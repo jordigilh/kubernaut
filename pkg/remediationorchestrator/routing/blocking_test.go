@@ -150,7 +150,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					SignalFingerprint: "xyz789",
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 2, // Below threshold
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 2, // Below threshold
+					},
 				},
 			}
 
@@ -365,8 +367,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseBlocked,
-					BlockReason:  remediationv1.BlockReasonDuplicateInProgress,
-					DuplicateOf:  "rr-a-older",
+					RoutingStatus: &remediationv1.RoutingStatus{
+						BlockReason: remediationv1.BlockReasonDuplicateInProgress,
+						DuplicateOf: "rr-a-older",
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, rrB)).To(Succeed())
@@ -1049,8 +1053,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 3,
-					NextAllowedExecution:    &futureTime,
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 3,
+						NextAllowedExecution:    &futureTime,
+					},
 				},
 			}
 
@@ -1080,8 +1086,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 2,
-					NextAllowedExecution:    nil, // No backoff configured
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 2,
+						NextAllowedExecution:    nil, // No backoff configured
+					},
 				},
 			}
 
@@ -1108,8 +1116,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 5,
-					NextAllowedExecution:    &pastTime, // Backoff expired
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 5,
+						NextAllowedExecution:    &pastTime, // Backoff expired
+					},
 				},
 			}
 
@@ -1196,7 +1206,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					SignalFingerprint: "short-circuit-fp",
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 0, // First check passes
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 0, // First check passes
+					},
 				},
 			}
 
@@ -1222,8 +1234,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					ConsecutiveFailureCount: 0, // No consecutive failures
-					OverallPhase:            remediationv1.PhasePending,
+					OverallPhase: remediationv1.PhasePending,
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 0, // No consecutive failures
+					},
 				},
 			}
 
@@ -1507,8 +1521,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 					SignalFingerprint: "below-threshold-fp",
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					OverallPhase:            remediationv1.PhaseAnalyzing,
-					ConsecutiveFailureCount: 2, // Just below threshold
+					OverallPhase: remediationv1.PhaseAnalyzing,
+					RoutingStatus: &remediationv1.RoutingStatus{
+						ConsecutiveFailureCount: 2, // Just below threshold
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())

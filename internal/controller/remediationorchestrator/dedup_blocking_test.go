@@ -52,9 +52,9 @@ const (
 // referencing the given original RR name.
 func newBlockedDuplicateRR(name, duplicateOf string) *remediationv1.RemediationRequest {
 	rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseBlocked)
-	rr.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
-	rr.Status.BlockMessage = "Another remediation is in progress for this fingerprint"
-	rr.Status.DuplicateOf = duplicateOf
+	rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonDuplicateInProgress
+	rr.Status.EnsureRoutingStatus().BlockMessage = "Another remediation is in progress for this fingerprint"
+	rr.Status.EnsureRoutingStatus().DuplicateOf = duplicateOf
 	rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-30 * time.Second)}
 	rr.Status.ObservedGeneration = rr.Generation
 	return rr
@@ -74,7 +74,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-001: original RR Completed → duplicate inherits Completed with InheritedCompleted outcome", func() {
 			originalRR := newRemediationRequest("original-rr-001", defaultFixture, remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
+			originalRR.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-001", "original-rr-001")
 
@@ -104,15 +104,15 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Completed when original RR completes")
-			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
+			Expect(updated.Status.EnsureCompletionStatus().Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set for terminal transition")
-			Expect(updated.Status.BlockReason).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockReason).To(BeEmpty(),
 				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockMessage).To(BeEmpty(),
 				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().DuplicateOf).To(BeEmpty(),
 				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
 		})
 
@@ -120,8 +120,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := oomKilled
 			originalRR := newRemediationRequest("original-rr-002", defaultFixture, remediationv1.PhaseFailed)
-			originalRR.Status.FailurePhase = &failPhase
-			originalRR.Status.FailureReason = &failReason
+			originalRR.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			originalRR.Status.EnsureCompletionStatus().FailureReason = &failReason
 
 			dupRR := newBlockedDuplicateRR("dup-rr-002", "original-rr-002")
 
@@ -151,19 +151,19 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Failed when original RR fails")
-			Expect(updated.Status.FailurePhase).NotTo(BeNil(),
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil(),
 				"Behavior: FailurePhase must be set for inherited failures")
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Behavior: FailurePhase must be Deduplicated (not the original's failure phase)")
-			Expect(updated.Status.FailureReason).NotTo(BeNil(),
+			Expect(updated.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil(),
 				"Behavior: FailureReason must contain reference to original RR")
-			Expect(*updated.Status.FailureReason).To(ContainSubstring("original-rr-002"),
+			Expect(*updated.Status.EnsureCompletionStatus().FailureReason).To(ContainSubstring("original-rr-002"),
 				"Behavior: FailureReason must mention original RR name for traceability")
-			Expect(updated.Status.BlockReason).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockReason).To(BeEmpty(),
 				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockMessage).To(BeEmpty(),
 				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().DuplicateOf).To(BeEmpty(),
 				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
 		})
 	})
@@ -199,17 +199,17 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: deleted original must cause inherited failure, not silent clearing")
-			Expect(updated.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Behavior: FailurePhase must be Deduplicated for deleted original")
-			Expect(updated.Status.BlockReason).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockReason).To(BeEmpty(),
 				"Behavior: BlockReason must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.BlockMessage).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().BlockMessage).To(BeEmpty(),
 				"Behavior: BlockMessage must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.DuplicateOf).To(BeEmpty(),
+			Expect(updated.Status.EnsureRoutingStatus().DuplicateOf).To(BeEmpty(),
 				"Behavior: DuplicateOf must be cleared after RR-level inheritance (#614 F2)")
-			Expect(updated.Status.FailureReason).NotTo(BeNil())
-			Expect(*updated.Status.FailureReason).To(ContainSubstring("deleted-original-003"),
+			Expect(updated.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailureReason).To(ContainSubstring("deleted-original-003"),
 				"Behavior: FailureReason must reference the deleted original RR")
 		})
 
@@ -259,7 +259,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-005: CurrentBlockedGauge decrements after successful Completed inheritance", func() {
 			originalRR := newRemediationRequest("original-rr-005", defaultFixture, remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
+			originalRR.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-005", "original-rr-005")
 
@@ -296,8 +296,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := oomKilled
 			originalRR := newRemediationRequest("original-rr-006", defaultFixture, remediationv1.PhaseFailed)
-			originalRR.Status.FailurePhase = &failPhase
-			originalRR.Status.FailureReason = &failReason
+			originalRR.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			originalRR.Status.EnsureCompletionStatus().FailureReason = &failReason
 
 			dupRR := newBlockedDuplicateRR("dup-rr-006", "original-rr-006")
 
@@ -335,7 +335,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-007: Completed inheritance emits K8s event with RemediationRequest provenance", func() {
 			originalRR := newRemediationRequest("original-rr-007", defaultFixture, remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
+			originalRR.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-007", "original-rr-007")
 
@@ -377,8 +377,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := oomKilled
 			originalRR := newRemediationRequest("original-rr-008", defaultFixture, remediationv1.PhaseFailed)
-			originalRR.Status.FailurePhase = &failPhase
-			originalRR.Status.FailureReason = &failReason
+			originalRR.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			originalRR.Status.EnsureCompletionStatus().FailureReason = &failReason
 
 			dupRR := newBlockedDuplicateRR("dup-rr-008", "original-rr-008")
 
@@ -456,8 +456,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-010: empty DuplicateOf → clears to Pending (pre-#614 behavior preserved)", func() {
 			dupRR := newRemediationRequest("dup-rr-010", defaultFixture, remediationv1.PhaseBlocked)
-			dupRR.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
-			dupRR.Status.DuplicateOf = ""
+			dupRR.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonDuplicateInProgress
+			dupRR.Status.EnsureRoutingStatus().DuplicateOf = ""
 			dupRR.Status.ObservedGeneration = dupRR.Generation
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
@@ -498,8 +498,8 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := oomKilled
 			originalRR := newRemediationRequest("original-rr-011", defaultFixture, remediationv1.PhaseFailed)
-			originalRR.Status.FailurePhase = &failPhase
-			originalRR.Status.FailureReason = &failReason
+			originalRR.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			originalRR.Status.EnsureCompletionStatus().FailureReason = &failReason
 
 			dupRR := newBlockedDuplicateRR("dup-rr-011", "original-rr-011")
 
@@ -527,7 +527,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			updated := &remediationv1.RemediationRequest{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-011", Namespace: defaultFixture}, updated)).To(Succeed())
 
-			Expect(updated.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+			Expect(updated.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 				"Behavior: inherited failures from RR-level dedup must NOT increment ConsecutiveFailureCount")
 		})
 
@@ -562,11 +562,11 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: non-Completed terminal phases (TimedOut, Cancelled, etc.) must map to inherited Failed")
-			Expect(updated.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Behavior: FailurePhase must be Deduplicated regardless of original's terminal phase")
-			Expect(updated.Status.FailureReason).NotTo(BeNil())
-			Expect(*updated.Status.FailureReason).To(ContainSubstring("TimedOut"),
+			Expect(updated.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailureReason).To(ContainSubstring("TimedOut"),
 				"Behavior: FailureReason must include original's terminal phase for traceability")
 		})
 	})
@@ -575,7 +575,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-F3: ensureNotificationsCreated must NOT be called for RR-level inheritance (no AIAnalysis exists)", func() {
 			originalRR := newRemediationRequest("original-rr-f3", defaultFixture, remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
+			originalRR.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-f3", "original-rr-f3")
 
@@ -606,7 +606,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: inheritance must succeed without notification creation")
-			Expect(updated.Status.NotificationRequestRefs).To(BeEmpty(),
+			Expect(updated.Status.EnsureCompletionStatus().NotificationRequestRefs).To(BeEmpty(),
 				"Behavior: no notification refs should be created for RR-level inheritance (F-3 guard)")
 		})
 	})

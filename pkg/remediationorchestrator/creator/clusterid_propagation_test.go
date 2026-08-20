@@ -173,7 +173,9 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 				ClusterID:    "prod-east-1",
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				DuplicateCount: 3,
+				RoutingStatus: &remediationv1.RoutingStatus{
+					DuplicateCount: 3,
+				},
 			},
 		}
 

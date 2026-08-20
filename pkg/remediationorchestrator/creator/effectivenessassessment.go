@@ -148,7 +148,7 @@ func (c *EffectivenessAssessmentCreator) buildEffectivenessAssessment(
 			},
 			RemediationCreatedAt:   rr.CreationTimestamp.DeepCopy(),
 			SignalName:             rr.Spec.SignalName,
-			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
+			PreRemediationSpecHash: rr.Status.GetOperatorAudit().PreRemediationSpecHash,
 			ClusterID:              rr.Spec.ClusterID,
 		},
 	}

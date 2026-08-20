@@ -295,7 +295,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase, no requeue
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("SignalProcessing failed")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("SignalProcessing failed")))
 			},
 		}),
 
@@ -316,7 +316,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 
 		Entry("2.4: Processing→Analyzing - Status Aggregation", ReconcileScenario{
 			name:        "processing_status_aggregation",
-			description: "Should aggregate SP status into RR.Status.SignalProcessingRef",
+			description: "Should aggregate SP status into RR.Status.EnsurePhaseProgress().SignalProcessingRef",
 			businessReq: "BR-ORCH-026 (status aggregation)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
@@ -328,8 +328,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				RequeueAfter: 5 * time.Second, // Requeue to check AI progress
 			},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
-				Expect(rr.Status.SignalProcessingRef).To(HaveField("Namespace", Equal(defaultFixture)))
+				Expect(rr.Status.EnsurePhaseProgress().SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
+				Expect(rr.Status.EnsurePhaseProgress().SignalProcessingRef).To(HaveField("Namespace", Equal(defaultFixture)))
 			},
 		}),
 
@@ -344,7 +344,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("SignalProcessing not found")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("SignalProcessing not found")))
 			},
 		}),
 
@@ -371,10 +371,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			},
 			// UT-RR-387-002: RemediationTarget populated from AIAnalysis AffectedResource (direct path)
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
-				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
-				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
-				Expect(rr.Status.RemediationTarget.Namespace).To(Equal(defaultFixture))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Name).To(Equal("test-deployment"))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Namespace).To(Equal(defaultFixture))
 			},
 		}),
 
@@ -448,7 +448,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("AIAnalysis failed")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("AIAnalysis failed")))
 			},
 		}),
 
@@ -485,7 +485,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution failed")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution failed")))
 			},
 		}),
 
@@ -519,9 +519,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseVerifying,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
-				Expect(rr.Status.AIAnalysisRef).To(HaveField("Name", Equal("test-rr-ai")))
-				Expect(rr.Status.WorkflowExecutionRef).To(HaveField("Name", Equal("test-rr-we")))
+				Expect(rr.Status.EnsurePhaseProgress().SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
+				Expect(rr.Status.EnsurePhaseProgress().AIAnalysisRef).To(HaveField("Name", Equal("test-rr-ai")))
+				Expect(rr.Status.EnsurePhaseProgress().WorkflowExecutionRef).To(HaveField("Name", Equal("test-rr-we")))
 			},
 		}),
 
@@ -538,7 +538,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution not found")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution not found")))
 			},
 		}),
 
@@ -563,10 +563,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedChildren: map[string]bool{"WE": true},
 			// UT-RR-387-003: RemediationTarget populated from AIAnalysis AffectedResource (post-approval path)
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
-				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
-				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
-				Expect(rr.Status.RemediationTarget.Namespace).To(Equal(defaultFixture))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Name).To(Equal("test-deployment"))
+				Expect(rr.Status.EnsureWorkflowSelection().RemediationTarget.Namespace).To(Equal(defaultFixture))
 			},
 		}),
 
@@ -584,7 +584,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("Too risky")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("Too risky")))
 			},
 		}),
 
@@ -602,7 +602,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("expired")))
+				Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(HaveValue(ContainSubstring("expired")))
 			},
 		}),
 
@@ -652,8 +652,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.TimeoutTime).To(HaveValue(Not(BeZero())))
-				Expect(rr.Status.TimeoutPhase).To(HaveValue(Equal(remediationv1.PhasePending)))
+				Expect(rr.Status.EnsureCompletionStatus().TimeoutTime).To(HaveValue(Not(BeZero())))
+				Expect(rr.Status.EnsureCompletionStatus().TimeoutPhase).To(HaveValue(Equal(remediationv1.PhasePending)))
 			},
 		}),
 
@@ -681,7 +681,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second}, // RequeueResourceBusy after notification creation
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(*rr.Status.TimeoutPhase).To(Equal(remediationv1.PhaseProcessing))
+				Expect(*rr.Status.EnsureCompletionStatus().TimeoutPhase).To(Equal(remediationv1.PhaseProcessing))
 			},
 		}),
 
@@ -840,7 +840,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 		Expect(finalRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
 			"RR should NOT fail when hash capture soft-fails (Issue #545)")
-		Expect(finalRR.Status.PreRemediationSpecHash).To(BeEmpty(),
+		Expect(finalRR.Status.EnsureOperatorAudit().PreRemediationSpecHash).To(BeEmpty(),
 			"Hash should be empty when capture was degraded")
 
 		// Verify a HashCaptureDegraded warning event was emitted

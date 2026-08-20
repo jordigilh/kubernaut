@@ -77,9 +77,9 @@ var _ = Describe("CheckConsecutiveFailures - Inconclusive Chain Counting (BR-ORC
 			Build()
 
 		config := routing.Config{
-			ConsecutiveFailureThreshold: 3,
-			ConsecutiveFailureCooldown:  3600,
-			RecentlyRemediatedCooldown:  300,
+			ConsecutiveFailureThreshold:   3,
+			ConsecutiveFailureCooldown:    3600,
+			RecentlyRemediatedCooldown:    300,
 			ExponentialBackoffBase:        60,
 			ExponentialBackoffMax:         600,
 			ExponentialBackoffMaxExponent: 4,
@@ -123,7 +123,9 @@ var _ = Describe("CheckConsecutiveFailures - Inconclusive Chain Counting (BR-ORC
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseCompleted,
-				Outcome:      "Inconclusive",
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: "Inconclusive",
+				},
 			},
 		}
 		Expect(fakeClient.Create(ctx, inconclusiveRR)).To(Succeed())
@@ -184,7 +186,9 @@ var _ = Describe("CheckConsecutiveFailures - Inconclusive Chain Counting (BR-ORC
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseCompleted,
-				Outcome:      "Remediated",
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: "Remediated",
+				},
 			},
 		}
 		Expect(fakeClient.Create(ctx, remediatedRR)).To(Succeed())
@@ -244,7 +248,9 @@ var _ = Describe("CheckConsecutiveFailures - Inconclusive Chain Counting (BR-ORC
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseCompleted,
-					Outcome:      "Inconclusive",
+					CompletionStatus: &remediationv1.CompletionStatus{
+						Outcome: "Inconclusive",
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, incRR)).To(Succeed())

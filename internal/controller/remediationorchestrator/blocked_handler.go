@@ -69,8 +69,8 @@ func (h *BlockedHandler) Phase() phase.Phase {
 func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.BlockedUntil == nil {
-		switch rr.Status.BlockReason {
+	if rr.Status.EnsureRoutingStatus().BlockedUntil == nil {
+		switch rr.Status.EnsureRoutingStatus().BlockReason {
 		case remediationv1.BlockReasonResourceBusy:
 			result, err := h.callbacks.RecheckResourceBusyBlock(ctx, rr)
 			if err != nil {
@@ -89,13 +89,13 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 		}
 	}
 
-	if time.Now().After(rr.Status.BlockedUntil.Time) {
+	if time.Now().After(rr.Status.EnsureRoutingStatus().BlockedUntil.Time) {
 		return h.handleCooldownExpired(ctx, rr, logger)
 	}
 
-	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
+	requeueAfter := time.Until(rr.Status.EnsureRoutingStatus().BlockedUntil.Time)
 	logger.V(1).Info("Still blocked, requeueing at expiry",
-		"blockedUntil", rr.Status.BlockedUntil.Format(time.RFC3339),
+		"blockedUntil", rr.Status.EnsureRoutingStatus().BlockedUntil.Format(time.RFC3339),
 		"requeueAfter", requeueAfter)
 	return phase.Requeue(requeueAfter, "blocked cooldown active"), nil
 }
@@ -105,7 +105,7 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 // block reasons transition the RR to terminal Failed. Extracted from Handle
 // per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (h *BlockedHandler) handleCooldownExpired(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (phase.TransitionIntent, error) {
-	if rr.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource {
+	if rr.Status.EnsureRoutingStatus().BlockReason == remediationv1.BlockReasonUnmanagedResource {
 		result, err := h.callbacks.HandleUnmanagedResourceExpiry(ctx, rr)
 		if err != nil {
 			return phase.TransitionIntent{}, err
@@ -119,8 +119,8 @@ func (h *BlockedHandler) handleCooldownExpired(ctx context.Context, rr *remediat
 	}
 
 	blockReason := "unknown"
-	if rr.Status.BlockReason != "" {
-		blockReason = string(rr.Status.BlockReason)
+	if rr.Status.EnsureRoutingStatus().BlockReason != "" {
+		blockReason = string(rr.Status.EnsureRoutingStatus().BlockReason)
 	}
 
 	result, err := h.callbacks.TransitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,

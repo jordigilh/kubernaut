@@ -72,8 +72,8 @@ var _ = Describe("Issue #190: Deduplication CRD Types", func() {
 
 		It("DeduplicatedByWE field is assignable on RR status", func() {
 			rr := &remediationv1.RemediationRequest{}
-			rr.Status.DeduplicatedByWE = "test-original-wfe"
-			Expect(rr.Status.DeduplicatedByWE).To(Equal("test-original-wfe"),
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "test-original-wfe"
+			Expect(rr.Status.EnsureRoutingStatus().DeduplicatedByWE).To(Equal("test-original-wfe"),
 				"Behavior: RR status must have DeduplicatedByWE string field")
 		})
 	})
@@ -100,9 +100,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-005", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-005")
-			rr.Status.DeduplicatedByWE = "original-wfe-005"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "original-wfe-005"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-005", defaultFixture, "prop-rr-005", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -136,7 +136,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: RR must inherit Completed from original WFE")
-			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
+			Expect(updated.Status.EnsureCompletionStatus().Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DeduplicatedByWE + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil())
 		})
@@ -145,9 +145,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-006", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-006")
-			rr.Status.DeduplicatedByWE = "original-wfe-006"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "original-wfe-006"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-006", defaultFixture, "prop-rr-006", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -181,8 +181,8 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: RR must inherit Failed from original WFE")
-			Expect(updated.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Behavior: FailurePhase must be Deduplicated for inherited failures")
 		})
 
@@ -190,9 +190,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-011", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-011")
-			rr.Status.DeduplicatedByWE = "deleted-wfe-011"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "deleted-wfe-011"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-011", defaultFixture, "prop-rr-011", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -224,17 +224,17 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: RR must fail when original WFE is deleted (dangling reference)")
-			Expect(updated.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
 		})
 
 		It("UT-RO-190-012: original WFE still Running → RR stays Executing, requeue", func() {
 			rr := newRemediationRequest("prop-rr-012", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-012")
-			rr.Status.DeduplicatedByWE = "running-wfe-012"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "running-wfe-012"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-012", defaultFixture, "prop-rr-012", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -276,9 +276,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-016", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-016")
-			rr.Status.DeduplicatedByWE = "running-wfe-016"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "running-wfe-016"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-016", defaultFixture, "prop-rr-016", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -328,9 +328,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-015", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-015")
-			rr.Status.DeduplicatedByWE = "original-wfe-015"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "original-wfe-015"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-015", defaultFixture, "prop-rr-015", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -379,9 +379,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-019", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-019")
-			rr.Status.DeduplicatedByWE = transientErrorWfe019
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = transientErrorWfe019
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-019", defaultFixture, "prop-rr-019", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -432,9 +432,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-017", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-017")
-			rr.Status.DeduplicatedByWE = "failed-original-017"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "failed-original-017"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-017", defaultFixture, "prop-rr-017", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -480,9 +480,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-018", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-018")
-			rr.Status.DeduplicatedByWE = "failed-original-018"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "failed-original-018"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-018", defaultFixture, "prop-rr-018", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -514,8 +514,8 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			updated := &remediationv1.RemediationRequest{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-018", Namespace: defaultFixture}, updated)).To(Succeed())
 
-			Expect(updated.Status.FailureReason).NotTo(BeNil())
-			Expect(*updated.Status.FailureReason).To(ContainSubstring("failed-original-018"),
+			Expect(updated.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailureReason).To(ContainSubstring("failed-original-018"),
 				"Behavior: FailureReason must contain original WFE name for audit trail traceability")
 		})
 	})
@@ -526,9 +526,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-013", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-013")
-			rr.Status.DeduplicatedByWE = "deleted-wfe-013"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "deleted-wfe-013"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-013", defaultFixture, "prop-rr-013", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -559,9 +559,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-013", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-			Expect(updated.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+			Expect(updated.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 				"Behavior: inherited failures must NOT increment ConsecutiveFailureCount")
-			Expect(updated.Status.NextAllowedExecution).To(BeNil(),
+			Expect(updated.Status.EnsureRoutingStatus().NextAllowedExecution).To(BeNil(),
 				"Behavior: inherited failures must NOT set exponential backoff")
 		})
 
@@ -569,9 +569,9 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr := newRemediationRequest("prop-rr-014", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
-			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
+			rr.Status.EnsurePhaseProgress().ExecutingStartTime = &metav1.Time{Time: time.Now()}
 			setWERef(rr, "dedup-wfe-014")
-			rr.Status.DeduplicatedByWE = "failed-original-014"
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = "failed-original-014"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-014", defaultFixture, "prop-rr-014", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
@@ -604,17 +604,17 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-014", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-			Expect(updated.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updated.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+			Expect(updated.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updated.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 				"Invariant: FailurePhase=Deduplicated marks this RR for exclusion from countConsecutiveFailures")
-			Expect(updated.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+			Expect(updated.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 				"Invariant: ConsecutiveFailureCount must be 0 (not incremented by transitionToInheritedFailed)")
 		})
 	})
 })
 
 func setWERef(rr *remediationv1.RemediationRequest, name string) {
-	rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+	rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 		APIVersion: workflowexecutionv1.GroupVersion.String(),
 		Kind:       "WorkflowExecution",
 		Name:       name,

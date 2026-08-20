@@ -102,16 +102,16 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 		It("should update multiple status fields in single call", func() {
 			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseSkipped
-				rr.Status.SkipReason = remediationv1.SkipReasonResourceBusy
-				rr.Status.DuplicateOf = "parent-rr"
+				rr.Status.EnsureRoutingStatus().SkipReason = remediationv1.SkipReasonResourceBusy
+				rr.Status.EnsureRoutingStatus().DuplicateOf = "parent-rr"
 				rr.Status.Message = "Skipped due to resource lock"
 				return nil
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
-			Expect(rr.Status.SkipReason).To(Equal(remediationv1.SkipReasonResourceBusy))
-			Expect(rr.Status.DuplicateOf).To(Equal("parent-rr"))
+			Expect(rr.Status.EnsureRoutingStatus().SkipReason).To(Equal(remediationv1.SkipReasonResourceBusy))
+			Expect(rr.Status.EnsureRoutingStatus().DuplicateOf).To(Equal("parent-rr"))
 			Expect(rr.Status.Message).To(Equal("Skipped due to resource lock"))
 		})
 
@@ -177,7 +177,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 	Context("Issue #118 Gap 5: SelectedWorkflowRef population", func() {
 		It("UT-RR-SWR-001: should persist SelectedWorkflowRef when set in status update callback", func() {
 			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+				rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{
 					WorkflowID:      "wf-restart-pod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
@@ -186,11 +186,11 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr.Status.SelectedWorkflowRef).NotTo(BeNil(),
+			Expect(rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef).NotTo(BeNil(),
 				"SelectedWorkflowRef must be persisted through UpdateRemediationRequestStatus")
-			Expect(rr.Status.SelectedWorkflowRef.WorkflowID).To(Equal("wf-restart-pod"))
-			Expect(rr.Status.SelectedWorkflowRef.Version).To(Equal("v1.0.0"))
-			Expect(rr.Status.SelectedWorkflowRef.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
+			Expect(rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef.WorkflowID).To(Equal("wf-restart-pod"))
+			Expect(rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef.Version).To(Equal("v1.0.0"))
+			Expect(rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
 		})
 	})
 

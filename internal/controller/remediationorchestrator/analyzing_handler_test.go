@@ -118,7 +118,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 	analyzingRR := func(name string, aiRefName string) *remediationv1.RemediationRequest {
 		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseAnalyzing)
 		if aiRefName != "" {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
+			rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
 		}
 		return rr
 	}

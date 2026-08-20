@@ -98,13 +98,17 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				Outcome:      remediationv1.OutcomeRemediated,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      eaName,
-					Namespace: namespace,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: remediationv1.OutcomeRemediated,
 				},
-				VerificationDeadline: &deadline,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      eaName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &deadline,
+				},
 			},
 		}
 
@@ -194,7 +198,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.NotificationRequestRefs).To(ContainElement(
+		Expect(fetchedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(ContainElement(
 			HaveField("Name", completionNTName),
 		), "NotificationRequestRefs should track the completion notification after retry")
 	})
@@ -233,23 +237,29 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:   remediationv1.PhaseVerifying,
-				Outcome:        remediationv1.OutcomeRemediated,
-				DuplicateCount: 3,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      eaName,
-					Namespace: namespace,
-				},
-				VerificationDeadline: &deadline,
-				// Completion notification already tracked (only bulk fails)
-				NotificationRequestRefs: []corev1.ObjectReference{
-					{
-						Kind:       "NotificationRequest",
-						Name:       completionNTName,
-						Namespace:  namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
+				OverallPhase: remediationv1.PhaseVerifying,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: remediationv1.OutcomeRemediated,
+					// Completion notification already tracked (only bulk fails)
+					NotificationRequestRefs: []corev1.ObjectReference{
+						{
+							Kind:       "NotificationRequest",
+							Name:       completionNTName,
+							Namespace:  namespace,
+							APIVersion: "notification.kubernaut.ai/v1alpha1",
+						},
 					},
+				},
+				RoutingStatus: &remediationv1.RoutingStatus{
+					DuplicateCount: 3,
+				},
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      eaName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &deadline,
 				},
 			},
 		}
@@ -357,7 +367,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.NotificationRequestRefs).To(ContainElement(
+		Expect(fetchedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(ContainElement(
 			HaveField("Name", bulkNTName),
 		), "NotificationRequestRefs should track the bulk duplicate notification after retry")
 	})
@@ -396,29 +406,35 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:   remediationv1.PhaseVerifying,
-				Outcome:        remediationv1.OutcomeRemediated,
-				DuplicateCount: 2,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      eaName,
-					Namespace: namespace,
+				OverallPhase: remediationv1.PhaseVerifying,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: remediationv1.OutcomeRemediated,
+					// Both notifications already tracked
+					NotificationRequestRefs: []corev1.ObjectReference{
+						{
+							Kind:       "NotificationRequest",
+							Name:       completionNTName,
+							Namespace:  namespace,
+							APIVersion: "notification.kubernaut.ai/v1alpha1",
+						},
+						{
+							Kind:       "NotificationRequest",
+							Name:       bulkNTName,
+							Namespace:  namespace,
+							APIVersion: "notification.kubernaut.ai/v1alpha1",
+						},
+					},
 				},
-				VerificationDeadline: &deadline,
-				// Both notifications already tracked
-				NotificationRequestRefs: []corev1.ObjectReference{
-					{
-						Kind:       "NotificationRequest",
-						Name:       completionNTName,
-						Namespace:  namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
+				RoutingStatus: &remediationv1.RoutingStatus{
+					DuplicateCount: 2,
+				},
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      eaName,
+						Namespace: namespace,
 					},
-					{
-						Kind:       "NotificationRequest",
-						Name:       bulkNTName,
-						Namespace:  namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
-					},
+					VerificationDeadline: &deadline,
 				},
 			},
 		}
@@ -523,7 +539,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.NotificationRequestRefs).To(HaveLen(2),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(HaveLen(2),
 			"NotificationRequestRefs should remain unchanged")
 	})
 })
@@ -582,13 +598,17 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				Outcome:      remediationv1.OutcomeRemediated,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      eaName,
-					Namespace: namespace,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: remediationv1.OutcomeRemediated,
 				},
-				VerificationDeadline: &deadline,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      eaName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &deadline,
+				},
 			},
 		}
 
@@ -701,10 +721,14 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:               remediationv1.PhaseVerifying,
-				Outcome:                    remediationv1.OutcomeRemediated,
-				EffectivenessAssessmentRef: nil,
-				VerificationDeadline:       &deadline,
+				OverallPhase: remediationv1.PhaseVerifying,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: remediationv1.OutcomeRemediated,
+				},
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: nil,
+					VerificationDeadline:       &deadline,
+				},
 			},
 		}
 

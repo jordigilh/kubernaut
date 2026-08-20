@@ -83,7 +83,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		rr := newRemediationRequest(name, testNs, remediationv1.PhaseVerifying)
 		startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 		rr.Status.StartTime = &startTime
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  testNs,
@@ -92,7 +92,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		// VerificationDeadline must be set and in the future so the Verifying handler
 		// proceeds past the deadline checks to TrackEffectivenessStatus.
 		futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
-		rr.Status.VerificationDeadline = &futureDeadline
+		rr.Status.EnsurePhaseProgress().VerificationDeadline = &futureDeadline
 		return rr
 	}
 
@@ -153,12 +153,12 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 			"Inconclusive should still transition to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal("Inconclusive"))
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(1)),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("Inconclusive"))
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(1)),
 			"Inconclusive should increment ConsecutiveFailureCount")
-		Expect(fetchedRR.Status.NextAllowedExecution).ToNot(BeNil(),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution).ToNot(BeNil(),
 			"Inconclusive should set NextAllowedExecution")
-		Expect(fetchedRR.Status.NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
 			"NextAllowedExecution should be in the future")
 	})
 
@@ -169,7 +169,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, eaName)
-		rr.Status.ConsecutiveFailureCount = 1
+		rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = 1
 		ea := newInconclusiveEA(eaName)
 
 		fakeClient := fake.NewClientBuilder().
@@ -184,9 +184,9 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(2)),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(2)),
 			"Should increment from 1 to 2")
-		Expect(fetchedRR.Status.NextAllowedExecution).ToNot(BeNil(),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution).ToNot(BeNil(),
 			"Should set NextAllowedExecution for count=2")
 	})
 
@@ -225,9 +225,9 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-		Expect(fetchedRR.Status.Outcome).To(Equal("Inconclusive"))
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(1)))
-		Expect(fetchedRR.Status.NextAllowedExecution).To(
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("Inconclusive"))
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(1)))
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(
 			Satisfy(func(t *metav1.Time) bool { return t != nil && t.After(time.Now()) }),
 			"Inconclusive should set NextAllowedExecution to a future time")
 	})
@@ -239,7 +239,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, eaName)
-		rr.Status.ConsecutiveFailureCount = 3 // At threshold (MockRoutingEngine threshold=3)
+		rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = 3 // At threshold (MockRoutingEngine threshold=3)
 		ea := newInconclusiveEA(eaName)
 
 		fakeClient := fake.NewClientBuilder().
@@ -254,9 +254,9 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(4)),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(4)),
 			"Count should still increment even at threshold (TQ-7)")
-		Expect(fetchedRR.Status.NextAllowedExecution).To(BeNil(),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(BeNil(),
 			"At threshold, NextAllowedExecution should NOT be set (routing engine blocks instead)")
 	})
 
@@ -282,10 +282,10 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated))
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal(remediationv1.OutcomeRemediated))
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 			"Remediated should NOT increment ConsecutiveFailureCount")
-		Expect(fetchedRR.Status.NextAllowedExecution).To(BeNil(),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(BeNil(),
 			"Remediated should NOT set NextAllowedExecution")
 	})
 
@@ -310,14 +310,14 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 
 		fetchedRR := &remediationv1.RemediationRequest{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
-		firstCount := fetchedRR.Status.ConsecutiveFailureCount
+		firstCount := fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount
 
 		// Second reconcile: should be idempotent (RR is now Completed, not Verifying)
 		_, err = reconcileVerifying(fakeClient, rrName, namespace)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
-		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(firstCount),
+		Expect(fetchedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(firstCount),
 			"Second reconcile should NOT increment ConsecutiveFailureCount again")
 	})
 })

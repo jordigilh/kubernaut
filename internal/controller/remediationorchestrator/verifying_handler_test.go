@@ -75,12 +75,12 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 	// helper: create a Verifying-phase RR with EA ref and active deadline
 	verifyingRRWithDeadline := func(name string, deadline time.Time) *remediationv1.RemediationRequest {
 		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseVerifying)
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind: "EffectivenessAssessment", Name: "ea-" + name, Namespace: defaultFixture,
 		}
 		dl := metav1.NewTime(deadline)
-		rr.Status.VerificationDeadline = &dl
+		rr.Status.EnsurePhaseProgress().VerificationDeadline = &dl
 		return rr
 	}
 
@@ -134,7 +134,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 
 		It("UT-VER-H-004: does NOT call EnsureNotificationsCreated when Outcome is empty", func() {
 			rr := verifyingRRWithDeadline("ver-no-notif", time.Now().Add(10*time.Minute))
-			rr.Status.Outcome = "" // clear outcome
+			rr.Status.EnsureCompletionStatus().Outcome = "" // clear outcome
 			ea := minimalEA("ea-ver-no-notif", eav1.PhasePending)
 
 			c := fake.NewClientBuilder().WithScheme(scheme).
@@ -161,7 +161,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 	Describe("EA creation retry", func() {
 		It("UT-VER-H-005: EA ref nil, creation callback still leaves nil → requeue at RequeueResourceBusy", func() {
 			rr := newRemediationRequest("ver-ea-nil", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr).
@@ -184,7 +184,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 
 		It("UT-VER-H-006: EA ref nil, creation callback sets ref → proceeds to step 2", func() {
 			rr := newRemediationRequest("ver-ea-created", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			ea := minimalEA("ea-ver-ea-created", eav1.PhasePending)
 
@@ -195,7 +195,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 
 			cbs := noopCallbacks()
 			cbs.CreateEffectivenessAssessmentIfNeeded = func(_ context.Context, rr *remediationv1.RemediationRequest) {
-				rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 					Kind: "EffectivenessAssessment", Name: "ea-ver-ea-created", Namespace: defaultFixture,
 				}
 			}
@@ -215,8 +215,8 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 	Describe("VerificationDeadline population", func() {
 		It("UT-VER-H-007: EA Get error returns requeue at RequeueResourceBusy", func() {
 			rr := newRemediationRequest("ver-ea-err", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-missing", Namespace: defaultFixture,
 			}
 
@@ -234,8 +234,8 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 
 		It("UT-VER-H-008: ValidityDeadline set → VerificationDeadline populated with buffer", func() {
 			rr := newRemediationRequest("ver-dl-set", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-dl-set", Namespace: defaultFixture,
 			}
 
@@ -259,14 +259,14 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 			// After setting deadline, continues to step 3/4 → EA still in progress → requeue
 			Expect(intent.Type).To(Equal(phase.TransitionNone))
 			Expect(intent.RequeueAfter).To(Equal(config.RequeueResourceBusy))
-			Expect(rr.Status.VerificationDeadline).ToNot(BeNil(),
+			Expect(rr.Status.EnsurePhaseProgress().VerificationDeadline).ToNot(BeNil(),
 				"VerificationDeadline should be populated from EA.ValidityDeadline + buffer")
 		})
 
 		It("UT-VER-H-009: ValidityDeadline nil, age < timeout → requeue", func() {
 			rr := newRemediationRequest("ver-no-dl", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-no-dl", Namespace: defaultFixture,
 			}
 
@@ -287,8 +287,8 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 		It("UT-VER-H-010: safety-net timeout → Completed/VerificationTimedOut + metrics + audit", func() {
 			rr := newRemediationRequest("ver-safety", defaultFixture, remediationv1.PhaseVerifying)
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-safety", Namespace: defaultFixture,
 			}
 
@@ -369,7 +369,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 			cbs.TrackEffectivenessStatus = func(_ context.Context, rr *remediationv1.RemediationRequest) error {
 				// Simulate what trackEffectivenessStatus does: mutate OverallPhase
 				rr.Status.OverallPhase = phase.Completed
-				rr.Status.Outcome = remediationv1.OutcomeRemediated
+				rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 				return nil
 			}
 			cbs.EmitVerificationCompletedAudit = func(_ context.Context, _ *remediationv1.RemediationRequest) {
