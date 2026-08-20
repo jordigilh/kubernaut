@@ -238,8 +238,23 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
 					"LastPolled must be set on completed poll")
 
-				Expect(auditSpy.resultEvents).To(HaveLen(1), "should record exactly 1 result audit event")
-				Expect(auditSpy.resultEvents[0].investigationTime).To(BeNumerically(">", 0), "investigation time should be positive")
+				// #2204 (2026-08-20): RecordAIAgentResult itself moved out of
+				// InvestigatingHandler.Handle (which runs inside the
+				// controller's retryable AtomicStatusUpdate closure) into
+				// internal/controller/aianalysis's finalizeInvestigatingTransition,
+				// which runs exactly once after the closure durably commits
+				// -- see phase_handlers.go and DD-WE-009 ("audit outside the
+				// retryable closure"). This unit test exercises the handler
+				// in isolation (no AtomicStatusUpdate/controller in the
+				// loop), so it can no longer observe that audit call here;
+				// the controller-level regression coverage for the fix
+				// itself lives in
+				// internal/controller/aianalysis/duplicate_audit_on_conflict_retry_test.go
+				// (UT-AA-2204-101). What this handler-level test still owns
+				// is the underlying InvestigationTime computation the
+				// controller layer keys its post-commit audit off of.
+				Expect(analysis.Status.GetInvestigationMetadata().InvestigationTime).To(BeNumerically(">", 0),
+					"investigation time should be positive")
 			})
 		})
 

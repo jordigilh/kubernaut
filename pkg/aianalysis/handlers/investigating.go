@@ -420,8 +420,24 @@ func (h *InvestigatingHandler) handleSessionCompleted(ctx context.Context, analy
 	analysis.Status.EnsureInvestigationMetadata().InvestigationTime = investigationTime
 	analysis.Status.ObservedGeneration = analysis.Generation
 
-	// DD-AUDIT-003: Record result retrieval audit event
-	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
+	// #2204 (2026-08-20): DD-AUDIT-003's "record result retrieval audit
+	// event" call used to live here, inside the handler invoked from
+	// InvestigatingHandler.Handle -- which itself runs inside
+	// StatusManager.AtomicStatusUpdate's k8sretry.RetryOnConflict closure
+	// (phase_handlers.go's runInvestigatingHandler). A resourceVersion
+	// Conflict on that closure's own Status().Update() call re-runs the
+	// WHOLE closure, including this non-idempotent audit write, double-
+	// recording "aianalysis.aiagent.call" for one logical completion. Per
+	// DD-WE-009 ("audit outside the retryable closure") -- the exact
+	// convention this codebase already applies to RecordPhaseTransition
+	// (AA-BUG-001, see finalizeInvestigatingTransition) -- the audit call
+	// has moved to phase_handlers.go's finalizeInvestigatingTransition,
+	// which runs exactly once, after AtomicStatusUpdate has durably
+	// committed. investigationTimeMs is threaded through
+	// investigatingUpdateOutcome via a before/after comparison of
+	// InvestigationMetadata.InvestigationTime (still safely set above,
+	// inside the closure -- a plain status field write is idempotent across
+	// retries, unlike an external audit call).
 
 	res := as.Status.Result
 	if res == nil {

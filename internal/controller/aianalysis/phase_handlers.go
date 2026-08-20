@@ -135,6 +135,18 @@ type investigatingUpdateOutcome struct {
 	result          ctrl.Result
 	handlerErr      error
 	handlerExecuted bool
+	// investigationTimeMs is non-nil only when THIS execution of the
+	// AtomicStatusUpdate closure is the one that first computed
+	// InvestigationMetadata.InvestigationTime (detected as a 0 -> >0
+	// transition -- see runInvestigatingHandler). #2204 (2026-08-20): the
+	// RecordAIAgentResult audit call keys off this field in
+	// finalizeInvestigatingTransition, which runs AFTER AtomicStatusUpdate
+	// durably commits, so a resourceVersion-Conflict retry of the closure
+	// (which recomputes InvestigationTime from a fresh 0 baseline every
+	// time, since the prior failed attempt's write never landed) cannot
+	// double-record the event -- only the run whose outcome the caller
+	// actually observes gets audited, exactly once.
+	investigationTimeMs *int64
 }
 
 // runInvestigatingHandler is the AtomicStatusUpdate closure body for
@@ -157,7 +169,15 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 		return nil
 	}
 
-	if analysis.Status.GetInvestigationMetadata().InvestigationTime > 0 {
+	// #2204: baseline read BEFORE the handler runs, so that after Handle()
+	// returns we can detect whether THIS execution is the one that first
+	// transitioned InvestigationTime from 0 -- see investigatingUpdateOutcome
+	// .investigationTimeMs's doc comment. Read once here (not inside the
+	// guard below) because the "AA-H4 recovery poll" branch can also reach
+	// Handle() despite InvestigationTime already being > 0.
+	investigationTimeBefore := analysis.Status.GetInvestigationMetadata().InvestigationTime
+
+	if investigationTimeBefore > 0 {
 		hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
 		if !hasActiveSession {
 			log.Info("AA-KA-001: Handler already executed, skipping duplicate call",
@@ -194,6 +214,19 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 	outcome.handlerExecuted = true
 	if outcome.handlerErr != nil {
 		return outcome.handlerErr
+	}
+
+	// #2204: this run just transitioned InvestigationTime 0 -> >0, i.e. it is
+	// the run whose handleSessionCompleted observed KA's Completed write.
+	// Capture the value so finalizeInvestigatingTransition can record the
+	// RecordAIAgentResult audit event exactly once, after this closure's
+	// Status().Update() actually commits (DD-WE-009 convention) -- see
+	// investigatingUpdateOutcome.investigationTimeMs's doc comment for why a
+	// Conflict-retry of this same closure cannot cause a duplicate.
+	if investigationTimeBefore == 0 {
+		if t := analysis.Status.GetInvestigationMetadata().InvestigationTime; t > 0 {
+			outcome.investigationTimeMs = &t
+		}
 	}
 
 	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
@@ -322,6 +355,15 @@ func (r *AIAnalysisReconciler) clearSchemaRejectionRetryAnnotation(ctx context.C
 // reconcileInvestigating (Wave 6 6c GREEN: funlen remediation) — pure code
 // motion, no behavior change.
 func (r *AIAnalysisReconciler) finalizeInvestigatingTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome *investigatingUpdateOutcome, log logr.Logger) (ctrl.Result, error) {
+	// DD-AUDIT-003 / DD-WE-009 ("audit outside the retryable closure"), #2204
+	// fix: record result-retrieval audit exactly once, now that
+	// AtomicStatusUpdate has durably committed -- see
+	// investigatingUpdateOutcome.investigationTimeMs's doc comment.
+	// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+	if outcome.investigationTimeMs != nil {
+		r.AuditClient.RecordAIAgentResult(ctx, analysis, *outcome.investigationTimeMs)
+	}
+
 	if outcome.handlerExecuted && analysis.Status.Phase != outcome.phaseBefore {
 		log.Info("Phase changed, requeuing", "from", outcome.phaseBefore, "to", analysis.Status.Phase)
 

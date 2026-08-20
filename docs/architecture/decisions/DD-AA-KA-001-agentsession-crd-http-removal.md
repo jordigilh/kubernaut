@@ -806,6 +806,65 @@ reproduction, so no change was made; flagging here for monitoring across the nex
 than guessing at a fix. If it recurs, capture `kubernautagent` pod logs *before* any subsequent spec
 can trigger a pod restart.
 
+---
+### Amendment: #2204 Follow-up Round 3 — root cause and fix for item 4's duplicate AI-agent-call flake (2026-08-20)
+
+**Correction to Round 2 item 4 above:** the "narrower dispatch-Lease double-dispatch on KA's side"
+hypothesis was wrong. The actual root cause is entirely inside the `AIAnalysis` controller (AA), not
+KA, and is fully deterministic (no live race, no pprof/goroutine-dump reproduction needed) — a plain
+unit test with an injected K8s API conflict reproduces it 100% of the time.
+
+**RCA:** `status.Manager.AtomicStatusUpdate` (`pkg/aianalysis/status/manager.go`) wraps its
+`updateFunc` closure in `k8sretry.RetryOnConflict`. That closure is `runInvestigatingHandler`
+(`internal/controller/aianalysis/phase_handlers.go`), which calls `InvestigatingHandler.Handle` ->
+`handleSessionCompleted` -> the non-idempotent, side-effecting audit write
+`auditClient.RecordAIAgentResult` (the source of the `aianalysis.aiagent.call` event this test
+counts). If the closure's own `Status().Update()` call hits a resourceVersion Conflict (plausible
+under concurrent load — exactly what `MaxConcurrentReconciles>1`, DD-AA-KA-001's own Round 1 fix
+above, or a contended CI/`helios08` host produce), `RetryOnConflict` re-runs the **entire closure**,
+re-emitting the audit call, even though the eventual K8s status write only commits once. Each retry
+attempt refetches a fresh copy of the object from the API server (via `apiReader`), so
+`InvestigationTime` reads back as `0` on every attempt whose prior write never landed — the existing
+`AA-BUG-009` idempotency guard (`InvestigationTime > 0` skip) cannot see the in-flight, uncommitted
+write from the failed attempt and does not protect this path.
+
+This is a known bug *class* already fixed for a sibling controller: see
+[DD-WE-009](./DD-WE-009-terminal-audit-ordering.md) (`WorkflowExecution`, issue #1597), which
+documents "audit outside the retryable closure" as this codebase's established convention — a
+convention `AIAnalysis`'s own `RecordPhaseTransition` already follows (`AA-BUG-001`, see
+`finalizeInvestigatingTransition`), but `RecordAIAgentResult` had been missed from that same fix.
+
+**Reproduction:** `internal/controller/aianalysis/duplicate_audit_on_conflict_retry_test.go`
+(`UT-AA-2204-101`) wires a `fake.NewClientBuilder()` with `WithInterceptorFuncs` that returns exactly
+one `apierrors.NewConflict(...)` on the first `Status().Update()` call, then a real
+`reconcileInvestigating` run against a fake KA client returning an already-`Completed`
+`AgentSession`. Pre-fix, this reliably produced 2 `aianalysis.aiagent.call`/`aianalysis.aiagent.result`
+events for 1 logical completion — reproducing the flake deterministically, matching DD-WE-009's own
+spike technique.
+
+**Fix (Option A, matching DD-WE-009 precedent):** `handleSessionCompleted`
+(`pkg/aianalysis/handlers/investigating.go`) no longer calls the audit client directly. The plain
+status field write (`InvestigationMetadata.InvestigationTime`) stays inside the closure (idempotent —
+overwriting with the same value on retry is harmless), but `runInvestigatingHandler` now detects,
+via a captured before/after comparison of that field (0 -> >0), whether *this* execution of the
+closure is the one that just processed the Completed session, recording the result on a new
+`investigatingUpdateOutcome.investigationTimeMs` field. `finalizeInvestigatingTransition` — which
+runs exactly once, only after `AtomicStatusUpdate` has durably committed — then calls
+`r.AuditClient.RecordAIAgentResult` using that value. A Conflict-retry recomputes
+`investigationTimeMs` fresh on each attempt (always from a `0` baseline, since the failed attempt's
+write never landed), but only the single, final `outcome` state the caller observes after
+`AtomicStatusUpdate` returns is ever audited.
+
+**Validation:** `UT-AA-2204-101` passes; full `pkg/aianalysis` (423 specs) and
+`internal/controller/aianalysis` unit suites pass with zero regressions (one existing handler-level
+test's assertion was moved to check the underlying `InvestigationTime` field directly, since
+`RecordAIAgentResult` is no longer observable from that isolated layer by design).
+`test/integration/aianalysis/capacityretry` and `.../schemarejection` suites pass unchanged against
+a real envtest apiserver. The `aianalysis` integration suite's own `audit_flow_integration_test.go`
+exact-count assertions (`aianalysis.aiagent.call` == 1, 9 total AA events) continue to pass, since
+the audit now fires from the controller layer on the happy (non-conflicted) path exactly as before —
+this fix only changes behavior when a Conflict is actually hit.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
