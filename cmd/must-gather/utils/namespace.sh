@@ -36,5 +36,35 @@ resolve_operator_namespace() {
     : "${OPERATOR_NAMESPACE:=kubernaut-operator-system}"
 }
 
+resolve_workflow_namespace() {
+    : "${WORKFLOW_NAMESPACE:=kubernaut-workflows}"
+}
+
+# Issue #2196: KUBERNAUT_NAMESPACES is a bash array, but gather.sh invokes
+# events.sh/metrics.sh/cluster-state.sh as separate `bash <script>.sh`
+# subprocesses -- bash cannot export array variables across that boundary,
+# only scalar strings (confirmed by direct repro; see #2196). Their
+# `for namespace in "${KUBERNAUT_NAMESPACES[@]}"` loops silently iterated
+# zero times in every real install as a result.
+#
+# Fix mirrors EXTRA_NAMESPACES_CSV (#2036/#2194): gather.sh exports a scalar,
+# comma-joined KUBERNAUT_NAMESPACES_CSV instead of the array; this helper
+# reconstructs the KUBERNAUT_NAMESPACES array locally in each collector's own
+# process from that CSV. Falls back to RELEASE_NAMESPACE/WORKFLOW_NAMESPACE
+# when the CSV is unset, matching gather.sh's own default composition --
+# this only matters when a collector is run standalone (direct debugging, or
+# a test that doesn't go through gather.sh).
+resolve_kubernaut_namespaces() {
+    # shellcheck disable=SC2034 # consumed by the caller after sourcing this file
+    if [ -n "${KUBERNAUT_NAMESPACES_CSV:-}" ]; then
+        IFS=',' read -ra KUBERNAUT_NAMESPACES <<< "${KUBERNAUT_NAMESPACES_CSV}"
+    else
+        resolve_release_namespace
+        resolve_workflow_namespace
+        KUBERNAUT_NAMESPACES=("${RELEASE_NAMESPACE}" "${WORKFLOW_NAMESPACE}")
+    fi
+}
+
 resolve_release_namespace
 resolve_operator_namespace
+resolve_workflow_namespace
