@@ -174,7 +174,7 @@ func mapAIAnalysisCompletedFields(parsedData *ParsedAuditData, result *Reconstru
 //nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields)
 func mapWorkflowSelectionCompletedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.SelectedWorkflowRef != nil {
-		result.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+		result.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{
 			WorkflowID:            parsedData.SelectedWorkflowRef.WorkflowID,
 			Version:               parsedData.SelectedWorkflowRef.Version,
 			ExecutionBundle:       parsedData.SelectedWorkflowRef.ContainerImage,
@@ -189,7 +189,7 @@ func mapWorkflowSelectionCompletedFields(parsedData *ParsedAuditData, result *Re
 //nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields)
 func mapWorkflowExecutionStartedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.ExecutionRef != nil {
-		result.Status.ExecutionRef = &corev1.ObjectReference{
+		result.Status.EnsureWorkflowSelection().ExecutionRef = &corev1.ObjectReference{
 			APIVersion: parsedData.ExecutionRef.APIVersion,
 			Kind:       parsedData.ExecutionRef.Kind,
 			Name:       parsedData.ExecutionRef.Name,
@@ -204,15 +204,15 @@ func mapWorkflowExecutionStartedFields(parsedData *ParsedAuditData, result *Reco
 //nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields); also registered twice (completed/failed)
 func mapOrchestratorTerminalFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.Outcome != "" {
-		result.Status.Outcome = parsedData.Outcome
+		result.Status.EnsureCompletionStatus().Outcome = parsedData.Outcome
 	}
 	if parsedData.FailurePhase != "" {
 		fp := remediationv1.FailurePhase(parsedData.FailurePhase)
-		result.Status.FailurePhase = &fp
+		result.Status.EnsureCompletionStatus().FailurePhase = &fp
 	}
 	if parsedData.ErrorDetails != nil && parsedData.ErrorDetails.Message != "" {
 		reason := parsedData.ErrorDetails.Message
-		result.Status.FailureReason = &reason
+		result.Status.EnsureCompletionStatus().FailureReason = &reason
 	}
 	return nil
 }
@@ -341,22 +341,26 @@ func mergeStatusFields(dst, src *remediationv1.RemediationRequestStatus) {
 		dst.TimeoutConfig = src.TimeoutConfig
 	}
 	// CC8.1: Merge outcome for completion/failure reconstruction
-	if src.Outcome != "" {
-		dst.Outcome = src.Outcome
+	if src.CompletionStatus != nil {
+		if src.CompletionStatus.Outcome != "" {
+			dst.EnsureCompletionStatus().Outcome = src.CompletionStatus.Outcome
+		}
+		if src.CompletionStatus.FailurePhase != nil {
+			dst.EnsureCompletionStatus().FailurePhase = src.CompletionStatus.FailurePhase
+		}
+		if src.CompletionStatus.FailureReason != nil {
+			dst.EnsureCompletionStatus().FailureReason = src.CompletionStatus.FailureReason
+		}
 	}
-	if src.FailurePhase != nil {
-		dst.FailurePhase = src.FailurePhase
-	}
-	if src.FailureReason != nil {
-		dst.FailureReason = src.FailureReason
-	}
-	// Gap #5: Merge SelectedWorkflowRef from workflow selection event
-	if src.SelectedWorkflowRef != nil {
-		dst.SelectedWorkflowRef = src.SelectedWorkflowRef
-	}
-	// Gap #6: Merge ExecutionRef from workflow execution event
-	if src.ExecutionRef != nil {
-		dst.ExecutionRef = src.ExecutionRef
+	if src.WorkflowSelection != nil {
+		// Gap #5: Merge SelectedWorkflowRef from workflow selection event
+		if src.WorkflowSelection.SelectedWorkflowRef != nil {
+			dst.EnsureWorkflowSelection().SelectedWorkflowRef = src.WorkflowSelection.SelectedWorkflowRef
+		}
+		// Gap #6: Merge ExecutionRef from workflow execution event
+		if src.WorkflowSelection.ExecutionRef != nil {
+			dst.EnsureWorkflowSelection().ExecutionRef = src.WorkflowSelection.ExecutionRef
+		}
 	}
 }
 

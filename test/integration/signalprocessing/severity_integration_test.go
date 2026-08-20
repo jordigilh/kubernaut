@@ -112,9 +112,9 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				}, &updated)).To(Succeed())
 
 				// THEN: Normalized severity is persisted in Status
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(BeEmpty(),
 					"Controller should write normalized severity to Status.Severity")
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"Status.Severity should be normalized value per operator policy (not external 'Sev1')")
 			}, "30s", "1s").Should(Succeed())
 
@@ -149,7 +149,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// THEN: External severity is preserved in Spec, normalized in Status
 				g.Expect(updated.Spec.Signal.Severity).To(Equal("P0"),
 					"External severity should be preserved for audit trail")
-				g.Expect(updated.Status.Severity).ToNot(Equal("P0"),
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(Equal("P0"),
 					"Status.Severity should be normalized (not external value)")
 			}, "30s", "1s").Should(Succeed())
 
@@ -177,7 +177,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"CUSTOM_VALUE should be mapped to a normalized severity by policy")
 				// Note: Could capture initial severity and compare after reload in REFACTOR phase
 			}, "30s", "1s").Should(Succeed())
@@ -197,7 +197,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				}, &updated)).To(Succeed())
 
 				// Verify severity can be re-evaluated (policy hot-reload functional)
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"Severity determination should continue working after policy reload")
 			}, "60s", "2s").Should(Succeed())
 
@@ -237,9 +237,9 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
 				GinkgoWriter.Printf("DEBUG: RemediationRequestRef.Name='%s', Status.Severity='%s', Status.Phase='%s'\n",
-					updated.Spec.RemediationRequestRef.Name, updated.Status.Severity, updated.Status.Phase)
+					updated.Spec.RemediationRequestRef.Name, updated.Status.GetSignalClassification().Severity, updated.Status.Phase)
 				// Wait for severity determination (set during Classifying phase)
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(BeEmpty(),
 					"Status.Severity should be set after Classifying phase completes")
 				// Also ensure we're past Enriching phase
 				g.Expect(updated.Status.Phase).ToNot(Equal(signalprocessingv1alpha1.PhaseEnriching),
@@ -330,7 +330,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
 				// Wait for severity determination (indicates Classifying phase completed)
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(BeEmpty(),
 					"Status.Severity should be set after Classifying phase completes")
 			}, "30s", "1s").Should(Succeed())
 
@@ -475,9 +475,9 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// (No fallback to "unknown" - policy errors are surfaced to operator)
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseFailed),
 					"SignalProcessing should transition to Failed phase on policy error")
-				g.Expect(updated.Status.Error).To(ContainSubstring("policy evaluation failed"),
+				g.Expect(updated.Status.GetFailureInfo().Error).To(ContainSubstring("policy evaluation failed"),
 					"Error message should explain policy evaluation failure to guide operator")
-				g.Expect(updated.Status.Severity).To(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeEmpty(),
 					"Status.Severity should remain empty when determination fails (no system fallback)")
 			}, "60s", "2s").Should(Succeed())
 
@@ -560,9 +560,9 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"CustomSeverity should be mapped to normalized severity by policy")
-				initialSeverity = updated.Status.Severity
+				initialSeverity = updated.Status.GetSignalClassification().Severity
 			}, "30s", "1s").Should(Succeed())
 
 			// THEN: Hot-reload mechanism is functional
@@ -621,9 +621,9 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					}, &updated)).To(Succeed())
 
 					// THEN: All CRDs have severity determined correctly
-					g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
+					g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(BeEmpty(),
 						"Concurrent CRD %s should have severity determined", spName)
-					g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
+					g.Expect(updated.Status.GetSignalClassification().Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 						"Concurrent CRD %s should have valid normalized severity per operator policy", spName)
 				}
 			}, "60s", "2s").Should(Succeed())

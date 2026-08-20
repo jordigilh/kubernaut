@@ -109,12 +109,14 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:       remediationv1.PhaseAnalyzing,
-				AnalyzingStartTime: &startTime,
+				OverallPhase: remediationv1.PhaseAnalyzing,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					AnalyzingStartTime: &startTime,
+				},
 			},
 		}
 		if aiRefName != "" {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
+			rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
 		}
 		return rr
 	}
@@ -349,9 +351,11 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					OverallPhase:        remediationv1.PhaseProcessing,
-					ProcessingStartTime: &processingStart,
-					AIAnalysisRef:       &corev1.ObjectReference{Name: ai.Name, Namespace: defaultFixture},
+					OverallPhase: remediationv1.PhaseProcessing,
+					PhaseProgress: &remediationv1.PhaseProgress{
+						ProcessingStartTime: &processingStart,
+						AIAnalysisRef:       &corev1.ObjectReference{Name: ai.Name, Namespace: defaultFixture},
+					},
 				},
 			}
 

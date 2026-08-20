@@ -172,7 +172,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 				}
 			}
 			g.Expect(sp).ToNot(BeNil(), "SP should be created for the fleet signal")
-			g.Expect(sp.Status.ClusterClassification).To(Equal("production"),
+			g.Expect(sp.Status.GetSignalClassification().ClusterClassification).To(Equal("production"),
 				"BR-FLEET-003: SP Rego must classify remote-cluster as 'production' "+
 					"from the MCPServerRegistration's environment=production onboarding label")
 		}, timeout, interval).Should(Succeed())

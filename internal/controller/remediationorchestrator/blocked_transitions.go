@@ -153,7 +153,7 @@ func (r *Reconciler) escalateIneffectiveChainToManualReview(ctx context.Context,
 	logger.Info("Created manual review notification for IneffectiveChain block", "notification", notifName)
 	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist IneffectiveChain NR ref (non-critical)", "notification", notifName)
@@ -185,7 +185,7 @@ func (r *Reconciler) createBlockNotification(ctx context.Context, rr *remediatio
 	logger.Info("Created block notification", "notification", notifName, "blockReason", blocked.Reason)
 	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist block NR ref (non-critical)", "notification", notifName)
@@ -203,26 +203,26 @@ func (r *Reconciler) createBlockNotification(ctx context.Context, rr *remediatio
 func (r *Reconciler) updateBlockedStatus(ctx context.Context, rr *remediationv1.RemediationRequest, blocked *routing.BlockingCondition, isIneffectiveChain bool) error {
 	return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
-		rr.Status.BlockReason = remediationv1.BlockReason(blocked.Reason)
-		rr.Status.BlockMessage = blocked.Message
+		rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReason(blocked.Reason)
+		rr.Status.EnsureRoutingStatus().BlockMessage = blocked.Message
 
 		// Set time-based block fields (nil clears any prior value)
 		if blocked.BlockedUntil != nil {
-			rr.Status.BlockedUntil = &metav1.Time{Time: *blocked.BlockedUntil}
+			rr.Status.EnsureRoutingStatus().BlockedUntil = &metav1.Time{Time: *blocked.BlockedUntil}
 		} else {
-			rr.Status.BlockedUntil = nil
+			rr.Status.EnsureRoutingStatus().BlockedUntil = nil
 		}
 
 		// Set WFE-based block fields ("" clears any prior value)
-		rr.Status.BlockingWorkflowExecution = blocked.BlockingWorkflowExecution
+		rr.Status.EnsureRoutingStatus().BlockingWorkflowExecution = blocked.BlockingWorkflowExecution
 
 		// Set duplicate tracking ("" clears any prior value)
-		rr.Status.DuplicateOf = blocked.DuplicateOf
+		rr.Status.EnsureRoutingStatus().DuplicateOf = blocked.DuplicateOf
 
 		// Issue #214: Set ManualReviewRequired for IneffectiveChain blocks
 		if isIneffectiveChain {
-			rr.Status.Outcome = "ManualReviewRequired"
-			rr.Status.RequiresManualReview = true
+			rr.Status.EnsureCompletionStatus().Outcome = "ManualReviewRequired"
+			rr.Status.EnsureCompletionStatus().RequiresManualReview = true
 		}
 
 		return nil

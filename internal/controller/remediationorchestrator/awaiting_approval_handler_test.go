@@ -101,7 +101,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 
 	awaitingRR := func(name string) *remediationv1.RemediationRequest {
 		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseAwaitingApproval)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-" + name, Namespace: defaultFixture}
+		rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{Name: "ai-" + name, Namespace: defaultFixture}
 		return rr
 	}
 

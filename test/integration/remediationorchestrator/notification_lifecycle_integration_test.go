@@ -57,15 +57,15 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				Name:      fmt.Sprintf("test-rr-%d", time.Now().UnixNano()),
 				Namespace: ROControllerNamespace,
 			},
-		Spec: remediationv1.RemediationRequestSpec{
-			SignalFingerprint: func() string {
-				h := sha256.Sum256([]byte(uuid.New().String()))
-				return hex.EncodeToString(h[:])
-			}(),
-				SignalName:        "NotificationLifecycleTest",
-				Severity:          "warning",
-				SignalType:        "alert",
-				TargetType:        "kubernetes",
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: func() string {
+					h := sha256.Sum256([]byte(uuid.New().String()))
+					return hex.EncodeToString(h[:])
+				}(),
+				SignalName: "NotificationLifecycleTest",
+				Severity:   "warning",
+				SignalType: "alert",
+				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
 					Name:      "test-app",
@@ -122,7 +122,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
-				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
+				testRR.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 					{
 						APIVersion: notificationv1.GroupVersion.String(),
 						Kind:       "NotificationRequest",
@@ -148,24 +148,24 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
-				return testRR.Status.NotificationStatus
+				return testRR.Status.EnsureCompletionStatus().NotificationStatus
 			}, timeout, interval).Should(Equal("Cancelled"))
 
-		// CRITICAL: Verify notification cancellation does NOT cause an abnormal phase transition.
-		// The controller may legitimately advance the phase (Pending → Processing → Analyzing)
-		// as part of normal orchestration. BR-ORCH-029 requires that notification cancellation
-		// must NOT cause a transition to Failed or any other error state.
-		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
-		Expect(testRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
-			"Notification cancellation must not cause phase to transition to Failed")
+			// CRITICAL: Verify notification cancellation does NOT cause an abnormal phase transition.
+			// The controller may legitimately advance the phase (Pending → Processing → Analyzing)
+			// as part of normal orchestration. BR-ORCH-029 requires that notification cancellation
+			// must NOT cause a transition to Failed or any other error state.
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			Expect(testRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
+				"Notification cancellation must not cause phase to transition to Failed")
 
-		// Sustained verification: phase must never become Failed over the observation window.
-		// Forward progress (Pending → Processing → Analyzing) is expected and healthy.
-		Consistently(func() remediationv1.RemediationPhase {
-			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
-			return testRR.Status.OverallPhase
-		}, 2*time.Second, 250*time.Millisecond).ShouldNot(Equal(remediationv1.PhaseFailed),
-			"Notification cancellation must not cause phase to transition to Failed")
+			// Sustained verification: phase must never become Failed over the observation window.
+			// Forward progress (Pending → Processing → Analyzing) is expected and healthy.
+			Consistently(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
+				return testRR.Status.OverallPhase
+			}, 2*time.Second, 250*time.Millisecond).ShouldNot(Equal(remediationv1.PhaseFailed),
+				"Notification cancellation must not cause phase to transition to Failed")
 
 			cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			Expect(cond).To(HaveField("Status", Equal(metav1.ConditionFalse)))
@@ -210,7 +210,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
-				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
+				testRR.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 					{
 						APIVersion: notificationv1.GroupVersion.String(),
 						Kind:       "NotificationRequest",
@@ -237,7 +237,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
-				return testRR.Status.NotificationStatus
+				return testRR.Status.EnsureCompletionStatus().NotificationStatus
 			}, timeout, interval).Should(Equal("Cancelled"))
 
 			// Verify second notification still exists
@@ -269,7 +269,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 					if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 						return err
 					}
-					testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
+					testRR.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 						{
 							APIVersion: notificationv1.GroupVersion.String(),
 							Kind:       "NotificationRequest",
@@ -296,7 +296,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 					if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 						return ""
 					}
-					return testRR.Status.NotificationStatus
+					return testRR.Status.EnsureCompletionStatus().NotificationStatus
 				}, timeout, interval).Should(Equal(expectedStatus))
 
 				// Verify condition if expected
@@ -334,7 +334,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
-				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
+				testRR.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 					{
 						APIVersion: notificationv1.GroupVersion.String(),
 						Kind:       "NotificationRequest",
@@ -393,7 +393,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
-				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
+				testRR.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 					{
 						APIVersion: notificationv1.GroupVersion.String(),
 						Kind:       "NotificationRequest",

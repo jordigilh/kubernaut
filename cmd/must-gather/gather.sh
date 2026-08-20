@@ -129,13 +129,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# KUBERNAUT_NAMESPACES stays exported in this same shape (events.sh, metrics.sh,
-# cluster-state.sh all consume it unchanged) -- only its contents changed, from
-# 3 hardcoded literals to these 2 configurable namespaces.
+# KUBERNAUT_NAMESPACES is used locally in THIS process only (the summary
+# banner below and collection-metadata.json's namespaces_collected field) --
+# kept as a real array here since there's no subprocess boundary to cross.
 KUBERNAUT_NAMESPACES=(
     "${RELEASE_NAMESPACE}"
     "${WORKFLOW_NAMESPACE}"
 )
+
+# Issue #2196: events.sh/metrics.sh/cluster-state.sh run as separate `bash
+# <script>.sh` subprocesses, and bash cannot export array variables across
+# that boundary (only scalars) -- exporting KUBERNAUT_NAMESPACES itself did
+# nothing there. Export the same comma-joined-CSV-then-reconstruct pattern
+# already used for EXTRA_NAMESPACES_CSV (#2036/#2194); each of those 3
+# collectors calls utils/namespace.sh's resolve_kubernaut_namespaces() to
+# rebuild the array locally from this scalar.
+KUBERNAUT_NAMESPACES_CSV=$(IFS=','; echo "${KUBERNAUT_NAMESPACES[*]}")
 
 # Export configuration for collectors
 export SINCE_DURATION
@@ -146,7 +155,7 @@ export RELEASE_NAMESPACE
 export WORKFLOW_NAMESPACE
 export OPERATOR_NAMESPACE
 export EXTRA_NAMESPACES_CSV
-export KUBERNAUT_NAMESPACES
+export KUBERNAUT_NAMESPACES_CSV
 export COLLECTION_NAME
 
 # Create collection directory structure

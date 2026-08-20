@@ -20,19 +20,19 @@ spec:
     - jsonPath: .status.overallPhase
       name: Phase
       type: string
-    - jsonPath: .status.outcome
+    - jsonPath: .status.completionStatus.outcome
       name: Outcome
       type: string
     - jsonPath: .spec.signalName
       name: Alert
       type: string
-    - jsonPath: .status.targetDisplay
+    - jsonPath: .status.workflowSelection.targetDisplay
       name: RCA Target
       type: string
-    - jsonPath: .status.workflowDisplayName
+    - jsonPath: .status.workflowSelection.workflowDisplayName
       name: Workflow
       type: string
-    - jsonPath: .status.confidence
+    - jsonPath: .status.workflowSelection.confidence
       name: Confidence
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -50,11 +50,11 @@ spec:
       name: Signal NS
       priority: 1
       type: string
-    - jsonPath: .status.signalTargetDisplay
+    - jsonPath: .status.workflowSelection.signalTargetDisplay
       name: Signal Target
       priority: 1
       type: string
-    - jsonPath: .status.remediationTarget.namespace
+    - jsonPath: .status.workflowSelection.remediationTarget.namespace
       name: RCA NS
       priority: 1
       type: string
@@ -242,123 +242,153 @@ spec:
           status:
             description: RemediationRequestStatus defines the observed state of RemediationRequest.
             properties:
-              aiAnalysisRef:
-                description: ObjectReference contains enough information to let you
-                  inspect or modify the referred object.
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              analyzingStartTime:
-                description: |-
-                  AnalyzingStartTime is when AIAnalysis phase started.
-                  Used for per-phase timeout detection (default: 10 minutes).
-                  Reference: BR-ORCH-028
-                format: date-time
-                type: string
-              approvalNotificationSent:
-                description: |-
-                  Approval notification tracking (BR-ORCH-001)
-                  Prevents duplicate notifications when AIAnalysis requires approval
-                type: boolean
-              blockMessage:
-                description: |-
-                  BlockMessage provides human-readable details about why remediation is blocked
-                  Examples:
-                  - "Another workflow is running on target deployment/my-app: wfe-abc123"
-                  - "Recently remediated. Cooldown: 3m15s remaining"
-                  - "Backoff active. Next retry: 2025-12-15T10:30:00Z"
-                  - "Duplicate of active remediation rr-original-abc123"
-                  - "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"
-                  Only set when OverallPhase = "Blocked"
-                  Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-                type: string
-              blockReason:
-                allOf:
-                - enum:
-                  - ConsecutiveFailures
-                  - DuplicateInProgress
-                  - ResourceBusy
-                  - RecentlyRemediated
-                  - ExponentialBackoff
-                  - UnmanagedResource
-                  - IneffectiveChain
-                - enum:
-                  - ConsecutiveFailures
-                  - DuplicateInProgress
-                  - ResourceBusy
-                  - RecentlyRemediated
-                  - ExponentialBackoff
-                  - UnmanagedResource
-                  - IneffectiveChain
-                description: |-
-                  BlockReason indicates why this remediation is blocked (non-terminal)
-                  Valid values:
-                  - "ConsecutiveFailures": Max consecutive failures reached, in cooldown (BR-ORCH-042)
-                  - "ResourceBusy": Another workflow is using the target resource
-                  - "RecentlyRemediated": Target recently remediated, cooldown active (DD-WE-001)
-                  - "ExponentialBackoff": Pre-execution failures, backoff window active (DD-WE-004)
-                  - "DuplicateInProgress": Duplicate of an active remediation
-                  Only set when OverallPhase = "Blocked"
-                  Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-                type: string
-              blockedUntil:
-                description: |-
-                  BlockedUntil indicates when blocking expires (time-based blocks)
-                  Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff
-                  Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)
-                  After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)
-                  Reference: BR-ORCH-042, DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-                format: date-time
-                type: string
-              blockingWorkflowExecution:
-                description: |-
-                  BlockingWorkflowExecution references the WorkflowExecution causing the block
-                  Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff
-                  Nil for: ConsecutiveFailures, DuplicateInProgress
-                  Enables operators to investigate the blocking WFE for troubleshooting
-                  Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-                type: string
               completedAt:
                 format: date-time
                 type: string
+              completionStatus:
+                description: |-
+                  CompletionStatus tracks terminal-phase outcome details: failure/timeout
+                  reason, manual-review flag, and notification tracking.
+                  Reference: BR-ORCH-029/030/031/037.
+                  God-struct decomposition (issue #2206). Use GetCompletionStatus()/
+                  EnsureCompletionStatus() for nil-safe access.
+                properties:
+                  approvalNotificationSent:
+                    description: |-
+                      ApprovalNotificationSent prevents duplicate notifications when AIAnalysis requires approval
+                      Reference: BR-ORCH-001
+                    type: boolean
+                  failurePhase:
+                    allOf:
+                    - enum:
+                      - Configuration
+                      - SignalProcessing
+                      - AIAnalysis
+                      - Approval
+                      - WorkflowExecution
+                      - Blocked
+                      - Deduplicated
+                    - enum:
+                      - Configuration
+                      - SignalProcessing
+                      - AIAnalysis
+                      - Approval
+                      - WorkflowExecution
+                      - Blocked
+                      - Deduplicated
+                    description: |-
+                      FailurePhase indicates which orchestration phase failed.
+                      Only set when OverallPhase = Failed.
+                    type: string
+                  failureReason:
+                    description: |-
+                      FailureReason provides a human-readable reason for the failure
+                      Only set when OverallPhase = "failed"
+                    type: string
+                  notificationRequestRefs:
+                    description: |-
+                      NotificationRequestRefs tracks all notification CRDs created for this remediation.
+                      Reference: BR-ORCH-035
+                    items:
+                      description: ObjectReference contains enough information to
+                        let you inspect or modify the referred object.
+                      properties:
+                        apiVersion:
+                          description: API version of the referent.
+                          type: string
+                        fieldPath:
+                          description: |-
+                            If referring to a piece of an object instead of an entire object, this string
+                            should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                            For example, if the object reference is to a container within a pod, this would take on a value like:
+                            "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                            the event) or if no container name is specified "spec.containers[2]" (container with
+                            index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                            referencing a part of an object.
+                          type: string
+                        kind:
+                          description: |-
+                            Kind of the referent.
+                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                          type: string
+                        name:
+                          description: |-
+                            Name of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                          type: string
+                        resourceVersion:
+                          description: |-
+                            Specific resourceVersion to which this reference is made, if any.
+                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                          type: string
+                        uid:
+                          description: |-
+                            UID of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    type: array
+                  notificationStatus:
+                    description: |-
+                      NotificationStatus tracks the delivery status of notification(s) for this remediation.
+                      Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"
+                      Reference: BR-ORCH-030 (notification status tracking)
+                    enum:
+                    - Pending
+                    - InProgress
+                    - Sent
+                    - Failed
+                    - Cancelled
+                    type: string
+                  outcome:
+                    description: |-
+                      Outcome indicates the remediation result when completed.
+                      Reference: BR-ORCH-037, BR-KA-200, BR-EM-012
+                    enum:
+                    - Remediated
+                    - NoActionRequired
+                    - ManualReviewRequired
+                    - VerificationTimedOut
+                    - Inconclusive
+                    - DryRun
+                    type: string
+                  requiresManualReview:
+                    description: |-
+                      RequiresManualReview indicates that this remediation cannot proceed automatically
+                      and requires operator intervention.
+                      Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
+                    type: boolean
+                  timeoutPhase:
+                    description: |-
+                      TimeoutPhase indicates which orchestration phase timed out.
+                      Only set when OverallPhase = TimedOut.
+                    enum:
+                    - Pending
+                    - Processing
+                    - Analyzing
+                    - AwaitingApproval
+                    - Executing
+                    - Verifying
+                    - Blocked
+                    - Completed
+                    - Failed
+                    - TimedOut
+                    - Skipped
+                    - Cancelled
+                    type: string
+                  timeoutTime:
+                    description: |-
+                      TimeoutTime records when the timeout occurred
+                      Only set when OverallPhase = "timeout"
+                    format: date-time
+                    type: string
+                type: object
               conditions:
                 description: |-
                   Conditions represent observations of RemediationRequest state.
@@ -428,72 +458,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              confidence:
-                description: |-
-                  Confidence is the AI analysis confidence score as a display string
-                  (e.g., "0.97"). Populated from AIAnalysis.SelectedWorkflow.Confidence.
-                type: string
-              consecutiveFailureCount:
-                description: |-
-                  ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
-                  Updated by RO when RR transitions to Failed phase or completes with Outcome=Inconclusive
-                  (EA confirms alert still firing, treated as functional failure per BR-ORCH-042.6, #1091).
-                  Reset to 0 when RR enters Verifying phase after successful remediation.
-                  Reference: BR-ORCH-042
-                format: int32
-                type: integer
-              currentProcessingRef:
-                description: CurrentProcessingRef references the current SignalProcessing
-                  CRD
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              deduplicatedByWE:
-                description: |-
-                  DeduplicatedByWE stores the name of the original WorkflowExecution whose
-                  outcome this RR is waiting to inherit (Issue #190). Set when the RR's own
-                  WFE was marked Failed/Deduplicated. Used as a field index key for the
-                  cross-WE watch to trigger reconciliation when the original WFE completes.
-                  Immutable after initial assignment.
-                type: string
               deduplication:
                 description: |-
                   Deduplication tracks signal occurrence for this remediation.
@@ -516,250 +480,8 @@ spec:
                     format: int32
                     type: integer
                 type: object
-              duplicateCount:
-                description: |-
-                  DuplicateCount tracks the number of duplicate remediations that were skipped
-                  because this RR's workflow was already executing (resource lock)
-                  Only populated on parent RRs that have duplicates
-                type: integer
-              duplicateOf:
-                description: |-
-                  DuplicateOf references the parent RemediationRequest that this is a duplicate of
-                  V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"
-                  Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication
-                  Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-                type: string
-              duplicateRefs:
-                description: |-
-                  DuplicateRefs lists the names of RemediationRequests that were skipped
-                  because they targeted the same resource as this RR
-                  Only populated on parent RRs that have duplicates
-                items:
-                  type: string
-                type: array
-              effectivenessAssessmentRef:
-                description: |-
-                  EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
-                  Set by the RO after creating the EA CRD on terminal phase transitions.
-                  Reference: ADR-EM-001
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              executingStartTime:
-                description: |-
-                  ExecutingStartTime is when WorkflowExecution phase started.
-                  Used for per-phase timeout detection (default: 30 minutes).
-                  Reference: BR-ORCH-028
-                format: date-time
-                type: string
-              executionRef:
-                description: |-
-                  ExecutionRef references the WorkflowExecution CRD for this remediation.
-                  Populated from workflowexecution.execution.started audit event.
-                  Reference: BR-AUDIT-005 Gap #6 (Execution Reference)
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              failurePhase:
-                allOf:
-                - enum:
-                  - Configuration
-                  - SignalProcessing
-                  - AIAnalysis
-                  - Approval
-                  - WorkflowExecution
-                  - Blocked
-                  - Deduplicated
-                - enum:
-                  - Configuration
-                  - SignalProcessing
-                  - AIAnalysis
-                  - Approval
-                  - WorkflowExecution
-                  - Blocked
-                  - Deduplicated
-                description: |-
-                  FailurePhase indicates which orchestration phase failed.
-                  Only set when OverallPhase = Failed.
-                type: string
-              failureReason:
-                description: |-
-                  FailureReason provides a human-readable reason for the failure
-                  Only set when OverallPhase = "failed"
-                type: string
-              lastModifiedAt:
-                description: |-
-                  LastModifiedAt tracks when the last status modification occurred.
-                  Populated by RemediationRequest mutating webhook.
-                format: date-time
-                type: string
-              lastModifiedBy:
-                description: |-
-                  LastModifiedBy tracks the last operator who modified this RR's status.
-                  Populated by RemediationRequest mutating webhook.
-                  Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
-                type: string
               message:
                 description: Human-readable message describing current status
-                type: string
-              nextAllowedExecution:
-                description: |-
-                  NextAllowedExecution indicates when this RR can be retried after exponential backoff.
-                  Set when RR transitions to Failed phase (pre-execution failures) or when EA
-                  determines an Inconclusive outcome (alert still firing after remediation, #1091).
-                  Implements progressive delay: 1m, 2m, 4m, 8m, capped at 10m.
-                  Formula: min(Base × 2^(failures-1), Max)
-                  Nil means no exponential backoff is active.
-                  Reference: DD-WE-004 (Exponential Backoff Cooldown), BR-ORCH-042.6 (#1091)
-                format: date-time
-                type: string
-              notificationRequestRefs:
-                description: |-
-                  NotificationRequestRefs tracks all notification CRDs created for this remediation.
-                  Provides audit trail for compliance and instant visibility for debugging.
-                  Reference: BR-ORCH-035
-                items:
-                  description: ObjectReference contains enough information to let
-                    you inspect or modify the referred object.
-                  properties:
-                    apiVersion:
-                      description: API version of the referent.
-                      type: string
-                    fieldPath:
-                      description: |-
-                        If referring to a piece of an object instead of an entire object, this string
-                        should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                        For example, if the object reference is to a container within a pod, this would take on a value like:
-                        "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                        the event) or if no container name is specified "spec.containers[2]" (container with
-                        index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                        referencing a part of an object.
-                      type: string
-                    kind:
-                      description: |-
-                        Kind of the referent.
-                        More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                      type: string
-                    name:
-                      description: |-
-                        Name of the referent.
-                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      type: string
-                    namespace:
-                      description: |-
-                        Namespace of the referent.
-                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                      type: string
-                    resourceVersion:
-                      description: |-
-                        Specific resourceVersion to which this reference is made, if any.
-                        More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                      type: string
-                    uid:
-                      description: |-
-                        UID of the referent.
-                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                      type: string
-                  type: object
-                  x-kubernetes-map-type: atomic
-                type: array
-              notificationStatus:
-                description: |-
-                  NotificationStatus tracks the delivery status of notification(s) for this remediation.
-                  Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"
-
-                  Status Mapping from NotificationRequest.Status.Phase:
-                  - NotificationRequest Pending → "Pending"
-                  - NotificationRequest Sending → "InProgress"
-                  - NotificationRequest Sent → "Sent"
-                  - NotificationRequest Failed → "Failed"
-                  - NotificationRequest deleted by user → "Cancelled"
-
-                  For bulk notifications (BR-ORCH-034), this reflects the status of the consolidated notification.
-
-                  Reference: BR-ORCH-030 (notification status tracking)
-                enum:
-                - Pending
-                - InProgress
-                - Sent
-                - Failed
-                - Cancelled
                 type: string
               observedGeneration:
                 description: |-
@@ -768,25 +490,38 @@ spec:
                   Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
                 format: int64
                 type: integer
-              outcome:
+              operatorAudit:
                 description: |-
-                  Outcome indicates the remediation result when completed.
-                  Values:
-                  - "Remediated": Workflow executed successfully and EA verified effectiveness
-                  - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
-                  - "ManualReviewRequired": Requires operator intervention
-                  - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
-                  - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
-                  - "DryRun": Pipeline stopped after AI analysis; no WFE/EA created (dry-run mode) (#712, #736)
-                  Reference: BR-ORCH-037, BR-KA-200, BR-EM-012
-                enum:
-                - Remediated
-                - NoActionRequired
-                - ManualReviewRequired
-                - VerificationTimedOut
-                - Inconclusive
-                - DryRun
-                type: string
+                  OperatorAudit tracks SOC2 CC8.1 operator-mutation attribution and the
+                  pre-remediation spec hash captured before workflow execution.
+                  Reference: BR-AUTH-001, ADR-EM-001, DD-EM-002, Gap #8 Extension.
+                  God-struct decomposition (issue #2206). Use GetOperatorAudit()/
+                  EnsureOperatorAudit() for nil-safe access.
+                properties:
+                  lastModifiedAt:
+                    description: |-
+                      LastModifiedAt tracks when the last status modification occurred.
+                      Populated by RemediationRequest mutating webhook.
+                    format: date-time
+                    type: string
+                  lastModifiedBy:
+                    description: |-
+                      LastModifiedBy tracks the last operator who modified this RR's status.
+                      Populated by RemediationRequest mutating webhook.
+                      Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
+                    type: string
+                  preRemediationSpecHash:
+                    description: |-
+                      PreRemediationSpecHash is the canonical spec hash of the target resource captured
+                      by the RO BEFORE launching the remediation workflow. This enables the EM to compare
+                      pre vs post-remediation state without querying DataStorage audit events.
+                      Set once by the RO during the transition to WorkflowExecution phase; immutable after.
+                      Reference: ADR-EM-001, DD-EM-002
+                    type: string
+                    x-kubernetes-validations:
+                    - message: preRemediationSpecHash is immutable once set
+                      rule: oldSelf == '' || self == oldSelf
+                type: object
               overallPhase:
                 description: "Phase tracking for orchestration.\nUses typed RemediationPhase
                   constants for type safety and cross-service integration.\n\n\U0001F3DB️
@@ -806,218 +541,425 @@ spec:
                 - Skipped
                 - Cancelled
                 type: string
-              preRemediationSpecHash:
+              phaseProgress:
                 description: |-
-                  PreRemediationSpecHash is the canonical spec hash of the target resource captured
-                  by the RO BEFORE launching the remediation workflow. This enables the EM to compare
-                  pre vs post-remediation state without querying DataStorage audit events.
-                  Set once by the RO during the transition to WorkflowExecution phase; immutable after.
-                  Reference: ADR-EM-001, DD-EM-002
-                type: string
-                x-kubernetes-validations:
-                - message: preRemediationSpecHash is immutable once set
-                  rule: oldSelf == '' || self == oldSelf
-              processingStartTime:
-                description: |-
-                  ProcessingStartTime is when SignalProcessing phase started.
-                  Used for per-phase timeout detection (default: 5 minutes).
-                  Reference: BR-ORCH-028
-                format: date-time
-                type: string
-              remediationProcessingRef:
-                description: ObjectReference contains enough information to let you
-                  inspect or modify the referred object.
+                  PhaseProgress tracks per-phase start times and downstream CRD references
+                  accumulated as the remediation progresses through SignalProcessing,
+                  AIAnalysis, WorkflowExecution, and EffectivenessAssessment.
+                  God-struct decomposition (issue #2206, following #2205's AIAnalysisStatus
+                  precedent). Use GetPhaseProgress()/EnsurePhaseProgress() for nil-safe access.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
+                  aiAnalysisRef:
+                    description: AIAnalysisRef references the AIAnalysis CRD.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  analyzingStartTime:
                     description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
+                      AnalyzingStartTime is when AIAnalysis phase started.
+                      Used for per-phase timeout detection (default: 10 minutes).
+                      Reference: BR-ORCH-028
+                    format: date-time
                     type: string
-                  kind:
+                  currentProcessingRef:
+                    description: CurrentProcessingRef references the current SignalProcessing
+                      CRD
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  effectivenessAssessmentRef:
                     description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
+                      EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
+                      Set by the RO after creating the EA CRD on terminal phase transitions.
+                      Reference: ADR-EM-001
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  executingStartTime:
                     description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      ExecutingStartTime is when WorkflowExecution phase started.
+                      Used for per-phase timeout detection (default: 30 minutes).
+                      Reference: BR-ORCH-028
+                    format: date-time
                     type: string
-                  namespace:
+                  processingStartTime:
                     description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                      ProcessingStartTime is when SignalProcessing phase started.
+                      Used for per-phase timeout detection (default: 5 minutes).
+                      Reference: BR-ORCH-028
+                    format: date-time
                     type: string
-                  resourceVersion:
+                  remediationProcessingRef:
+                    description: RemediationProcessingRef references the RemediationProcessing
+                      CRD.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  signalProcessingRef:
+                    description: SignalProcessingRef references the SignalProcessing
+                      CRD.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  verificationDeadline:
                     description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                      VerificationDeadline is the deadline for the Verifying phase.
+                      Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
+                      If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
+                      Reference: #280 (Verifying phase timeout)
+                    format: date-time
                     type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
+                  workflowExecutionRef:
+                    description: WorkflowExecutionRef references the WorkflowExecution
+                      CRD.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
                 type: object
-                x-kubernetes-map-type: atomic
-              remediationTarget:
-                description: |-
-                  RemediationTarget identifies the Kubernetes resource the LLM determined should be
-                  remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.RemediationTarget.
-                  May differ from Spec.TargetResource (e.g., Deployment vs Pod).
-                  Reference: BR-KA-212, Issue #387
-                properties:
-                  apiVersion:
-                    description: |-
-                      APIVersion disambiguates the resource's API group when the Kind exists in
-                      multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
-                      Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
-                    type: string
-                  kind:
-                    description: Kind of the Kubernetes resource (e.g., "Pod", "Deployment",
-                      "Node", "StatefulSet")
-                    type: string
-                  name:
-                    description: Name of the Kubernetes resource instance
-                    type: string
-                  namespace:
-                    description: Namespace of the Kubernetes resource (empty for cluster-scoped
-                      resources like Node)
-                    type: string
-                required:
-                - kind
-                - name
-                type: object
-              requiresManualReview:
-                description: |-
-                  RequiresManualReview indicates that this remediation cannot proceed automatically
-                  and requires operator intervention. Set when:
-                  - WE skip reason is "ExhaustedRetries" (5+ consecutive pre-execution failures)
-                  - WE skip reason is "PreviousExecutionFailed" (execution failure, cluster state unknown)
-                  - AIAnalysis WorkflowResolutionFailed with LowConfidence or WorkflowNotFound
-                  Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
-                type: boolean
               retentionExpiryTime:
                 description: RetentionExpiryTime indicates when this CRD should be
                   cleaned up (24 hours after completion)
                 format: date-time
                 type: string
-              selectedWorkflowRef:
+              routingStatus:
                 description: |-
-                  SelectedWorkflowRef captures the workflow selected by AI for this remediation.
-                  Populated from workflowexecution.selection.completed audit event.
-                  Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
+                  RoutingStatus tracks centralized routing decisions: skip/block reasons,
+                  deduplication tracking, and consecutive-failure cooldown state.
+                  Reference: DD-RO-001, DD-RO-002, DD-RO-002-ADDENDUM, BR-ORCH-032/033/034/042.
+                  God-struct decomposition (issue #2206). Use GetRoutingStatus()/
+                  EnsureRoutingStatus() for nil-safe access.
                 properties:
-                  executionBundle:
+                  blockMessage:
                     description: |-
-                      ExecutionBundle resolved from workflow catalog
-                      OCI bundle reference for Tekton PipelineRun
+                      BlockMessage provides human-readable details about why remediation is blocked
+                      Only set when OverallPhase = "Blocked"
+                      Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
                     type: string
-                  executionBundleDigest:
-                    description: ExecutionBundleDigest for audit trail and reproducibility
+                  blockReason:
+                    allOf:
+                    - enum:
+                      - ConsecutiveFailures
+                      - DuplicateInProgress
+                      - ResourceBusy
+                      - RecentlyRemediated
+                      - ExponentialBackoff
+                      - UnmanagedResource
+                      - IneffectiveChain
+                    - enum:
+                      - ConsecutiveFailures
+                      - DuplicateInProgress
+                      - ResourceBusy
+                      - RecentlyRemediated
+                      - ExponentialBackoff
+                      - UnmanagedResource
+                      - IneffectiveChain
+                    description: |-
+                      BlockReason indicates why this remediation is blocked (non-terminal)
+                      Only set when OverallPhase = "Blocked"
+                      Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
                     type: string
-                  version:
-                    description: Version of the workflow
+                  blockedUntil:
+                    description: |-
+                      BlockedUntil indicates when blocking expires (time-based blocks)
+                      Reference: BR-ORCH-042, DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+                    format: date-time
                     type: string
-                  workflowId:
-                    description: WorkflowID is the catalog lookup key
+                  blockingWorkflowExecution:
+                    description: |-
+                      BlockingWorkflowExecution references the WorkflowExecution causing the block
+                      Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff
+                      Nil for: ConsecutiveFailures, DuplicateInProgress
+                      Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
                     type: string
-                required:
-                - executionBundle
-                - version
-                - workflowId
+                  consecutiveFailureCount:
+                    description: |-
+                      ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
+                      Reference: BR-ORCH-042
+                    format: int32
+                    type: integer
+                  deduplicatedByWE:
+                    description: |-
+                      DeduplicatedByWE stores the name of the original WorkflowExecution whose
+                      outcome this RR is waiting to inherit (Issue #190).
+                    type: string
+                  duplicateCount:
+                    description: |-
+                      DuplicateCount tracks the number of duplicate remediations that were skipped
+                      because this RR's workflow was already executing (resource lock)
+                    type: integer
+                  duplicateOf:
+                    description: |-
+                      DuplicateOf references the parent RemediationRequest that this is a duplicate of
+                      Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+                    type: string
+                  duplicateRefs:
+                    description: |-
+                      DuplicateRefs lists the names of RemediationRequests that were skipped
+                      because they targeted the same resource as this RR
+                    items:
+                      type: string
+                    type: array
+                  nextAllowedExecution:
+                    description: |-
+                      NextAllowedExecution indicates when this RR can be retried after exponential backoff.
+                      Reference: DD-WE-004 (Exponential Backoff Cooldown), BR-ORCH-042.6 (#1091)
+                    format: date-time
+                    type: string
+                  skipMessage:
+                    description: |-
+                      SkipMessage provides human-readable details about why remediation was skipped
+                      Only set when OverallPhase = "Skipped" or "Failed"
+                      Reference: DD-RO-002 (centralized routing responsibility)
+                    type: string
+                  skipReason:
+                    allOf:
+                    - enum:
+                      - RecentlyRemediated
+                      - ResourceBusy
+                      - ExhaustedRetries
+                      - PreviousExecutionFailed
+                    - enum:
+                      - RecentlyRemediated
+                      - ResourceBusy
+                      - ExhaustedRetries
+                      - PreviousExecutionFailed
+                    description: |-
+                      SkipReason indicates why this remediation was skipped.
+                      Only set when OverallPhase = Skipped or Failed.
+                      Reference: DD-RO-002 (centralized routing responsibility)
+                    type: string
                 type: object
-              signalProcessingRef:
-                description: References to downstream CRDs
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              signalTargetDisplay:
-                description: |-
-                  SignalTargetDisplay is the Kubernetes-idiomatic Kind/Name of the signal target
-                  (e.g., "Pod/web-frontend-cdbdbc4f8-6kn6j"). Populated from Spec.TargetResource.
-                type: string
-              skipMessage:
-                description: |-
-                  SkipMessage provides human-readable details about why remediation was skipped
-                  Examples:
-                  - "Same workflow executed recently. Cooldown: 3m15s remaining"
-                  - "Another workflow is running on target: wfe-abc123"
-                  - "Backoff active. Next allowed: 2025-12-15T10:30:00Z"
-                  Only set when OverallPhase = "Skipped" or "Failed"
-                  Reference: DD-RO-002 (centralized routing responsibility)
-                type: string
-              skipReason:
-                allOf:
-                - enum:
-                  - RecentlyRemediated
-                  - ResourceBusy
-                  - ExhaustedRetries
-                  - PreviousExecutionFailed
-                - enum:
-                  - RecentlyRemediated
-                  - ResourceBusy
-                  - ExhaustedRetries
-                  - PreviousExecutionFailed
-                description: |-
-                  SkipReason indicates why this remediation was skipped.
-                  Only set when OverallPhase = Skipped or Failed.
-                  Reference: DD-RO-002 (centralized routing responsibility)
-                type: string
               startTime:
                 description: Timestamps
                 format: date-time
-                type: string
-              targetDisplay:
-                description: |-
-                  TargetDisplay is the Kubernetes-idiomatic Kind/Name of the RCA target
-                  (e.g., "Deployment/web-frontend"). Populated when RemediationTarget is set.
                 type: string
               timeoutConfig:
                 description: |-
@@ -1056,87 +998,134 @@ spec:
                     format: duration
                     type: string
                 type: object
-              timeoutPhase:
+              workflowSelection:
                 description: |-
-                  TimeoutPhase indicates which orchestration phase timed out.
-                  Only set when OverallPhase = TimedOut.
-                enum:
-                - Pending
-                - Processing
-                - Analyzing
-                - AwaitingApproval
-                - Executing
-                - Verifying
-                - Blocked
-                - Completed
-                - Failed
-                - TimedOut
-                - Skipped
-                - Cancelled
-                type: string
-              timeoutTime:
-                description: |-
-                  TimeoutTime records when the timeout occurred
-                  Only set when OverallPhase = "timeout"
-                format: date-time
-                type: string
-              verificationDeadline:
-                description: |-
-                  VerificationDeadline is the deadline for the Verifying phase.
-                  Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
-                  If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
-                  Reference: #280 (Verifying phase timeout)
-                format: date-time
-                type: string
-              workflowDisplayName:
-                description: |-
-                  WorkflowDisplayName is the human-readable workflow identifier
-                  (e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
-                type: string
-              workflowExecutionRef:
-                description: ObjectReference contains enough information to let you
-                  inspect or modify the referred object.
+                  WorkflowSelection tracks the AI-selected workflow, its execution reference,
+                  the resolved remediation target, and kubectl display strings.
+                  Reference: BR-AUDIT-005 Gap #5-6, BR-KA-212, Issue #387, Issue #635.
+                  God-struct decomposition (issue #2206). Use GetWorkflowSelection()/
+                  EnsureWorkflowSelection() for nil-safe access.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
+                  confidence:
                     description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
+                      Confidence is the AI analysis confidence score as a display string
+                      (e.g., "0.97"). Populated from AIAnalysis.SelectedWorkflow.Confidence.
                     type: string
-                  kind:
+                  executionRef:
                     description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                      ExecutionRef references the WorkflowExecution CRD for this remediation.
+                      Populated from workflowexecution.execution.started audit event.
+                      Reference: BR-AUDIT-005 Gap #6 (Execution Reference)
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  remediationTarget:
+                    description: |-
+                      RemediationTarget identifies the Kubernetes resource the LLM determined should be
+                      remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.RemediationTarget.
+                      May differ from Spec.TargetResource (e.g., Deployment vs Pod).
+                      Reference: BR-KA-212, Issue #387
+                    properties:
+                      apiVersion:
+                        description: |-
+                          APIVersion disambiguates the resource's API group when the Kind exists in
+                          multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                          Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                        type: string
+                      kind:
+                        description: Kind of the Kubernetes resource (e.g., "Pod",
+                          "Deployment", "Node", "StatefulSet")
+                        type: string
+                      name:
+                        description: Name of the Kubernetes resource instance
+                        type: string
+                      namespace:
+                        description: Namespace of the Kubernetes resource (empty for
+                          cluster-scoped resources like Node)
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    type: object
+                  selectedWorkflowRef:
+                    description: |-
+                      SelectedWorkflowRef captures the workflow selected by AI for this remediation.
+                      Populated from workflowexecution.selection.completed audit event.
+                      Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
+                    properties:
+                      executionBundle:
+                        description: |-
+                          ExecutionBundle resolved from workflow catalog
+                          OCI bundle reference for Tekton PipelineRun
+                        type: string
+                      executionBundleDigest:
+                        description: ExecutionBundleDigest for audit trail and reproducibility
+                        type: string
+                      version:
+                        description: Version of the workflow
+                        type: string
+                      workflowId:
+                        description: WorkflowID is the catalog lookup key
+                        type: string
+                    required:
+                    - executionBundle
+                    - version
+                    - workflowId
+                    type: object
+                  signalTargetDisplay:
+                    description: |-
+                      SignalTargetDisplay is the Kubernetes-idiomatic Kind/Name of the signal target
+                      (e.g., "Pod/web-frontend-cdbdbc4f8-6kn6j"). Populated from Spec.TargetResource.
                     type: string
-                  name:
+                  targetDisplay:
                     description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TargetDisplay is the Kubernetes-idiomatic Kind/Name of the RCA target
+                      (e.g., "Deployment/web-frontend"). Populated when RemediationTarget is set.
                     type: string
-                  namespace:
+                  workflowDisplayName:
                     description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                      WorkflowDisplayName is the human-readable workflow identifier
+                      (e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
                     type: string
                 type: object
-                x-kubernetes-map-type: atomic
             type: object
         type: object
     selectableFields:

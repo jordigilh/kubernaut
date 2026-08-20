@@ -101,7 +101,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				}, timeout, interval).Should(Succeed())
 
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Simulated failure for consecutive failure test"
+				sp.Status.EnsureFailureInfo().Error = "Simulated failure for consecutive failure test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				// Wait for RR to transition to a terminal phase (Failed or Blocked)
@@ -150,8 +150,8 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked), "Expected 4th RR to be Blocked after 3 consecutive failures")
 
 			// Validate BlockReason
-			Expect(rr4.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures))
-			Expect(rr4.Status.BlockMessage).To(ContainSubstring("consecutive"), "BlockMessage should describe consecutive failure reason")
+			Expect(rr4.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures))
+			Expect(rr4.Status.EnsureRoutingStatus().BlockMessage).To(ContainSubstring("consecutive"), "BlockMessage should describe consecutive failure reason")
 		})
 	})
 
@@ -196,7 +196,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Failure for count reset test"
+				sp.Status.EnsureFailureInfo().Error = "Failure for count reset test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -279,7 +279,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Failure for blocked prevent test"
+				sp.Status.EnsureFailureInfo().Error = "Failure for blocked prevent test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -373,7 +373,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Failure for cooldown test"
+				sp.Status.EnsureFailureInfo().Error = "Failure for cooldown test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -416,7 +416,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				return rr4.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked))
 
-			Expect(rr4.Status.BlockedUntil).To(HaveField("Time", BeTemporally(">", time.Now())), "BlockedUntil should be in the future")
+			Expect(rr4.Status.EnsureRoutingStatus().BlockedUntil).To(HaveField("Time", BeTemporally(">", time.Now())), "BlockedUntil should be in the future")
 
 			// Note: Full cooldown expiry test would require waiting 1 hour (default cooldown)
 			// Integration test validates BlockedUntil is set correctly
@@ -464,7 +464,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Failure for BlockedUntil test"
+				sp.Status.EnsureFailureInfo().Error = "Failure for BlockedUntil test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				Eventually(func() remediationv1.RemediationPhase {
@@ -510,13 +510,13 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			// Refresh RR4 status to get BlockedUntil
 			Eventually(func() bool {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
-				return rr4.Status.BlockedUntil != nil
+				return rr4.Status.EnsureRoutingStatus().BlockedUntil != nil
 			}, timeout, interval).Should(BeTrue())
 
 			// Per BR-ORCH-042: Default cooldown is 1 hour (3600 seconds)
 			// BlockedUntil should be approximately 1 hour in the future (allow 5min tolerance for test execution)
 			expectedBlockedUntil := time.Now().Add(1 * time.Hour)
-			Expect(rr4.Status.BlockedUntil).To(HaveField("Time",
+			Expect(rr4.Status.EnsureRoutingStatus().BlockedUntil).To(HaveField("Time",
 				BeTemporally("~", expectedBlockedUntil, 5*time.Minute)),
 				"BlockedUntil should be approximately 1 hour from now (default cooldown)")
 		})

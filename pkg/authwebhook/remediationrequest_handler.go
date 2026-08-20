@@ -94,9 +94,9 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	}
 
 	// Populate authentication fields
-	rr.Status.LastModifiedBy = authCtx.Username
+	rr.Status.EnsureOperatorAudit().LastModifiedBy = authCtx.Username
 	now := metav1.Now()
-	rr.Status.LastModifiedAt = &now
+	rr.Status.EnsureOperatorAudit().LastModifiedAt = &now
 
 	// Write complete audit event (webhook.remediationrequest.timeout_modified)
 	auditEvent := audit.NewAuditEventRequest()

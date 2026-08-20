@@ -108,33 +108,33 @@ func persistWFERefAndDisplay(
 	}
 
 	return helpers.UpdateRemediationRequestStatus(ctx, k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 			APIVersion: workflowexecutionv1.GroupVersion.String(),
 			Kind:       "WorkflowExecution",
 			Name:       weName,
 			Namespace:  rr.Namespace,
 		}
 		if sw != nil {
-			rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+			rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{
 				WorkflowID:            sw.WorkflowID,
 				Version:               sw.Version,
 				ExecutionBundle:       sw.ExecutionBundle,
 				ExecutionBundleDigest: sw.ExecutionBundleDigest,
 			}
-			rr.Status.WorkflowDisplayName = workflowDisplayName
-			rr.Status.Confidence = confidence
+			rr.Status.EnsureWorkflowSelection().WorkflowDisplayName = workflowDisplayName
+			rr.Status.EnsureWorkflowSelection().Confidence = confidence
 		}
 		if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.RemediationTarget != nil {
 			ar := rca.RootCauseAnalysis.RemediationTarget
-			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
+			rr.Status.EnsureWorkflowSelection().RemediationTarget = &remediationv1.ResourceIdentifier{
 				Kind:       ar.Kind,
 				Name:       ar.Name,
 				Namespace:  ar.Namespace,
 				APIVersion: ar.APIVersion, // #1040
 			}
-			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
+			rr.Status.EnsureWorkflowSelection().TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
 		}
-		rr.Status.SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
+		rr.Status.EnsureWorkflowSelection().SignalTargetDisplay = remediationrequest.FormatResourceDisplay(
 			rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
 		remediationrequest.SetWorkflowExecutionReady(rr, true,
 			fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), m)

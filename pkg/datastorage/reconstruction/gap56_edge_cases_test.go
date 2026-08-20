@@ -201,7 +201,7 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 			// Then: No error, Status.SelectedWorkflowRef remains nil
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fields).ToNot(BeNil())
-			Expect(fields.Status.SelectedWorkflowRef).To(BeNil(), "Nil input should result in nil output")
+			Expect(fields.Status.EnsureWorkflowSelection().SelectedWorkflowRef).To(BeNil(), "Nil input should result in nil output")
 		})
 	})
 
@@ -220,7 +220,7 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 			// Then: No error, Status.ExecutionRef remains nil
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fields).ToNot(BeNil())
-			Expect(fields.Status.ExecutionRef).To(BeNil(), "Nil input should result in nil output")
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef).To(BeNil(), "Nil input should result in nil output")
 		})
 	})
 
@@ -244,10 +244,10 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 			// Then: No error, all fields mapped as empty strings
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fields).ToNot(BeNil())
-			Expect(fields.Status.SelectedWorkflowRef).ToNot(BeNil())
-			Expect(fields.Status.SelectedWorkflowRef.WorkflowID).To(BeEmpty())
-			Expect(fields.Status.SelectedWorkflowRef.Version).To(BeEmpty())
-			Expect(fields.Status.SelectedWorkflowRef.ExecutionBundle).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().SelectedWorkflowRef).ToNot(BeNil())
+			Expect(fields.Status.EnsureWorkflowSelection().SelectedWorkflowRef.WorkflowID).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().SelectedWorkflowRef.Version).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().SelectedWorkflowRef.ExecutionBundle).To(BeEmpty())
 		})
 	})
 
@@ -271,11 +271,11 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 			// Then: No error, all fields mapped as empty strings
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fields).ToNot(BeNil())
-			Expect(fields.Status.ExecutionRef).ToNot(BeNil())
-			Expect(fields.Status.ExecutionRef.APIVersion).To(BeEmpty())
-			Expect(fields.Status.ExecutionRef.Kind).To(BeEmpty())
-			Expect(fields.Status.ExecutionRef.Name).To(BeEmpty())
-			Expect(fields.Status.ExecutionRef.Namespace).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef).ToNot(BeNil())
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef.APIVersion).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef.Kind).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef.Name).To(BeEmpty())
+			Expect(fields.Status.EnsureWorkflowSelection().ExecutionRef.Namespace).To(BeEmpty())
 		})
 	})
 })

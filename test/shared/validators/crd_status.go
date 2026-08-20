@@ -148,10 +148,10 @@ func ValidateSPStatus(sp *signalprocessingv1.SignalProcessing) []string {
 	}
 
 	f = appendIfNonEmpty(f, checkNonNil("SP: BusinessClassification", "business context unavailable for SLA routing", s.BusinessClassification))
-	f = appendIfNonEmpty(f, checkNonEmpty("SP: Severity", "severity-based routing and notification escalation unavailable", s.Severity))
-	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalMode", "reactive vs proactive classification missing", s.SignalMode))
-	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalType", "signal type unknown, workflow matching may fail", s.SignalName))
-	f = appendIfNonEmpty(f, checkNonEmpty("SP: PolicyHash", "policy versioning broken, cannot detect policy drift", s.PolicyHash))
+	f = appendIfNonEmpty(f, checkNonEmpty("SP: Severity", "severity-based routing and notification escalation unavailable", s.GetSignalClassification().Severity))
+	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalMode", "reactive vs proactive classification missing", s.GetSignalClassification().SignalMode))
+	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalType", "signal type unknown, workflow matching may fail", s.GetSignalClassification().SignalName))
+	f = appendIfNonEmpty(f, checkNonEmpty("SP: PolicyHash", "policy versioning broken, cannot detect policy drift", s.GetSignalClassification().PolicyHash))
 	f = appendIfNonEmpty(f, checkConditions("SP: Conditions", s.Conditions))
 
 	return f
@@ -261,35 +261,38 @@ func ValidateRRStatus(rr *remediationv1.RemediationRequest, opts ...ValidationOp
 		f = append(f, "RR: ObservedGeneration not set -- controller may not have reconciled")
 	}
 
-	f = appendIfNonEmpty(f, checkNonNil("RR: SignalProcessingRef", "audit trail cannot link to signal processing", s.SignalProcessingRef))
-	f = appendIfNonEmpty(f, checkNonNil("RR: AIAnalysisRef", "audit trail cannot link to AI analysis", s.AIAnalysisRef))
-	f = appendIfNonEmpty(f, checkNonNil("RR: WorkflowExecutionRef", "audit trail cannot link to workflow execution", s.WorkflowExecutionRef))
+	phaseProgress := s.GetPhaseProgress()
+	f = appendIfNonEmpty(f, checkNonNil("RR: SignalProcessingRef", "audit trail cannot link to signal processing", phaseProgress.SignalProcessingRef))
+	f = appendIfNonEmpty(f, checkNonNil("RR: AIAnalysisRef", "audit trail cannot link to AI analysis", phaseProgress.AIAnalysisRef))
+	f = appendIfNonEmpty(f, checkNonNil("RR: WorkflowExecutionRef", "audit trail cannot link to workflow execution", phaseProgress.WorkflowExecutionRef))
 
+	completionStatus := s.GetCompletionStatus()
 	if cfg.approvalFlow {
-		if len(s.NotificationRequestRefs) < 2 {
-			f = append(f, fmt.Sprintf("RR: NotificationRequestRefs has %d refs, expected >= 2 for approval flow (approval + completion)", len(s.NotificationRequestRefs)))
+		if len(completionStatus.NotificationRequestRefs) < 2 {
+			f = append(f, fmt.Sprintf("RR: NotificationRequestRefs has %d refs, expected >= 2 for approval flow (approval + completion)", len(completionStatus.NotificationRequestRefs)))
 		}
 	} else {
-		if len(s.NotificationRequestRefs) < 1 {
-			f = append(f, fmt.Sprintf("RR: NotificationRequestRefs has %d refs, expected >= 1 (completion notification)", len(s.NotificationRequestRefs)))
+		if len(completionStatus.NotificationRequestRefs) < 1 {
+			f = append(f, fmt.Sprintf("RR: NotificationRequestRefs has %d refs, expected >= 1 (completion notification)", len(completionStatus.NotificationRequestRefs)))
 		}
 	}
 
-	f = appendIfNonEmpty(f, checkNonNil("RR: EffectivenessAssessmentRef", "audit trail cannot link to effectiveness assessment", s.EffectivenessAssessmentRef))
-	f = appendIfNonEmpty(f, checkNonEmpty("RR: Outcome", "remediation outcome unknown, audit trail incomplete", s.Outcome))
+	f = appendIfNonEmpty(f, checkNonNil("RR: EffectivenessAssessmentRef", "audit trail cannot link to effectiveness assessment", phaseProgress.EffectivenessAssessmentRef))
+	f = appendIfNonEmpty(f, checkNonEmpty("RR: Outcome", "remediation outcome unknown, audit trail incomplete", completionStatus.Outcome))
 
-	if s.SelectedWorkflowRef == nil {
+	workflowSelection := s.GetWorkflowSelection()
+	if workflowSelection.SelectedWorkflowRef == nil {
 		f = append(f, "RR: SelectedWorkflowRef not populated -- audit trail missing which workflow was selected")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.WorkflowID", "audit trail missing workflow ID", s.SelectedWorkflowRef.WorkflowID))
-		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.Version", "audit trail missing workflow version", s.SelectedWorkflowRef.Version))
-		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.ExecutionBundle", "audit trail missing execution bundle reference", s.SelectedWorkflowRef.ExecutionBundle))
+		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.WorkflowID", "audit trail missing workflow ID", workflowSelection.SelectedWorkflowRef.WorkflowID))
+		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.Version", "audit trail missing workflow version", workflowSelection.SelectedWorkflowRef.Version))
+		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.ExecutionBundle", "audit trail missing execution bundle reference", workflowSelection.SelectedWorkflowRef.ExecutionBundle))
 	}
 
 	f = appendIfNonEmpty(f, checkConditions("RR: Conditions", s.Conditions))
 
 	if cfg.approvalFlow {
-		if !s.ApprovalNotificationSent {
+		if !completionStatus.ApprovalNotificationSent {
 			f = append(f, "RR: ApprovalNotificationSent is false -- expected true for approval flow")
 		}
 	}

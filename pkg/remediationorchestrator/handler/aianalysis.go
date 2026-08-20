@@ -161,7 +161,7 @@ func (h *AIAnalysisHandler) handleCompleted(
 func (h *AIAnalysisHandler) markNoActionRequired(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) error {
 	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = "NoActionRequired"
+		rr.Status.EnsureCompletionStatus().Outcome = "NoActionRequired"
 		rr.Status.Message = ai.Status.Message
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
@@ -171,7 +171,7 @@ func (h *AIAnalysisHandler) markNoActionRequired(ctx context.Context, rr *remedi
 		// on terminal-phase RRs, preventing an infinite NoActionRequired loop.
 		if h.noActionRequiredDelay > 0 {
 			nextAllowed := metav1.NewTime(time.Now().Add(h.noActionRequiredDelay))
-			rr.Status.NextAllowedExecution = &nextAllowed
+			rr.Status.EnsureRoutingStatus().NextAllowedExecution = &nextAllowed
 		}
 
 		// BR-ORCH-043: Set Ready condition (terminal success - no action required)
@@ -196,12 +196,13 @@ func (h *AIAnalysisHandler) notifySelfResolvedIfConfigured(ctx context.Context, 
 
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 	updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		for _, existing := range rr.Status.NotificationRequestRefs {
+		completion := rr.Status.EnsureCompletionStatus()
+		for _, existing := range completion.NotificationRequestRefs {
 			if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
 				return nil
 			}
 		}
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		completion.NotificationRequestRefs = append(completion.NotificationRequestRefs, ref)
 		return nil
 	})
 	if updateErr != nil {
@@ -243,7 +244,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 	logger.Info("Remediation completed - no action required",
 		"outcome", "NoActionRequired",
 		"reason", reason,
-		"nextAllowedExecution", rr.Status.NextAllowedExecution,
+		"nextAllowedExecution", rr.Status.GetRoutingStatus().NextAllowedExecution,
 	)
 
 	return ctrl.Result{}, nil
@@ -272,8 +273,8 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-		rr.Status.ApprovalNotificationSent = true
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().ApprovalNotificationSent = true
 		return nil
 	})
 	if err != nil {
@@ -359,8 +360,9 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 func (h *AIAnalysisHandler) markManualReviewRequired(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, ref corev1.ObjectReference) error {
 	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = "ManualReviewRequired"
-		rr.Status.RequiresManualReview = true
+		completion := rr.Status.EnsureCompletionStatus()
+		completion.Outcome = "ManualReviewRequired"
+		completion.RequiresManualReview = true
 		rr.Status.Message = ai.Status.Message
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
@@ -368,11 +370,11 @@ func (h *AIAnalysisHandler) markManualReviewRequired(ctx context.Context, rr *re
 		// Reuse NoActionRequiredDelayHours for cooldown suppression
 		if h.noActionRequiredDelay > 0 {
 			nextAllowed := metav1.NewTime(time.Now().Add(h.noActionRequiredDelay))
-			rr.Status.NextAllowedExecution = &nextAllowed
+			rr.Status.EnsureRoutingStatus().NextAllowedExecution = &nextAllowed
 		}
 
 		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		completion.NotificationRequestRefs = append(completion.NotificationRequestRefs, ref)
 
 		// BR-ORCH-043: Set Ready condition (terminal success - manual review required)
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonManualReviewRequired, "Manual review required", h.Metrics)
@@ -428,7 +430,7 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 	logger.Info("Remediation completed - manual review required",
 		"outcome", "ManualReviewRequired",
 		"notificationName", notifName,
-		"nextAllowedExecution", rr.Status.NextAllowedExecution,
+		"nextAllowedExecution", rr.Status.GetRoutingStatus().NextAllowedExecution,
 	)
 
 	return ctrl.Result{}, nil
@@ -508,11 +510,12 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Handler-specific status fields
-		rr.Status.Outcome = "ManualReviewRequired"
-		rr.Status.RequiresManualReview = true
+		completion := rr.Status.EnsureCompletionStatus()
+		completion.Outcome = "ManualReviewRequired"
+		completion.RequiresManualReview = true
 
 		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		completion.NotificationRequestRefs = append(completion.NotificationRequestRefs, ref)
 		return nil
 	})
 	if err != nil {

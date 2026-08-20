@@ -142,7 +142,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
 			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
 			// Set high consecutive failures that would trigger ConsecutiveFailures check
-			rr.Status.ConsecutiveFailureCount = 100
+			rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = 100
 
 			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "wf-001", "test-ns/deployment/payment-api", "", "")
 			Expect(err).ToNot(HaveOccurred())
@@ -159,7 +159,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			var previousBackoff time.Duration
 			for _, retryCount := range []int32{0, 1, 2, 3, 4, 5, 6, 7} {
 				rr := makeRR("test-ns", fmt.Sprintf("rr-%d", retryCount), "Deployment", "app")
-				rr.Status.ConsecutiveFailureCount = retryCount
+				rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = retryCount
 
 				blocked := engine.CheckUnmanagedResource(ctx, rr)
 				Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))

@@ -63,7 +63,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 			rr.Status.ObservedGeneration = rr.Generation // Guard1 trigger condition
 			rr.Status.StartTime = &metav1.Time{Time: metav1.Now().Time}
 			// Bug 2 fix prerequisite: completion NT ref must be in NotificationRequestRefs
-			rr.Status.NotificationRequestRefs = []corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 				{
 					Name:      notifName,
 					Namespace: namespace,
@@ -137,7 +137,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 			rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseFailed)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: metav1.Now().Time}
-			rr.Status.NotificationRequestRefs = []corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 				{
 					Name:      notifName,
 					Namespace: namespace,
@@ -218,7 +218,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: metav1.Now().Time}
 			// Intentionally empty — this is the bug
-			rr.Status.NotificationRequestRefs = []corev1.ObjectReference{}
+			rr.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{}
 
 			// The NT exists as an owned resource but is NOT tracked
 			notif := &notificationv1.NotificationRequest{

@@ -54,18 +54,18 @@ func (r *Reconciler) trackNotificationStatus(ctx context.Context, rr *remediatio
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"namespace", rr.Namespace,
-		"notificationRefsCount", len(rr.Status.NotificationRequestRefs),
+		"notificationRefsCount", len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs),
 	)
 
 	// If no notification refs, nothing to track
-	if len(rr.Status.NotificationRequestRefs) == 0 {
+	if len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs) == 0 {
 		logger.V(1).Info("No notification refs to track")
 		return nil
 	}
 
 	// Defensive: Limit iterations to prevent infinite loops
 	maxRefs := 10
-	refsToProcess := rr.Status.NotificationRequestRefs
+	refsToProcess := rr.Status.EnsureCompletionStatus().NotificationRequestRefs
 	if len(refsToProcess) > maxRefs {
 		logger.Info("Too many notification refs, limiting tracking",
 			"refCount", len(refsToProcess),
@@ -133,7 +133,7 @@ func (r *Reconciler) trackSingleNotificationRef(ctx context.Context, rr *remedia
 	logger.V(1).Info("Updating notification status from NotificationRequest",
 		"notificationName", notif.Name,
 		"notificationPhase", notif.Status.Phase,
-		"currentNotificationStatus", rr.Status.NotificationStatus,
+		"currentNotificationStatus", rr.Status.EnsureCompletionStatus().NotificationStatus,
 	)
 	return r.updateNotificationStatusFromPhase(ctx, rr, notif)
 }

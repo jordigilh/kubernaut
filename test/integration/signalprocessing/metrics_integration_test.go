@@ -298,7 +298,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				// May reach Failed or Completed (enrichment may be partial due to missing resource)
 				return updated.Status.Phase == signalprocessingv1alpha1.PhaseFailed ||
 					updated.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
-					(updated.Status.Error != "" && updated.Status.Phase != signalprocessingv1alpha1.PhasePending)
+					(updated.Status.GetFailureInfo().Error != "" && updated.Status.Phase != signalprocessingv1alpha1.PhasePending)
 			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 4. Verify enrichment error metrics were emitted

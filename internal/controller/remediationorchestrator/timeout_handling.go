@@ -94,8 +94,8 @@ func (r *Reconciler) transitionToTimedOut(ctx context.Context, rr *remediationv1
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		now := metav1.Now()
-		rr.Status.TimeoutTime = &now
-		rr.Status.TimeoutPhase = &timeoutPhase
+		rr.Status.EnsureCompletionStatus().TimeoutTime = &now
+		rr.Status.EnsureCompletionStatus().TimeoutPhase = &timeoutPhase
 		rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
 		// BR-ORCH-043: Set Ready condition (terminal timeout)
@@ -209,7 +209,7 @@ func (r *Reconciler) buildTimeoutNotificationRequest(rr *remediationv1.Remediati
 				string(timeoutPhase),
 				r.getEffectiveGlobalTimeout(rr).String(),
 				rr.Status.StartTime.Format(time.RFC3339),
-				rr.Status.TimeoutTime.Format(time.RFC3339),
+				rr.Status.EnsureCompletionStatus().TimeoutTime.Format(time.RFC3339),
 			),
 			Context: buildTimeoutContext(rr.Name, string(timeoutPhase), "", rr.Spec.TargetResource),
 		},
@@ -218,7 +218,7 @@ func (r *Reconciler) buildTimeoutNotificationRequest(rr *remediationv1.Remediati
 
 // trackTimeoutNotification implements handleGlobalTimeout's best-effort
 // status-tracking step (Recommendation #2, BR-ORCH-035): append nr to
-// rr.Status.NotificationRequestRefs. Failure is logged but not propagated —
+// rr.Status.EnsureCompletionStatus().NotificationRequestRefs. Failure is logged but not propagated —
 // the notification was already created successfully, so tracking is
 // best-effort. Extracted from handleGlobalTimeout (Wave 6 6e-i GREEN: funlen
 // remediation) — pure code motion, no behavior change.
@@ -231,7 +231,7 @@ func (r *Reconciler) trackTimeoutNotification(ctx context.Context, rr *remediati
 			UID:        nr.UID,
 			APIVersion: "notification.kubernaut.ai/v1alpha1",
 		}
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, notifRef)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, notifRef)
 		return nil
 	})
 
@@ -241,7 +241,7 @@ func (r *Reconciler) trackTimeoutNotification(ctx context.Context, rr *remediati
 	} else {
 		logger.V(1).Info("Tracked notification in status",
 			"notificationName", nr.Name,
-			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
+			"totalNotifications", len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs)+1)
 	}
 }
 
@@ -278,7 +278,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
 	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       name,
 			Namespace:  rr.Namespace,
@@ -306,14 +306,14 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 // 6e-i GREEN: cyclomatic-complexity remediation) — pure code motion, no
 // behavior change.
 func (r *Reconciler) resolveEATargets(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (dualTarget *creator.DualTarget, isGitOpsManaged bool, ai *aianalysisv1.AIAnalysis) {
-	if rr.Status.AIAnalysisRef == nil {
+	if rr.Status.EnsurePhaseProgress().AIAnalysisRef == nil {
 		return nil, false, nil
 	}
 
 	ai = &aianalysisv1.AIAnalysis{}
 	if err := r.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.AIAnalysisRef.Name,
-		Namespace: rr.Status.AIAnalysisRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace,
 	}, ai); err != nil {
 		logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
 			"error", err)

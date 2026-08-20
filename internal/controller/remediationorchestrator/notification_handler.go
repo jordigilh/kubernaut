@@ -90,7 +90,7 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 		"remediationRequest", rr.Name,
 		"namespace", rr.Namespace,
 		"currentPhase", rr.Status.OverallPhase,
-		"notificationRefsCount", len(rr.Status.NotificationRequestRefs),
+		"notificationRefsCount", len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs),
 	)
 
 	startTime := time.Now()
@@ -110,7 +110,7 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 	}
 
 	// Defensive: Check for notification refs
-	if len(rr.Status.NotificationRequestRefs) == 0 {
+	if len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs) == 0 {
 		logger.V(1).Info("No notification refs found, skipping cancellation update")
 		return nil
 	}
@@ -128,19 +128,19 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 // funlen remediation) — pure code motion, no behavior change.
 func (h *NotificationHandler) applyUserCancellation(rr *remediationv1.RemediationRequest, logger logr.Logger) {
 	logger.Info("NotificationRequest deleted by user (cancellation)",
-		"notificationRefs", len(rr.Status.NotificationRequestRefs),
-		"previousStatus", rr.Status.NotificationStatus,
+		"notificationRefs", len(rr.Status.EnsureCompletionStatus().NotificationRequestRefs),
+		"previousStatus", rr.Status.EnsureCompletionStatus().NotificationStatus,
 	)
 
 	// Update notification tracking ONLY (DO NOT change overallPhase!)
 	phaseBefore := rr.Status.OverallPhase
-	previousStatus := rr.Status.NotificationStatus
-	rr.Status.NotificationStatus = "Cancelled"
+	previousStatus := rr.Status.EnsureCompletionStatus().NotificationStatus
+	rr.Status.EnsureCompletionStatus().NotificationStatus = "Cancelled"
 	rr.Status.Message = "NotificationRequest deleted by user before delivery completed"
 
 	logger.V(1).Info("Updated notification status",
 		"previousStatus", previousStatus,
-		"newStatus", rr.Status.NotificationStatus,
+		"newStatus", rr.Status.EnsureCompletionStatus().NotificationStatus,
 	)
 
 	// Set condition: NotificationDelivered = False
@@ -184,7 +184,7 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		"remediationRequest", rr.Name,
 		"notificationRequest", notif.Name,
 		"notificationPhase", notif.Status.Phase,
-		"previousNotificationStatus", rr.Status.NotificationStatus,
+		"previousNotificationStatus", rr.Status.EnsureCompletionStatus().NotificationStatus,
 		"currentPhase", rr.Status.OverallPhase,
 	)
 
@@ -196,7 +196,7 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 	}()
 
 	phaseBefore := rr.Status.OverallPhase
-	previousStatus := rr.Status.NotificationStatus
+	previousStatus := rr.Status.EnsureCompletionStatus().NotificationStatus
 
 	if !h.applyNotificationPhase(rr, notif, startTime, logger) {
 		return nil
@@ -204,8 +204,8 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 
 	logger.V(1).Info("Notification status updated",
 		"previousStatus", previousStatus,
-		"newStatus", rr.Status.NotificationStatus,
-		"statusChanged", previousStatus != rr.Status.NotificationStatus,
+		"newStatus", rr.Status.EnsureCompletionStatus().NotificationStatus,
+		"statusChanged", previousStatus != rr.Status.EnsureCompletionStatus().NotificationStatus,
 	)
 
 	// Defensive: verify this function did not accidentally mutate overallPhase
@@ -228,15 +228,15 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 func (h *NotificationHandler) applyNotificationPhase(rr *remediationv1.RemediationRequest, notif *notificationv1.NotificationRequest, startTime time.Time, logger logr.Logger) bool {
 	switch notif.Status.Phase {
 	case notificationv1.NotificationPhasePending:
-		rr.Status.NotificationStatus = "Pending"
+		rr.Status.EnsureCompletionStatus().NotificationStatus = "Pending"
 		logger.V(1).Info("Notification pending delivery")
 
 	case notificationv1.NotificationPhaseSending:
-		rr.Status.NotificationStatus = "InProgress"
+		rr.Status.EnsureCompletionStatus().NotificationStatus = "InProgress"
 		logger.V(1).Info("Notification delivery in progress")
 
 	case notificationv1.NotificationPhaseSent:
-		rr.Status.NotificationStatus = "Sent"
+		rr.Status.EnsureCompletionStatus().NotificationStatus = "Sent"
 		deliveryDuration := time.Since(startTime)
 
 		remediationrequest.SetNotificationDelivered(rr, true, remediationrequest.ReasonDeliverySucceeded, "Notification delivered successfully", h.Metrics)
@@ -246,7 +246,7 @@ func (h *NotificationHandler) applyNotificationPhase(rr *remediationv1.Remediati
 		)
 
 	case notificationv1.NotificationPhaseFailed:
-		rr.Status.NotificationStatus = "Failed"
+		rr.Status.EnsureCompletionStatus().NotificationStatus = "Failed"
 		deliveryDuration := time.Since(startTime)
 
 		// Defensive: Handle empty failure message

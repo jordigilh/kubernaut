@@ -111,8 +111,8 @@ func validateOptionalRRFields(rr *remediationv1.RemediationRequest, result *Vali
 		{len(rr.Spec.OriginalPayload) == 0, "OriginalPayload is missing (Gap #1) - full audit trail requires original data"},
 		{rr.Status.TimeoutConfig == nil, "TimeoutConfig is missing (Gap #8) - operational timeouts may use defaults"},
 		{len(rr.Spec.ProviderData) == 0, "providerData is missing (Gap #4) - AI analysis summary unavailable"},
-		{rr.Status.SelectedWorkflowRef == nil, "selectedWorkflowRef is missing (Gap #5) - workflow selection data unavailable"},
-		{rr.Status.ExecutionRef == nil, "executionRef is missing (Gap #6) - workflow execution reference unavailable"},
+		{rr.Status.GetWorkflowSelection().SelectedWorkflowRef == nil, "selectedWorkflowRef is missing (Gap #5) - workflow selection data unavailable"},
+		{rr.Status.GetWorkflowSelection().ExecutionRef == nil, "executionRef is missing (Gap #6) - workflow execution reference unavailable"},
 	}
 
 	for _, check := range checks {

@@ -102,7 +102,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 					Status: remediationv1.RemediationRequestStatus{
 						OverallPhase: remediationv1.PhaseCompleted,
-						Outcome:      "Success",
+						CompletionStatus: &remediationv1.CompletionStatus{
+							Outcome: "Success",
+						},
 					},
 				}
 
@@ -219,8 +221,10 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					},
 					Status: remediationv1.RemediationRequestStatus{
 						OverallPhase: remediationv1.PhaseSkipped,
-						SkipReason:   remediationv1.SkipReasonResourceBusy,
-						DuplicateOf:  "original-rr",
+						RoutingStatus: &remediationv1.RoutingStatus{
+							SkipReason:  remediationv1.SkipReasonResourceBusy,
+							DuplicateOf: "original-rr",
+						},
 					},
 				}
 
@@ -260,7 +264,7 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 				}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
-				Expect(updatedRR.Status.DuplicateOf).To(Equal("original-rr"),
+				Expect(updatedRR.Status.EnsureRoutingStatus().DuplicateOf).To(Equal("original-rr"),
 					"Duplicate tracking must be preserved")
 			})
 		})

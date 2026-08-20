@@ -21,6 +21,10 @@ set -euo pipefail
 COLLECTION_DIR="${1}"
 CLUSTER_DIR="${COLLECTION_DIR}/cluster-scoped"
 
+# shellcheck source=../utils/namespace.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/namespace.sh"
+resolve_kubernaut_namespaces
+
 echo "Collecting cluster state..."
 
 mkdir -p "${CLUSTER_DIR}"/{nodes,rbac,storage,network,config}

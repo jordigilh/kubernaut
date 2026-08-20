@@ -187,9 +187,10 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 
 			By("Simulating SP completion")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = signalprocessingv1.SeverityCritical
-			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
-			sp.Status.SignalName = sp.Spec.Signal.Name
+			spClassification := sp.Status.EnsureSignalClassification()
+			spClassification.Severity = signalprocessingv1.SeverityCritical
+			spClassification.SignalMode = signalprocessingv1.SignalModeReactive
+			spClassification.SignalName = sp.Spec.Signal.Name
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",
@@ -256,7 +257,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
 				"RR should reach Completed phase (dry-run intercept in AnalyzingHandler)")
 
-			Expect(updatedRR.Status.Outcome).To(Equal("DryRun"),
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("DryRun"),
 				"Outcome must be DryRun per ADR-RO-001")
 
 			By("Verifying NO WorkflowExecution was created (dry-run stops pipeline)")
@@ -276,7 +277,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				"NO WorkflowExecution should exist — dry-run intercepts before WFE creation")
 
 			By("Verifying NextAllowedExecution is set for Gateway dedup suppression")
-			Expect(updatedRR.Status.NextAllowedExecution).ToNot(BeNil(),
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).ToNot(BeNil(),
 				"NextAllowedExecution must be set per ADR-RO-001 Gateway dedup")
 		})
 	})

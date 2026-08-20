@@ -103,8 +103,8 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			rr.Status.CompletedAt = &now
 			reason := "test failure"
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
-			rr.Status.FailureReason = &reason
-			rr.Status.FailurePhase = &failPhase
+			rr.Status.EnsureCompletionStatus().FailureReason = &reason
+			rr.Status.EnsureCompletionStatus().FailurePhase = &failPhase
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -141,7 +141,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
 			phase := remediationv1.RemediationPhase("Processing")
-			rr.Status.TimeoutPhase = &phase
+			rr.Status.EnsureCompletionStatus().TimeoutPhase = &phase
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).

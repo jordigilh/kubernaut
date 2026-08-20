@@ -241,7 +241,7 @@ func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watch
 	_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
 
 	if IsTerminalPhase(phase) {
-		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}
+		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.GetCompletionStatus().Outcome, Message: rrObj.Status.Message}
 	}
 	if phase == "AwaitingApproval" {
 		emitApprovalRequestEvent(ctx, deps)

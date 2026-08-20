@@ -94,7 +94,7 @@ func (r *SignalProcessingReconciler) failOnTimeout(ctx context.Context, sp *sign
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		sp.Status.ObservedGeneration = sp.Generation
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-		sp.Status.Error = timeoutErr.Error()
+		sp.Status.EnsureFailureInfo().Error = timeoutErr.Error()
 		// DD-SP-002: on FAILED, the phase-specific condition for whichever
 		// phase was active when the deadline hit is also set False, mirroring
 		// evaluateSeverityOrFail's existing terminal-failure pattern. Must use

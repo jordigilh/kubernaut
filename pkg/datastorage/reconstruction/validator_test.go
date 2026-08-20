@@ -46,14 +46,16 @@ var _ = Describe("Reconstruction Validator", func() {
 					ProviderData:      `{"incident_id":"test-123"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
-						WorkflowID:     "test-workflow-001",
-						Version:        "v1.0.0",
-						ExecutionBundle: "test/workflow:latest",
-					},
-					ExecutionRef: &corev1.ObjectReference{ // Gap #6
-						Name:      "test-execution-001",
-						Namespace: "default",
+					WorkflowSelection: &remediationv1.WorkflowSelection{
+						SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+							WorkflowID:      "test-workflow-001",
+							Version:         "v1.0.0",
+							ExecutionBundle: "test/workflow:latest",
+						},
+						ExecutionRef: &corev1.ObjectReference{ // Gap #6
+							Name:      "test-execution-001",
+							Namespace: "default",
+						},
 					},
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Global: &metav1.Duration{Duration: 3600000000000},
@@ -119,16 +121,18 @@ var _ = Describe("Reconstruction Validator", func() {
 					ProviderData:      `{"incident_id":"test-456","analysis":"complete"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
-						WorkflowID:      "workflow-002",
-						Version:         "v2.1.0",
-						ExecutionBundle:  "registry/workflow:v2.1.0",
-						ExecutionBundleDigest: "sha256:abcdef123456",
-					},
-					ExecutionRef: &corev1.ObjectReference{ // Gap #6
-						Name:      "execution-002",
-						Namespace: "production",
-						Kind:      "WorkflowExecution",
+					WorkflowSelection: &remediationv1.WorkflowSelection{
+						SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+							WorkflowID:            "workflow-002",
+							Version:               "v2.1.0",
+							ExecutionBundle:       "registry/workflow:v2.1.0",
+							ExecutionBundleDigest: "sha256:abcdef123456",
+						},
+						ExecutionRef: &corev1.ObjectReference{ // Gap #6
+							Name:      "execution-002",
+							Namespace: "production",
+							Kind:      "WorkflowExecution",
+						},
 					},
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Global: &metav1.Duration{Duration: 3600000000000},
@@ -211,14 +215,16 @@ var _ = Describe("Reconstruction Validator", func() {
 					ProviderData:      `{"incident_id":"test-789"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
-						WorkflowID:     "workflow-003",
-						Version:        "v1.2.0",
-						ExecutionBundle: "registry/workflow:v1.2.0",
-					},
-					ExecutionRef: &corev1.ObjectReference{ // Gap #6
-						Name:      "execution-003",
-						Namespace: "default",
+					WorkflowSelection: &remediationv1.WorkflowSelection{
+						SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+							WorkflowID:      "workflow-003",
+							Version:         "v1.2.0",
+							ExecutionBundle: "registry/workflow:v1.2.0",
+						},
+						ExecutionRef: &corev1.ObjectReference{ // Gap #6
+							Name:      "execution-003",
+							Namespace: "default",
+						},
 					},
 					TimeoutConfig: &remediationv1.TimeoutConfig{ // Gap #8
 						Global: &metav1.Duration{Duration: 3600000000000},

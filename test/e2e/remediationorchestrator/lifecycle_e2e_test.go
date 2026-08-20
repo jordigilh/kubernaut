@@ -309,17 +309,17 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					return false
 				}
 				return updatedRR.Status.OverallPhase == remediationv1.PhaseCompleted &&
-					updatedRR.Status.NextAllowedExecution != nil
+					updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution != nil
 			}, timeout, interval).Should(BeTrue(),
 				"Behavior: RR must reach Completed with NextAllowedExecution set through Helm->config->reconciler->handler->K8s chain (#353)")
 
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
-			Expect(updatedRR.Status.NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution.Time.After(time.Now())).To(BeTrue(),
 				"Correctness: NextAllowedExecution must be strictly in the future so Gateway suppresses duplicates")
-			Expect(updatedRR.Status.NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 5*time.Minute),
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 5*time.Minute),
 				"Accuracy: suppression window must match Helm default (24h)")
-			Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"),
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("NoActionRequired"),
 				"Correctness: Outcome must be NoActionRequired")
 		})
 	})
@@ -424,7 +424,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				LastSeenAt:      &now,
 				OccurrenceCount: 2,
 			}
-			createdRR.Status.DuplicateOf = "rr-original-parent"
+			createdRR.Status.EnsureRoutingStatus().DuplicateOf = "rr-original-parent"
 			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
 
 			By("Letting RO reconcile again to verify deduplication survives")
@@ -437,7 +437,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					"Deduplication should still be present after RO reconcile")
 				g.Expect(createdRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(2)),
 					"OccurrenceCount should be preserved across RO reconciles")
-				g.Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
+				g.Expect(createdRR.Status.EnsureRoutingStatus().DuplicateOf).To(Equal("rr-original-parent"),
 					"DuplicateOf should be preserved across RO reconciles")
 			}, timeout, interval).Should(Succeed())
 
@@ -448,11 +448,11 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				"Deduplication.OccurrenceCount should be preserved")
 			Expect(createdRR.Status.Deduplication.FirstSeenAt).NotTo(BeNil())
 			Expect(createdRR.Status.Deduplication.LastSeenAt).NotTo(BeNil())
-			Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
+			Expect(createdRR.Status.EnsureRoutingStatus().DuplicateOf).To(Equal("rr-original-parent"),
 				"DuplicateOf should be preserved during RO reconciliation")
 
 			GinkgoWriter.Printf("E2E-RO-163-002: Deduplication preserved — OccurrenceCount=%d, DuplicateOf=%s\n",
-				createdRR.Status.Deduplication.OccurrenceCount, createdRR.Status.DuplicateOf)
+				createdRR.Status.Deduplication.OccurrenceCount, createdRR.Status.EnsureRoutingStatus().DuplicateOf)
 		})
 	})
 })

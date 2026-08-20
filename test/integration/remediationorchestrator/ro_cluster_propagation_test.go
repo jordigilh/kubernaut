@@ -45,9 +45,10 @@ func completeSPWithClusterClassification(namespace, name, cluster string) error 
 	now := metav1.Now()
 	sp.Status.Phase = signalprocessingv1.PhaseCompleted
 	sp.Status.CompletionTime = &now
-	sp.Status.Severity = "critical"
-	sp.Status.SignalMode = "reactive"
-	sp.Status.SignalName = sp.Spec.Signal.Name
+	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = "critical"
+	classification.SignalMode = "reactive"
+	classification.SignalName = sp.Spec.Signal.Name
 	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 		Environment:  signalprocessingv1.EnvironmentProduction,
 		Source:       "test",
@@ -58,7 +59,7 @@ func completeSPWithClusterClassification(namespace, name, cluster string) error 
 		Source:     "test",
 		AssignedAt: now,
 	}
-	sp.Status.ClusterClassification = cluster
+	classification.ClusterClassification = cluster
 
 	return k8sClient.Status().Update(ctx, sp)
 }

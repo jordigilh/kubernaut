@@ -419,12 +419,12 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
 		// ADR-EM-001, Batch 3: EffectivenessAssessmentRef should be set and persisted
-		Expect(fetchedRR.Status.EffectivenessAssessmentRef).ToNot(BeNil(),
+		Expect(fetchedRR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef).ToNot(BeNil(),
 			"EffectivenessAssessmentRef should be set after EA creation")
-		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Name).To(Equal("ea-"+rrName),
+		Expect(fetchedRR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Name).To(Equal("ea-"+rrName),
 			"EffectivenessAssessmentRef should reference the created EA")
-		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Kind).To(Equal("EffectivenessAssessment"))
-		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Namespace).To(Equal(namespace))
+		Expect(fetchedRR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Kind).To(Equal("EffectivenessAssessment"))
+		Expect(fetchedRR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Namespace).To(Equal(namespace))
 	})
 
 	// ========================================
@@ -448,7 +448,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
 		// RO captured the target spec hash before the workflow ran
-		rr.Status.PreRemediationSpecHash = "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
+		rr.Status.EnsureOperatorAudit().PreRemediationSpecHash = "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
 
 		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
@@ -487,7 +487,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 		// Business outcome: The EA carries the pre-remediation baseline from the RR,
 		// enabling the EM to compare pre vs post hashes without querying DataStorage.
-		Expect(ea.Spec.PreRemediationSpecHash).To(Equal(rr.Status.PreRemediationSpecHash),
+		Expect(ea.Spec.PreRemediationSpecHash).To(Equal(rr.Status.EnsureOperatorAudit().PreRemediationSpecHash),
 			"EA must carry the same pre-remediation baseline the RO captured, so the EM "+
 				"can detect whether the workflow changed the target resource")
 
@@ -637,7 +637,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		rr := newRemediationRequestWithTimeout(rrName, namespace, remediationv1.PhaseProcessing, -5*time.Minute)
 		// Set ProcessingStartTime far enough in the past to exceed the 5-minute phase timeout
 		processingStart := metav1.NewTime(time.Now().Add(-10 * time.Minute))
-		rr.Status.ProcessingStartTime = &processingStart
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &processingStart
 
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -675,7 +675,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseTimedOut),
 			"RR should have transitioned to TimedOut via phase timeout")
-		Expect(*fetchedRR.Status.TimeoutPhase).To(Equal(remediationv1.PhaseProcessing),
+		Expect(*fetchedRR.Status.EnsureCompletionStatus().TimeoutPhase).To(Equal(remediationv1.PhaseProcessing),
 			"TimeoutPhase should indicate which phase timed out")
 
 		// Issue #240: EA must NOT be created on phase timeout
@@ -734,7 +734,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 			"Issue #550: no-workflow ManualReviewRequired should transition to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 			"Issue #550: Outcome should be ManualReviewRequired")
 
 		// Issue #240: EA must NOT be created when no remediation was attempted

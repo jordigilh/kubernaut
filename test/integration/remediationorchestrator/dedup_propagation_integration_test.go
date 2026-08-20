@@ -174,7 +174,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		By("Waiting for DeduplicatedByWE to be set on the RR")
 		Eventually(func() string {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return rr.Status.DeduplicatedByWE
+			return rr.Status.EnsureRoutingStatus().DeduplicatedByWE
 		}, timeout, interval).Should(Equal(originalWFEName))
 
 		By("Verifying RR inherits Completed")
@@ -183,7 +183,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(rr.Status.Outcome).To(Equal("Remediated"),
+		Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("Remediated"),
 			"Behavior: outcome must be Remediated (lineage tracked via DeduplicatedByWE + K8s events)")
 		Expect(rr.Status.CompletedAt).NotTo(BeNil())
 	})
@@ -210,7 +210,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		By("Waiting for DeduplicatedByWE to be set on the RR")
 		Eventually(func() string {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return rr.Status.DeduplicatedByWE
+			return rr.Status.EnsureRoutingStatus().DeduplicatedByWE
 		}, timeout, interval).Should(Equal(originalWFEName))
 
 		By("Creating the original WFE as Failed")
@@ -244,8 +244,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		Expect(rr.Status.FailurePhase).NotTo(BeNil())
-		Expect(*rr.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
+		Expect(rr.Status.GetCompletionStatus().FailurePhase).NotTo(BeNil())
+		Expect(*rr.Status.GetCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
 		Expect(rr.Status.CompletedAt).NotTo(BeNil())
 	})
 
@@ -273,8 +273,8 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		Expect(rr.Status.FailurePhase).NotTo(BeNil())
-		Expect(*rr.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
+		Expect(rr.Status.GetCompletionStatus().FailurePhase).NotTo(BeNil())
+		Expect(*rr.Status.GetCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated))
 	})
 
 	It("IT-RO-190-004: RR stays Executing while original WFE is Running, then inherits Completed", func() {
@@ -321,7 +321,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		By("Waiting for DeduplicatedByWE to be set")
 		Eventually(func() string {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return rr.Status.DeduplicatedByWE
+			return rr.Status.EnsureRoutingStatus().DeduplicatedByWE
 		}, timeout, interval).Should(Equal(originalWFEName))
 
 		By("Verifying RR stays Executing while original is Running")
@@ -345,7 +345,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(rr.Status.Outcome).To(Equal("Remediated"))
+		Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("Remediated"))
 	})
 
 	It("IT-RO-190-006: Inherited failure does NOT increment ConsecutiveFailureCount", func() {
@@ -373,7 +373,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
 		By("Verifying ConsecutiveFailureCount was NOT incremented")
-		Expect(rr.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+		Expect(rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 			"Behavior: inherited failures must NOT increment consecutive failure count (Phase 5)")
 	})
 })

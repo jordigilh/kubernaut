@@ -57,13 +57,14 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		if sourceKind == "RemediationRequest" {
-			rr.Status.BlockReason = ""
-			rr.Status.BlockMessage = ""
-			rr.Status.DuplicateOf = ""
+			routing := rr.Status.EnsureRoutingStatus()
+			routing.BlockReason = ""
+			routing.BlockMessage = ""
+			routing.DuplicateOf = ""
 		}
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady,
 			fmt.Sprintf("Inherited completion from original %s", sourceKind), r.Metrics)
@@ -122,14 +123,15 @@ func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Contex
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = "DryRun"
+		rr.Status.EnsureCompletionStatus().Outcome = "DryRun"
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 
 		// Set NextAllowedExecution for GW suppression, only if later than existing value
 		dryRunNAE := metav1.NewTime(now.Add(r.getDryRunHoldPeriod()))
-		if rr.Status.NextAllowedExecution == nil || dryRunNAE.After(rr.Status.NextAllowedExecution.Time) {
-			rr.Status.NextAllowedExecution = &dryRunNAE
+		routing := rr.Status.EnsureRoutingStatus()
+		if routing.NextAllowedExecution == nil || dryRunNAE.After(routing.NextAllowedExecution.Time) {
+			routing.NextAllowedExecution = &dryRunNAE
 		}
 
 		remediationrequest.SetReady(rr, true, "DryRun",
@@ -157,7 +159,7 @@ func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Contex
 
 	logger.Info("RR completed without verification (dry-run)",
 		"outcome", "DryRun", "reason", reason,
-		"nextAllowedExecution", rr.Status.NextAllowedExecution)
+		"nextAllowedExecution", rr.Status.EnsureRoutingStatus().NextAllowedExecution)
 	return ctrl.Result{}, nil
 }
 
@@ -180,14 +182,16 @@ func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remedi
 		now := metav1.Now()
 		failPhase := remediationv1.FailurePhaseDeduplicated
 		rr.Status.OverallPhase = phase.Failed
-		rr.Status.FailurePhase = &failPhase
-		rr.Status.FailureReason = &failureReason
+		completion := rr.Status.EnsureCompletionStatus()
+		completion.FailurePhase = &failPhase
+		completion.FailureReason = &failureReason
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		if sourceKind == "RemediationRequest" {
-			rr.Status.BlockReason = ""
-			rr.Status.BlockMessage = ""
-			rr.Status.DuplicateOf = ""
+			routing := rr.Status.EnsureRoutingStatus()
+			routing.BlockReason = ""
+			routing.BlockMessage = ""
+			routing.DuplicateOf = ""
 		}
 		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady,
 			fmt.Sprintf("Inherited failure from original %s", sourceKind), r.Metrics)
@@ -305,11 +309,11 @@ func (r *Reconciler) applyPhaseTransitionFields(rr *remediationv1.RemediationReq
 
 	switch newPhase {
 	case phase.Processing:
-		rr.Status.ProcessingStartTime = &now
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &now
 	case phase.Analyzing:
-		rr.Status.AnalyzingStartTime = &now
+		rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &now
 	case phase.Executing:
-		rr.Status.ExecutingStartTime = &now
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &now
 	}
 
 	switch newPhase {
@@ -375,13 +379,14 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonVerifying, "Remediation completed, verifying effectiveness", r.Metrics)
 
 		// DD-WE-004 V1.0: Reset exponential backoff on success
-		if rr.Status.NextAllowedExecution != nil {
+		routing := rr.Status.EnsureRoutingStatus()
+		if routing.NextAllowedExecution != nil {
 			logger.Info("Clearing exponential backoff after successful remediation",
-				"previousNextAllowed", rr.Status.NextAllowedExecution.Format(time.RFC3339),
-				"previousConsecutiveFailures", rr.Status.ConsecutiveFailureCount)
-			rr.Status.NextAllowedExecution = nil
+				"previousNextAllowed", routing.NextAllowedExecution.Format(time.RFC3339),
+				"previousConsecutiveFailures", routing.ConsecutiveFailureCount)
+			routing.NextAllowedExecution = nil
 		}
-		rr.Status.ConsecutiveFailureCount = 0
+		routing.ConsecutiveFailureCount = 0
 
 		return nil
 	})
@@ -508,8 +513,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureReason string, logger logr.Logger) {
 	rr.Status.OverallPhase = phase.Failed
 	rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
-	rr.Status.FailurePhase = &failurePhase
-	rr.Status.FailureReason = &failureReason
+	completion := rr.Status.EnsureCompletionStatus()
+	completion.FailurePhase = &failurePhase
+	completion.FailureReason = &failureReason
 	now := metav1.Now()
 	rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
 
@@ -517,18 +523,19 @@ func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRe
 	remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", r.Metrics)
 
 	// Increment consecutive failures (this happens for all failures, not just pre-execution)
-	rr.Status.ConsecutiveFailureCount++
+	routing := rr.Status.EnsureRoutingStatus()
+	routing.ConsecutiveFailureCount++
 
 	// Calculate and set exponential backoff if below threshold
 	// (At threshold, routing engine's CheckConsecutiveFailures will block with fixed cooldown)
-	if rr.Status.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
+	if routing.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
 		// Calculate backoff: 1min → 2min → 4min → 8min → 10min (capped)
-		backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.ConsecutiveFailureCount)
+		backoff := r.routingEngine.CalculateExponentialBackoff(routing.ConsecutiveFailureCount)
 		if backoff > 0 {
 			nextAllowed := metav1.NewTime(time.Now().Add(backoff))
-			rr.Status.NextAllowedExecution = &nextAllowed
+			routing.NextAllowedExecution = &nextAllowed
 			logger.Info("Set exponential backoff for failure",
-				"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+				"consecutiveFailures", routing.ConsecutiveFailureCount,
 				"backoff", backoff.Round(time.Second),
 				"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
 		}
@@ -580,7 +587,7 @@ func (r *Reconciler) createEscalationNotificationIfNeeded(ctx context.Context, r
 	logger.Info("Created escalation notification for terminal failure", "notification", notifName)
 	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)

@@ -252,12 +252,12 @@ func (r *Reconciler) emitVerificationCompletedAudit(ctx context.Context, rr *rem
 	}
 
 	eaName := ""
-	if rr.Status.EffectivenessAssessmentRef != nil {
-		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	if rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Name
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationCompletedEvent(
-		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, rr.Status.Outcome, durationMs)
+		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, rr.Status.EnsureCompletionStatus().Outcome, durationMs)
 	if err != nil {
 		logger.Error(err, "Failed to build verification_completed audit event")
 		return
@@ -276,8 +276,8 @@ func (r *Reconciler) emitVerificationTimedOutAudit(ctx context.Context, rr *reme
 	}
 
 	eaName := ""
-	if rr.Status.EffectivenessAssessmentRef != nil {
-		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	if rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Name
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationTimedOutEvent(
@@ -463,12 +463,12 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		BlockedUntil:        blockedUntilStr,
 		BlockingWFE:         blocked.BlockingWorkflowExecution,
 		DuplicateOf:         blocked.DuplicateOf,
-		ConsecutiveFailures: rr.Status.ConsecutiveFailureCount,
+		ConsecutiveFailures: rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount,
 	}
 
 	// Calculate backoff seconds if NextAllowedExecution is set
-	if rr.Status.NextAllowedExecution != nil {
-		backoff := time.Until(rr.Status.NextAllowedExecution.Time)
+	if rr.Status.EnsureRoutingStatus().NextAllowedExecution != nil {
+		backoff := time.Until(rr.Status.EnsureRoutingStatus().NextAllowedExecution.Time)
 		if backoff > 0 {
 			blockData.BackoffSeconds = int(backoff.Seconds())
 		}
