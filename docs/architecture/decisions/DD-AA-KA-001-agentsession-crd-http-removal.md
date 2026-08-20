@@ -681,8 +681,42 @@ goroutine-dump correlation:
 
 | Component | Production Entry Point | Wiring Code Location | Test proving wiring |
 |---|---|---|---|
-| `AIAnalysisReconciler.SetupWithManager(mgr, maxConcurrentReconciles ...int)` | `cmd/aianalysis/main.go` (unchanged call site, still 0-arg → controller-runtime default) | `internal/controller/aianalysis/aianalysis_controller.go` | `test/integration/aianalysis/suite_test.go` calls `SetupWithManager(k8sManager, 10)`; full suite run proves no regression |
+| `AIAnalysisReconciler.SetupWithManager(mgr, maxConcurrentReconciles ...int)` | `cmd/aianalysis/main.go`: `aaReconciler.SetupWithManager(mgr, cfg.MaxConcurrentReconciles)` | `internal/controller/aianalysis/aianalysis_controller.go` | `test/integration/aianalysis/suite_test.go` calls `SetupWithManager(k8sManager, 10)`; full suite run proves no regression. Production wiring itself proven by `UT-AA-2204-001b`/`config_test.go` (`MaxConcurrentReconciles` default=10, `Validate()` rejects <1) — see follow-up round below |
 | `InvestigatingHandler.backstopRequeueAfter` / `investigationDeadline` | `handleSessionRunning`'s two `RequeueAfter` sites | `pkg/aianalysis/handlers/investigating.go` | `UT-AA-2204-001` (`pkg/aianalysis/investigation_timeout_test.go`) — three specs proving `RequeueAfter` tracks `Spec.TimesOutAt`/`maxInvestigationDuration`, not a flat interval, including under an active interactive session |
+
+**Follow-up round (2026-08-20, later same day) — CI run 32384963654.** After the fixes above landed,
+`E2E (aianalysis)` still showed 11 failures. Two distinct, unrelated causes:
+
+1. **`MaxConcurrentReconciles` gap closed for real.** The Wiring Manifest row above originally left
+   `cmd/aianalysis/main.go` at controller-runtime's implicit default of 1, reasoning that the evidence
+   was integration-suite-specific. Must-gather RCA on this CI run showed `Full User Journey E2E`'s
+   `should require approval for production environment` timing out at `Investigating` for the full 60s
+   `Eventually` window in the **E2E Kind deployment**, which runs the actual `cmd/aianalysis` production
+   binary, not the integration suite's envtest manager — i.e. the exact single-worker bottleneck this DD
+   already diagnosed was still live in the one place that matters most. Added
+   `Config.MaxConcurrentReconciles` (`internal/config/aianalysis/config.go`, default 10, `Validate()`
+   rejects <1 — mirrors `EffectivenessMonitor.AssessmentConfig.MaxConcurrentReconciles`, ADR-EM-001 §10)
+   and wired it: `aaReconciler.SetupWithManager(mgr, cfg.MaxConcurrentReconciles)`.
+2. **Audit correlation-ID mismatch (test bug, not production).** Every `Audit Trail E2E`/`Error Audit
+   Trail E2E` spec in `05_audit_trail_test.go`/`06_error_audit_trail_test.go` failed with "0 total
+   events" despite `datastorage` logs confirming the batch **writes** succeeded
+   (`"Batch audit events created successfully"`) — a pure query-side miss, not a lost-write bug.
+   Root cause: `pkg/aianalysis/audit.getCorrelationID` (DD-AUDIT-CORRELATION-001) tags every event with
+   `analysis.Spec.RemediationRequestRef.Name` when set, falling back to `RemediationID` only when the
+   ref is empty. Commit `3cfb40ad4` (2026-08-19, a prior unrelated RCA) added a **distinct**
+   `RemediationRequestRef.Name` (e.g. `"e2e-audit-test-rr-<suffix>"`) to these fixtures to satisfy
+   `AgentSessionCreator.GetOrCreate`'s non-empty-ref requirement, without updating the tests' own
+   `remediationID := analysis.Spec.RemediationID` query key (`"e2e-audit-test-<suffix>"`, no `-rr-`) to
+   match — so every write landed under one correlation ID while every query searched for a different
+   one. Fixed by pointing both files' query key at `analysis.Spec.RemediationRequestRef.Name` instead,
+   matching what the writer actually uses (and what these helper functions' own doc comments already
+   said the parameter should be).
+
+**Wiring Manifest** (follow-up round):
+
+| Component | Production Entry Point | Wiring Code Location | Test proving wiring |
+|---|---|---|---|
+| `Config.MaxConcurrentReconciles` | `cmd/aianalysis/main.go` | `internal/config/aianalysis/config.go` | `pkg/aianalysis/config_test.go`: default=10 spec + `Validate()` rejects 0 spec |
 
 **Validation.** `go build ./...`, `golangci-lint run` (0 issues on all touched packages), and
 `make test-unit-aianalysis` (419/421 passed, 2 pre-existing skips, 76.5% composite coverage) all
