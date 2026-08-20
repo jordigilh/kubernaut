@@ -489,11 +489,39 @@ spec:
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
+		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ AlertManager deployed (NodePort %d)\n", AlertManagerNodePort)
 	return nil
+}
+
+// dumpNodePortAllocations lists every Service (all namespaces) with its
+// NodePort(s) and writes it to writer. Issue #2014: two "provided port is
+// already allocated" collisions (30193, then 30191 after relocation) have
+// now been observed with no static claimant found by source-code audit --
+// this dump gives the next occurrence a live culprit (the actual Service
+// object holding the port at failure time) instead of another negative
+// static audit. Best-effort: a dump failure is logged, never promoted to
+// the caller's error (the real failure is the original apply, not this).
+func dumpNodePortAllocations(ctx context.Context, kubeconfigPath string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "  🔎 Issue #2014 diagnostic: dumping all Service NodePort allocations...")
+	dumpCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(dumpCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "svc", "--all-namespaces",
+		"-o", `custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,TYPE:.spec.type,NODEPORTS:.spec.ports[*].nodePort,CREATED:.metadata.creationTimestamp`,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Issue #2014 diagnostic dump failed (non-fatal): %v\n", err)
+		return
+	}
+	_, _ = fmt.Fprintln(writer, "  ── Service NodePort allocations at failure time (Issue #2014) ──")
+	_, _ = writer.Write(out)
+	_, _ = fmt.Fprintln(writer, "  ── end diagnostic dump ──")
 }
 
 // WaitForPrometheusReady polls the Prometheus readiness endpoint until it responds 200 OK.
