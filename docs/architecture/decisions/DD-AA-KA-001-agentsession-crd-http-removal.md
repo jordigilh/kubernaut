@@ -745,6 +745,67 @@ code, gates how high `TEST_PROCS` can go for a clean local repro on `helios08` s
 Actions CI runners (this PR's actual merge gate) are separate infrastructure and are the
 authoritative signal for this change.
 
+---
+### Amendment: #2204 Follow-up Round 2 — dispatch-Lease orphan fix, E2E name-collision fix, and a
+### reverted `Serial` attempt (2026-08-20, `helios08` TEST_PROCS=4 validation)
+
+**1. `kubernautagent` dispatch-Lease orphan (unit test flake).** `UT-AA-KA-065-025`/`-026`
+intermittently found a leftover `dispatch-as-cap-2` Lease. RCA: `Dispatcher.tryDispatch`'s
+terminal-phase bailout (added for Gap 6) re-fetches the `AgentSession` after winning the Lease; if a
+*second*, concurrent `tryDispatch` call (a resync racing the first call's own status write) wins a
+*new* Lease after the first call already deleted its own, then observes the session as
+already-terminal on its own fresh `Get`, it returned without deleting *that* Lease — orphaning it for
+the full 15-minute `dispatchLeaseDuration`. Fixed by adding `deleteDispatchLease` to that bailout path
+too (`internal/kubernautagent/agentsession/dispatcher.go`).
+
+**2. E2E `AgentSession` name collisions under `--procs` (`02_metrics_test.go`, `03_full_flow_test.go`,
+`07_proactive_signal_mode_test.go`, `08_session_async_flow_test.go`,
+`10_not_actionable_e2e_test.go`).** `AgentSessionCreator.GetOrCreate` derives the child
+`AgentSession`'s name deterministically from `RemediationRequestRef.Name` alone (`as-<name>`), with
+no ownership check against the calling `AIAnalysis`. These five files used a hardcoded (non-unique)
+`RemediationRequestRef.Name` in `BeforeEach`/seed helpers; live `helios08` repro (`TEST_PROCS=4`)
+showed a losing parallel process's `AIAnalysis` silently inheriting a foreign, already-terminal
+`AgentSession` it doesn't own (confirmed via `ownerReference` UID mismatch), so its owner-scoped watch
+never woke it again — it hung until either its own `Eventually` or the 25-minute deadline-driven
+backstop. Fixed by appending `randomSuffix()` to every `RemediationRequestRef.Name` in these files.
+
+**3. `audit_flow_integration_test.go`: a `Serial` fix was tried, measured, and reverted.** An earlier
+pass (this same day) diagnosed CI run 32399213648's `Complete Workflow Audit Trail` timeout as this
+file's own documented-but-never-applied "marked Serial" intent (see header comment above) and added
+the `Serial` decorator to enforce it. `helios08` validation (`TEST_PROCS=4`) then measured the actual
+cost: `make test-integration-aianalysis` runs three sibling Ginkgo suites in **one** CLI invocation
+(`aianalysis`, `capacityretry`, `schemarejection`) sharing a single `--timeout=15m` budget
+(`TEST_TIMEOUT_INTEGRATION` in the Makefile — the same 15 minutes as CI's own `timeout: 15` job-minutes
+for this matrix entry). `Serial` forces this Describe's ~15 specs to run back-to-back with zero
+overlap instead of spread across 4 parallel workers; measured wall time was 902s (~15m) for only 62/64
+specs before the shared budget ran out entirely, leaving `capacityretry` and `schemarejection` unable
+to run at all (`"Suite did not run because the timeout elapsed"`) — a deterministic, total suite
+failure, strictly worse than the ~4-7% flake rate `Serial` was meant to fix. **Reverted.** The
+documented 93-96% parallel pass rate is an accepted, bounded, pre-existing flake budget older than
+this PR, not a regression it introduces; the real fix, if pursued, is the file's own documented
+"FUTURE IMPROVEMENTS" explicit-audit-flush path, which removes the race without adding wall-clock
+cost. Re-validated on `helios08` (`TEST_PROCS=4`) with the revert in place: full three-suite run
+completed in 558s (well inside the 15m budget), `aianalysis` 62/64 (the 2 residual failures —
+`graceful_shutdown_test.go`, `metrics_integration_test.go` — both show the same envtest-apiserver
+`connection refused` signature already attributed above to this host's degraded Podman/resource
+state, not this PR's code), `capacityretry` 2/2, `schemarejection` 1/1.
+
+**4. One residual, unexplained E2E flake — flagged, not fixed.** The same `helios08` E2E validation
+run (`TEST_PROCS=4`, post name-collision fix) showed 36/37 passing; the one failure
+(`05_audit_trail_test.go`: `should create audit events in Data Storage for full reconciliation cycle`)
+asserted exactly 1 recorded AI-agent call and got 2. This file already uses `randomSuffix()`
+(fixed in an earlier round, unrelated to today's collision fix), so it is not the same root cause as
+item 2 above. The `kubernautagent` pod had already restarted by the time this was investigated, so its
+logs for the failure window were unavailable, and a standalone re-run (bypassing the suite's
+`SynchronizedBeforeSuite` cluster bootstrap) was not achieved in the time available. Plausible
+hypothesis (unconfirmed): a narrower variant of the dispatch-Lease race in item 1, where both
+competing `tryDispatch` calls observe the `AgentSession` as *not yet* terminal and both proceed to
+`dispatch()` before either's Lease/Status write propagates — a real double-dispatch rather than an
+orphaned Lease. Confidence in this hypothesis is below the 90% bar for a code fix without
+reproduction, so no change was made; flagging here for monitoring across the next few CI runs rather
+than guessing at a fix. If it recurs, capture `kubernautagent` pod logs *before* any subsequent spec
+can trigger a pod restart.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
