@@ -18,12 +18,18 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		fp := remediationv1.FailurePhaseWorkflowExecution
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:       remediationv1.PhaseExecuting,
-				ExecutingStartTime: &now,
-				SelectedWorkflowRef: &remediationv1.WorkflowReference{
-					WorkflowID: "git-revert-v2",
+				OverallPhase: remediationv1.PhaseExecuting,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					ExecutingStartTime: &now,
 				},
-				FailurePhase: &fp,
+				WorkflowSelection: &remediationv1.WorkflowSelection{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{
+						WorkflowID: "git-revert-v2",
+					},
+				},
+				CompletionStatus: &remediationv1.CompletionStatus{
+					FailurePhase: &fp,
+				},
 			},
 		}
 
@@ -39,8 +45,10 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		deadline := metav1.NewTime(now.Add(10 * time.Minute))
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:         remediationv1.PhaseVerifying,
-				VerificationDeadline: &deadline,
+				OverallPhase: remediationv1.PhaseVerifying,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					VerificationDeadline: &deadline,
+				},
 			},
 		}
 		stabilizationEnd := metav1.NewTime(now.Add(5 * time.Minute))
@@ -64,9 +72,11 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseBlocked,
-				BlockReason:  remediationv1.BlockReasonConsecutiveFailures,
-				BlockMessage: "3 consecutive failures. Cooldown expires: 2026-06-18T14:00:00Z",
-				BlockedUntil: &blockedTime,
+				RoutingStatus: &remediationv1.RoutingStatus{
+					BlockReason:  remediationv1.BlockReasonConsecutiveFailures,
+					BlockMessage: "3 consecutive failures. Cooldown expires: 2026-06-18T14:00:00Z",
+					BlockedUntil: &blockedTime,
+				},
 			},
 		}
 
@@ -176,10 +186,14 @@ var _ = Describe("BuildPhaseMetadata", func() {
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:       remediationv1.PhaseExecuting,
-				ExecutingStartTime: &now,
-				SelectedWorkflowRef: &remediationv1.WorkflowReference{
-					WorkflowID: "git-revert-v2",
+				OverallPhase: remediationv1.PhaseExecuting,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					ExecutingStartTime: &now,
+				},
+				WorkflowSelection: &remediationv1.WorkflowSelection{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{
+						WorkflowID: "git-revert-v2",
+					},
 				},
 			},
 		}
@@ -200,7 +214,9 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseCompleted,
-				Outcome:      "Remediated",
+				CompletionStatus: &remediationv1.CompletionStatus{
+					Outcome: "Remediated",
+				},
 			},
 		}
 		meta := handler.BuildPhaseMetadata(rr, nil)
@@ -211,9 +227,11 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		fpPhase := remediationv1.FailurePhaseWorkflowExecution
 		rrFailed := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
-				OverallPhase:  remediationv1.PhaseFailed,
-				FailureReason: &failReason,
-				FailurePhase:  &fpPhase,
+				OverallPhase: remediationv1.PhaseFailed,
+				CompletionStatus: &remediationv1.CompletionStatus{
+					FailureReason: &failReason,
+					FailurePhase:  &fpPhase,
+				},
 			},
 		}
 		metaFailed := handler.BuildPhaseMetadata(rrFailed, nil)
@@ -224,7 +242,9 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		rrSkipped := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseSkipped,
-				SkipReason:   remediationv1.SkipReasonRecentlyRemediated,
+				RoutingStatus: &remediationv1.RoutingStatus{
+					SkipReason: remediationv1.SkipReasonRecentlyRemediated,
+				},
 			},
 		}
 		metaSkipped := handler.BuildPhaseMetadata(rrSkipped, nil)

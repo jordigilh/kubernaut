@@ -159,16 +159,16 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 		// #719: ManualReviewRequired is a terminal suppression state. A human must
 		// act before the system retries — creating new RRs would only produce
 		// immediately-Blocked noise. Suppresses until the RR is acknowledged.
-		if rr.Status.Outcome == "ManualReviewRequired" {
+		if rr.Status.GetCompletionStatus().Outcome == "ManualReviewRequired" {
 			return true, rr, nil
 		}
 
 		// Exponential backoff cooldown (#242, DD-WE-004): Failed/TimedOut RRs with
 		// NextAllowedExecution in the future suppress new RR creation.
-		if rr.Status.NextAllowedExecution != nil &&
-			time.Now().Before(rr.Status.NextAllowedExecution.Time) {
+		if rr.Status.GetRoutingStatus().NextAllowedExecution != nil &&
+			time.Now().Before(rr.Status.GetRoutingStatus().NextAllowedExecution.Time) {
 			if mostRecentBackoffRR == nil ||
-				rr.Status.NextAllowedExecution.After(mostRecentBackoffRR.Status.NextAllowedExecution.Time) {
+				rr.Status.GetRoutingStatus().NextAllowedExecution.After(mostRecentBackoffRR.Status.GetRoutingStatus().NextAllowedExecution.Time) {
 				mostRecentBackoffRR = rr
 			}
 		}

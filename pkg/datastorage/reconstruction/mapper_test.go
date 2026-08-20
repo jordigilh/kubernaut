@@ -227,7 +227,7 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields.Spec.SignalName).To(Equal("OOMKilled"))
-			Expect(rrFields.Status.Outcome).To(Equal("success"))
+			Expect(rrFields.Status.EnsureCompletionStatus().Outcome).To(Equal("success"))
 		})
 
 		It("should still return error when neither gateway.signal.received nor apifrontend.rr.created is present", func() {
@@ -391,7 +391,7 @@ var _ = Describe("Audit Event Mapper", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
 			Expect(rrFields.Status).ToNot(BeNil())
-			Expect(rrFields.Status.Outcome).To(Equal("success"),
+			Expect(rrFields.Status.EnsureCompletionStatus().Outcome).To(Equal("success"),
 				"CC8.1: Mapper must set Status.Outcome from completed event Outcome")
 		})
 
@@ -406,11 +406,11 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
-			Expect(rrFields.Status.Outcome).To(Equal("success"),
+			Expect(rrFields.Status.EnsureCompletionStatus().Outcome).To(Equal("success"),
 				"CC8.1: Outcome must still be mapped even when DurationMs is present")
-			Expect(rrFields.Status.FailurePhase).To(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailurePhase).To(BeNil(),
 				"CC8.1: Completed event must not set FailurePhase")
-			Expect(rrFields.Status.FailureReason).To(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailureReason).To(BeNil(),
 				"CC8.1: Completed event must not set FailureReason")
 		})
 	})
@@ -432,9 +432,9 @@ var _ = Describe("Audit Event Mapper", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
 			Expect(rrFields.Status).ToNot(BeNil())
-			Expect(rrFields.Status.FailurePhase).ToNot(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailurePhase).ToNot(BeNil(),
 				"CC8.1: Mapper must set Status.FailurePhase pointer from failed event")
-			Expect(*rrFields.Status.FailurePhase).To(Equal(remediationv1.FailurePhase("execution")),
+			Expect(*rrFields.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhase("execution")),
 				"CC8.1: Status.FailurePhase must match parsed FailurePhase value")
 		})
 
@@ -455,9 +455,9 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
-			Expect(rrFields.Status.FailureReason).ToNot(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailureReason).ToNot(BeNil(),
 				"CC8.1: Mapper must set Status.FailureReason pointer from ErrorDetails.Message")
-			Expect(*rrFields.Status.FailureReason).To(Equal("AI analysis timed out after 15m"),
+			Expect(*rrFields.Status.EnsureCompletionStatus().FailureReason).To(Equal("AI analysis timed out after 15m"),
 				"CC8.1: Status.FailureReason must match ErrorDetails.Message")
 		})
 
@@ -474,7 +474,7 @@ var _ = Describe("Audit Event Mapper", func() {
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rrFields.Status.Outcome).To(Equal("failure"),
+			Expect(rrFields.Status.EnsureCompletionStatus().Outcome).To(Equal("failure"),
 				"CC8.1: Mapper must set Status.Outcome from failed event Outcome")
 		})
 	})
@@ -514,15 +514,15 @@ var _ = Describe("Audit Event Mapper", func() {
 				"CC8.1: Gateway spec data must survive merge with failed event")
 
 			// Validate failure fields survived merge
-			Expect(rrFields.Status.Outcome).To(Equal("failure"),
+			Expect(rrFields.Status.EnsureCompletionStatus().Outcome).To(Equal("failure"),
 				"CC8.1: Outcome must survive merge from failed orchestrator event")
-			Expect(rrFields.Status.FailurePhase).ToNot(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailurePhase).ToNot(BeNil(),
 				"CC8.1: FailurePhase must survive merge from failed orchestrator event")
-			Expect(*rrFields.Status.FailurePhase).To(Equal(remediationv1.FailurePhase("verification")),
+			Expect(*rrFields.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhase("verification")),
 				"CC8.1: FailurePhase value must be preserved through merge")
-			Expect(rrFields.Status.FailureReason).ToNot(BeNil(),
+			Expect(rrFields.Status.EnsureCompletionStatus().FailureReason).ToNot(BeNil(),
 				"CC8.1: FailureReason must survive merge from failed orchestrator event")
-			Expect(*rrFields.Status.FailureReason).To(Equal("post-remediation verification failed: service still unhealthy"),
+			Expect(*rrFields.Status.EnsureCompletionStatus().FailureReason).To(Equal("post-remediation verification failed: service still unhealthy"),
 				"CC8.1: FailureReason value must be preserved through merge")
 		})
 	})
