@@ -353,6 +353,21 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 		return
 	}
 	if isTerminalPhase(fresh.Status.Phase) {
+		// BR-AI-009 / DD-AA-KA-001 amendment Gap 6 follow-up (2026-08-20,
+		// CI RCA): this tryDispatch call just won (Created or reclaimed) the
+		// dispatch Lease above, but the fresh Get shows the AgentSession
+		// already terminal -- a benign race where a concurrent tryDispatch
+		// call for the same AgentSession (typically a resync tick firing
+		// against a stale, pre-rejection list snapshot) reached
+		// acquireDispatchLease after the original attempt's own
+		// deleteDispatchLease had already run, winning a brand-new Lease
+		// for work that's already done. Without this, that Lease is
+		// orphaned fresh (dispatchLeaseDuration=15m) and blocks any retry
+		// under the same AgentSession name for up to 15 minutes, exactly
+		// the failure mode Gap 6 originally fixed for the direct rejection
+		// path -- confirmed via UT-AA-KA-065-025/026 CI flakes surfacing a
+		// leftover Lease despite the rejection path's own cleanup.
+		d.deleteDispatchLease(ctx, as.Name, as.Namespace)
 		return
 	}
 
