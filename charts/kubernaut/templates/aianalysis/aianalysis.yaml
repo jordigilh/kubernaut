@@ -89,11 +89,15 @@ rules:
   # for the initial dispatch write; "get"/"list"/"watch" because AgentSession
   # is namespace-scoped in this controller's mgr.GetCache() ByObject config
   # (cmd/aianalysis/main.go), so Get() reads go through the informer cache,
-  # not a direct API call. No "agentsessions/status" grant -- AA never
-  # writes Status, only KA does (BR-AA-KA-065.9).
+  # not a direct API call. "delete" (BR-AI-009, DD-AA-KA-001 amendment) is for
+  # AgentSessionCreator.DeleteForRetry, called from
+  # InvestigatingHandler.retryCapacityExceeded to discard a stale
+  # Failed+CapacityExceeded AgentSession so the retry attempt gets a fresh
+  # one. No "agentsessions/status" grant -- AA never writes Status, only KA
+  # does (BR-AA-KA-065.9).
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch", "create"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

@@ -62,6 +62,7 @@ rules:
   - agentsessions
   verbs:
   - create
+  - delete
   - get
   - list
   - watch

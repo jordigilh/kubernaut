@@ -451,8 +451,12 @@ new BR), BR-AA-KA-065 (AA↔KA channel is the `AgentSession` CRD).
 `AgentSessionReasonCapacityExceeded`; `internal/kubernautagent/agentsession/dispatcher.go`'s
 `dispatch()` (`errors.Is` tagging) and `status_writer.go`'s `writeFailedStatus` (new `reason`
 parameter); `pkg/aianalysis/creator/agentsession.go`'s `AgentSessionCreator.DeleteForRetry`;
-`pkg/aianalysis/handlers/investigating.go`'s `handleSessionFailed`/`retryCapacityExceeded`. Test
-coverage: `internal/kubernautagent/agentsession/dispatcher_test.go` (UT-AA-KA-065-025),
+`pkg/aianalysis/handlers/investigating.go`'s `handleSessionFailed`/`retryCapacityExceeded`; AA's
+`agentsessions` RBAC grant gains `delete` (`internal/controller/aianalysis/aianalysis_controller.go`
+kubebuilder marker, regenerated into `config/rbac/role.yaml`, and the hand-authored Helm equivalent
+`charts/kubernaut/templates/aianalysis/aianalysis.yaml` — `DeleteForRetry` is a real API call, not a
+cache-backed read, so both RBAC sources needed the new verb; see RCA note below). Test coverage:
+`internal/kubernautagent/agentsession/dispatcher_test.go` (UT-AA-KA-065-025),
 `pkg/aianalysis/agentsession_creator_test.go` (UT-AA-KA-065-208/209),
 `pkg/aianalysis/investigating_handler_session_test.go` (UT-AA-065-007/008),
 `test/integration/aianalysis/capacityretry` (IT-AA-KA-065-210/211 — deliberately isolated from the
@@ -461,6 +465,24 @@ a directly-seeded `AgentSession` fixture; see that package's `suite_test.go` doc
 `test/e2e/aianalysis/11_capacity_exceeded_retry_e2e_test.go` (E2E-AA-065 — the one layer that drives
 a *genuine* `session.ErrMaxInvestigationsReached` rejection under real concurrent load against the
 E2E cluster's actually-deployed KA, rather than a seeded/synthetic one).
+
+**RCA — first CI run of E2E-AA-065 (2026-08-20)**: 23/120 bursted investigations converged to
+`Failed` instead of retrying. AA's controller log showed `handleSessionFailed` correctly observed
+`Reason == AgentSessionReasonCapacityExceeded` and entered `retryCapacityExceeded`, which then
+failed at `DeleteForRetry` with `agentsessions.kubernaut.ai "..." is forbidden: User
+"system:serviceaccount:kubernaut-system:aianalysis-controller" cannot delete resource
+"agentsessions"` — exactly the fail-closed behavior `retryCapacityExceeded` documents for a delete
+error (fall through to permanent failure rather than risk retrying against an object that might
+still exist). Root cause: AA's pre-existing `agentsessions` RBAC grant was `get;list;watch;create`
+only — `DeleteForRetry` was new production code introduced by this amendment that needed a new verb,
+and neither RBAC source (`kubebuilder:rbac` marker → `config/rbac/role.yaml`, and the Helm chart's
+independent hand-authored `ClusterRole`) was updated alongside it, so integration/unit tests (which
+use fake/envtest clients that don't enforce RBAC) never caught the gap — only a real E2E run against
+an actual API server with the real ServiceAccount surfaced it. Fixed by adding `delete` to both RBAC
+sources; no Go logic changed. Lesson for future `AgentSession`-verb-expanding changes in this
+decision's scope: grep both `+kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions` and
+`charts/kubernaut/templates/*/*.yaml`'s `resources: ["agentsessions"]` block before declaring a new
+client call wired.
 
 ## Future Considerations (not a decision — revisit later)
 

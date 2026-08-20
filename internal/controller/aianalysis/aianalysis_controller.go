@@ -129,7 +129,12 @@ type AIAnalysisReconciler struct {
 // informer even though the call site never reads Spec/Status content.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=list;watch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions/status,verbs=update;patch
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create
+// delete on agentsessions (BR-AI-009, DD-AA-KA-001 amendment): required by
+// creator.AgentSessionCreator.DeleteForRetry, called from
+// InvestigatingHandler.retryCapacityExceeded to discard a stale
+// Failed+CapacityExceeded AgentSession so the next reconcile's GetOrCreate
+// falls through to Create for the retry attempt.
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
