@@ -485,8 +485,8 @@ github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+D
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
-github.com/slack-go/slack v0.27.0 h1:VWOpUzOK6UAPCCQlFxl79jhv8a/b+GOSJMnWziDJ8B8=
-github.com/slack-go/slack v0.27.0/go.mod h1:UEe+jmo9WLlwHB04qsOrTDvqM7Aa4rQL3O5wF3n0hx4=
+github.com/slack-go/slack v0.29.0 h1:ohhMNgp9DmPKiLhH/pNZV4NxhOXKgNy0SH8FzVHNerI=
+github.com/slack-go/slack v0.29.0/go.mod h1:UEe+jmo9WLlwHB04qsOrTDvqM7Aa4rQL3O5wF3n0hx4=
 github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f h1:Z2cODYsUxQPofhpYRMQVwWz4yUVpHF+vPi+eUdruUYI=
 github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f/go.mod h1:JqzWyvTuI2X4+9wOHmKSQCYxybB/8j6Ko43qVmXDuZg=
 github.com/smarty/assertions v1.15.0 h1:cR//PqUBUiQRakZWqBiFFQ9wb8emQGDb0HeGdqGByCY=
@@ -647,8 +647,8 @@ gomodules.xyz/jsonpatch/v2 v2.5.0 h1:JELs8RLM12qJGXU4u/TO3V25KW8GreMKl9pdkk14RM0
 gomodules.xyz/jsonpatch/v2 v2.5.0/go.mod h1:AH3dM2RI6uoBZxn3LVrfvJ3E0/9dG4cSrbuBJT4moAY=
 gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
 gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
-google.golang.org/adk v1.5.1 h1:Ssw1pqDj0oPJ8OOTlFYZpYIlQehBX84EBQSf7yEbe6Q=
-google.golang.org/adk v1.5.1/go.mod h1:kmzzFxl787QWuKxdab74upPCeoM6u8BDSmQa/VvmQ7w=
+google.golang.org/adk v1.6.0 h1:wv506E7+Fw9PCIwbeeRbF9ooaH7cSonbd2tKSNcT3Rs=
+google.golang.org/adk v1.6.0/go.mod h1:R20iBRF+zQdq997kqCM5/Zmwdoo4qbDeElmYPbDCsMQ=
 google.golang.org/api v0.287.1 h1:LiyJx32VU3cwQfLchn/513qKhc25hq0pEANYJoWNnnI=
 google.golang.org/api v0.287.1/go.mod h1:lM2kYRzYUCBY91P9h6VF1PYmvhxii3O5hji37qRvIcY=
 google.golang.org/genai v1.68.0 h1:gmALuBU6mRy46wupEt20wBR1dYAMY13t/jkTxpdzhzE=

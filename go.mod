@@ -45,7 +45,7 @@ require (
 	github.com/prometheus/prometheus v0.313.2
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/slack-go/slack v0.27.0
+	github.com/slack-go/slack v0.29.0
 	github.com/sony/gobreaker/v2 v2.4.0
 	github.com/tektoncd/pipeline v1.15.0
 	github.com/vektah/gqlparser/v2 v2.5.36
@@ -60,7 +60,7 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
-	google.golang.org/adk v1.5.1
+	google.golang.org/adk v1.6.0
 	google.golang.org/genai v1.68.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
