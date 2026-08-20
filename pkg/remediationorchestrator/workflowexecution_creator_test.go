@@ -147,13 +147,13 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(created.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
 
 			// Verify WorkflowRef pass-through from AIAnalysis
-			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
-			Expect(created.Spec.WorkflowRef.Version).To(Equal(ai.Status.SelectedWorkflow.Version))
-			Expect(created.Spec.WorkflowRef.ExecutionBundle).To(Equal(ai.Status.SelectedWorkflow.ExecutionBundle))
+			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(ai.Status.RCAResult.SelectedWorkflow.WorkflowID))
+			Expect(created.Spec.WorkflowRef.Version).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Version))
+			Expect(created.Spec.WorkflowRef.ExecutionBundle).To(Equal(ai.Status.RCAResult.SelectedWorkflow.ExecutionBundle))
 
 			// Verify audit fields
-			Expect(created.Spec.Confidence).To(Equal(ai.Status.SelectedWorkflow.Confidence))
-			Expect(created.Spec.Rationale).To(Equal(ai.Status.SelectedWorkflow.Rationale))
+			Expect(created.Spec.Confidence).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Confidence))
+			Expect(created.Spec.Rationale).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Rationale))
 
 			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
 			Expect(created.Labels).To(BeNil())
@@ -173,18 +173,18 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-snapshot-passthrough", "default")
-			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
-			ai.Status.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
-			ai.Status.SelectedWorkflow.ActionType = "ScaleReplicas"
-			ai.Status.SelectedWorkflow.WorkflowName = "scale-replicas-fix"
-			ai.Status.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
+			ai.Status.RCAResult.SelectedWorkflow.ExecutionEngine = "job"
+			ai.Status.RCAResult.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
+			ai.Status.RCAResult.SelectedWorkflow.ActionType = "ScaleReplicas"
+			ai.Status.RCAResult.SelectedWorkflow.WorkflowName = "scale-replicas-fix"
+			ai.Status.RCAResult.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
 			}
-			ai.Status.SelectedWorkflow.Resources = &corev1.ResourceRequirements{
+			ai.Status.RCAResult.SelectedWorkflow.Resources = &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
 				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
 			}
-			ai.Status.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_POD": true}
+			ai.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_POD": true}
 			ctx := context.Background()
 
 			name, err := weCreator.Create(ctx, rr, ai)
@@ -200,8 +200,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"Issue #1661 Change 11f: ActionType must pass through to WorkflowRef like its siblings")
 			Expect(created.Spec.WorkflowRef.WorkflowName).To(Equal("scale-replicas-fix"),
 				"Issue #1661 Change 12: WorkflowName must pass through to WorkflowRef like its siblings")
-			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.SelectedWorkflow.Dependencies))
-			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.SelectedWorkflow.Resources))
+			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Dependencies))
+			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.RCAResult.SelectedWorkflow.Resources))
 			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))
 		})
 	})
@@ -215,7 +215,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Pod crash loop - parent Deployment needs rollback",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Namespace: "prod",
@@ -243,7 +243,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Node not ready",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Namespace: "", // Cluster-scoped
@@ -271,7 +271,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Incomplete RCA",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Namespace: "prod",
@@ -299,7 +299,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-remediation", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Incomplete RCA",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Namespace: "prod",
@@ -378,15 +378,15 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			},
 			Entry("nil SelectedWorkflow",
 				"SelectedWorkflow is nil",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow = nil },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow = nil },
 				"no selectedWorkflow"),
 			Entry("empty WorkflowID",
 				"WorkflowID is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowID = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.WorkflowID = "" },
 				"workflowId is required"),
 			Entry("empty ExecutionBundle",
 				"ExecutionBundle is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionBundle = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.ExecutionBundle = "" },
 				"executionBundle is required"),
 			Entry("empty ExecutionEngine",
 				// UT-RO-341-002 (Issue #1661 Change 11d, DD-WORKFLOW-018): once WFE
@@ -395,7 +395,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				// instead of failing closed -- so RO must reject it up front,
 				// mirroring the existing WorkflowID/ExecutionBundle checks.
 				"ExecutionEngine is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionEngine = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.ExecutionEngine = "" },
 				"executionEngine is required"),
 			Entry("empty WorkflowName",
 				// UT-RO-1711-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowName
@@ -405,7 +405,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				// snapshot never went through catalog enrichment and must not
 				// silently create a WorkflowExecution with a missing name.
 				"WorkflowName is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowName = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.WorkflowName = "" },
 				"workflowName is required"),
 			Entry("empty ActionType",
 				// UT-RO-1711-002 (Issue #1711 cascade, DD-KA-001 v1.1): ActionType is
@@ -413,13 +413,13 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				// never LLM-suppliable (Issue #1661 Change 12). Same rationale as
 				// WorkflowName above.
 				"ActionType is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ActionType = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.ActionType = "" },
 				"actionType is required"),
 			Entry("empty Version",
 				// UT-RO-1711-003 (Issue #1711 cascade, DD-KA-001 v1.1): Version is
 				// likewise Required on WorkflowSnapshot.
 				"Version is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.Version = "" },
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.RCAResult.SelectedWorkflow.Version = "" },
 				"version is required"),
 		)
 

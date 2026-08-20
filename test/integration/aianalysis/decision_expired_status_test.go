@@ -116,8 +116,8 @@ var _ = Describe("Decision Expired Status Write (#2019/#2020)", Label("integrati
 				}
 				now := metav1.Now()
 				analysis.Status.Phase = aianalysis.PhaseFailed
-				analysis.Status.NeedsHumanReview = true
-				analysis.Status.HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
+				analysis.Status.EnsureReview().NeedsHumanReview = true
+				analysis.Status.EnsureReview().HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
 				analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				analysis.Status.SubReason = "DecisionExpired"
 				analysis.Status.CompletedAt = &now
@@ -126,7 +126,7 @@ var _ = Describe("Decision Expired Status Write (#2019/#2020)", Label("integrati
 				// ApprovalRequired stays unset/false, since the human never
 				// actually confirmed it (AC-6/CM-3: no silent auto-approval of
 				// an action nobody signed off on).
-				analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				analysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: decisionExpiredWorkflowSnapshot(),
 					Confidence:       0.9,
 					Rationale:        "restart the crashlooping pod",
@@ -139,19 +139,19 @@ var _ = Describe("Decision Expired Status Write (#2019/#2020)", Label("integrati
 			var persisted aianalysisv1.AIAnalysis
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
 
-			Expect(persisted.Status.HumanReviewReason).To(Equal(katypes.HumanReviewReasonDecisionExpired),
+			Expect(persisted.Status.GetReview().HumanReviewReason).To(Equal(katypes.HumanReviewReasonDecisionExpired),
 				"AU-2/AU-3: decision_expired must be persisted -- this is the #2019/#2020 audit-of-record fix")
-			Expect(persisted.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(persisted.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"AC-6/CM-3: NeedsHumanReview must stay true -- a presented-but-unanswered decision is never auto-approved")
 			Expect(persisted.Status.Phase).To(Equal("Failed"),
 				"AU-2/AU-3: Phase=Failed must be persisted for audit trail")
 			Expect(persisted.Status.SubReason).To(Equal("DecisionExpired"),
 				"AU-2/AU-3: SubReason must be persisted for structured audit reporting/metrics")
-			Expect(persisted.Status.SelectedWorkflow).NotTo(BeNil(),
+			Expect(persisted.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
 				"AU-2/AU-3: the discovered workflow recommendation must survive -- this is the actual bug #2019/#2020 fixes "+
 					"(previously silently discarded as has_workflow:false)")
-			Expect(persisted.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-recommended-2020"))
-			Expect(persisted.Status.ApprovalRequired).To(BeFalse(),
+			Expect(persisted.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("wf-recommended-2020"))
+			Expect(persisted.Status.GetApproval().ApprovalRequired).To(BeFalse(),
 				"AC-6/CM-3: a decision_expired outcome must never be marked as approved -- no execution without an explicit human decision")
 		})
 	})

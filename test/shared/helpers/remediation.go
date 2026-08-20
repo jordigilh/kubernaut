@@ -271,9 +271,9 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 		if opt.Phase != "" {
 			ai.Status.Phase = opt.Phase
 		}
-		ai.Status.ApprovalRequired = opt.ApprovalRequired
+		ai.Status.EnsureApproval().ApprovalRequired = opt.ApprovalRequired
 		if opt.SelectedWorkflow != nil {
-			ai.Status.SelectedWorkflow = opt.SelectedWorkflow
+			ai.Status.EnsureRCAResult().SelectedWorkflow = opt.SelectedWorkflow
 		}
 	}
 
@@ -331,8 +331,8 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 			},
 		},
 	})
-	ai.Status.ApprovalReason = approvalReason
-	ai.Status.ApprovalContext = &aianalysisv1.ApprovalContext{
+	ai.Status.Approval.ApprovalReason = approvalReason
+	ai.Status.Approval.ApprovalContext = &aianalysisv1.ApprovalContext{
 		Reason:               approvalReason,
 		ConfidenceScore:      0.65,
 		ConfidenceLevel:      "low",

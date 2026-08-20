@@ -114,8 +114,10 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 				Namespace: namespace,
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:     aianalysisv1.PhaseCompleted,
-				RootCause: "Memory leak in container",
+				Phase: aianalysisv1.PhaseCompleted,
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Memory leak in container",
+				},
 			},
 		}
 
@@ -258,8 +260,10 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 				Namespace: namespace,
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:     aianalysisv1.PhaseCompleted,
-				RootCause: "Memory leak in container",
+				Phase: aianalysisv1.PhaseCompleted,
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Memory leak in container",
+				},
 			},
 		}
 
@@ -425,8 +429,10 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 				Namespace: namespace,
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:     aianalysisv1.PhaseCompleted,
-				RootCause: "Memory leak in container",
+				Phase: aianalysisv1.PhaseCompleted,
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Memory leak in container",
+				},
 			},
 		}
 
@@ -592,8 +598,10 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 				Namespace: namespace,
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:     aianalysisv1.PhaseCompleted,
-				RootCause: "Memory leak in container",
+				Phase: aianalysisv1.PhaseCompleted,
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Memory leak in container",
+				},
 			},
 		}
 
@@ -706,8 +714,10 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 				Namespace: namespace,
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:     aianalysisv1.PhaseCompleted,
-				RootCause: "Memory leak in container",
+				Phase: aianalysisv1.PhaseCompleted,
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Memory leak in container",
+				},
 			},
 		}
 

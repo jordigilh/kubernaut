@@ -156,12 +156,12 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 		ai.Status.Message = "Workflow recommended"
-		ai.Status.RootCause = "Root cause identified"
-		ai.Status.ApprovalRequired = opts.ApprovalRequired
+		ai.Status.EnsureRCAResult().RootCause = "Root cause identified"
+		ai.Status.EnsureApproval().ApprovalRequired = opts.ApprovalRequired
 		if opts.ApprovalReason != "" {
-			ai.Status.ApprovalReason = opts.ApprovalReason
+			ai.Status.Approval.ApprovalReason = opts.ApprovalReason
 		}
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID: "restart-pod-v1",
 				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
@@ -175,7 +175,7 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: confidence,
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Root cause identified",
 			Severity:   signalprocessingv1.SeverityCritical,
 			SignalType: "alert",
@@ -215,8 +215,8 @@ func SimulateAINeedsHumanReview(ctx context.Context, k8sClient client.Client, ai
 		}
 		ai.Status.Phase = aianalysisv1.PhaseFailed
 		ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
-		ai.Status.NeedsHumanReview = true
-		ai.Status.HumanReviewReason = "rca_incomplete"
+		ai.Status.EnsureReview().NeedsHumanReview = true
+		ai.Status.Review.HumanReviewReason = "rca_incomplete"
 		ai.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
 		return k8sClient.Status().Update(ctx, ai)
 	})).To(Succeed())

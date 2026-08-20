@@ -401,7 +401,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -411,7 +411,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 			},
 			Confidence: 0.95,
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",

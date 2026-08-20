@@ -96,19 +96,23 @@ var _ = Describe("NotificationCreator", func() {
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:      "restart-pod",
-						WorkflowName:    "restart-pod",
-						Version:         "1.0.0",
-						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
-						ActionType:      "restart",
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							WorkflowName:    "restart-pod",
+							Version:         "1.0.0",
+							ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+							ActionType:      "restart",
+						},
+						Confidence: 0.85,
+						Rationale:  "Pod restart recommended",
 					},
-					Confidence: 0.85,
-					Rationale:  "Pod restart recommended",
+					RootCause: "Memory leak detected",
 				},
-				ApprovalReason: "High severity requires approval",
-				RootCause:      "Memory leak detected",
+				Approval: &aianalysisv1.ApprovalStatus{
+					ApprovalReason: "High severity requires approval",
+				},
 			},
 		}
 
@@ -151,7 +155,7 @@ var _ = Describe("NotificationCreator", func() {
 		})
 
 		It("returns an error when AIAnalysis is missing SelectedWorkflow", func() {
-			ai.Status.SelectedWorkflow = nil
+			ai.Status.RCAResult.SelectedWorkflow = nil
 			nc := creator.NewNotificationCreator(k8sClient, scheme, m)
 			_, err := nc.CreateApprovalNotification(ctx, rr, ai)
 			Expect(err).To(HaveOccurred())
@@ -159,7 +163,7 @@ var _ = Describe("NotificationCreator", func() {
 		})
 
 		It("returns an error when SelectedWorkflow.WorkflowID is empty", func() {
-			ai.Status.SelectedWorkflow.WorkflowID = ""
+			ai.Status.RCAResult.SelectedWorkflow.WorkflowID = ""
 			nc := creator.NewNotificationCreator(k8sClient, scheme, m)
 			_, err := nc.CreateApprovalNotification(ctx, rr, ai)
 			Expect(err).To(HaveOccurred())

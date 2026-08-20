@@ -117,7 +117,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ai.Status.Phase = completed
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
 				Severity:   "critical",
 				SignalType: "alert",
@@ -127,7 +127,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 					Namespace: ns,
 				},
 			}
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-test-001",
 					WorkflowName:    "wf-test-001",
@@ -358,18 +358,18 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 						ai.Status.Phase = completed
 						now := metav1.Now()
 						ai.Status.CompletedAt = &now
-						ai.Status.ApprovalRequired = true
-						ai.Status.ApprovalReason = "Confidence below threshold"
-						ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-							Summary:  "Test root cause - approval required",
-							Severity: "critical",
-							RemediationTarget: &aianalysisv1.RemediationTarget{
-								Kind:      "Deployment",
-								Name:      "test-app",
-								Namespace: ns,
-							},
-						}
-						ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+					ai.Status.EnsureApproval().ApprovalRequired = true
+					ai.Status.Approval.ApprovalReason = "Confidence below threshold"
+					ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+						Summary:  "Test root cause - approval required",
+						Severity: "critical",
+						RemediationTarget: &aianalysisv1.RemediationTarget{
+							Kind:      "Deployment",
+							Name:      "test-app",
+							Namespace: ns,
+						},
+					}
+					ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "wf-test-001",
 								WorkflowName:    "wf-test-001",

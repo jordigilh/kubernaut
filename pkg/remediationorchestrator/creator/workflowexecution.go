@@ -69,10 +69,10 @@ func NewWorkflowExecutionCreator(c client.Client, s *runtime.Scheme, m *metrics.
 // is the immutable execution snapshot every downstream consumer (Job/Tekton/Ansible executor,
 // audit trail, SOC2 CC8.1 reconstruction) trusts without re-validation.
 func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
-	if ai.Status.SelectedWorkflow == nil {
+	sw := ai.Status.GetRCAResult().SelectedWorkflow
+	if sw == nil {
 		return fmt.Errorf("AIAnalysis has no selectedWorkflow")
 	}
-	sw := ai.Status.SelectedWorkflow
 	if sw.WorkflowID == "" {
 		return fmt.Errorf("selectedWorkflow.workflowId is required")
 	}
@@ -118,17 +118,17 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 				UID:        rr.UID,
 			},
 			// WorkflowRef: Direct pass-through from AIAnalysis (BR-ORCH-025)
-			WorkflowRef: buildWorkflowRef(ai.Status.SelectedWorkflow),
+			WorkflowRef: buildWorkflowRef(ai.Status.RCAResult.SelectedWorkflow),
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-KA-212: Prefer LLM-identified RemediationTarget (e.g., Deployment)
 			// over the RR's TargetResource (e.g., Pod) when available.
 			// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
 			ClusterID:      rr.Spec.ClusterID,
-			Parameters:     ai.Status.SelectedWorkflow.Parameters,
+			Parameters:     ai.Status.RCAResult.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
-			Confidence: ai.Status.SelectedWorkflow.Confidence,
-			Rationale:  ai.Status.SelectedWorkflow.Rationale,
+			Confidence: ai.Status.RCAResult.SelectedWorkflow.Confidence,
+			Rationale:  ai.Status.RCAResult.SelectedWorkflow.Rationale,
 			// DD-TIMEOUT-002 / Issue #2176: propagate RO's authoritative Executing
 			// timeout as a self-enforceable absolute deadline. Nil-safe: leaves
 			// TimesOutAt nil when RO has no authoritative Executing timeout, so
@@ -239,8 +239,8 @@ func (c *WorkflowExecutionCreator) Create(
 
 	logger.Info("Created WorkflowExecution CRD",
 		"name", name,
-		"workflowId", ai.Status.SelectedWorkflow.WorkflowID,
-		"executionBundle", ai.Status.SelectedWorkflow.ExecutionBundle,
+		"workflowId", ai.Status.RCAResult.SelectedWorkflow.WorkflowID,
+		"executionBundle", ai.Status.RCAResult.SelectedWorkflow.ExecutionBundle,
 		"targetResource", we.Spec.TargetResource,
 	)
 	return name, nil
@@ -267,8 +267,9 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 // Pod that generated the signal, which is the correct target for patching operations.
 func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
 	// Prefer RemediationTarget from RCA if available
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-		ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	rca := ai.Status.GetRCAResult().RootCauseAnalysis
+	if rca != nil && rca.RemediationTarget != nil {
+		ar := rca.RemediationTarget
 		if ar.Kind != "" && ar.Name != "" {
 			if ar.Namespace != "" {
 				return fmt.Sprintf("%s/%s/%s", ar.Namespace, ar.Kind, ar.Name)

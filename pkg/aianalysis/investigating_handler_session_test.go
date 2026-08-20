@@ -337,8 +337,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should advance to Analyzing phase")
-				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(), "SelectedWorkflow should be populated from result")
-				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(), "SelectedWorkflow should be populated from result")
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
 				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)),
 					"PollCount must be incremented even when poll returns completed")
 				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
@@ -597,7 +597,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase should stay Investigating")
-				Expect(analysis.Status.ConsecutiveFailures).To(BeNumerically(">", 0), "ConsecutiveFailures should be incremented")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(BeNumerically(">", 0), "ConsecutiveFailures should be incremented")
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should requeue with exponential backoff")
 			})
 		})

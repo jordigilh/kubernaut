@@ -226,19 +226,23 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 				Namespace: "kubernaut-system",
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:      "restart-pod",
-						WorkflowName:    "restart-pod",
-						ActionType:      "RestartPod",
-						Version:         "1.0.0",
-						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							WorkflowName:    "restart-pod",
+							ActionType:      "RestartPod",
+							Version:         "1.0.0",
+							ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+						},
+						Confidence: 0.85,
+						Rationale:  "Pod restart recommended for high latency",
 					},
-					Confidence: 0.85,
-					Rationale:  "Pod restart recommended for high latency",
+					RootCause: "Memory leak detected",
 				},
-				ApprovalReason: "High severity requires approval",
-				RootCause:      "Memory leak detected",
+				Approval: &aianalysisv1.ApprovalStatus{
+					ApprovalReason: "High severity requires approval",
+				},
 			},
 		}
 

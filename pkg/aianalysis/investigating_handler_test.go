@@ -268,9 +268,9 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.Warnings).To(HaveLen(2))
-				Expect(analysis.Status.Warnings).To(ContainElement("High memory pressure"))
-				Expect(analysis.Status.Warnings).To(ContainElement("Node scheduling delayed"))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(HaveLen(2))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ContainElement("High memory pressure"))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ContainElement("Node scheduling delayed"))
 			})
 		})
 
@@ -298,10 +298,10 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil())
-				Expect(analysis.Status.RootCauseAnalysis.Summary).To(Equal("OOM caused by memory leak"))
-				Expect(analysis.Status.RootCauseAnalysis.Severity).To(Equal("high"))
-				Expect(analysis.Status.RootCause).To(Equal("OOM caused by memory leak"))
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil())
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(Equal("OOM caused by memory leak"))
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("high"))
+				Expect(analysis.Status.GetRCAResult().RootCause).To(Equal("OOM caused by memory leak"))
 			})
 
 			// BR-AI-008: SelectedWorkflow capture (DD-CONTRACT-002)
@@ -311,11 +311,11 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
-				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
-				Expect(analysis.Status.SelectedWorkflow.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
-				Expect(analysis.Status.SelectedWorkflow.Confidence).To(BeNumerically("~", 0.92, 0.01))
-				Expect(analysis.Status.SelectedWorkflow.Rationale).To(Equal("Selected for OOM recovery"))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil())
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Confidence).To(BeNumerically("~", 0.92, 0.01))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Rationale).To(Equal("Selected for OOM recovery"))
 			})
 
 			// BR-AI-008: AlternativeWorkflows capture (Q12 - for audit/context only)
@@ -325,10 +325,10 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(1))
-				Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal("wf-scale-deployment"))
-				Expect(analysis.Status.AlternativeWorkflows[0].Confidence).To(BeNumerically("~", 0.75, 0.01))
-				Expect(analysis.Status.AlternativeWorkflows[0].Rationale).To(ContainSubstring("scaling"))
+				Expect(analysis.Status.GetRCAResult().AlternativeWorkflows).To(HaveLen(1))
+				Expect(analysis.Status.GetRCAResult().AlternativeWorkflows[0].WorkflowID).To(Equal("wf-scale-deployment"))
+				Expect(analysis.Status.GetRCAResult().AlternativeWorkflows[0].Confidence).To(BeNumerically("~", 0.75, 0.01))
+				Expect(analysis.Status.GetRCAResult().AlternativeWorkflows[0].Rationale).To(ContainSubstring("scaling"))
 			})
 		})
 
@@ -352,7 +352,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				// Simulate max retries already reached (ConsecutiveFailures = 5)
 				// Next error will increment to 6, which exceeds MaxRetries (5)
-				analysis.Status.ConsecutiveFailures = 5
+				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 5
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -361,7 +361,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
 				Expect(analysis.Status.Message).To(ContainSubstring("exceeded max retries"), "Should explain max retries exceeded")
 				Expect(analysis.Status.SubReason).To(Equal("MaxRetriesExceeded"), "Should set SubReason to MaxRetriesExceeded")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
 				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should not requeue after max retries")
 
 				// BR-AUDIT-005 Gap #7: Validate error audit with standardized ErrorDetails
@@ -495,12 +495,12 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
 				// Partial workflow preserved
-				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(), "Partial workflow should be preserved")
-				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(), "Partial workflow should be preserved")
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
 				// RCA preserved
-				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
 				// Issue #588: Warnings are stored separately, not in Message
-				Expect(analysis.Status.Warnings).To(ContainElement(ContainSubstring("Parameter validation failed")))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ContainElement(ContainSubstring("Parameter validation failed")))
 			})
 
 			// BR-KA-197.6: MUST NOT proceed to Analyzing
@@ -539,15 +539,15 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(3), "Should store all 3 validation attempts")
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory).To(HaveLen(3), "Should store all 3 validation attempts")
 
 				// Verify attempt details
-				Expect(analysis.Status.ValidationAttemptsHistory[0].Attempt).To(Equal(1))
-				Expect(analysis.Status.ValidationAttemptsHistory[0].WorkflowID).To(Equal("bad-workflow-1"))
-				Expect(analysis.Status.ValidationAttemptsHistory[0].Errors).To(ContainElement("Workflow not found"))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[0].Attempt).To(Equal(1))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[0].WorkflowID).To(Equal("bad-workflow-1"))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[0].Errors).To(ContainElement("Workflow not found"))
 
-				Expect(analysis.Status.ValidationAttemptsHistory[2].Attempt).To(Equal(3))
-				Expect(analysis.Status.ValidationAttemptsHistory[2].Errors).To(ContainElement("Missing parameter: namespace"))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[2].Attempt).To(Equal(3))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[2].Errors).To(ContainElement("Missing parameter: namespace"))
 			})
 
 			// DD-KA-001 v1.4: Build detailed message from validation attempts
@@ -587,8 +587,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(1))
-				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Timestamp should be parsed")
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory).To(HaveLen(1))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Timestamp should be parsed")
 			})
 
 			// DD-KA-001 v1.4: Handle empty validation history (backward compatibility)
@@ -599,10 +599,10 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when KA doesn't provide it")
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory).To(BeEmpty(), "No history when KA doesn't provide it")
 				// Issue #588: Warnings stored separately, Message only has validation attempt errors
 				Expect(analysis.Status.Message).To(BeEmpty(), "No validation attempts means empty message")
-				Expect(analysis.Status.Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
 			})
 
 			// DD-KA-001 v1.4: Handle malformed timestamp gracefully
@@ -620,9 +620,9 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(1))
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory).To(HaveLen(1))
 				// Timestamp should be set to current time (fallback), not zero
-				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Should use current time as fallback")
+				Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Should use current time as fallback")
 			})
 		})
 	})
@@ -677,8 +677,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.Warnings).To(HaveLen(1))
-				Expect(analysis.Status.Warnings).To(ContainElement("Problem self-resolved - no remediation required"))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(HaveLen(1))
+				Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ContainElement("Problem self-resolved - no remediation required"))
 			})
 		})
 
@@ -704,10 +704,10 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 					"#208: RCA with contributing factors should not be treated as resolved")
-				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
-				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
-				Expect(analysis.Status.RootCauseAnalysis.Summary).To(ContainSubstring("memory spike"))
-				Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(ContainSubstring("memory spike"))
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
 			})
 		})
 
@@ -732,9 +732,9 @@ var _ = Describe("InvestigatingHandler", func() {
 				// #208: Real problem with contributing factors should NOT be treated as "resolved"
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 					"Real problem with RCA should fail (not complete as NoActionRequired)")
-				Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 					"Real problem without workflow should escalate to human review")
-				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(),
 					"RCA should be preserved for operator context")
 			})
 		})
@@ -773,13 +773,13 @@ var _ = Describe("InvestigatingHandler", func() {
 						"#301: KA self-resolved signal should bypass hasSubstantiveRCA")
 					Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
-					Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+					Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse(),
 						"Self-resolved problems do not need human review")
-					Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+					Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(),
 						"RCA should be preserved for audit trail")
-					Expect(analysis.Status.RootCauseAnalysis.Summary).To(
+					Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(
 						ContainSubstring("self-resolved"))
-					Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(
+					Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.ContributingFactors).To(
 						ContainElements("Transient condition", "Auto-recovery"))
 				})
 			})
@@ -812,7 +812,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 						"#208: Active-problem RCA without self-resolved signal must escalate")
-					Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
+					Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
 				})
 			})
 
@@ -964,7 +964,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "503 errors are transient")
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should retry with backoff")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented")
 			})
 
 			It("should classify 429 Too Many Requests as transient and retry", func() {
@@ -1018,7 +1018,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should reset ConsecutiveFailures to 0 on successful API call", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.ConsecutiveFailures = 3
+				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 3
 
 				// Simulate successful API call with complete response
 				mockClient.WithFullResponse(
@@ -1037,7 +1037,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(0)), "Counter reset on success")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(0)), "Counter reset on success")
 			})
 		})
 
@@ -1045,7 +1045,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			// Business Value: Handler retries transient errors with exponential backoff
 			It("should retry transient errors starting from ConsecutiveFailures=0", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.ConsecutiveFailures = 0
+				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
 
 				// Using transient error (503) to trigger retry path
 				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
@@ -1055,7 +1055,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				// Business outcome: Transient errors trigger retry with backoff
 				Expect(err).NotTo(HaveOccurred(), "No error returned, status updated")
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating during retry")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Failure counter incremented")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(1)), "Failure counter incremented")
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff duration set for retry")
 				Expect(analysis.Status.Message).To(ContainSubstring("Transient error"), "Status indicates transient error")
 			})
@@ -1072,14 +1072,14 @@ var _ = Describe("InvestigatingHandler", func() {
 				// Should retry (transient error classification)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented from 0 to 1")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented from 0 to 1")
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff set")
 			})
 
 			// Business Value: Correctly increments retry count on transient failures
 			It("should increment retry count on subsequent transient errors", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.ConsecutiveFailures = 2
+				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 2
 
 				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
@@ -1088,7 +1088,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				// Should retry (not yet at max retries)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(3)), "Counter incremented from 2 to 3")
+				Expect(analysis.Status.GetInvestigationMetadata().ConsecutiveFailures).To(Equal(int32(3)), "Counter incremented from 2 to 3")
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff increases with attempt count")
 				Expect(analysis.Status.Message).To(ContainSubstring("attempt 3/5"), "Status shows progress toward max retries")
 			})
@@ -1134,9 +1134,9 @@ var _ = Describe("InvestigatingHandler", func() {
 					"#388: Should use WorkflowNotNeeded reason")
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"),
 					"#388: SubReason must be NotActionable (distinct from ProblemResolved)")
-				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
+				Expect(analysis.Status.GetRCAResult().Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
 					"#388: Actionability must be NotActionable for benign alerts")
-				Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse(),
 					"#388: Benign alerts should not need human review")
 			})
 
@@ -1183,9 +1183,9 @@ var _ = Describe("InvestigatingHandler", func() {
 					"#388: Not-actionable signal should override #208 substantive-RCA check")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
-				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
+				Expect(analysis.Status.GetRCAResult().Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
 					"#388: Actionability must be NotActionable even with substantive RCA")
-				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(),
 					"RCA should be preserved for audit trail")
 			})
 		})
@@ -1229,8 +1229,8 @@ var _ = Describe("InvestigatingHandler", func() {
 					"#607: actionable=false is authoritative — confidence must not gate it")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 				Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
-				Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable))
-				Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
+				Expect(analysis.Status.GetRCAResult().Actionability).To(Equal(aianalysis.ActionabilityNotActionable))
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse())
 			})
 		})
 
@@ -1264,7 +1264,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"#607: Zero confidence must not block the not-actionable determination")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),
 					"#607: Must be WorkflowNotNeeded, not WorkflowResolutionFailed")
-				Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse())
 			})
 		})
 
@@ -1290,7 +1290,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 					"#607: Warning alone without is_actionable=false must NOT route to NotActionable")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
-				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
 			})
 		})
 
@@ -1341,7 +1341,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 					"#607 regression: Terminal failure path must be unaffected")
 				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
-				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
+				Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
 			})
 		})
 	})

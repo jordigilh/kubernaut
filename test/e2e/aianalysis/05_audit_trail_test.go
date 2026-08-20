@@ -519,7 +519,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			By("Verifying approval is required for production")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue(),
 				"Production environment should require approval per Rego policy")
 
 			remediationID := analysis.Spec.RemediationID

@@ -224,18 +224,18 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				if aa.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
 					aa.Status.Phase == aianalysisv1.PhaseCompleted {
 					aaObj = aa
-					GinkgoWriter.Printf("  AA %s completed: approvalRequired=%v\n", aa.Name, aa.Status.ApprovalRequired)
+					GinkgoWriter.Printf("  AA %s completed: approvalRequired=%v\n", aa.Name, aa.Status.GetApproval().ApprovalRequired)
 					return true
 				}
 			}
 			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should reach Completed phase")
 
-		Expect(aaObj.Status.ApprovalRequired).To(BeTrue(),
+		Expect(aaObj.Status.GetApproval().ApprovalRequired).To(BeTrue(),
 			"AIAnalysis should require approval for production environment (Rego policy)")
-		Expect(aaObj.Status.ApprovalReason).ToNot(BeEmpty(),
+		Expect(aaObj.Status.GetApproval().ApprovalReason).ToNot(BeEmpty(),
 			"AIAnalysis approval reason should be populated")
-		GinkgoWriter.Printf("  ✅ Approval required: reason=%s\n", aaObj.Status.ApprovalReason)
+		GinkgoWriter.Printf("  ✅ Approval required: reason=%s\n", aaObj.Status.GetApproval().ApprovalReason)
 
 		// Verify AA signal context propagated environment, priority, severity, signalMode from SP
 		By("Step 5b: Verifying AA signal context contains full SP-derived fields")

@@ -104,7 +104,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
 			"#610: TotalAnalysisTime must be calculated from StartedAt")
 
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -136,7 +136,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
 			"#610: TotalAnalysisTime must be calculated from StartedAt")
 
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -169,7 +169,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
 			"#610: TotalAnalysisTime must be calculated from StartedAt")
 
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -201,7 +201,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
 			"#610: TotalAnalysisTime must be calculated from StartedAt")
 
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -240,7 +240,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
 			"#610: TotalAnalysisTime must be calculated from StartedAt")
 
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -284,7 +284,7 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.TotalAnalysisTime).To(BeZero(),
+		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeZero(),
 			"#610: TotalAnalysisTime must remain 0 when StartedAt is nil")
 	})
 })

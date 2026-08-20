@@ -200,7 +200,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.RCAResult.SelectedWorkflow = nil
 
 				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).To(HaveOccurred())
@@ -214,7 +214,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.SelectedWorkflow.WorkflowID = ""
+				ai.Status.RCAResult.SelectedWorkflow.WorkflowID = ""
 
 				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).To(HaveOccurred())
@@ -229,8 +229,8 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.RootCause = "legacy field"
-				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				ai.Status.RCAResult.RootCause = "legacy field"
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "RCA Summary: Pod crash due to OOM - Deployment should be scaled",
 				}
 
@@ -252,8 +252,8 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.RootCause = "Legacy root cause text"
-				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				ai.Status.RCAResult.RootCause = "Legacy root cause text"
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "", // Empty - fallback to RootCause
 				}
 
@@ -504,9 +504,9 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.ApprovalReason = "low_confidence"
-				ai.Status.SelectedWorkflow.Confidence = 0.75
-				ai.Status.SelectedWorkflow.WorkflowID = "restart-pod"
+				ai.Status.Approval.ApprovalReason = "low_confidence"
+				ai.Status.RCAResult.SelectedWorkflow.Confidence = 0.75
+				ai.Status.RCAResult.SelectedWorkflow.WorkflowID = "restart-pod"
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1279,10 +1279,10 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.SelectedWorkflow.WorkflowID = "rollback-deployment-v1"
-				ai.Status.SelectedWorkflow.Version = "v2.0.0"
-				ai.Status.SelectedWorkflow.ExecutionEngine = "tekton"
-				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				ai.Status.RCAResult.SelectedWorkflow.WorkflowID = "rollback-deployment-v1"
+				ai.Status.RCAResult.SelectedWorkflow.Version = "v2.0.0"
+				ai.Status.RCAResult.SelectedWorkflow.ExecutionEngine = "tekton"
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "Deployment rollout failed",
 				}
 
@@ -1309,7 +1309,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.RootCause = "Memory exhaustion in container"
+				ai.Status.RCAResult.RootCause = "Memory exhaustion in container"
 
 				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
 				Expect(err).ToNot(HaveOccurred())
@@ -1323,7 +1323,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				// Body should contain RCA and workflow ID
 				Expect(nr.Spec.Body).To(ContainSubstring("Memory exhaustion in container"))
-				Expect(nr.Spec.Body).To(ContainSubstring(ai.Status.SelectedWorkflow.WorkflowID))
+				Expect(nr.Spec.Body).To(ContainSubstring(ai.Status.RCAResult.SelectedWorkflow.WorkflowID))
 			})
 
 			It("should include metadata with remediation context", func() {
@@ -1341,7 +1341,7 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
-				Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
+				Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.RCAResult.SelectedWorkflow.WorkflowID))
 			})
 		})
 
@@ -1503,7 +1503,7 @@ var _ = Describe("NotificationCreator", func() {
 			}
 
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "OOM kills in payment-api",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
@@ -1533,7 +1533,7 @@ var _ = Describe("NotificationCreator", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-305b", "default")
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305b", "default")
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Some issue",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
@@ -1567,8 +1567,8 @@ var _ = Describe("NotificationCreator", func() {
 			}
 
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305c", "default")
-			ai.Status.ApprovalReason = "Production namespace"
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.Approval.ApprovalReason = "Production namespace"
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary: "Memory leak",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "StatefulSet",
@@ -1800,7 +1800,7 @@ var _ = Describe("NotificationCreator", func() {
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 				ai.Status.Message = "Problem self-resolved. No remediation required."
-				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "Node memory pressure cleared after OOM killer freed processes",
 				}
 

@@ -340,9 +340,9 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				"Reason should be WorkflowNotNeeded")
 			Expect(finalAnalysis.Status.SubReason).To(Equal("ProblemResolved"),
 				"SubReason should be ProblemResolved")
-			Expect(finalAnalysis.Status.SelectedWorkflow).To(BeNil(),
+			Expect(finalAnalysis.Status.GetRCAResult().SelectedWorkflow).To(BeNil(),
 				"SelectedWorkflow should be nil (no workflow needed)")
-			Expect(finalAnalysis.Status.ApprovalRequired).To(BeFalse(),
+			Expect(finalAnalysis.Status.GetApproval().ApprovalRequired).To(BeFalse(),
 				"ApprovalRequired should be false (no human review needed)")
 			Expect(finalAnalysis.Status.CompletedAt).ToNot(BeNil(),
 				"CompletedAt should be set")
@@ -499,11 +499,11 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			Expect(finalAnalysis.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted))
 			Expect(finalAnalysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
 			Expect(finalAnalysis.Status.SubReason).To(Equal("ProblemResolved"))
-			Expect(finalAnalysis.Status.NeedsHumanReview).To(BeFalse(),
+			Expect(finalAnalysis.Status.GetReview().NeedsHumanReview).To(BeFalse(),
 				"#301: needs_human_review should be false after parser contradiction override")
-			Expect(finalAnalysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+			Expect(finalAnalysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(),
 				"RCA should be preserved")
-			Expect(finalAnalysis.Status.RootCauseAnalysis.ContributingFactors).NotTo(BeEmpty(),
+			Expect(finalAnalysis.Status.GetRCAResult().RootCauseAnalysis.ContributingFactors).NotTo(BeEmpty(),
 				"#301: Contributing factors should be preserved despite resolution")
 
 			GinkgoWriter.Printf("✅ Problem resolved contradiction test complete (#301)\n")

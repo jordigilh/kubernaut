@@ -59,19 +59,21 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "ai-test", Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart",
-						WorkflowName: "wf-restart",
-						ActionType:   "patch",
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "wf-restart",
+							WorkflowName: "wf-restart",
+							ActionType:   "patch",
+						},
+						Confidence: 0.95,
 					},
-					Confidence: 0.95,
-				},
-				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
-					RemediationTarget: &aianalysisv1.RemediationTarget{
-						Kind:      "Deployment",
-						Name:      "my-app",
-						Namespace: defaultFixture,
+					RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
+						RemediationTarget: &aianalysisv1.RemediationTarget{
+							Kind:      "Deployment",
+							Name:      "my-app",
+							Namespace: defaultFixture,
+						},
 					},
 				},
 			},

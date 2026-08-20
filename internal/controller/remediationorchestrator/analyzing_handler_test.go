@@ -127,27 +127,31 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 		ai := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:            "Completed",
-				ApprovalRequired: approvalRequired,
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart",
-						WorkflowName: "wf-restart",
-						ActionType:   "patch",
-					},
-					Confidence: 0.95,
+				Phase: "Completed",
+				Approval: &aianalysisv1.ApprovalStatus{
+					ApprovalRequired: approvalRequired,
 				},
-				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
-					RemediationTarget: &aianalysisv1.RemediationTarget{
-						Kind:      "Deployment",
-						Name:      "my-app",
-						Namespace: defaultFixture,
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "wf-restart",
+							WorkflowName: "wf-restart",
+							ActionType:   "patch",
+						},
+						Confidence: 0.95,
+					},
+					RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
+						RemediationTarget: &aianalysisv1.RemediationTarget{
+							Kind:      "Deployment",
+							Name:      "my-app",
+							Namespace: defaultFixture,
+						},
 					},
 				},
 			},
 		}
 		if workflowNotNeeded {
-			ai.Status.SelectedWorkflow = nil
+			ai.Status.RCAResult.SelectedWorkflow = nil
 		}
 		return ai
 	}
@@ -295,7 +299,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 
 		It("UT-ANZ-H-010: missing RemediationTarget → delegates to HandleRemediationTargetMissing", func() {
 			ai := completedAI("ai-notarget", false, false)
-			ai.Status.RootCauseAnalysis = nil
+			ai.Status.RCAResult.RootCauseAnalysis = nil
 			rr := analyzingRR("anz-notarget", ai.Name)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ai).Build()
 

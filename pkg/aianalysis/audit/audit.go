@@ -142,25 +142,29 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 // summary. Extracted from RecordAnalysisComplete (Wave 6 6c GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func buildAnalysisCompletePayload(analysis *aianalysisv1.AIAnalysis) *ogenclient.AIAnalysisAuditPayload {
+	im := analysis.Status.GetInvestigationMetadata()
+	approval := analysis.Status.GetApproval()
+	rca := analysis.Status.GetRCAResult()
+
 	// Single source of truth: api/openapi/data-storage-v1.yaml
 	payload := &ogenclient.AIAnalysisAuditPayload{
 		EventType:        EventTypeAnalysisCompleted,
 		AnalysisName:     analysis.Name,
 		Namespace:        analysis.Namespace,
 		Phase:            ogenclient.AIAnalysisAuditPayloadPhase(analysis.Status.Phase),
-		ApprovalRequired: analysis.Status.ApprovalRequired,
-		DegradedMode:     analysis.Status.DegradedMode,
-		WarningsCount:    len(analysis.Status.Warnings),
+		ApprovalRequired: approval.ApprovalRequired,
+		DegradedMode:     im.DegradedMode,
+		WarningsCount:    len(im.Warnings),
 	}
 
 	// Optional fields (OGEN-MIGRATION: Use .SetTo() for optional fields)
-	if analysis.Status.ApprovalReason != "" {
-		payload.ApprovalReason.SetTo(analysis.Status.ApprovalReason)
+	if approval.ApprovalReason != "" {
+		payload.ApprovalReason.SetTo(approval.ApprovalReason)
 	}
-	if analysis.Status.SelectedWorkflow != nil {
-		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
+	if rca.SelectedWorkflow != nil {
+		confidence := float32(rca.SelectedWorkflow.Confidence)
 		payload.Confidence.SetTo(confidence)
-		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+		payload.WorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 	}
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
@@ -172,15 +176,15 @@ func buildAnalysisCompletePayload(analysis *aianalysisv1.AIAnalysis) *ogenclient
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective)
 	// This complements the aiagent.response.complete event (provider perspective)
-	if analysis.Status.InvestigationID != "" {
+	if im.InvestigationID != "" {
 		summary := ogenclient.ProviderResponseSummary{
-			IncidentID:       analysis.Status.InvestigationID,
-			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
+			IncidentID:       im.InvestigationID,
+			AnalysisPreview:  truncateString(rca.RootCause, 500),
 			NeedsHumanReview: determineNeedsHumanReview(analysis),
-			WarningsCount:    len(analysis.Status.Warnings),
+			WarningsCount:    len(im.Warnings),
 		}
-		if analysis.Status.SelectedWorkflow != nil {
-			summary.SelectedWorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+		if rca.SelectedWorkflow != nil {
+			summary.SelectedWorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 		}
 		payload.ProviderResponseSummary.SetTo(summary)
 	}
@@ -319,9 +323,9 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	}
 
 	// Conditional fields (type-safe pointers)
-	if analysis.Status.SelectedWorkflow != nil {
-		payload.Confidence.SetTo(analysis.Status.SelectedWorkflow.Confidence)
-		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+	if sw := analysis.Status.GetRCAResult().SelectedWorkflow; sw != nil {
+		payload.Confidence.SetTo(sw.Confidence)
+		payload.WorkflowID.SetTo(sw.WorkflowID)
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -426,12 +430,12 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 	}
 
 	// No workflow selected = needs human review
-	if analysis.Status.SelectedWorkflow == nil {
+	if analysis.Status.GetRCAResult().SelectedWorkflow == nil {
 		return true
 	}
 
 	// Approval required due to low confidence or validation issues
-	if analysis.Status.ApprovalRequired {
+	if analysis.Status.GetApproval().ApprovalRequired {
 		// High-severity approval reasons suggest human review needed
 		highSeverityReasons := map[string]bool{
 			"WorkflowNotFound":          true,
@@ -625,6 +629,10 @@ func classifyAnalysisFailureError(err error) *sharedaudit.ErrorDetails {
 // RecordAnalysisFailed (Wave 6 6c GREEN: funlen remediation) — pure code
 // motion, no behavior change.
 func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails *sharedaudit.ErrorDetails) ogenclient.AIAnalysisAuditPayload {
+	im := analysis.Status.GetInvestigationMetadata()
+	approval := analysis.Status.GetApproval()
+	rca := analysis.Status.GetRCAResult()
+
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	payload := ogenclient.AIAnalysisAuditPayload{
@@ -632,20 +640,20 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 		AnalysisName:     analysis.Name,
 		Namespace:        analysis.Namespace,
 		Phase:            toAIAnalysisAuditPayloadPhase(analysis.Status.Phase),
-		ApprovalRequired: analysis.Status.ApprovalRequired,
-		DegradedMode:     analysis.Status.DegradedMode,
-		WarningsCount:    len(analysis.Status.Warnings),
+		ApprovalRequired: approval.ApprovalRequired,
+		DegradedMode:     im.DegradedMode,
+		WarningsCount:    len(im.Warnings),
 		ErrorDetails:     toOptErrorDetails(errorDetails), // Gap #7: Standardized error_details for SOC2 compliance
 	}
 
 	// Optional fields (OGEN-MIGRATION: Use .SetTo() for optional fields)
-	if analysis.Status.ApprovalReason != "" {
-		payload.ApprovalReason.SetTo(analysis.Status.ApprovalReason)
+	if approval.ApprovalReason != "" {
+		payload.ApprovalReason.SetTo(approval.ApprovalReason)
 	}
-	if analysis.Status.SelectedWorkflow != nil {
-		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
+	if rca.SelectedWorkflow != nil {
+		confidence := float32(rca.SelectedWorkflow.Confidence)
 		payload.Confidence.SetTo(confidence)
-		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+		payload.WorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 	}
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
@@ -656,15 +664,15 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 	}
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective) if available
-	if analysis.Status.InvestigationID != "" {
+	if im.InvestigationID != "" {
 		summary := ogenclient.ProviderResponseSummary{
-			IncidentID:       analysis.Status.InvestigationID,
-			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
+			IncidentID:       im.InvestigationID,
+			AnalysisPreview:  truncateString(rca.RootCause, 500),
 			NeedsHumanReview: true, // Failures always need human review
-			WarningsCount:    len(analysis.Status.Warnings),
+			WarningsCount:    len(im.Warnings),
 		}
-		if analysis.Status.SelectedWorkflow != nil {
-			summary.SelectedWorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+		if rca.SelectedWorkflow != nil {
+			summary.SelectedWorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 		}
 		payload.ProviderResponseSummary.SetTo(summary)
 	}

@@ -248,7 +248,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Complete AIAnalysis to trigger phase transition to Analyzing
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
 					WorkflowName:    "test-workflow",
@@ -261,7 +261,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution.
 			// Use a unique target name to avoid ResourceBusy conflicts with other tests
 			// that share the same ROControllerNamespace (e.g., IT-AUDIT-COMPLETION-001).
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
 				Severity:   "warning",
 				SignalType: "alert",
@@ -362,7 +362,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}, timeout, interval).Should(BeTrue())
 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
 					WorkflowName:    "test-workflow",
@@ -373,7 +373,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				},
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
 				Severity:   "warning",
 				SignalType: "alert",

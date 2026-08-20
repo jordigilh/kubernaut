@@ -144,7 +144,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		"phase", analysis.Status.Phase,
 		"generation", analysis.Generation,
 		"observedGeneration", analysis.Status.ObservedGeneration,
-		"investigationTime", analysis.Status.InvestigationTime)
+		"investigationTime", analysis.Status.GetInvestigationMetadata().InvestigationTime)
 
 	// 2. HANDLE DELETION
 	if !analysis.DeletionTimestamp.IsZero() {

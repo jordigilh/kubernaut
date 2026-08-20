@@ -117,10 +117,10 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 
 	// Extract workflow metadata from AIAnalysis status
 	var workflowID, workflowVersion, actionType string
-	if ai.Status.SelectedWorkflow != nil {
-		workflowID = ai.Status.SelectedWorkflow.WorkflowID
-		workflowVersion = ai.Status.SelectedWorkflow.Version
-		actionType = ai.Status.SelectedWorkflow.ActionType
+	if sw := ai.Status.GetRCAResult().SelectedWorkflow; sw != nil {
+		workflowID = sw.WorkflowID
+		workflowVersion = sw.Version
+		actionType = sw.ActionType
 	}
 
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(

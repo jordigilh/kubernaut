@@ -74,11 +74,11 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		ai := &aianalysisv1.AIAnalysis{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 		ai.Status.Phase = completed
-		ai.Status.ApprovalRequired = true
-		ai.Status.ApprovalReason = "Confidence below threshold"
-		ai.Status.SelectedWorkflow = aiWorkflow
-		ai.Status.RootCause = "OOMKill detected"
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.EnsureApproval().ApprovalRequired = true
+		ai.Status.Approval.ApprovalReason = "Confidence below threshold"
+		ai.Status.EnsureRCAResult().SelectedWorkflow = aiWorkflow
+		ai.Status.RCAResult.RootCause = "OOMKill detected"
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak causing OOM",
 			Severity:   "critical",
 			SignalType: "alert",

@@ -151,14 +151,14 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 			By("Manually updating AIAnalysis status with needsHumanReview=true (simulating KA response)")
 			analysis.Status.Phase = aianalysisv1.PhaseFailed
 			analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
-			analysis.Status.NeedsHumanReview = true
-			analysis.Status.HumanReviewReason = "rca_incomplete"
+			analysis.Status.EnsureReview().NeedsHumanReview = true
+			analysis.Status.Review.HumanReviewReason = "rca_incomplete"
 			analysis.Status.Message = "RCA analysis incomplete: missing remediationTarget field in incident data"
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			By("Validating AIAnalysis status fields")
-			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(), "NeedsHumanReview must be true")
-			Expect(analysis.Status.HumanReviewReason).To(Equal("rca_incomplete"), "HumanReviewReason must match Mock LLM scenario")
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(), "NeedsHumanReview must be true")
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("rca_incomplete"), "HumanReviewReason must match Mock LLM scenario")
 			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed), "Reason should be WorkflowResolutionFailed")
 			Expect(analysis.Status.Message).To(ContainSubstring("remediationTarget"), "Message should explain missing remediationTarget")
 
@@ -302,10 +302,10 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 			By("Manually updating AIAnalysis status with needsHumanReview=false (simulating KA response)")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-			analysis.Status.NeedsHumanReview = false
-			analysis.Status.HumanReviewReason = ""
+			analysis.Status.EnsureReview().NeedsHumanReview = false
+			analysis.Status.Review.HumanReviewReason = ""
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "restart-pod-v1",
 					WorkflowName:    "restart-pod-v1",
@@ -319,7 +319,7 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 				Rationale:  "High confidence workflow match for pod restart scenario",
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",
 				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
@@ -332,9 +332,9 @@ var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			By("Validating AIAnalysis status (needs_human_review=false)")
-			Expect(analysis.Status.NeedsHumanReview).To(BeFalse(), "NeedsHumanReview must be false for normal flow")
-			Expect(analysis.Status.HumanReviewReason).To(BeEmpty(), "HumanReviewReason should be empty")
-			Expect(analysis.Status.SelectedWorkflow).ToNot(BeNil(), "SelectedWorkflow should be populated")
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse(), "NeedsHumanReview must be false for normal flow")
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(BeEmpty(), "HumanReviewReason should be empty")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil(), "SelectedWorkflow should be populated")
 
 			By("Waiting for RO to create WorkflowExecution")
 			var we *workflowexecutionv1.WorkflowExecution

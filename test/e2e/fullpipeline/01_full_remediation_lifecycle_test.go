@@ -265,8 +265,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		By("Step 5b: Verifying AIAnalysis selected workflow with job engine")
 		aa := &aianalysisv1.AIAnalysis{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
-		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
+		Expect(aa.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
+		Expect(aa.Status.RCAResult.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
 
 		// Verify AA signal context has environment, priority, severity, signalMode from SP
@@ -1259,8 +1259,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		By("AM Step 5b: Verifying AIAnalysis selected workflow with job engine")
 		aa := &aianalysisv1.AIAnalysis{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
-		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
+		Expect(aa.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
+		Expect(aa.Status.RCAResult.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
 
 		// Verify AA signal context propagated environment and priority from SP

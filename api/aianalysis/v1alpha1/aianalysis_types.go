@@ -384,6 +384,77 @@ type AIAnalysisStatus struct {
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 
 	// ========================================
+	// RCA / WORKFLOW SELECTION RESULT (God-struct decomposition, #2189 follow-up)
+	// ========================================
+	// RCAResult bundles the investigation outcome (root cause, selected
+	// workflow, alternatives, actionability). Nil until KA's investigation
+	// produces a result; callers MUST nil-check before dereferencing
+	// (same convention as KASession/InteractiveSession/PostRCAContext below).
+	// +optional
+	RCAResult *RCAResult `json:"rcaResult,omitempty"`
+
+	// ========================================
+	// APPROVAL SIGNALING (God-struct decomposition, #2189 follow-up)
+	// ========================================
+	// Approval bundles human-approval-gating signals. Nil until the
+	// Analyzing phase's Rego evaluation runs.
+	// +optional
+	Approval *ApprovalStatus `json:"approval,omitempty"`
+
+	// ========================================
+	// HUMAN REVIEW SIGNALING (BR-KA-197, God-struct decomposition #2189 follow-up)
+	// Set by Kubernaut Agent when AI cannot produce reliable result
+	// ========================================
+	// Review bundles human-review signaling (KA decision: RCA
+	// incomplete/unreliable) and the shadow-agent alignment verdict.
+	// +optional
+	Review *ReviewStatus `json:"review,omitempty"`
+
+	// ========================================
+	// INVESTIGATION METADATA (God-struct decomposition, #2189 follow-up)
+	// ========================================
+	// InvestigationMetadata bundles KA execution bookkeeping (investigation
+	// ID/duration, warnings, validation history, degraded-mode flag, total
+	// analysis time, consecutive-failure retry counter).
+	// +optional
+	InvestigationMetadata *InvestigationMetadata `json:"investigationMetadata,omitempty"`
+
+	// ========================================
+	// INVESTIGATION SESSION (BR-AA-KA-064)
+	// Tracks the async submit/poll session with Kubernaut Agent
+	// ========================================
+	// KASession tracks the async KA session for submit/poll pattern
+	// +optional
+	KASession *KASession `json:"investigationSession,omitempty"`
+
+	// ========================================
+	// INTERACTIVE SESSION (DD-INTERACTIVE-002)
+	// Tracks the dynamic takeover session for MCP interactive mode (#703)
+	// ========================================
+	// InteractiveSession tracks who is currently driving the investigation.
+	// Populated when a user takes over via MCP; nil during autonomous mode.
+	// DD-INTERACTIVE-002: Every RR is takeover-capable; this is observability-only.
+	// +optional
+	InteractiveSession *InteractiveSessionInfo `json:"interactiveSession,omitempty"`
+
+	// ========================================
+	// POST-RCA CONTEXT (ADR-056)
+	// Runtime-computed cluster characteristics from Kubernaut Agent
+	// ========================================
+	// PostRCAContext holds data computed by Kubernaut Agent after RCA (e.g., DetectedLabels).
+	// Immutable once set — use CEL validation on the PostRCAContext type.
+	// +optional
+	PostRCAContext *PostRCAContext `json:"postRCAContext,omitempty"`
+
+	// Conditions
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// RCAResult bundles the investigation outcome produced by KA's root-cause
+// analysis and workflow selection (God-struct decomposition, #2189 follow-up:
+// AIAnalysisStatus previously carried these as 5 separate top-level fields).
+type RCAResult struct {
+	// ========================================
 	// ROOT CAUSE ANALYSIS RESULTS
 	// ========================================
 	// Identified root cause
@@ -407,20 +478,30 @@ type AIAnalysisStatus struct {
 	// +optional
 	AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
 
-	// ========================================
-	// APPROVAL SIGNALING
-	// ========================================
+	// #388: LLM's assessment of whether the alert warrants action.
+	// Empty when not yet assessed (pre-investigation or error paths).
+	// "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
+	// "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
+	// +kubebuilder:validation:Enum=Actionable;NotActionable
+	// +optional
+	Actionability string `json:"actionability,omitempty"`
+}
+
+// ApprovalStatus bundles human-approval-gating signals set by the Analyzing
+// phase's Rego evaluation (God-struct decomposition, #2189 follow-up).
+type ApprovalStatus struct {
 	// True if approval is required (confidence < 80% or policy requires)
 	ApprovalRequired bool `json:"approvalRequired"`
 	// Reason why approval is required (when ApprovalRequired=true)
 	ApprovalReason string `json:"approvalReason,omitempty"`
 	// Rich context for approval notification
 	ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
+}
 
-	// ========================================
-	// HUMAN REVIEW SIGNALING (BR-KA-197)
-	// Set by Kubernaut Agent when AI cannot produce reliable result
-	// ========================================
+// ReviewStatus bundles human-review signaling set by Kubernaut Agent when
+// the AI cannot produce a reliable result, plus the shadow-agent alignment
+// verdict (BR-KA-197, BR-AI-601; God-struct decomposition #2189 follow-up).
+type ReviewStatus struct {
 	// True if human review required (KA decision: RCA incomplete/unreliable)
 	// BR-KA-197: Triggers NotificationRequest creation in RO
 	// BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
@@ -441,15 +522,13 @@ type AIAnalysisStatus struct {
 	// or compromised. Users should treat shadow findings as the primary content.
 	// +optional
 	AlignmentVerdict *AlignmentVerdictStatus `json:"alignmentVerdict,omitempty"`
+}
 
-	// #388: LLM's assessment of whether the alert warrants action.
-	// Empty when not yet assessed (pre-investigation or error paths).
-	// "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
-	// "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
-	// +kubebuilder:validation:Enum=Actionable;NotActionable
-	// +optional
-	Actionability string `json:"actionability,omitempty"`
-
+// InvestigationMetadata bundles KA execution bookkeeping: correlation ID,
+// duration, non-fatal warnings, validation-attempt history, degraded-mode
+// flag, and the retry counter used by BR-AI-009's backoff logic
+// (God-struct decomposition, #2189 follow-up).
+type InvestigationMetadata struct {
 	// ========================================
 	// INVESTIGATION DETAILS
 	// ========================================
@@ -491,36 +570,82 @@ type AIAnalysisStatus struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
+}
 
-	// ========================================
-	// INVESTIGATION SESSION (BR-AA-KA-064)
-	// Tracks the async submit/poll session with Kubernaut Agent
-	// ========================================
-	// KASession tracks the async KA session for submit/poll pattern
-	// +optional
-	KASession *KASession `json:"investigationSession,omitempty"`
+// GetRCAResult returns Status.RCAResult, or a zero-value *RCAResult if nil,
+// so read call sites can chain field access without repeating a nil-guard.
+// God-struct decomposition (#2189 follow-up): RCAResult/Approval/Review/
+// InvestigationMetadata are pointer bundles (nil until their owning phase
+// populates them), unlike the flat bool/string fields they replaced.
+func (s *AIAnalysisStatus) GetRCAResult() *RCAResult {
+	if s.RCAResult == nil {
+		return &RCAResult{}
+	}
+	return s.RCAResult
+}
 
-	// ========================================
-	// INTERACTIVE SESSION (DD-INTERACTIVE-002)
-	// Tracks the dynamic takeover session for MCP interactive mode (#703)
-	// ========================================
-	// InteractiveSession tracks who is currently driving the investigation.
-	// Populated when a user takes over via MCP; nil during autonomous mode.
-	// DD-INTERACTIVE-002: Every RR is takeover-capable; this is observability-only.
-	// +optional
-	InteractiveSession *InteractiveSessionInfo `json:"interactiveSession,omitempty"`
+// EnsureRCAResult initializes Status.RCAResult if nil and returns it, for
+// write call sites (mirrors the pre-existing KASession/InteractiveSession
+// nil-init-then-mutate convention used throughout this package's handlers).
+func (s *AIAnalysisStatus) EnsureRCAResult() *RCAResult {
+	if s.RCAResult == nil {
+		s.RCAResult = &RCAResult{}
+	}
+	return s.RCAResult
+}
 
-	// ========================================
-	// POST-RCA CONTEXT (ADR-056)
-	// Runtime-computed cluster characteristics from Kubernaut Agent
-	// ========================================
-	// PostRCAContext holds data computed by Kubernaut Agent after RCA (e.g., DetectedLabels).
-	// Immutable once set — use CEL validation on the PostRCAContext type.
-	// +optional
-	PostRCAContext *PostRCAContext `json:"postRCAContext,omitempty"`
+// GetApproval returns Status.Approval, or a zero-value *ApprovalStatus if
+// nil. See GetRCAResult doc comment.
+func (s *AIAnalysisStatus) GetApproval() *ApprovalStatus {
+	if s.Approval == nil {
+		return &ApprovalStatus{}
+	}
+	return s.Approval
+}
 
-	// Conditions
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+// EnsureApproval initializes Status.Approval if nil and returns it. See
+// EnsureRCAResult doc comment.
+func (s *AIAnalysisStatus) EnsureApproval() *ApprovalStatus {
+	if s.Approval == nil {
+		s.Approval = &ApprovalStatus{}
+	}
+	return s.Approval
+}
+
+// GetReview returns Status.Review, or a zero-value *ReviewStatus if nil.
+// See GetRCAResult doc comment.
+func (s *AIAnalysisStatus) GetReview() *ReviewStatus {
+	if s.Review == nil {
+		return &ReviewStatus{}
+	}
+	return s.Review
+}
+
+// EnsureReview initializes Status.Review if nil and returns it. See
+// EnsureRCAResult doc comment.
+func (s *AIAnalysisStatus) EnsureReview() *ReviewStatus {
+	if s.Review == nil {
+		s.Review = &ReviewStatus{}
+	}
+	return s.Review
+}
+
+// GetInvestigationMetadata returns Status.InvestigationMetadata, or a
+// zero-value *InvestigationMetadata if nil. See GetRCAResult doc comment.
+func (s *AIAnalysisStatus) GetInvestigationMetadata() *InvestigationMetadata {
+	if s.InvestigationMetadata == nil {
+		return &InvestigationMetadata{}
+	}
+	return s.InvestigationMetadata
+}
+
+// EnsureInvestigationMetadata initializes Status.InvestigationMetadata if
+// nil and returns it. See EnsureRCAResult doc comment.
+func (s *AIAnalysisStatus) EnsureInvestigationMetadata() *InvestigationMetadata {
+	if s.InvestigationMetadata == nil {
+		s.InvestigationMetadata = &InvestigationMetadata{}
+	}
+	return s.InvestigationMetadata
 }
 
 // PostRCAContext holds data computed by Kubernaut Agent after the RCA phase.
@@ -768,8 +893,8 @@ type AlignmentFindingStatus struct {
 // +kubebuilder:resource:shortName=aia
 // +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.selectedWorkflow.confidence`
-// +kubebuilder:printcolumn:name="Approval Required",type=boolean,JSONPath=`.status.approvalRequired`
+// +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.rcaResult.selectedWorkflow.confidence`
+// +kubebuilder:printcolumn:name="Approval Required",type=boolean,JSONPath=`.status.approval.approvalRequired`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

@@ -84,7 +84,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -97,7 +97,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			Confidence: 0.95,
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
@@ -277,7 +277,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -289,7 +289,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			Confidence: 0.95,
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
@@ -399,8 +399,8 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		ai.Status.Reason = "WorkflowResolutionFailed"
 		ai.Status.SubReason = "NoMatchingWorkflows"
 		ai.Status.Message = "No workflows matched the search criteria"
-		ai.Status.NeedsHumanReview = true
-		ai.Status.HumanReviewReason = "no_matching_workflows"
+		ai.Status.EnsureReview().NeedsHumanReview = true
+		ai.Status.Review.HumanReviewReason = "no_matching_workflows"
 		aiNow := metav1.Now()
 		ai.Status.CompletedAt = &aiNow
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -463,7 +463,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -475,7 +475,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
@@ -566,7 +566,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-scale-hpa",
 				WorkflowName:    "wf-scale-hpa",
@@ -578,7 +578,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.90,
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "HPA maxed out, scaling target pod autoscaler",
 			Severity:   "critical",
 			SignalType: "alert",
@@ -674,7 +674,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -686,7 +686,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.85,
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Generic OOM detected",
 			Severity:   "high",
 			SignalType: "alert",

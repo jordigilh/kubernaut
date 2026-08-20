@@ -286,7 +286,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			// Set phase to Analyzing with a selected workflow (required by AnalyzingHandler)
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.Message = "Analysis in progress"
-			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			testAnalysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
 					WorkflowName:    "wf-restart-pod",
@@ -431,7 +431,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Build()
 
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
-			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			testAnalysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
 					WorkflowName:    "wf-restart-pod",
@@ -511,7 +511,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			// Set phase to Analyzing with a selected workflow
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
-			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			testAnalysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
 					WorkflowName:    "wf-restart-pod",

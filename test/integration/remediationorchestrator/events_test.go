@@ -125,8 +125,8 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.ApprovalRequired = false
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = false
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
 					WorkflowName:    "wf-restart-pods",
@@ -140,7 +140,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				Rationale: "High confidence auto-approve",
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected",
 				Severity:   "critical",
 				SignalType: "alert",
@@ -243,9 +243,9 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = true
+			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
 					WorkflowName:    "wf-restart-pods",

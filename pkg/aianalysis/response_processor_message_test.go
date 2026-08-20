@@ -102,7 +102,7 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 		Expect(analysis.Status.Message).ToNot(ContainSubstring("Retry budget exhausted"))
 
 		// Warnings must be set independently
-		Expect(analysis.Status.Warnings).To(ConsistOf("LLM output was not structured JSON", "Retry budget exhausted"))
+		Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ConsistOf("LLM output was not structured JSON", "Retry budget exhausted"))
 	})
 
 	// UT-AA-588-002: Status.Warnings is populated independently from Status.Message.
@@ -134,7 +134,7 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 			"Status.Message must be empty when there are no validation attempts")
 
 		// Warnings must still be populated
-		Expect(analysis.Status.Warnings).To(ConsistOf("Workflow not found in catalog", "Search scope was empty"))
+		Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(ConsistOf("Workflow not found in catalog", "Search scope was empty"))
 	})
 
 	// UT-AA-588-003: Both fields empty when no validation attempts and no warnings.
@@ -161,7 +161,7 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 
 		Expect(analysis.Status.Message).To(BeEmpty(),
 			"Status.Message must be empty when no validation attempts and no warnings")
-		Expect(analysis.Status.Warnings).To(BeNil(),
+		Expect(analysis.Status.GetInvestigationMetadata().Warnings).To(BeNil(),
 			"Status.Warnings must be nil when resp.Warnings is nil")
 	})
 })

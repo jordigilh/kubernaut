@@ -68,10 +68,11 @@ func validateApprovalPreconditions(ai *aianalysisv1.AIAnalysis) error {
 	if ai == nil {
 		return fmt.Errorf("AIAnalysis is nil")
 	}
-	if ai.Status.SelectedWorkflow == nil {
+	sw := ai.Status.GetRCAResult().SelectedWorkflow
+	if sw == nil {
 		return fmt.Errorf("AIAnalysis %s/%s missing SelectedWorkflow for approval request", ai.Namespace, ai.Name)
 	}
-	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+	if sw.WorkflowID == "" {
 		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
 	}
 	return nil
@@ -164,7 +165,7 @@ func (c *ApprovalCreator) Create(
 
 	logger.Info("Created RemediationApprovalRequest",
 		"name", name,
-		"confidence", ai.Status.SelectedWorkflow.Confidence,
+		"confidence", ai.Status.GetRCAResult().SelectedWorkflow.Confidence,
 		"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
 	)
 
@@ -187,11 +188,12 @@ func confidenceLevelFor(confidence float64) string {
 // approvalInvestigationSummary picks the best available investigation summary: the
 // legacy RootCause string, falling back to the structured RootCauseAnalysis.Summary.
 func approvalInvestigationSummary(ai *aianalysisv1.AIAnalysis) string {
-	if ai.Status.RootCause != "" {
-		return ai.Status.RootCause
+	rca := ai.Status.GetRCAResult()
+	if rca.RootCause != "" {
+		return rca.RootCause
 	}
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
-		return ai.Status.RootCauseAnalysis.Summary
+	if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.Summary != "" {
+		return rca.RootCauseAnalysis.Summary
 	}
 	return "Investigation completed"
 }
@@ -236,21 +238,23 @@ func (c *ApprovalCreator) buildApprovalRequest(
 
 	confidence := float64(0)
 	var recommendedWorkflow remediationv1.RecommendedWorkflowSummary
-	if ai.Status.SelectedWorkflow != nil {
-		confidence = ai.Status.SelectedWorkflow.Confidence
+	if sw := ai.Status.GetRCAResult().SelectedWorkflow; sw != nil {
+		confidence = sw.Confidence
 		recommendedWorkflow = remediationv1.RecommendedWorkflowSummary{
-			WorkflowID:      ai.Status.SelectedWorkflow.WorkflowID,
-			Version:         ai.Status.SelectedWorkflow.Version,
-			ExecutionBundle: ai.Status.SelectedWorkflow.ExecutionBundle,
-			Rationale:       ai.Status.SelectedWorkflow.Rationale,
+			WorkflowID:      sw.WorkflowID,
+			Version:         sw.Version,
+			ExecutionBundle: sw.ExecutionBundle,
+			Rationale:       sw.Rationale,
 		}
 	}
+
+	approvalReason := ai.Status.GetApproval().ApprovalReason
 
 	// Build recommended actions using the actual Rego policy reason (Issue #206)
 	recommendedActions := []remediationv1.ApprovalRecommendedAction{
 		{
 			Action:    "Review the recommended workflow and approve if appropriate",
-			Rationale: ai.Status.ApprovalReason,
+			Rationale: approvalReason,
 		},
 	}
 
@@ -273,16 +277,16 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			ClusterID:            rr.Spec.ClusterID,
 			Confidence:           confidence,
 			ConfidenceLevel:      confidenceLevelFor(confidence),
-			Reason:               ai.Status.ApprovalReason,
+			Reason:               approvalReason,
 			RecommendedWorkflow:  recommendedWorkflow,
 			InvestigationSummary: approvalInvestigationSummary(ai),
 			RecommendedActions:   recommendedActions,
-			WhyApprovalRequired:  ai.Status.ApprovalReason,
+			WhyApprovalRequired:  approvalReason,
 			RequiredBy:           requiredBy,
 		},
 	}
 
-	applyApprovalContext(rar, ai.Status.ApprovalContext)
+	applyApprovalContext(rar, ai.Status.GetApproval().ApprovalContext)
 
 	return rar
 }
