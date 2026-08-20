@@ -145,7 +145,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 			Expect(rr.Status.OverallPhase).To(Equal(phase.Failed))
-			Expect(rr.Status.FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseSignalProcessing)))
+			Expect(rr.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseSignalProcessing)))
 		})
 
 		It("UT-AT-008: Verifying dispatches to transitionToVerifying", func() {
@@ -205,13 +205,13 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 			Expect(string(rr.Status.OverallPhase)).To(Equal(string(remediationv1.PhaseCompleted)))
-			Expect(rr.Status.Outcome).To(Equal("DryRun"))
+			Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("DryRun"))
 		})
 
 		It("UT-RO-712-005b: already-Completed RR is a no-op on double-reconcile (idempotency)", func() {
 			rr := newRemediationRequest("test-dryrun-idem", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
-			rr.Status.Outcome = "DryRun"
+			rr.Status.EnsureCompletionStatus().Outcome = "DryRun"
 			completedAt := metav1.Now()
 			rr.Status.CompletedAt = &completedAt
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
@@ -253,7 +253,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			_, err := r.ApplyTransition(ctx, rr, intent)
 			Expect(err).ToNot(HaveOccurred())
 			expectedNAE := time.Now().Add(holdPeriod)
-			Expect(rr.Status.NextAllowedExecution).To(HaveValue(WithTransform(
+			Expect(rr.Status.EnsureRoutingStatus().NextAllowedExecution).To(HaveValue(WithTransform(
 				func(t metav1.Time) time.Time { return t.Time },
 				BeTemporally("~", expectedNAE, 5*time.Second),
 			)))
@@ -263,8 +263,8 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-dryrun-preserve", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			laterBackoff := metav1.NewTime(time.Now().Add(24 * time.Hour))
-			rr.Status.NextAllowedExecution = &laterBackoff
-			rr.Status.ConsecutiveFailureCount = 3
+			rr.Status.EnsureRoutingStatus().NextAllowedExecution = &laterBackoff
+			rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = 3
 			holdPeriod := 30 * time.Minute
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -273,8 +273,8 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
 			_, err := r.ApplyTransition(ctx, rr, intent)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr.Status.NextAllowedExecution.Time).To(BeTemporally("~", laterBackoff.Time, 1*time.Second))
-			Expect(rr.Status.ConsecutiveFailureCount).To(Equal(int32(3)))
+			Expect(rr.Status.EnsureRoutingStatus().NextAllowedExecution.Time).To(BeTemporally("~", laterBackoff.Time, 1*time.Second))
+			Expect(rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(3)))
 		})
 	})
 

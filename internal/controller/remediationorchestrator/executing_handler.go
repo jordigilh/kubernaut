@@ -94,7 +94,7 @@ func (h *ExecutingHandler) Phase() phase.Phase {
 func (h *ExecutingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.WorkflowExecutionRef == nil {
+	if rr.Status.EnsurePhaseProgress().WorkflowExecutionRef == nil {
 		logger.Error(nil, "Executing phase but no WorkflowExecutionRef - corrupted state")
 		return phase.Fail(remediationv1.FailurePhaseWorkflowExecution,
 			fmt.Errorf("WorkflowExecution not found"),
@@ -109,7 +109,7 @@ func (h *ExecutingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 
 	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
 		logger.Error(nil, "WorkflowExecution CRD not found",
-			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
+			"workflowExecutionRef", rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name)
 		return phase.Fail(remediationv1.FailurePhaseWorkflowExecution,
 			fmt.Errorf("WorkflowExecution not found"),
 			"child CRD missing"), nil
@@ -117,8 +117,8 @@ func (h *ExecutingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 
 	we := &workflowexecutionv1.WorkflowExecution{}
 	if err := h.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.WorkflowExecutionRef.Name,
-		Namespace: rr.Status.WorkflowExecutionRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Namespace,
 	}, we); err != nil {
 		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
 		return phase.Fail(remediationv1.FailurePhaseWorkflowExecution,
@@ -126,7 +126,7 @@ func (h *ExecutingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 			"failed to fetch WE CRD"), nil
 	}
 
-	if rr.Status.DeduplicatedByWE != "" {
+	if rr.Status.EnsureRoutingStatus().DeduplicatedByWE != "" {
 		return h.handleDedupResultPropagation(ctx, rr)
 	}
 
@@ -155,7 +155,7 @@ func (h *ExecutingHandler) handleWEStatus(ctx context.Context, rr *remediationv1
 			logger.Info("WorkflowExecution failed as Deduplicated, setting DeduplicatedByWE",
 				"originalWFE", we.Status.DeduplicatedBy)
 
-			rr.Status.DeduplicatedByWE = we.Status.DeduplicatedBy
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE = we.Status.DeduplicatedBy
 			if err := h.client.Status().Update(ctx, rr); err != nil {
 				return phase.TransitionIntent{}, fmt.Errorf("failed to set DeduplicatedByWE: %w", err)
 			}
@@ -191,33 +191,33 @@ func (h *ExecutingHandler) handleWEStatus(ctx context.Context, rr *remediationv1
 func (h *ExecutingHandler) handleDedupResultPropagation(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
-		"originalWFE", rr.Status.DeduplicatedByWE,
+		"originalWFE", rr.Status.EnsureRoutingStatus().DeduplicatedByWE,
 	)
 
 	originalWFE := &workflowexecutionv1.WorkflowExecution{}
 	err := h.apiReader.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.DeduplicatedByWE,
+		Name:      rr.Status.EnsureRoutingStatus().DeduplicatedByWE,
 		Namespace: rr.Namespace,
 	}, originalWFE)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Error(nil, "Original WFE deleted (dangling DeduplicatedByWE reference)")
 			return phase.InheritFail(
-				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.DeduplicatedByWE),
-				rr.Status.DeduplicatedByWE, "WorkflowExecution",
+				fmt.Errorf("original WorkflowExecution %q deleted before completion", rr.Status.EnsureRoutingStatus().DeduplicatedByWE),
+				rr.Status.EnsureRoutingStatus().DeduplicatedByWE, "WorkflowExecution",
 				"original WFE deleted"), nil
 		}
-		return phase.TransitionIntent{}, fmt.Errorf("failed to fetch original WFE %q: %w", rr.Status.DeduplicatedByWE, err)
+		return phase.TransitionIntent{}, fmt.Errorf("failed to fetch original WFE %q: %w", rr.Status.EnsureRoutingStatus().DeduplicatedByWE, err)
 	}
 
 	switch originalWFE.Status.Phase {
 	case workflowexecutionv1.PhaseCompleted:
-		return phase.InheritComplete(rr.Status.DeduplicatedByWE, "WorkflowExecution",
+		return phase.InheritComplete(rr.Status.EnsureRoutingStatus().DeduplicatedByWE, "WorkflowExecution",
 			"original WFE completed"), nil
 	case workflowexecutionv1.PhaseFailed:
 		return phase.InheritFail(
 			fmt.Errorf("original WorkflowExecution %q failed: %s", originalWFE.Name, originalWFE.Status.FailureReason),
-			rr.Status.DeduplicatedByWE, "WorkflowExecution",
+			rr.Status.EnsureRoutingStatus().DeduplicatedByWE, "WorkflowExecution",
 			"original WFE failed"), nil
 	default:
 		logger.Info("Original WFE still in progress, requeuing",
@@ -266,12 +266,12 @@ func (h *ExecutingHandler) createWFEFailureManualReviewNR(ctx context.Context, r
 	}
 
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		for _, existing := range rr.Status.NotificationRequestRefs {
+		for _, existing := range rr.Status.EnsureCompletionStatus().NotificationRequestRefs {
 			if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
 				return nil
 			}
 		}
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist ManualReview NR ref (non-critical)", "notification", notifName)

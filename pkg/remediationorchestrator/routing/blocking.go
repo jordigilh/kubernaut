@@ -452,11 +452,11 @@ func countConsecutiveFailures(logger logr.Logger, history []remediationv1.Remedi
 		case item.Status.OverallPhase == remediationv1.PhaseFailed || item.Status.OverallPhase == remediationv1.PhaseBlocked:
 			consecutiveFailures++
 			logger.Info("Counted failed/blocked RR", "name", item.Name, "phase", item.Status.OverallPhase, "consecutiveFailures", consecutiveFailures)
-		case item.Status.OverallPhase == remediationv1.PhaseCompleted && item.Status.Outcome == "Inconclusive":
+		case item.Status.OverallPhase == remediationv1.PhaseCompleted && item.Status.GetCompletionStatus().Outcome == "Inconclusive":
 			consecutiveFailures++
 			logger.Info("Counted Completed+Inconclusive RR as functional failure", "name", item.Name, "consecutiveFailures", consecutiveFailures)
 		case item.Status.OverallPhase == remediationv1.PhaseCompleted:
-			logger.Info("Found completed RR with successful outcome - breaking chain", "name", item.Name, "outcome", item.Status.Outcome, "consecutiveFailures", consecutiveFailures)
+			logger.Info("Found completed RR with successful outcome - breaking chain", "name", item.Name, "outcome", item.Status.GetCompletionStatus().Outcome, "consecutiveFailures", consecutiveFailures)
 			return consecutiveFailures
 		default:
 			// Ignore RRs in other phases (Pending, Processing, etc.) - they're not terminal yet
@@ -693,12 +693,12 @@ func (r *RoutingEngine) CheckExponentialBackoff(
 	logger := log.FromContext(ctx)
 
 	// No backoff configured
-	if rr.Status.NextAllowedExecution == nil {
+	if rr.Status.GetRoutingStatus().NextAllowedExecution == nil {
 		return nil
 	}
 
 	now := time.Now()
-	nextAllowed := rr.Status.NextAllowedExecution.Time
+	nextAllowed := rr.Status.GetRoutingStatus().NextAllowedExecution.Time
 
 	// Backoff expired - can proceed
 	if nextAllowed.Before(now) || nextAllowed.Equal(now) {
@@ -713,7 +713,7 @@ func (r *RoutingEngine) CheckExponentialBackoff(
 	logger.Info("Blocking due to exponential backoff",
 		"nextAllowedExecution", nextAllowed.Format(time.RFC3339),
 		"requeueAfter", requeueAfter,
-		"consecutiveFailures", rr.Status.ConsecutiveFailureCount)
+		"consecutiveFailures", rr.Status.GetRoutingStatus().ConsecutiveFailureCount)
 
 	return &BlockingCondition{
 		Blocked:      true,
@@ -753,7 +753,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
 
-		retryCount := rr.Status.ConsecutiveFailureCount
+		retryCount := rr.Status.GetRoutingStatus().ConsecutiveFailureCount
 		backoffDuration := r.calculateScopeBackoff(retryCount)
 		blockedUntil := time.Now().Add(backoffDuration)
 		return &BlockingCondition{
@@ -772,7 +772,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		return nil
 	}
 
-	retryCount := rr.Status.ConsecutiveFailureCount
+	retryCount := rr.Status.GetRoutingStatus().ConsecutiveFailureCount
 	backoffDuration := r.calculateScopeBackoff(retryCount)
 	blockedUntil := time.Now().Add(backoffDuration)
 

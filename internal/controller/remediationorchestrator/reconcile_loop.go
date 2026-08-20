@@ -189,7 +189,7 @@ func (r *Reconciler) checkGlobalTimeout(ctx context.Context, rr *remediationv1.R
 func (r *Reconciler) shouldSkipPendingReconcile(rr *remediationv1.RemediationRequest, logger logr.Logger) bool {
 	if rr.Status.ObservedGeneration == rr.Generation &&
 		rr.Status.OverallPhase == phase.Pending &&
-		rr.Status.SignalProcessingRef != nil {
+		rr.Status.EnsurePhaseProgress().SignalProcessingRef != nil {
 		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,

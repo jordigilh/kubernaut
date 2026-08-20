@@ -146,7 +146,7 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 	if spName != "" {
-		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 			APIVersion: signalprocessingv1.GroupVersion.String(),
 			Kind:       "SignalProcessing",
 			Name:       spName,
@@ -155,7 +155,7 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	}
 
 	if aiName != "" {
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 			APIVersion: aianalysisv1.GroupVersion.String(),
 			Kind:       "AIAnalysis",
 			Name:       aiName,
@@ -164,7 +164,7 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	}
 
 	if weName != "" {
-		rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 			APIVersion: workflowexecutionv1.GroupVersion.String(),
 			Kind:       "WorkflowExecution",
 			Name:       weName,
@@ -492,7 +492,7 @@ func newSignalProcessingFailed(name, namespace, rrName, message string) *signalp
 	sp := newSignalProcessing(name, namespace, rrName, signalprocessingv1.PhaseFailed)
 	now := metav1.Now()
 	sp.Status.CompletionTime = &now
-	sp.Status.Error = message
+	sp.Status.EnsureFailureInfo().Error = message
 	return sp
 }
 
@@ -625,9 +625,9 @@ func newRemediationRequestWithPhaseTimeout(name, namespace string, phase remedia
 	phaseStartTime := metav1.NewTime(time.Now().Add(timeDelta))
 	switch phase {
 	case remediationv1.PhaseProcessing:
-		rr.Status.ProcessingStartTime = &phaseStartTime
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &phaseStartTime
 		if childRefName != "" {
-			rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 				APIVersion: signalprocessingv1.GroupVersion.String(),
 				Kind:       "SignalProcessing",
 				Name:       childRefName,
@@ -635,9 +635,9 @@ func newRemediationRequestWithPhaseTimeout(name, namespace string, phase remedia
 			}
 		}
 	case remediationv1.PhaseAnalyzing:
-		rr.Status.AnalyzingStartTime = &phaseStartTime
+		rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &phaseStartTime
 		if childRefName != "" {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 				APIVersion: aianalysisv1.GroupVersion.String(),
 				Kind:       "AIAnalysis",
 				Name:       childRefName,
@@ -645,9 +645,9 @@ func newRemediationRequestWithPhaseTimeout(name, namespace string, phase remedia
 			}
 		}
 	case remediationv1.PhaseExecuting:
-		rr.Status.ExecutingStartTime = &phaseStartTime
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &phaseStartTime
 		if childRefName != "" {
-			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
 				Name:       childRefName,

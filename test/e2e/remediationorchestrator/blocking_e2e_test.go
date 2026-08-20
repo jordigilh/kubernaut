@@ -180,7 +180,7 @@ var _ = Describe("BR-ORCH-042.5: Ineffective Remediation Chain Target-Resource S
 
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
-		Expect(fetched.Status.BlockReason).ToNot(Equal(remediationv1.BlockReasonIneffectiveChain),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).ToNot(Equal(remediationv1.BlockReasonIneffectiveChain),
 			"ns-b/app must not be blocked with IneffectiveChain by ns-a's cross-namespace history")
 
 		GinkgoWriter.Printf("✅ E2E-RO-1802-001: ns-b/app WorkflowExecution %s created -- not blocked by ns-a's cross-namespace chain\n", we.Name)

@@ -130,10 +130,10 @@ var _ = Describe("Escalation Lifecycle [#1456 / FedRAMP IR-5, SI-4]", Label("e2e
 			var rr remediationv1.RemediationRequest
 			g.Expect(apiReader.Get(testCtx, client.ObjectKey{Name: rrName, Namespace: namespace}, &rr)).To(Succeed())
 			GinkgoWriter.Printf("  RR %s: phase=%s outcome=%s\n",
-				rr.Name, rr.Status.OverallPhase, rr.Status.Outcome)
+				rr.Name, rr.Status.OverallPhase, rr.Status.EnsureCompletionStatus().Outcome)
 			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"#1456: RR must reach terminal Completed phase")
-			g.Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"),
+			g.Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 				"#1456: RR outcome must be ManualReviewRequired for operator escalation")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 

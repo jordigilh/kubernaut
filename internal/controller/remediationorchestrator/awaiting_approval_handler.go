@@ -167,15 +167,15 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 // from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 // Returns done=true when the caller must return (intent, err) immediately.
 func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, logger logr.Logger) (*aianalysisv1.AIAnalysis, *aianalysisv1.AIAnalysis, phase.TransitionIntent, bool, error) {
-	if rr.Status.AIAnalysisRef == nil {
+	if rr.Status.EnsurePhaseProgress().AIAnalysisRef == nil {
 		logger.Error(nil, "AIAnalysisRef not set on RemediationRequest (ADR-040 invariant)")
 		return nil, nil, phase.Requeue(config.RequeueGenericError, "AIAnalysisRef nil"), true, nil
 	}
 
 	ai := &aianalysisv1.AIAnalysis{}
 	if err := h.k8sClient.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.AIAnalysisRef.Name,
-		Namespace: rr.Status.AIAnalysisRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace,
 	}, ai); err != nil {
 		logger.Error(err, "Failed to fetch AIAnalysis CRD")
 		return nil, nil, phase.Requeue(config.RequeueGenericError, "AI fetch failed"), true, nil
@@ -228,7 +228,7 @@ func (h *AwaitingApprovalHandler) capturePostApprovalHash(ctx context.Context, r
 			fmt.Sprintf("Pre-remediation hash unavailable for %s/%s: %s", remTarget.Kind, remTarget.Name, degradedReason))
 		remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, h.m)
 	}
-	if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+	if preHash != "" && rr.Status.EnsureOperatorAudit().PreRemediationSpecHash == "" {
 		if err := h.callbacks.PersistPreHash(ctx, rr, preHash); err != nil {
 			logger.Error(err, "Failed to persist pre-remediation hash (non-fatal)")
 		}

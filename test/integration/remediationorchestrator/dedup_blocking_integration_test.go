@@ -75,7 +75,7 @@ func waitForBlocked(name string) {
 		if fetched.Status.OverallPhase != remediationv1.PhaseBlocked {
 			return ""
 		}
-		return fetched.Status.BlockReason
+		return fetched.Status.EnsureRoutingStatus().BlockReason
 	}, timeout, 25*time.Millisecond).Should(Equal(remediationv1.BlockReasonDuplicateInProgress),
 		"RO should naturally block %s/%s as DuplicateInProgress", ROControllerNamespace, name)
 }
@@ -93,13 +93,13 @@ func injectTerminalStatus(name string, phase remediationv1.RemediationPhase) {
 		fetched.Status.OverallPhase = phase
 		switch phase {
 		case remediationv1.PhaseCompleted:
-			fetched.Status.Outcome = "Remediated"
+			fetched.Status.EnsureCompletionStatus().Outcome = "Remediated"
 			fetched.Status.CompletedAt = &now
 		case remediationv1.PhaseFailed:
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := "original failure"
-			fetched.Status.FailurePhase = &failPhase
-			fetched.Status.FailureReason = &failReason
+			fetched.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			fetched.Status.EnsureCompletionStatus().FailureReason = &failReason
 			fetched.Status.CompletedAt = &now
 		}
 		fetched.Status.ObservedGeneration = fetched.Generation
@@ -142,7 +142,7 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 			return dupRR.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		Expect(dupRR.Status.Outcome).To(Equal("Remediated"),
+		Expect(dupRR.Status.EnsureCompletionStatus().Outcome).To(Equal("Remediated"),
 			"Behavior: outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 		Expect(dupRR.Status.CompletedAt).NotTo(BeNil(),
 			"Behavior: CompletedAt must be set for terminal transition")
@@ -170,14 +170,14 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 			return dupRR.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		Expect(dupRR.Status.FailurePhase).NotTo(BeNil(),
+		Expect(dupRR.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil(),
 			"Behavior: FailurePhase must be set for inherited failures")
-		Expect(*dupRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+		Expect(*dupRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 			"Behavior: FailurePhase must be Deduplicated (not the original's failure phase)")
-		Expect(dupRR.Status.FailureReason).NotTo(BeNil())
-		Expect(*dupRR.Status.FailureReason).To(ContainSubstring(originalName),
+		Expect(dupRR.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil())
+		Expect(*dupRR.Status.EnsureCompletionStatus().FailureReason).To(ContainSubstring(originalName),
 			"Behavior: FailureReason must reference the original RR for traceability")
-		Expect(dupRR.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
+		Expect(dupRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(0)),
 			"Behavior: inherited failures must NOT increment ConsecutiveFailureCount")
 	})
 
@@ -204,8 +204,8 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
 		By("Verifying FailurePhase=Deduplicated marks this for exclusion from countConsecutiveFailures")
-		Expect(dupRR.Status.FailurePhase).NotTo(BeNil())
-		Expect(*dupRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
+		Expect(dupRR.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+		Expect(*dupRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseDeduplicated),
 			"Invariant: FailurePhase=Deduplicated is the marker that countConsecutiveFailures skips")
 
 		By("Creating a new RR with same fingerprint to verify it is NOT blocked")

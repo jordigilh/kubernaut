@@ -149,7 +149,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.EffectivenessAssessmentRef).ToNot(BeNil(),
+		Expect(fetchedRR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef).ToNot(BeNil(),
 			"EffectivenessAssessmentRef should be set on RR after EA creation")
 	})
 
@@ -168,12 +168,14 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      "ea-" + rrName,
-					Namespace: namespace,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      "ea-" + rrName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &deadline,
 				},
-				VerificationDeadline: &deadline,
 			},
 		}
 		ea := &eav1.EffectivenessAssessment{
@@ -221,7 +223,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			"#280: EA terminal should trigger Verifying -> Completed")
 		Expect(fetchedRR.Status.CompletedAt).ToNot(BeNil(),
 			"CompletedAt should be set when transitioning to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"Outcome should be Remediated after successful verification")
 	})
 
@@ -240,12 +242,14 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      "ea-" + rrName,
-					Namespace: namespace,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      "ea-" + rrName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &deadline,
 				},
-				VerificationDeadline: &deadline,
 			},
 		}
 		ea := &eav1.EffectivenessAssessment{
@@ -293,7 +297,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			"#280: EA failure should also trigger Verifying -> Completed")
 		Expect(fetchedRR.Status.CompletedAt).To(HaveValue(Not(BeZero())),
 			"CompletedAt should be set when transitioning to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"Outcome is Remediated because the remediation itself succeeded, even if EA failed")
 	})
 
@@ -312,12 +316,14 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      "ea-" + rrName,
-					Namespace: namespace,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      "ea-" + rrName,
+						Namespace: namespace,
+					},
+					VerificationDeadline: &expiredDeadline,
 				},
-				VerificationDeadline: &expiredDeadline,
 			},
 		}
 		ea := &eav1.EffectivenessAssessment{
@@ -361,7 +367,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 			"#280: Expired VerificationDeadline should trigger Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal("VerificationTimedOut"),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("VerificationTimedOut"),
 			"Outcome should be VerificationTimedOut when deadline expires")
 		Expect(fetchedRR.Status.CompletedAt).To(HaveValue(Not(BeZero())),
 			"CompletedAt should be set on verification timeout")
@@ -383,10 +389,12 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      "ea-" + rrName,
-					Namespace: namespace,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      "ea-" + rrName,
+						Namespace: namespace,
+					},
 				},
 			},
 		}
@@ -431,7 +439,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 			"#280: Safety-net should fire when VerificationDeadline is nil and RR age exceeds configured verifying timeout")
-		Expect(fetchedRR.Status.Outcome).To(Equal("VerificationTimedOut"),
+		Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("VerificationTimedOut"),
 			"Outcome should be VerificationTimedOut for safety-net timeout")
 		Expect(fetchedRR.Status.CompletedAt).To(HaveValue(Not(BeZero())),
 			"CompletedAt should be set on safety-net timeout")
@@ -452,10 +460,12 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				EffectivenessAssessmentRef: &corev1.ObjectReference{
-					Kind:      "EffectivenessAssessment",
-					Name:      "ea-" + rrName,
-					Namespace: namespace,
+				PhaseProgress: &remediationv1.PhaseProgress{
+					EffectivenessAssessmentRef: &corev1.ObjectReference{
+						Kind:      "EffectivenessAssessment",
+						Name:      "ea-" + rrName,
+						Namespace: namespace,
+					},
 				},
 			},
 		}
@@ -499,7 +509,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(fetchedRR.Status.VerificationDeadline).ToNot(BeNil(),
+		Expect(fetchedRR.Status.EnsurePhaseProgress().VerificationDeadline).ToNot(BeNil(),
 			"VerificationDeadline should be populated from EA.Status.ValidityDeadline + buffer")
 	})
 })

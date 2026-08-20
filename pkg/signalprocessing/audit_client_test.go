@@ -128,7 +128,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 			It("AC-HP-02: should record failed signal with failure outcome", func() {
 				sp := createTestSignalProcessing("failed")
 				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-				sp.Status.Error = "enrichment timeout"
+				sp.Status.EnsureFailureInfo().Error = "enrichment timeout"
 
 				auditClient.RecordSignalProcessed(ctx, sp)
 
@@ -321,7 +321,7 @@ func createTestSignalProcessing(name string) *signalprocessingv1alpha1.SignalPro
 			Signal: signalprocessingv1alpha1.SignalData{
 				Fingerprint: "test-fingerprint-abc123def456abc123def456abc123def456abc123d",
 				Name:        "TestSignal",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

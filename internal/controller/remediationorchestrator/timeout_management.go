@@ -216,11 +216,11 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 	// Get phase start time based on current phase
 	switch currentPhase {
 	case remediationv1.PhaseProcessing:
-		phaseStartTime = rr.Status.ProcessingStartTime
+		phaseStartTime = rr.Status.EnsurePhaseProgress().ProcessingStartTime
 	case remediationv1.PhaseAnalyzing:
-		phaseStartTime = rr.Status.AnalyzingStartTime
+		phaseStartTime = rr.Status.EnsurePhaseProgress().AnalyzingStartTime
 	case remediationv1.PhaseExecuting:
-		phaseStartTime = rr.Status.ExecutingStartTime
+		phaseStartTime = rr.Status.EnsurePhaseProgress().ExecutingStartTime
 	default:
 		// Phase doesn't have specific timeout
 		return nil
@@ -276,15 +276,15 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 // Falls back gracefully to the original timeout (and aiTerminal=false) on AA fetch errors.
 // Reference: DD-INTERACTIVE-002 (dynamic timeout extension), #2012
 func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *remediationv1.RemediationRequest, defaultTimeout time.Duration) (extendedTimeout time.Duration, aiTerminal bool) {
-	if rr.Status.AIAnalysisRef == nil {
+	if rr.Status.EnsurePhaseProgress().AIAnalysisRef == nil {
 		return defaultTimeout, false
 	}
 
 	logger := log.FromContext(ctx)
 	ai := &aianalysisv1.AIAnalysis{}
 	key := client.ObjectKey{
-		Name:      rr.Status.AIAnalysisRef.Name,
-		Namespace: rr.Status.AIAnalysisRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace,
 	}
 	if key.Namespace == "" {
 		key.Namespace = rr.Namespace
@@ -338,8 +338,8 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 		// Transition to TimedOut phase
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		rr.Status.Message = fmt.Sprintf("Phase %s exceeded timeout of %s", phase, timeout)
-		rr.Status.TimeoutTime = &metav1.Time{Time: time.Now()}
-		rr.Status.TimeoutPhase = &phase
+		rr.Status.EnsureCompletionStatus().TimeoutTime = &metav1.Time{Time: time.Now()}
+		rr.Status.EnsureCompletionStatus().TimeoutPhase = &phase
 		rr.Status.CompletedAt = &metav1.Time{Time: time.Now()}
 		return nil
 	})

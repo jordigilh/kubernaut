@@ -390,7 +390,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
-				sp.Status.Error = "Simulated failure for consecutive failure event test"
+				sp.Status.EnsureFailureInfo().Error = "Simulated failure for consecutive failure event test"
 				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 				Eventually(func() bool {

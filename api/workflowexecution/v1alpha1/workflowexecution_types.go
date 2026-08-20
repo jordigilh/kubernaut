@@ -492,7 +492,7 @@ type ExecutionStatusSummary struct {
 
 // ========================================
 // V1.0: SKIP REASON CONSTANTS REMOVED
-// DD-RO-002: All skip reasons moved to RemediationRequest.Status.SkipReason
+// DD-RO-002: All skip reasons moved to RemediationRequest.Status.EnsureRoutingStatus().SkipReason
 // Constants removed: SkipReasonResourceBusy, SkipReasonRecentlyRemediated,
 //                    SkipReasonExhaustedRetries, SkipReasonPreviousExecutionFailed
 // ========================================

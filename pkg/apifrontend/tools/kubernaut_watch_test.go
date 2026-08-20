@@ -54,7 +54,7 @@ func updateRRTerminal(ctx context.Context, c crclient.WithWatch, name, outcome s
 	var rr remediationv1.RemediationRequest
 	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: "payments", Name: name}, &rr)).To(Succeed())
 	rr.Status.OverallPhase = remediationv1.PhaseCompleted
-	rr.Status.Outcome = outcome
+	rr.Status.EnsureCompletionStatus().Outcome = outcome
 	rr.Status.Message = "done"
 	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
 }
@@ -612,7 +612,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 		Expect(refEAName).NotTo(Equal(conventionEAName), "test precondition: ref name must differ from convention")
 
 		rr := newTypedRR("payments", "rr-ref", "Executing")
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       refEAName,
 			Namespace:  "payments",

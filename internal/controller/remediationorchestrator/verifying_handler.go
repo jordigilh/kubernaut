@@ -80,30 +80,30 @@ func (h *VerifyingHandler) Phase() phase.Phase {
 func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.Outcome != "" {
+	if rr.Status.EnsureCompletionStatus().Outcome != "" {
 		h.callbacks.EnsureNotificationsCreated(ctx, rr)
 	}
 
-	if rr.Status.EffectivenessAssessmentRef == nil {
+	if rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef == nil {
 		logger.Info("EffectivenessAssessmentRef is nil in Verifying phase, retrying EA creation")
 		h.callbacks.CreateEffectivenessAssessmentIfNeeded(ctx, rr)
 
-		if rr.Status.EffectivenessAssessmentRef == nil {
+		if rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef == nil {
 			logger.Info("EA creation still pending, requeueing")
 			return phase.Requeue(config.RequeueResourceBusy, "EA creation pending"), nil
 		}
 	}
 
-	if rr.Status.VerificationDeadline == nil {
+	if rr.Status.EnsurePhaseProgress().VerificationDeadline == nil {
 		intent, done, err := h.ensureVerificationDeadline(ctx, rr, logger)
 		if done {
 			return intent, err
 		}
 	}
 
-	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
+	if rr.Status.EnsurePhaseProgress().VerificationDeadline != nil && time.Now().After(rr.Status.EnsurePhaseProgress().VerificationDeadline.Time) {
 		logger.Info("VerificationDeadline expired, timing out verification",
-			"deadline", rr.Status.VerificationDeadline.Format(time.RFC3339))
+			"deadline", rr.Status.EnsurePhaseProgress().VerificationDeadline.Format(time.RFC3339))
 		return h.completeAsVerificationTimedOut(ctx, rr, logger, "verification deadline expired, completed")
 	}
 
@@ -115,7 +115,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 		h.callbacks.EnsureNotificationsCreated(ctx, rr)
 		h.callbacks.EmitVerificationCompletedAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
-			h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
+			h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.EnsureCompletionStatus().Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
 		}
 		return phase.NoOp("EA terminal, verification completed"), nil
 	}
@@ -131,7 +131,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 // Extracted from Handle per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 // Returns done=true when the caller must return (intent, err) immediately.
 func (h *VerifyingHandler) ensureVerificationDeadline(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (phase.TransitionIntent, bool, error) {
-	eaName := rr.Status.EffectivenessAssessmentRef.Name
+	eaName := rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef.Name
 	ea := &eav1.EffectivenessAssessment{}
 	if err := h.k8sClient.Get(ctx, client.ObjectKey{Name: eaName, Namespace: rr.Namespace}, ea); err != nil {
 		logger.Error(err, "Failed to fetch EA for VerificationDeadline computation", "ea", eaName)
@@ -141,7 +141,7 @@ func (h *VerifyingHandler) ensureVerificationDeadline(ctx context.Context, rr *r
 	if ea.Status.ValidityDeadline != nil {
 		deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
 		if err := helpers.UpdateRemediationRequestStatus(ctx, h.k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
-			rr.Status.VerificationDeadline = &deadline
+			rr.Status.EnsurePhaseProgress().VerificationDeadline = &deadline
 			return nil
 		}); err != nil {
 			logger.Error(err, "Failed to persist VerificationDeadline")
@@ -172,7 +172,7 @@ func (h *VerifyingHandler) completeAsVerificationTimedOut(ctx context.Context, r
 	if err := helpers.UpdateRemediationRequestStatus(ctx, h.k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = "VerificationTimedOut"
+		rr.Status.EnsureCompletionStatus().Outcome = "VerificationTimedOut"
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		return nil
@@ -186,7 +186,7 @@ func (h *VerifyingHandler) completeAsVerificationTimedOut(ctx context.Context, r
 	h.callbacks.EnsureNotificationsCreated(ctx, rr)
 	h.callbacks.EmitVerificationTimedOutAudit(ctx, rr)
 	if rr.Status.StartTime != nil {
-		h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
+		h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.EnsureCompletionStatus().Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
 	}
 	return phase.NoOp(noOpReason), nil
 }

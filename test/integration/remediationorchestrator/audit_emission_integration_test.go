@@ -427,7 +427,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 			sp.Status.Phase = signalprocessingv1.PhaseFailed
-			sp.Status.Error = "Simulated SP failure for testing"
+			sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for testing"
 			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 			// Wait for Failed

@@ -128,11 +128,11 @@ var _ = Describe("E2E-SP-106-001: Proactive Signal Mode Classification", Label("
 					"SP should complete successfully with proactive signal")
 
 				// BR-SP-106: Verify signal mode classification
-				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("proactive"),
 					"PredictedOOMKill should be classified as proactive")
-				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("OOMKilled"),
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
-				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(Equal("PredictedOOMKill"),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 			}, "60s", "2s").Should(Succeed())
 
@@ -193,11 +193,11 @@ var _ = Describe("E2E-SP-106-001: Proactive Signal Mode Classification", Label("
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
 
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("reactive"),
 					"Standard OOMKilled should default to reactive")
-				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("OOMKilled"),
 					"Reactive signal type should pass through unchanged")
-				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(BeEmpty(),
 					"No original type for reactive signals")
 			}, "60s", "2s").Should(Succeed())
 

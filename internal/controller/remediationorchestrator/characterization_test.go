@@ -591,8 +591,8 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "exe001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"WE missing (phase empty + unhealthy) should transition to Failed")
-			Expect(finalRR.Status.FailurePhase).ToNot(BeNil(), "FailurePhase should be set")
-			Expect(*finalRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseWorkflowExecution),
+			Expect(finalRR.Status.EnsureCompletionStatus().FailurePhase).ToNot(BeNil(), "FailurePhase should be set")
+			Expect(*finalRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseWorkflowExecution),
 				"FailurePhase should be WorkflowExecution")
 			Expect(result).To(Equal(ctrl.Result{}), "transitionToFailed returns empty result (no requeue)")
 		})
@@ -606,14 +606,14 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-001: EA Get error returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver001", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver001", "ai-ver001", "we-ver001")
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver001",
 				Namespace:  defaultFixture,
 			}
-			rr.Status.EffectivenessAssessmentRef = &eaRef
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &eaRef
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -638,16 +638,16 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-002: EA in progress (non-terminal phase) returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver002", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver002", "ai-ver002", "we-ver002")
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver002",
 				Namespace:  defaultFixture,
 			}
-			rr.Status.EffectivenessAssessmentRef = &eaRef
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &eaRef
 			deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
-			rr.Status.VerificationDeadline = &deadline
+			rr.Status.EnsurePhaseProgress().VerificationDeadline = &deadline
 
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -682,7 +682,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-003: nil EA creator causes EA ref unset path, returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver003", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver003", "ai-ver003", "we-ver003")
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -707,14 +707,14 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-004: ValidityDeadline not yet set, age under timeout, returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver004", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver004", "ai-ver004", "we-ver004")
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver004",
 				Namespace:  defaultFixture,
 			}
-			rr.Status.EffectivenessAssessmentRef = &eaRef
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &eaRef
 
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -744,7 +744,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			var finalRR remediationv1.RemediationRequest
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver004", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying), "should remain Verifying")
-			Expect(finalRR.Status.VerificationDeadline).To(BeNil(), "VerificationDeadline should not be set yet")
+			Expect(finalRR.Status.EnsurePhaseProgress().VerificationDeadline).To(BeNil(), "VerificationDeadline should not be set yet")
 		})
 	})
 
@@ -756,9 +756,9 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-BLK-001: ResourceBusy with terminal blocking WFE clears block", func() {
 			rr := newRemediationRequestWithChildRefs("blk001", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk001", "ai-blk001", "")
-			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
-			rr.Status.BlockingWorkflowExecution = "we-blocking-blk001"
-			rr.Status.BlockMessage = targetResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockingWorkflowExecution = "we-blocking-blk001"
+			rr.Status.EnsureRoutingStatus().BlockMessage = targetResourceBusy
 
 			blockingWE := newWorkflowExecutionCompleted("we-blocking-blk001", defaultFixture, "other-rr")
 
@@ -783,7 +783,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing),
 				"should clear ResourceBusy block and return to Analyzing")
-			Expect(string(finalRR.Status.BlockReason)).To(BeEmpty(),
+			Expect(string(finalRR.Status.EnsureRoutingStatus().BlockReason)).To(BeEmpty(),
 				"BlockReason should be cleared")
 			Expect(result).To(Equal(ctrl.Result{Requeue: true}),
 				"clearEventBasedBlock returns Requeue:true for immediate re-reconcile")
@@ -792,9 +792,9 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-BLK-002: ResourceBusy with missing WFE clears block", func() {
 			rr := newRemediationRequestWithChildRefs("blk002", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk002", "ai-blk002", "")
-			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
-			rr.Status.BlockingWorkflowExecution = "we-gone-blk002"
-			rr.Status.BlockMessage = targetResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockingWorkflowExecution = "we-gone-blk002"
+			rr.Status.EnsureRoutingStatus().BlockMessage = targetResourceBusy
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -814,7 +814,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing),
 				"should clear ResourceBusy block (WFE gone) and return to Analyzing")
-			Expect(string(finalRR.Status.BlockReason)).To(BeEmpty(),
+			Expect(string(finalRR.Status.EnsureRoutingStatus().BlockReason)).To(BeEmpty(),
 				"BlockReason should be cleared")
 			Expect(result).To(Equal(ctrl.Result{Requeue: true}),
 				"clearEventBasedBlock returns Requeue:true for immediate re-reconcile")
@@ -823,9 +823,9 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-BLK-003: ResourceBusy with active WFE requeues at 30s", func() {
 			rr := newRemediationRequestWithChildRefs("blk003", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk003", "ai-blk003", "")
-			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
-			rr.Status.BlockingWorkflowExecution = "we-active-blk003"
-			rr.Status.BlockMessage = targetResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonResourceBusy
+			rr.Status.EnsureRoutingStatus().BlockingWorkflowExecution = "we-active-blk003"
+			rr.Status.EnsureRoutingStatus().BlockMessage = targetResourceBusy
 
 			activeWE := newWorkflowExecution("we-active-blk003", defaultFixture, "other-rr", workflowexecutionv1.PhaseRunning)
 
@@ -886,11 +886,11 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk004", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 				"should transition to Blocked on IneffectiveChain")
-			Expect(string(finalRR.Status.BlockReason)).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)),
+			Expect(string(finalRR.Status.EnsureRoutingStatus().BlockReason)).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)),
 				"BlockReason should be IneffectiveChain")
-			Expect(finalRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+			Expect(finalRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 				"Outcome should be ManualReviewRequired for IneffectiveChain")
-			Expect(finalRR.Status.RequiresManualReview).To(BeTrue(),
+			Expect(finalRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(),
 				"RequiresManualReview should be true for IneffectiveChain")
 			Expect(result).To(Equal(ctrl.Result{}),
 				"handleBlocked with RequeueAfter=0 should return empty result")
@@ -906,7 +906,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			rr := newRemediationRequest("xct001", defaultFixture, remediationv1.PhaseFailed)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			reason := "test failure"
-			rr.Status.FailureReason = &reason
+			rr.Status.EnsureCompletionStatus().FailureReason = &reason
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -961,7 +961,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "xct002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing),
 				"should transition from Pending to Processing")
-			Expect(finalRR.Status.ProcessingStartTime).ToNot(BeNil(),
+			Expect(finalRR.Status.EnsurePhaseProgress().ProcessingStartTime).ToNot(BeNil(),
 				"ProcessingStartTime should be set on Pending->Processing transition")
 		})
 	})

@@ -40,10 +40,10 @@ import (
 )
 
 // hasNotificationRef returns true if a NotificationRequest with the given name
-// is already tracked in rr.Status.NotificationRequestRefs.
+// is already tracked in rr.Status.GetCompletionStatus().NotificationRequestRefs.
 func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool {
-	for i := range rr.Status.NotificationRequestRefs {
-		if rr.Status.NotificationRequestRefs[i].Name == name {
+	for _, ref := range rr.Status.GetCompletionStatus().NotificationRequestRefs {
+		if ref.Name == name {
 			return true
 		}
 	}
@@ -66,7 +66,7 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 	}
 
 	bulkName := fmt.Sprintf("nr-bulk-%s", rr.Name)
-	if rr.Status.DuplicateCount > 0 && !hasNotificationRef(rr, bulkName) {
+	if rr.Status.GetRoutingStatus().DuplicateCount > 0 && !hasNotificationRef(rr, bulkName) {
 		r.createBulkDuplicateNotification(ctx, rr, logger)
 	}
 }
@@ -89,9 +89,9 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 
 	// Issue #518: Read executionEngine from WFE status (resolved at runtime by WE controller).
 	executionEngine := ""
-	if rr.Status.WorkflowExecutionRef != nil {
+	if weRef := rr.Status.GetPhaseProgress().WorkflowExecutionRef; weRef != nil {
 		we := &workflowexecutionv1.WorkflowExecution{}
-		weKey := client.ObjectKey{Name: rr.Status.WorkflowExecutionRef.Name, Namespace: rr.Status.WorkflowExecutionRef.Namespace}
+		weKey := client.ObjectKey{Name: weRef.Name, Namespace: weRef.Namespace}
 		if weErr := r.client.Get(ctx, weKey, we); weErr != nil {
 			logger.V(1).Info("Could not fetch WFE for executionEngine (best-effort)", "error", weErr)
 		} else {
@@ -110,7 +110,7 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 	logger.Info("Created completion notification", "notification", notifName)
 	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
@@ -129,13 +129,14 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 // from createCompletionNotification (Wave 6 6e-i GREEN: nestif remediation)
 // — pure code motion, no behavior change.
 func (r *Reconciler) fetchEAForCompletionSummary(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) *eav1.EffectivenessAssessment {
-	if rr.Status.EffectivenessAssessmentRef == nil {
+	eaRef := rr.Status.GetPhaseProgress().EffectivenessAssessmentRef
+	if eaRef == nil {
 		return nil
 	}
 
 	eaObj := &eav1.EffectivenessAssessment{}
 	eaKey := client.ObjectKey{
-		Name:      rr.Status.EffectivenessAssessmentRef.Name,
+		Name:      eaRef.Name,
 		Namespace: rr.Namespace,
 	}
 	if err := r.client.Get(ctx, eaKey, eaObj); err != nil {
@@ -163,7 +164,7 @@ func (r *Reconciler) createBulkDuplicateNotification(ctx context.Context, rr *re
 	logger.Info("Created bulk duplicate notification", "notification", name)
 	ref := r.buildNotificationRef(ctx, name, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist bulk NT ref (non-critical)", "notification", name)
@@ -243,7 +244,7 @@ func (r *Reconciler) buildPhaseTimeoutNotificationRequest(rr *remediationv1.Reme
 				string(phase),
 				timeout.String(),
 				safeFormatTime(rr.Status.StartTime),
-				safeFormatTime(rr.Status.TimeoutTime),
+				safeFormatTime(rr.Status.GetCompletionStatus().TimeoutTime),
 			),
 			Context: buildTimeoutContext(rr.Name, string(phase), timeout.String(), rr.Spec.TargetResource),
 		},
@@ -293,7 +294,7 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 	// BR-ORCH-035 AC-4: Track timeout notification ref (non-blocking)
 	ref := r.buildNotificationRef(ctx, notificationName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist timeout NT ref (non-critical)", "notification", notificationName)

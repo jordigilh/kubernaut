@@ -185,16 +185,16 @@ func (c *AIAnalysisCreator) buildSignalContext(
 	// For proactive signals: SP normalizes e.g. "PredictedOOMKill" -> "OOMKilled"
 	// For reactive signals: SP copies Spec.Signal.Type unchanged
 	// Fallback to RR spec if SP status field is empty (backwards compatibility)
-	signalType := sp.Status.SignalName
+	signalType := sp.Status.GetSignalClassification().SignalName
 	if signalType == "" {
 		signalType = rr.Spec.SignalType
 	}
 
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
-		Severity:         sp.Status.Severity,   // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
-		SignalName:       signalType,           // BR-SP-106: Normalized by SP (not raw from RR)
-		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Proactive signal mode for KA prompt switching
+		Severity:         sp.Status.GetSignalClassification().Severity,   // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
+		SignalName:       signalType,                                     // BR-SP-106: Normalized by SP (not raw from RR)
+		SignalMode:       sp.Status.GetSignalClassification().SignalMode, // BR-AI-084: Proactive signal mode for KA prompt switching
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{
@@ -210,7 +210,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		// BR-FLEET-003 (#1511): optional cluster business classification from
 		// SP's Rego policy. Empty for non-fleet deployments/unregistered
 		// clusters -- a normal outcome, not an error.
-		Cluster: sp.Status.ClusterClassification,
+		Cluster: sp.Status.GetSignalClassification().ClusterClassification,
 	}
 }
 

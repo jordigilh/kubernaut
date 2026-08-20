@@ -109,7 +109,7 @@ func resolveDualTargetsForCallback(rr *remediationv1.RemediationRequest, ai *aia
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (r *Reconciler) persistPreRemediationHash(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error {
 	return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.PreRemediationSpecHash = preHash
+		rr.Status.EnsureOperatorAudit().PreRemediationSpecHash = preHash
 		remediationrequest.SetPreRemediationHashCaptured(rr, true,
 			"Pre-remediation hash captured", r.Metrics)
 		return nil

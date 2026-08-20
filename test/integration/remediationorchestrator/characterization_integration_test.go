@@ -130,7 +130,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			}
 		}
 		Expect(hasReady).To(BeTrue(), "terminal Failed RR should have Ready condition set")
-		Expect(fetched.Status.FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseAIAnalysis)),
+		Expect(fetched.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseAIAnalysis)),
 			"FailurePhase should be AIAnalysis")
 
 		By("Verifying idempotency: second reconcile does not change Failed RR state")
@@ -145,7 +145,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		}, idempotentRR)).To(Succeed())
 		Expect(idempotentRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 			"phase should still be Failed after subsequent reconciles")
-		Expect(idempotentRR.Status.FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseAIAnalysis)),
+		Expect(idempotentRR.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseAIAnalysis)),
 			"FailurePhase should remain AIAnalysis")
 		Expect(idempotentRR.ResourceVersion).To(Equal(firstResourceVersion),
 			"ResourceVersion should not change (no status mutations on idempotent reconcile)")
@@ -180,7 +180,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			}, fetched); err != nil {
 				return nil
 			}
-			return fetched.Status.ProcessingStartTime
+			return fetched.Status.EnsurePhaseProgress().ProcessingStartTime
 		}, timeout, interval).ShouldNot(BeNil(),
 			"ProcessingStartTime should be set after Pending → Processing transition")
 
@@ -207,9 +207,9 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		}, timeout, interval).Should(Equal(string(remediationv1.PhaseAnalyzing)))
 
 		By("Verifying AnalyzingStartTime is set")
-		Expect(fetched.Status.AnalyzingStartTime).ToNot(BeNil(),
+		Expect(fetched.Status.EnsurePhaseProgress().AnalyzingStartTime).ToNot(BeNil(),
 			"AnalyzingStartTime should be set after Processing → Analyzing transition")
-		Expect(fetched.Status.AnalyzingStartTime.Time).To(BeTemporally(">=", fetched.Status.ProcessingStartTime.Time),
+		Expect(fetched.Status.EnsurePhaseProgress().AnalyzingStartTime.Time).To(BeTemporally(">=", fetched.Status.EnsurePhaseProgress().ProcessingStartTime.Time),
 			"AnalyzingStartTime should be >= ProcessingStartTime")
 	})
 
@@ -309,7 +309,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			}
 			return string(fetched.Status.OverallPhase)
 		}, timeout, interval).Should(Equal(string(remediationv1.PhaseExecuting)))
-		Expect(fetched.Status.ExecutingStartTime).ToNot(BeNil(),
+		Expect(fetched.Status.EnsurePhaseProgress().ExecutingStartTime).ToNot(BeNil(),
 			"ExecutingStartTime should be set after Analyzing → Executing transition")
 	})
 

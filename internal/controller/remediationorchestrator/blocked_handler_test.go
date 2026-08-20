@@ -67,10 +67,10 @@ var _ = Describe("Issue #666: BlockedHandler (BR-ORCH-042)", func() {
 
 	blockedRR := func(name string, reason remediationv1.BlockReason, blockedUntil *time.Time) *remediationv1.RemediationRequest {
 		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseBlocked)
-		rr.Status.BlockReason = reason
+		rr.Status.EnsureRoutingStatus().BlockReason = reason
 		if blockedUntil != nil {
 			t := metav1.NewTime(*blockedUntil)
-			rr.Status.BlockedUntil = &t
+			rr.Status.EnsureRoutingStatus().BlockedUntil = &t
 		}
 		return rr
 	}
@@ -95,7 +95,7 @@ var _ = Describe("Issue #666: BlockedHandler (BR-ORCH-042)", func() {
 	Describe("BlockedUntil nil (event-based blocks)", func() {
 		It("UT-BLK-H-003: ResourceBusy → delegates to recheckResourceBusyBlock callback", func() {
 			rr := blockedRR("blk-busy", remediationv1.BlockReasonResourceBusy, nil)
-			rr.Status.BlockingWorkflowExecution = "wfe-busy"
+			rr.Status.EnsureRoutingStatus().BlockingWorkflowExecution = "wfe-busy"
 
 			recheckCalled := false
 			cbs := noopBlockedCallbacks()
@@ -114,7 +114,7 @@ var _ = Describe("Issue #666: BlockedHandler (BR-ORCH-042)", func() {
 
 		It("UT-BLK-H-004: DuplicateInProgress → delegates to recheckDuplicateBlock callback", func() {
 			rr := blockedRR("blk-dup", remediationv1.BlockReasonDuplicateInProgress, nil)
-			rr.Status.DuplicateOf = "original-rr"
+			rr.Status.EnsureRoutingStatus().DuplicateOf = "original-rr"
 
 			recheckCalled := false
 			cbs := noopBlockedCallbacks()

@@ -24,11 +24,41 @@ import (
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
-// VERSION: v1alpha1-v1.0
-// Last Updated: December 14, 2025
+// VERSION: v1alpha1-v1.1
+// Last Updated: August 19, 2026
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // CHANGELOG:
+//
+// ## V1.1 (August 19, 2026) - God-Struct Decomposition (issue #2206)
+//
+// ### Changed (RemediationRequestStatus):
+// - 40 of 50 top-level fields grouped into 5 pointer sub-structs, each with a
+//   nil-safe GetX()/EnsureX() accessor pair (mirrors the AIAnalysisStatus
+//   precedent from issue #2205):
+//   * PhaseProgress: per-phase timestamps + phase-owned child CRD refs
+//     (SignalProcessingRef, AIAnalysisRef, ExecutingStartTime, etc.)
+//   * RoutingStatus: dedup/blocking/skip decisions
+//     (SkipReason, DuplicateOf, ConsecutiveFailureCount, BlockReason, etc.)
+//   * CompletionStatus: terminal outcome + failure/timeout attribution
+//     (Outcome, FailureReason, FailurePhase, TimeoutPhase, etc.)
+//   * OperatorAudit: manual-intervention audit trail
+//     (LastModifiedBy, LastModifiedAt, PreRemediationSpecHash, etc.)
+//   * WorkflowSelection: AI-selected workflow display metadata
+//     (SelectedWorkflowRef, TargetDisplay, Confidence, etc.)
+// - +kubebuilder:printcolumn JSONPaths updated to the new nested paths
+//   (e.g. .status.completionStatus.outcome).
+//
+// ### Design Decision: Deployment strategy eliminates upgrade risk
+// - Fresh-install-only deployment strategy (no in-place upgrade path for
+//   this internal, unexposed v1alpha1 CRD) means there is no read-modify-write
+//   window where an old controller binary could round-trip a CR through the
+//   new schema and silently drop status data written to the old flat fields.
+//
+// ### Rationale:
+// - 50 top-level fields exceeded the God-struct anti-pattern threshold
+//   (AGENTS.md: 15+ fields); grouping by functional concern restores
+//   single-responsibility per sub-struct and matches #2205's precedent.
 //
 // ## V1.0 (December 14, 2025) - Centralized Routing Enhancement
 //
@@ -462,256 +492,48 @@ type RemediationRequestStatus struct {
 	StartTime   *metav1.Time `json:"startTime,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 
-	// ========================================
-	// PHASE START TIME TRACKING (BR-ORCH-028)
-	// ========================================
-
-	// ProcessingStartTime is when SignalProcessing phase started.
-	// Used for per-phase timeout detection (default: 5 minutes).
-	// Reference: BR-ORCH-028
+	// PhaseProgress tracks per-phase start times and downstream CRD references
+	// accumulated as the remediation progresses through SignalProcessing,
+	// AIAnalysis, WorkflowExecution, and EffectivenessAssessment.
+	// God-struct decomposition (issue #2206, following #2205's AIAnalysisStatus
+	// precedent). Use GetPhaseProgress()/EnsurePhaseProgress() for nil-safe access.
 	// +optional
-	ProcessingStartTime *metav1.Time `json:"processingStartTime,omitempty"`
+	PhaseProgress *PhaseProgress `json:"phaseProgress,omitempty"`
 
-	// AnalyzingStartTime is when AIAnalysis phase started.
-	// Used for per-phase timeout detection (default: 10 minutes).
-	// Reference: BR-ORCH-028
+	// RoutingStatus tracks centralized routing decisions: skip/block reasons,
+	// deduplication tracking, and consecutive-failure cooldown state.
+	// Reference: DD-RO-001, DD-RO-002, DD-RO-002-ADDENDUM, BR-ORCH-032/033/034/042.
+	// God-struct decomposition (issue #2206). Use GetRoutingStatus()/
+	// EnsureRoutingStatus() for nil-safe access.
 	// +optional
-	AnalyzingStartTime *metav1.Time `json:"analyzingStartTime,omitempty"`
+	RoutingStatus *RoutingStatus `json:"routingStatus,omitempty"`
 
-	// ExecutingStartTime is when WorkflowExecution phase started.
-	// Used for per-phase timeout detection (default: 30 minutes).
-	// Reference: BR-ORCH-028
+	// CompletionStatus tracks terminal-phase outcome details: failure/timeout
+	// reason, manual-review flag, and notification tracking.
+	// Reference: BR-ORCH-029/030/031/037.
+	// God-struct decomposition (issue #2206). Use GetCompletionStatus()/
+	// EnsureCompletionStatus() for nil-safe access.
 	// +optional
-	ExecutingStartTime *metav1.Time `json:"executingStartTime,omitempty"`
+	CompletionStatus *CompletionStatus `json:"completionStatus,omitempty"`
 
-	// VerificationDeadline is the deadline for the Verifying phase.
-	// Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
-	// If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
-	// Reference: #280 (Verifying phase timeout)
+	// OperatorAudit tracks SOC2 CC8.1 operator-mutation attribution and the
+	// pre-remediation spec hash captured before workflow execution.
+	// Reference: BR-AUTH-001, ADR-EM-001, DD-EM-002, Gap #8 Extension.
+	// God-struct decomposition (issue #2206). Use GetOperatorAudit()/
+	// EnsureOperatorAudit() for nil-safe access.
 	// +optional
-	VerificationDeadline *metav1.Time `json:"verificationDeadline,omitempty"`
+	OperatorAudit *OperatorAudit `json:"operatorAudit,omitempty"`
 
-	// References to downstream CRDs
-	SignalProcessingRef      *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
-	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
-	AIAnalysisRef            *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
-	WorkflowExecutionRef     *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
-
-	// NotificationRequestRefs tracks all notification CRDs created for this remediation.
-	// Provides audit trail for compliance and instant visibility for debugging.
-	// Reference: BR-ORCH-035
+	// WorkflowSelection tracks the AI-selected workflow, its execution reference,
+	// the resolved remediation target, and kubectl display strings.
+	// Reference: BR-AUDIT-005 Gap #5-6, BR-KA-212, Issue #387, Issue #635.
+	// God-struct decomposition (issue #2206). Use GetWorkflowSelection()/
+	// EnsureWorkflowSelection() for nil-safe access.
 	// +optional
-	NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
-
-	// EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
-	// Set by the RO after creating the EA CRD on terminal phase transitions.
-	// Reference: ADR-EM-001
-	// +optional
-	EffectivenessAssessmentRef *corev1.ObjectReference `json:"effectivenessAssessmentRef,omitempty"`
-
-	// PreRemediationSpecHash is the canonical spec hash of the target resource captured
-	// by the RO BEFORE launching the remediation workflow. This enables the EM to compare
-	// pre vs post-remediation state without querying DataStorage audit events.
-	// Set once by the RO during the transition to WorkflowExecution phase; immutable after.
-	// Reference: ADR-EM-001, DD-EM-002
-	// +optional
-	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="preRemediationSpecHash is immutable once set"
-	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
-
-	// Approval notification tracking (BR-ORCH-001)
-	// Prevents duplicate notifications when AIAnalysis requires approval
-	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`
-
-	// ========================================
-	// SKIPPED PHASE TRACKING (DD-RO-001, DD-RO-002)
-	// BR-ORCH-032, BR-ORCH-033, BR-ORCH-034
-	// V1.0 Update: Enhanced for centralized routing (DD-RO-002)
-	// ========================================
-
-	// SkipReason indicates why this remediation was skipped.
-	// Only set when OverallPhase = Skipped or Failed.
-	// Reference: DD-RO-002 (centralized routing responsibility)
-	// +optional
-	// +kubebuilder:validation:Enum=RecentlyRemediated;ResourceBusy;ExhaustedRetries;PreviousExecutionFailed
-	SkipReason SkipReason `json:"skipReason,omitempty"`
-
-	// SkipMessage provides human-readable details about why remediation was skipped
-	// Examples:
-	// - "Same workflow executed recently. Cooldown: 3m15s remaining"
-	// - "Another workflow is running on target: wfe-abc123"
-	// - "Backoff active. Next allowed: 2025-12-15T10:30:00Z"
-	// Only set when OverallPhase = "Skipped" or "Failed"
-	// Reference: DD-RO-002 (centralized routing responsibility)
-	// +optional
-	SkipMessage string `json:"skipMessage,omitempty"`
-
-	// BlockingWorkflowExecution references the WorkflowExecution causing the block
-	// Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff
-	// Nil for: ConsecutiveFailures, DuplicateInProgress
-	// Enables operators to investigate the blocking WFE for troubleshooting
-	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-	// +optional
-	BlockingWorkflowExecution string `json:"blockingWorkflowExecution,omitempty"`
-
-	// DuplicateOf references the parent RemediationRequest that this is a duplicate of
-	// V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"
-	// Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication
-	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-	// +optional
-	DuplicateOf string `json:"duplicateOf,omitempty"`
-
-	// DuplicateCount tracks the number of duplicate remediations that were skipped
-	// because this RR's workflow was already executing (resource lock)
-	// Only populated on parent RRs that have duplicates
-	DuplicateCount int `json:"duplicateCount,omitempty"`
-
-	// DuplicateRefs lists the names of RemediationRequests that were skipped
-	// because they targeted the same resource as this RR
-	// Only populated on parent RRs that have duplicates
-	DuplicateRefs []string `json:"duplicateRefs,omitempty"`
-
-	// DeduplicatedByWE stores the name of the original WorkflowExecution whose
-	// outcome this RR is waiting to inherit (Issue #190). Set when the RR's own
-	// WFE was marked Failed/Deduplicated. Used as a field index key for the
-	// cross-WE watch to trigger reconciliation when the original WFE completes.
-	// Immutable after initial assignment.
-	// +optional
-	DeduplicatedByWE string `json:"deduplicatedByWE,omitempty"`
-
-	// ========================================
-	// BLOCKED PHASE TRACKING (DD-RO-002 Blocked Phase Semantics)
-	// V1.0 Update: Unified blocking for all temporary wait states
-	// Prevents Gateway RR flood by keeping phase non-terminal
-	// See: docs/architecture/decisions/DD-RO-002-ADDENDUM-blocked-phase-semantics.md
-	// ========================================
-
-	// BlockReason indicates why this remediation is blocked (non-terminal)
-	// Valid values:
-	// - "ConsecutiveFailures": Max consecutive failures reached, in cooldown (BR-ORCH-042)
-	// - "ResourceBusy": Another workflow is using the target resource
-	// - "RecentlyRemediated": Target recently remediated, cooldown active (DD-WE-001)
-	// - "ExponentialBackoff": Pre-execution failures, backoff window active (DD-WE-004)
-	// - "DuplicateInProgress": Duplicate of an active remediation
-	// Only set when OverallPhase = "Blocked"
-	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-	// +optional
-	// +kubebuilder:validation:Enum=ConsecutiveFailures;DuplicateInProgress;ResourceBusy;RecentlyRemediated;ExponentialBackoff;UnmanagedResource;IneffectiveChain
-	BlockReason BlockReason `json:"blockReason,omitempty"`
-
-	// BlockMessage provides human-readable details about why remediation is blocked
-	// Examples:
-	// - "Another workflow is running on target deployment/my-app: wfe-abc123"
-	// - "Recently remediated. Cooldown: 3m15s remaining"
-	// - "Backoff active. Next retry: 2025-12-15T10:30:00Z"
-	// - "Duplicate of active remediation rr-original-abc123"
-	// - "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"
-	// Only set when OverallPhase = "Blocked"
-	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-	// +optional
-	BlockMessage string `json:"blockMessage,omitempty"`
-
-	// BlockedUntil indicates when blocking expires (time-based blocks)
-	// Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff
-	// Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)
-	// After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)
-	// Reference: BR-ORCH-042, DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-	// +optional
-	BlockedUntil *metav1.Time `json:"blockedUntil,omitempty"`
-
-	// ========================================
-	// EXPONENTIAL BACKOFF (DD-WE-004, V1.0)
-	// ========================================
-
-	// NextAllowedExecution indicates when this RR can be retried after exponential backoff.
-	// Set when RR transitions to Failed phase (pre-execution failures) or when EA
-	// determines an Inconclusive outcome (alert still firing after remediation, #1091).
-	// Implements progressive delay: 1m, 2m, 4m, 8m, capped at 10m.
-	// Formula: min(Base × 2^(failures-1), Max)
-	// Nil means no exponential backoff is active.
-	// Reference: DD-WE-004 (Exponential Backoff Cooldown), BR-ORCH-042.6 (#1091)
-	// +optional
-	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
-
-	// ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
-	// Updated by RO when RR transitions to Failed phase or completes with Outcome=Inconclusive
-	// (EA confirms alert still firing, treated as functional failure per BR-ORCH-042.6, #1091).
-	// Reset to 0 when RR enters Verifying phase after successful remediation.
-	// Reference: BR-ORCH-042
-	// +optional
-	ConsecutiveFailureCount int32 `json:"consecutiveFailureCount,omitempty"`
-
-	// ========================================
-	// FAILURE/TIMEOUT TRACKING
-	// ========================================
-
-	// FailurePhase indicates which orchestration phase failed.
-	// Only set when OverallPhase = Failed.
-	// +optional
-	// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked;Deduplicated
-	FailurePhase *FailurePhase `json:"failurePhase,omitempty"`
-
-	// FailureReason provides a human-readable reason for the failure
-	// Only set when OverallPhase = "failed"
-	FailureReason *string `json:"failureReason,omitempty"`
-
-	// RequiresManualReview indicates that this remediation cannot proceed automatically
-	// and requires operator intervention. Set when:
-	// - WE skip reason is "ExhaustedRetries" (5+ consecutive pre-execution failures)
-	// - WE skip reason is "PreviousExecutionFailed" (execution failure, cluster state unknown)
-	// - AIAnalysis WorkflowResolutionFailed with LowConfidence or WorkflowNotFound
-	// Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
-	// +optional
-	RequiresManualReview bool `json:"requiresManualReview,omitempty"`
-
-	// ========================================
-	// COMPLETION OUTCOME (BR-ORCH-037)
-	// ========================================
-
-	// Outcome indicates the remediation result when completed.
-	// Values:
-	// - "Remediated": Workflow executed successfully and EA verified effectiveness
-	// - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
-	// - "ManualReviewRequired": Requires operator intervention
-	// - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
-	// - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
-	// - "DryRun": Pipeline stopped after AI analysis; no WFE/EA created (dry-run mode) (#712, #736)
-	// Reference: BR-ORCH-037, BR-KA-200, BR-EM-012
-	// +optional
-	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive;DryRun
-	Outcome string `json:"outcome,omitempty"`
-
-	// TimeoutPhase indicates which orchestration phase timed out.
-	// Only set when OverallPhase = TimedOut.
-	// +optional
-	TimeoutPhase *RemediationPhase `json:"timeoutPhase,omitempty"`
-
-	// TimeoutTime records when the timeout occurred
-	// Only set when OverallPhase = "timeout"
-	TimeoutTime *metav1.Time `json:"timeoutTime,omitempty"`
+	WorkflowSelection *WorkflowSelection `json:"workflowSelection,omitempty"`
 
 	// RetentionExpiryTime indicates when this CRD should be cleaned up (24 hours after completion)
 	RetentionExpiryTime *metav1.Time `json:"retentionExpiryTime,omitempty"`
-
-	// ========================================
-	// NOTIFICATION LIFECYCLE TRACKING (BR-ORCH-029/030/031)
-	// ========================================
-
-	// NotificationStatus tracks the delivery status of notification(s) for this remediation.
-	// Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"
-	//
-	// Status Mapping from NotificationRequest.Status.Phase:
-	// - NotificationRequest Pending → "Pending"
-	// - NotificationRequest Sending → "InProgress"
-	// - NotificationRequest Sent → "Sent"
-	// - NotificationRequest Failed → "Failed"
-	// - NotificationRequest deleted by user → "Cancelled"
-	//
-	// For bulk notifications (BR-ORCH-034), this reflects the status of the consolidated notification.
-	//
-	// Reference: BR-ORCH-030 (notification status tracking)
-	// +optional
-	// +kubebuilder:validation:Enum=Pending;InProgress;Sent;Failed;Cancelled
-	NotificationStatus string `json:"notificationStatus,omitempty"`
 
 	// Conditions represent observations of RemediationRequest state.
 	// Standard condition types:
@@ -740,11 +562,266 @@ type RemediationRequestStatus struct {
 	// Gap #8: Moved from spec to status to enable operator mutability + audit trail
 	// +optional
 	TimeoutConfig *TimeoutConfig `json:"timeoutConfig,omitempty"`
+}
 
-	// ========================================
-	// OPERATOR MUTATION TRACKING (SOC2 CC8.1)
-	// ========================================
+// OutcomeRemediated is the Status.Outcome value for a successfully remediated
+// and EA-verified RemediationRequest (BR-ORCH-037). See the Outcome field enum
+// above for the full set of valid values.
+const OutcomeRemediated = "Remediated"
 
+// ========================================
+// GOD-STRUCT DECOMPOSITION SUB-STRUCTS (Issue #2206)
+// Following #2205's AIAnalysisStatus precedent: pointer bundles, nil until
+// their owning phase populates them, each with a GetX()/EnsureX() nil-safe
+// accessor pair so read call sites never repeat a nil-guard.
+// ========================================
+
+// PhaseProgress tracks per-phase start times (BR-ORCH-028 per-phase timeout
+// detection) and the downstream CRD references accumulated as a remediation
+// progresses through SignalProcessing, AIAnalysis, WorkflowExecution, and
+// EffectivenessAssessment.
+type PhaseProgress struct {
+	// ProcessingStartTime is when SignalProcessing phase started.
+	// Used for per-phase timeout detection (default: 5 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	ProcessingStartTime *metav1.Time `json:"processingStartTime,omitempty"`
+
+	// AnalyzingStartTime is when AIAnalysis phase started.
+	// Used for per-phase timeout detection (default: 10 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	AnalyzingStartTime *metav1.Time `json:"analyzingStartTime,omitempty"`
+
+	// ExecutingStartTime is when WorkflowExecution phase started.
+	// Used for per-phase timeout detection (default: 30 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	ExecutingStartTime *metav1.Time `json:"executingStartTime,omitempty"`
+
+	// VerificationDeadline is the deadline for the Verifying phase.
+	// Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
+	// If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
+	// Reference: #280 (Verifying phase timeout)
+	// +optional
+	VerificationDeadline *metav1.Time `json:"verificationDeadline,omitempty"`
+
+	// SignalProcessingRef references the SignalProcessing CRD.
+	// +optional
+	SignalProcessingRef *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
+
+	// RemediationProcessingRef references the RemediationProcessing CRD.
+	// +optional
+	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
+
+	// AIAnalysisRef references the AIAnalysis CRD.
+	// +optional
+	AIAnalysisRef *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
+
+	// WorkflowExecutionRef references the WorkflowExecution CRD.
+	// +optional
+	WorkflowExecutionRef *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
+
+	// EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
+	// Set by the RO after creating the EA CRD on terminal phase transitions.
+	// Reference: ADR-EM-001
+	// +optional
+	EffectivenessAssessmentRef *corev1.ObjectReference `json:"effectivenessAssessmentRef,omitempty"`
+
+	// CurrentProcessingRef references the current SignalProcessing CRD
+	// +optional
+	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
+}
+
+// GetPhaseProgress returns Status.PhaseProgress, or a zero-value *PhaseProgress
+// if nil, so read call sites can chain field access without repeating a nil-guard.
+func (s *RemediationRequestStatus) GetPhaseProgress() *PhaseProgress {
+	if s.PhaseProgress == nil {
+		return &PhaseProgress{}
+	}
+	return s.PhaseProgress
+}
+
+// EnsurePhaseProgress lazily initializes Status.PhaseProgress and returns it,
+// for write call sites that need a non-nil target to mutate.
+func (s *RemediationRequestStatus) EnsurePhaseProgress() *PhaseProgress {
+	if s.PhaseProgress == nil {
+		s.PhaseProgress = &PhaseProgress{}
+	}
+	return s.PhaseProgress
+}
+
+// RoutingStatus tracks centralized routing decisions made by the Remediation
+// Orchestrator: skip/block reasons, deduplication tracking, and
+// consecutive-failure backoff cooldown state.
+// Reference: DD-RO-001, DD-RO-002, DD-RO-002-ADDENDUM (Blocked Phase Semantics),
+// BR-ORCH-032/033/034/042, DD-WE-004 (Exponential Backoff).
+type RoutingStatus struct {
+	// SkipReason indicates why this remediation was skipped.
+	// Only set when OverallPhase = Skipped or Failed.
+	// Reference: DD-RO-002 (centralized routing responsibility)
+	// +optional
+	// +kubebuilder:validation:Enum=RecentlyRemediated;ResourceBusy;ExhaustedRetries;PreviousExecutionFailed
+	SkipReason SkipReason `json:"skipReason,omitempty"`
+
+	// SkipMessage provides human-readable details about why remediation was skipped
+	// Only set when OverallPhase = "Skipped" or "Failed"
+	// Reference: DD-RO-002 (centralized routing responsibility)
+	// +optional
+	SkipMessage string `json:"skipMessage,omitempty"`
+
+	// BlockingWorkflowExecution references the WorkflowExecution causing the block
+	// Set for block reasons: ResourceBusy, RecentlyRemediated, ExponentialBackoff
+	// Nil for: ConsecutiveFailures, DuplicateInProgress
+	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+	// +optional
+	BlockingWorkflowExecution string `json:"blockingWorkflowExecution,omitempty"`
+
+	// DuplicateOf references the parent RemediationRequest that this is a duplicate of
+	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+	// +optional
+	DuplicateOf string `json:"duplicateOf,omitempty"`
+
+	// DuplicateCount tracks the number of duplicate remediations that were skipped
+	// because this RR's workflow was already executing (resource lock)
+	// +optional
+	DuplicateCount int `json:"duplicateCount,omitempty"`
+
+	// DuplicateRefs lists the names of RemediationRequests that were skipped
+	// because they targeted the same resource as this RR
+	// +optional
+	DuplicateRefs []string `json:"duplicateRefs,omitempty"`
+
+	// DeduplicatedByWE stores the name of the original WorkflowExecution whose
+	// outcome this RR is waiting to inherit (Issue #190).
+	// +optional
+	DeduplicatedByWE string `json:"deduplicatedByWE,omitempty"`
+
+	// BlockReason indicates why this remediation is blocked (non-terminal)
+	// Only set when OverallPhase = "Blocked"
+	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+	// +optional
+	// +kubebuilder:validation:Enum=ConsecutiveFailures;DuplicateInProgress;ResourceBusy;RecentlyRemediated;ExponentialBackoff;UnmanagedResource;IneffectiveChain
+	BlockReason BlockReason `json:"blockReason,omitempty"`
+
+	// BlockMessage provides human-readable details about why remediation is blocked
+	// Only set when OverallPhase = "Blocked"
+	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+	// +optional
+	BlockMessage string `json:"blockMessage,omitempty"`
+
+	// BlockedUntil indicates when blocking expires (time-based blocks)
+	// Reference: BR-ORCH-042, DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+	// +optional
+	BlockedUntil *metav1.Time `json:"blockedUntil,omitempty"`
+
+	// NextAllowedExecution indicates when this RR can be retried after exponential backoff.
+	// Reference: DD-WE-004 (Exponential Backoff Cooldown), BR-ORCH-042.6 (#1091)
+	// +optional
+	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
+
+	// ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
+	// Reference: BR-ORCH-042
+	// +optional
+	ConsecutiveFailureCount int32 `json:"consecutiveFailureCount,omitempty"`
+}
+
+// GetRoutingStatus returns Status.RoutingStatus, or a zero-value *RoutingStatus
+// if nil, so read call sites can chain field access without repeating a nil-guard.
+func (s *RemediationRequestStatus) GetRoutingStatus() *RoutingStatus {
+	if s.RoutingStatus == nil {
+		return &RoutingStatus{}
+	}
+	return s.RoutingStatus
+}
+
+// EnsureRoutingStatus lazily initializes Status.RoutingStatus and returns it,
+// for write call sites that need a non-nil target to mutate.
+func (s *RemediationRequestStatus) EnsureRoutingStatus() *RoutingStatus {
+	if s.RoutingStatus == nil {
+		s.RoutingStatus = &RoutingStatus{}
+	}
+	return s.RoutingStatus
+}
+
+// CompletionStatus tracks terminal-phase outcome details: failure/timeout
+// reason, manual-review escalation flag, and notification delivery tracking.
+// Reference: BR-ORCH-029/030/031 (notification lifecycle), BR-ORCH-037 (outcome).
+type CompletionStatus struct {
+	// FailurePhase indicates which orchestration phase failed.
+	// Only set when OverallPhase = Failed.
+	// +optional
+	// +kubebuilder:validation:Enum=Configuration;SignalProcessing;AIAnalysis;Approval;WorkflowExecution;Blocked;Deduplicated
+	FailurePhase *FailurePhase `json:"failurePhase,omitempty"`
+
+	// FailureReason provides a human-readable reason for the failure
+	// Only set when OverallPhase = "failed"
+	// +optional
+	FailureReason *string `json:"failureReason,omitempty"`
+
+	// RequiresManualReview indicates that this remediation cannot proceed automatically
+	// and requires operator intervention.
+	// Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
+	// +optional
+	RequiresManualReview bool `json:"requiresManualReview,omitempty"`
+
+	// Outcome indicates the remediation result when completed.
+	// Reference: BR-ORCH-037, BR-KA-200, BR-EM-012
+	// +optional
+	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive;DryRun
+	Outcome string `json:"outcome,omitempty"`
+
+	// TimeoutPhase indicates which orchestration phase timed out.
+	// Only set when OverallPhase = TimedOut.
+	// +optional
+	TimeoutPhase *RemediationPhase `json:"timeoutPhase,omitempty"`
+
+	// TimeoutTime records when the timeout occurred
+	// Only set when OverallPhase = "timeout"
+	// +optional
+	TimeoutTime *metav1.Time `json:"timeoutTime,omitempty"`
+
+	// NotificationRequestRefs tracks all notification CRDs created for this remediation.
+	// Reference: BR-ORCH-035
+	// +optional
+	NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
+
+	// NotificationStatus tracks the delivery status of notification(s) for this remediation.
+	// Values: "Pending", "InProgress", "Sent", "Failed", "Cancelled"
+	// Reference: BR-ORCH-030 (notification status tracking)
+	// +optional
+	// +kubebuilder:validation:Enum=Pending;InProgress;Sent;Failed;Cancelled
+	NotificationStatus string `json:"notificationStatus,omitempty"`
+
+	// ApprovalNotificationSent prevents duplicate notifications when AIAnalysis requires approval
+	// Reference: BR-ORCH-001
+	// +optional
+	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`
+}
+
+// GetCompletionStatus returns Status.CompletionStatus, or a zero-value
+// *CompletionStatus if nil, so read call sites can chain field access without
+// repeating a nil-guard.
+func (s *RemediationRequestStatus) GetCompletionStatus() *CompletionStatus {
+	if s.CompletionStatus == nil {
+		return &CompletionStatus{}
+	}
+	return s.CompletionStatus
+}
+
+// EnsureCompletionStatus lazily initializes Status.CompletionStatus and
+// returns it, for write call sites that need a non-nil target to mutate.
+func (s *RemediationRequestStatus) EnsureCompletionStatus() *CompletionStatus {
+	if s.CompletionStatus == nil {
+		s.CompletionStatus = &CompletionStatus{}
+	}
+	return s.CompletionStatus
+}
+
+// OperatorAudit tracks SOC2 CC8.1 operator-mutation attribution and the
+// pre-remediation spec hash captured before workflow execution.
+// Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), ADR-EM-001, DD-EM-002.
+type OperatorAudit struct {
 	// LastModifiedBy tracks the last operator who modified this RR's status.
 	// Populated by RemediationRequest mutating webhook.
 	// Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
@@ -756,13 +833,40 @@ type RemediationRequestStatus struct {
 	// +optional
 	LastModifiedAt *metav1.Time `json:"lastModifiedAt,omitempty"`
 
-	// CurrentProcessingRef references the current SignalProcessing CRD
-	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
+	// PreRemediationSpecHash is the canonical spec hash of the target resource captured
+	// by the RO BEFORE launching the remediation workflow. This enables the EM to compare
+	// pre vs post-remediation state without querying DataStorage audit events.
+	// Set once by the RO during the transition to WorkflowExecution phase; immutable after.
+	// Reference: ADR-EM-001, DD-EM-002
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="preRemediationSpecHash is immutable once set"
+	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
+}
 
-	// ========================================
-	// WORKFLOW REFERENCES (BR-AUDIT-005 Gap #5-6)
-	// ========================================
+// GetOperatorAudit returns Status.OperatorAudit, or a zero-value *OperatorAudit
+// if nil, so read call sites can chain field access without repeating a nil-guard.
+func (s *RemediationRequestStatus) GetOperatorAudit() *OperatorAudit {
+	if s.OperatorAudit == nil {
+		return &OperatorAudit{}
+	}
+	return s.OperatorAudit
+}
 
+// EnsureOperatorAudit lazily initializes Status.OperatorAudit and returns it,
+// for write call sites that need a non-nil target to mutate.
+func (s *RemediationRequestStatus) EnsureOperatorAudit() *OperatorAudit {
+	if s.OperatorAudit == nil {
+		s.OperatorAudit = &OperatorAudit{}
+	}
+	return s.OperatorAudit
+}
+
+// WorkflowSelection tracks the AI-selected workflow, its execution reference,
+// the resolved remediation target, and the kubectl-printer display strings
+// derived from them.
+// Reference: BR-AUDIT-005 Gap #5-6 (Workflow Selection/Execution Reference),
+// BR-KA-212, Issue #387 (RemediationTarget), Issue #635 (display columns).
+type WorkflowSelection struct {
 	// SelectedWorkflowRef captures the workflow selected by AI for this remediation.
 	// Populated from workflowexecution.selection.completed audit event.
 	// Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
@@ -781,11 +885,6 @@ type RemediationRequestStatus struct {
 	// Reference: BR-KA-212, Issue #387
 	// +optional
 	RemediationTarget *ResourceIdentifier `json:"remediationTarget,omitempty"`
-
-	// ========================================
-	// DISPLAY FIELDS FOR kubectl PRINTER COLUMNS (Issue #635)
-	// Populated by RO from AIAnalysis results; used by additionalPrinterColumns.
-	// ========================================
 
 	// TargetDisplay is the Kubernetes-idiomatic Kind/Name of the RCA target
 	// (e.g., "Deployment/web-frontend"). Populated when RemediationTarget is set.
@@ -808,10 +907,24 @@ type RemediationRequestStatus struct {
 	SignalTargetDisplay string `json:"signalTargetDisplay,omitempty"`
 }
 
-// OutcomeRemediated is the Status.Outcome value for a successfully remediated
-// and EA-verified RemediationRequest (BR-ORCH-037). See the Outcome field enum
-// above for the full set of valid values.
-const OutcomeRemediated = "Remediated"
+// GetWorkflowSelection returns Status.WorkflowSelection, or a zero-value
+// *WorkflowSelection if nil, so read call sites can chain field access
+// without repeating a nil-guard.
+func (s *RemediationRequestStatus) GetWorkflowSelection() *WorkflowSelection {
+	if s.WorkflowSelection == nil {
+		return &WorkflowSelection{}
+	}
+	return s.WorkflowSelection
+}
+
+// EnsureWorkflowSelection lazily initializes Status.WorkflowSelection and
+// returns it, for write call sites that need a non-nil target to mutate.
+func (s *RemediationRequestStatus) EnsureWorkflowSelection() *WorkflowSelection {
+	if s.WorkflowSelection == nil {
+		s.WorkflowSelection = &WorkflowSelection{}
+	}
+	return s.WorkflowSelection
+}
 
 // WorkflowReference captures workflow catalog information for audit trail.
 // Used in RemediationRequestStatus.SelectedWorkflowRef (Gap #5).
@@ -859,17 +972,17 @@ type DeduplicationStatus struct {
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:selectablefield:JSONPath=.spec.clusterID
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
-// +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
+// +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.completionStatus.outcome`
 // +kubebuilder:printcolumn:name="Alert",type=string,JSONPath=`.spec.signalName`
-// +kubebuilder:printcolumn:name="RCA Target",type=string,JSONPath=`.status.targetDisplay`
-// +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowDisplayName`
-// +kubebuilder:printcolumn:name="Confidence",type=string,JSONPath=`.status.confidence`
+// +kubebuilder:printcolumn:name="RCA Target",type=string,JSONPath=`.status.workflowSelection.targetDisplay`
+// +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowSelection.workflowDisplayName`
+// +kubebuilder:printcolumn:name="Confidence",type=string,JSONPath=`.status.workflowSelection.confidence`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterID`,priority=1
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.signalSource`,priority=1
 // +kubebuilder:printcolumn:name="Signal NS",type=string,JSONPath=`.spec.targetResource.namespace`,priority=1
-// +kubebuilder:printcolumn:name="Signal Target",type=string,JSONPath=`.status.signalTargetDisplay`,priority=1
-// +kubebuilder:printcolumn:name="RCA NS",type=string,JSONPath=`.status.remediationTarget.namespace`,priority=1
+// +kubebuilder:printcolumn:name="Signal Target",type=string,JSONPath=`.status.workflowSelection.signalTargetDisplay`,priority=1
+// +kubebuilder:printcolumn:name="RCA NS",type=string,JSONPath=`.status.workflowSelection.remediationTarget.namespace`,priority=1
 
 // RemediationRequest is the Schema for the remediationrequests API.
 // DD-CRD-003: Printer columns for operational triage

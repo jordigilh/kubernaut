@@ -196,12 +196,14 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseVerifying,
 					StartTime:    &startTime,
-					EffectivenessAssessmentRef: &corev1.ObjectReference{
-						Kind:      "EffectivenessAssessment",
-						Name:      "ea-" + rrName,
-						Namespace: namespace,
+					PhaseProgress: &remediationv1.PhaseProgress{
+						EffectivenessAssessmentRef: &corev1.ObjectReference{
+							Kind:      "EffectivenessAssessment",
+							Name:      "ea-" + rrName,
+							Namespace: namespace,
+						},
+						VerificationDeadline: &deadline,
 					},
-					VerificationDeadline: &deadline,
 				},
 			}
 			ea := &eav1.EffectivenessAssessment{
@@ -247,7 +249,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 			Expect(event.CorrelationID).To(Equal(rrName))
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.EaName.Value).To(Equal("ea-"+rrName),
-				"EA name must be read from RR.Status.EffectivenessAssessmentRef")
+				"EA name must be read from RR.Status.EnsurePhaseProgress().EffectivenessAssessmentRef")
 			Expect(payload.DurationMs.IsSet()).To(BeTrue())
 			Expect(payload.DurationMs.Value).To(BeNumerically(">=", 0))
 		})
@@ -270,12 +272,14 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase: remediationv1.PhaseVerifying,
 					StartTime:    &startTime,
-					EffectivenessAssessmentRef: &corev1.ObjectReference{
-						Kind:      "EffectivenessAssessment",
-						Name:      "ea-" + rrName,
-						Namespace: namespace,
+					PhaseProgress: &remediationv1.PhaseProgress{
+						EffectivenessAssessmentRef: &corev1.ObjectReference{
+							Kind:      "EffectivenessAssessment",
+							Name:      "ea-" + rrName,
+							Namespace: namespace,
+						},
+						VerificationDeadline: &expiredDeadline,
 					},
-					VerificationDeadline: &expiredDeadline,
 				},
 			}
 			ea := &eav1.EffectivenessAssessment{
@@ -313,7 +317,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 
 			fetchedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
-			Expect(fetchedRR.Status.Outcome).To(Equal("VerificationTimedOut"))
+			Expect(fetchedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("VerificationTimedOut"))
 
 			timedOutEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleVerificationTimedOut)
 			Expect(timedOutEvents).To(HaveLen(1),

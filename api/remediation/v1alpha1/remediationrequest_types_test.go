@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -141,6 +142,138 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 			}
 
 			Expect(spec.ClusterID).To(BeEmpty(), "empty ClusterID == local hub cluster")
+		})
+	})
+})
+
+// RemediationRequestStatus god-struct decomposition (issue #2206, following #2205's
+// AIAnalysisStatus precedent): 40 of 50 top-level fields are grouped into 5 pointer
+// sub-structs (PhaseProgress, RoutingStatus, CompletionStatus, OperatorAudit,
+// WorkflowSelection), each with a GetX()/EnsureX() nil-safe accessor pair.
+var _ = Describe("RemediationRequestStatus God-Struct Decomposition (BR-COMMON-001, issue #2206)", func() {
+	Describe("GetPhaseProgress / EnsurePhaseProgress", func() {
+		It("UT-CRD-2206-001: GetPhaseProgress returns zero-value without mutating Status when nil", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			pp := status.GetPhaseProgress()
+
+			Expect(pp).ToNot(BeNil())
+			Expect(*pp).To(Equal(v1alpha1.PhaseProgress{}))
+			Expect(status.PhaseProgress).To(BeNil(), "GetPhaseProgress must not initialize the underlying pointer")
+		})
+
+		It("UT-CRD-2206-002: EnsurePhaseProgress lazily initializes and returns the same instance on repeated calls", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			first := status.EnsurePhaseProgress()
+			Expect(first).ToNot(BeNil())
+			Expect(status.PhaseProgress).ToNot(BeNil(), "EnsurePhaseProgress must initialize the underlying pointer")
+
+			first.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-1"}
+			second := status.EnsurePhaseProgress()
+			Expect(second).To(BeIdenticalTo(first), "EnsurePhaseProgress must return the same instance, not reallocate")
+			Expect(second.AIAnalysisRef).ToNot(BeNil())
+			Expect(second.AIAnalysisRef.Name).To(Equal("ai-1"))
+		})
+	})
+
+	Describe("GetRoutingStatus / EnsureRoutingStatus", func() {
+		It("UT-CRD-2206-003: GetRoutingStatus returns zero-value without mutating Status when nil", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			rs := status.GetRoutingStatus()
+
+			Expect(rs).ToNot(BeNil())
+			Expect(*rs).To(Equal(v1alpha1.RoutingStatus{}))
+			Expect(status.RoutingStatus).To(BeNil(), "GetRoutingStatus must not initialize the underlying pointer")
+		})
+
+		It("UT-CRD-2206-004: EnsureRoutingStatus lazily initializes and returns the same instance on repeated calls", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			first := status.EnsureRoutingStatus()
+			Expect(first).ToNot(BeNil())
+			Expect(status.RoutingStatus).ToNot(BeNil(), "EnsureRoutingStatus must initialize the underlying pointer")
+
+			first.DuplicateOf = "rr-original"
+			second := status.EnsureRoutingStatus()
+			Expect(second).To(BeIdenticalTo(first), "EnsureRoutingStatus must return the same instance, not reallocate")
+			Expect(second.DuplicateOf).To(Equal("rr-original"))
+		})
+	})
+
+	Describe("GetCompletionStatus / EnsureCompletionStatus", func() {
+		It("UT-CRD-2206-005: GetCompletionStatus returns zero-value without mutating Status when nil", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			cs := status.GetCompletionStatus()
+
+			Expect(cs).ToNot(BeNil())
+			Expect(*cs).To(Equal(v1alpha1.CompletionStatus{}))
+			Expect(status.CompletionStatus).To(BeNil(), "GetCompletionStatus must not initialize the underlying pointer")
+		})
+
+		It("UT-CRD-2206-006: EnsureCompletionStatus lazily initializes and returns the same instance on repeated calls", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			first := status.EnsureCompletionStatus()
+			Expect(first).ToNot(BeNil())
+			Expect(status.CompletionStatus).ToNot(BeNil(), "EnsureCompletionStatus must initialize the underlying pointer")
+
+			first.RequiresManualReview = true
+			second := status.EnsureCompletionStatus()
+			Expect(second).To(BeIdenticalTo(first), "EnsureCompletionStatus must return the same instance, not reallocate")
+			Expect(second.RequiresManualReview).To(BeTrue())
+		})
+	})
+
+	Describe("GetOperatorAudit / EnsureOperatorAudit", func() {
+		It("UT-CRD-2206-007: GetOperatorAudit returns zero-value without mutating Status when nil", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			oa := status.GetOperatorAudit()
+
+			Expect(oa).ToNot(BeNil())
+			Expect(*oa).To(Equal(v1alpha1.OperatorAudit{}))
+			Expect(status.OperatorAudit).To(BeNil(), "GetOperatorAudit must not initialize the underlying pointer")
+		})
+
+		It("UT-CRD-2206-008: EnsureOperatorAudit lazily initializes and returns the same instance on repeated calls", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			first := status.EnsureOperatorAudit()
+			Expect(first).ToNot(BeNil())
+			Expect(status.OperatorAudit).ToNot(BeNil(), "EnsureOperatorAudit must initialize the underlying pointer")
+
+			first.LastModifiedBy = "alice"
+			second := status.EnsureOperatorAudit()
+			Expect(second).To(BeIdenticalTo(first), "EnsureOperatorAudit must return the same instance, not reallocate")
+			Expect(second.LastModifiedBy).To(Equal("alice"))
+		})
+	})
+
+	Describe("GetWorkflowSelection / EnsureWorkflowSelection", func() {
+		It("UT-CRD-2206-009: GetWorkflowSelection returns zero-value without mutating Status when nil", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			ws := status.GetWorkflowSelection()
+
+			Expect(ws).ToNot(BeNil())
+			Expect(*ws).To(Equal(v1alpha1.WorkflowSelection{}))
+			Expect(status.WorkflowSelection).To(BeNil(), "GetWorkflowSelection must not initialize the underlying pointer")
+		})
+
+		It("UT-CRD-2206-010: EnsureWorkflowSelection lazily initializes and returns the same instance on repeated calls", func() {
+			status := v1alpha1.RemediationRequestStatus{}
+
+			first := status.EnsureWorkflowSelection()
+			Expect(first).ToNot(BeNil())
+			Expect(status.WorkflowSelection).ToNot(BeNil(), "EnsureWorkflowSelection must initialize the underlying pointer")
+
+			first.TargetDisplay = "Deployment/web-frontend"
+			second := status.EnsureWorkflowSelection()
+			Expect(second).To(BeIdenticalTo(first), "EnsureWorkflowSelection must return the same instance, not reallocate")
+			Expect(second.TargetDisplay).To(Equal("Deployment/web-frontend"))
 		})
 	})
 })

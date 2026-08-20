@@ -192,8 +192,8 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseExecuting
 		now := metav1.Now()
-		rr.Status.ExecutingStartTime = &now
-		rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "git-revert-v2"}
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &now
+		rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "git-revert-v2"}
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 2, 5*time.Second)
@@ -223,7 +223,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		defer cleanupTestRR(ctx, rr.Name, testNS)
 
 		eaName := "ea-custom-ref-12"
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:      "EffectivenessAssessment",
 			Name:      eaName,
 			Namespace: testNS,
@@ -240,7 +240,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
 		rr.Status.OverallPhase = remediationv1.PhaseVerifying
-		rr.Status.VerificationDeadline = &deadline
+		rr.Status.EnsurePhaseProgress().VerificationDeadline = &deadline
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		time.Sleep(200 * time.Millisecond)
@@ -296,7 +296,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		time.Sleep(200 * time.Millisecond)
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 2, 5*time.Second)
@@ -338,7 +338,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 
 	It("IT-AF-1460-017: already-terminal RR sends single final event and closes", func() {
 		rr := createTestRR(ctx, "rr-already-done", testNS, "Completed")
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 		defer cleanupTestRR(ctx, rr.Name, testNS)
 
@@ -370,14 +370,14 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseExecuting
 		now := metav1.Now()
-		rr.Status.ExecutingStartTime = &now
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &now
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		time.Sleep(200 * time.Millisecond)
 
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 3, 5*time.Second)
@@ -480,10 +480,10 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		time.Sleep(200 * time.Millisecond)
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
-		rr.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
-		rr.Status.BlockMessage = "3 consecutive failures"
+		rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonConsecutiveFailures
+		rr.Status.EnsureRoutingStatus().BlockMessage = "3 consecutive failures"
 		blockedTime := metav1.NewTime(time.Now().Add(1 * time.Hour))
-		rr.Status.BlockedUntil = &blockedTime
+		rr.Status.EnsureRoutingStatus().BlockedUntil = &blockedTime
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 2, 5*time.Second)
@@ -548,8 +548,8 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseExecuting
 		now := metav1.Now()
-		rr.Status.ExecutingStartTime = &now
-		rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "git-revert-v2"}
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &now
+		rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "git-revert-v2"}
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 2, 5*time.Second)

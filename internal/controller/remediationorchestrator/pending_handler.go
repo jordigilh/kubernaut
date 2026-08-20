@@ -153,7 +153,7 @@ func (h *PendingHandler) handleSignalProcessingCreationError(ctx context.Context
 // change.
 func (h *PendingHandler) persistSignalProcessingRef(ctx context.Context, rr *remediationv1.RemediationRequest, spName string) error {
 	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 			APIVersion: signalprocessingv1.GroupVersion.String(),
 			Kind:       "SignalProcessing",
 			Name:       spName,

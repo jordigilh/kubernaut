@@ -257,7 +257,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			rr := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
+			Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-036: ManualReview notification created for WorkflowResolutionFailed\n")
 		})
@@ -342,8 +342,8 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 				}
 				return string(rr.Status.OverallPhase)
 			}, timeout, interval).Should(Equal(string(remediationv1.PhaseFailed)))
-			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
-			Expect(rr.Status.RequiresManualReview).To(BeTrue())
+			Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+			Expect(rr.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 
 			GinkgoWriter.Printf("✅ BR-ORCH-036 v3.0: Escalation notification created for APIError/MaxRetriesExceeded\n")
 		})
@@ -403,7 +403,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
 					return ""
 				}
-				return rr.Status.Outcome
+				return rr.Status.EnsureCompletionStatus().Outcome
 			}, timeout, interval).Should(Equal("NoActionRequired"))
 
 			By("Verifying RR status")
@@ -412,11 +412,11 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 
 			By("IT-RO-353-001: Verifying NextAllowedExecution suppression window (#353)")
-			Expect(rr.Status.NextAllowedExecution).NotTo(BeNil(),
+			Expect(rr.Status.EnsureRoutingStatus().NextAllowedExecution).NotTo(BeNil(),
 				"Behavior: NextAllowedExecution must be populated through the full reconciler->handler chain (#353)")
-			Expect(time.Now().Before(rr.Status.NextAllowedExecution.Time)).To(BeTrue(),
+			Expect(time.Now().Before(rr.Status.EnsureRoutingStatus().NextAllowedExecution.Time)).To(BeTrue(),
 				"Correctness: NextAllowedExecution must be strictly in the future so Gateway will suppress duplicates")
-			Expect(rr.Status.NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 2*time.Minute),
+			Expect(rr.Status.EnsureRoutingStatus().NextAllowedExecution.Time).To(BeTemporally("~", time.Now().Add(24*time.Hour), 2*time.Minute),
 				"Accuracy: suppression window must be proportional to configured delay (24h), not a magic number")
 			Expect(rr.Status.CompletedAt).NotTo(BeNil(),
 				"Correctness: CompletedAt must be populated, proving normal completion flow (not partial status)")
@@ -425,7 +425,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			GinkgoWriter.Printf("✅ BR-ORCH-037: RR completed with NoActionRequired for WorkflowNotNeeded\n")
 			GinkgoWriter.Printf("✅ IT-RO-353-001: NextAllowedExecution=%s, CompletedAt=%s (#353)\n",
-				rr.Status.NextAllowedExecution.Format(time.RFC3339), rr.Status.CompletedAt.Format(time.RFC3339))
+				rr.Status.EnsureRoutingStatus().NextAllowedExecution.Format(time.RFC3339), rr.Status.CompletedAt.Format(time.RFC3339))
 		})
 	})
 })

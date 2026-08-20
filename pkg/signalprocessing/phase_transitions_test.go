@@ -210,11 +210,12 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 		Context("PHASE-13: ConsecutiveFailures tracks retries", func() {
 			It("should track consecutive failures for backoff", func() {
 				sp := createTestSP(signalprocessingv1alpha1.PhaseEnriching)
-				sp.Status.ConsecutiveFailures = 3
-				sp.Status.Error = "K8s API timeout"
+				failureInfo := sp.Status.EnsureFailureInfo()
+				failureInfo.ConsecutiveFailures = 3
+				failureInfo.Error = "K8s API timeout"
 
-				Expect(sp.Status.ConsecutiveFailures).To(Equal(int32(3)))
-				Expect(sp.Status.Error).To(ContainSubstring("timeout"))
+				Expect(sp.Status.GetFailureInfo().ConsecutiveFailures).To(Equal(int32(3)))
+				Expect(sp.Status.GetFailureInfo().Error).To(ContainSubstring("timeout"))
 			})
 		})
 
@@ -222,9 +223,9 @@ var _ = Describe("SignalProcessing Phase State Machine", func() {
 			It("should track last failure time", func() {
 				sp := createTestSP(signalprocessingv1alpha1.PhaseEnriching)
 				now := metav1.Now()
-				sp.Status.LastFailureTime = &now
+				sp.Status.EnsureFailureInfo().LastFailureTime = &now
 
-				Expect(sp.Status.LastFailureTime.IsZero()).To(BeFalse())
+				Expect(sp.Status.GetFailureInfo().LastFailureTime.IsZero()).To(BeFalse())
 			})
 		})
 	})

@@ -709,12 +709,13 @@ func updateSPStatus(name string, severity ...string) error {
 	if len(severity) > 0 && severity[0] != "" {
 		severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
 	}
-	sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
+	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
 	// BR-SP-106: Set signal mode defaults for downstream services (RO → AA)
 	// Default to "reactive" with type pass-through (backwards compatible)
 	// Tests that need proactive mode should use updateSPStatusProactive()
-	sp.Status.SignalMode = "reactive"
-	sp.Status.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
+	classification.SignalMode = "reactive"
+	classification.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
 	// Set environment classification for downstream use
 	// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 	// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
@@ -749,11 +750,12 @@ func updateSPStatusProactive(namespace, name string, normalizedType, originalTyp
 	now := metav1.Now()
 	sp.Status.Phase = signalprocessingv1.PhaseCompleted
 	sp.Status.CompletionTime = &now
-	sp.Status.Severity = severity
+	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = severity
 	// BR-SP-106: Proactive signal mode fields
-	sp.Status.SignalMode = "proactive"
-	sp.Status.SignalName = normalizedType
-	sp.Status.SourceSignalName = originalType
+	classification.SignalMode = "proactive"
+	classification.SignalName = normalizedType
+	classification.SourceSignalName = originalType
 	// Standard classification fields
 	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 		Environment:  signalprocessingv1.EnvironmentProduction,

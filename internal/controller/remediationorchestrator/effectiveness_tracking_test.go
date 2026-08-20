@@ -87,7 +87,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 
 		// Create terminal RR with EA ref
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  namespace,
@@ -135,7 +135,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  namespace,
@@ -181,7 +181,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  namespace,
@@ -249,7 +249,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  namespace,
@@ -304,7 +304,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       eaName,
 			Namespace:  namespace,

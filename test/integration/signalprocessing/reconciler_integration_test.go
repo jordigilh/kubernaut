@@ -941,7 +941,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 
 				var final signalprocessingv1alpha1.SignalProcessing
 				Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-				Expect(final.Status.Error).To(ContainSubstring("invalid"))
+				Expect(final.Status.GetFailureInfo().Error).To(ContainSubstring("invalid"))
 			}
 			// If creation failed due to validation, that's also acceptable
 		})
@@ -1103,9 +1103,9 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Verifying ConsecutiveFailures is zero after successful processing")
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-			Expect(final.Status.ConsecutiveFailures).To(Equal(int32(0)),
+			Expect(final.Status.GetFailureInfo().ConsecutiveFailures).To(Equal(int32(0)),
 				"ConsecutiveFailures should be 0 after successful processing")
-			Expect(final.Status.LastFailureTime).To(BeNil(),
+			Expect(final.Status.GetFailureInfo().LastFailureTime).To(BeNil(),
 				"LastFailureTime should be nil (no failures occurred)")
 		})
 
@@ -1136,7 +1136,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			var created signalprocessingv1alpha1.SignalProcessing
 			Eventually(func() int32 {
 				_ = k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &created)
-				return created.Status.ConsecutiveFailures
+				return created.Status.GetFailureInfo().ConsecutiveFailures
 			}, timeout, interval).Should(Equal(int32(0)),
 				"ConsecutiveFailures should initialize to 0")
 		})
@@ -1187,7 +1187,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			Expect(spconditions.IsConditionTrue(&final, spconditions.ConditionProcessingComplete)).To(BeTrue())
 
 			// Verify no failures accumulated
-			Expect(final.Status.ConsecutiveFailures).To(Equal(int32(0)),
+			Expect(final.Status.GetFailureInfo().ConsecutiveFailures).To(Equal(int32(0)),
 				"ConsecutiveFailures should remain 0 after all successful phase transitions")
 		})
 
@@ -1221,8 +1221,8 @@ labels["team"] := ["platform"  // Missing closing bracket
 
 			// These fields should exist and be accessible (schema validation)
 			// Even if not set, accessing them should not panic
-			_ = created.Status.ConsecutiveFailures
-			_ = created.Status.LastFailureTime
+			_ = created.Status.GetFailureInfo().ConsecutiveFailures
+			_ = created.Status.GetFailureInfo().LastFailureTime
 		})
 	})
 })

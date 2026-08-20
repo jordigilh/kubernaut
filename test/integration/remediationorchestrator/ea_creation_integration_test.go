@@ -184,7 +184,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for EA test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for EA test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase")
@@ -421,7 +421,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 
 		By("Verifying RR has RequiresManualReview set")
 		_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+		Expect(rr.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(),
 			"RR should require manual review when AIA fails with WorkflowResolutionFailed")
 	})
 
@@ -707,9 +707,9 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
 		By("Verifying ManualReviewRequired is set")
-		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+		Expect(rr.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(),
 			"BR-ORCH-036 v4.0: RR should have RequiresManualReview=true when RemediationTarget is missing")
-		Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"),
+		Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 			"BR-ORCH-036 v4.0: RR outcome should be ManualReviewRequired")
 	})
 
@@ -740,7 +740,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for dual-target fallback test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for dual-target fallback test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase (no AA was ever created)")
@@ -821,7 +821,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for cluster-scoped Node test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for cluster-scoped Node test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase")
