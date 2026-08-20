@@ -110,6 +110,13 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 		wg.Wait()
 
 		By("every investigation must eventually converge to Completed -- a capacity rejection is transient and must never surface as a permanent failure")
+		// 300s (raised from 180s per CI evidence, 2026-08-20): two consecutive real CI
+		// runs after the RBAC fix (DD-AA-KA-001 Gap 5 amendment) showed zero Failed --
+		// the retry mechanism itself is correct -- but only 90/120 had converged to
+		// Completed by 180s, the rest still (correctly) retrying. 120 investigations
+		// against KA's 50-slot cap means a meaningful fraction queue through multiple
+		// ErrorClassifier backoff rounds (up to ~31s of backoff alone across 5 retries)
+		// before a slot frees; 300s gives comfortable margin on a shared CI runner.
 		Eventually(func() map[string]int {
 			counts := map[string]int{}
 			for _, a := range analyses {
@@ -125,7 +132,7 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 				counts[phase]++
 			}
 			return counts
-		}, 180*time.Second, 3*time.Second).Should(
+		}, 300*time.Second, 3*time.Second).Should(
 			SatisfyAll(
 				HaveKeyWithValue("Completed", capacityBurstOvershoot),
 				Not(HaveKey("Failed")),
