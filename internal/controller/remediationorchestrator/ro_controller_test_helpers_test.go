@@ -492,7 +492,7 @@ func newSignalProcessingFailed(name, namespace, rrName, message string) *signalp
 	sp := newSignalProcessing(name, namespace, rrName, signalprocessingv1.PhaseFailed)
 	now := metav1.Now()
 	sp.Status.CompletionTime = &now
-	sp.Status.Error = message
+	sp.Status.EnsureFailureInfo().Error = message
 	return sp
 }
 

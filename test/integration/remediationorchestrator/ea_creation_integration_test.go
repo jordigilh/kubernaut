@@ -184,7 +184,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for EA test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for EA test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase")
@@ -740,7 +740,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for dual-target fallback test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for dual-target fallback test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase (no AA was ever created)")
@@ -821,7 +821,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
 		sp.Status.CompletionTime = &failedNow
-		sp.Status.Error = "Simulated SP failure for cluster-scoped Node test"
+		sp.Status.EnsureFailureInfo().Error = "Simulated SP failure for cluster-scoped Node test"
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
 		By("Waiting for Failed phase")

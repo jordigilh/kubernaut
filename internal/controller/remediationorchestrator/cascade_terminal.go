@@ -101,7 +101,7 @@ func (r *Reconciler) cascadeToSignalProcessing(ctx context.Context, name, namesp
 		}
 
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
-		sp.Status.Error = message
+		sp.Status.EnsureFailureInfo().Error = message
 
 		return r.client.Status().Update(ctx, sp)
 	})

@@ -117,9 +117,10 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				return err
 			}
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = signalprocessingv1.SeverityCritical
-			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
-			sp.Status.SignalName = signalNameOOMKilledFixture
+			classification := sp.Status.EnsureSignalClassification()
+			classification.Severity = signalprocessingv1.SeverityCritical
+			classification.SignalMode = signalprocessingv1.SignalModeReactive
+			classification.SignalName = signalNameOOMKilledFixture
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",

@@ -101,7 +101,7 @@ cluster := input.cluster.labels.environment if {
 		By("Verifying Status.ClusterClassification was persisted via the real reconcile loop")
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, &final)).To(Succeed())
-		Expect(final.Status.ClusterClassification).To(Equal("production"))
+		Expect(final.Status.GetSignalClassification().ClusterClassification).To(Equal("production"))
 	})
 
 	It("IT-SP-1511-002b: leaves Status.ClusterClassification empty for an unregistered cluster (graceful degradation, SI-10)", func() {
@@ -131,7 +131,7 @@ cluster := input.cluster.labels.environment if {
 		By("Verifying Status.ClusterClassification stays empty and completion is not blocked")
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, &final)).To(Succeed())
-		Expect(final.Status.ClusterClassification).To(BeEmpty())
+		Expect(final.Status.GetSignalClassification().ClusterClassification).To(BeEmpty())
 	})
 
 	It("IT-SP-1511-002c: leaves Status.ClusterClassification empty when fleet mode is disabled (no ClusterRegistry configured)", func() {
@@ -157,6 +157,6 @@ cluster := input.cluster.labels.environment if {
 		By("Verifying Status.ClusterClassification stays empty")
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, &final)).To(Succeed())
-		Expect(final.Status.ClusterClassification).To(BeEmpty())
+		Expect(final.Status.GetSignalClassification().ClusterClassification).To(BeEmpty())
 	})
 })

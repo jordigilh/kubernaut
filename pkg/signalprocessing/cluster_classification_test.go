@@ -127,7 +127,7 @@ var _ = Describe("UT-SP-1511: Cluster classification persistence (BR-FLEET-003, 
 
 		updated := &signalprocessingv1alpha1.SignalProcessing{}
 		Expect(fakeClient.Get(context.Background(), types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, updated)).To(Succeed())
-		Expect(updated.Status.ClusterClassification).To(Equal("production"))
+		Expect(updated.Status.GetSignalClassification().ClusterClassification).To(Equal("production"))
 		Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCategorizing))
 	})
 
@@ -166,7 +166,7 @@ var _ = Describe("UT-SP-1511: Cluster classification persistence (BR-FLEET-003, 
 		Expect(updated.Status.Phase).ToNot(Equal(signalprocessingv1alpha1.PhaseFailed),
 			"cluster classification errors must be non-fatal per BR-FLEET-003 R2 (unlike severity)")
 		Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCategorizing))
-		Expect(updated.Status.ClusterClassification).To(BeEmpty())
+		Expect(updated.Status.GetSignalClassification().ClusterClassification).To(BeEmpty())
 	})
 
 	It("UT-SP-1511-CLASS-03: no KubernetesContext.Cluster (non-fleet) leaves Status.ClusterClassification empty", func() {
@@ -194,7 +194,7 @@ var _ = Describe("UT-SP-1511: Cluster classification persistence (BR-FLEET-003, 
 
 		updated := &signalprocessingv1alpha1.SignalProcessing{}
 		Expect(fakeClient.Get(context.Background(), types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, updated)).To(Succeed())
-		Expect(updated.Status.ClusterClassification).To(BeEmpty())
+		Expect(updated.Status.GetSignalClassification().ClusterClassification).To(BeEmpty())
 		Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCategorizing))
 	})
 })

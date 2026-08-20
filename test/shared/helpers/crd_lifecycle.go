@@ -66,9 +66,10 @@ func SimulateSPCompletion(ctx context.Context, k8sClient client.Client, sp *sign
 			return err
 		}
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = normalizeSeverity(sp.Spec.Signal.Severity)
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = sp.Spec.Signal.Name
+		classification := sp.Status.EnsureSignalClassification()
+		classification.Severity = normalizeSeverity(sp.Spec.Signal.Severity)
+		classification.SignalMode = "reactive"
+		classification.SignalName = sp.Spec.Signal.Name
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
