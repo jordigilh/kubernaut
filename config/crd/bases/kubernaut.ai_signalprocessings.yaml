@@ -20,7 +20,7 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .status.severity
+    - jsonPath: .status.signalClassification.severity
       name: Severity
       type: string
     - jsonPath: .status.environmentClassification.environment
@@ -265,17 +265,6 @@ spec:
                     - Bronze
                     type: string
                 type: object
-              clusterClassification:
-                description: |-
-                  ClusterClassification is the optional cluster business classification
-                  (e.g. "production", "staging-eu") derived by Rego from the signal's
-                  fleet cluster-registration labels (KubernetesContext.Cluster.Labels).
-                  BR-FLEET-003, Issue #1511. Empty when fleet mode is disabled, the
-                  cluster is unregistered, or no Rego `cluster` rule matched -- this is
-                  a normal, non-error outcome (unlike Severity, which is mandatory).
-                  Propagates to AIAnalysis.Spec.SignalContext.Cluster for DataStorage
-                  workflow-discovery filtering.
-                type: string
               completionTime:
                 format: date-time
                 type: string
@@ -336,13 +325,6 @@ spec:
                   - type
                   type: object
                 type: array
-              consecutiveFailures:
-                description: |-
-                  ConsecutiveFailures tracks the number of consecutive transient failures.
-                  Used with shared backoff for exponential retry delays (DD-SHARED-001).
-                  Reset to 0 on successful phase transition.
-                format: int32
-                type: integer
               environmentClassification:
                 description: Categorization results (DD-CATEGORIZATION-001)
                 properties:
@@ -370,9 +352,32 @@ spec:
                 - environment
                 - source
                 type: object
-              error:
-                description: Error information
-                type: string
+              failureInfo:
+                description: |-
+                  ========================================
+                  FAILURE TRACKING (God-struct decomposition, Issue #2209)
+                  ========================================
+                  FailureInfo bundles the error message and consecutive-failure retry
+                  bookkeeping. Nil until the first failure occurs; callers MUST
+                  nil-check before dereferencing directly, or use Get*/Ensure* below.
+                properties:
+                  consecutiveFailures:
+                    description: |-
+                      ConsecutiveFailures tracks the number of consecutive transient failures.
+                      Used with shared backoff for exponential retry delays (DD-SHARED-001).
+                      Reset to 0 on successful phase transition.
+                    format: int32
+                    type: integer
+                  error:
+                    description: Error information
+                    type: string
+                  lastFailureTime:
+                    description: |-
+                      LastFailureTime records when the last failure occurred.
+                      Used to determine if enough time has passed for retry.
+                    format: date-time
+                    type: string
+                type: object
               kubernetesContext:
                 description: Enrichment results
                 properties:
@@ -494,12 +499,6 @@ spec:
                     - name
                     type: object
                 type: object
-              lastFailureTime:
-                description: |-
-                  LastFailureTime records when the last failure occurred.
-                  Used to determine if enough time has passed for retry.
-                format: date-time
-                type: string
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent generation observed by the controller.
@@ -517,12 +516,6 @@ spec:
                 - Categorizing
                 - Completed
                 - Failed
-                type: string
-              policyHash:
-                description: |-
-                  PolicyHash is the SHA256 hash of the Rego policy used for severity determination
-                  Provides audit trail and policy version tracking for compliance requirements
-                  Expected format: 64-character hexadecimal string (SHA256 hash)
                 type: string
               priorityAssignment:
                 description: |-
@@ -561,46 +554,74 @@ spec:
                 - priority
                 - source
                 type: object
-              severity:
+              signalClassification:
                 description: |-
-                  Severity determination (DD-SEVERITY-001 v1.1, ADR-066)
-                  Normalized severity determined by Rego policy: "critical", "high", "warning", "info", or "unknown"
-                  Aligned with KA/workflow catalog severity levels for consistency across platform
-                  Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
-                  to interpret alert urgency without understanding external severity schemes.
-                enum:
-                - critical
-                - high
-                - warning
-                - info
-                - unknown
-                type: string
-              signalMode:
-                description: |-
-                  SignalMode indicates whether this is a reactive or proactive signal.
-                  BR-SP-106: Proactive Signal Mode Classification
-                  ADR-054: Proactive Signal Mode Classification and Prompt Strategy
-                  Set during the Classifying phase alongside severity, environment, and priority.
-                  All signals MUST be classified — "reactive" is the default for unmapped types.
-                enum:
-                - reactive
-                - proactive
-                type: string
-              signalName:
-                description: |-
-                  SignalName is the normalized signal name after proactive-to-base mapping.
-                  BR-SP-106: Signal Name Normalization
-                  For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
-                  For reactive signals, this matches Spec.Signal.Name unchanged.
-                  This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, KA).
-                type: string
-              sourceSignalName:
-                description: |-
-                  SourceSignalName preserves the pre-normalization signal name for audit trail.
-                  BR-SP-106: Audit trail preservation (SOC2 CC7.4)
-                  Only populated for proactive signals (e.g., "PredictedOOMKill").
-                  Empty for reactive signals.
-                type: string
+                  ========================================
+                  SIGNAL CLASSIFICATION (God-struct decomposition, Issue #2209)
+                  ========================================
+                  SignalClassification bundles the severity/policy/cluster/mode/name
+                  determinations produced by the Classifying phase's Rego evaluation.
+                  Nil until the Classifying phase runs; callers MUST nil-check before
+                  dereferencing directly, or use Get*/Ensure* below.
+                properties:
+                  clusterClassification:
+                    description: |-
+                      ClusterClassification is the optional cluster business classification
+                      (e.g. "production", "staging-eu") derived by Rego from the signal's
+                      fleet cluster-registration labels (KubernetesContext.Cluster.Labels).
+                      BR-FLEET-003, Issue #1511. Empty when fleet mode is disabled, the
+                      cluster is unregistered, or no Rego `cluster` rule matched -- this is
+                      a normal, non-error outcome (unlike Severity, which is mandatory).
+                      Propagates to AIAnalysis.Spec.SignalContext.Cluster for DataStorage
+                      workflow-discovery filtering.
+                    type: string
+                  policyHash:
+                    description: |-
+                      PolicyHash is the SHA256 hash of the Rego policy used for severity determination
+                      Provides audit trail and policy version tracking for compliance requirements
+                      Expected format: 64-character hexadecimal string (SHA256 hash)
+                    type: string
+                  severity:
+                    description: |-
+                      Severity determination (DD-SEVERITY-001 v1.1, ADR-066)
+                      Normalized severity determined by Rego policy: "critical", "high", "warning", "info", or "unknown"
+                      Aligned with KA/workflow catalog severity levels for consistency across platform
+                      Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
+                      to interpret alert urgency without understanding external severity schemes.
+                    enum:
+                    - critical
+                    - high
+                    - warning
+                    - info
+                    - unknown
+                    type: string
+                  signalMode:
+                    description: |-
+                      SignalMode indicates whether this is a reactive or proactive signal.
+                      BR-SP-106: Proactive Signal Mode Classification
+                      ADR-054: Proactive Signal Mode Classification and Prompt Strategy
+                      Set during the Classifying phase alongside severity, environment, and priority.
+                      All signals MUST be classified — "reactive" is the default for unmapped types.
+                    enum:
+                    - reactive
+                    - proactive
+                    type: string
+                  signalName:
+                    description: |-
+                      SignalName is the normalized signal name after proactive-to-base mapping.
+                      BR-SP-106: Signal Name Normalization
+                      For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
+                      For reactive signals, this matches Spec.Signal.Name unchanged.
+                      This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, KA).
+                    type: string
+                  sourceSignalName:
+                    description: |-
+                      SourceSignalName preserves the pre-normalization signal name for audit trail.
+                      BR-SP-106: Audit trail preservation (SOC2 CC7.4)
+                      Only populated for proactive signals (e.g., "PredictedOOMKill").
+                      Empty for reactive signals.
+                    type: string
+                type: object
               startTime:
                 description: Processing timestamps
                 format: date-time
