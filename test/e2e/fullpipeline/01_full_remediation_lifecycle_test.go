@@ -232,9 +232,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 					GinkgoWriter.Printf("  ✅ SP priority: %s (source: %s)\n",
 						sp.Status.PriorityAssignment.Priority, sp.Status.PriorityAssignment.Source)
 
-					Expect(sp.Status.Severity).ToNot(BeEmpty(),
+					Expect(sp.Status.GetSignalClassification().Severity).ToNot(BeEmpty(),
 						"SP Severity must be populated (normalized by Rego)")
-					GinkgoWriter.Printf("  ✅ SP severity: %s\n", sp.Status.Severity)
+					GinkgoWriter.Printf("  ✅ SP severity: %s\n", sp.Status.GetSignalClassification().Severity)
 					break
 				}
 			}

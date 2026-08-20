@@ -67,10 +67,12 @@ func completeSP() *signalprocessingv1.SignalProcessing {
 				Criticality:    sharedtypes.CriticalityCritical,
 				SLARequirement: sharedtypes.SLARequirementPlatinum,
 			},
-			Severity:   "critical",
-			SignalMode: "reactive",
-			SignalName: "OOMKilled",
-			PolicyHash: "a1b2c3d4e5f6",
+			SignalClassification: &signalprocessingv1.SignalClassification{
+				Severity:   "critical",
+				SignalMode: "reactive",
+				SignalName: "OOMKilled",
+				PolicyHash: "a1b2c3d4e5f6",
+			},
 			Conditions: []metav1.Condition{
 				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Completed"},
 			},

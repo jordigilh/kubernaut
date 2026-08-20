@@ -187,9 +187,10 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 
 			By("Simulating SP completion")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = signalprocessingv1.SeverityCritical
-			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
-			sp.Status.SignalName = sp.Spec.Signal.Name
+			spClassification := sp.Status.EnsureSignalClassification()
+			spClassification.Severity = signalprocessingv1.SeverityCritical
+			spClassification.SignalMode = signalprocessingv1.SignalModeReactive
+			spClassification.SignalName = sp.Spec.Signal.Name
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",

@@ -184,22 +184,23 @@ func (r *SignalProcessingReconciler) finalizeClassification(ctx context.Context,
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Categorizing handler after processing
 		sp.Status.EnvironmentClassification = in.envClass
 		sp.Status.PriorityAssignment = in.priorityAssignment
+		classification := sp.Status.EnsureSignalClassification()
 		// DD-SEVERITY-001: Set normalized severity
 		if in.severityResult != nil {
-			sp.Status.Severity = in.severityResult.Severity
+			classification.Severity = in.severityResult.Severity
 		}
 		// ADR-060: Unified policy hash covers all rules
 		if r.PolicyEvaluator != nil {
-			sp.Status.PolicyHash = r.PolicyEvaluator.GetPolicyHash()
+			classification.PolicyHash = r.PolicyEvaluator.GetPolicyHash()
 		}
 		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
 		// SignalType is set for ALL signals (not just proactive) — it is the
 		// authoritative signal name for all downstream consumers (RO, AA, KA).
-		sp.Status.SignalMode = in.signalModeResult.SignalMode
-		sp.Status.SignalName = in.signalModeResult.SignalName
-		sp.Status.SourceSignalName = in.signalModeResult.SourceSignalName
+		classification.SignalMode = in.signalModeResult.SignalMode
+		classification.SignalName = in.signalModeResult.SignalName
+		classification.SourceSignalName = in.signalModeResult.SourceSignalName
 		// BR-FLEET-003 (#1511): optional cluster business classification.
-		sp.Status.ClusterClassification = in.clusterClassification
+		classification.ClusterClassification = in.clusterClassification
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe
 		spconditions.SetClassificationComplete(sp, true, "", in.classificationMessage)
@@ -324,7 +325,7 @@ func (r *SignalProcessingReconciler) failClassifyingPhase(ctx context.Context, s
 	if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		sp.Status.ObservedGeneration = sp.Generation
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-		sp.Status.Error = statusErrMsg
+		sp.Status.EnsureFailureInfo().Error = statusErrMsg
 		spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
 		spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
 		spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
@@ -368,7 +369,7 @@ func (r *SignalProcessingReconciler) evaluateSeverityOrFail(ctx context.Context,
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		sp.Status.ObservedGeneration = sp.Generation
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-		sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
+		sp.Status.EnsureFailureInfo().Error = fmt.Sprintf("policy evaluation failed: %v", err)
 		spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
 		// S1 (DD-SP-002): Set all downstream conditions to False on terminal failure
 		spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")

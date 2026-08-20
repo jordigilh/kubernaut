@@ -159,7 +159,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
 
-				g.Expect(updated.Status.Severity).To(Equal("critical"),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(Equal("critical"),
 					"Sev1 should normalize to 'critical' per Rego policy (DD-SEVERITY-001)")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
 					"SignalProcessing should complete successfully")
@@ -168,8 +168,8 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			// E2E-SP-163-002: Severity and PolicyHash exact field validation
 			var finalSP signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &finalSP)).To(Succeed())
-			Expect(finalSP.Status.Severity).To(Equal("critical"))
-			Expect(finalSP.Status.PolicyHash).To(MatchRegexp("^[a-f0-9]{64}$"),
+			Expect(finalSP.Status.GetSignalClassification().Severity).To(Equal("critical"))
+			Expect(finalSP.Status.GetSignalClassification().PolicyHash).To(MatchRegexp("^[a-f0-9]{64}$"),
 				"PolicyHash should be SHA256 hex (64 chars) from SeverityClassifier.GetPolicyHash()")
 
 			// BUSINESS OUTCOME VERIFIED:
@@ -248,8 +248,8 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			Eventually(func(g Gomega) {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty(), "Initial severity should be set")
-				initialSeverity = updated.Status.Severity
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(BeEmpty(), "Initial severity should be set")
+				initialSeverity = updated.Status.GetSignalClassification().Severity
 			}, "60s", "2s").Should(Succeed())
 
 			// AND: Operator updates unified Rego policy ConfigMap (hot-reload)
@@ -323,7 +323,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 					// environment/priority rules. The stripped policy has default priority P3.
 					// Check that priority is NOT the stripped-policy default "P3" for a signal
 					// with "high" severity — the original Rego policy assigns score-based priority.
-					g.Expect(processed.Status.Severity).ToNot(Equal("unknown"),
+					g.Expect(processed.Status.GetSignalClassification().Severity).ToNot(Equal("unknown"),
 						"Policy restore probe: severity should not be 'unknown' (original policy loaded)")
 				}, "45s", "3s").Should(Succeed(), "Original Rego policy should propagate via FileWatcher within 45s")
 
@@ -385,7 +385,7 @@ default labels := {}
 				}, "20s", "1s").Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
 				// Verify policy was hot-reloaded (should return "high" not "critical")
-				g.Expect(processed.Status.Severity).To(Equal("high"),
+				g.Expect(processed.Status.GetSignalClassification().Severity).To(Equal("high"),
 					"Hot-reload validation: CUSTOM_VALUE should map to high (policy reloaded, DD-SEVERITY-001 v1.1)")
 			}, "30s", "2s").Should(Succeed(), "ConfigMap hot-reload should complete within 30s (kubelet sync-frequency=10s)")
 
@@ -431,9 +431,9 @@ default labels := {}
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp2), &updated)).To(Succeed())
 
-				g.Expect(updated.Status.Severity).To(Equal("high"),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(Equal("high"),
 					"New workflow should use updated policy mapping CUSTOM_VALUE → high (DD-SEVERITY-001 v1.1)")
-				g.Expect(updated.Status.Severity).ToNot(Equal(initialSeverity),
+				g.Expect(updated.Status.GetSignalClassification().Severity).ToNot(Equal(initialSeverity),
 					"New workflow severity should differ from old workflow (policy changed)")
 			}, "30s", "2s").Should(Succeed())
 
@@ -497,7 +497,7 @@ default labels := {}
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
 
-				g.Expect(updated.Status.Severity).To(Equal("critical"),
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(Equal("critical"),
 					"P0 should normalize to 'critical' per Rego policy (DD-SEVERITY-001)")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
 					"SignalProcessing should complete successfully")

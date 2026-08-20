@@ -31,7 +31,7 @@ import (
 // +kubebuilder:resource:shortName=sp
 // +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Severity",type=string,JSONPath=`.status.severity`
+// +kubebuilder:printcolumn:name="Severity",type=string,JSONPath=`.status.signalClassification.severity`
 // +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.status.environmentClassification.environment`
 // +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.status.priorityAssignment.priority`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
@@ -225,6 +225,35 @@ type SignalProcessingStatus struct {
 	PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
 	BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
 
+	// ========================================
+	// SIGNAL CLASSIFICATION (God-struct decomposition, Issue #2209)
+	// ========================================
+	// SignalClassification bundles the severity/policy/cluster/mode/name
+	// determinations produced by the Classifying phase's Rego evaluation.
+	// Nil until the Classifying phase runs; callers MUST nil-check before
+	// dereferencing directly, or use Get*/Ensure* below.
+	// +optional
+	SignalClassification *SignalClassification `json:"signalClassification,omitempty"`
+
+	// Conditions for detailed status
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// ========================================
+	// FAILURE TRACKING (God-struct decomposition, Issue #2209)
+	// ========================================
+	// FailureInfo bundles the error message and consecutive-failure retry
+	// bookkeeping. Nil until the first failure occurs; callers MUST
+	// nil-check before dereferencing directly, or use Get*/Ensure* below.
+	// +optional
+	FailureInfo *FailureInfo `json:"failureInfo,omitempty"`
+}
+
+// SignalClassification bundles the severity, policy attribution, cluster
+// business classification, and signal-mode/name normalization determined
+// by the SignalProcessing controller's Classifying phase (God-struct
+// decomposition, Issue #2209: SignalProcessingStatus previously carried
+// these as 6 separate top-level fields).
+type SignalClassification struct {
 	// Severity determination (DD-SEVERITY-001 v1.1, ADR-066)
 	// Normalized severity determined by Rego policy: "critical", "high", "warning", "info", or "unknown"
 	// Aligned with KA/workflow catalog severity levels for consistency across platform
@@ -274,10 +303,13 @@ type SignalProcessingStatus struct {
 	// Empty for reactive signals.
 	// +optional
 	SourceSignalName string `json:"sourceSignalName,omitempty"`
+}
 
-	// Conditions for detailed status
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
+// FailureInfo bundles the error message and consecutive-failure retry
+// bookkeeping tracked across SignalProcessing's error/timeout handling
+// (God-struct decomposition, Issue #2209: SignalProcessingStatus previously
+// carried these as 3 separate top-level fields).
+type FailureInfo struct {
 	// Error information
 	Error string `json:"error,omitempty"`
 
@@ -291,6 +323,46 @@ type SignalProcessingStatus struct {
 	// Used to determine if enough time has passed for retry.
 	// +optional
 	LastFailureTime *metav1.Time `json:"lastFailureTime,omitempty"`
+}
+
+// GetSignalClassification returns Status.SignalClassification, or a
+// zero-value *SignalClassification if nil, so read call sites can chain
+// field access without repeating a nil-guard. God-struct decomposition
+// (Issue #2209): SignalClassification/FailureInfo are pointer bundles (nil
+// until their owning phase populates them), unlike the flat string/int32
+// fields they replaced.
+func (s *SignalProcessingStatus) GetSignalClassification() *SignalClassification {
+	if s.SignalClassification == nil {
+		return &SignalClassification{}
+	}
+	return s.SignalClassification
+}
+
+// EnsureSignalClassification initializes Status.SignalClassification if nil
+// and returns it, for write call sites.
+func (s *SignalProcessingStatus) EnsureSignalClassification() *SignalClassification {
+	if s.SignalClassification == nil {
+		s.SignalClassification = &SignalClassification{}
+	}
+	return s.SignalClassification
+}
+
+// GetFailureInfo returns Status.FailureInfo, or a zero-value *FailureInfo if
+// nil. See GetSignalClassification doc comment.
+func (s *SignalProcessingStatus) GetFailureInfo() *FailureInfo {
+	if s.FailureInfo == nil {
+		return &FailureInfo{}
+	}
+	return s.FailureInfo
+}
+
+// EnsureFailureInfo initializes Status.FailureInfo if nil and returns it.
+// See EnsureSignalClassification doc comment.
+func (s *SignalProcessingStatus) EnsureFailureInfo() *FailureInfo {
+	if s.FailureInfo == nil {
+		s.FailureInfo = &FailureInfo{}
+	}
+	return s.FailureInfo
 }
 
 // SignalProcessingStatus.SignalMode enum values (BR-SP-106, ADR-054).

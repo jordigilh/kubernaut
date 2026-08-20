@@ -118,15 +118,15 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				}, &updated)).To(Succeed())
 
 				// THEN: Signal mode is proactive
-				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("proactive"),
 					"PredictedOOMKill should be classified as proactive signal mode")
 
 				// THEN: Signal type is normalized for workflow catalog matching
-				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("OOMKilled"),
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
 
 				// THEN: Original signal type is preserved for SOC2 audit trail
-				g.Expect(updated.Status.SourceSignalName).To(Equal(predictedoomkill),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(Equal(predictedoomkill),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 
 				// THEN: SP reaches Completed phase (full pipeline works with proactive signals)
@@ -162,15 +162,15 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				}, &updated)).To(Succeed())
 
 				// THEN: Signal mode defaults to reactive
-				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("reactive"),
 					"OOMKilled should be classified as reactive (not in proactive mappings)")
 
 				// THEN: Signal type is unchanged (no normalization needed)
-				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("OOMKilled"),
 					"Reactive signal type should pass through unchanged")
 
 				// THEN: Original signal type is empty (no normalization occurred)
-				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(BeEmpty(),
 					"SourceSignalName should be empty for reactive signals (no normalization)")
 
 				// THEN: SP reaches Completed phase
@@ -200,11 +200,11 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				}, &updated)).To(Succeed())
 
 				// THEN: Classified as proactive with correct normalization
-				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("proactive"),
 					"PredictedCPUThrottling should be classified as proactive")
-				g.Expect(updated.Status.SignalName).To(Equal("CPUThrottling"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("CPUThrottling"),
 					"PredictedCPUThrottling should normalize to CPUThrottling")
-				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedCPUThrottling"),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(Equal("PredictedCPUThrottling"),
 					"Original type preserved for audit trail")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())
@@ -230,11 +230,11 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				}, &updated)).To(Succeed())
 
 				// THEN: Defaults to reactive with type unchanged
-				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
+				g.Expect(updated.Status.GetSignalClassification().SignalMode).To(Equal("reactive"),
 					"Unknown signal types should default to reactive")
-				g.Expect(updated.Status.SignalName).To(Equal("CustomAlertType"),
+				g.Expect(updated.Status.GetSignalClassification().SignalName).To(Equal("CustomAlertType"),
 					"Unknown signal type should pass through unchanged")
-				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
+				g.Expect(updated.Status.GetSignalClassification().SourceSignalName).To(BeEmpty(),
 					"No original type for reactive signals")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())

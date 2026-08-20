@@ -46,8 +46,8 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -305,9 +305,9 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 					},
 				},
 				Status: signalprocessingv1alpha1.SignalProcessingStatus{
-					Phase:               signalprocessingv1alpha1.PhasePending,
-					ConsecutiveFailures: 3,
-					StartTime:           &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					Phase:       signalprocessingv1alpha1.PhasePending,
+					FailureInfo: &signalprocessingv1alpha1.FailureInfo{ConsecutiveFailures: 3},
+					StartTime:   &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
 				},
 			}
 
@@ -335,7 +335,7 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 
 			updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
 			Expect(fakeClient.Get(context.Background(), types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, updatedSP)).To(Succeed())
-			Expect(updatedSP.Status.ConsecutiveFailures).To(Equal(int32(0)),
+			Expect(updatedSP.Status.GetFailureInfo().ConsecutiveFailures).To(Equal(int32(0)),
 				"BR-SP-111: ConsecutiveFailures MUST reset on successful phase transition (RequeueAfter path)")
 		})
 
@@ -357,9 +357,9 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 					},
 				},
 				Status: signalprocessingv1alpha1.SignalProcessingStatus{
-					Phase:               signalprocessingv1alpha1.PhasePending,
-					ConsecutiveFailures: 5,
-					StartTime:           &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					Phase:       signalprocessingv1alpha1.PhasePending,
+					FailureInfo: &signalprocessingv1alpha1.FailureInfo{ConsecutiveFailures: 5},
+					StartTime:   &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
 				},
 			}
 
@@ -388,7 +388,7 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 
 			updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
 			Expect(fakeClient.Get(context.Background(), types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, updatedSP)).To(Succeed())
-			Expect(updatedSP.Status.ConsecutiveFailures).To(Equal(int32(0)),
+			Expect(updatedSP.Status.GetFailureInfo().ConsecutiveFailures).To(Equal(int32(0)),
 				"BR-SP-111: ConsecutiveFailures MUST reset on any successful transition")
 		})
 
@@ -410,9 +410,9 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 					},
 				},
 				Status: signalprocessingv1alpha1.SignalProcessingStatus{
-					Phase:               signalprocessingv1alpha1.PhaseEnriching,
-					ConsecutiveFailures: 2,
-					StartTime:           &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					Phase:       signalprocessingv1alpha1.PhaseEnriching,
+					FailureInfo: &signalprocessingv1alpha1.FailureInfo{ConsecutiveFailures: 2},
+					StartTime:   &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
 				},
 			}
 
@@ -446,7 +446,7 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 
 			updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
 			Expect(fakeClient.Get(context.Background(), types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, updatedSP)).To(Succeed())
-			Expect(updatedSP.Status.ConsecutiveFailures).To(BeNumerically(">=", 2),
+			Expect(updatedSP.Status.GetFailureInfo().ConsecutiveFailures).To(BeNumerically(">=", 2),
 				"ConsecutiveFailures MUST NOT reset on error (failures should accumulate)")
 		})
 	})
