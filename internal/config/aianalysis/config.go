@@ -48,6 +48,20 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// MaxConcurrentReconciles limits the number of concurrent AIAnalysis
+	// reconciliations (controller-runtime's WithOptions, wired via
+	// AIAnalysisReconciler.SetupWithManager). #2204 RCA (2026-08-20):
+	// cmd/aianalysis/main.go previously called SetupWithManager(mgr) with no
+	// explicit worker count, so controller-runtime's implicit default of 1
+	// serialized every AIAnalysis reconcile in production/E2E even though
+	// KA dispatches the underlying investigations concurrently -- the same
+	// bottleneck the integration envtest suite already worked around
+	// (test/integration/aianalysis/suite_test.go hardcodes 10), but this is
+	// the first time it's wired into the actual production entry point.
+	// Mirrors effectivenessmonitor's AssessmentConfig.MaxConcurrentReconciles
+	// (ADR-EM-001 §10) precedent. Default: 10. Range: [1, ∞).
+	MaxConcurrentReconciles int `yaml:"maxConcurrentReconciles"`
 }
 
 // #2204 (2026-08-20): AgentConfig (agent.url / agent.timeout /
@@ -102,7 +116,8 @@ func DefaultConfig() *Config {
 		Rego: RegoConfig{
 			PolicyPath: "/etc/aianalysis/policies/approval.rego",
 		},
-		Logging: sharedconfig.DefaultLoggingConfig(),
+		Logging:                 sharedconfig.DefaultLoggingConfig(),
+		MaxConcurrentReconciles: 10,
 	}
 }
 
@@ -150,6 +165,10 @@ func (c *Config) Validate() error {
 	// Validate DataStorage config (ADR-030)
 	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err
+	}
+
+	if c.MaxConcurrentReconciles < 1 {
+		return fmt.Errorf("maxConcurrentReconciles must be at least 1, got %d", c.MaxConcurrentReconciles)
 	}
 
 	return c.Rego.Validate()

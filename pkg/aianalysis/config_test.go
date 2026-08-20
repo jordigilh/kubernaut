@@ -61,6 +61,19 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(cfg.DataStorage.Buffer.BufferSize).To(Equal(20000))
 			Expect(cfg.DataStorage.Buffer.BatchSize).To(Equal(1000))
 		})
+
+		It("#2204: should default MaxConcurrentReconciles to 10 workers", func() {
+			// Prior to this fix, cmd/aianalysis/main.go called
+			// SetupWithManager(mgr) with no explicit worker count, so
+			// controller-runtime's implicit default of 1 silently serialized
+			// every AIAnalysis reconcile in production (and in the E2E Kind
+			// deployment, which runs this same binary) -- the exact
+			// bottleneck already fixed for the integration envtest suite
+			// (test/integration/aianalysis/suite_test.go: SetupWithManager(k8sManager, 10))
+			// but never wired into the production entry point itself.
+			cfg := config.DefaultConfig()
+			Expect(cfg.MaxConcurrentReconciles).To(Equal(10))
+		})
 	})
 
 	// ========================================
@@ -127,6 +140,12 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			cfg.Rego.PolicyPath = ""
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("policyPath")))
+		})
+
+		It("#2204: should reject a maxConcurrentReconciles below 1", func() {
+			cfg := config.DefaultConfig()
+			cfg.MaxConcurrentReconciles = 0
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("maxConcurrentReconciles must be at least 1")))
 		})
 
 		It("should reject config loaded from invalid YAML testdata", func() {

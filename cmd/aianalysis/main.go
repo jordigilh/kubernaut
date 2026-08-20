@@ -324,7 +324,9 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 		ISPhaseUpdater:   isPhaseUpdater,      // #1421: Cascade cancel to IS in terminal branch
 	}
 	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
-	if err := aaReconciler.SetupWithManager(mgr); err != nil {
+	// #2204 RCA (2026-08-20): explicit worker count, not the bare SetupWithManager(mgr)
+	// default of 1 -- see MaxConcurrentReconciles doc comment (internal/config/aianalysis/config.go).
+	if err := aaReconciler.SetupWithManager(mgr, cfg.MaxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
 	}
