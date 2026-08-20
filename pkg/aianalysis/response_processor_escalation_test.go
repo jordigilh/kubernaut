@@ -98,9 +98,9 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"IR-5: Escalation must result in Failed phase to route to human review")
-			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"IR-5: NeedsHumanReview must be true for escalation routing")
-			Expect(analysis.Status.HumanReviewReason).To(Equal("operator_escalation"),
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("operator_escalation"),
 				"IR-5/AU-12: operator_escalation must be persisted as the audit-trail reason for escalation")
 			Expect(string(analysis.Status.Reason)).To(Equal("WorkflowResolutionFailed"),
 				"IR-5: Reason must indicate workflow resolution failure requiring human intervention")

@@ -112,8 +112,8 @@ func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, c
 	}, timeout, interval).Should(Succeed())
 
 	By("Verifying the RCA reflects a genuine, correctly-targeted tool call")
-	Expect(ai.Status.RootCauseAnalysis).ToNot(BeNil(), "Completed AIAnalysis must carry rootCauseAnalysis")
-	Expect(ai.Status.RootCauseAnalysis.Summary).To(ContainSubstring(evidence),
+	Expect(ai.Status.GetRCAResult().RootCauseAnalysis).ToNot(BeNil(), "Completed AIAnalysis must carry rootCauseAnalysis")
+	Expect(ai.Status.RCAResult.RootCauseAnalysis.Summary).To(ContainSubstring(evidence),
 		"AC-4/AC-6, SI-4: the RCA summary must contain the environment-specific evidence %q, proving KA's "+
 			"real investigation loop called the correct tool for this environment and reached the correct "+
 			"cluster's live object -- not a canned response and not a wrong-cluster false positive", evidence)

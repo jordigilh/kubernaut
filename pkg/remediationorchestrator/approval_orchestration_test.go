@@ -76,19 +76,23 @@ var _ = Describe("ApprovalOrchestration", func() {
 					},
 					Status: aianalysisv1.AIAnalysisStatus{
 						Phase: "Completed",
-						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-								WorkflowID:      "wf-restart-pods",
-								WorkflowName:    "wf-restart-pods",
-								ActionType:      "RestartPod",
-								Version:         "v1.0.0",
-								ExecutionBundle: "kubernaut/workflows:latest",
+						RCAResult: &aianalysisv1.RCAResult{
+							SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "wf-restart-pods",
+									WorkflowName:    "wf-restart-pods",
+									ActionType:      "RestartPod",
+									Version:         "v1.0.0",
+									ExecutionBundle: "kubernaut/workflows:latest",
+								},
+								Confidence: 0.75,
+								Rationale:  "Pod restart recommended based on OOM patterns",
 							},
-							Confidence: 0.75,
-							Rationale:  "Pod restart recommended based on OOM patterns",
+							RootCause: "Memory leak causing OOM kills",
 						},
-						ApprovalReason: "Confidence between 60-79%",
-						RootCause:      "Memory leak causing OOM kills",
+						Approval: &aianalysisv1.ApprovalStatus{
+							ApprovalReason: "Confidence between 60-79%",
+						},
 					},
 				}
 				Expect(fakeClient.Create(ctx, ai)).To(Succeed())
@@ -198,9 +202,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						Name:      "ai-test-rr",
 						Namespace: "default",
 					},
-					Status: aianalysisv1.AIAnalysisStatus{
-						SelectedWorkflow: nil,
-					},
+					Status: aianalysisv1.AIAnalysisStatus{},
 				}
 				_, err := ac.Create(ctx, rr, ai)
 				Expect(err).To(HaveOccurred())
@@ -402,19 +404,23 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.85,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.85,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalRequired: true,
-					ApprovalReason:   "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)",
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalRequired: true,
+						ApprovalReason:   "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)",
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
@@ -437,19 +443,23 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.90,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.90,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalRequired: true,
-					ApprovalReason:   "Production environment with sensitive resource kind - requires manual approval",
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalRequired: true,
+						ApprovalReason:   "Production environment with sensitive resource kind - requires manual approval",
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
@@ -473,19 +483,23 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-scale-hpa",
-							WorkflowName:    "wf-scale-hpa",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-scale-hpa",
+								WorkflowName:    "wf-scale-hpa",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.65,
+							Rationale:  "HPA max replicas reached",
 						},
-						Confidence: 0.65,
-						Rationale:  "HPA max replicas reached",
 					},
-					ApprovalRequired: true,
-					ApprovalReason:   "Production environment requires manual approval",
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalRequired: true,
+						ApprovalReason:   "Production environment requires manual approval",
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
@@ -540,23 +554,27 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.72,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.72,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalReason: "Confidence below auto-approve threshold",
-					ApprovalContext: &aianalysisv1.ApprovalContext{
-						EvidenceCollected: []string{
-							"OOM killed event detected at 14:32 UTC",
-							"Memory usage exceeded 95% of limit",
-							"Container restart count: 3 in last 10 minutes",
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalReason: "Confidence below auto-approve threshold",
+						ApprovalContext: &aianalysisv1.ApprovalContext{
+							EvidenceCollected: []string{
+								"OOM killed event detected at 14:32 UTC",
+								"Memory usage exceeded 95% of limit",
+								"Container restart count: 3 in last 10 minutes",
+							},
 						},
 					},
 				},
@@ -582,27 +600,31 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
-						},
-						Confidence: 0.72,
-						Rationale:  "Pod restart recommended",
-					},
-					ApprovalReason: "Confidence below auto-approve threshold",
-					ApprovalContext: &aianalysisv1.ApprovalContext{
-						AlternativesConsidered: []aianalysisv1.AlternativeApproach{
-							{
-								Approach: "wf-scale-up",
-								ProsCons: "Pros: addresses root cause. Cons: higher resource cost",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
 							},
-							{
-								Approach: "wf-rollback",
-								ProsCons: "Pros: quick recovery. Cons: loses recent changes",
+							Confidence: 0.72,
+							Rationale:  "Pod restart recommended",
+						},
+					},
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalReason: "Confidence below auto-approve threshold",
+						ApprovalContext: &aianalysisv1.ApprovalContext{
+							AlternativesConsidered: []aianalysisv1.AlternativeApproach{
+								{
+									Approach: "wf-scale-up",
+									ProsCons: "Pros: addresses root cause. Cons: higher resource cost",
+								},
+								{
+									Approach: "wf-rollback",
+									ProsCons: "Pros: quick recovery. Cons: loses recent changes",
+								},
 							},
 						},
 					},
@@ -631,23 +653,27 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.85,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.85,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalReason: "Production environment requires manual approval",
-					ApprovalContext: &aianalysisv1.ApprovalContext{
-						PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
-							PolicyName:   "production-approval-policy",
-							MatchedRules: []string{"require_approval_for_production", "sensitive_namespace"},
-							Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalReason: "Production environment requires manual approval",
+						ApprovalContext: &aianalysisv1.ApprovalContext{
+							PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
+								PolicyName:   "production-approval-policy",
+								MatchedRules: []string{"require_approval_for_production", "sensitive_namespace"},
+								Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
+							},
 						},
 					},
 				},
@@ -679,24 +705,28 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.85,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.85,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalReason: "Production environment requires manual approval",
-					ApprovalContext: &aianalysisv1.ApprovalContext{
-						PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
-							PolicyName:   "production-approval-policy",
-							MatchedRules: []string{"require_approval_for_production"},
-							Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
-							PolicyHash:   expectedHash,
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalReason: "Production environment requires manual approval",
+						ApprovalContext: &aianalysisv1.ApprovalContext{
+							PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
+								PolicyName:   "production-approval-policy",
+								MatchedRules: []string{"require_approval_for_production"},
+								Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
+								PolicyHash:   expectedHash,
+							},
 						},
 					},
 				},
@@ -723,19 +753,23 @@ var _ = Describe("ApprovalOrchestration", func() {
 				},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
-					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID:      "wf-restart-pods",
-							WorkflowName:    "wf-restart-pods",
-							ActionType:      "RestartPod",
-							Version:         "v1.0.0",
-							ExecutionBundle: "kubernaut/workflows:latest",
+					RCAResult: &aianalysisv1.RCAResult{
+						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.72,
+							Rationale:  "Pod restart recommended",
 						},
-						Confidence: 0.72,
-						Rationale:  "Pod restart recommended",
 					},
-					ApprovalReason:  "Confidence below auto-approve threshold",
-					ApprovalContext: nil,
+					Approval: &aianalysisv1.ApprovalStatus{
+						ApprovalReason:  "Confidence below auto-approve threshold",
+						ApprovalContext: nil,
+					},
 				},
 			}
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())

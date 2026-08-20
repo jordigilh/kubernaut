@@ -111,16 +111,18 @@ var _ = Describe("AnalyzingHandler", func() {
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: aianalysis.PhaseAnalyzing,
 				// Simulating data from InvestigatingHandler
-				RootCause: "OOM caused by memory leak",
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:      "wf-restart-pod",
-						WorkflowName:    "wf-restart-pod",
-						ActionType:      "RestartPod",
-						ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "OOM caused by memory leak",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pod",
+							WorkflowName:    "wf-restart-pod",
+							ActionType:      "RestartPod",
+							ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
+						},
+						Confidence: 0.92,
+						Rationale:  "Selected for OOM remediation",
 					},
-					Confidence: 0.92,
-					Rationale:  "Selected for OOM remediation",
 				},
 			},
 		}
@@ -136,8 +138,8 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: Business outcome - analysis completes with approval decision
 			It("should complete analysis and require approval for production", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow.Confidence = 0.5
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.SelectedWorkflow.Confidence = 0.5
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "OOM detected",
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind: "Deployment", Name: "api-server", Namespace: "production",
@@ -149,16 +151,16 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should reach terminal Completed phase")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
-				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Production environment should require approval")
-				Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty(), "Approval reason should explain why approval is needed")
-				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("Production"), "Reason should mention production")
+				Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue(), "Production environment should require approval")
+				Expect(analysis.Status.GetApproval().ApprovalReason).NotTo(BeEmpty(), "Approval reason should explain why approval is needed")
+				Expect(analysis.Status.GetApproval().ApprovalReason).To(ContainSubstring("Production"), "Reason should mention production")
 			})
 
 			// BR-AI-019: ApprovalContext population
 			It("should populate ApprovalContext", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow.Confidence = 0.5
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.SelectedWorkflow.Confidence = 0.5
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "OOM detected",
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind: "Deployment", Name: "api-server", Namespace: "production",
@@ -168,9 +170,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.Reason).To(ContainSubstring("Production"))
-				Expect(analysis.Status.ApprovalContext.WhyApprovalRequired).To(ContainSubstring("Production"))
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.Reason).To(ContainSubstring("Production"))
+				Expect(analysis.Status.GetApproval().ApprovalContext.WhyApprovalRequired).To(ContainSubstring("Production"))
 			})
 
 			// BR-AI-019: Confidence level classification for operator visibility
@@ -178,16 +180,16 @@ var _ = Describe("AnalyzingHandler", func() {
 			DescribeTable("should populate ApprovalContext with correct confidence level",
 				func(confidenceScore float64, expectedLevel string) {
 					analysis := createTestAnalysis()
-					analysis.Status.SelectedWorkflow.Confidence = confidenceScore
+					analysis.Status.RCAResult.SelectedWorkflow.Confidence = confidenceScore
 					// Ensure approval is triggered: missing remediation target guarantees it
-					analysis.Status.RootCauseAnalysis = nil
+					analysis.Status.RCAResult.RootCauseAnalysis = nil
 
 					_, err := handler.Handle(ctx, analysis)
 
 					Expect(err).NotTo(HaveOccurred())
-					Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-					Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
-					Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
+					Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+					Expect(analysis.Status.GetApproval().ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
+					Expect(analysis.Status.GetApproval().ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
 				},
 				// High confidence (≥0.8): AI is very confident
 				Entry("0.92 → high (above threshold)", 0.92, "high"),
@@ -210,17 +212,17 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
-				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.RecommendedActions).To(HaveLen(1))
+				Expect(analysis.Status.GetApproval().ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
 			})
 
 			// BR-AI-019: Investigation summary from RootCauseAnalysis
 			// Business Value: Operators see AI's investigation findings in approval context
 			It("should populate ApprovalContext with InvestigationSummary from RCA", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow.Confidence = 0.5
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.SelectedWorkflow.Confidence = 0.5
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary:             "Memory leak in application container",
 					ContributingFactors: []string{"OOM killed event", "Gradual memory increase over 2 hours"},
 					RemediationTarget: &aianalysisv1.RemediationTarget{
@@ -231,25 +233,25 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
+				Expect(analysis.Status.GetApproval().ApprovalContext.EvidenceCollected).To(HaveLen(2))
+				Expect(analysis.Status.GetApproval().ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
 			})
 
 			// BR-AI-019: Edge case - no RCA available
 			// Business Value: System handles missing investigation gracefully
 			It("should handle missing RootCauseAnalysis gracefully", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.RootCauseAnalysis = nil
+				analysis.Status.RCAResult.RootCauseAnalysis = nil
 				// Missing RemediationTarget triggers approval via real policy
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(BeEmpty())
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.InvestigationSummary).To(BeEmpty())
+				Expect(analysis.Status.GetApproval().ApprovalContext.EvidenceCollected).To(BeNil())
 			})
 
 			// BR-AI-019: AlternativesConsidered from AlternativeWorkflows
@@ -257,7 +259,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			It("should populate ApprovalContext with AlternativesConsidered", func() {
 				analysis := createTestAnalysis()
 				// Missing RemediationTarget triggers approval via real policy
-				analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
+				analysis.Status.RCAResult.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
 					{
 						WorkflowID:      "wf-scale-up",
 						ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
@@ -275,24 +277,24 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(HaveLen(2))
-				Expect(analysis.Status.ApprovalContext.AlternativesConsidered[0].Approach).To(Equal("wf-scale-up"))
-				Expect(analysis.Status.ApprovalContext.AlternativesConsidered[1].Approach).To(Equal("wf-rollback"))
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.AlternativesConsidered).To(HaveLen(2))
+				Expect(analysis.Status.GetApproval().ApprovalContext.AlternativesConsidered[0].Approach).To(Equal("wf-scale-up"))
+				Expect(analysis.Status.GetApproval().ApprovalContext.AlternativesConsidered[1].Approach).To(Equal("wf-rollback"))
 			})
 
 			// BR-AI-019: Edge case - no alternatives available
 			// Business Value: System handles single workflow scenarios
 			It("should handle empty AlternativeWorkflows gracefully", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.AlternativeWorkflows = nil
+				analysis.Status.RCAResult.AlternativeWorkflows = nil
 				// Missing RemediationTarget triggers approval via real policy
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.AlternativesConsidered).To(BeNil())
 			})
 
 			// BR-AI-019: Business outcome - operator can see policy decision in approval context
@@ -303,10 +305,10 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for manual review")
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil(), "Policy evaluation should be visible to operator")
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for manual review")
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation).NotTo(BeNil(), "Policy evaluation should be visible to operator")
 				// Business outcome: Operator sees clear decision status
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation.Decision).To(
 					BeElementOf(aianalysisv1.PolicyDecisionManualReviewRequired, aianalysisv1.PolicyDecisionDegradedMode),
 					"Decision should be one of the valid policy outcomes when approval is required",
 				)
@@ -321,9 +323,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.PolicyHash).To(
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation.PolicyHash).To(
 					MatchRegexp("^[0-9a-f]{64}$"),
 					"PolicyHash must be a full SHA-256 hex digest of the policy that produced this decision",
 				)
@@ -339,7 +341,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			It("should auto-approve and complete without requiring operator action", func() {
 				analysis := createTestAnalysis()
 				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "OOM detected",
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind: "Deployment", Name: "api-server", Namespace: "default",
@@ -351,8 +353,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should complete")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
-				Expect(analysis.Status.ApprovalRequired).To(BeFalse(), "Non-production should auto-approve")
-				Expect(analysis.Status.ApprovalContext).To(BeNil(), "No approval context for auto-approved analysis")
+				Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse(), "Non-production should auto-approve")
+				Expect(analysis.Status.GetApproval().ApprovalContext).To(BeNil(), "No approval context for auto-approved analysis")
 			})
 		})
 
@@ -361,7 +363,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			It("UT-AA-TAT-001: should compute TotalAnalysisTime in milliseconds from StartedAt to CompletedAt", func() {
 				analysis := createTestAnalysis()
 				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "OOM detected",
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind: "Deployment", Name: "api-server", Namespace: "default",
@@ -373,9 +375,9 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
-				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", int64(29000)),
+				Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">=", int64(29000)),
 					"TotalAnalysisTime must be computed as CompletedAt - StartedAt in milliseconds")
-				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically("<=", int64(35000)),
+				Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically("<=", int64(35000)),
 					"TotalAnalysisTime should be approximately 30000 milliseconds")
 			})
 		})
@@ -400,9 +402,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should complete despite policy failure")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Degraded mode should require approval (safe default)")
-				Expect(analysis.Status.DegradedMode).To(BeTrue(), "Operator should know system is in degraded mode")
-				Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty(), "Reason should explain degradation")
+				Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue(), "Degraded mode should require approval (safe default)")
+				Expect(analysis.Status.GetInvestigationMetadata().DegradedMode).To(BeTrue(), "Operator should know system is in degraded mode")
+				Expect(analysis.Status.GetApproval().ApprovalReason).NotTo(BeEmpty(), "Reason should explain degradation")
 			})
 
 			// BR-AI-019: Business outcome - operator sees clear degraded status
@@ -412,12 +414,12 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for operator")
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(Equal(aianalysisv1.PolicyDecisionDegradedMode),
+				Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for operator")
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation).NotTo(BeNil())
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation.Decision).To(Equal(aianalysisv1.PolicyDecisionDegradedMode),
 					"Operator should see clear degraded-mode policy decision")
 				// Issue #1981: no policy was ever loaded in degraded mode, so there is no hash to attribute
-				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.PolicyHash).To(BeEmpty(),
+				Expect(analysis.Status.GetApproval().ApprovalContext.PolicyEvaluation.PolicyHash).To(BeEmpty(),
 					"no hash available when no policy is loaded (degraded mode)")
 			})
 		})
@@ -426,7 +428,7 @@ var _ = Describe("AnalyzingHandler", func() {
 		Context("when SelectedWorkflow is missing", func() {
 			It("should fail analysis with clear explanation for operator", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow = nil // Simulate missing workflow from KA
+				analysis.Status.RCAResult.SelectedWorkflow = nil // Simulate missing workflow from KA
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -440,7 +442,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 			It("should not evaluate policies when no workflow exists", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow = nil
+				analysis.Status.RCAResult.SelectedWorkflow = nil
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -475,7 +477,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			// ADR-055: TargetInOwnerChain replaced by RemediationTarget
 			It("should pass RemediationTarget from RCA status", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary:  "OOM detected",
 					Severity: "high",
 					RemediationTarget: &aianalysisv1.RemediationTarget{
@@ -500,7 +502,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			// gating signal for infrastructure-impacting actions like ProvisionNode.
 			It("should pass ActionType from SelectedWorkflow to policy input", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow.ActionType = "ProvisionNode"
+				analysis.Status.RCAResult.SelectedWorkflow.ActionType = "ProvisionNode"
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -511,7 +513,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 			It("should pass Warnings from status", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.Warnings = []string{"High memory pressure", "Node scheduling delayed"}
+				analysis.Status.EnsureInvestigationMetadata().Warnings = []string{"High memory pressure", "Node scheduling delayed"}
 
 				_, err := handler.Handle(ctx, analysis)
 

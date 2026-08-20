@@ -419,8 +419,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
-				ai.Status.ApprovalRequired = true
-				ai.Status.ApprovalReason = aianalysisv1.HumanReviewReasonLowConfidence
+				ai.Status.EnsureApproval().ApprovalRequired = true
+				ai.Status.EnsureApproval().ApprovalReason = aianalysisv1.HumanReviewReasonLowConfidence
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -501,7 +501,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
-				ai.Status.RootCause = "Pod crash loop detected"
+				ai.Status.EnsureRCAResult().RootCause = "Pod crash loop detected"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -526,8 +526,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
-				ai.Status.RootCause = "legacy"
-				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				ai.Status.EnsureRCAResult().RootCause = "legacy"
+				ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "RCA Summary: OOM kill - scale deployment",
 				}
 
@@ -555,7 +555,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
 				ai.Status.Message = "Confidence below threshold"
-				ai.Status.Warnings = []string{"Warning A: Missing probes", "Warning B: Resource limits low"}
+				ai.Status.EnsureInvestigationMetadata().Warnings = []string{"Warning A: Missing probes", "Warning B: Resource limits low"}
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -738,8 +738,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "RCA is missing remediationTarget - cannot determine target"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -764,8 +764,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
-				ai.Status.NeedsHumanReview = false
-				ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				ai.Status.EnsureReview().NeedsHumanReview = false
+				ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:   "restart-pod-v1",
 						WorkflowName: "restart-pod-v1",
@@ -796,8 +796,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				// Both flags set (edge case)
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "workflow_not_found"
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = "workflow_not_found"
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = "WorkflowNotFound"
 				ai.Status.Message = "Workflow not found"
@@ -825,8 +825,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 				ai.Status.Message = "AI confidence below threshold"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -865,8 +865,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				for _, reason := range reasons {
 					ai := helpers.NewCompletedAIAnalysis("test-ai-"+reason, "default")
 					ai.Status.Phase = aianalysisv1.PhaseFailed
-					ai.Status.NeedsHumanReview = true
-					ai.Status.HumanReviewReason = reason
+					ai.Status.EnsureReview().NeedsHumanReview = true
+					ai.Status.EnsureReview().HumanReviewReason = reason
 					ai.Status.Message = "Human review required: " + reason
 
 					result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -894,10 +894,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "RCA missing remediationTarget"
-				ai.Status.RootCause = "Pod crash loop detected"
+				ai.Status.EnsureRCAResult().RootCause = "Pod crash loop detected"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -929,10 +929,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.Message = "No matching workflows found for this alert type"
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -955,10 +955,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.Message = msgNoMatchingWorkflowsFound
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -980,9 +980,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				beforeCall := time.Now()
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1003,9 +1003,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1026,10 +1026,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "Orphaned PVCs detected — cannot determine remediation target"
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1051,9 +1051,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1076,9 +1076,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1096,7 +1096,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.Reason = aianalysisv1.ReasonAPIError
-				ai.Status.NeedsHumanReview = false
+				ai.Status.EnsureReview().NeedsHumanReview = false
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1113,8 +1113,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 				// SelectedWorkflow is already non-nil from NewCompletedAIAnalysis
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1133,7 +1133,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
-				ai.Status.NeedsHumanReview = false
+				ai.Status.EnsureReview().NeedsHumanReview = false
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1149,10 +1149,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.RootCause = "Orphaned PVCs in namespace production"
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().RootCause = "Orphaned PVCs in namespace production"
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1174,9 +1174,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1200,9 +1200,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseFailed
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1227,10 +1227,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.Message = msgNoMatchingWorkflowsFound
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1255,11 +1255,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.Message = msgNoMatchingWorkflowsFound
-				ai.Status.SelectedWorkflow = nil
-				ai.Status.RootCause = "ResourceQuota exhausted"
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
+				ai.Status.EnsureRCAResult().RootCause = "ResourceQuota exhausted"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1280,9 +1280,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
-				ai.Status.SelectedWorkflow = nil
+				ai.Status.EnsureReview().NeedsHumanReview = true
+				ai.Status.EnsureReview().HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.EnsureRCAResult().SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())

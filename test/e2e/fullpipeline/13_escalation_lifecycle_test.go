@@ -110,12 +110,12 @@ var _ = Describe("Escalation Lifecycle [#1456 / FedRAMP IR-5, SI-4]", Label("e2e
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					GinkgoWriter.Printf("  AA %s: phase=%s reason=%s subReason=%s humanReview=%v\n",
-						aa.Name, aa.Status.Phase, aa.Status.Reason, aa.Status.SubReason, aa.Status.NeedsHumanReview)
+						aa.Name, aa.Status.Phase, aa.Status.Reason, aa.Status.SubReason, aa.Status.GetReview().NeedsHumanReview)
 					g.Expect(aa.Status.Phase).To(Equal(aianalysisv1.PhaseFailed),
 						"#1456: AA must reach Failed phase after escalation (not stuck in Investigating)")
-					g.Expect(aa.Status.NeedsHumanReview).To(BeTrue(),
+					g.Expect(aa.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 						"IR-5: NeedsHumanReview must be true for escalation routing")
-					g.Expect(aa.Status.HumanReviewReason).To(Equal("operator_escalation"),
+					g.Expect(aa.Status.GetReview().HumanReviewReason).To(Equal("operator_escalation"),
 						"IR-5: HumanReviewReason must be operator_escalation")
 					g.Expect(aa.Status.SubReason).To(Equal("OperatorEscalation"),
 						"AU-12: SubReason must map to OperatorEscalation for structured audit")

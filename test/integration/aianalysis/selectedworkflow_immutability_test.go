@@ -124,27 +124,27 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 				return err
 			}
-			analysis.Status.SelectedWorkflow = firstSW
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = firstSW
 			return k8sClient.Status().Update(ctx, analysis)
 		}, timeout, interval).Should(Succeed(), "first write to a nil SelectedWorkflow must be accepted regardless of content")
 
 		By("Re-reading the persisted SelectedWorkflow")
 		var persisted aianalysisv1.AIAnalysis
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
-		Expect(persisted.Status.SelectedWorkflow).ToNot(BeNil())
-		Expect(persisted.Status.SelectedWorkflow.SelectedAt).ToNot(BeNil(), "SelectedAt must persist as the immutability sentinel")
-		Expect(persisted.Status.SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.SelectedAt).ToNot(BeNil(), "SelectedAt must persist as the immutability sentinel")
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 
 		By("Second status write: tampering with DeclaredParameterNames must be rejected by the API server")
 		tampered := persisted.DeepCopy()
-		tampered.Status.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true}
+		tampered.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true}
 		err := k8sClient.Status().Update(ctx, tampered)
 		Expect(err).To(HaveOccurred(), "CEL must reject any mutation once selectedAt is populated (DD-WORKFLOW-018)")
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an Invalid admission error, got: %v", err)
 
 		By("Second status write attempt: tampering with WorkflowID must also be rejected")
 		tamperedID := persisted.DeepCopy()
-		tamperedID.Status.SelectedWorkflow.WorkflowID = "a-different-workflow-v2"
+		tamperedID.Status.RCAResult.SelectedWorkflow.WorkflowID = "a-different-workflow-v2"
 		err = k8sClient.Status().Update(ctx, tamperedID)
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an Invalid admission error, got: %v", err)
@@ -152,8 +152,8 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		By("Verifying the original snapshot survived both rejected tampering attempts")
 		var afterTamper aianalysisv1.AIAnalysis
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &afterTamper)).To(Succeed())
-		Expect(afterTamper.Status.SelectedWorkflow.WorkflowID).To(Equal("increase-memory-v1"))
-		Expect(afterTamper.Status.SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("increase-memory-v1"))
+		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 
 		By("Third status write: resubmitting an identical value must succeed (idempotent reconcile-retry safety)")
 		idempotentRetry := afterTamper.DeepCopy()

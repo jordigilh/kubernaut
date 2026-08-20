@@ -211,7 +211,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	analysis.Status.ObservedGeneration = analysis.Generation
 
 	// Set investigation time on successful response
-	analysis.Status.InvestigationTime = investigationTime
+	analysis.Status.EnsureInvestigationMetadata().InvestigationTime = investigationTime
 
 	// Process incident response - must check for nil (CRITICAL: prevents panic)
 	if incidentResp == nil {
@@ -243,10 +243,10 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	classification := h.errorClassifier.ClassifyError(err)
 
 	// Increment failure count before retry check
-	analysis.Status.ConsecutiveFailures++
+	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures++
 
 	// P2.1: Check if error should be retried based on classification and attempt count
-	if h.errorClassifier.ShouldRetry(classification, int(analysis.Status.ConsecutiveFailures)) {
+	if h.errorClassifier.ShouldRetry(classification, int(analysis.Status.InvestigationMetadata.ConsecutiveFailures)) {
 		return h.retryTransientError(analysis, err, classification)
 	}
 
@@ -265,18 +265,18 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 // motion, no behavior change.
 func (h *InvestigatingHandler) retryTransientError(analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
 	// P2.1: Use error classifier to calculate backoff duration
-	backoffDuration := h.errorClassifier.GetRetryDelay(int(analysis.Status.ConsecutiveFailures))
+	backoffDuration := h.errorClassifier.GetRetryDelay(int(analysis.Status.InvestigationMetadata.ConsecutiveFailures))
 
 	h.log.Info("Transient error - retrying with backoff",
 		"error", err,
 		"errorType", classification.ErrorType,
-		"attempts", analysis.Status.ConsecutiveFailures,
+		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
 		"backoff", backoffDuration,
 	)
 
 	// Update status to indicate retry
 	analysis.Status.Message = fmt.Sprintf("Transient error (attempt %d/%d): %v",
-		analysis.Status.ConsecutiveFailures, MaxRetries, err)
+		analysis.Status.InvestigationMetadata.ConsecutiveFailures, MaxRetries, err)
 	analysis.Status.Reason = aianalysisv1.ReasonTransientError
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
@@ -295,7 +295,7 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 	h.log.Info("Transient error exceeded max retries - failing permanently",
 		"error", err,
 		"errorType", classification.ErrorType,
-		"attempts", analysis.Status.ConsecutiveFailures,
+		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
 		"maxRetries", h.errorClassifier.GetMaxRetries(),
 	)
 
@@ -305,7 +305,7 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
-		analysis.Status.ConsecutiveFailures, err)
+		analysis.Status.InvestigationMetadata.ConsecutiveFailures, err)
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
 	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 
@@ -317,7 +317,7 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
-	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v", analysis.Status.ConsecutiveFailures, err))
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v", analysis.Status.InvestigationMetadata.ConsecutiveFailures, err))
 	return ctrl.Result{}, nil
 }
 
@@ -715,7 +715,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 
 	// AA-CRIT-2: Reset consecutive failure counter on successful poll to prevent
 	// transient errors from accumulating across successful intervals.
-	analysis.Status.ConsecutiveFailures = 0
+	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
 
 	switch status.Status {
 	case "pending", "investigating":
@@ -939,7 +939,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	session.ConsecutiveGetResultErrors = 0
 
 	// Set investigation metadata
-	analysis.Status.InvestigationTime = investigationTime
+	analysis.Status.EnsureInvestigationMetadata().InvestigationTime = investigationTime
 	analysis.Status.ObservedGeneration = analysis.Generation
 
 	// DD-AUDIT-003: Record result retrieval audit event
@@ -970,7 +970,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	// (accurate error handling).
 	if analysis.Status.SubReason == "NoMatchingWorkflows" && isSessionTimedOutWithoutResult(resp) {
 		analysis.Status.SubReason = "InvestigationInconclusive"
-		analysis.Status.HumanReviewReason = "investigation_inconclusive"
+		analysis.Status.EnsureReview().HumanReviewReason = "investigation_inconclusive"
 		analysis.Status.Message = "KA session completed without producing a result " +
 			"(likely an inactivity timeout); the investigation did not reach a conclusion"
 	}

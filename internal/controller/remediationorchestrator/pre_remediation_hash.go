@@ -53,8 +53,8 @@ func resolveDualTargets(
 	}
 
 	remediation := signal
-	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-		ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	if ai != nil && ai.Status.GetRCAResult().RootCauseAnalysis != nil && ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget != nil {
+		ar := ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget
 		if ar.Kind != "" && ar.Name != "" {
 			remediation = eav1.TargetResource{
 				Kind:       ar.Kind,
@@ -71,10 +71,10 @@ func resolveDualTargets(
 // formatRemediationTargetString builds a "namespace/kind/name" or "kind/name"
 // string from an AIAnalysis RemediationTarget. Returns "" if the target is nil.
 func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
-	if ai == nil || ai.Status.RootCauseAnalysis == nil || ai.Status.RootCauseAnalysis.RemediationTarget == nil {
+	if ai == nil || ai.Status.GetRCAResult().RootCauseAnalysis == nil || ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget == nil {
 		return ""
 	}
-	ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	ar := ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget
 	if ar.Kind == "" || ar.Name == "" {
 		return ""
 	}

@@ -115,9 +115,9 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"AU-2/AU-3: decision_expired must result in Failed phase to route to human review")
-			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"AC-6/CM-3: NeedsHumanReview must be true -- a presented decision with no answer is never auto-approved")
-			Expect(analysis.Status.HumanReviewReason).To(Equal("decision_expired"),
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("decision_expired"),
 				"AU-2/AU-3: decision_expired must be persisted as the audit-trail reason")
 		})
 
@@ -139,10 +139,10 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(),
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
 				"AU-2/AU-3: the discovered workflow must survive a decision_expired outcome -- "+
 					"this is the false negative #2019/#2020 fixes (previously has_workflow:false discarded it)")
-			Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-recommended-2020"))
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal("wf-recommended-2020"))
 		})
 
 		It("UT-AA-2020-009: never sets ApprovalRequired=true for an unanswered decision", func() {
@@ -152,7 +152,7 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(analysis.Status.ApprovalRequired).To(BeFalse(),
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse(),
 				"AC-6/CM-3: no human ever approved this workflow -- decision_expired must never imply consent")
 		})
 	})

@@ -160,7 +160,7 @@ func (h *AnalyzingHandler) handleCompleted(ctx context.Context, rr *remediationv
 	}
 
 	// #805 / BR-ORCH-036: NeedsHumanReview with no workflow → ManualReview NR
-	if ai.Status.NeedsHumanReview && ai.Status.SelectedWorkflow == nil {
+	if ai.Status.GetReview().NeedsHumanReview && ai.Status.GetRCAResult().SelectedWorkflow == nil {
 		logger.Info("AIAnalysis completed with NeedsHumanReview (no workflow) - delegating to handler")
 		result, err := h.callbacks.HandleAIAnalysisStatus(ctx, rr, ai)
 		if err != nil {
@@ -175,7 +175,7 @@ func (h *AnalyzingHandler) handleCompleted(ctx context.Context, rr *remediationv
 		return phase.CompleteWithoutVerification("dry-run mode enabled"), nil
 	}
 
-	if ai.Status.ApprovalRequired {
+	if ai.Status.GetApproval().ApprovalRequired {
 		return h.handleApprovalRequired(ctx, rr, ai)
 	}
 
@@ -192,10 +192,11 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 	}
 	logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
 
-	if ai.Status.SelectedWorkflow != nil {
+	sw := ai.Status.GetRCAResult().SelectedWorkflow
+	if sw != nil {
 		h.callbacks.RecordEvent(rr, "Normal", "ApprovalRequired",
 			fmt.Sprintf("Human approval required (confidence %.0f%%): %s",
-				ai.Status.SelectedWorkflow.Confidence*100, ai.Status.ApprovalReason))
+				sw.Confidence*100, ai.Status.GetApproval().ApprovalReason))
 	}
 
 	result, err := h.callbacks.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -208,8 +209,8 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 
 	intent := phase.Advance(phase.AwaitingApproval, "approval required")
 
-	if oldPhase != phase.AwaitingApproval && ai.Status.SelectedWorkflow != nil {
-		h.callbacks.EmitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID)
+	if oldPhase != phase.AwaitingApproval && sw != nil {
+		h.callbacks.EmitApprovalRequestedAudit(ctx, rr, sw.Confidence, sw.WorkflowID)
 	}
 
 	return intent, nil
@@ -294,7 +295,7 @@ func (h *AnalyzingHandler) checkStaleAnalyzingCache(ctx context.Context, rr *rem
 // BR-ORCH-036 v4.0). Extracted from handleDirectExecution per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (h *AnalyzingHandler) failIfRemediationTargetMissing(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) (phase.TransitionIntent, bool, error) {
-	rca := ai.Status.RootCauseAnalysis
+	rca := ai.Status.GetRCAResult().RootCauseAnalysis
 	if rca != nil && rca.RemediationTarget != nil && rca.RemediationTarget.Kind != "" && rca.RemediationTarget.Name != "" {
 		return phase.TransitionIntent{}, false, nil
 	}
@@ -329,9 +330,9 @@ type preRemediationHashContext struct {
 // Returns done=true when the caller must return (intent, err) immediately.
 func (h *AnalyzingHandler) capturePreRemediationHashStep(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) (preRemediationHashContext, phase.TransitionIntent, bool, error) {
 	var workflowID, actionType string
-	if ai.Status.SelectedWorkflow != nil {
-		workflowID = ai.Status.SelectedWorkflow.WorkflowID
-		actionType = ai.Status.SelectedWorkflow.ActionType
+	if sw := ai.Status.GetRCAResult().SelectedWorkflow; sw != nil {
+		workflowID = sw.WorkflowID
+		actionType = sw.ActionType
 	}
 	targetResource := formatRemediationTargetString(ai)
 	remTarget := h.callbacks.ResolveDualTargets(rr, ai).Remediation
@@ -385,7 +386,7 @@ func (h *AnalyzingHandler) handleFailed(ctx context.Context, rr *remediationv1.R
 		logger.Error(err, "Failed to update AIAnalysisComplete condition")
 	}
 
-	if ai.Status.NeedsHumanReview {
+	if ai.Status.GetReview().NeedsHumanReview {
 		h.callbacks.RecordEvent(rr, "Warning", "EscalatedToManualReview",
 			fmt.Sprintf("AI analysis requires manual review: %s", ai.Status.Message))
 	}

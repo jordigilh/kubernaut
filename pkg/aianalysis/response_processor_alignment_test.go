@@ -65,7 +65,7 @@ var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func()
 		}
 	}
 
-	// UT-AA-SCHEMA-001: alignment_verdict present -> maps to AIAnalysisStatus.AlignmentVerdict
+	// UT-AA-SCHEMA-001: alignment_verdict present -> maps to AIAnalysisStatus.GetReview().AlignmentVerdict
 	It("UT-AA-SCHEMA-001: maps alignment_verdict from IncidentResponse to AIAnalysisStatus", func() {
 		analysis := createAnalysis()
 
@@ -107,16 +107,16 @@ var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func()
 		Expect(err).NotTo(HaveOccurred())
 
 		// Verify AlignmentVerdict mapped to CRD status
-		Expect(analysis.Status.AlignmentVerdict).NotTo(BeNil(),
+		Expect(analysis.Status.GetReview().AlignmentVerdict).NotTo(BeNil(),
 			"AlignmentVerdict must be mapped to AIAnalysisStatus")
-		Expect(analysis.Status.AlignmentVerdict.Result).To(Equal("suspicious"))
-		Expect(analysis.Status.AlignmentVerdict.CircuitBreakerActivated).To(BeTrue())
-		Expect(analysis.Status.AlignmentVerdict.Summary).To(Equal("Suspicious tool call detected"))
-		Expect(analysis.Status.AlignmentVerdict.Flagged).To(Equal(2))
-		Expect(analysis.Status.AlignmentVerdict.Total).To(Equal(5))
-		Expect(analysis.Status.AlignmentVerdict.Findings).To(HaveLen(1))
-		Expect(analysis.Status.AlignmentVerdict.Findings[0].StepKind).To(Equal("tool_result"))
-		Expect(analysis.Status.AlignmentVerdict.Findings[0].Tool).To(Equal("kubectl_get"))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Result).To(Equal("suspicious"))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.CircuitBreakerActivated).To(BeTrue())
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Summary).To(Equal("Suspicious tool call detected"))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Flagged).To(Equal(2))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Total).To(Equal(5))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Findings).To(HaveLen(1))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Findings[0].StepKind).To(Equal("tool_result"))
+		Expect(analysis.Status.GetReview().AlignmentVerdict.Findings[0].Tool).To(Equal("kubectl_get"))
 	})
 
 	// UT-AA-SCHEMA-002: alignment_verdict null -> AlignmentVerdict nil on CRD (no crash)
@@ -139,7 +139,7 @@ var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func()
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(analysis.Status.AlignmentVerdict).To(BeNil(),
+		Expect(analysis.Status.GetReview().AlignmentVerdict).To(BeNil(),
 			"AlignmentVerdict must be nil when not present in response")
 	})
 })

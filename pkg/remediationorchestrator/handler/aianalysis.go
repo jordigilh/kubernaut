@@ -139,13 +139,13 @@ func (h *AIAnalysisHandler) handleCompleted(
 	}
 
 	// #768: Investigation succeeded but no workflow matched — route to manual review
-	if ai.Status.NeedsHumanReview && ai.Status.SelectedWorkflow == nil {
+	if ai.Status.GetReview().NeedsHumanReview && ai.Status.GetRCAResult().SelectedWorkflow == nil {
 		logger.Info("AIAnalysis completed with NeedsHumanReview (no workflow) - routing to ManualReviewCompleted")
 		return h.handleManualReviewCompleted(ctx, rr, ai)
 	}
 
 	// Check if approval is required (BR-ORCH-001)
-	if ai.Status.ApprovalRequired {
+	if ai.Status.GetApproval().ApprovalRequired {
 		logger.Info("AIAnalysis requires approval, creating approval notification")
 		return h.handleApprovalRequired(ctx, rr, ai)
 	}
@@ -296,7 +296,7 @@ func (h *AIAnalysisHandler) handleFailed(
 ) (ctrl.Result, error) {
 	// BR-KA-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
 	// This flag is set by KA when AI cannot produce a reliable result
-	if ai.Status.NeedsHumanReview {
+	if ai.Status.GetReview().NeedsHumanReview {
 		return h.handleHumanReviewRequired(ctx, rr, ai)
 	}
 
@@ -319,15 +319,17 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 	ai *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
 	// Issue #550: No workflow selected + needs human review = valid completion, not failure
-	if ai.Status.SelectedWorkflow == nil {
+	if ai.Status.GetRCAResult().SelectedWorkflow == nil {
 		return h.handleManualReviewCompleted(ctx, rr, ai)
 	}
+
+	humanReviewReason := ai.Status.GetReview().HumanReviewReason
 
 	// Existing path: has workflow but low confidence -> Failed
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"aiAnalysis", ai.Name,
-		"humanReviewReason", ai.Status.HumanReviewReason,
+		"humanReviewReason", humanReviewReason,
 	)
 
 	logger.Info("AIAnalysis requires human review (workflow present but rejected) - creating manual review notification")
@@ -336,16 +338,16 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 	reviewCtx := &creator.ManualReviewContext{
 		Source:            notificationv1.ReviewSourceAIAnalysis,
 		Reason:            "HumanReviewRequired", // BR-KA-197 reason
-		SubReason:         ai.Status.HumanReviewReason,
+		SubReason:         humanReviewReason,
 		Message:           ai.Status.Message,
-		HumanReviewReason: ai.Status.HumanReviewReason, // BR-KA-197: Store for metadata
+		HumanReviewReason: humanReviewReason, // BR-KA-197: Store for metadata
 	}
 
 	// Populate root cause and warnings (common pattern)
 	h.populateManualReviewContext(reviewCtx, ai)
 
 	// Create notification and update RR status (common pattern)
-	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, "HumanReviewRequired", ai.Status.HumanReviewReason)
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, "HumanReviewRequired", humanReviewReason)
 }
 
 // handleManualReviewCompleted processes the case where KA requires human review but no workflow
@@ -383,10 +385,12 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
+	humanReviewReason := ai.Status.GetReview().HumanReviewReason
+
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"aiAnalysis", ai.Name,
-		"humanReviewReason", ai.Status.HumanReviewReason,
+		"humanReviewReason", humanReviewReason,
 	)
 
 	logger.Info("AIAnalysis requires human review (no workflow selected) - completing with ManualReviewRequired")
@@ -395,9 +399,9 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 	reviewCtx := &creator.ManualReviewContext{
 		Source:            notificationv1.ReviewSourceAIAnalysis,
 		Reason:            "HumanReviewRequired",
-		SubReason:         ai.Status.HumanReviewReason,
+		SubReason:         humanReviewReason,
 		Message:           ai.Status.Message,
-		HumanReviewReason: ai.Status.HumanReviewReason,
+		HumanReviewReason: humanReviewReason,
 	}
 	h.populateManualReviewContext(reviewCtx, ai)
 
@@ -460,21 +464,23 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 // populateManualReviewContext adds root cause analysis and warnings to the review context.
 // Common helper for handleHumanReviewRequired, handleManualReviewCompleted, and handleWorkflowResolutionFailed.
 func (h *AIAnalysisHandler) populateManualReviewContext(reviewCtx *creator.ManualReviewContext, ai *aianalysisv1.AIAnalysis) {
+	rca := ai.Status.GetRCAResult()
 	// Add root cause analysis if available
-	if ai.Status.RootCauseAnalysis != nil {
-		reviewCtx.RootCauseAnalysis = ai.Status.RootCauseAnalysis.Summary
-	} else if ai.Status.RootCause != "" {
-		reviewCtx.RootCauseAnalysis = ai.Status.RootCause
+	if rca.RootCauseAnalysis != nil {
+		reviewCtx.RootCauseAnalysis = rca.RootCauseAnalysis.Summary
+	} else if rca.RootCause != "" {
+		reviewCtx.RootCauseAnalysis = rca.RootCause
 	}
 
+	im := ai.Status.GetInvestigationMetadata()
 	// Add warnings if available
-	if ai.Status.Warnings != nil {
-		reviewCtx.Warnings = ai.Status.Warnings
+	if im.Warnings != nil {
+		reviewCtx.Warnings = im.Warnings
 	}
 
 	// BR-AI-601: Add alignment verdict if available
-	if ai.Status.AlignmentVerdict != nil {
-		reviewCtx.AlignmentVerdict = ai.Status.AlignmentVerdict
+	if av := ai.Status.GetReview().AlignmentVerdict; av != nil {
+		reviewCtx.AlignmentVerdict = av
 	}
 }
 

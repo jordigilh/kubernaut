@@ -90,8 +90,8 @@ var _ = Describe("Escalation Status Write (#1449)", Label("integration", "escala
 				}
 				now := metav1.Now()
 				analysis.Status.Phase = aianalysis.PhaseFailed
-				analysis.Status.NeedsHumanReview = true
-				analysis.Status.HumanReviewReason = "operator_escalation"
+				analysis.Status.EnsureReview().NeedsHumanReview = true
+				analysis.Status.EnsureReview().HumanReviewReason = "operator_escalation"
 				analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				analysis.Status.SubReason = "OperatorEscalation"
 				analysis.Status.CompletedAt = &now
@@ -103,9 +103,9 @@ var _ = Describe("Escalation Status Write (#1449)", Label("integration", "escala
 			var persisted aianalysisv1.AIAnalysis
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
 
-			Expect(persisted.Status.HumanReviewReason).To(Equal("operator_escalation"),
+			Expect(persisted.Status.GetReview().HumanReviewReason).To(Equal("operator_escalation"),
 				"IR-5: operator_escalation must be persisted — this was the root cause of #1449")
-			Expect(persisted.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(persisted.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"IR-5: NeedsHumanReview must be persisted for escalation routing")
 			Expect(persisted.Status.Phase).To(Equal("Failed"),
 				"AU-12: Phase=Failed must be persisted for audit trail")

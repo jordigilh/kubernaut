@@ -200,12 +200,12 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 		// JSON response (include_affected_resource=False). The presence of this
 		// field in the CRD proves KA's _inject_target_resource populated it
 		// from root_owner (K8s owner chain: Pod → ReplicaSet → Deployment).
-		Expect(aa.Status.RootCauseAnalysis).ToNot(BeNil(),
+		Expect(aa.Status.GetRCAResult().RootCauseAnalysis).ToNot(BeNil(),
 			"AIAnalysis should have rootCauseAnalysis (mock LLM returns RCA)")
-		Expect(aa.Status.RootCauseAnalysis.RemediationTarget).ToNot(BeNil(),
+		Expect(aa.Status.RCAResult.RootCauseAnalysis.RemediationTarget).ToNot(BeNil(),
 			"[E2E-FP-496-003] remediationTarget must be populated even though mock LLM omits it (KA injection)")
 
-		ar := aa.Status.RootCauseAnalysis.RemediationTarget
+		ar := aa.Status.RCAResult.RootCauseAnalysis.RemediationTarget
 
 		// The memory-eater is a Deployment. get_namespaced_resource_context resolves the
 		// owner chain: Pod → ReplicaSet → Deployment ("memory-eater").

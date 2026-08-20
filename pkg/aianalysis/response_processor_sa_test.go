@@ -132,7 +132,7 @@ var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481/#650/#1661)", 
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 			Expect(err).ToNot(HaveOccurred())
 
-			sw := analysis.Status.SelectedWorkflow
+			sw := analysis.Status.GetRCAResult().SelectedWorkflow
 			Expect(sw).ToNot(BeNil(), "SelectedWorkflow must be populated")
 			Expect(sw.ServiceAccountName).To(Equal("workflow-job-executor"),
 				"ServiceAccountName must reach AIAnalysis.Status.SelectedWorkflow -- WFE (#1661 Change 11e) "+
@@ -165,7 +165,7 @@ var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481/#650/#1661)", 
 			}).ToNot(Panic())
 			Expect(err).ToNot(HaveOccurred())
 
-			sw := analysis.Status.SelectedWorkflow
+			sw := analysis.Status.GetRCAResult().SelectedWorkflow
 			Expect(sw).ToNot(BeNil())
 			Expect(sw.ServiceAccountName).To(BeEmpty())
 		})

@@ -89,7 +89,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-ansible-restart",
 				WorkflowName:    "wf-ansible-restart",
@@ -104,7 +104,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			Confidence: 0.92,
 			Rationale:  "Ansible playbook for deployment restart",
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak detected",
 			Severity:   "critical",
 			SignalType: "alert",

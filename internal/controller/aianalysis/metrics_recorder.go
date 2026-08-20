@@ -64,9 +64,9 @@ func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase str
 	}
 
 	// Track confidence scores for successful analyses
-	if analysis.Status.Phase == PhaseCompleted && analysis.Status.SelectedWorkflow != nil {
+	if sw := analysis.Status.GetRCAResult().SelectedWorkflow; analysis.Status.Phase == PhaseCompleted && sw != nil {
 		signalType := analysis.Spec.AnalysisRequest.SignalContext.SignalName
-		confidence := analysis.Status.SelectedWorkflow.Confidence
+		confidence := sw.Confidence
 		r.Metrics.RecordConfidenceScore(signalType, confidence)
 	}
 

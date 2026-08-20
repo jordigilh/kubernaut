@@ -157,18 +157,18 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 		return nil
 	}
 
-	if analysis.Status.InvestigationTime > 0 {
+	if analysis.Status.GetInvestigationMetadata().InvestigationTime > 0 {
 		hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
 		if !hasActiveSession {
 			log.Info("AA-KA-001: Handler already executed, skipping duplicate call",
-				"investigationTime", analysis.Status.InvestigationTime,
+				"investigationTime", analysis.Status.InvestigationMetadata.InvestigationTime,
 				"phase", outcome.phaseBefore)
 			outcome.handlerExecuted = false
 			return nil
 		}
 		log.Info("AA-H4: Active KA session detected, allowing recovery poll despite InvestigationTime > 0",
 			"sessionID", analysis.Status.KASession.ID,
-			"investigationTime", analysis.Status.InvestigationTime)
+			"investigationTime", analysis.Status.InvestigationMetadata.InvestigationTime)
 	}
 
 	// #2080 recurrence: absorb any early wake-up (self-watch on
@@ -450,8 +450,8 @@ func (r *AIAnalysisReconciler) emitInvestigatingPhaseEvents(analysis *aianalysis
 	}
 
 	// P2: Decision point events
-	if analysis.Status.NeedsHumanReview {
-		reason := analysis.Status.HumanReviewReason
+	if analysis.Status.GetReview().NeedsHumanReview {
+		reason := analysis.Status.Review.HumanReviewReason
 		if reason == "" {
 			reason = "unspecified"
 		}
@@ -482,8 +482,8 @@ func (r *AIAnalysisReconciler) emitAnalyzingPhaseEvents(analysis *aianalysisv1.A
 	}
 
 	// P2: Decision point events
-	if analysis.Status.ApprovalRequired {
-		reason := analysis.Status.ApprovalReason
+	if analysis.Status.GetApproval().ApprovalRequired {
+		reason := analysis.Status.Approval.ApprovalReason
 		if reason == "" {
 			reason = "policy evaluation"
 		}

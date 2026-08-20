@@ -445,7 +445,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		// Failed AI with NeedsHumanReview triggers manual review escalation
 		ai := newAIAnalysisFailed("ai-test-rr-escalated", defaultFixture, "test-rr-escalated", "Insufficient context for automated analysis")
-		ai.Status.NeedsHumanReview = true
+		ai.Status.EnsureReview().NeedsHumanReview = true
 		sp := newSignalProcessingCompleted("sp-test-rr-escalated", "test-rr-escalated")
 
 		fakeClient := fake.NewClientBuilder().

@@ -188,7 +188,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 
 			// BR-AI-013: Production environment should require approval (Rego evaluation
 			// ran with detected_labels in input regardless of label values)
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue(),
 				"Production environment should require approval (Rego uses detected_labels)")
 		})
 

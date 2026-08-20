@@ -157,8 +157,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
-			analysis.Status.RootCause = "Memory exhaustion due to unbounded cache growth"
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			analysis.Status.EnsureRCAResult().RootCause = "Memory exhaustion due to unbounded cache growth"
+			analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:            "restart-pod-v1",
 					WorkflowName:          "restart-pod-v1",
@@ -174,7 +174,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 					"TARGET_POD": "test-pod-completion",
 				},
 			}
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Memory exhaustion due to unbounded cache growth",
 				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",

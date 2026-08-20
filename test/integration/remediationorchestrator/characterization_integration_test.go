@@ -247,8 +247,8 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			Name: aiName, Namespace: ROControllerNamespace,
 		}, ai)).To(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.ApprovalRequired = false
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureApproval().ApprovalRequired = false
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -261,7 +261,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale: "High confidence auto-approve (characterization test)",
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",
@@ -346,8 +346,8 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			Name: aiName, Namespace: ROControllerNamespace,
 		}, ai)).To(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
-		ai.Status.ApprovalRequired = false
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		ai.Status.EnsureApproval().ApprovalRequired = false
+		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
 				WorkflowName:    "wf-restart-pods",
@@ -360,7 +360,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale: "High confidence auto-approve",
 		}
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
 			SignalType: "alert",

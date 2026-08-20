@@ -102,7 +102,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	}
 
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
-	if analysis.Status.SelectedWorkflow == nil {
+	if analysis.Status.RCAResult == nil || analysis.Status.RCAResult.SelectedWorkflow == nil {
 		h.handleNoWorkflowSelected(ctx, analysis)
 		return ctrl.Result{}, nil
 	}
@@ -129,9 +129,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason, result.PolicyHash)
 
 	// Store evaluation results in status
-	analysis.Status.ApprovalRequired = result.ApprovalRequired
-	analysis.Status.ApprovalReason = result.Reason
-	analysis.Status.DegradedMode = result.Degraded
+	approval := analysis.Status.EnsureApproval()
+	approval.ApprovalRequired = result.ApprovalRequired
+	approval.ApprovalReason = result.Reason
+	analysis.Status.EnsureInvestigationMetadata().DegradedMode = result.Degraded
 
 	h.log.Info("Rego evaluation complete",
 		"approvalRequired", result.ApprovalRequired,
@@ -143,8 +144,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 	// Set WorkflowResolved condition (we already validated workflow exists above)
 	aianalysis.SetWorkflowResolved(analysis, true, aianalysis.ReasonWorkflowSelected,
-		"Workflow "+analysis.Status.SelectedWorkflow.WorkflowID+" selected with confidence "+
-			formatConfidence(analysis.Status.SelectedWorkflow.Confidence))
+		"Workflow "+analysis.Status.RCAResult.SelectedWorkflow.WorkflowID+" selected with confidence "+
+			formatConfidence(analysis.Status.RCAResult.SelectedWorkflow.Confidence))
 
 	// Set AnalysisComplete condition
 	aianalysis.SetAnalysisComplete(analysis, true, "Rego policy evaluation completed successfully")
@@ -296,7 +297,7 @@ func (h *AnalyzingHandler) completeAnalyzingPhase(ctx context.Context, analysis 
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	if analysis.Status.StartedAt != nil {
-		analysis.Status.TotalAnalysisTime = now.Sub(analysis.Status.StartedAt.Time).Milliseconds()
+		analysis.Status.EnsureInvestigationMetadata().TotalAnalysisTime = now.Sub(analysis.Status.StartedAt.Time).Milliseconds()
 	}
 	analysis.Status.Message = "Analysis complete"
 
@@ -318,17 +319,20 @@ func (h *AnalyzingHandler) completeAnalyzingPhase(ctx context.Context, analysis 
 // populateApprovalContext populates the ApprovalContext for approval notifications.
 // BR-AI-019: Rich context for approval notification
 func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnalysis, result *rego.PolicyResult) {
-	if analysis.Status.ApprovalContext == nil {
-		analysis.Status.ApprovalContext = &aianalysisv1.ApprovalContext{}
+	approval := analysis.Status.EnsureApproval()
+	if approval.ApprovalContext == nil {
+		approval.ApprovalContext = &aianalysisv1.ApprovalContext{}
 	}
 
-	ctx := analysis.Status.ApprovalContext
+	ctx := approval.ApprovalContext
 	ctx.Reason = result.Reason
 	ctx.WhyApprovalRequired = result.Reason
 
+	rca := analysis.Status.RCAResult
+
 	// Get confidence from SelectedWorkflow
-	if analysis.Status.SelectedWorkflow != nil {
-		ctx.ConfidenceScore = analysis.Status.SelectedWorkflow.Confidence
+	if rca != nil && rca.SelectedWorkflow != nil {
+		ctx.ConfidenceScore = rca.SelectedWorkflow.Confidence
 
 		// Set confidence level based on score
 		switch {
@@ -343,26 +347,26 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 		// Populate RecommendedActions from SelectedWorkflow
 		ctx.RecommendedActions = []aianalysisv1.RecommendedAction{
 			{
-				WorkflowId: analysis.Status.SelectedWorkflow.WorkflowID,
-				Rationale:  analysis.Status.SelectedWorkflow.Rationale,
+				WorkflowId: rca.SelectedWorkflow.WorkflowID,
+				Rationale:  rca.SelectedWorkflow.Rationale,
 			},
 		}
 	}
 
 	// Include investigation summary from RCA
-	if analysis.Status.RootCauseAnalysis != nil {
-		ctx.InvestigationSummary = analysis.Status.RootCauseAnalysis.Summary
+	if rca != nil && rca.RootCauseAnalysis != nil {
+		ctx.InvestigationSummary = rca.RootCauseAnalysis.Summary
 
 		// Populate EvidenceCollected from contributing factors
-		if len(analysis.Status.RootCauseAnalysis.ContributingFactors) > 0 {
-			ctx.EvidenceCollected = analysis.Status.RootCauseAnalysis.ContributingFactors
+		if len(rca.RootCauseAnalysis.ContributingFactors) > 0 {
+			ctx.EvidenceCollected = rca.RootCauseAnalysis.ContributingFactors
 		}
 	}
 
 	// Populate AlternativesConsidered from AlternativeWorkflows
-	if len(analysis.Status.AlternativeWorkflows) > 0 {
-		ctx.AlternativesConsidered = make([]aianalysisv1.AlternativeApproach, 0, len(analysis.Status.AlternativeWorkflows))
-		for _, alt := range analysis.Status.AlternativeWorkflows {
+	if rca != nil && len(rca.AlternativeWorkflows) > 0 {
+		ctx.AlternativesConsidered = make([]aianalysisv1.AlternativeApproach, 0, len(rca.AlternativeWorkflows))
+		for _, alt := range rca.AlternativeWorkflows {
 			ctx.AlternativesConsidered = append(ctx.AlternativesConsidered, aianalysisv1.AlternativeApproach{
 				Approach: alt.WorkflowID,
 				ProsCons: alt.Rationale,
@@ -404,21 +408,23 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 		// KA response data
 		KAResponse: rego.KAResponseInput{
-			Warnings: analysis.Status.Warnings,
+			Warnings: analysis.Status.GetInvestigationMetadata().Warnings,
 		},
 	}
+
+	rca := analysis.Status.RCAResult
 
 	// Get confidence and action type from SelectedWorkflow (populated by InvestigatingHandler)
 	// #247: ActionType enables infrastructure-action approval gating independent
 	// of remediation_target.kind (see rego.PolicyInput.ActionType doc comment).
-	if analysis.Status.SelectedWorkflow != nil {
-		input.KAResponse.Confidence = analysis.Status.SelectedWorkflow.Confidence
-		input.ActionType = analysis.Status.SelectedWorkflow.ActionType
+	if rca != nil && rca.SelectedWorkflow != nil {
+		input.KAResponse.Confidence = rca.SelectedWorkflow.Confidence
+		input.ActionType = rca.SelectedWorkflow.ActionType
 	}
 
 	// ADR-055: Populate RemediationTarget for Rego policy evaluation
-	if analysis.Status.RootCauseAnalysis != nil && analysis.Status.RootCauseAnalysis.RemediationTarget != nil {
-		ar := analysis.Status.RootCauseAnalysis.RemediationTarget
+	if rca != nil && rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.RemediationTarget != nil {
+		ar := rca.RootCauseAnalysis.RemediationTarget
 		input.RemediationTarget = &rego.RemediationTargetInput{
 			Kind:      ar.Kind,
 			Name:      ar.Name,

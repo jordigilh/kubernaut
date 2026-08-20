@@ -63,12 +63,12 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		ai := newAIAnalysis("ai-"+rrName, defaultFixture, rrName, aianalysisv1.PhaseCompleted)
 		now := metav1.Now()
 		ai.Status.CompletedAt = &now
-		ai.Status.NeedsHumanReview = true
-		ai.Status.HumanReviewReason = "no_matching_workflows"
+		ai.Status.EnsureReview().NeedsHumanReview = true
+		ai.Status.EnsureReview().HumanReviewReason = "no_matching_workflows"
 		ai.Status.Reason = "WorkflowResolutionFailed"
 		ai.Status.SubReason = "NoMatchingWorkflows"
 		ai.Status.Message = "No workflows matched the search criteria"
-		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:  "Test root cause",
 			Severity: "high",
 			RemediationTarget: &aianalysisv1.RemediationTarget{
@@ -128,7 +128,7 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		ai.Status.NeedsHumanReview = true
+		ai.Status.EnsureReview().NeedsHumanReview = true
 
 		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 

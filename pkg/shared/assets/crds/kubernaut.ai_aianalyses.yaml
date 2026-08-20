@@ -20,10 +20,10 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .status.selectedWorkflow.confidence
+    - jsonPath: .status.rcaResult.selectedWorkflow.confidence
       name: Confidence
       type: number
-    - jsonPath: .status.approvalRequired
+    - jsonPath: .status.approval.approvalRequired
       name: Approval Required
       type: boolean
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
@@ -434,224 +434,128 @@ spec:
           status:
             description: AIAnalysisStatus defines the observed state of AIAnalysis.
             properties:
-              actionability:
-                description: |-
-                  #388: LLM's assessment of whether the alert warrants action.
-                  Empty when not yet assessed (pre-investigation or error paths).
-                  "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
-                  "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
-                enum:
-                - Actionable
-                - NotActionable
-                type: string
-              alignmentVerdict:
-                description: |-
-                  Shadow agent alignment verdict from KA (BR-AI-601, #1076).
-                  When CircuitBreakerActivated=true, the investigation was terminated early
-                  and LLM results (RootCauseAnalysis, SelectedWorkflow) may be incomplete
-                  or compromised. Users should treat shadow findings as the primary content.
-                properties:
-                  circuitBreakerActivated:
-                    description: CircuitBreakerActivated indicates the investigation
-                      was terminated early.
-                    type: boolean
-                  findings:
-                    description: Findings contains per-step suspicious findings.
-                    items:
-                      description: AlignmentFindingStatus captures a single suspicious
-                        step on the CRD.
-                      properties:
-                        explanation:
-                          description: Explanation is the shadow agent's explanation
-                            for flagging this step.
-                          type: string
-                        stepIndex:
-                          description: StepIndex is the zero-based index of the evaluated
-                            step.
-                          type: integer
-                        stepKind:
-                          description: StepKind is the kind of step (llm_reasoning,
-                            tool_result, signal_input).
-                          type: string
-                        tool:
-                          description: Tool is the tool name if StepKind is tool_result.
-                          type: string
-                      required:
-                      - explanation
-                      - stepIndex
-                      - stepKind
-                      type: object
-                    type: array
-                  flagged:
-                    description: Flagged is the number of steps flagged as suspicious.
-                    type: integer
-                  result:
-                    description: 'Result is the overall shadow agent verdict: "clean"
-                      or "suspicious".'
-                    type: string
-                  summary:
-                    description: Summary is a narrative summary of the shadow agent
-                      evaluation.
-                    type: string
-                  total:
-                    description: Total is the total number of steps evaluated.
-                    type: integer
-                required:
-                - circuitBreakerActivated
-                - flagged
-                - result
-                - total
-                type: object
-              alternativeWorkflows:
+              approval:
                 description: |-
                   ========================================
-                  ALTERNATIVE WORKFLOWS (Dec 2025)
+                  APPROVAL SIGNALING (God-struct decomposition, #2189 follow-up)
                   ========================================
-                  Alternative workflows considered but not selected.
-                  INFORMATIONAL ONLY - NOT for automatic execution.
-                  Helps operators make informed approval decisions and provides audit trail.
-                  Per KA team: Alternatives are for CONTEXT, not EXECUTION.
-                items:
-                  description: |-
-                    AlternativeWorkflow contains alternative workflows considered but not selected.
-                    INFORMATIONAL ONLY - NOT for automatic execution.
-                    Helps operators understand AI reasoning during approval decisions.
-                    Per KA team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
-                  properties:
-                    confidence:
-                      description: Confidence score (0.0-1.0) - shows why it wasn't
-                        selected
-                      maximum: 1
-                      minimum: 0
-                      type: number
-                    executionBundle:
-                      description: Execution bundle OCI reference (digest-pinned)
-                        - resolved by KA
-                      type: string
-                    rationale:
-                      description: Rationale explaining why this workflow was considered
-                      type: string
-                    workflowId:
-                      description: Workflow identifier (catalog lookup key)
-                      type: string
-                  required:
-                  - confidence
-                  - rationale
-                  - workflowId
-                  type: object
-                type: array
-              approvalContext:
-                description: Rich context for approval notification
+                  Approval bundles human-approval-gating signals. Nil until the
+                  Analyzing phase's Rego evaluation runs.
                 properties:
-                  alternativesConsidered:
-                    description: AlternativesConsidered with pros/cons
-                    items:
-                      description: AlternativeApproach describes an alternative approach
-                        with pros/cons
-                      properties:
-                        approach:
-                          description: Approach description
-                          type: string
-                        prosCons:
-                          description: ProsCons analysis
-                          type: string
-                      required:
-                      - approach
-                      - prosCons
-                      type: object
-                    type: array
-                  confidenceLevel:
-                    description: 'ConfidenceLevel: "low" | "medium" | "high"'
-                    enum:
-                    - low
-                    - medium
-                    - high
-                    type: string
-                  confidenceScore:
-                    description: ConfidenceScore from AI analysis (0.0-1.0)
-                    maximum: 1
-                    minimum: 0
-                    type: number
-                  evidenceCollected:
-                    description: EvidenceCollected that led to this conclusion
-                    items:
-                      type: string
-                    type: array
-                  investigationSummary:
-                    description: InvestigationSummary from KA analysis
-                    type: string
-                  policyEvaluation:
-                    description: PolicyEvaluation contains Rego policy evaluation
-                      details (BR-AI-030)
+                  approvalContext:
+                    description: Rich context for approval notification
                     properties:
-                      decision:
-                        description: Decision from policy evaluation
+                      alternativesConsidered:
+                        description: AlternativesConsidered with pros/cons
+                        items:
+                          description: AlternativeApproach describes an alternative
+                            approach with pros/cons
+                          properties:
+                            approach:
+                              description: Approach description
+                              type: string
+                            prosCons:
+                              description: ProsCons analysis
+                              type: string
+                          required:
+                          - approach
+                          - prosCons
+                          type: object
+                        type: array
+                      confidenceLevel:
+                        description: 'ConfidenceLevel: "low" | "medium" | "high"'
                         enum:
-                        - Approved
-                        - ManualReviewRequired
-                        - Denied
-                        - DegradedMode
+                        - low
+                        - medium
+                        - high
                         type: string
-                      matchedRules:
-                        description: Rules that matched
+                      confidenceScore:
+                        description: ConfidenceScore from AI analysis (0.0-1.0)
+                        maximum: 1
+                        minimum: 0
+                        type: number
+                      evidenceCollected:
+                        description: EvidenceCollected that led to this conclusion
                         items:
                           type: string
                         type: array
-                      policyHash:
-                        description: |-
-                          PolicyHash is the SHA256 hash of the Rego policy that produced this decision
-                          Provides audit trail and policy version attribution for compliance requirements (BR-AI-030)
-                          Expected format: 64-character hexadecimal string (SHA256 hash); empty if no policy was loaded
+                      investigationSummary:
+                        description: InvestigationSummary from KA analysis
                         type: string
-                      policyName:
-                        description: Policy name that was evaluated
+                      policyEvaluation:
+                        description: PolicyEvaluation contains Rego policy evaluation
+                          details (BR-AI-030)
+                        properties:
+                          decision:
+                            description: Decision from policy evaluation
+                            enum:
+                            - Approved
+                            - ManualReviewRequired
+                            - Denied
+                            - DegradedMode
+                            type: string
+                          matchedRules:
+                            description: Rules that matched
+                            items:
+                              type: string
+                            type: array
+                          policyHash:
+                            description: |-
+                              PolicyHash is the SHA256 hash of the Rego policy that produced this decision
+                              Provides audit trail and policy version attribution for compliance requirements (BR-AI-030)
+                              Expected format: 64-character hexadecimal string (SHA256 hash); empty if no policy was loaded
+                            type: string
+                          policyName:
+                            description: Policy name that was evaluated
+                            type: string
+                        required:
+                        - decision
+                        - policyName
+                        type: object
+                      reason:
+                        description: Reason why approval is required
+                        type: string
+                      recommendedActions:
+                        description: RecommendedActions with rationale
+                        items:
+                          description: RecommendedAction describes a remediation action
+                            with rationale
+                          properties:
+                            rationale:
+                              description: Rationale explaining why this action is
+                                recommended
+                              type: string
+                            workflowId:
+                              description: WorkflowId is the catalog workflow identifier
+                                for this recommendation
+                              type: string
+                          required:
+                          - rationale
+                          - workflowId
+                          type: object
+                        type: array
+                      whyApprovalRequired:
+                        description: WhyApprovalRequired explains the need for human
+                          review
                         type: string
                     required:
-                    - decision
-                    - policyName
+                    - confidenceLevel
+                    - confidenceScore
+                    - investigationSummary
+                    - reason
+                    - recommendedActions
+                    - whyApprovalRequired
                     type: object
-                  reason:
-                    description: Reason why approval is required
+                  approvalReason:
+                    description: Reason why approval is required (when ApprovalRequired=true)
                     type: string
-                  recommendedActions:
-                    description: RecommendedActions with rationale
-                    items:
-                      description: RecommendedAction describes a remediation action
-                        with rationale
-                      properties:
-                        rationale:
-                          description: Rationale explaining why this action is recommended
-                          type: string
-                        workflowId:
-                          description: WorkflowId is the catalog workflow identifier
-                            for this recommendation
-                          type: string
-                      required:
-                      - rationale
-                      - workflowId
-                      type: object
-                    type: array
-                  whyApprovalRequired:
-                    description: WhyApprovalRequired explains the need for human review
-                    type: string
+                  approvalRequired:
+                    description: True if approval is required (confidence < 80% or
+                      policy requires)
+                    type: boolean
                 required:
-                - confidenceLevel
-                - confidenceScore
-                - investigationSummary
-                - reason
-                - recommendedActions
-                - whyApprovalRequired
+                - approvalRequired
                 type: object
-              approvalReason:
-                description: Reason why approval is required (when ApprovalRequired=true)
-                type: string
-              approvalRequired:
-                description: |-
-                  ========================================
-                  APPROVAL SIGNALING
-                  ========================================
-                  True if approval is required (confidence < 80% or policy requires)
-                type: boolean
               completedAt:
                 format: date-time
                 type: string
@@ -712,43 +616,6 @@ spec:
                   - type
                   type: object
                 type: array
-              consecutiveFailures:
-                description: |-
-                  ConsecutiveFailures tracks retry attempts for exponential backoff
-                  BR-AI-009: Reset to 0 on success, increment on transient failure
-                  Used with pkg/shared/backoff for retry logic with jitter
-                format: int32
-                minimum: 0
-                type: integer
-              degradedMode:
-                description: |-
-                  ========================================
-                  OPERATIONAL STATUS
-                  ========================================
-                  DegradedMode indicates if the analysis ran with degraded capabilities
-                  (e.g., Rego policy evaluation failed, using safe defaults)
-                type: boolean
-              humanReviewReason:
-                description: |-
-                  Reason why human review needed (when NeedsHumanReview=true)
-                  BR-KA-197: Maps to KA's human_review_reason enum values
-                  BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
-                  #2019/#2020: decision_expired added for a discovered-and-presented
-                  workflow whose decision was not answered before the interactive
-                  session's inactivity timeout (distinct from no_matching_workflows).
-                enum:
-                - workflow_not_found
-                - image_mismatch
-                - parameter_validation_failed
-                - no_matching_workflows
-                - low_confidence
-                - llm_parsing_error
-                - investigation_inconclusive
-                - rca_incomplete
-                - alignment_check_failed
-                - operator_escalation
-                - decision_expired
-                type: string
               interactiveSession:
                 description: |-
                   ========================================
@@ -787,14 +654,105 @@ spec:
                     format: date-time
                     type: string
                 type: object
-              investigationId:
+              investigationMetadata:
                 description: |-
                   ========================================
-                  INVESTIGATION DETAILS
+                  INVESTIGATION METADATA (God-struct decomposition, #2189 follow-up)
                   ========================================
-                  KA investigation ID for correlation
-                maxLength: 253
-                type: string
+                  InvestigationMetadata bundles KA execution bookkeeping (investigation
+                  ID/duration, warnings, validation history, degraded-mode flag, total
+                  analysis time, consecutive-failure retry counter).
+                properties:
+                  consecutiveFailures:
+                    description: |-
+                      ConsecutiveFailures tracks retry attempts for exponential backoff
+                      BR-AI-009: Reset to 0 on success, increment on transient failure
+                      Used with pkg/shared/backoff for retry logic with jitter
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  degradedMode:
+                    description: |-
+                      ========================================
+                      OPERATIONAL STATUS
+                      ========================================
+                      DegradedMode indicates if the analysis ran with degraded capabilities
+                      (e.g., Rego policy evaluation failed, using safe defaults)
+                    type: boolean
+                  investigationId:
+                    description: |-
+                      ========================================
+                      INVESTIGATION DETAILS
+                      ========================================
+                      KA investigation ID for correlation
+                    maxLength: 253
+                    type: string
+                  investigationTime:
+                    description: |-
+                      NOTE: TokensUsed REMOVED (Dec 2025)
+                      Reason: LLM token tracking is KA's responsibility (it calls the LLM)
+                      Observability: KA exposes kubernaut_agent_llm_token_usage_total Prometheus metric
+                      Correlation: Use InvestigationID to link AIAnalysis CRD to KA metrics
+                      Design Decision: DD-COST-001 - Cost observability is provider's responsibility
+                      Investigation duration in seconds
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  totalAnalysisTime:
+                    description: TotalAnalysisTime is the total duration of the analysis
+                      in milliseconds
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  validationAttemptsHistory:
+                    description: |-
+                      ValidationAttemptsHistory contains complete history of all KA validation attempts
+                      Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
+                      This field provides audit trail for operator notifications and debugging
+                    items:
+                      description: |-
+                        ValidationAttempt contains details of a single KA validation attempt
+                        Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
+                        Each attempt feeds validation errors back to the LLM for correction
+                      properties:
+                        attempt:
+                          description: Attempt number (1, 2, or 3)
+                          maximum: 3
+                          minimum: 1
+                          type: integer
+                        errors:
+                          description: Validation errors encountered
+                          items:
+                            type: string
+                          type: array
+                        isValid:
+                          description: Whether validation passed (always false for
+                            failed attempts in history)
+                          type: boolean
+                        timestamp:
+                          description: When this attempt occurred
+                          format: date-time
+                          type: string
+                        workflowId:
+                          description: WorkflowID that the LLM tried in this attempt
+                          type: string
+                      required:
+                      - attempt
+                      - isValid
+                      - timestamp
+                      - workflowId
+                      type: object
+                    type: array
+                  warnings:
+                    description: |-
+                      ========================================
+                      KA RESPONSE METADATA
+                      ========================================
+                      Non-fatal warnings from KA (e.g., low confidence)
+                    items:
+                      type: string
+                    type: array
+                type: object
               investigationSession:
                 description: |-
                   ========================================
@@ -858,29 +816,8 @@ spec:
                 required:
                 - generation
                 type: object
-              investigationTime:
-                description: |-
-                  NOTE: TokensUsed REMOVED (Dec 2025)
-                  Reason: LLM token tracking is KA's responsibility (it calls the LLM)
-                  Observability: KA exposes kubernaut_agent_llm_token_usage_total Prometheus metric
-                  Correlation: Use InvestigationID to link AIAnalysis CRD to KA metrics
-                  Design Decision: DD-COST-001 - Cost observability is provider's responsibility
-                  Investigation duration in seconds
-                format: int64
-                minimum: 0
-                type: integer
               message:
                 type: string
-              needsHumanReview:
-                description: |-
-                  ========================================
-                  HUMAN REVIEW SIGNALING (BR-KA-197)
-                  Set by Kubernaut Agent when AI cannot produce reliable result
-                  ========================================
-                  True if human review required (KA decision: RCA incomplete/unreliable)
-                  BR-KA-197: Triggers NotificationRequest creation in RO
-                  BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
-                type: boolean
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent generation observed by the controller.
@@ -1047,6 +984,349 @@ spec:
                 x-kubernetes-validations:
                 - message: postRCAContext is immutable once setAt is populated (ADR-056)
                   rule: '!has(oldSelf.setAt) || self == oldSelf'
+              rcaResult:
+                description: |-
+                  ========================================
+                  RCA / WORKFLOW SELECTION RESULT (God-struct decomposition, #2189 follow-up)
+                  ========================================
+                  RCAResult bundles the investigation outcome (root cause, selected
+                  workflow, alternatives, actionability). Nil until KA's investigation
+                  produces a result; callers MUST nil-check before dereferencing
+                  (same convention as KASession/InteractiveSession/PostRCAContext below).
+                properties:
+                  actionability:
+                    description: |-
+                      #388: LLM's assessment of whether the alert warrants action.
+                      Empty when not yet assessed (pre-investigation or error paths).
+                      "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
+                      "NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).
+                    enum:
+                    - Actionable
+                    - NotActionable
+                    type: string
+                  alternativeWorkflows:
+                    description: |-
+                      ========================================
+                      ALTERNATIVE WORKFLOWS (Dec 2025)
+                      ========================================
+                      Alternative workflows considered but not selected.
+                      INFORMATIONAL ONLY - NOT for automatic execution.
+                      Helps operators make informed approval decisions and provides audit trail.
+                      Per KA team: Alternatives are for CONTEXT, not EXECUTION.
+                    items:
+                      description: |-
+                        AlternativeWorkflow contains alternative workflows considered but not selected.
+                        INFORMATIONAL ONLY - NOT for automatic execution.
+                        Helps operators understand AI reasoning during approval decisions.
+                        Per KA team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+                      properties:
+                        confidence:
+                          description: Confidence score (0.0-1.0) - shows why it wasn't
+                            selected
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        executionBundle:
+                          description: Execution bundle OCI reference (digest-pinned)
+                            - resolved by KA
+                          type: string
+                        rationale:
+                          description: Rationale explaining why this workflow was
+                            considered
+                          type: string
+                        workflowId:
+                          description: Workflow identifier (catalog lookup key)
+                          type: string
+                      required:
+                      - confidence
+                      - rationale
+                      - workflowId
+                      type: object
+                    type: array
+                  rootCause:
+                    description: |-
+                      ========================================
+                      ROOT CAUSE ANALYSIS RESULTS
+                      ========================================
+                      Identified root cause
+                    type: string
+                  rootCauseAnalysis:
+                    description: Root cause analysis details
+                    properties:
+                      contributingFactors:
+                        description: Contributing factors
+                        items:
+                          type: string
+                        type: array
+                      remediationTarget:
+                        description: |-
+                          RemediationTarget identifies the actual resource the LLM determined should be remediated.
+                          BR-KA-212: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+                          the Pod that generated the signal. The WFE creator should prefer this over the RR's
+                          TargetResource when available to ensure the correct resource is patched.
+                        properties:
+                          apiVersion:
+                            description: |-
+                              APIVersion disambiguates the resource's API group when the Kind exists in
+                              multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                              Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                            type: string
+                          kind:
+                            description: Kind is the Kubernetes resource kind (e.g.,
+                              "Deployment", "StatefulSet", "DaemonSet")
+                            type: string
+                          name:
+                            description: Name is the resource name
+                            type: string
+                          namespace:
+                            description: Namespace is the resource namespace. Empty
+                              for cluster-scoped resources (e.g., Node, PersistentVolume).
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        type: object
+                      severity:
+                        description: |-
+                          Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1, ADR-066)
+                          DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, warning, info, unknown)
+                        enum:
+                        - critical
+                        - high
+                        - warning
+                        - info
+                        - unknown
+                        type: string
+                      signalType:
+                        description: Signal type determined by RCA (may differ from
+                          input)
+                        type: string
+                      summary:
+                        description: Brief summary of root cause
+                        type: string
+                    required:
+                    - signalType
+                    - summary
+                    type: object
+                  selectedWorkflow:
+                    description: |-
+                      ========================================
+                      SELECTED WORKFLOW (DD-CONTRACT-002)
+                      ========================================
+                      Selected workflow for execution (populated when phase=Completed)
+                    properties:
+                      actionType:
+                        description: |-
+                          ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
+                          ScaleReplicas, RestartPod), resolved from the DS catalog at selection
+                          time. Required here because the upstream source of truth,
+                          RemediationWorkflow.Spec.ActionType, is itself
+                          so it is always non-empty once a workflow has been resolved from the
+                          catalog. Audit-readability only -- WorkflowID remains the
+                          functional/join key for SOC2 CC8.1 reconstruction regardless
+                          (IT-AW-1111-001).
+                        type: string
+                      confidence:
+                        description: Confidence score (0.0-1.0)
+                        maximum: 1
+                        minimum: 0
+                        type: number
+                      declaredParameterNames:
+                        additionalProperties:
+                          type: boolean
+                        description: |-
+                          DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+                          uses for defense-in-depth stripping of undeclared parameters (#243). Not
+                          "omitempty": nil (no schema, no filtering) and a non-nil empty map
+                          (schema declares zero allowed parameters, strip everything) are
+                          distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
+                          encoding/json "omitempty" treats a zero-length map the same as nil and
+                          silently drops it from the wire payload, collapsing that distinction.
+                        nullable: true
+                        type: object
+                      dependencies:
+                        description: |-
+                          Dependencies declares the Secrets/ConfigMaps the workflow's schema
+                          requires in the execution namespace (DD-WE-006).
+                        properties:
+                          configMaps:
+                            items:
+                              description: |-
+                                WorkflowResourceDependency identifies a required Kubernetes Secret or
+                                ConfigMap by name in the execution namespace.
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          secrets:
+                            items:
+                              description: |-
+                                WorkflowResourceDependency identifies a required Kubernetes Secret or
+                                ConfigMap by name in the execution namespace.
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                        type: object
+                      engineConfig:
+                        description: |-
+                          EngineConfig holds engine-specific configuration (BR-WE-016).
+                          For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
+                          For tekton/job: nil.
+                        x-kubernetes-preserve-unknown-fields: true
+                      executionBundle:
+                        description: |-
+                          ExecutionBundle is the OCI execution bundle reference (digest-pinned),
+                          resolved from the DS workflow catalog.
+                        type: string
+                      executionBundleDigest:
+                        description: ExecutionBundleDigest is retained for audit trail
+                          and reproducibility.
+                        type: string
+                      executionEngine:
+                        description: |-
+                          ExecutionEngine specifies the backend engine for workflow execution,
+                          resolved from the DS workflow catalog at selection time. Deliberately
+                          NOT Required: unlike WorkflowID/WorkflowName/ActionType/Version/
+                          ExecutionBundle (whose upstream sources guarantee non-empty values),
+                          AIAnalysis legitimately persists a SelectedWorkflow with this field
+                          empty on its partial/degenerate paths (e.g. workflow-resolution
+                          failure, low-confidence preservation -- see
+                          preservePartialSelectedWorkflow/preserveLowConfidenceWorkflow in
+                          pkg/aianalysis/handlers/response_processor.go) before
+                          RemediationOrchestrator's validateSelectedWorkflow ever runs its own
+                          Go-level fail-closed check. Tightening this to Required+no-omitempty
+                          broke exactly that: an empty string is present-but-invalid against the
+                          Enum, not merely "missing" (#1661 Change 12 CI regression, confirmed
+                          against IT-AA-344-001 and three sibling suites -- 100go.co "validate
+                          at the right layer": RO's runtime check, not CRD admission, is the
+                          correct gate here).
+                        enum:
+                        - tekton
+                        - job
+                        - ansible
+                        type: string
+                      parameters:
+                        additionalProperties:
+                          type: string
+                        description: Workflow parameters (UPPER_SNAKE_CASE keys per
+                          DD-WORKFLOW-003)
+                        type: object
+                      rationale:
+                        description: Rationale explaining why this workflow was selected
+                        type: string
+                      resources:
+                        description: |-
+                          Resources declares the per-workflow Job container CPU/memory
+                          requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This field depends on the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      selectedAt:
+                        description: |-
+                          SelectedAt records when this snapshot was first populated. Once
+                          non-nil, the entire SelectedWorkflow becomes immutable via the
+                          XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
+                          to prevent tampering with the execution snapshot RO/WFE will trust.
+                        format: date-time
+                        type: string
+                      serviceAccountName:
+                        description: |-
+                          ServiceAccountName is the pre-existing ServiceAccount resolved from
+                          the DS workflow catalog at selection time (Issue #650), used for pod
+                          execution.
+                        type: string
+                      version:
+                        description: Version is the workflow's semantic version.
+                        type: string
+                      workflowId:
+                        description: WorkflowID is the catalog lookup key (DS-assigned
+                          UUID).
+                        type: string
+                      workflowName:
+                        description: |-
+                          WorkflowName is the human-readable workflow identifier, always equal
+                          to RemediationWorkflow.metadata.name -- a Kubernetes-guaranteed
+                          non-empty value on every object, making this Required safe on both
+                          embedding CRDs. Surfaced for kubectl/operator readability so CRD
+                          consumers aren't limited to the opaque WorkflowID UUID.
+                          Catalog-authoritative: always sourced from DataStorage, never
+                          LLM-suppliable (Issue #1661 Change 12).
+                        type: string
+                    required:
+                    - actionType
+                    - confidence
+                    - executionBundle
+                    - rationale
+                    - version
+                    - workflowId
+                    - workflowName
+                    type: object
+                    x-kubernetes-validations:
+                    - message: 'selectedWorkflow is immutable once selectedAt is populated
+                        (Issue #1661, DD-WORKFLOW-018)'
+                      rule: '!has(oldSelf.selectedAt) || self == oldSelf'
+                type: object
               reason:
                 description: Reason provides the umbrella failure or completion category.
                 enum:
@@ -1060,287 +1340,103 @@ spec:
                 - InteractiveCancelled
                 - ParentCancelled
                 type: string
-              rootCause:
+              review:
                 description: |-
                   ========================================
-                  ROOT CAUSE ANALYSIS RESULTS
+                  HUMAN REVIEW SIGNALING (BR-KA-197, God-struct decomposition #2189 follow-up)
+                  Set by Kubernaut Agent when AI cannot produce reliable result
                   ========================================
-                  Identified root cause
-                type: string
-              rootCauseAnalysis:
-                description: Root cause analysis details
+                  Review bundles human-review signaling (KA decision: RCA
+                  incomplete/unreliable) and the shadow-agent alignment verdict.
                 properties:
-                  contributingFactors:
-                    description: Contributing factors
-                    items:
-                      type: string
-                    type: array
-                  remediationTarget:
+                  alignmentVerdict:
                     description: |-
-                      RemediationTarget identifies the actual resource the LLM determined should be remediated.
-                      BR-KA-212: The LLM may identify a higher-level resource (e.g., Deployment) rather than
-                      the Pod that generated the signal. The WFE creator should prefer this over the RR's
-                      TargetResource when available to ensure the correct resource is patched.
+                      Shadow agent alignment verdict from KA (BR-AI-601, #1076).
+                      When CircuitBreakerActivated=true, the investigation was terminated early
+                      and LLM results (RootCauseAnalysis, SelectedWorkflow) may be incomplete
+                      or compromised. Users should treat shadow findings as the primary content.
                     properties:
-                      apiVersion:
-                        description: |-
-                          APIVersion disambiguates the resource's API group when the Kind exists in
-                          multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
-                          Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                      circuitBreakerActivated:
+                        description: CircuitBreakerActivated indicates the investigation
+                          was terminated early.
+                        type: boolean
+                      findings:
+                        description: Findings contains per-step suspicious findings.
+                        items:
+                          description: AlignmentFindingStatus captures a single suspicious
+                            step on the CRD.
+                          properties:
+                            explanation:
+                              description: Explanation is the shadow agent's explanation
+                                for flagging this step.
+                              type: string
+                            stepIndex:
+                              description: StepIndex is the zero-based index of the
+                                evaluated step.
+                              type: integer
+                            stepKind:
+                              description: StepKind is the kind of step (llm_reasoning,
+                                tool_result, signal_input).
+                              type: string
+                            tool:
+                              description: Tool is the tool name if StepKind is tool_result.
+                              type: string
+                          required:
+                          - explanation
+                          - stepIndex
+                          - stepKind
+                          type: object
+                        type: array
+                      flagged:
+                        description: Flagged is the number of steps flagged as suspicious.
+                        type: integer
+                      result:
+                        description: 'Result is the overall shadow agent verdict:
+                          "clean" or "suspicious".'
                         type: string
-                      kind:
-                        description: Kind is the Kubernetes resource kind (e.g., "Deployment",
-                          "StatefulSet", "DaemonSet")
+                      summary:
+                        description: Summary is a narrative summary of the shadow
+                          agent evaluation.
                         type: string
-                      name:
-                        description: Name is the resource name
-                        type: string
-                      namespace:
-                        description: Namespace is the resource namespace. Empty for
-                          cluster-scoped resources (e.g., Node, PersistentVolume).
-                        type: string
+                      total:
+                        description: Total is the total number of steps evaluated.
+                        type: integer
                     required:
-                    - kind
-                    - name
+                    - circuitBreakerActivated
+                    - flagged
+                    - result
+                    - total
                     type: object
-                  severity:
+                  humanReviewReason:
                     description: |-
-                      Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1, ADR-066)
-                      DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, warning, info, unknown)
+                      Reason why human review needed (when NeedsHumanReview=true)
+                      BR-KA-197: Maps to KA's human_review_reason enum values
+                      BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
+                      #2019/#2020: decision_expired added for a discovered-and-presented
+                      workflow whose decision was not answered before the interactive
+                      session's inactivity timeout (distinct from no_matching_workflows).
                     enum:
-                    - critical
-                    - high
-                    - warning
-                    - info
-                    - unknown
+                    - workflow_not_found
+                    - image_mismatch
+                    - parameter_validation_failed
+                    - no_matching_workflows
+                    - low_confidence
+                    - llm_parsing_error
+                    - investigation_inconclusive
+                    - rca_incomplete
+                    - alignment_check_failed
+                    - operator_escalation
+                    - decision_expired
                     type: string
-                  signalType:
-                    description: Signal type determined by RCA (may differ from input)
-                    type: string
-                  summary:
-                    description: Brief summary of root cause
-                    type: string
+                  needsHumanReview:
+                    description: |-
+                      True if human review required (KA decision: RCA incomplete/unreliable)
+                      BR-KA-197: Triggers NotificationRequest creation in RO
+                      BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
+                    type: boolean
                 required:
-                - signalType
-                - summary
+                - needsHumanReview
                 type: object
-              selectedWorkflow:
-                description: |-
-                  ========================================
-                  SELECTED WORKFLOW (DD-CONTRACT-002)
-                  ========================================
-                  Selected workflow for execution (populated when phase=Completed)
-                properties:
-                  actionType:
-                    description: |-
-                      ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
-                      ScaleReplicas, RestartPod), resolved from the DS catalog at selection
-                      time. Required here because the upstream source of truth,
-                      RemediationWorkflow.Spec.ActionType, is itself
-                      so it is always non-empty once a workflow has been resolved from the
-                      catalog. Audit-readability only -- WorkflowID remains the
-                      functional/join key for SOC2 CC8.1 reconstruction regardless
-                      (IT-AW-1111-001).
-                    type: string
-                  confidence:
-                    description: Confidence score (0.0-1.0)
-                    maximum: 1
-                    minimum: 0
-                    type: number
-                  declaredParameterNames:
-                    additionalProperties:
-                      type: boolean
-                    description: |-
-                      DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-                      uses for defense-in-depth stripping of undeclared parameters (#243). Not
-                      "omitempty": nil (no schema, no filtering) and a non-nil empty map
-                      (schema declares zero allowed parameters, strip everything) are
-                      distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
-                      encoding/json "omitempty" treats a zero-length map the same as nil and
-                      silently drops it from the wire payload, collapsing that distinction.
-                    nullable: true
-                    type: object
-                  dependencies:
-                    description: |-
-                      Dependencies declares the Secrets/ConfigMaps the workflow's schema
-                      requires in the execution namespace (DD-WE-006).
-                    properties:
-                      configMaps:
-                        items:
-                          description: |-
-                            WorkflowResourceDependency identifies a required Kubernetes Secret or
-                            ConfigMap by name in the execution namespace.
-                          properties:
-                            name:
-                              type: string
-                          required:
-                          - name
-                          type: object
-                        type: array
-                      secrets:
-                        items:
-                          description: |-
-                            WorkflowResourceDependency identifies a required Kubernetes Secret or
-                            ConfigMap by name in the execution namespace.
-                          properties:
-                            name:
-                              type: string
-                          required:
-                          - name
-                          type: object
-                        type: array
-                    type: object
-                  engineConfig:
-                    description: |-
-                      EngineConfig holds engine-specific configuration (BR-WE-016).
-                      For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
-                      For tekton/job: nil.
-                    x-kubernetes-preserve-unknown-fields: true
-                  executionBundle:
-                    description: |-
-                      ExecutionBundle is the OCI execution bundle reference (digest-pinned),
-                      resolved from the DS workflow catalog.
-                    type: string
-                  executionBundleDigest:
-                    description: ExecutionBundleDigest is retained for audit trail
-                      and reproducibility.
-                    type: string
-                  executionEngine:
-                    description: |-
-                      ExecutionEngine specifies the backend engine for workflow execution,
-                      resolved from the DS workflow catalog at selection time. Deliberately
-                      NOT Required: unlike WorkflowID/WorkflowName/ActionType/Version/
-                      ExecutionBundle (whose upstream sources guarantee non-empty values),
-                      AIAnalysis legitimately persists a SelectedWorkflow with this field
-                      empty on its partial/degenerate paths (e.g. workflow-resolution
-                      failure, low-confidence preservation -- see
-                      preservePartialSelectedWorkflow/preserveLowConfidenceWorkflow in
-                      pkg/aianalysis/handlers/response_processor.go) before
-                      RemediationOrchestrator's validateSelectedWorkflow ever runs its own
-                      Go-level fail-closed check. Tightening this to Required+no-omitempty
-                      broke exactly that: an empty string is present-but-invalid against the
-                      Enum, not merely "missing" (#1661 Change 12 CI regression, confirmed
-                      against IT-AA-344-001 and three sibling suites -- 100go.co "validate
-                      at the right layer": RO's runtime check, not CRD admission, is the
-                      correct gate here).
-                    enum:
-                    - tekton
-                    - job
-                    - ansible
-                    type: string
-                  parameters:
-                    additionalProperties:
-                      type: string
-                    description: Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
-                    type: object
-                  rationale:
-                    description: Rationale explaining why this workflow was selected
-                    type: string
-                  resources:
-                    description: |-
-                      Resources declares the per-workflow Job container CPU/memory
-                      requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
-                    properties:
-                      claims:
-                        description: |-
-                          Claims lists the names of resources, defined in spec.resourceClaims,
-                          that are used by this container.
-
-                          This field depends on the
-                          DynamicResourceAllocation feature gate.
-
-                          This field is immutable. It can only be set for containers.
-                        items:
-                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                          properties:
-                            name:
-                              description: |-
-                                Name must match the name of one entry in pod.spec.resourceClaims of
-                                the Pod where this field is used. It makes that resource available
-                                inside a container.
-                              type: string
-                            request:
-                              description: |-
-                                Request is the name chosen for a request in the referenced claim.
-                                If empty, everything from the claim is made available, otherwise
-                                only the result of this request.
-                              type: string
-                          required:
-                          - name
-                          type: object
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - name
-                        x-kubernetes-list-type: map
-                      limits:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: |-
-                          Limits describes the maximum amount of compute resources allowed.
-                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                        type: object
-                      requests:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: |-
-                          Requests describes the minimum amount of compute resources required.
-                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                        type: object
-                    type: object
-                  selectedAt:
-                    description: |-
-                      SelectedAt records when this snapshot was first populated. Once
-                      non-nil, the entire SelectedWorkflow becomes immutable via the
-                      XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
-                      to prevent tampering with the execution snapshot RO/WFE will trust.
-                    format: date-time
-                    type: string
-                  serviceAccountName:
-                    description: |-
-                      ServiceAccountName is the pre-existing ServiceAccount resolved from
-                      the DS workflow catalog at selection time (Issue #650), used for pod
-                      execution.
-                    type: string
-                  version:
-                    description: Version is the workflow's semantic version.
-                    type: string
-                  workflowId:
-                    description: WorkflowID is the catalog lookup key (DS-assigned
-                      UUID).
-                    type: string
-                  workflowName:
-                    description: |-
-                      WorkflowName is the human-readable workflow identifier, always equal
-                      to RemediationWorkflow.metadata.name -- a Kubernetes-guaranteed
-                      non-empty value on every object, making this Required safe on both
-                      embedding CRDs. Surfaced for kubectl/operator readability so CRD
-                      consumers aren't limited to the opaque WorkflowID UUID.
-                      Catalog-authoritative: always sourced from DataStorage, never
-                      LLM-suppliable (Issue #1661 Change 12).
-                    type: string
-                required:
-                - actionType
-                - confidence
-                - executionBundle
-                - rationale
-                - version
-                - workflowId
-                - workflowName
-                type: object
-                x-kubernetes-validations:
-                - message: 'selectedWorkflow is immutable once selectedAt is populated
-                    (Issue #1661, DD-WORKFLOW-018)'
-                  rule: '!has(oldSelf.selectedAt) || self == oldSelf'
               startedAt:
                 description: Timestamps
                 format: date-time
@@ -1370,63 +1466,7 @@ spec:
                 - OperatorEscalation
                 - DecisionExpired
                 type: string
-              totalAnalysisTime:
-                description: TotalAnalysisTime is the total duration of the analysis
-                  in milliseconds
-                format: int64
-                minimum: 0
-                type: integer
-              validationAttemptsHistory:
-                description: |-
-                  ValidationAttemptsHistory contains complete history of all KA validation attempts
-                  Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
-                  This field provides audit trail for operator notifications and debugging
-                items:
-                  description: |-
-                    ValidationAttempt contains details of a single KA validation attempt
-                    Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
-                    Each attempt feeds validation errors back to the LLM for correction
-                  properties:
-                    attempt:
-                      description: Attempt number (1, 2, or 3)
-                      maximum: 3
-                      minimum: 1
-                      type: integer
-                    errors:
-                      description: Validation errors encountered
-                      items:
-                        type: string
-                      type: array
-                    isValid:
-                      description: Whether validation passed (always false for failed
-                        attempts in history)
-                      type: boolean
-                    timestamp:
-                      description: When this attempt occurred
-                      format: date-time
-                      type: string
-                    workflowId:
-                      description: WorkflowID that the LLM tried in this attempt
-                      type: string
-                  required:
-                  - attempt
-                  - isValid
-                  - timestamp
-                  - workflowId
-                  type: object
-                type: array
-              warnings:
-                description: |-
-                  ========================================
-                  KA RESPONSE METADATA
-                  ========================================
-                  Non-fatal warnings from KA (e.g., low confidence)
-                items:
-                  type: string
-                type: array
             required:
-            - approvalRequired
-            - needsHumanReview
             - phase
             type: object
         type: object

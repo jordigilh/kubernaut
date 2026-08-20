@@ -119,9 +119,9 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			Expect(string(analysis.Status.Reason)).To(Equal("AnalysisCompleted"),
 				"#768: Reason should be AnalysisCompleted, not WorkflowResolutionFailed")
 			Expect(analysis.Status.SubReason).To(Equal("NoMatchingWorkflows"))
-			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"#768: NeedsHumanReview must remain true")
-			Expect(analysis.Status.HumanReviewReason).To(Equal("no_matching_workflows"))
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("no_matching_workflows"))
 		})
 
 		It("UT-AA-768-002: sets InvestigationComplete=True and AnalysisComplete=True for no_matching_workflows", func() {
@@ -209,7 +209,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(analysis.Status.RootCause).To(Equal("The namespace-quota ResourceQuota is exhausted"),
+			Expect(analysis.Status.GetRCAResult().RootCause).To(Equal("The namespace-quota ResourceQuota is exhausted"),
 				"#769: rootCause must contain the RCA summary, not 'N/A'")
 		})
 
@@ -220,15 +220,15 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(analysis.Status.RootCauseAnalysis).ToNot(BeNil(),
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).ToNot(BeNil(),
 				"#769: rootCauseAnalysis must be set")
-			Expect(analysis.Status.RootCauseAnalysis.Summary).To(
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(
 				Equal("The namespace-quota ResourceQuota is exhausted"))
-			Expect(analysis.Status.RootCauseAnalysis.Severity).To(Equal("medium"))
-			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
-			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
-			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget.Name).To(Equal("api-server"))
-			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget.Namespace).To(Equal("demo-quota"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("medium"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Name).To(Equal("api-server"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Namespace).To(Equal("demo-quota"))
 		})
 
 		It("UT-AA-769-003: handles nil RCA gracefully — no panic, fields remain empty", func() {
@@ -239,8 +239,8 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(analysis.Status.RootCause).To(BeEmpty())
-			Expect(analysis.Status.RootCauseAnalysis).To(BeNil())
+			Expect(analysis.Status.GetRCAResult().RootCause).To(BeEmpty())
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).To(BeNil())
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
 				"Phase must still be Completed even without RCA")
 		})

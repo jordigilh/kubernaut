@@ -113,24 +113,24 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 				"#607: Reason must be WorkflowNotNeeded for not-actionable alerts")
 			Expect(analysis.Status.SubReason).To(Equal("NotActionable"),
 				"#607: SubReason must be NotActionable (distinct from ProblemResolved)")
-			Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse(),
 				"#607: Benign alerts should not require human review")
-			Expect(analysis.Status.Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
+			Expect(analysis.Status.GetRCAResult().Actionability).To(Equal(aianalysis.ActionabilityNotActionable),
 				"#607: Actionability must be NotActionable for benign conditions")
 
 			By("Verifying RCA is preserved for audit trail")
-			Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil(),
 				"RCA should be populated even for not-actionable alerts")
-			Expect(analysis.Status.RootCauseAnalysis.Summary).NotTo(BeEmpty())
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.Summary).NotTo(BeEmpty())
 
 			By("Verifying no workflow was selected")
-			Expect(analysis.Status.SelectedWorkflow).To(BeNil(),
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).To(BeNil(),
 				"No workflow should be selected for not-actionable alerts")
 
 			By("Verifying completion metadata")
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 			// Uses >= 0 because mock LLM responds instantly; sub-second analyses truncate to 0
-			Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", 0))
+			Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">=", 0))
 		})
 	})
 })

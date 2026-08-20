@@ -87,29 +87,33 @@ func completeAA() *aianalysisv1.AIAnalysis {
 			ObservedGeneration: 1,
 			StartedAt:          &now,
 			CompletedAt:        &now,
-			RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
-				Summary:             "Memory limit exceeded",
-				Severity:            "critical",
-				SignalType:          "OOMKilled",
-				ContributingFactors: []string{"high memory usage"},
-				RemediationTarget:   &aianalysisv1.RemediationTarget{Kind: "Deployment", Name: "my-app", Namespace: "default"},
-			},
-			SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID:            "restart-pod",
-					WorkflowName:          "restart-pod",
-					ActionType:            "RestartPod",
-					Version:               "v1",
-					ExecutionBundle:       "oci://registry/restart-pod:v1",
-					ExecutionBundleDigest: "sha256:abc123",
-					ExecutionEngine:       "tekton",
+			RCAResult: &aianalysisv1.RCAResult{
+				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
+					Summary:             "Memory limit exceeded",
+					Severity:            "critical",
+					SignalType:          "OOMKilled",
+					ContributingFactors: []string{"high memory usage"},
+					RemediationTarget:   &aianalysisv1.RemediationTarget{Kind: "Deployment", Name: "my-app", Namespace: "default"},
 				},
-				Confidence: 0.95,
-				Parameters: map[string]string{"NAMESPACE": "default"},
-				Rationale:  "Restart will clear memory",
+				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:            "restart-pod",
+						WorkflowName:          "restart-pod",
+						ActionType:            "RestartPod",
+						Version:               "v1",
+						ExecutionBundle:       "oci://registry/restart-pod:v1",
+						ExecutionBundleDigest: "sha256:abc123",
+						ExecutionEngine:       "tekton",
+					},
+					Confidence: 0.95,
+					Parameters: map[string]string{"NAMESPACE": "default"},
+					Rationale:  "Restart will clear memory",
+				},
 			},
-			InvestigationID:   "inv-abc-123",
-			TotalAnalysisTime: 5000,
+			InvestigationMetadata: &aianalysisv1.InvestigationMetadata{
+				InvestigationID:   "inv-abc-123",
+				TotalAnalysisTime: 5000,
+			},
 			KASession: &aianalysisv1.KASession{
 				ID:         "sess-123",
 				Generation: 0,
@@ -130,9 +134,9 @@ func completeAA() *aianalysisv1.AIAnalysis {
 
 func completeAAWithApproval() *aianalysisv1.AIAnalysis {
 	aa := completeAA()
-	aa.Status.ApprovalRequired = true
-	aa.Status.ApprovalReason = "low confidence"
-	aa.Status.ApprovalContext = &aianalysisv1.ApprovalContext{
+	aa.Status.EnsureApproval().ApprovalRequired = true
+	aa.Status.Approval.ApprovalReason = "low confidence"
+	aa.Status.Approval.ApprovalContext = &aianalysisv1.ApprovalContext{
 		Reason:                 "Confidence below threshold",
 		ConfidenceScore:        0.65,
 		ConfidenceLevel:        "medium",

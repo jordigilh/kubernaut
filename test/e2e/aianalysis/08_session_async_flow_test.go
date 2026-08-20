@@ -112,7 +112,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 
 			By("Verifying analysis results are complete")
 			// Should have workflow selected (same as sync flow)
-			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(),
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
 				"SelectedWorkflow must be populated after async investigation")
 
 			// Should have completion timestamp
@@ -120,7 +120,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 				"CompletedAt must be set when analysis completes")
 
 			// Staging environment = auto-approve
-			Expect(analysis.Status.ApprovalRequired).To(BeFalse(),
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse(),
 				"Staging environment should auto-approve")
 		})
 	})
