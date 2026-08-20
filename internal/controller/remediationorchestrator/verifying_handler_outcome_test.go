@@ -65,20 +65,20 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 	}
 
 	// ========================================
-	// P0: EmitCompletionAudit receives rr.Status.Outcome, not "success"
+	// P0: EmitCompletionAudit receives rr.Status.EnsureCompletionStatus().Outcome, not "success"
 	// ========================================
 	Describe("EmitCompletionAudit outcome argument (P0)", func() {
 
-		It("UT-RO-1033-001: EA terminal completion passes rr.Status.Outcome to EmitCompletionAudit", func() {
+		It("UT-RO-1033-001: EA terminal completion passes rr.Status.EnsureCompletionStatus().Outcome to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-ea", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 			rr.Status.StartTime = &startTime
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-ea", Namespace: defaultFixture,
 			}
 			dl := metav1.NewTime(time.Now().Add(10 * time.Minute))
-			rr.Status.VerificationDeadline = &dl
+			rr.Status.EnsurePhaseProgress().VerificationDeadline = &dl
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-ea", Namespace: defaultFixture},
 				Status:     eav1.EffectivenessAssessmentStatus{Phase: eav1.PhasePending},
@@ -93,7 +93,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			cbs := noopCallbacks()
 			cbs.TrackEffectivenessStatus = func(_ context.Context, rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = phase.Completed
-				rr.Status.Outcome = remediationv1.OutcomeRemediated
+				rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 				return nil
 			}
 			cbs.EmitCompletionAudit = func(_ context.Context, _ *remediationv1.RemediationRequest, outcome string, _ int64) {
@@ -104,16 +104,16 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			_, err := h.Handle(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(capturedOutcome).To(Equal(remediationv1.OutcomeRemediated),
-				"EmitCompletionAudit should receive rr.Status.Outcome, not 'success'")
+				"EmitCompletionAudit should receive rr.Status.EnsureCompletionStatus().Outcome, not 'success'")
 		})
 
 		It("UT-RO-1033-002: Safety-net timeout passes VerificationTimedOut to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-safety", defaultFixture, remediationv1.PhaseVerifying)
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.StartTime = &startTime
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-safety", Namespace: defaultFixture,
 			}
 
@@ -142,14 +142,14 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 		It("UT-RO-1033-003: Verification deadline expired passes VerificationTimedOut to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-dl", defaultFixture, remediationv1.PhaseVerifying)
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-10 * time.Minute))
 			rr.Status.StartTime = &startTime
-			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-dl", Namespace: defaultFixture,
 			}
 			dl := metav1.NewTime(time.Now().Add(-1 * time.Minute))
-			rr.Status.VerificationDeadline = &dl
+			rr.Status.EnsurePhaseProgress().VerificationDeadline = &dl
 
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-dl", Namespace: defaultFixture},
@@ -245,7 +245,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 	// ========================================
 	Describe("Nil/zero edge cases (P1)", func() {
 
-		It("UT-RO-1033-006: empty rr.Status.Outcome → crd_outcome is unset (OptString.Set=false)", func() {
+		It("UT-RO-1033-006: empty rr.Status.EnsureCompletionStatus().Outcome → crd_outcome is unset (OptString.Set=false)", func() {
 			mgr := prodaudit.NewManager("test-orchestrator")
 
 			event, err := mgr.BuildCompletionEvent(

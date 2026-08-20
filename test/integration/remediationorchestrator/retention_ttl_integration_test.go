@@ -72,8 +72,8 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, updated); err != nil {
 					return false
 				}
-				if updated.Status.SignalProcessingRef != nil {
-					spName = updated.Status.SignalProcessingRef.Name
+				if updated.Status.EnsurePhaseProgress().SignalProcessingRef != nil {
+					spName = updated.Status.EnsurePhaseProgress().SignalProcessingRef.Name
 					return true
 				}
 				return false
@@ -157,8 +157,8 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 			failReason := "test-forced-failure"
 			updated.Status.OverallPhase = remediationv1.PhaseFailed
 			updated.Status.CompletedAt = &now
-			updated.Status.FailurePhase = &failPhase
-			updated.Status.FailureReason = &failReason
+			updated.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+			updated.Status.EnsureCompletionStatus().FailureReason = &failReason
 			updated.Status.RetentionExpiryTime = &expired
 			Expect(k8sClient.Status().Update(ctx, updated)).To(Succeed())
 

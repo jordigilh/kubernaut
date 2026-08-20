@@ -269,15 +269,15 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(rr.Status.LastModifiedBy).ToNot(BeEmpty(),
+			Expect(rr.Status.EnsureOperatorAudit().LastModifiedBy).ToNot(BeEmpty(),
 				"Webhook should populate LastModifiedBy with authenticated user")
-			Expect(rr.Status.LastModifiedAt).ToNot(BeNil(),
+			Expect(rr.Status.EnsureOperatorAudit().LastModifiedAt).ToNot(BeNil(),
 				"Webhook should populate LastModifiedAt with mutation timestamp")
 
 			GinkgoWriter.Printf("✅ Gap #8 E2E test PASSED:\n")
 			GinkgoWriter.Printf("   • Webhook intercepted TimeoutConfig mutation\n")
-			GinkgoWriter.Printf("   • LastModifiedBy: %s\n", rr.Status.LastModifiedBy)
-			GinkgoWriter.Printf("   • LastModifiedAt: %s\n", rr.Status.LastModifiedAt.Time)
+			GinkgoWriter.Printf("   • LastModifiedBy: %s\n", rr.Status.EnsureOperatorAudit().LastModifiedBy)
+			GinkgoWriter.Printf("   • LastModifiedAt: %s\n", rr.Status.EnsureOperatorAudit().LastModifiedAt.Time)
 			GinkgoWriter.Printf("   • Audit event: %s (category=%s, action=%s, outcome=%s)\n",
 				webhookEvent.EventType,
 				webhookEvent.EventCategory,

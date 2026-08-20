@@ -81,7 +81,7 @@ func (h *ProcessingHandler) Phase() phase.Phase {
 func (h *ProcessingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.SignalProcessingRef == nil {
+	if rr.Status.EnsurePhaseProgress().SignalProcessingRef == nil {
 		logger.Error(nil, "Processing phase but no SignalProcessingRef - corrupted state")
 		return phase.Fail(remediationv1.FailurePhaseSignalProcessing,
 			fmt.Errorf("SignalProcessing not found"),
@@ -90,8 +90,8 @@ func (h *ProcessingHandler) Handle(ctx context.Context, rr *remediationv1.Remedi
 
 	sp := &signalprocessingv1.SignalProcessing{}
 	if err := h.client.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.SignalProcessingRef.Name,
-		Namespace: rr.Status.SignalProcessingRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().SignalProcessingRef.Namespace,
 	}, sp); err != nil {
 		logger.Error(err, "Failed to fetch SignalProcessing CRD")
 		return phase.Requeue(config.RequeueGenericError, "SP fetch failed"), nil
@@ -140,7 +140,7 @@ func (h *ProcessingHandler) handleSPCompleted(ctx context.Context, rr *remediati
 	h.metrics.ChildCRDCreationsTotal.WithLabelValues("AIAnalysis", rr.Namespace).Inc()
 
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+		rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 			APIVersion: aianalysisv1.GroupVersion.String(),
 			Kind:       "AIAnalysis",
 			Name:       aiName,

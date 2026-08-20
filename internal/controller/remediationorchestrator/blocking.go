@@ -117,7 +117,7 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 		case phase.Failed:
 			// Issue #190: Skip inherited/deduplicated failures — they don't represent
 			// actual remediation attempts and should not count toward blocking.
-			if rr.Status.FailurePhase != nil && *rr.Status.FailurePhase == remediationv1.FailurePhaseDeduplicated {
+			if rr.Status.EnsureCompletionStatus().FailurePhase != nil && *rr.Status.EnsureCompletionStatus().FailurePhase == remediationv1.FailurePhaseDeduplicated {
 				continue
 			}
 			consecutiveFailures++
@@ -170,7 +170,7 @@ func (r *Reconciler) createCooldownEscalationNotificationIfNeeded(ctx context.Co
 	escCtx := &creator.EscalationContext{
 		FailurePhase:  string(failurePhase),
 		FailureReason: failureReason,
-		BlockReason:   string(rr.Status.BlockReason),
+		BlockReason:   string(rr.Status.GetRoutingStatus().BlockReason),
 		Message:       "Cooldown expired after blocking period",
 	}
 	notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
@@ -182,7 +182,7 @@ func (r *Reconciler) createCooldownEscalationNotificationIfNeeded(ctx context.Co
 	logger.Info("Created escalation notification for terminal failure", "notification", notifName)
 	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
@@ -211,10 +211,11 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Failed
-		rr.Status.FailurePhase = &failurePhase
-		rr.Status.FailureReason = &failureReason
+		completion := rr.Status.EnsureCompletionStatus()
+		completion.FailurePhase = &failurePhase
+		completion.FailureReason = &failureReason
 		// Clear blocking fields since we're transitioning to terminal
-		rr.Status.BlockedUntil = nil
+		rr.Status.EnsureRoutingStatus().BlockedUntil = nil
 		// Keep BlockReason for audit trail
 
 		// BR-ORCH-043: Set Ready condition (terminal blocked)
@@ -262,7 +263,7 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 		// handleBlocked's UpdateRemediationRequestStatus refetches the RR, so we must
 		// persist the increment in a separate update to avoid it being lost.
 		err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			rr.Status.ConsecutiveFailureCount++
+			rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount++
 			return nil
 		})
 		if err != nil {
@@ -279,9 +280,10 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 	oldPhase := string(rr.Status.OverallPhase)
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Pending
-		rr.Status.BlockReason = ""
-		rr.Status.BlockMessage = ""
-		rr.Status.BlockedUntil = nil
+		routing := rr.Status.EnsureRoutingStatus()
+		routing.BlockReason = ""
+		routing.BlockMessage = ""
+		routing.BlockedUntil = nil
 		return nil
 	})
 	if err != nil {
@@ -305,20 +307,21 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 func (r *Reconciler) recheckResourceBusyBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.BlockingWorkflowExecution == "" {
+	blockingWFE := rr.Status.GetRoutingStatus().BlockingWorkflowExecution
+	if blockingWFE == "" {
 		logger.Info("ResourceBusy block has no blocking WFE reference, clearing")
 		return r.clearEventBasedBlock(ctx, rr, phase.Analyzing)
 	}
 
 	wfe := &workflowexecutionv1.WorkflowExecution{}
 	err := r.apiReader.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.BlockingWorkflowExecution,
+		Name:      blockingWFE,
 		Namespace: rr.Namespace,
 	}, wfe)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Blocking WFE no longer exists, clearing ResourceBusy block",
-				"blockingWFE", rr.Status.BlockingWorkflowExecution)
+				"blockingWFE", blockingWFE)
 			return r.clearEventBasedBlock(ctx, rr, phase.Analyzing)
 		}
 		logger.Error(err, "Failed to check blocking WFE status")
@@ -346,23 +349,24 @@ func (r *Reconciler) recheckResourceBusyBlock(ctx context.Context, rr *remediati
 func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.DuplicateOf == "" {
+	duplicateOf := rr.Status.GetRoutingStatus().DuplicateOf
+	if duplicateOf == "" {
 		logger.Info("DuplicateInProgress block has no original RR reference, clearing")
 		return r.clearEventBasedBlock(ctx, rr, phase.Pending)
 	}
 
 	originalRR := &remediationv1.RemediationRequest{}
 	err := r.apiReader.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.DuplicateOf,
+		Name:      duplicateOf,
 		Namespace: rr.Namespace,
 	}, originalRR)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Original RR deleted, inheriting failure",
-				"duplicateOf", rr.Status.DuplicateOf)
+				"duplicateOf", duplicateOf)
 			result, inheritErr := r.transitionToInheritedFailed(ctx, rr,
-				fmt.Errorf("original RemediationRequest %q deleted before completion", rr.Status.DuplicateOf),
-				rr.Status.DuplicateOf, "RemediationRequest")
+				fmt.Errorf("original RemediationRequest %q deleted before completion", duplicateOf),
+				duplicateOf, "RemediationRequest")
 			if inheritErr == nil {
 				r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
 			}
@@ -380,13 +384,13 @@ func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv
 		case phase.Completed:
 			logger.Info("Original RR completed, inheriting outcome",
 				"duplicateOf", originalRR.Name)
-			result, inheritErr = r.transitionToInheritedCompleted(ctx, rr, rr.Status.DuplicateOf, "RemediationRequest")
+			result, inheritErr = r.transitionToInheritedCompleted(ctx, rr, duplicateOf, "RemediationRequest")
 		default:
 			logger.Info("Original RR failed, inheriting failure",
 				"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
 			result, inheritErr = r.transitionToInheritedFailed(ctx, rr,
 				fmt.Errorf("original RemediationRequest %q reached %s", originalRR.Name, originalRR.Status.OverallPhase),
-				rr.Status.DuplicateOf, "RemediationRequest")
+				duplicateOf, "RemediationRequest")
 		}
 		if inheritErr == nil {
 			r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
@@ -406,10 +410,11 @@ func (r *Reconciler) clearEventBasedBlock(ctx context.Context, rr *remediationv1
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = resumePhase
-		rr.Status.BlockReason = ""
-		rr.Status.BlockMessage = ""
-		rr.Status.BlockingWorkflowExecution = ""
-		rr.Status.DuplicateOf = ""
+		routing := rr.Status.EnsureRoutingStatus()
+		routing.BlockReason = ""
+		routing.BlockMessage = ""
+		routing.BlockingWorkflowExecution = ""
+		routing.DuplicateOf = ""
 		return nil
 	})
 	if err != nil {

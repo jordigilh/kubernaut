@@ -97,7 +97,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 
 	// ========================================
 	// DD-RO-002 Phase 3: Counter Reset Removed (Dec 19, 2025)
-	// RO resets RR.Status.ConsecutiveFailureCount on successful remediation
+	// RO resets RR.Status.EnsureRoutingStatus().ConsecutiveFailureCount on successful remediation
 	// WE no longer tracks routing state
 	// ========================================
 

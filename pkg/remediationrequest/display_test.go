@@ -133,15 +133,17 @@ var _ = Describe("Issue #635: Display Helpers for RR kubectl Columns", func() {
 	Describe("New status fields on RemediationRequestStatus", func() {
 		It("UT-RO-635-006: should accept TargetDisplay, Confidence, WorkflowDisplayName, SignalTargetDisplay", func() {
 			status := remediationv1.RemediationRequestStatus{
-				TargetDisplay:       "Deployment/web-frontend",
-				Confidence:          "0.97",
-				WorkflowDisplayName: "GitRevertCommit:git-revert-v2",
-				SignalTargetDisplay:  "Pod/web-frontend-cdbdbc4f8-6kn6j",
+				WorkflowSelection: &remediationv1.WorkflowSelection{
+					TargetDisplay:       "Deployment/web-frontend",
+					Confidence:          "0.97",
+					WorkflowDisplayName: "GitRevertCommit:git-revert-v2",
+					SignalTargetDisplay: "Pod/web-frontend-cdbdbc4f8-6kn6j",
+				},
 			}
-			Expect(status.TargetDisplay).To(Equal("Deployment/web-frontend"))
-			Expect(status.Confidence).To(Equal("0.97"))
-			Expect(status.WorkflowDisplayName).To(Equal("GitRevertCommit:git-revert-v2"))
-			Expect(status.SignalTargetDisplay).To(Equal("Pod/web-frontend-cdbdbc4f8-6kn6j"))
+			Expect(status.WorkflowSelection.TargetDisplay).To(Equal("Deployment/web-frontend"))
+			Expect(status.WorkflowSelection.Confidence).To(Equal("0.97"))
+			Expect(status.WorkflowSelection.WorkflowDisplayName).To(Equal("GitRevertCommit:git-revert-v2"))
+			Expect(status.WorkflowSelection.SignalTargetDisplay).To(Equal("Pod/web-frontend-cdbdbc4f8-6kn6j"))
 		})
 	})
 })

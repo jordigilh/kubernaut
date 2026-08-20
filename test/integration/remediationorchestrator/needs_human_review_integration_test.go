@@ -139,16 +139,16 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 			// Validate RR status fields
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
-			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
-			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
+			Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
 			Expect(updatedRR.Status.CompletedAt).NotTo(BeNil(), "CompletedAt should be set for Completed phase")
-			Expect(updatedRR.Status.NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
 
 			// Validate notification reference was added to RR status
-			Expect(updatedRR.Status.NotificationRequestRefs).ToNot(BeEmpty(), "RR should track at least one notification reference")
+			Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).ToNot(BeEmpty(), "RR should track at least one notification reference")
 			// Note: RO may reconcile multiple times, so we check that at least one ref matches
 			foundMatch := false
-			for _, ref := range updatedRR.Status.NotificationRequestRefs {
+			for _, ref := range updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs {
 				if ref.Name == notification.Name {
 					foundMatch = true
 					break
@@ -310,8 +310,8 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
-			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
-			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
+			Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
 		})
 	})
 
@@ -380,11 +380,11 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
-			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+			Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			Expect(updatedRR.Status.CompletedAt).NotTo(BeNil())
-			Expect(updatedRR.Status.NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
-			Expect(updatedRR.Status.NotificationRequestRefs).NotTo(BeEmpty())
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).NotTo(BeNil(), "NextAllowedExecution should be set for cooldown suppression")
+			Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).NotTo(BeEmpty())
 		})
 	})
 
@@ -452,8 +452,8 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			updatedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: ROControllerNamespace}, updatedRR)).To(Succeed())
-			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+			Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 		})
 	})
 })

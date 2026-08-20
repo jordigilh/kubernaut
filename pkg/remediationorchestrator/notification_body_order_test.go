@@ -55,7 +55,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 
 		rr := helpers.NewRemediationRequest("test-rr-627-001", "default")
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = remediationv1.OutcomeRemediated
+		rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 		ai := helpers.NewCompletedAIAnalysis("test-ai-627-001", "default")
 
 		name, err := nc.CreateCompletionNotification(context.Background(), rr, ai, "argo", nil)
@@ -128,7 +128,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 
 		rr := helpers.NewRemediationRequest("test-rr-627-004", "default")
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.DuplicateCount = 2
+		rr.Status.EnsureRoutingStatus().DuplicateCount = 2
 		ai := helpers.NewCompletedAIAnalysis("test-ai-627-004", "default")
 
 		bulkName, err := nc.CreateBulkDuplicateNotification(context.Background(), rr)

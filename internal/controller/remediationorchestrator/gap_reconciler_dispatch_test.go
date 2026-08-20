@@ -113,8 +113,8 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		updatedRR := &remediationv1.RemediationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: defaultFixture}, updatedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-		Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+		Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+		Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 	})
 
 	It("UT-RO-805-002: should NOT create ManualReview NR when AIAnalysis has SelectedWorkflow even if NeedsHumanReview", func() {
@@ -176,7 +176,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
-		rr.Status.ExecutingStartTime = &execStart
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
@@ -225,7 +225,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
-		rr.Status.ExecutingStartTime = &execStart
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
@@ -268,7 +268,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
-		rr.Status.ExecutingStartTime = &execStart
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)

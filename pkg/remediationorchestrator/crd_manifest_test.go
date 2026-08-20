@@ -41,14 +41,19 @@ var _ = Describe("Issue #644: CRD Manifest Printer Columns (DD-CRD-003)", func()
 
 		Expect(crdYAML).To(ContainSubstring("name: Phase"))
 		Expect(crdYAML).To(ContainSubstring("name: Outcome"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.completionStatus.outcome"),
+			"issue #2206: Outcome moved into the CompletionStatus sub-struct")
 		Expect(crdYAML).To(ContainSubstring("name: Alert"))
 		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.signalName"))
 		Expect(crdYAML).To(ContainSubstring("name: RCA Target"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.targetDisplay"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowSelection.targetDisplay"),
+			"issue #2206: TargetDisplay moved into the WorkflowSelection sub-struct")
 		Expect(crdYAML).To(ContainSubstring("name: Workflow"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowDisplayName"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowSelection.workflowDisplayName"),
+			"issue #2206: WorkflowDisplayName moved into the WorkflowSelection sub-struct")
 		Expect(crdYAML).To(ContainSubstring("name: Confidence"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.confidence"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowSelection.confidence"),
+			"issue #2206: Confidence moved into the WorkflowSelection sub-struct")
 		Expect(crdYAML).To(ContainSubstring("name: Age"))
 	})
 
@@ -63,9 +68,11 @@ var _ = Describe("Issue #644: CRD Manifest Printer Columns (DD-CRD-003)", func()
 		Expect(crdYAML).To(ContainSubstring("name: Signal NS"))
 		Expect(crdYAML).To(ContainSubstring("jsonPath: .spec.targetResource.namespace"))
 		Expect(crdYAML).To(ContainSubstring("name: Signal Target"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.signalTargetDisplay"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowSelection.signalTargetDisplay"),
+			"issue #2206: SignalTargetDisplay moved into the WorkflowSelection sub-struct")
 		Expect(crdYAML).To(ContainSubstring("name: RCA NS"))
-		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.remediationTarget.namespace"))
+		Expect(crdYAML).To(ContainSubstring("jsonPath: .status.workflowSelection.remediationTarget.namespace"),
+			"issue #2206: RemediationTarget moved into the WorkflowSelection sub-struct")
 		Expect(crdYAML).NotTo(ContainSubstring("name: Reason"))
 	})
 })

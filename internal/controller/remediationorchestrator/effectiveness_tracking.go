@@ -87,7 +87,7 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 // Extracted from trackEffectivenessStatus (Wave 6 6e-i GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func effectivenessTrackingRef(rr *remediationv1.RemediationRequest, logger logr.Logger) (*corev1.ObjectReference, bool) {
-	ref := rr.Status.EffectivenessAssessmentRef
+	ref := rr.Status.EnsurePhaseProgress().EffectivenessAssessmentRef
 	if ref == nil {
 		logger.V(1).Info("No EffectivenessAssessmentRef to track")
 		return nil, false
@@ -245,7 +245,7 @@ func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationR
 
 	now := metav1.Now()
 	rr.Status.OverallPhase = phase.Completed
-	rr.Status.Outcome = outcome
+	rr.Status.EnsureCompletionStatus().Outcome = outcome
 	rr.Status.CompletedAt = &now
 	rr.Status.ObservedGeneration = rr.Generation
 
@@ -260,21 +260,21 @@ func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationR
 	// #1091 (BR-ORCH-042.6): Inconclusive outcomes get exponential backoff to prevent RR flood.
 	// Mirrors transitionToFailed backoff pattern — count always increments, backoff only set below threshold.
 	if outcome == "Inconclusive" {
-		rr.Status.ConsecutiveFailureCount++
+		rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount++
 
-		if rr.Status.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
-			backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.ConsecutiveFailureCount)
+		if rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
+			backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount)
 			if backoff > 0 {
 				nextAllowed := metav1.NewTime(time.Now().Add(backoff))
-				rr.Status.NextAllowedExecution = &nextAllowed
+				rr.Status.EnsureRoutingStatus().NextAllowedExecution = &nextAllowed
 				logger.Info("Inconclusive outcome: set exponential backoff",
-					"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+					"consecutiveFailures", rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount,
 					"backoff", backoff.Round(time.Second),
 					"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
 			}
 		} else {
 			logger.Info("Inconclusive outcome: at/above threshold, skipping backoff (routing engine will block)",
-				"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+				"consecutiveFailures", rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount,
 				"threshold", r.routingEngine.Config().ConsecutiveFailureThreshold)
 		}
 	}
@@ -282,5 +282,5 @@ func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationR
 	logger.Info("Verification complete, RR transitioned to Completed",
 		"outcome", outcome,
 		"remediationRequest", rr.Name,
-		"consecutiveFailures", rr.Status.ConsecutiveFailureCount)
+		"consecutiveFailures", rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount)
 }

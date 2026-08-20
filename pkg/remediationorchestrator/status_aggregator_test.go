@@ -65,7 +65,7 @@ var _ = Describe("StatusAggregator", func() {
 				// Arrange
 				sp := helpers.NewCompletedSignalProcessing("sp-test", "default")
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}
@@ -87,7 +87,7 @@ var _ = Describe("StatusAggregator", func() {
 				// Arrange
 				ai := helpers.NewCompletedAIAnalysis("ai-test", "default")
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,
 				}
@@ -117,7 +117,7 @@ var _ = Describe("StatusAggregator", func() {
 					},
 				}
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 					Name:      we.Name,
 					Namespace: we.Namespace,
 				}
@@ -158,7 +158,7 @@ var _ = Describe("StatusAggregator", func() {
 			It("should handle missing child CRDs gracefully", func() {
 				// Arrange
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 					Name:      "non-existent-sp",
 					Namespace: "default",
 				}
@@ -190,7 +190,7 @@ var _ = Describe("StatusAggregator", func() {
 
 				// Given: RemediationRequest referencing non-existent child CRD
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 					Name:      "deleted-sp",
 					Namespace: "default",
 				}
@@ -229,7 +229,7 @@ var _ = Describe("StatusAggregator", func() {
 				}
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,
 				}
@@ -265,11 +265,11 @@ var _ = Describe("StatusAggregator", func() {
 				}
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,
 				}
-				rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 					Name:      we.Name,
 					Namespace: we.Namespace,
 				}

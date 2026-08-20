@@ -84,17 +84,17 @@ func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv
 
 	result := &AggregatedStatus{AllChildrenHealthy: true}
 
-	if ref := rr.Status.SignalProcessingRef; ref != nil {
+	if ref := rr.Status.GetPhaseProgress().SignalProcessingRef; ref != nil {
 		a.aggregateChildPhase(logger, result, &result.SignalProcessingPhase, "signalProcessing", ref.Name,
 			func() (string, error) { return a.getSignalProcessingPhase(ctx, ref.Name, ref.Namespace) })
 	}
 
-	if ref := rr.Status.AIAnalysisRef; ref != nil {
+	if ref := rr.Status.GetPhaseProgress().AIAnalysisRef; ref != nil {
 		a.aggregateChildPhase(logger, result, &result.AIAnalysisPhase, "aiAnalysis", ref.Name,
 			func() (string, error) { return a.getAIAnalysisPhase(ctx, ref.Name, ref.Namespace) })
 	}
 
-	if ref := rr.Status.WorkflowExecutionRef; ref != nil {
+	if ref := rr.Status.GetPhaseProgress().WorkflowExecutionRef; ref != nil {
 		a.aggregateChildPhase(logger, result, &result.WorkflowExecutionPhase, "workflowExecution", ref.Name,
 			func() (string, error) { return a.getWorkflowExecutionPhase(ctx, ref.Name, ref.Namespace) })
 	}

@@ -140,7 +140,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 				return err
 			}
-			rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, corev1.ObjectReference{
 				APIVersion: notificationv1.GroupVersion.String(),
 				Kind:       "NotificationRequest",
 				Name:       notif.Name,
@@ -263,7 +263,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 				return err
 			}
-			rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+			rr.Status.EnsureCompletionStatus().NotificationRequestRefs = append(rr.Status.EnsureCompletionStatus().NotificationRequestRefs, corev1.ObjectReference{
 				APIVersion: notificationv1.GroupVersion.String(),
 				Kind:       "NotificationRequest",
 				Name:       notif.Name,

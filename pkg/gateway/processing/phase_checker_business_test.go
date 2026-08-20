@@ -365,10 +365,14 @@ var _ = Describe("Issue #1091: Gateway dedup for Completed+Inconclusive with Nex
 					SignalFingerprint: fingerprint,
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase:           remediationv1alpha1.PhaseCompleted,
-					Outcome:                "Inconclusive",
-					NextAllowedExecution:   &nextAllowed,
-					ConsecutiveFailureCount: 1,
+					OverallPhase: remediationv1alpha1.PhaseCompleted,
+					CompletionStatus: &remediationv1alpha1.CompletionStatus{
+						Outcome: "Inconclusive",
+					},
+					RoutingStatus: &remediationv1alpha1.RoutingStatus{
+						NextAllowedExecution:    &nextAllowed,
+						ConsecutiveFailureCount: 1,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -446,8 +450,10 @@ var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown 
 					SignalFingerprint: fingerprint,
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase:         remediationv1alpha1.PhaseFailed,
-					NextAllowedExecution: &nextAllowed,
+					OverallPhase: remediationv1alpha1.PhaseFailed,
+					RoutingStatus: &remediationv1alpha1.RoutingStatus{
+						NextAllowedExecution: &nextAllowed,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -477,8 +483,10 @@ var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown 
 					SignalFingerprint: fingerprint,
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase:         remediationv1alpha1.PhaseFailed,
-					NextAllowedExecution: &nextAllowed,
+					OverallPhase: remediationv1alpha1.PhaseFailed,
+					RoutingStatus: &remediationv1alpha1.RoutingStatus{
+						NextAllowedExecution: &nextAllowed,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -506,8 +514,7 @@ var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown 
 					SignalFingerprint: fingerprint,
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase:         remediationv1alpha1.PhaseFailed,
-					NextAllowedExecution: nil,
+					OverallPhase: remediationv1alpha1.PhaseFailed,
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -535,8 +542,10 @@ var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown 
 					SignalFingerprint: fingerprint,
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase:         remediationv1alpha1.PhaseTimedOut,
-					NextAllowedExecution: &nextAllowed,
+					OverallPhase: remediationv1alpha1.PhaseTimedOut,
+					RoutingStatus: &remediationv1alpha1.RoutingStatus{
+						NextAllowedExecution: &nextAllowed,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -608,7 +617,9 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
 					OverallPhase: remediationv1alpha1.PhaseFailed,
-					Outcome:      "ManualReviewRequired",
+					CompletionStatus: &remediationv1alpha1.CompletionStatus{
+						Outcome: "ManualReviewRequired",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -635,7 +646,6 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
 					OverallPhase: remediationv1alpha1.PhaseFailed,
-					Outcome:      "",
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -661,7 +671,9 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
 					OverallPhase: remediationv1alpha1.PhaseCompleted,
-					Outcome:      "ManualReviewRequired",
+					CompletionStatus: &remediationv1alpha1.CompletionStatus{
+						Outcome: "ManualReviewRequired",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -688,7 +700,9 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
 					OverallPhase: remediationv1alpha1.PhaseCompleted,
-					Outcome:      "Remediated",
+					CompletionStatus: &remediationv1alpha1.CompletionStatus{
+						Outcome: "Remediated",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rrA)).To(Succeed())
@@ -704,7 +718,9 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 				},
 				Status: remediationv1alpha1.RemediationRequestStatus{
 					OverallPhase: remediationv1alpha1.PhaseFailed,
-					Outcome:      "ManualReviewRequired",
+					CompletionStatus: &remediationv1alpha1.CompletionStatus{
+						Outcome: "ManualReviewRequired",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rrB)).To(Succeed())
@@ -715,7 +731,7 @@ var _ = Describe("#719: Gateway suppresses new RR creation when ManualReviewRequ
 			Expect(shouldDedup).To(BeTrue(),
 				"#719: ManualReviewRequired on any RR for the fingerprint must suppress new RR creation")
 			Expect(existingRR).NotTo(BeNil())
-			Expect(existingRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+			Expect(existingRR.Status.GetCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 				"#719: The returned RR should be the ManualReviewRequired one for occurrence tracking")
 		})
 	})

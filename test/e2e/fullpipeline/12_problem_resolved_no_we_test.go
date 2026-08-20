@@ -161,9 +161,9 @@ var _ = Describe("Problem Resolved No WorkflowExecution [#1432 / BR-KA-200]", fu
 				return ""
 			}
 			GinkgoWriter.Printf("  RR %s: phase=%s outcome=%s\n",
-				rr.Name, rr.Status.OverallPhase, rr.Status.Outcome)
+				rr.Name, rr.Status.OverallPhase, rr.Status.EnsureCompletionStatus().Outcome)
 			if rr.Status.OverallPhase == remediationv1.PhaseCompleted {
-				return rr.Status.Outcome
+				return rr.Status.EnsureCompletionStatus().Outcome
 			}
 			return ""
 		}, 2*time.Minute, 2*time.Second).Should(Equal("NoActionRequired"),

@@ -95,10 +95,10 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(updatedRR.Status.WorkflowDisplayName).To(
+		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(
 			Equal(actionType+":"+workflowName),
 			"WorkflowDisplayName should be ActionType:WorkflowName sourced from AIAnalysis.Status.SelectedWorkflow")
-		Expect(updatedRR.Status.WorkflowDisplayName).NotTo(
+		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).NotTo(
 			ContainSubstring(workflowUUID),
 			"WorkflowDisplayName should NOT contain the raw UUID")
 	})
@@ -142,6 +142,6 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643b", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(updatedRR.Status.WorkflowDisplayName).To(Equal("RestartPod:" + workflowUUID))
+		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(Equal("RestartPod:" + workflowUUID))
 	})
 })

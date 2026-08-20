@@ -228,7 +228,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 		"approvalReason", ai.Status.GetApproval().ApprovalReason,
 	)
 
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
 }
 
@@ -388,7 +388,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 		"workflowId", workflowID,
 	)
 
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
 }
 
@@ -496,7 +496,7 @@ func (c *NotificationCreator) buildCompletionNotificationRequest(
 				},
 				Analysis: &notificationv1.AnalysisContext{
 					RootCause: content.RootCause,
-					Outcome:   rr.Status.Outcome,
+					Outcome:   rr.Status.GetCompletionStatus().Outcome,
 				},
 				Verification: content.VerificationCtx,
 			},
@@ -530,8 +530,9 @@ func (c *NotificationCreator) buildCompletionBody(rr *remediationv1.RemediationR
 	}
 
 	// Deprecated: **Outcome** retained for one release (Issue #628). Use **Status** for canonical status.
+	outcome := rr.Status.GetCompletionStatus().Outcome
 	body := "Remediation Completed Successfully\n\n" +
-		FormatStatusLine(rr.Status.Outcome) +
+		FormatStatusLine(outcome) +
 		fmt.Sprintf(`**Outcome**: %s
 
 **Signal**: %s
@@ -545,7 +546,7 @@ func (c *NotificationCreator) buildCompletionBody(rr *remediationv1.RemediationR
 
 **Workflow Executed**: %s
 **Execution Engine**: %s`,
-			rr.Status.Outcome,
+			outcome,
 			rr.Spec.SignalName,
 			rr.Spec.Severity,
 			formatTargetResource(target),
@@ -575,7 +576,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"namespace", rr.Namespace,
-		"duplicateCount", rr.Status.DuplicateCount,
+		"duplicateCount", rr.Status.GetRoutingStatus().DuplicateCount,
 	)
 
 	// Generate deterministic name
@@ -610,14 +611,14 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			Type:      notificationv1.NotificationTypeSimple,
 			Priority:  notificationv1.NotificationPriorityLow,
 			Severity:  "info",
-			Subject:   fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
+			Subject:   fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.GetRoutingStatus().DuplicateCount),
 			Body:      c.buildBulkDuplicateBody(rr),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
 					RemediationRequest: rr.Name,
 				},
 				Dedup: &notificationv1.DedupContext{
-					DuplicateCount: fmt.Sprintf("%d", rr.Status.DuplicateCount),
+					DuplicateCount: fmt.Sprintf("%d", rr.Status.GetRoutingStatus().DuplicateCount),
 				},
 			},
 		},
@@ -630,7 +631,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 	logger.Info("Created bulk duplicate NotificationRequest", "name", result)
 
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
 }
 
@@ -652,7 +653,7 @@ All duplicate signals have been handled by this remediation.`,
 			rr.Spec.SignalName,
 			rr.Status.OverallPhase,
 			formatTargetResource(rr.Spec.TargetResource),
-			rr.Status.DuplicateCount,
+			rr.Status.GetRoutingStatus().DuplicateCount,
 		)
 }
 
@@ -939,7 +940,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 		"priority", priority,
 	)
 
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.CompletionStatus.NotificationRequestRefs
 	return result, nil
 }
 

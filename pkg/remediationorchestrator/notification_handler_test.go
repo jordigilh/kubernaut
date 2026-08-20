@@ -99,7 +99,7 @@ var _ = Describe("NotificationHandler", func() {
 		}
 
 		// Add notification reference to RR
-		rr.Status.NotificationRequestRefs = []corev1.ObjectReference{
+		rr.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 			{
 				APIVersion: "notification.kubernaut.ai/v1alpha1",
 				Kind:       "NotificationRequest",
@@ -125,7 +125,7 @@ var _ = Describe("NotificationHandler", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					// Verify notification status updated
-					Expect(rr.Status.NotificationStatus).To(Equal("Cancelled"))
+					Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal("Cancelled"))
 
 					// CRITICAL: Verify phase UNCHANGED (remediation continues)
 					Expect(rr.Status.OverallPhase).To(Equal(currentPhase))
@@ -156,7 +156,7 @@ var _ = Describe("NotificationHandler", func() {
 			It("BR-ORCH-031: should not update notification status", func() {
 				// Test: Cascade deletion (expected cleanup)
 				rr.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-				originalStatus := rr.Status.NotificationStatus
+				originalStatus := rr.Status.EnsureCompletionStatus().NotificationStatus
 				originalPhase := rr.Status.OverallPhase
 
 				err := handler.HandleNotificationRequestDeletion(ctx, rr)
@@ -164,7 +164,7 @@ var _ = Describe("NotificationHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Status should not change
-				Expect(rr.Status.NotificationStatus).To(Equal(originalStatus))
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal(originalStatus))
 				Expect(rr.Status.OverallPhase).To(Equal(originalPhase))
 
 				// No condition should be set
@@ -195,7 +195,7 @@ var _ = Describe("NotificationHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify notification status updated
-				Expect(rr.Status.NotificationStatus).To(Equal(expectedStatus))
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal(expectedStatus))
 
 				// CRITICAL: Verify phase UNCHANGED
 				Expect(rr.Status.OverallPhase).To(Equal(originalPhase))
@@ -237,7 +237,7 @@ var _ = Describe("NotificationHandler", func() {
 				err := handler.UpdateNotificationStatus(ctx, rr, notif)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(rr.Status.NotificationStatus).To(Equal("Sent"))
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal("Sent"))
 
 				cond := meta.FindStatusCondition(rr.Status.Conditions, "NotificationDelivered")
 				Expect(cond).ToNot(BeNil())
@@ -254,7 +254,7 @@ var _ = Describe("NotificationHandler", func() {
 				err := handler.UpdateNotificationStatus(ctx, rr, notif)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(rr.Status.NotificationStatus).To(Equal("Failed"))
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal("Failed"))
 
 				cond := meta.FindStatusCondition(rr.Status.Conditions, "NotificationDelivered")
 				Expect(cond).ToNot(BeNil())
@@ -297,7 +297,7 @@ var _ = Describe("NotificationHandler", func() {
 	Describe("Edge Cases", func() {
 		Context("when RemediationRequest has no notification refs", func() {
 			It("BR-ORCH-029: should handle gracefully", func() {
-				rr.Status.NotificationRequestRefs = nil
+				rr.Status.EnsureCompletionStatus().NotificationRequestRefs = nil
 				rr.DeletionTimestamp = nil
 
 				err := handler.HandleNotificationRequestDeletion(ctx, rr)
@@ -305,7 +305,7 @@ var _ = Describe("NotificationHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				// TDD REFACTOR (Day 2): With defensive programming, no status update when no refs
 				// Status should remain unchanged (not set to "Cancelled")
-				Expect(rr.Status.NotificationStatus).To(BeEmpty())
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(BeEmpty())
 			})
 		})
 
@@ -317,7 +317,7 @@ var _ = Describe("NotificationHandler", func() {
 				err := handler.UpdateNotificationStatus(ctx, rr, notif)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(rr.Status.NotificationStatus).To(Equal("Failed"))
+				Expect(rr.Status.EnsureCompletionStatus().NotificationStatus).To(Equal("Failed"))
 
 				cond := meta.FindStatusCondition(rr.Status.Conditions, "NotificationDelivered")
 				Expect(cond).ToNot(BeNil())

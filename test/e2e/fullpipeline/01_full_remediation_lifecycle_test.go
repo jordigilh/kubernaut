@@ -420,7 +420,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			if pollCount%10 == 1 {
 				rr := &remediationv1.RemediationRequest{}
 				if getErr := apiReader.Get(ctx, client.ObjectKey{Name: remediationRequest.Name, Namespace: namespace}, rr); getErr == nil {
-					GinkgoWriter.Printf("  [Step 9 poll %d] RR %s phase=%s outcome=%s\n", pollCount, rr.Name, rr.Status.OverallPhase, rr.Status.Outcome)
+					GinkgoWriter.Printf("  [Step 9 poll %d] RR %s phase=%s outcome=%s\n", pollCount, rr.Name, rr.Status.OverallPhase, rr.Status.EnsureCompletionStatus().Outcome)
 				} else {
 					GinkgoWriter.Printf("  [Step 9 poll %d] RR Get error: %v\n", pollCount, getErr)
 				}
@@ -780,15 +780,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Printf("  ✅ Gap #4: originalPayload present (%d bytes)\n", len(reconstructedRR.Spec.OriginalPayload))
 
 		// Gap #5: status.selectedWorkflowRef — from workflowexecution.selection.completed
-		Expect(reconstructedRR.Status.SelectedWorkflowRef).ToNot(BeNil(),
+		Expect(reconstructedRR.Status.EnsureWorkflowSelection().SelectedWorkflowRef).ToNot(BeNil(),
 			"Gap #5: Reconstructed RR must have status.selectedWorkflowRef")
 		GinkgoWriter.Printf("  ✅ Gap #5: selectedWorkflowRef.workflowID=%s\n",
-			reconstructedRR.Status.SelectedWorkflowRef.WorkflowID)
+			reconstructedRR.Status.EnsureWorkflowSelection().SelectedWorkflowRef.WorkflowID)
 
 		// Gap #6: status.executionRef — from workflowexecution.execution.started
-		Expect(reconstructedRR.Status.ExecutionRef).ToNot(BeNil(),
+		Expect(reconstructedRR.Status.EnsureWorkflowSelection().ExecutionRef).ToNot(BeNil(),
 			"Gap #6: Reconstructed RR must have status.executionRef")
-		GinkgoWriter.Printf("  ✅ Gap #6: executionRef.name=%s\n", reconstructedRR.Status.ExecutionRef.Name)
+		GinkgoWriter.Printf("  ✅ Gap #6: executionRef.name=%s\n", reconstructedRR.Status.EnsureWorkflowSelection().ExecutionRef.Name)
 
 		// Gap #7: status.error — NOT implemented in reconstruction pipeline
 		// This is a success path so no error is expected anyway.

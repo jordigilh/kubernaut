@@ -357,8 +357,8 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Create RR in Failed phase with RequiresManualReview flag
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseFailed, "sp-test-rr", "ai-test-rr", "we-test-rr")
-			rr.Status.RequiresManualReview = true
-			rr.Status.FailureReason = stringPtr("ExhaustedRetries")
+			rr.Status.EnsureCompletionStatus().RequiresManualReview = true
+			rr.Status.EnsureCompletionStatus().FailureReason = stringPtr("ExhaustedRetries")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")

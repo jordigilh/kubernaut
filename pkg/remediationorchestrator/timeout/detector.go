@@ -105,18 +105,18 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 	var phaseStartTime *time.Time
 	switch currentPhase {
 	case remediationv1.PhaseProcessing:
-		if rr.Status.ProcessingStartTime != nil {
-			t := rr.Status.ProcessingStartTime.Time
+		if rr.Status.GetPhaseProgress().ProcessingStartTime != nil {
+			t := rr.Status.GetPhaseProgress().ProcessingStartTime.Time
 			phaseStartTime = &t
 		}
 	case remediationv1.PhaseAnalyzing, remediationv1.PhaseAwaitingApproval:
-		if rr.Status.AnalyzingStartTime != nil {
-			t := rr.Status.AnalyzingStartTime.Time
+		if rr.Status.GetPhaseProgress().AnalyzingStartTime != nil {
+			t := rr.Status.GetPhaseProgress().AnalyzingStartTime.Time
 			phaseStartTime = &t
 		}
 	case remediationv1.PhaseExecuting:
-		if rr.Status.ExecutingStartTime != nil {
-			t := rr.Status.ExecutingStartTime.Time
+		if rr.Status.GetPhaseProgress().ExecutingStartTime != nil {
+			t := rr.Status.GetPhaseProgress().ExecutingStartTime.Time
 			phaseStartTime = &t
 		}
 	default:

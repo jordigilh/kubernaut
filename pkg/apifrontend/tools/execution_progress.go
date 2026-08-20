@@ -45,8 +45,8 @@ func EANameForRR(rrName string) string {
 // ResolveEAName returns the EA name from the RR's EffectivenessAssessmentRef
 // if populated, falling back to EANameForRR for backward compatibility.
 func ResolveEAName(rr *remediationv1.RemediationRequest) string {
-	if rr.Status.EffectivenessAssessmentRef != nil && rr.Status.EffectivenessAssessmentRef.Name != "" {
-		return rr.Status.EffectivenessAssessmentRef.Name
+	if rr.Status.GetPhaseProgress().EffectivenessAssessmentRef != nil && rr.Status.GetPhaseProgress().EffectivenessAssessmentRef.Name != "" {
+		return rr.Status.GetPhaseProgress().EffectivenessAssessmentRef.Name
 	}
 	return EANameForRR(rr.Name)
 }

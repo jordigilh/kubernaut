@@ -162,9 +162,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				transitionFailedCalls++
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
 				failurePhase := phase
-				rr.Status.FailurePhase = &failurePhase
+				rr.Status.EnsureCompletionStatus().FailurePhase = &failurePhase
 				reasonStr := reason.Error()
-				rr.Status.FailureReason = &reasonStr
+				rr.Status.EnsureCompletionStatus().FailureReason = &reasonStr
 				// Persist to fake client
 				if err := c.Status().Update(ctx, rr); err != nil {
 					return ctrl.Result{}, err
@@ -245,11 +245,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("NoActionRequired"))
 				Expect(updatedRR.Status.CompletedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
 
 				// Issue #314: NextAllowedExecution must be set to suppress Gateway duplicate RR creation
-				Expect(updatedRR.Status.NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
+				Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
 			})
 
 			// Test #13b: NextAllowedExecution NOT set when delay is zero (opt-out)
@@ -273,8 +273,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
-				Expect(updatedRR.Status.NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("NoActionRequired"))
+				Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
 			})
 
 			// Issue #590: Self-resolved notification tests (BR-ORCH-037 AC-037-08/09)
@@ -298,11 +298,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(updatedRR.Status.NotificationRequestRefs).To(HaveLen(1),
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(HaveLen(1),
 					"Behavior: NR ref must be tracked in RR status (BR-ORCH-035)")
-				Expect(updatedRR.Status.NotificationRequestRefs[0].Name).To(Equal("nr-self-resolved-test-rr"),
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs[0].Name).To(Equal("nr-self-resolved-test-rr"),
 					"Correctness: NR ref name must follow deterministic pattern")
-				Expect(updatedRR.Status.NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
 			})
 
 			It("UT-RO-590-006: should complete RR normally when notification creation fails (#590)", func() {
@@ -336,10 +336,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 					"Correctness: RR must still reach Completed despite notification failure")
-				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("NoActionRequired"))
 				Expect(updatedRR.Status.CompletedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second),
 					"Correctness: CompletedAt must be set to approximately now")
-				Expect(updatedRR.Status.NotificationRequestRefs).To(BeEmpty(),
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(BeEmpty(),
 					"Accuracy: no NR ref since creation failed")
 			})
 
@@ -368,7 +368,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.NotificationRequestRefs).To(BeEmpty())
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(BeEmpty())
 			})
 
 			It("UT-RO-590-008: should preserve all existing handler outcomes when notification is enabled (#590)", func() {
@@ -396,7 +396,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 					"Correctness: RR phase must be Completed")
-				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"),
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("NoActionRequired"),
 					"Correctness: RR outcome must be NoActionRequired")
 				Expect(updatedRR.Status.CompletedAt).ToNot(BeNil(),
 					"Correctness: CompletedAt must be set")
@@ -484,9 +484,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
-				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+				Expect(*updatedRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
+				Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			})
 
 			// Test #17: Includes RootCauseAnalysis in context
@@ -647,9 +647,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
-				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+				Expect(*updatedRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
+				Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			})
 
 			// AC-036-31: NotificationRequest created for APIError/TransientError
@@ -837,9 +837,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
-				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+				Expect(*updatedRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseAIAnalysis))
+				Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			})
 
 			// UT-RO-197-005: All HumanReviewReason enum values map correctly
@@ -942,8 +942,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
-				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			})
 
 			// UT-RO-550-002: NotificationRequest creation
@@ -991,7 +991,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
+				Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
 			})
 
 			// UT-RO-550-003b: NextAllowedExecution nil when delay=0 (opt-out)
@@ -1014,7 +1014,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-				Expect(updatedRR.Status.NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
+				Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
 			})
 
 			// UT-RO-550-004: CompletedAt + Message propagation
@@ -1184,9 +1184,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.NotificationRequestRefs).To(HaveLen(1))
-				Expect(updatedRR.Status.NotificationRequestRefs[0].Name).To(Equal("nr-manual-review-test-rr"))
-				Expect(updatedRR.Status.NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs).To(HaveLen(1))
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs[0].Name).To(Equal("nr-manual-review-test-rr"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs[0].Kind).To(Equal("NotificationRequest"))
 			})
 
 			// UT-RO-550-012: NoActionNeededTotal metric with reason=manual_review
@@ -1241,9 +1241,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 					"#768: RR must be PhaseCompleted")
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 					"#768: RR Outcome must be ManualReviewRequired")
-				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+				Expect(updatedRR.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue())
 			})
 
 			It("UT-RO-768-002: should create ManualReview notification for Completed+NeedsHumanReview", func() {
@@ -1290,9 +1290,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.Outcome).ToNot(BeEmpty(),
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).ToNot(BeEmpty(),
 					"#768: RR Outcome must be set — handler must NOT fall through to no-op WFE path")
-				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
+				Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
 			})
 		})
 	})

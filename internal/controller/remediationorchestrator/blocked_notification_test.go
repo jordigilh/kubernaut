@@ -109,7 +109,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		Expect(err).ToNot(HaveOccurred())
 
 		foundRef := false
-		for _, ref := range updatedRR.Status.NotificationRequestRefs {
+		for _, ref := range updatedRR.Status.EnsureCompletionStatus().NotificationRequestRefs {
 			if ref.Name == "nr-manual-review-test-rr-803-003" {
 				foundRef = true
 				break

@@ -318,7 +318,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 5
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 5
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).ToNot(HaveOccurred())
@@ -331,7 +331,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 3
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 3
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).ToNot(HaveOccurred())
@@ -350,7 +350,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 2
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 2
 
 				// First call
 				name1, err := nc.CreateBulkDuplicateNotification(ctx, rr)
@@ -379,7 +379,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 3
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 3
 
 				_, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).To(HaveOccurred())
@@ -396,7 +396,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 3
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 3
 
 				_, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).To(HaveOccurred())
@@ -409,7 +409,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 4
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 4
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).ToNot(HaveOccurred())
@@ -467,7 +467,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				rr.Status.DuplicateCount = 5
+				rr.Status.EnsureRoutingStatus().DuplicateCount = 5
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 				Expect(err).ToNot(HaveOccurred())
@@ -1435,7 +1435,7 @@ var _ = Describe("NotificationCreator", func() {
 			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			rr := helpers.NewRemediationRequest("test-rr-304", "default")
-			rr.Status.Outcome = remediationv1.OutcomeRemediated
+			rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
 
 			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
@@ -1612,7 +1612,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-001", "default")
-				rr.Status.Outcome = remediationv1.OutcomeRemediated
+				rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-001", "default")
 				ea := &eav1.EffectivenessAssessment{
 					Status: eav1.EffectivenessAssessmentStatus{
@@ -1649,7 +1649,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-002", "default")
-				rr.Status.Outcome = remediationv1.OutcomeRemediated
+				rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-002", "default")
 				ea := &eav1.EffectivenessAssessment{
 					Status: eav1.EffectivenessAssessmentStatus{
@@ -1683,7 +1683,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-003", "default")
-				rr.Status.Outcome = remediationv1.OutcomeRemediated
+				rr.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-003", "default")
 
 				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "", nil)

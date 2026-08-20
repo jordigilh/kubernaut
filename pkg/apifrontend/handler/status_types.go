@@ -101,18 +101,18 @@ func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.Remediation
 		// always comes from the injected controllerNS, never from the ID.
 		meta["approval_request_name"] = fmt.Sprintf("rar-%s", rr.Name)
 	case remediationv1.PhaseCompleted:
-		if rr.Status.Outcome != "" {
-			meta["outcome"] = rr.Status.Outcome
+		if outcome := rr.Status.GetCompletionStatus().Outcome; outcome != "" {
+			meta["outcome"] = outcome
 		}
 	case remediationv1.PhaseFailed:
 		addFailedPhaseMetadata(meta, rr)
 	case remediationv1.PhaseTimedOut:
-		if rr.Status.TimeoutPhase != nil {
-			meta["failure_phase"] = string(*rr.Status.TimeoutPhase)
+		if tp := rr.Status.GetCompletionStatus().TimeoutPhase; tp != nil {
+			meta["failure_phase"] = string(*tp)
 		}
 	case remediationv1.PhaseSkipped:
-		if rr.Status.SkipReason != "" {
-			meta["skip_reason"] = string(rr.Status.SkipReason)
+		if skipReason := rr.Status.GetRoutingStatus().SkipReason; skipReason != "" {
+			meta["skip_reason"] = string(skipReason)
 		}
 	default:
 		// Pending/Processing/Analyzing/Cancelled have no phase-specific
@@ -123,21 +123,21 @@ func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.Remediation
 
 // addExecutingPhaseMetadata populates phase metadata for PhaseExecuting.
 func addExecutingPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
-	if rr.Status.SelectedWorkflowRef != nil {
-		meta["workflow_id"] = rr.Status.SelectedWorkflowRef.WorkflowID
+	if wf := rr.Status.GetWorkflowSelection().SelectedWorkflowRef; wf != nil {
+		meta["workflow_id"] = wf.WorkflowID
 	}
-	if rr.Status.ExecutingStartTime != nil {
-		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
+	if st := rr.Status.GetPhaseProgress().ExecutingStartTime; st != nil {
+		meta["started_at"] = st.Format(time.RFC3339)
 	}
 }
 
 // addVerifyingPhaseMetadata populates phase metadata for PhaseVerifying.
 func addVerifyingPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest, ea *eav1alpha1.EffectivenessAssessment) {
-	if rr.Status.VerificationDeadline != nil {
-		meta["verification_deadline"] = rr.Status.VerificationDeadline.Format(time.RFC3339)
+	if vd := rr.Status.GetPhaseProgress().VerificationDeadline; vd != nil {
+		meta["verification_deadline"] = vd.Format(time.RFC3339)
 	}
-	if rr.Status.ExecutingStartTime != nil {
-		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
+	if st := rr.Status.GetPhaseProgress().ExecutingStartTime; st != nil {
+		meta["started_at"] = st.Format(time.RFC3339)
 	}
 	if ea != nil {
 		meta["ea_phase"] = ea.Status.Phase
@@ -149,23 +149,25 @@ func addVerifyingPhaseMetadata(meta map[string]any, rr *remediationv1.Remediatio
 
 // addBlockedPhaseMetadata populates phase metadata for PhaseBlocked.
 func addBlockedPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
-	if rr.Status.BlockedUntil != nil {
-		meta["blocked_until"] = rr.Status.BlockedUntil.Format(time.RFC3339)
+	routing := rr.Status.GetRoutingStatus()
+	if routing.BlockedUntil != nil {
+		meta["blocked_until"] = routing.BlockedUntil.Format(time.RFC3339)
 	}
-	if rr.Status.BlockReason != "" {
-		meta["block_reason"] = string(rr.Status.BlockReason)
+	if routing.BlockReason != "" {
+		meta["block_reason"] = string(routing.BlockReason)
 	}
-	if rr.Status.BlockMessage != "" {
-		meta["block_message"] = rr.Status.BlockMessage
+	if routing.BlockMessage != "" {
+		meta["block_message"] = routing.BlockMessage
 	}
 }
 
 // addFailedPhaseMetadata populates phase metadata for PhaseFailed.
 func addFailedPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
-	if rr.Status.FailureReason != nil {
-		meta["failure_reason"] = *rr.Status.FailureReason
+	completion := rr.Status.GetCompletionStatus()
+	if completion.FailureReason != nil {
+		meta["failure_reason"] = *completion.FailureReason
 	}
-	if rr.Status.FailurePhase != nil {
-		meta["failure_phase"] = string(*rr.Status.FailurePhase)
+	if completion.FailurePhase != nil {
+		meta["failure_phase"] = string(*completion.FailurePhase)
 	}
 }

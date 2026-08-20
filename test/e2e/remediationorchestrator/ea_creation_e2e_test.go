@@ -225,14 +225,14 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
 
 		// E2E-RO-163-001: Phase timestamps validation
-		Expect(updatedRR.Status.ProcessingStartTime).NotTo(BeNil())
-		Expect(updatedRR.Status.AnalyzingStartTime).NotTo(BeNil())
-		Expect(updatedRR.Status.ExecutingStartTime).NotTo(BeNil())
-		Expect(updatedRR.Status.AnalyzingStartTime.Time).To(BeTemporally(">=", updatedRR.Status.ProcessingStartTime.Time))
-		Expect(updatedRR.Status.ExecutingStartTime.Time).To(BeTemporally(">=", updatedRR.Status.AnalyzingStartTime.Time))
+		Expect(updatedRR.Status.EnsurePhaseProgress().ProcessingStartTime).NotTo(BeNil())
+		Expect(updatedRR.Status.EnsurePhaseProgress().AnalyzingStartTime).NotTo(BeNil())
+		Expect(updatedRR.Status.EnsurePhaseProgress().ExecutingStartTime).NotTo(BeNil())
+		Expect(updatedRR.Status.EnsurePhaseProgress().AnalyzingStartTime.Time).To(BeTemporally(">=", updatedRR.Status.EnsurePhaseProgress().ProcessingStartTime.Time))
+		Expect(updatedRR.Status.EnsurePhaseProgress().ExecutingStartTime.Time).To(BeTemporally(">=", updatedRR.Status.EnsurePhaseProgress().AnalyzingStartTime.Time))
 
 		// E2E-RO-163-006: Outcome validation
-		Expect(updatedRR.Status.Outcome).To(Equal("Remediated"))
+		Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("Remediated"))
 
 		// E2E-RO-163-007: NotificationDelivered condition
 		// RO creates NR on completion; simulate delivery by updating NR to Sent
@@ -465,19 +465,19 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
 
 			// E2E-RO-163-005: Failure post-mortem assertions
-			Expect(updatedRR.Status.FailurePhase).NotTo(BeNil())
-			Expect(*updatedRR.Status.FailurePhase).To(Equal(remediationv1.FailurePhaseWorkflowExecution),
+			Expect(updatedRR.Status.EnsureCompletionStatus().FailurePhase).NotTo(BeNil())
+			Expect(*updatedRR.Status.EnsureCompletionStatus().FailurePhase).To(Equal(remediationv1.FailurePhaseWorkflowExecution),
 				"FailurePhase should be WorkflowExecution (BR-COMMON-001 PascalCase)")
-			Expect(updatedRR.Status.FailureReason).NotTo(BeNil())
-			Expect(*updatedRR.Status.FailureReason).NotTo(BeEmpty(),
+			Expect(updatedRR.Status.EnsureCompletionStatus().FailureReason).NotTo(BeNil())
+			Expect(*updatedRR.Status.EnsureCompletionStatus().FailureReason).NotTo(BeEmpty(),
 				"FailureReason should contain the WE failure reason")
-			Expect(updatedRR.Status.ConsecutiveFailureCount).To(Equal(int32(1)),
+			Expect(updatedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(Equal(int32(1)),
 				"ConsecutiveFailureCount should be 1 for first failure")
-			Expect(updatedRR.Status.NextAllowedExecution).NotTo(BeNil(),
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).NotTo(BeNil(),
 				"NextAllowedExecution should be set via exponential backoff on first failure")
 
 			GinkgoWriter.Printf("E2E-RO-163-005: Failure post-mortem validated — FailurePhase=%s, ConsecutiveFailureCount=%d, NextAllowedExecution=%s\n",
-				*updatedRR.Status.FailurePhase, updatedRR.Status.ConsecutiveFailureCount, updatedRR.Status.NextAllowedExecution.Format(time.RFC3339))
+				*updatedRR.Status.EnsureCompletionStatus().FailurePhase, updatedRR.Status.EnsureRoutingStatus().ConsecutiveFailureCount, updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution.Format(time.RFC3339))
 		})
 	})
 })

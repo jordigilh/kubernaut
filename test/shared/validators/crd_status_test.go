@@ -157,23 +157,29 @@ func completeRR() *remediationv1.RemediationRequest {
 	return &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{Name: "rr-test", Namespace: "default", Generation: 1},
 		Status: remediationv1.RemediationRequestStatus{
-			ObservedGeneration:         1,
-			OverallPhase:               remediationv1.PhaseCompleted,
-			StartTime:                  &now,
-			CompletedAt:                &now,
-			SignalProcessingRef:        &corev1.ObjectReference{Name: "sp-1", Kind: "SignalProcessing"},
-			AIAnalysisRef:              &corev1.ObjectReference{Name: "aa-1", Kind: "AIAnalysis"},
-			WorkflowExecutionRef:       &corev1.ObjectReference{Name: "we-1", Kind: "WorkflowExecution"},
-			EffectivenessAssessmentRef: &corev1.ObjectReference{Name: "ea-1", Kind: "EffectivenessAssessment"},
-			Outcome:                    "success",
-			NotificationRequestRefs: []corev1.ObjectReference{
-				{Name: "nr-1", Kind: "NotificationRequest"},
+			ObservedGeneration: 1,
+			OverallPhase:       remediationv1.PhaseCompleted,
+			StartTime:          &now,
+			CompletedAt:        &now,
+			PhaseProgress: &remediationv1.PhaseProgress{
+				SignalProcessingRef:        &corev1.ObjectReference{Name: "sp-1", Kind: "SignalProcessing"},
+				AIAnalysisRef:              &corev1.ObjectReference{Name: "aa-1", Kind: "AIAnalysis"},
+				WorkflowExecutionRef:       &corev1.ObjectReference{Name: "we-1", Kind: "WorkflowExecution"},
+				EffectivenessAssessmentRef: &corev1.ObjectReference{Name: "ea-1", Kind: "EffectivenessAssessment"},
 			},
-			SelectedWorkflowRef: &remediationv1.WorkflowReference{
-				WorkflowID:            "restart-pod",
-				Version:               "v1",
-				ExecutionBundle:       "oci://registry/restart-pod:v1",
-				ExecutionBundleDigest: "sha256:abc123",
+			CompletionStatus: &remediationv1.CompletionStatus{
+				Outcome: "success",
+				NotificationRequestRefs: []corev1.ObjectReference{
+					{Name: "nr-1", Kind: "NotificationRequest"},
+				},
+			},
+			WorkflowSelection: &remediationv1.WorkflowSelection{
+				SelectedWorkflowRef: &remediationv1.WorkflowReference{
+					WorkflowID:            "restart-pod",
+					Version:               "v1",
+					ExecutionBundle:       "oci://registry/restart-pod:v1",
+					ExecutionBundleDigest: "sha256:abc123",
+				},
 			},
 			Conditions: []metav1.Condition{
 				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Completed"},
@@ -184,11 +190,11 @@ func completeRR() *remediationv1.RemediationRequest {
 
 func completeRRWithApproval() *remediationv1.RemediationRequest {
 	rr := completeRR()
-	rr.Status.NotificationRequestRefs = []corev1.ObjectReference{
+	rr.Status.EnsureCompletionStatus().NotificationRequestRefs = []corev1.ObjectReference{
 		{Name: "nr-1", Kind: "NotificationRequest"},
 		{Name: "nr-2", Kind: "NotificationRequest"},
 	}
-	rr.Status.ApprovalNotificationSent = true
+	rr.Status.EnsureCompletionStatus().ApprovalNotificationSent = true
 	return rr
 }
 

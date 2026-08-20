@@ -108,7 +108,7 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-615-006", "default")
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
-			rr.Status.Outcome = outcomeSucceededFixture
+			rr.Status.EnsureCompletionStatus().Outcome = outcomeSucceededFixture
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-006", "default")
 
 			name, err := nc.CreateCompletionNotification(context.Background(), rr, ai, "argo", nil)
@@ -126,7 +126,7 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-615-007", "default")
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
-			rr.Status.DuplicateCount = 3
+			rr.Status.EnsureRoutingStatus().DuplicateCount = 3
 
 			name, err := nc.CreateBulkDuplicateNotification(context.Background(), rr)
 			Expect(err).ToNot(HaveOccurred())
@@ -227,8 +227,8 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-615-010", "default")
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
-			rr.Status.Outcome = outcomeSucceededFixture
-			rr.Status.DuplicateCount = 1
+			rr.Status.EnsureCompletionStatus().Outcome = outcomeSucceededFixture
+			rr.Status.EnsureRoutingStatus().DuplicateCount = 1
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-010", "default")
 
 			ctx := context.Background()

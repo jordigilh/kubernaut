@@ -111,8 +111,8 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				}
 
 				rr.Status.OverallPhase = remediationv1.PhaseBlocked
-				rr.Status.BlockedUntil = &pastTime
-				rr.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
+				rr.Status.EnsureRoutingStatus().BlockedUntil = &pastTime
+				rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonConsecutiveFailures
 				rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
 				rr.Status.ObservedGeneration = rr.Generation
 
@@ -128,11 +128,11 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				"RR should transition to Failed when BlockedUntil is in the past")
 
 			// Verify failure details indicate cooldown expiry
-			Expect(rr.Status.FailurePhase).To(And(
+			Expect(rr.Status.EnsureCompletionStatus().FailurePhase).To(And(
 				Not(BeNil()),
 				HaveValue(Equal(remediationv1.FailurePhaseBlocked)),
 			))
-			Expect(rr.Status.FailureReason).To(And(
+			Expect(rr.Status.EnsureCompletionStatus().FailureReason).To(And(
 				Not(BeNil()),
 				HaveValue(ContainSubstring("cooldown expired")),
 			))
@@ -206,11 +206,11 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			rr2Updated := &remediationv1.RemediationRequest{}
 			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr2Updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr2Updated.Status.BlockReason).To(Equal(remediationv1.BlockReasonDuplicateInProgress),
+			Expect(rr2Updated.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonDuplicateInProgress),
 				"BlockReason should be DuplicateInProgress")
-			Expect(rr2Updated.Status.BlockMessage).To(ContainSubstring("Duplicate"),
+			Expect(rr2Updated.Status.EnsureRoutingStatus().BlockMessage).To(ContainSubstring("Duplicate"),
 				"BlockMessage should mention duplicate")
-			Expect(rr2Updated.Status.DuplicateOf).To(Equal(rr1.Name),
+			Expect(rr2Updated.Status.EnsureRoutingStatus().DuplicateOf).To(Equal(rr1.Name),
 				"Should reference the original RR")
 
 			GinkgoWriter.Println("✅ RR2 blocked correctly with DuplicateInProgress")
@@ -433,7 +433,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-			g.Expect(rr.Status.BlockReason).To(Equal(remediationv1.BlockReasonRecentlyRemediated))
+			g.Expect(rr.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonRecentlyRemediated))
 		}, timeout, interval).Should(Succeed(),
 			"RR must be blocked as RecentlyRemediated when Kind casing matches WFE")
 

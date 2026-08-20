@@ -163,7 +163,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 		By("Verifying completion notification ref is tracked in NotificationRequestRefs (#281)")
 		Eventually(func() bool {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			for _, ref := range rr.Status.NotificationRequestRefs {
+			for _, ref := range rr.Status.EnsureCompletionStatus().NotificationRequestRefs {
 				if ref.Name == completionNTName {
 					return true
 				}

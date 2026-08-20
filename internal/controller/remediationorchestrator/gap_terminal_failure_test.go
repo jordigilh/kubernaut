@@ -59,7 +59,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
-		rr.Status.ProcessingStartTime = &procStart
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &procStart
 
 		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "Signal processing failed")
 
@@ -105,7 +105,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
-		rr.Status.ProcessingStartTime = &procStart
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &procStart
 
 		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "SP failed")
 
@@ -146,7 +146,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
-		rr.Status.ExecutingStartTime = &execStart
+		rr.Status.EnsurePhaseProgress().ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
@@ -204,7 +204,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
-		rr.Status.ProcessingStartTime = &procStart
+		rr.Status.EnsurePhaseProgress().ProcessingStartTime = &procStart
 
 		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "SP failed")
 
@@ -263,8 +263,8 @@ var _ = Describe("BR-ORCH-036 GAP-5: transitionToFailedTerminal Escalation NR (#
 		rr := newRemediationRequest(rrName, defaultFixture, remediationv1.PhaseBlocked)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-30 * time.Minute)}
 		expiredTime := metav1.NewTime(time.Now().Add(-1 * time.Minute))
-		rr.Status.BlockedUntil = &expiredTime
-		rr.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
+		rr.Status.EnsureRoutingStatus().BlockedUntil = &expiredTime
+		rr.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonConsecutiveFailures
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).

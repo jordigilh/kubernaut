@@ -45,24 +45,24 @@ func (r *Reconciler) cascadeTerminalToChildren(ctx context.Context, rr *remediat
 	parentPhase := string(rr.Status.OverallPhase)
 	message := fmt.Sprintf("Parent RR entered terminal phase: %s", parentPhase)
 
-	if rr.Status.AIAnalysisRef != nil {
-		if err := r.cascadeToAIAnalysis(ctx, rr.Status.AIAnalysisRef.Name, rr.Status.AIAnalysisRef.Namespace, message); err != nil {
+	if rr.Status.EnsurePhaseProgress().AIAnalysisRef != nil {
+		if err := r.cascadeToAIAnalysis(ctx, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name, rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace, message); err != nil {
 			logger.Error(err, "Failed to cascade terminal to AIAnalysis",
-				"aianalysis", rr.Status.AIAnalysisRef.Name)
+				"aianalysis", rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name)
 		}
 	}
 
-	if rr.Status.SignalProcessingRef != nil {
-		if err := r.cascadeToSignalProcessing(ctx, rr.Status.SignalProcessingRef.Name, rr.Status.SignalProcessingRef.Namespace, message); err != nil {
+	if rr.Status.EnsurePhaseProgress().SignalProcessingRef != nil {
+		if err := r.cascadeToSignalProcessing(ctx, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name, rr.Status.EnsurePhaseProgress().SignalProcessingRef.Namespace, message); err != nil {
 			logger.Error(err, "Failed to cascade terminal to SignalProcessing",
-				"signalprocessing", rr.Status.SignalProcessingRef.Name)
+				"signalprocessing", rr.Status.EnsurePhaseProgress().SignalProcessingRef.Name)
 		}
 	}
 
-	if rr.Status.WorkflowExecutionRef != nil {
-		if err := r.cascadeToWorkflowExecution(ctx, rr.Status.WorkflowExecutionRef.Name, rr.Status.WorkflowExecutionRef.Namespace, message); err != nil {
+	if rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil {
+		if err := r.cascadeToWorkflowExecution(ctx, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name, rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Namespace, message); err != nil {
 			logger.Error(err, "Failed to cascade terminal to WorkflowExecution",
-				"workflowexecution", rr.Status.WorkflowExecutionRef.Name)
+				"workflowexecution", rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name)
 		}
 	}
 }

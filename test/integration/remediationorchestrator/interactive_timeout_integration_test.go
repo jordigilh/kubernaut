@@ -136,7 +136,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 				}, rr); err != nil {
 					return err
 				}
-				rr.Status.AnalyzingStartTime = &analyzingStart
+				rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &analyzingStart
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
@@ -190,7 +190,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 				}, rr); err != nil {
 					return err
 				}
-				rr.Status.AnalyzingStartTime = &analyzingStart
+				rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &analyzingStart
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
@@ -231,8 +231,8 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 				}, rr); err != nil {
 					return err
 				}
-				rr.Status.AnalyzingStartTime = &analyzingStart
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+				rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &analyzingStart
+				rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 					Name:      "ai-deleted-nonexistent",
 					Namespace: ROControllerNamespace,
 				}

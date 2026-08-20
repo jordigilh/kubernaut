@@ -104,15 +104,15 @@ func (h *AnalyzingHandler) Phase() phase.Phase {
 func (h *AnalyzingHandler) Handle(ctx context.Context, rr *remediationv1.RemediationRequest) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	if rr.Status.AIAnalysisRef == nil {
+	if rr.Status.EnsurePhaseProgress().AIAnalysisRef == nil {
 		logger.V(1).Info("AIAnalysis not created yet, waiting")
 		return phase.Requeue(config.RequeueGenericError, "AI ref not set"), nil
 	}
 
 	ai := &aianalysisv1.AIAnalysis{}
 	err := h.k8sClient.Get(ctx, client.ObjectKey{
-		Name:      rr.Status.AIAnalysisRef.Name,
-		Namespace: rr.Status.AIAnalysisRef.Namespace,
+		Name:      rr.Status.EnsurePhaseProgress().AIAnalysisRef.Name,
+		Namespace: rr.Status.EnsurePhaseProgress().AIAnalysisRef.Namespace,
 	}, ai)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -282,9 +282,9 @@ func (h *AnalyzingHandler) checkStaleAnalyzingCache(ctx context.Context, rr *rem
 			"freshPhase", freshRR.Status.OverallPhase)
 		return phase.NoOp("stale cache"), true
 	}
-	if freshRR.Status.WorkflowExecutionRef != nil {
+	if freshRR.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil {
 		logger.Info("WFE already created but phase still Analyzing, completing transition",
-			"wfeName", freshRR.Status.WorkflowExecutionRef.Name)
+			"wfeName", freshRR.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name)
 		return phase.Advance(phase.Executing, "WFE already exists"), true
 	}
 	return phase.TransitionIntent{}, false
@@ -344,7 +344,7 @@ func (h *AnalyzingHandler) capturePreRemediationHashStep(ctx context.Context, rr
 		if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.OverallPhase = remediationv1.PhaseFailed
 			reason := fmt.Sprintf("Cannot determine target resource state: %v", hashErr)
-			rr.Status.FailureReason = &reason
+			rr.Status.EnsureCompletionStatus().FailureReason = &reason
 			return nil
 		}); updateErr != nil {
 			logger.Error(updateErr, "Failed to update RR to Failed after hash error")
@@ -359,7 +359,7 @@ func (h *AnalyzingHandler) capturePreRemediationHashStep(ctx context.Context, rr
 			fmt.Sprintf("Pre-remediation hash unavailable for %s/%s: %s", remTarget.Kind, remTarget.Name, degradedReason))
 		remediationrequest.SetPreRemediationHashCaptured(rr, false, degradedReason, h.m)
 	}
-	if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+	if preHash != "" && rr.Status.EnsureOperatorAudit().PreRemediationSpecHash == "" {
 		if err := h.callbacks.PersistPreHash(ctx, rr, preHash); err != nil {
 			logger.Error(err, "Failed to persist pre-remediation hash on RR status (non-fatal)")
 		}

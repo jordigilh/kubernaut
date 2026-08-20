@@ -90,7 +90,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 
 		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
-			Expect(fetched.Status.BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
+			Expect(fetched.Status.EnsureRoutingStatus().BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
 				"RR in managed namespace should NOT be blocked for UnmanagedResource")
 		}
 
@@ -125,7 +125,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR in unmanaged namespace should be blocked with UnmanagedResource reason")
 
@@ -164,9 +164,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			Name:      rrName,
 			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
-		Expect(fetched.Status.BlockReason).To(BeEmpty(),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).To(BeEmpty(),
 			"BlockReason should be cleared after unblock")
-		Expect(fetched.Status.BlockedUntil).To(BeNil(),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockedUntil).To(BeNil(),
 			"BlockedUntil should be cleared after unblock")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-002: RR %s continued pipeline after namespace became managed (phase: %s)\n",
@@ -194,7 +194,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be blocked with UnmanagedResource reason")
 
@@ -206,14 +206,14 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-		Expect(fetched.Status.BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource))
-		Expect(fetched.Status.BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource))
+		Expect(fetched.Status.EnsureRoutingStatus().BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
 			"Block message should include remediation instructions")
-		Expect(fetched.Status.BlockedUntil).ToNot(BeNil(),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockedUntil).ToNot(BeNil(),
 			"BlockedUntil should be set for time-based scope backoff")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-003: Scope blocking audit verified — reason: %s, blockedUntil: %s\n",
-			fetched.Status.BlockReason, fetched.Status.BlockedUntil.Format(time.RFC3339))
+			fetched.Status.EnsureRoutingStatus().BlockReason, fetched.Status.EnsureRoutingStatus().BlockedUntil.Format(time.RFC3339))
 	})
 
 	// ─────────────────────────────────────────────
@@ -238,8 +238,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 				return false
 			}
 			return fetched.Status.OverallPhase == remediationv1.PhaseBlocked &&
-				fetched.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource &&
-				fetched.Status.BlockedUntil != nil
+				fetched.Status.EnsureRoutingStatus().BlockReason == remediationv1.BlockReasonUnmanagedResource &&
+				fetched.Status.EnsureRoutingStatus().BlockedUntil != nil
 		}, timeout, interval).Should(BeTrue(),
 			"RR should be blocked with BlockedUntil set")
 
@@ -250,7 +250,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
 
-		firstBlockedUntil := fetched.Status.BlockedUntil.Time
+		firstBlockedUntil := fetched.Status.EnsureRoutingStatus().BlockedUntil.Time
 		GinkgoWriter.Printf("✅ First blockedUntil: %s\n", firstBlockedUntil.Format(time.RFC3339))
 
 		// Verify the blockedUntil is in the near future (within scope backoff bounds: ~5s)
@@ -286,7 +286,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be initially blocked with UnmanagedResource")
 
@@ -296,8 +296,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			Name:      rrName,
 			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
-		initialFailureCount := fetched.Status.ConsecutiveFailureCount
-		initialBlockedUntil := fetched.Status.BlockedUntil.Time
+		initialFailureCount := fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount
+		initialBlockedUntil := fetched.Status.EnsureRoutingStatus().BlockedUntil.Time
 		GinkgoWriter.Printf("Initial block: failureCount=%d, blockedUntil=%s\n",
 			initialFailureCount, initialBlockedUntil.Format(time.RFC3339))
 
@@ -319,10 +319,10 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 				GinkgoWriter.Printf("Phase is %s (expected Blocked) — bug #266?\n", f.Status.OverallPhase)
 				return false
 			}
-			if f.Status.BlockedUntil == nil {
+			if f.Status.EnsureRoutingStatus().BlockedUntil == nil {
 				return false
 			}
-			return f.Status.BlockedUntil.Time.After(initialBlockedUntil)
+			return f.Status.EnsureRoutingStatus().BlockedUntil.Time.After(initialBlockedUntil)
 		}, 30*time.Second, interval).Should(BeTrue(),
 			"BR-SCOPE-010: RR must be re-blocked with new BlockedUntil (not Failed)")
 
@@ -333,9 +333,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		}, fetched)).To(Succeed())
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 			"Phase must remain Blocked after re-validation")
-		Expect(fetched.Status.BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonUnmanagedResource),
 			"BlockReason must still be UnmanagedResource")
-		Expect(fetched.Status.ConsecutiveFailureCount).To(BeNumerically(">", initialFailureCount),
+		Expect(fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount).To(BeNumerically(">", initialFailureCount),
 			"ConsecutiveFailureCount should increment on re-block (drives backoff progression)")
 
 		// Validate audit trace: re-block should emit a new routing.blocked event
@@ -363,7 +363,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		Expect(payload.EventType).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked))
 
 		GinkgoWriter.Printf("✅ IT-RO-010-005: RR %s re-blocked (failureCount: %d→%d, events: %d)\n",
-			rrName, initialFailureCount, fetched.Status.ConsecutiveFailureCount, len(events))
+			rrName, initialFailureCount, fetched.Status.EnsureRoutingStatus().ConsecutiveFailureCount, len(events))
 	})
 
 	// ─────────────────────────────────────────────
@@ -388,7 +388,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			}, fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be initially blocked")
 
@@ -439,8 +439,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			Name:      rrName,
 			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
-		Expect(fetched.Status.BlockReason).To(BeEmpty())
-		Expect(fetched.Status.BlockedUntil).To(BeNil())
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).To(BeEmpty())
+		Expect(fetched.Status.EnsureRoutingStatus().BlockedUntil).To(BeNil())
 
 		// Validate audit trail: the initial routing.blocked event should exist,
 		// and no additional blocked events should be emitted for the unblock
