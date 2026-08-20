@@ -148,16 +148,16 @@ func buildSignalProcessedPayload(sp *signalprocessingv1alpha1.SignalProcessing) 
 		Signal:    sp.Spec.Signal.Name,
 	}
 	// DD-SEVERITY-001: Use normalized severity from Status (not external Spec.Signal.Severity)
-	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.Severity); sev != "" {
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.GetSignalClassification().Severity); sev != "" {
 		payload.Severity.SetTo(sev)
 	}
 
 	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
-	if sp.Status.SignalMode != "" {
-		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
+	if sp.Status.GetSignalClassification().SignalMode != "" {
+		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.GetSignalClassification().SignalMode))
 	}
-	if sp.Status.SourceSignalName != "" {
-		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
+	if sp.Status.GetSignalClassification().SourceSignalName != "" {
+		payload.SourceSignalName.SetTo(sp.Status.GetSignalClassification().SourceSignalName)
 	}
 
 	// Add environment classification if present
@@ -201,8 +201,8 @@ func buildSignalProcessedPayload(sp *signalprocessingv1alpha1.SignalProcessing) 
 	}
 
 	// Add error if present
-	if sp.Status.Error != "" {
-		payload.Error.SetTo(sp.Status.Error)
+	if sp.Status.GetFailureInfo().Error != "" {
+		payload.Error.SetTo(sp.Status.GetFailureInfo().Error)
 	}
 
 	return payload
@@ -267,16 +267,16 @@ func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProce
 	applySeverityFields(&payload, sp)
 
 	// Add policy hash for audit trail and policy version tracking
-	if sp.Status.PolicyHash != "" {
-		payload.PolicyHash.SetTo(sp.Status.PolicyHash)
+	if sp.Status.GetSignalClassification().PolicyHash != "" {
+		payload.PolicyHash.SetTo(sp.Status.GetSignalClassification().PolicyHash)
 	}
 
 	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
-	if sp.Status.SignalMode != "" {
-		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
+	if sp.Status.GetSignalClassification().SignalMode != "" {
+		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.GetSignalClassification().SignalMode))
 	}
-	if sp.Status.SourceSignalName != "" {
-		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
+	if sp.Status.GetSignalClassification().SourceSignalName != "" {
+		payload.SourceSignalName.SetTo(sp.Status.GetSignalClassification().SourceSignalName)
 	}
 
 	applyClassificationResultFields(&payload, sp)
@@ -287,18 +287,18 @@ func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProce
 // applySeverityFields sets the external/normalized/main severity fields and
 // the rego-policy determination source (DD-SEVERITY-001).
 func applySeverityFields(payload *api.SignalProcessingAuditPayload, sp *signalprocessingv1alpha1.SignalProcessing) {
-	// DD-SEVERITY-001: Use normalized severity (sp.Status.Severity) for the main Severity field
+	// DD-SEVERITY-001: Use normalized severity (sp.Status.GetSignalClassification().Severity) for the main Severity field
 	// to ensure it always matches the required enum ["critical", "warning", "info"]
-	if sp.Status.Severity != "" {
-		payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Status.Severity))
+	if sp.Status.GetSignalClassification().Severity != "" {
+		payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Status.GetSignalClassification().Severity))
 	}
 
 	// DD-SEVERITY-001: Record external and normalized severity for compliance audit trail
 	if sp.Spec.Signal.Severity != "" {
 		payload.ExternalSeverity.SetTo(sp.Spec.Signal.Severity)
 	}
-	if sp.Status.Severity != "" {
-		if normalizedSev := toSignalProcessingAuditPayloadNormalizedSeverity(sp.Status.Severity); normalizedSev != "" {
+	if sp.Status.GetSignalClassification().Severity != "" {
+		if normalizedSev := toSignalProcessingAuditPayloadNormalizedSeverity(sp.Status.GetSignalClassification().Severity); normalizedSev != "" {
 			payload.NormalizedSeverity.SetTo(normalizedSev)
 		}
 		// Always set determination_source to "rego-policy" when normalized severity exists
@@ -393,7 +393,7 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
 	// DD-SEVERITY-001: Use normalized severity from Status (not external Spec.Signal.Severity)
-	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.Severity); sev != "" {
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.GetSignalClassification().Severity); sev != "" {
 		payload.Severity.SetTo(sev)
 	}
 

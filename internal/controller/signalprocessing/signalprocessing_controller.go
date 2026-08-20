@@ -362,15 +362,15 @@ func (r *SignalProcessingReconciler) handleTransientError(
 	logger logr.Logger,
 ) (ctrl.Result, error) {
 	// Increment consecutive failures
-	sp.Status.ConsecutiveFailures++
-	sp.Status.LastFailureTime = &metav1.Time{Time: time.Now()}
+	consecutiveFailures := sp.Status.GetFailureInfo().ConsecutiveFailures + 1
+	lastFailureTime := &metav1.Time{Time: time.Now()}
 
 	// Calculate backoff delay
-	delay := r.calculateBackoffDelay(sp.Status.ConsecutiveFailures)
+	delay := r.calculateBackoffDelay(consecutiveFailures)
 
 	logger.V(1).Info("Transient error, scheduling retry with backoff",
 		"error", err,
-		"consecutiveFailures", sp.Status.ConsecutiveFailures,
+		"consecutiveFailures", consecutiveFailures,
 		"backoffDelay", delay,
 	)
 
@@ -378,14 +378,13 @@ func (r *SignalProcessingReconciler) handleTransientError(
 	// DD-PERF-001: ATOMIC STATUS UPDATE
 	// Consolidate: ConsecutiveFailures + LastFailureTime + Error → 1 API call
 	// ========================================
-	consecutiveFailures := sp.Status.ConsecutiveFailures
-	lastFailureTime := sp.Status.LastFailureTime
 	errorMsg := err.Error()
 
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		sp.Status.ConsecutiveFailures = consecutiveFailures
-		sp.Status.LastFailureTime = lastFailureTime
-		sp.Status.Error = errorMsg
+		failureInfo := sp.Status.EnsureFailureInfo()
+		failureInfo.ConsecutiveFailures = consecutiveFailures
+		failureInfo.LastFailureTime = lastFailureTime
+		failureInfo.Error = errorMsg
 		return nil
 	})
 	if updateErr != nil {
@@ -407,7 +406,7 @@ func (r *SignalProcessingReconciler) resetConsecutiveFailures(
 	ctx context.Context,
 	sp *signalprocessingv1alpha1.SignalProcessing,
 ) error {
-	if sp.Status.ConsecutiveFailures == 0 {
+	if sp.Status.GetFailureInfo().ConsecutiveFailures == 0 {
 		return nil // Already reset, skip update
 	}
 
@@ -416,8 +415,9 @@ func (r *SignalProcessingReconciler) resetConsecutiveFailures(
 	// Consolidate: ConsecutiveFailures + Error → 1 API call
 	// ========================================
 	return r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		sp.Status.ConsecutiveFailures = 0
-		sp.Status.Error = ""
+		failureInfo := sp.Status.EnsureFailureInfo()
+		failureInfo.ConsecutiveFailures = 0
+		failureInfo.Error = ""
 		return nil
 	})
 }
