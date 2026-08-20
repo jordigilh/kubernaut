@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -356,11 +357,31 @@ func (r *AIAnalysisReconciler) mapAgentSessionToAIAnalysis(_ context.Context, as
 // AgentSessionEventPredicate filters AgentSession events: passes create and
 // delete unconditionally, and update events only when a field AA's
 // InvestigatingHandler actually branches on changed -- Phase (terminal
-// transition or dispatch ack), Interactive (Gap 1 ack signal), or SessionID
-// (KA correlation onset). Status-only churn that AA doesn't act on (e.g. a
-// future observability-only field) is dropped to avoid unnecessary
-// reconciles, mirroring the old ISEventPredicate's terminal-only filter but
-// widened to the fields InvestigatingHandler.syncKASessionStatus reads.
+// transition or dispatch ack), Interactive (Gap 1 ack signal), SessionID
+// (KA correlation onset), or ActingUser/ActingUserGroups (#2204: MCP
+// takeover identity onset, see below). Status-only churn that AA doesn't
+// act on (e.g. a future observability-only field) is dropped to avoid
+// unnecessary reconciles, mirroring the old ISEventPredicate's
+// terminal-only filter but widened to the fields
+// InvestigatingHandler.syncKASessionStatus reads.
+//
+// #2204 (2026-08-20, E2E-1293-001 CI RCA): ActingUser/ActingUserGroups were
+// missing from this filter. Dispatcher.OnInteractiveUpgrade
+// (internal/kubernautagent/agentsession/dispatcher.go) writes
+// Interactive=true, ActingUser, and ActingUserGroups together in one
+// Status().Update() -- but for an AgentSession that was already
+// interactive-from-start (Interactive already true at creation, e.g. an
+// IS created before AA's first reconcile), that write leaves Phase,
+// Interactive, and SessionID all unchanged, so only ActingUser/
+// ActingUserGroups actually changed. Before this PR removed AA's
+// fixed-interval sessionPollInterval poll, a missed watch event here was
+// still caught by the next poll tick (2s test / 15s prod); now the only
+// paths to reconcile are this predicate and the deadline-driven backstop
+// (typically minutes away), so a dropped event here left
+// AIAnalysis.Status.InteractiveSession.ActingUser (populated by
+// syncKASessionStatus, which reads exactly these two fields) never set
+// until the investigation's full timeout elapsed -- confirmed live via
+// E2E-1293-001 timing out its 90s Eventually waiting for exactly this.
 func AgentSessionEventPredicate() predicate.TypedPredicate[*agentsessionv1.AgentSession] {
 	return predicate.TypedFuncs[*agentsessionv1.AgentSession]{
 		CreateFunc: func(e event.TypedCreateEvent[*agentsessionv1.AgentSession]) bool {
@@ -380,7 +401,13 @@ func AgentSessionEventPredicate() predicate.TypedPredicate[*agentsessionv1.Agent
 			if oldStatus.Interactive != newStatus.Interactive {
 				return true
 			}
-			return oldStatus.SessionID != newStatus.SessionID
+			if oldStatus.SessionID != newStatus.SessionID {
+				return true
+			}
+			if oldStatus.ActingUser != newStatus.ActingUser {
+				return true
+			}
+			return !slices.Equal(oldStatus.ActingUserGroups, newStatus.ActingUserGroups)
 		},
 		GenericFunc: func(e event.TypedGenericEvent[*agentsessionv1.AgentSession]) bool {
 			return false

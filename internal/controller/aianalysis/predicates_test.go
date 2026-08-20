@@ -199,6 +199,76 @@ var _ = Describe("AgentSessionEventPredicate (#1449, DD-AA-KA-001)", func() {
 		})
 	})
 
+	// ═══════════════════════════════════════════════════════════════════════
+	// #2204 follow-up (2026-08-20, E2E-1293-001 CI failure RCA): an
+	// MCP-driven takeover of an already-interactive-from-start AgentSession
+	// (Dispatcher.OnInteractiveUpgrade, internal/kubernautagent/agentsession
+	// /dispatcher.go) writes Interactive=true (already true, no change),
+	// ActingUser, and ActingUserGroups in a single Status().Update() call.
+	// Before #2204 removed AA's fixed-interval sessionPollInterval poll
+	// (2s test / 15s prod), a missed watch event here was still caught by
+	// the next poll tick. Now the ONLY paths to reconcile are this
+	// predicate and the deadline-driven backstop (minutes away) --
+	// so ActingUser/ActingUserGroups changing with Phase/Interactive/
+	// SessionID all unchanged must itself pass this predicate, or
+	// AIAnalysis.Status.InteractiveSession.ActingUser (set by
+	// handlers.InvestigatingHandler.syncKASessionStatus, which reads
+	// exactly these two fields) never gets a chance to populate until the
+	// investigation's full timeout elapses.
+	// ═══════════════════════════════════════════════════════════════════════
+
+	makeASWithActingUser := func(phase agentsessionv1.AgentSessionPhase, interactive bool, sessionID, actingUser string, groups []string) *agentsessionv1.AgentSession {
+		as := makeASWithSession(phase, interactive, sessionID)
+		as.Status.ActingUser = actingUser
+		as.Status.ActingUserGroups = groups
+		return as
+	}
+
+	Context("#2204 SI-4: ActingUser/ActingUserGroups-only changes trigger reconciliation", func() {
+		It("UT-AA-2204-201: passes Update events when only ActingUser changes (MCP takeover of an interactive-from-start session)", func() {
+			pred := controller.AgentSessionEventPredicate()
+			oldAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "", nil)
+			newAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "alice@example.com", []string{"sre"})
+
+			updateEvent := event.TypedUpdateEvent[*agentsessionv1.AgentSession]{
+				ObjectOld: oldAS,
+				ObjectNew: newAS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeTrue(),
+				"#2204: OnInteractiveUpgrade's ActingUser/ActingUserGroups write must pass the predicate "+
+					"even when Phase, Interactive, and SessionID are all already at their post-takeover values")
+		})
+
+		It("UT-AA-2204-202: passes Update events when only ActingUserGroups changes", func() {
+			pred := controller.AgentSessionEventPredicate()
+			oldAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "alice@example.com", []string{"sre"})
+			newAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "alice@example.com", []string{"sre", "on-call"})
+
+			updateEvent := event.TypedUpdateEvent[*agentsessionv1.AgentSession]{
+				ObjectOld: oldAS,
+				ObjectNew: newAS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeTrue(),
+				"#2204: a group-membership-only change must still pass the predicate")
+		})
+
+		It("UT-AA-2204-203: drops Update events when ActingUser, ActingUserGroups, SessionID, Interactive, and Phase are all unchanged (no regression)", func() {
+			pred := controller.AgentSessionEventPredicate()
+			oldAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "alice@example.com", []string{"sre"})
+			newAS := makeASWithActingUser(agentsessionv1.AgentSessionPhaseInvestigating, true, "ka-session-same", "alice@example.com", []string{"sre"})
+
+			updateEvent := event.TypedUpdateEvent[*agentsessionv1.AgentSession]{
+				ObjectOld: oldAS,
+				ObjectNew: newAS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeFalse(),
+				"no-op updates (e.g. resync) must still be filtered to avoid unnecessary reconciles")
+		})
+	})
+
 	Context("Create and Delete events still pass through", func() {
 		It("UT-AA-1449-014: passes Create events", func() {
 			pred := controller.AgentSessionEventPredicate()
