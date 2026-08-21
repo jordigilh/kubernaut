@@ -121,7 +121,17 @@ var _ = Describe("AgentSessionTerminalCloseReconciler wiring (#2214) [AU-2, AU-3
 
 	newAgentSession := func(name, rrName string) *agentsessionv1.AgentSession {
 		return &agentsessionv1.AgentSession{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: testNamespace,
+				// Mirrors production: AA's AgentSessionCreator.GetOrCreate
+				// sets this synchronously at creation (#2214 CI RCA, PR
+				// #2222) rather than relying solely on the reconciler's own
+				// reactive add, which otherwise races an immediate
+				// create-then-delete (exactly what IT-AF-2214-002 below
+				// does) landing before the reconciler's first reconcile.
+				Finalizers: []string{agentsessionv1.TerminalCloseFinalizer},
+			},
 			Spec: agentsessionv1.AgentSessionSpec{
 				RemediationRequestRef: agentsessionv1.ObjectRef{Name: rrName, Namespace: testNamespace},
 				IncidentID:            "ai-" + rrName,
@@ -231,12 +241,19 @@ var _ = Describe("AgentSessionTerminalCloseReconciler wiring (#2214) [AU-2, AU-3
 			as := newAgentSession(asName, rrName)
 			Expect(k8sClient.Create(ctx, as)).To(Succeed())
 
+			// Retry-on-conflict, re-Get'ing fresh each attempt: the
+			// reconciler's own terminalCloseFinalizer add (#2214 finalizer
+			// redesign) races this Status write for the same object's
+			// shared resourceVersion, exactly like KA's production
+			// updateStatus helper (status_writer.go) already retries
+			// against -- this test must tolerate the same, real,
+			// production-shaped conflict rather than assuming a single
+			// attempt always wins.
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: asName, Namespace: testNamespace}, as)).To(Succeed())
+				as.Status.Phase = asPhase
+				g.Expect(k8sClient.Status().Update(ctx, as)).To(Succeed())
 			}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
-
-			as.Status.Phase = asPhase
-			Expect(k8sClient.Status().Update(ctx, as)).To(Succeed())
 
 			Eventually(func(g Gomega) {
 				var fetched isv1alpha1.InvestigationSession
@@ -255,9 +272,16 @@ var _ = Describe("AgentSessionTerminalCloseReconciler wiring (#2214) [AU-2, AU-3
 		Entry("Failed", agentsessionv1.AgentSessionPhaseFailed, isv1alpha1.SessionPhaseFailed),
 	)
 
-	// IT-AF-2214-002: Delete-driven Cancelled path -- the novel handler.Funcs
-	// DeleteFunc capture pattern (the plan's main residual risk) proven
-	// end-to-end against a real envtest apiserver.
+	// IT-AF-2214-002: Delete-driven Cancelled path, proven end-to-end against
+	// a real envtest apiserver. Originally written against a raw
+	// handler.Funcs.DeleteFunc capture design; that design's delete event
+	// was reproducibly dropped under CPU contention (CI RCA, PR #2222, run
+	// 32513171970, reproduced 3/13 locally against the exact CI-built images
+	// under --race --procs=4) and was replaced by the terminalCloseFinalizer
+	// pattern (internal/controller/apifrontend/agentsession_close.go) -- this
+	// test's assertions are unchanged, since the finalizer redesign is an
+	// internal delivery-reliability fix with no change to the observable
+	// Create-then-Delete-then-IS-Cancelled contract asserted below.
 	It("IT-AF-2214-002: closes IS to Cancelled when the AgentSession is deleted [CC7.2]", func() {
 		k8sClient, emitter, stop := startEnv()
 		defer stop()

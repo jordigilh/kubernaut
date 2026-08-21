@@ -97,6 +97,14 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: analysis.Namespace,
+			// TerminalCloseFinalizer set synchronously here, not left to
+			// AF's AgentSessionTerminalCloseReconciler to add reactively on
+			// its own first reconcile (#2214 CI RCA, PR #2222): closes the
+			// narrow bootstrap race where a delete (DeleteForCascadeCancel)
+			// could otherwise land before that first reconcile observes
+			// this Create, removing the object with no finalizer ever
+			// attached. See the constant's doc comment for full detail.
+			Finalizers: []string{agentsessionv1.TerminalCloseFinalizer},
 		},
 		Spec: c.builder.BuildAgentSessionSpec(analysis),
 	}
@@ -126,7 +134,22 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 // DD-AA-KA-001 amendment: AgentSessionReasonCapacityExceeded retry path).
 // Idempotent: a NotFound (e.g. a concurrent retry, or a delete already
 // observed by another reconcile) is not an error.
+//
+// Explicitly removes agentsessionv1.TerminalCloseFinalizer before deleting
+// (#2214 finalizer redesign): a capacity-exceeded retry is not a terminal
+// outcome for the underlying investigation -- it immediately continues
+// under the same rrName with a fresh AgentSession -- so it must NOT trigger
+// AF's AgentSessionTerminalCloseReconciler's Cancelled-IS-closure the way
+// DeleteForCascadeCancel intentionally does. This also keeps the delete
+// synchronous (the deterministic as-<rrName> name must be free again
+// immediately for GetOrCreate's same-named Create, which would otherwise
+// collide with a terminating-but-not-yet-removed object of that name).
 func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error {
+	if controllerutil.RemoveFinalizer(as, agentsessionv1.TerminalCloseFinalizer) {
+		if err := c.client.Update(ctx, as); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to remove terminal-close finalizer from AgentSession %s/%s before retry delete: %w", as.Namespace, as.Name, err)
+		}
+	}
 	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete AgentSession %s/%s for retry: %w", as.Namespace, as.Name, err)
 	}

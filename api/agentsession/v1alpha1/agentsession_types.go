@@ -47,6 +47,24 @@ const (
 	AgentSessionPhaseCancelled AgentSessionPhase = "Cancelled"
 )
 
+// TerminalCloseFinalizer defers actual removal of an AgentSession until
+// AF's AgentSessionTerminalCloseReconciler has closed the correlated
+// InvestigationSession to Cancelled (#2214 / DD-AA-KA-001 Amendment).
+//
+// Exported here (rather than kept private inside
+// internal/controller/apifrontend) so AA's AgentSessionCreator.GetOrCreate
+// can set it at creation time: CI RCA (PR #2222) found that relying solely
+// on AF's reconciler to add it reactively on first observed Create/Update
+// leaves a narrow bootstrap race -- if the object is deleted before that
+// first reconcile lands (observed under CPU contention with a create
+// immediately followed by a delete), the object is removed with no
+// finalizer ever attached, silently reproducing the very race the
+// finalizer exists to close. Adding it synchronously in the same Create
+// call that brings the object into existence closes that window
+// entirely; AF's reconciler still adds it defensively too (idempotent,
+// cheap) as a second layer for any AgentSession that predates this change.
+const TerminalCloseFinalizer = "apifrontend.kubernaut.ai/agentsession-terminal-close"
+
 // AgentSessionStatus.Reason values.
 const (
 	// AgentSessionReasonCapacityExceeded means KA rejected dispatch because

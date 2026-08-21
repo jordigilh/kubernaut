@@ -378,9 +378,14 @@ rules:
   # AwaitAgentSessionInteractive (DD-AA-KA-001 Amendment Gap 1, #2172):
   # read-only watch of KA's own ack signal. No "agentsessions/status" grant
   # -- AF never writes Status, only KA does (BR-AA-KA-065.9).
+  # update/patch (#2214 finalizer redesign, CI RCA PR #2222 run 32513171970):
+  # AgentSessionTerminalCloseReconciler adds/removes its own metadata-only
+  # finalizer (terminalCloseFinalizer) to reliably observe deletion via
+  # Reconcile instead of a best-effort raw watch delete event -- still no
+  # "agentsessions/status" grant, this only touches metadata.finalizers.
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

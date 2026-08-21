@@ -964,6 +964,48 @@ separate non-cached MCP-tool client had it).
 generated RBAC mirroring these kubebuilder markers; narrowing AA's grant here requires a
 follow-up PR there to stay in sync.
 
+### Post-merge correction: `handler.Funcs.DeleteFunc` capture replaced with a finalizer (2026-08-21)
+
+CI RCA (PR #2222, run [32513171970](https://github.com/jordigilh/kubernaut/actions/runs/32513171970))
+surfaced that `IT-AF-2214-002` (the delete-driven Cancelled path) failed intermittently. Root-caused
+by reproducing against the exact failing commit and the exact CI-built amd64 images (loaded via
+`KUBERNAUT_CI_ARTIFACT_TAG`) on an amd64 host under `--race --procs=4` (matching the CI job): **3 of
+15, then 3 of the first 8, runs failed** with the `AgentSessionTerminalCloseReconciler`'s delete
+handler never firing at all — zero log output for the entire 10s window, while the sibling
+Update-triggered path always completed within ~2s in the same run.
+
+Root cause: the `Watches(&agentsessionv1.AgentSession{}, handler.Funcs{...})` design chosen above
+(to capture `Spec.RemediationRequestRef` before `Reconcile`'s own `Get()` would 404 after deletion)
+delivers its `DeleteFunc` callback as a **raw, at-most-once informer event** — outside
+controller-runtime's workqueue, and therefore outside its retry-on-error machinery. Under CPU
+contention (this suite's own `--procs=4` running several envtest+manager instances concurrently),
+that single ephemeral event can be dropped entirely, with no recovery short of the informer's next
+full relist (a client-go/apiserver watch-bounce, typically ~5-10 minutes — far outside any
+reasonable production or test detection budget). This is precisely the "same structural idea as
+KA's own raw-watch `Dispatcher.cancelOnDelete`" risk called out when this design was chosen above —
+except KA's use is a fire-and-forget in-memory goroutine stop (safe to occasionally miss under load,
+self-corrects on the goroutine's own timeout), while AF's use gated a durable, audited CRD state
+transition with no comparable self-correction on any short time budget.
+
+**Fix**: replaced the raw `DeleteFunc` capture with the standard Kubernetes finalizer pattern —
+`terminalCloseFinalizer` (`apifrontend.kubernaut.ai/agentsession-terminal-close`) defers actual
+`AgentSession` removal until `Reconcile()` (the same workqueue-backed, retried path already proven
+at 0% failure for the Update case) observes `DeletionTimestamp != nil`, closes IS to `Cancelled`, and
+removes the finalizer. `SetupWithManager` reverts to a plain `For(&agentsessionv1.AgentSession{})` —
+no custom event capture is needed once deletion is reliably observable through normal reconcile
+dispatch. AF's RBAC on `agentsessions` gains `update`/`patch` (metadata-only, for the finalizer;
+still no `agentsessions/status` grant — AF still never writes KA's Status field).
+
+**Verification**: re-ran the same reproduction harness (real CI images, `--race --procs=4`, amd64) on
+the fixed code — see PR #2222 for the run count and result at time of merge.
+
+**Cross-check (not fixed here, flagged for awareness)**: KA's `Dispatcher.watchLoop` reacts to a raw
+`watch.Deleted` event for the same `AgentSession` type via `cancelOnDelete` — the same structural
+pattern this fix moved AF *away* from, for the same underlying reason. Deferring the actual delete
+via AF's finalizer does not meaningfully change KA's exposure (the finalizer is removed within
+milliseconds in practice, and KA's use case tolerates an occasional miss as noted above), but KA's
+own watch-delete reliance is an independent, pre-existing latent risk out of scope for #2214.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
