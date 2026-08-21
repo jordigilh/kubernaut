@@ -19,38 +19,21 @@ package controller
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"k8s.io/client-go/util/workqueue"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
-
-// cacheSyncTimeout overrides controller-runtime's 2-minute default for this
-// controller's own EventSource cache sync (CI RCA, PR #2222, run
-// 32491684227, E2E apifrontend must-gather): under a fully-loaded Kind E2E
-// apiserver (dozens of parallel Ginkgo procs hammering it with CRD churn),
-// AgentSession's informer -- newly introduced by this controller, so it has
-// no warm cache to reuse -- did not complete its initial List/Watch within
-// the 2-minute default, and controller-runtime treats that as fatal to the
-// whole manager (session_infra.go's shared Healthy flag flips false,
-// /readyz returns 503, kube-proxy drops the pod from Service endpoints --
-// breaking every other AF request in flight, unrelated to session/IS
-// closure). A generous timeout gives the informer room to finish under load
-// instead of failing fast and taking down pod readiness for an unrelated
-// reason.
-const cacheSyncTimeout = 5 * time.Minute
 
 // alreadyTerminalErrSubstring matches session.ValidateTransition's error text
 // for an IS that is already in a terminal phase. client-go informers may
@@ -186,6 +169,12 @@ func (r *AgentSessionTerminalCloseReconciler) closeIS(ctx context.Context, names
 // deletion and lose the RR name needed to find the correlated IS -- the same
 // structural reason KA's own raw-watch Dispatcher.cancelOnDelete reads off
 // the watch event rather than re-fetching.
+//
+// No per-controller CacheSyncTimeout override here: cmd/apifrontend's
+// newSessionControllerManager sets a manager-wide default (config.Controller)
+// covering this controller's AgentSession informer alongside its sibling
+// session-cleanup/lease-sync controllers' InvestigationSession informer --
+// see that function's doc comment for the CI RCA this addresses.
 func (r *AgentSessionTerminalCloseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	enqueue := func(obj client.Object, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
@@ -196,7 +185,6 @@ func (r *AgentSessionTerminalCloseReconciler) SetupWithManager(mgr ctrl.Manager)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("agentsession-terminal-close").
-		WithOptions(controller.Options{CacheSyncTimeout: cacheSyncTimeout}).
 		Watches(&agentsessionv1.AgentSession{}, handler.Funcs{
 			CreateFunc: func(_ context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				enqueue(e.Object, q)

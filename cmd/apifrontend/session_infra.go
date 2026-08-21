@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
@@ -128,6 +129,26 @@ func newSessionControllerManager(restCfg *rest.Config, scheme *k8sruntime.Scheme
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "",
 		LeaderElection:         false,
+		// CacheSyncTimeout override (default is 2 minutes): CI RCA, PR
+		// #2222, run 32497709499, E2E apifrontend must-gather. This
+		// manager runs three sibling controllers (session-cleanup,
+		// lease-sync, agentsession-terminal-close) that together start
+		// informers for both InvestigationSession and AgentSession against
+		// the same apiserver at manager startup. Under a fully-loaded Kind
+		// E2E apiserver (dozens of parallel Ginkgo procs hammering it with
+		// CRD churn), adding the AgentSession informer (#2214) pushed the
+		// pre-existing InvestigationSession informer shared by
+		// session-cleanup/lease-sync over the 2-minute default too --
+		// it's shared apiserver/informer-goroutine contention across all
+		// three controllers, not a single controller's own cost. Set at
+		// the manager level (config.Controller default) so every
+		// controller registered here inherits the same generous timeout,
+		// rather than special-casing one. A cache-sync failure on any one
+		// of them is fatal to the whole manager (session_infra.go's shared
+		// Healthy flag flips false, /readyz returns 503, kube-proxy drops
+		// the pod from Service endpoints -- breaking every other AF
+		// request in flight, unrelated to session/IS closure).
+		Controller: ctrlconfig.Controller{CacheSyncTimeout: 5 * time.Minute},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create session controller manager: %w", err)
