@@ -33,7 +33,7 @@ server:
   maxConcurrentRequests: {{ $v.config.server.maxConcurrentRequests }}
   readTimeout: {{ $v.config.server.readTimeout }}
   writeTimeout: {{ $v.config.server.writeTimeout }}
-  idleTimeout: 120s
+  idleTimeout: {{ $v.config.server.idleTimeout }}
   k8sRequestTimeout: {{ $v.config.server.k8sRequestTimeout }}
 cors:
   allowedOrigins:

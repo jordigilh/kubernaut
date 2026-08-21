@@ -271,6 +271,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.cors.maxAge` | integer | Preflight cache duration in seconds. | `300` | No |
 | `config.deduplication.cooldownPeriod` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5m"` | No |
 | `config.middleware.trustedProxyCIDRs` | array of string | Issue #673 L-1: CIDRs whose proxy headers are trusted | `[]` | No |
+| `config.server.idleTimeout` | string | Issue #2217: was a bare template literal while its 3 struct siblings (maxConcurrentRequests/readTimeout/writeTimeout) were already schema-driven | `"120s"` | No |
 | `config.server.k8sRequestTimeout` | string | Per-handler K8s API timeout (BR-GATEWAY-102) | `"15s"` | No |
 | `config.server.maxConcurrentRequests` | integer |  | `100` | No |
 | `config.server.readTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |

@@ -215,6 +215,7 @@ gateway:
         middleware:
             trustedProxyCIDRs: []
         server:
+            idleTimeout: 120s
             k8sRequestTimeout: 15s
             maxConcurrentRequests: 100
             readTimeout: 30s

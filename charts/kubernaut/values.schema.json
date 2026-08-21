@@ -992,6 +992,15 @@
                   ],
                   "default": "30s"
                 },
+                "idleTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "120s",
+                  "description": "Issue #2217: was a bare template literal while its 3 struct siblings (maxConcurrentRequests/readTimeout/writeTimeout) were already schema-driven"
+                },
                 "k8sRequestTimeout": {
                   "allOf": [
                     {

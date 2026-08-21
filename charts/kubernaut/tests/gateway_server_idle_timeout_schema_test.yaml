@@ -1,0 +1,43 @@
+suite: "Issue #2217: Gateway server.idleTimeout hardcoded while its 3 struct siblings (maxConcurrentRequests/readTimeout/writeTimeout) are schema-driven"
+# templates/gateway/gateway.yaml's server block: maxConcurrentRequests,
+# readTimeout, writeTimeout are all schema-driven via
+# gateway.config.server.*; idleTimeout alone was a bare "120s" literal.
+# pkg/gateway/config/config.go ServerConfig.IdleTimeout is a real, actively
+# -read field (pkg/gateway/server_constructors.go wires it into
+# http.Server.IdleTimeout), so this was a genuine override gap, not dead
+# config.
+templates:
+  - templates/gateway/gateway.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no server.idleTimeout override) renders idleTimeout: 120s, matching the Go default exactly (ServerConfig.IdleTimeout default = 120 * time.Second)"
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'idleTimeout: 120s'
+
+  - it: "an explicit server.idleTimeout override renders through instead of being silently discarded"
+    set:
+      gateway:
+        config:
+          server:
+            idleTimeout: "60s"
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'idleTimeout: 60s'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'idleTimeout: 120s'
