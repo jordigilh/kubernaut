@@ -471,19 +471,21 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			}, timeout, interval).Should(Succeed())
 
 			// Wait for reconciler to retry and recover via Get-before-Create.
-			// DD-TEST-010 Amendment 1: this recovery legitimately involves an
-			// optimistic-concurrency conflict-and-retry cycle (the reverted status
-			// write above races the controller's own in-flight update); verified in
-			// isolation (--procs=1) this completes well within the suite's normal
-			// 120s timeout, but under 4-way shared-envtest contention (#2213) it can
-			// need more headroom to finish its retry loop. Dedicated longer timeout
-			// here (not a global bump) keeps other suites' timeouts meaningful.
+			// Root cause (found while migrating this suite under #2213): this
+			// revert races the controller's own in-flight Advance-to-Executing
+			// retry, which could previously commit OverallPhase=Executing on
+			// top of the now-nil ref (transitionPhase's conflict-retry guard
+			// only re-validated OverallPhase, not WorkflowExecutionRef) —
+			// producing a PERMANENT terminal failure in executing_handler.go
+			// that no timeout would recover from. Fixed in terminal_transitions.go
+			// (BR-ORCH-031 guard, UT-AT-013/014); the standard timeout here is
+			// sufficient again since recovery is now a normal, fast retry loop.
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 					return false
 				}
 				return rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
-			}, 4*timeout, interval).Should(BeTrue(), "WFE ref should be restored via idempotent create")
+			}, timeout, interval).Should(BeTrue(), "WFE ref should be restored via idempotent create")
 
 			// Verify the same WFE was reused (not a new one)
 			Expect(rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name).To(Equal(wfeName),
