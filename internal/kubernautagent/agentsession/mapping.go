@@ -107,14 +107,20 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 	// released via GracefulSessionClosedHandler before any investigation
 	// produced a result). Every other field below unconditionally
 	// dereferences r, so this must be the first check (CI RCA, PR #2222,
-	// run 32488044647: an unguarded nil r here crashed the whole KA pod).
+	// run 32488044647; re-confirmed independently via #2233, run
+	// 32524002195: an unguarded nil r here crashed the whole KA pod).
+	//
+	// #2233: the synthesized placeholder deliberately mirrors the retired
+	// HTTP-polling handler's synthesizeNilResult default branch
+	// (internal/kubernautagent/server/handler.go, #1390) instead of an
+	// ad-hoc literal -- AA's isSessionTimedOutWithoutResult
+	// (pkg/aianalysis/handlers/investigating.go) already detects that
+	// exact literal+confidence combination and reclassifies
+	// SubReason=InvestigationInconclusive, so no AA-side change is needed
+	// to correctly surface this outcome.
 	if r == nil {
-		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, returning curated empty result", "incidentID", incidentID)
-		return &agentsessionv1.AgentSessionResult{
-			IncidentID: incidentID,
-			Analysis:   "session completed with no investigation result recorded",
-			Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		}
+		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, synthesizing curated placeholder", "incidentID", incidentID)
+		r = &katypes.InvestigationResult{RCASummary: "Investigation completed without result"}
 	}
 
 	res := &agentsessionv1.AgentSessionResult{
