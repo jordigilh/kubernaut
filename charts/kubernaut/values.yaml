@@ -818,7 +818,13 @@ apifrontend:
     # PLATFORM-006 DA14) -- omitted here; set false explicitly to disable.
     # mcp:
     #   enabled: true
-    #   sessionIdleTimeout: "5m"
+    #   sessionIdleTimeout: "30m"
+    #   toolTimeout: "30s"
+    #   toolTimeouts:
+    #     kubernaut_investigate: "15m"
+    #     kubernaut_await_session: "3m"
+    #     kubernaut_watch: "15m"
+    #     kubernaut_discover_workflows: "60s"
     # -- A2A/MCP session-dependent tool registration (kubernaut_investigate,
     # discover_workflows, select_workflow, message, complete, cancel, status,
     # reconnect, await_session -- see pkg/apifrontend/tools/tool_categories.go).
