@@ -53,7 +53,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"180s"` | No |
 | `config.interactive.enabled` | boolean |  | `true` | No |
 | `config.mcp.enabled` | boolean |  | `true` | No |
-| `config.mcp.sessionIdleTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5m"` | No |
+| `config.mcp.sessionIdleTimeout` | string | Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig(). | `"30m"` | No |
 | `config.rateLimit.ipRequestsPerSec` | integer |  | `10000` | No |
 | `config.rateLimit.maxConcurrentSessions` | integer |  | `50` | No |
 | `config.rateLimit.toolCallsPerMinute` | integer |  | `600` | No |

@@ -2897,7 +2897,8 @@
                       "$ref": "#/definitions/goDuration"
                     }
                   ],
-                  "default": "5m"
+                  "default": "30m",
+                  "description": "Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig()."
                 }
               }
             },

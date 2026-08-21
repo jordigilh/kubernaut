@@ -49,7 +49,7 @@ apifrontend:
             enabled: true
         mcp:
             enabled: true
-            sessionIdleTimeout: 5m
+            sessionIdleTimeout: 30m
         rateLimit:
             ipRequestsPerSec: 10000
             maxConcurrentSessions: 50

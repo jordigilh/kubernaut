@@ -1,0 +1,64 @@
+suite: "Issue #2220: apifrontend.config.mcp.sessionIdleTimeout default was 5m, inconsistent with the 30m the Go-side cmd/ fallback silently applied whenever the field was unset"
+# Before this fix: values.schema.json defaulted mcp.sessionIdleTimeout to
+# "5m", but cmd/apifrontend/mcp_a2a_handlers.go:56-59 had its own
+# independent `if mcpSessionTimeout == 0 { mcpSessionTimeout = 30 * time.Minute }`
+# fallback -- so a bare `helm install` (schema default 5m, rendered into the
+# ConfigMap and loaded into Cfg.MCP.SessionIdleTimeout) actually produced a
+# real 5m session timeout in production (non-zero, so the Go fallback never
+# fired), NOT the 30m an operator reading the Go source might expect. Fixed
+# by consolidating to a single source of truth: schema default bumped to
+# 30m, and Go's own config.DefaultConfig() now sets the same 30m explicitly
+# (see pkg/apifrontend/config/config_test.go), with the now-redundant cmd/
+# fallback removed.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install (no mcp.sessionIdleTimeout override) renders sessionIdleTimeout: \"30m\", matching Go's config.DefaultConfig() exactly"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'sessionIdleTimeout: "30m"'
+
+  - it: "an explicit mcp.sessionIdleTimeout override still wins over the schema default"
+    set:
+      apifrontend:
+        config:
+          mcp:
+            sessionIdleTimeout: "15m"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'sessionIdleTimeout: "15m"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'sessionIdleTimeout: "30m"'
