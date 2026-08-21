@@ -899,6 +899,71 @@ reads `Failed`). No production code changed.
 **Validation:** 10/10 full-suite reruns at `--race --procs=4` after the fix; `make
 test-unit-kubernautagent` (35 suites, 112+ specs) passes clean on `helios08`.
 
+## Amendment: #2214 — AF-owned terminal-phase-close via AgentSession watch (2026-08-21)
+
+Gap 1 above narrowed AA's `InvestigationSession` (IS) RBAC to a single write-only purpose:
+`K8sISPhaseUpdater.SetTerminalPhase` (`pkg/aianalysis/handlers/is_checker.go`), called from
+`InvestigatingHandler.setISTerminalPhase` (normal completion) and
+`AIAnalysisReconciler.cascadeCancelToIS` (external cascade-cancel, #1421). This was the last
+place AA writes to a CRD it does not own — IS is AF's resource (`pkg/apifrontend/session`),
+originally written by AA only because AF had no persistent controller watching `AgentSession`
+to close IS itself.
+
+**Decision**: eliminate this last write. AF gains a new controller-runtime reconciler,
+`AgentSessionTerminalCloseReconciler` (`internal/controller/apifrontend/agentsession_close.go`),
+watching `AgentSession` and closing the correlated IS via the already-existing
+`CRDSessionService.FinalizeSessionByRR` (`pkg/apifrontend/session/service.go`) — the same
+primitive AF's own MCP complete/cancel tools already use. AA no longer watches or writes IS in
+any form.
+
+**Gap found during spike**: the #1421 cascade-cancel path does not naturally surface on
+`AgentSession` — RO's `cascadeToAIAnalysis` (`internal/controller/remediationorchestrator/cascade_terminal.go`)
+*patches* `AIAnalysis.Status` directly (`Phase=Failed`, `Reason=ParentCancelled`); it does not
+delete the object, so no owner-cascade reaches the child `AgentSession`. An AF reconciler that
+only reacts to `AgentSession.Status` transitions would miss cancellation entirely.
+
+**Options considered**:
+- (A) AF additionally watches `RemediationRequest.Status.Phase` for cancellation — avoids new
+  AA-side code, but reintroduces a new watched type and RBAC grant in AF for a single case.
+- (B) Split the migration: move only the normal-completion path to AF, leave AA's narrow
+  cascade-cancel IS-write as-is — lowest risk, but leaves AA with residual IS coupling
+  indefinitely.
+- (C) **Chosen.** AA explicitly deletes the `AgentSession` on cascade-cancel
+  (`creator.AgentSessionCreator.DeleteForCascadeCancel`, mirroring the existing
+  `DeleteForRetry`), and AF's reconciler treats `AgentSession` deletion as a terminal
+  (`Cancelled`) signal, uniformly with `Completed`/`Failed` status transitions.
+
+Option C was chosen because KA's dispatcher already handles `AgentSession` deletion safely and
+delete-source-agnostically today: `Dispatcher.cancelOnDelete`
+(`internal/kubernautagent/agentsession/dispatcher.go`) stops the in-memory investigation
+goroutine on any `watch.Deleted` event, regardless of who deleted it. No KA-side change is
+needed — this reuses production-proven infrastructure rather than adding new coupling, and
+it has the added benefit (over A/B) of actually halting KA's in-flight work on cascade-cancel,
+which a Status-only write would not.
+
+**Implementation note — delete-event object capture**: controller-runtime's default `For()`
+handler loses the deleted object's `Spec` (`Reconcile`'s `Get()` 404s after delete), which would
+lose the RR name needed to find the correlated IS. `AgentSessionTerminalCloseReconciler`
+therefore registers via `Watches(&agentsessionv1.AgentSession{}, handler.Funcs{...})` (not
+`For`), whose `DeleteFunc` reads `Spec.RemediationRequestRef` directly off the informer's
+last-known object (`event.DeleteEvent.Object`) and calls `FinalizeSessionByRR` immediately,
+bypassing the reconcile queue for that path only — the same structural idea as KA's own
+raw-watch `cancelOnDelete`, applied via the manager's cache instead of a second raw watch. This
+is best-effort, matching the existing `SetTerminalPhase` framing: the rare case where a
+long apiserver disconnection causes `client-go` to relist and lose the object body
+(`cache.DeletedFinalStateUnknown`) is an accepted gap, not a correctness requirement.
+
+**Consequences**: AA's RBAC on `investigationsessions`/`investigationsessions/status` (Gap 1's
+narrow write-only grant) is removed entirely — AA has zero IS interaction after this change. AF
+gains no new RBAC (`get/list/watch` on `agentsessions` already existed for MCP-tool reads); the
+persistent session-controller manager's scheme (`cmd/apifrontend/session_infra.go:
+buildSessionScheme`) gains `agentsessionv1` registration, which it previously lacked (only the
+separate non-cached MCP-tool client had it).
+
+**Follow-up (separate repo, out of scope for #2214)**: `kubernaut-operator` maintains its own
+generated RBAC mirroring these kubebuilder markers; narrowing AA's grant here requires a
+follow-up PR there to stay in sync.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
