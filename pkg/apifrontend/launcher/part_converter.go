@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"google.golang.org/adk/server/adka2a"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/server/adka2a"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
 

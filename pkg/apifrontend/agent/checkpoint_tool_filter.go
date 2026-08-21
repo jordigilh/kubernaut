@@ -17,9 +17,9 @@ limitations under the License.
 package agent
 
 import (
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	adksession "google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	adksession "google.golang.org/adk/v2/session"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
@@ -37,7 +37,7 @@ import (
 // nolint:nilnil // every (nil, nil) below is the ADK
 // llmagent.BeforeModelCallback contract for "no override response, proceed
 // with the (possibly mutated) request" — not an ambiguous error case.
-func checkpointToolFilter(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
+func checkpointToolFilter(ctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 	if req == nil || len(req.Tools) == 0 {
 		return nil, nil // nolint:nilnil
 	}

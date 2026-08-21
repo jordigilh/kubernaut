@@ -8,8 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -86,7 +87,7 @@ func NewKubectlListTool(factory auth.DynamicClientFactory, mapper meta.RESTMappe
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_list",
 		Description: desc,
-	}, func(ctx tool.Context, args KubectlListArgs) (KubectlListResult, error) {
+	}, func(ctx agent.Context, args KubectlListArgs) (KubectlListResult, error) {
 		var reader ResourceReader
 		if readerFactory != nil && args.ClusterID != "" {
 			r, err := readerFactory(ctx, args.ClusterID)

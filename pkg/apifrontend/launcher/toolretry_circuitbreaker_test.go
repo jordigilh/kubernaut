@@ -17,9 +17,10 @@ limitations under the License.
 package launcher
 
 import (
+	"context"
 	"testing"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
 
@@ -35,7 +36,7 @@ func functionResponseEvent(toolName string, errMsg string) *adksession.Event {
 	} else {
 		resp["output"] = "ok"
 	}
-	event := adksession.NewEvent("inv-test")
+	event := adksession.NewEvent(context.Background(), "inv-test")
 	event.Content = &genai.Content{
 		Role: "user",
 		Parts: []*genai.Part{
@@ -102,7 +103,7 @@ func TestToolRetryCircuitBreaker_PerToolIsolation(t *testing.T) {
 // are a no-op and never trip the breaker.
 func TestToolRetryCircuitBreaker_NonToolEventIsNoop(t *testing.T) {
 	b := newToolRetryCircuitBreaker(1)
-	event := adksession.NewEvent("inv-test")
+	event := adksession.NewEvent(context.Background(), "inv-test")
 	event.Content = genai.NewContentFromText("just some text", genai.RoleModel)
 
 	if toolName, tripped := b.observe(event); tripped || toolName != "" {

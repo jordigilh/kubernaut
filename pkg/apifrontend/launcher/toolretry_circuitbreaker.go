@@ -17,7 +17,7 @@ limitations under the License.
 package launcher
 
 import (
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 )
 
 // DefaultToolRetryCircuitBreakerThreshold is the number of consecutive

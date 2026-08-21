@@ -7,8 +7,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/watch"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -173,7 +174,7 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_await_session",
 		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
-	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	}, func(ctx agent.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
 		args.Namespace = controllerNS
 		return HandleAwaitSession(ctx, client, args)
 	})

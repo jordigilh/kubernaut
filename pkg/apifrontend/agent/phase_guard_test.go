@@ -24,8 +24,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	adksession "google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	adksession "google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -83,9 +84,9 @@ func (m *mapState) All() iter.Seq2[string, any] {
 var _ = Describe("Phase Guard (#1307)", func() {
 	var (
 		state   *mapState
-		toolCtx tool.Context
-		before  func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
-		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		toolCtx agent.Context
+		before  func(agent.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after   func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {
@@ -562,9 +563,9 @@ var _ = Describe("Phase Guard (#1307)", func() {
 var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 	var (
 		state   *mapState
-		toolCtx tool.Context
-		before  func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
-		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		toolCtx agent.Context
+		before  func(agent.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after   func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {
@@ -931,9 +932,9 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 	var (
 		registry *launcher.ActiveContextRegistry
 		state    *mapState
-		toolCtx  tool.Context
-		before   func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
-		after    func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		toolCtx  agent.Context
+		before   func(agent.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after    func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {
@@ -958,7 +959,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 		contextID, ok := registry.Get("alice")
 		Expect(ok).To(BeTrue(), "Registry must store context after successful investigate")
 		Expect(contextID).To(Equal("ctx-session-abc"),
-			"Registry must store the SessionID from tool.Context")
+			"Registry must store the SessionID from agent.Context")
 	})
 
 	It("UT-AF-SESS-020-021: Does NOT store context on investigate failure/error (SC-7)", func() {

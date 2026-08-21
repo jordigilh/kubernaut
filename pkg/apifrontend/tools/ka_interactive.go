@@ -7,8 +7,9 @@ import (
 	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -163,13 +164,12 @@ func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, k8sClient crcl
 	return invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
 }
 
-
 // NewMessageTool creates the kubernaut_message tool.
 func NewMessageTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_message",
 		Description: "Send a message to an active investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
+	}, func(ctx agent.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
 		return HandleMessage(ctx, mcpClient, args, auditor)
 	})
 }
@@ -179,7 +179,7 @@ func NewCompleteTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, 
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_complete",
 		Description: "Complete an investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
+	}, func(ctx agent.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
 		return HandleComplete(ctx, mcpClient, args, auditor)
 	})
 }
@@ -189,7 +189,7 @@ func NewCancelInvestigationTool(mcpClient ka.MCPClient, auditor audit.Emitter) (
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel",
 		Description: "Cancel an active investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
+	}, func(ctx agent.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
 		return HandleCancel(ctx, mcpClient, args, auditor)
 	})
 }
@@ -199,7 +199,7 @@ func NewStatusTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, er
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_status",
 		Description: "Get the current status of an investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
+	}, func(ctx agent.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
 		return HandleStatus(ctx, mcpClient, args, auditor)
 	})
 }
@@ -211,7 +211,7 @@ func NewReconnectTool(mcpClient ka.MCPClient, k8sClient crclient.Client, namespa
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_reconnect",
 		Description: "Reconnect to a disconnected investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
+	}, func(ctx agent.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
 		return HandleReconnect(ctx, mcpClient, k8sClient, namespace, args, auditor)
 	})
 }

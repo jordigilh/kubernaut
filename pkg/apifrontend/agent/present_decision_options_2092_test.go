@@ -22,7 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
@@ -40,9 +41,9 @@ import (
 var _ = Describe("Phase Guard — present_decision options repair (#2092)", func() {
 	var (
 		state   *mapState
-		toolCtx tool.Context
-		before  func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
-		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		toolCtx agent.Context
+		before  func(agent.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after   func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {

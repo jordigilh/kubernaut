@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -35,7 +35,7 @@ import (
 // directly -- the exact tool tools.NewPresentDecisionTool wires into
 // NewRootAgent's tool list in production.
 type runnableTool interface {
-	Run(ctx tool.Context, args any) (map[string]any, error)
+	Run(ctx agent.Context, args any) (map[string]any, error)
 }
 
 // IT #2092: unlike present_decision_options_2092_test.go (which only

@@ -6,21 +6,22 @@ import (
 	"iter"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	adkmemory "google.golang.org/adk/memory"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
-	"google.golang.org/adk/tool/toolconfirmation"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	adkmemory "google.golang.org/adk/v2/memory"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
@@ -32,7 +33,7 @@ import (
 	toolspkg "github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-// newMockToolContext returns a minimal tool.Context with a specific
+// newMockToolContext returns a minimal agent.Context with a specific
 // FunctionCallID for testing Before/After callback pairs.
 func newMockToolContext(callID string) mockToolCtx {
 	return mockToolCtx{Context: context.Background(), callID: callID}
@@ -60,8 +61,32 @@ func (mockToolCtx) SearchMemory(context.Context, string) (*adkmemory.SearchRespo
 }
 func (mockToolCtx) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
 func (mockToolCtx) RequestConfirmation(string, any) error                { return nil }
+func (mockToolCtx) Agent() agent.Agent                                   { return nil }
+func (mockToolCtx) Memory() agent.Memory                                 { return nil }
+func (mockToolCtx) Session() session.Session                             { return nil }
+func (mockToolCtx) IsolationScope() string                               { return "" }
+func (mockToolCtx) RunConfig() *agent.RunConfig                          { return nil }
+func (mockToolCtx) EndInvocation()                                       {}
+func (mockToolCtx) Ended() bool                                          { return false }
+func (mockToolCtx) ResumedInput(string) (any, bool)                      { return nil, false }
+func (mockToolCtx) WithContext(ctx context.Context) agent.InvocationContext {
+	return nil
+}
+func (mockToolCtx) WithICDelta(*agent.InvocationContextDelta) agent.InvocationContext {
+	return nil
+}
+func (mockToolCtx) Path() string                                   { return "" }
+func (mockToolCtx) RunID() string                                  { return "" }
+func (mockToolCtx) SubScheduler() agent.DynamicSubScheduler        { return nil }
+func (mockToolCtx) WithAgentContext(context.Context) agent.Context { return nil }
+func (mockToolCtx) WithAgentTimeout(time.Duration) (agent.Context, context.CancelFunc) {
+	return nil, nil
+}
+func (mockToolCtx) WithAgentCancel() (agent.Context, context.CancelFunc) { return nil, nil }
+func (mockToolCtx) OutputForAncestors() []string                         { return nil }
+func (mockToolCtx) WithDelta(*agent.CommonContextDelta) agent.Context    { return nil }
 
-var _ tool.Context = mockToolCtx{}
+var _ agent.Context = mockToolCtx{}
 
 // getCounterVecValue reads back the current value of a labeled counter from
 // a CounterVec for assertions in characterization tests.
@@ -315,7 +340,7 @@ var _ = Describe("Root Agent", func() {
 			noopTool, err := functiontool.New(functiontool.Config{
 				Name:        "af_test_tool",
 				Description: "No-op tool for RBAC guard integration tests",
-			}, func(_ tool.Context, args noopArgs) (noopResult, error) {
+			}, func(_ agent.Context, args noopArgs) (noopResult, error) {
 				return noopResult{Output: "executed"}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -430,7 +455,7 @@ var _ = Describe("Root Agent", func() {
 			testTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubernaut_investigate",
 				Description: "test tool for SI-4 audit",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -463,7 +488,7 @@ var _ = Describe("Root Agent", func() {
 			testTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubernaut_remediate",
 				Description: "test tool for SI-4 no-identity",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -490,7 +515,7 @@ var _ = Describe("Root Agent", func() {
 			testTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubernaut_investigate",
 				Description: "test tool for #1919 console gate",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -521,7 +546,7 @@ var _ = Describe("Root Agent", func() {
 			testTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubernaut_investigate",
 				Description: "test tool for #1919 zero-touch fallback",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -586,7 +611,7 @@ var _ = Describe("Root Agent", func() {
 			discoverTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubernaut_discover_workflows",
 				Description: "Discover workflows (MCP-dependent tool)",
-			}, func(_ tool.Context, _ pgArgs) (pgResult, error) {
+			}, func(_ agent.Context, _ pgArgs) (pgResult, error) {
 				return pgResult{Status: "discovered"}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -653,7 +678,7 @@ var _ = Describe("Root Agent", func() {
 			mockTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubectl_describe",
 				Description: "test tool",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -670,7 +695,7 @@ var _ = Describe("Root Agent", func() {
 			mockTool, err := functiontool.New(functiontool.Config{
 				Name:        "kubectl_get_pods",
 				Description: "test tool",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -703,7 +728,7 @@ var _ = Describe("Root Agent", func() {
 			mockTool, err := functiontool.New(functiontool.Config{
 				Name:        name,
 				Description: "test tool",
-			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+			}, func(_ agent.Context, _ struct{}) (struct{}, error) {
 				return struct{}{}, nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -828,7 +853,7 @@ var _ = Describe("Root Agent", func() {
 		// structural typing so we can invoke the tool directly without the
 		// full runner/LLM stack.
 		type runnableTool interface {
-			Run(ctx tool.Context, args any) (map[string]any, error)
+			Run(ctx agent.Context, args any) (map[string]any, error)
 		}
 
 		findTool := func(allTools []tool.Tool, name string) runnableTool {

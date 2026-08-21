@@ -3,15 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/agent"
-	adkmemory "google.golang.org/adk/memory"
-	adksession "google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/toolconfirmation"
+	"google.golang.org/adk/v2/agent"
+	adkmemory "google.golang.org/adk/v2/memory"
+	adksession "google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,42 +30,65 @@ func testCRDScheme() *k8sruntime.Scheme {
 	return s
 }
 
-
-// fakeToolContext satisfies tool.Context for unit testing callbacks.
+// fakeToolContext satisfies agent.Context for unit testing callbacks.
 // Only context.Value is exercised; all ADK-specific methods return zero values.
 type fakeToolContext struct {
 	context.Context
 }
 
-func (fakeToolContext) UserContent() *genai.Content                                          { return nil }
-func (fakeToolContext) InvocationID() string                                                 { return "" }
-func (fakeToolContext) AgentName() string                                                    { return "" }
-func (fakeToolContext) ReadonlyState() adksession.ReadonlyState                              { return nil }
-func (fakeToolContext) UserID() string                                                       { return "" }
-func (fakeToolContext) AppName() string                                                      { return "" }
-func (fakeToolContext) SessionID() string                                                    { return "" }
-func (fakeToolContext) Branch() string                                                       { return "" }
-func (fakeToolContext) Artifacts() agent.Artifacts                                           { return nil }
-func (fakeToolContext) State() adksession.State                                              { return nil }
-func (fakeToolContext) FunctionCallID() string                                               { return "" }
-func (fakeToolContext) Actions() *adksession.EventActions                                    { return nil }
+func (fakeToolContext) UserContent() *genai.Content             { return nil }
+func (fakeToolContext) InvocationID() string                    { return "" }
+func (fakeToolContext) AgentName() string                       { return "" }
+func (fakeToolContext) ReadonlyState() adksession.ReadonlyState { return nil }
+func (fakeToolContext) UserID() string                          { return "" }
+func (fakeToolContext) AppName() string                         { return "" }
+func (fakeToolContext) SessionID() string                       { return "" }
+func (fakeToolContext) Branch() string                          { return "" }
+func (fakeToolContext) Artifacts() agent.Artifacts              { return nil }
+func (fakeToolContext) State() adksession.State                 { return nil }
+func (fakeToolContext) FunctionCallID() string                  { return "" }
+func (fakeToolContext) Actions() *adksession.EventActions       { return nil }
 func (fakeToolContext) SearchMemory(context.Context, string) (*adkmemory.SearchResponse, error) {
 	return nil, nil
 }
 func (fakeToolContext) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
 func (fakeToolContext) RequestConfirmation(string, any) error                { return nil }
+func (fakeToolContext) Agent() agent.Agent                                   { return nil }
+func (fakeToolContext) Memory() agent.Memory                                 { return nil }
+func (fakeToolContext) Session() adksession.Session                          { return nil }
+func (fakeToolContext) IsolationScope() string                               { return "" }
+func (fakeToolContext) RunConfig() *agent.RunConfig                          { return nil }
+func (fakeToolContext) EndInvocation()                                       {}
+func (fakeToolContext) Ended() bool                                          { return false }
+func (fakeToolContext) ResumedInput(string) (any, bool)                      { return nil, false }
+func (fakeToolContext) WithContext(ctx context.Context) agent.InvocationContext {
+	return nil
+}
+func (fakeToolContext) WithICDelta(*agent.InvocationContextDelta) agent.InvocationContext {
+	return nil
+}
+func (fakeToolContext) Path() string                                   { return "" }
+func (fakeToolContext) RunID() string                                  { return "" }
+func (fakeToolContext) SubScheduler() agent.DynamicSubScheduler        { return nil }
+func (fakeToolContext) WithAgentContext(context.Context) agent.Context { return nil }
+func (fakeToolContext) WithAgentTimeout(time.Duration) (agent.Context, context.CancelFunc) {
+	return nil, nil
+}
+func (fakeToolContext) WithAgentCancel() (agent.Context, context.CancelFunc) { return nil, nil }
+func (fakeToolContext) OutputForAncestors() []string                         { return nil }
+func (fakeToolContext) WithDelta(*agent.CommonContextDelta) agent.Context    { return nil }
 
 // Compile-time interface satisfaction check.
-var _ tool.Context = fakeToolContext{}
+var _ agent.Context = fakeToolContext{}
 
 // fakeTool satisfies tool.Tool for unit testing callbacks.
 type fakeTool struct {
 	name string
 }
 
-func (t fakeTool) Name() string        { return t.name }
-func (fakeTool) Description() string   { return "" }
-func (fakeTool) IsLongRunning() bool   { return false }
+func (t fakeTool) Name() string      { return t.name }
+func (fakeTool) Description() string { return "" }
+func (fakeTool) IsLongRunning() bool { return false }
 
 // capturingAuditor captures audit events for test assertions.
 type capturingAuditor struct {
@@ -78,7 +102,7 @@ func (a *capturingAuditor) Emit(_ context.Context, event *audit.Event) {
 var _ = Describe("newAuditToolCallback (#1189)", func() {
 	var (
 		auditor  *capturingAuditor
-		callback func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		callback func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {
@@ -279,7 +303,7 @@ var _ = Describe("IS CRD creation callback (race fix)", func() {
 var _ = Describe("Audit callback — Intent-Based Tool Redesign (#1332)", func() {
 	var (
 		auditor  *capturingAuditor
-		callback func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		callback func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {

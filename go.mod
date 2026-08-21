@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	cloud.google.com/go/auth v0.23.1
 	github.com/Alcova-AI/adk-anthropic-go v1.0.0
+	github.com/Alcova-AI/adk-anthropic-go/v2 v2.0.7
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/a2aproject/a2a-go v0.3.15
 	github.com/a2aproject/a2a-go/v2 v2.4.0
@@ -60,7 +61,7 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
-	google.golang.org/adk v1.5.1
+	google.golang.org/adk/v2 v2.0.0
 	google.golang.org/genai v1.68.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
@@ -230,6 +231,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
+	google.golang.org/adk v1.0.0 // indirect
 	google.golang.org/api v0.287.1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect

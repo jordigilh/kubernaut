@@ -14,7 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -326,7 +326,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			for i := 0; i < 5; i++ {
-				evt := adksession.NewEvent("inv-1")
+				evt := adksession.NewEvent(ctx, "inv-1")
 				evt.Author = agent
 				evt.Content = genai.NewContentFromText("msg", genai.RoleModel)
 				err = svc.AppendEvent(ctx, createResp.Session, evt)
@@ -506,7 +506,7 @@ var _ = Describe("CRDSessionService", func() {
 		})
 
 		It("UT-AF-204-001: stores event in delegate", func() {
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Content = genai.NewContentFromText("hello", genai.RoleModel)
 
@@ -523,7 +523,7 @@ var _ = Describe("CRDSessionService", func() {
 		})
 
 		It("UT-AF-204-002: skips partial events", func() {
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Partial = true
 			evt.Content = genai.NewContentFromText("partial", genai.RoleModel)
@@ -540,8 +540,18 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(getResp.Session.Events().Len()).To(Equal(0))
 		})
 
+		// UT-AF-204-003 doubles as a CI regression guard for the ADK
+		// InMemoryService.AppendEvent "temp: key leak" bug (kubernaut fix:
+		// google/adk-go#1356, tracking google/adk-go#1354): the stored event's
+		// StateDelta must never retain "temp:"-prefixed keys, no matter which
+		// upstream ADK version this repo is pinned to. Confirmed present in
+		// adk-go v1.6.0, v2.1.0, and v2.2.0 (all skipped in favor of v2.0.0 for
+		// this reason -- see the ADK v2 migration plan). If this test starts
+		// failing after a future ADK bump, the target version most likely
+		// reintroduces the leak and should not be adopted until #1356 (or an
+		// equivalent upstream fix) ships in a release.
 		It("UT-AF-204-003: strips temp: keys from StateDelta", func() {
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Content = genai.NewContentFromText("result", genai.RoleModel)
 			evt.Actions.StateDelta = map[string]any{
@@ -568,7 +578,7 @@ var _ = Describe("CRDSessionService", func() {
 			}
 			responseJSON, _ := json.Marshal(largeResponse)
 
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Content = &genai.Content{
 				Role: string(genai.RoleModel),
@@ -607,7 +617,7 @@ var _ = Describe("CRDSessionService", func() {
 				"summary":    strings.Repeat("Root cause analysis details... ", 600),
 			}
 
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Content = &genai.Content{
 				Role: string(genai.RoleModel),
@@ -644,7 +654,7 @@ var _ = Describe("CRDSessionService", func() {
 			err := svc.MaterializeCRD(ctx, "sess-append", v1alpha1.ObjectRef{Name: "rr-append", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
 
-			evt := adksession.NewEvent("inv-1")
+			evt := adksession.NewEvent(ctx, "inv-1")
 			evt.Author = agent
 			evt.Content = genai.NewContentFromText("update", genai.RoleModel)
 
@@ -658,14 +668,14 @@ var _ = Describe("CRDSessionService", func() {
 		})
 
 		It("UT-AF-204-006: preserves user messages and final responses", func() {
-			userEvt := adksession.NewEvent("inv-1")
+			userEvt := adksession.NewEvent(ctx, "inv-1")
 			userEvt.Author = "user"
 			userEvt.Content = genai.NewContentFromText(strings.Repeat("u", 10000), genai.RoleUser)
 
 			err := svc.AppendEvent(ctx, sess, userEvt)
 			Expect(err).NotTo(HaveOccurred())
 
-			modelEvt := adksession.NewEvent("inv-1")
+			modelEvt := adksession.NewEvent(ctx, "inv-1")
 			modelEvt.Author = agent
 			modelEvt.Content = genai.NewContentFromText(strings.Repeat("m", 10000), genai.RoleModel)
 

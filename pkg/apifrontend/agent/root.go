@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -261,7 +261,7 @@ func NewRBACGuardForTest(authorizer auth.ToolAuthorizer, auditor audit.Emitter) 
 // is non-nil) and logs the denial, mirroring denyRBAC's contract in
 // mcp_bridge.go for the A2A tool-calling path. userID may be empty (no
 // identity yet resolved).
-func denyRBACGuard(ctx tool.Context, auditor audit.Emitter, toolName, userID, reason string, groups []string, logErr error) {
+func denyRBACGuard(ctx agent.Context, auditor audit.Emitter, toolName, userID, reason string, groups []string, logErr error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	if logErr != nil {
 		logger.Error(logErr, "rbac-guard denied tool", "tool", toolName, "user", userID, "reason", reason)
@@ -296,7 +296,7 @@ func denyRBACGuard(ctx tool.Context, auditor audit.Emitter, toolName, userID, re
 // that don't implement ConsoleAuthorizer (all pre-existing test doubles) skip
 // this check unchanged (result == nil, ok == true). Returns the guard's
 // terminal result (non-nil) when access is denied or the check errors.
-func checkConsoleAccessGuard(ctx tool.Context, authorizer auth.ToolAuthorizer, auditor audit.Emitter, identity *auth.UserIdentity, toolName string) (result map[string]any, ok bool) {
+func checkConsoleAccessGuard(ctx agent.Context, authorizer auth.ToolAuthorizer, auditor audit.Emitter, identity *auth.UserIdentity, toolName string) (result map[string]any, ok bool) {
 	ca, isConsoleAuthorizer := authorizer.(auth.ConsoleAuthorizer)
 	if !isConsoleAuthorizer {
 		return nil, true
@@ -318,7 +318,7 @@ func checkConsoleAccessGuard(ctx tool.Context, authorizer auth.ToolAuthorizer, a
 // Fail-closed: if no identity, authorizer error, or denial, the tool call is rejected.
 // Denied attempts are emitted as audit events for FedRAMP SI-4 compliance.
 func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagent.BeforeToolCallback {
-	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+	return func(ctx agent.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		toolName := t.Name()
 
 		identity := auth.UserIdentityFromContext(ctx)
@@ -349,7 +349,7 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 // tool-call rate limits in the A2A path (SEC-05). MCP bridge has its own
 // rate limiter in wrapTool; this mirrors it for the A2A entry point.
 func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) llmagent.BeforeToolCallback {
-	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+	return func(ctx agent.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
 			return nil, nil
@@ -394,7 +394,7 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 	var starts sync.Map
 	go sweepAbandonedToolCallStarts(&starts)
 
-	before := func(ctx tool.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
+	before := func(ctx agent.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
 		if toolCalls == nil && toolDuration == nil {
 			return nil, nil // nolint:nilnil
 		}
@@ -402,7 +402,7 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 		return nil, nil // nolint:nilnil
 	}
 
-	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
+	after := func(ctx agent.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
 		resultLabel := resultLabelSuccess
 		if toolErr != nil {
 			resultLabel = "error"
@@ -438,7 +438,7 @@ func sweepAbandonedToolCallStarts(starts *sync.Map) {
 
 // recordToolDuration observes the elapsed time since the matching "before"
 // callback recorded a start time for this tool call, if one was recorded.
-func recordToolDuration(starts *sync.Map, ctx tool.Context, t tool.Tool, toolDuration *prometheus.HistogramVec) {
+func recordToolDuration(starts *sync.Map, ctx agent.Context, t tool.Tool, toolDuration *prometheus.HistogramVec) {
 	raw, ok := starts.LoadAndDelete(ctx.FunctionCallID())
 	if !ok {
 		return
@@ -473,13 +473,13 @@ func NewMetricsToolCallbacksForTest(toolCalls *prometheus.CounterVec, toolDurati
 func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	var starts sync.Map
 
-	before := func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+	before := func(ctx agent.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		starts.Store(ctx.FunctionCallID(), time.Now())
 		logr.FromContextOrDiscard(ctx).Info("tool call started", "tool", t.Name(), "callID", ctx.FunctionCallID())
 		return nil, nil // nolint:nilnil
 	}
 
-	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
+	after := func(ctx agent.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
 		result := resultLabelSuccess
 		if toolErr != nil {
 			result = "error"
@@ -572,7 +572,7 @@ func (a *alertISSignalerAdapter) SignalInteractive(ctx context.Context, taskID, 
 //
 //nolint:unparam // sessionSvc is intentionally unused (see doc comment above); kept in the signature -- and in cfg.SessionService at the sole call site -- for the planned future re-wiring rather than churning callers twice (Issue #1546 Tier 4)
 func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService, controllerNS string) llmagent.AfterToolCallback {
-	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
+	return func(ctx agent.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
 			return nil, nil
 		}
@@ -608,7 +608,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 // call: outcome, error (redacted), and namespace (when present in input).
 // Logs the error at the call site (not in the audit event itself) for
 // operator observability.
-func buildToolAuditDetail(ctx tool.Context, t tool.Tool, input map[string]any, toolErr error) map[string]string {
+func buildToolAuditDetail(ctx agent.Context, t tool.Tool, input map[string]any, toolErr error) map[string]string {
 	result := resultLabelSuccess
 	if toolErr != nil {
 		result = "failure"

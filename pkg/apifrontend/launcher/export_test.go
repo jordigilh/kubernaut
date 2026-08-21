@@ -7,9 +7,9 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/server/adka2a"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/server/adka2a"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"

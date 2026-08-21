@@ -6,8 +6,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -340,7 +341,7 @@ func NewInvestigateAlertTool(cfg InvestigateAlertConfig) (tool.Tool, error) {
 			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the " +
 			"resource lives on; omit for the local hub cluster. " +
 			"The backend validates the alert exists and creates a RemediationRequest.",
-	}, func(ctx tool.Context, args InvestigateAlertArgs) (InvestigateAlertResult, error) {
+	}, func(ctx agent.Context, args InvestigateAlertArgs) (InvestigateAlertResult, error) {
 		return HandleInvestigateAlert(ctx, cfg, &args, usernameFromContext(ctx))
 	})
 }

@@ -2,13 +2,16 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	adkmemory "google.golang.org/adk/v2/memory"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 )
 
@@ -16,18 +19,49 @@ type stubCallbackContext struct {
 	context.Context
 }
 
-func (s *stubCallbackContext) UserContent() *genai.Content              { return nil }
-func (s *stubCallbackContext) InvocationID() string                     { return "" }
-func (s *stubCallbackContext) AgentName() string                        { return "test-agent" }
-func (s *stubCallbackContext) ReadonlyState() session.ReadonlyState     { return nil }
-func (s *stubCallbackContext) UserID() string                           { return "" }
-func (s *stubCallbackContext) AppName() string                          { return "" }
-func (s *stubCallbackContext) SessionID() string                        { return "" }
-func (s *stubCallbackContext) Branch() string                           { return "" }
-func (s *stubCallbackContext) Artifacts() agent.Artifacts               { return nil }
-func (s *stubCallbackContext) State() session.State                     { return nil }
+func (s *stubCallbackContext) UserContent() *genai.Content          { return nil }
+func (s *stubCallbackContext) InvocationID() string                 { return "" }
+func (s *stubCallbackContext) AgentName() string                    { return "test-agent" }
+func (s *stubCallbackContext) ReadonlyState() session.ReadonlyState { return nil }
+func (s *stubCallbackContext) UserID() string                       { return "" }
+func (s *stubCallbackContext) AppName() string                      { return "" }
+func (s *stubCallbackContext) SessionID() string                    { return "" }
+func (s *stubCallbackContext) Branch() string                       { return "" }
+func (s *stubCallbackContext) Artifacts() agent.Artifacts           { return nil }
+func (s *stubCallbackContext) State() session.State                 { return nil }
+func (s *stubCallbackContext) FunctionCallID() string               { return "" }
+func (s *stubCallbackContext) Actions() *session.EventActions       { return nil }
+func (s *stubCallbackContext) SearchMemory(context.Context, string) (*adkmemory.SearchResponse, error) {
+	return nil, nil
+}
+func (s *stubCallbackContext) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
+func (s *stubCallbackContext) RequestConfirmation(string, any) error                { return nil }
+func (s *stubCallbackContext) Agent() agent.Agent                                   { return nil }
+func (s *stubCallbackContext) Memory() agent.Memory                                 { return nil }
+func (s *stubCallbackContext) Session() session.Session                             { return nil }
+func (s *stubCallbackContext) IsolationScope() string                               { return "" }
+func (s *stubCallbackContext) RunConfig() *agent.RunConfig                          { return nil }
+func (s *stubCallbackContext) EndInvocation()                                       {}
+func (s *stubCallbackContext) Ended() bool                                          { return false }
+func (s *stubCallbackContext) ResumedInput(string) (any, bool)                      { return nil, false }
+func (s *stubCallbackContext) WithContext(ctx context.Context) agent.InvocationContext {
+	return nil
+}
+func (s *stubCallbackContext) WithICDelta(*agent.InvocationContextDelta) agent.InvocationContext {
+	return nil
+}
+func (s *stubCallbackContext) Path() string                                   { return "" }
+func (s *stubCallbackContext) RunID() string                                  { return "" }
+func (s *stubCallbackContext) SubScheduler() agent.DynamicSubScheduler        { return nil }
+func (s *stubCallbackContext) WithAgentContext(context.Context) agent.Context { return nil }
+func (s *stubCallbackContext) WithAgentTimeout(time.Duration) (agent.Context, context.CancelFunc) {
+	return nil, nil
+}
+func (s *stubCallbackContext) WithAgentCancel() (agent.Context, context.CancelFunc) { return nil, nil }
+func (s *stubCallbackContext) OutputForAncestors() []string                         { return nil }
+func (s *stubCallbackContext) WithDelta(*agent.CommonContextDelta) agent.Context    { return nil }
 
-func testCallbackCtx() agent.CallbackContext {
+func testCallbackCtx() agent.Context {
 	return &stubCallbackContext{Context: context.Background()}
 }
 
