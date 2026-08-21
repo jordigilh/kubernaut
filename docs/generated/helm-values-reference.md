@@ -172,7 +172,6 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.redis.dlqMaxLen` | integer | #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound | `10000` | No |
 | `config.redis.tls.caFile` | string | CA bundle to verify Redis server | `""` | No |
 | `config.redis.tls.certFile` | string | Client certificate file path (mTLS) | `""` | No |
-| `config.redis.tls.insecureSkipVerify` | boolean | Skip TLS verification (dev/test only) | `false` | No |
 | `config.redis.tls.keyFile` | string | Client key file path (mTLS) | `""` | No |
 | `config.retention.batchSize` | integer | Max rows per DELETE batch | `1000` | No |
 | `config.retention.defaultDays` | integer | Application-level default retention in days (ADR-034: 7 years) | `2555` | No |

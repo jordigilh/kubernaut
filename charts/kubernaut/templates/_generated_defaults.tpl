@@ -151,7 +151,6 @@ datastorage:
             tls:
                 caFile: ""
                 certFile: ""
-                insecureSkipVerify: false
                 keyFile: ""
         retention:
             batchSize: 1000
