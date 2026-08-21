@@ -1245,6 +1245,15 @@
                   ],
                   "default": "1h",
                   "description": "Maximum connection lifetime"
+                },
+                "connMaxIdleTime": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10m",
+                  "description": "Issue #2218: was a bare template literal while its 3 struct siblings (maxOpenConns/maxIdleConns/connMaxLifetime) were already schema-driven. Maximum connection idle time"
                 }
               }
             },

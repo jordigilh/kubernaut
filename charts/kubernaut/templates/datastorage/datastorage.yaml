@@ -43,7 +43,7 @@ database:
   maxOpenConns: {{ $v.config.database.maxOpenConns }}
   maxIdleConns: {{ $v.config.database.maxIdleConns }}
   connMaxLifetime: {{ $v.config.database.connMaxLifetime }}
-  connMaxIdleTime: 10m
+  connMaxIdleTime: {{ $v.config.database.connMaxIdleTime }}
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
   passwordKey: "password"

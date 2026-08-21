@@ -135,6 +135,7 @@ datastorage:
             existingSecret: ""
             secretKey: hmacKey
         database:
+            connMaxIdleTime: 10m
             connMaxLifetime: 1h
             maxIdleConns: 20
             maxOpenConns: 100

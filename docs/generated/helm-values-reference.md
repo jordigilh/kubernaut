@@ -159,6 +159,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `autoscaling.minReplicas` | integer |  | `1` | No |
 | `config.auditHashKey.existingSecret` | string | Pre-created Secret name; defaults to datastorage-audit-hmac-key when unset | `""` | No |
 | `config.auditHashKey.secretKey` | string | Key name within the secret's audit-hmac-key.yaml file | `"hmacKey"` | No |
+| `config.database.connMaxIdleTime` | string | Issue #2218: was a bare template literal while its 3 struct siblings (maxOpenConns/maxIdleConns/connMaxLifetime) were already schema-driven. Maximum connection idle time | `"10m"` | No |
 | `config.database.connMaxLifetime` | string | Maximum connection lifetime | `"1h"` | No |
 | `config.database.maxIdleConns` | integer | Maximum idle database connections | `20` | No |
 | `config.database.maxOpenConns` | integer | Maximum open database connections | `100` | No |
