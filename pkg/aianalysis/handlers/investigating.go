@@ -528,13 +528,25 @@ func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis
 // KA-dispatch-time capacity rejection (DD-AA-KA-001 amendment,
 // AgentSessionReasonCapacityExceeded): a transient, self-resolving
 // backpressure condition (session.ErrMaxInvestigationsReached) that must
-// not permanently fail the AIAnalysis while retry budget remains. Reuses
-// ErrorClassifier's already-tested HTTP-429/rate-limit branch via a
-// synthetic status error -- no new classification or backoff logic -- and
+// not permanently fail the AIAnalysis while retry budget remains.
+//
+// The retry budget is bounded by investigationDeadline (RO's authoritative
+// Spec.TimesOutAt, else session.CreatedAt+maxInvestigationDuration) rather
+// than a fixed attempt count. #2189 E2E-AA-065 finding: a burst of
+// concurrent investigations against a low KA capacity limit can need more
+// than a handful of retries to win a capacity slot -- how long a capacity
+// rejection needs to resolve scales with queue depth, not a fixed number of
+// quick retries, so gating exhaustion on attempt count (as the generic
+// ErrorClassifier.ShouldRetry/MaxRetries does for ordinary transient
+// errors) permanently failed investigations that would have completed well
+// within their own deadline.
+//
+// Still reuses ErrorClassifier's already-tested HTTP-429/rate-limit branch
+// (via a synthetic status error) for backoff *pacing* only, and
 // KASession.Generation (vestigial after the retired HTTP-session
-// regeneration mechanism) as the retry-attempt counter, avoiding a new
+// regeneration mechanism) as the backoff-attempt counter, avoiding a new
 // field. Returns (result, true) when a retry was taken and the caller must
-// return result immediately; (zero, false) when the budget is exhausted,
+// return result immediately; (zero, false) when the deadline has passed,
 // in which case the caller falls through to the unchanged permanent-fail
 // path.
 func (h *InvestigatingHandler) retryCapacityExceeded(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession, session *aianalysisv1.KASession) (ctrl.Result, bool) {
@@ -542,9 +554,12 @@ func (h *InvestigatingHandler) retryCapacityExceeded(ctx context.Context, analys
 	classification := h.errorClassifier.ClassifyError(syntheticErr)
 	attempt := int(session.Generation)
 
-	if !h.errorClassifier.ShouldRetry(classification, attempt) {
-		h.log.Info("capacity-exceeded retry budget exhausted, failing permanently",
-			"agentSession", as.Name, "attempts", attempt)
+	deadline := h.investigationDeadline(analysis, session)
+	remaining := time.Until(deadline)
+
+	if !classification.IsRetryable || remaining <= 0 {
+		h.log.Info("capacity-exceeded retry budget exhausted (investigation deadline reached), failing permanently",
+			"agentSession", as.Name, "attempts", attempt, "deadline", deadline)
 		return ctrl.Result{}, false
 	}
 
@@ -555,10 +570,16 @@ func (h *InvestigatingHandler) retryCapacityExceeded(ctx context.Context, analys
 	}
 
 	backoff := h.errorClassifier.GetRetryDelay(attempt)
+	if backoff > remaining {
+		// Don't let backoff pacing overshoot the deadline -- retry sooner
+		// so the next reconcile still lands before TimesOutAt instead of
+		// silently overshooting it.
+		backoff = remaining
+	}
 	analysis.Status.KASession = &aianalysisv1.KASession{Generation: session.Generation + 1}
 
 	h.log.Info("KA dispatch capacity exceeded, retrying with backoff",
-		"agentSession", as.Name, "attempt", attempt+1, "backoff", backoff)
+		"agentSession", as.Name, "attempt", attempt+1, "backoff", backoff, "deadline", deadline)
 
 	return ctrl.Result{RequeueAfter: backoff}, true
 }

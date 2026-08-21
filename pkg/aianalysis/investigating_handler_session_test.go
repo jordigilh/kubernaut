@@ -342,9 +342,18 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 	//
 	// KA tags a dispatch-time capacity rejection (session.ErrMaxInvestigationsReached)
 	// with Status.Reason=CapacityExceeded -- a transient, self-resolving
-	// backpressure condition, not a genuine investigation failure. AA reuses
-	// its existing ErrorClassifier retry machinery (synthetic HTTP-429) with
-	// KASession.Generation as the retry-attempt counter.
+	// backpressure condition, not a genuine investigation failure. The retry
+	// budget is bounded by the investigation's own deadline
+	// (investigationDeadline: RO's Spec.TimesOutAt, else
+	// session.CreatedAt+maxInvestigationDuration) rather than a fixed
+	// attempt count -- how long a capacity rejection needs to resolve
+	// scales with how many other investigations are ahead in KA's queue,
+	// not a handful of quick retries (#2189 E2E-AA-065 finding: a 70-way
+	// burst against a low capacity limit exhausted the old fixed
+	// MaxRetries=5/~30s budget and permanently failed one investigation
+	// that would have completed well within its own 120s test window).
+	// KASession.Generation remains the attempt counter purely for backoff
+	// pacing (GetRetryDelay), no longer for exhaustion.
 	// ========================================
 	Describe("AgentSession Capacity-Exceeded Retry", func() {
 		Context("UT-AA-065-007: within retry budget", func() {
@@ -373,13 +382,39 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 			})
 		})
 
-		Context("UT-AA-065-008: retry budget exhausted", func() {
-			It("should fall through to today's permanent-fail path, unchanged", func() {
+		Context("UT-AA-2189-201: retry budget is deadline-bound, not attempt-count-bound", func() {
+			It("should keep retrying past the old fixed MaxRetries attempt count as long as the investigation deadline has not passed", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "as-session-capacity-002",
-					Generation: int32(handlers.MaxRetries),
+					ID: "as-session-capacity-burst",
+					// Well past the retired fixed MaxRetries=5 cap --
+					// proves exhaustion is no longer attempt-count-gated.
+					Generation: int32(handlers.MaxRetries) + 15,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Second)},
+				}
+
+				mockClient.WithFailedCapacityExceeded("KA dispatch capacity exceeded")
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed),
+					"deadline (session.CreatedAt+25m default) is still ~25m away, so a burst-driven high attempt count must not trigger a premature permanent failure")
+				Expect(mockClient.DeleteForRetryCallCount).To(Equal(1))
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+					"must requeue with backoff, not busy-loop against KA")
+			})
+		})
+
+		Context("UT-AA-2189-202: retry budget exhausted at the investigation deadline", func() {
+			It("should fall through to today's permanent-fail path once the investigation's own deadline has passed, regardless of attempt count", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.KASession = &aianalysisv1.KASession{
+					ID: "as-session-capacity-002",
+					// Low attempt count -- proves exhaustion is now
+					// deadline-gated, not attempt-count-gated.
+					Generation: 1,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-handlers.DefaultMaxInvestigationDuration - time.Minute)},
 				}
 
 				mockClient.WithFailedCapacityExceeded("KA dispatch capacity exceeded")
@@ -388,9 +423,9 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-					"once the retry budget is exhausted, a capacity-exceeded failure must permanently fail like any other failure")
+					"once the investigation's own deadline has passed, a capacity-exceeded failure must permanently fail like any other failure")
 				Expect(mockClient.DeleteForRetryCallCount).To(Equal(0),
-					"a budget-exhausted failure must not attempt another retry deletion")
+					"a deadline-exhausted failure must not attempt another retry deletion")
 				Expect(analysis.Status.Message).To(ContainSubstring("KA dispatch capacity exceeded"),
 					"the curated KA error must still be surfaced to operators once the retry budget is exhausted")
 			})

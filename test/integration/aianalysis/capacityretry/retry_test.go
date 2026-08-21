@@ -90,11 +90,15 @@ func (noopAuditStore) Close() error                  { return nil }
 // newCapacityRetryAnalysis builds an AIAnalysis fixture already mid-lifecycle
 // (Investigating, with a KASession referencing the deterministic AgentSession
 // name a real creator.AgentSessionCreator would use) at the given retry
-// attempt count (KASession.Generation, repurposed as the BR-AI-009
-// capacity-exceeded retry counter).
-func newCapacityRetryAnalysis(ns, name string, kaSessionGeneration int32) *aianalysisv1.AIAnalysis {
+// attempt count (KASession.Generation, backoff-pacing counter only) and
+// session age. #2189: the capacity-exceeded retry budget is bounded by the
+// investigation's own deadline (session.CreatedAt+maxInvestigationDuration,
+// absent an RO-set Spec.TimesOutAt), not by attempt count -- sessionAge
+// lets callers simulate either "deadline far away" (retry) or "deadline
+// passed" (exhausted) independently of kaSessionGeneration.
+func newCapacityRetryAnalysis(ns, name string, kaSessionGeneration int32, sessionAge time.Duration) *aianalysisv1.AIAnalysis {
 	rrName := "rr-" + name
-	sessionCreated := metav1.Now()
+	sessionCreated := metav1.NewTime(time.Now().Add(-sessionAge))
 	return &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -218,7 +222,7 @@ var _ = Describe("AgentSession capacity-exceeded retry against a real API server
 	})
 
 	It("IT-AA-KA-065-210: retries with backoff and deletes the stale AgentSession while the retry budget remains", func() {
-		analysis := newCapacityRetryAnalysis(ns.Name, "cap-retry-within-budget", 0)
+		analysis := newCapacityRetryAnalysis(ns.Name, "cap-retry-within-budget", 0, 5*time.Second)
 		desiredStatus := analysis.Status
 		Expect(realWatch.Create(ctx, analysis)).To(Succeed())
 		analysis.Status = desiredStatus
@@ -262,7 +266,12 @@ var _ = Describe("AgentSession capacity-exceeded retry against a real API server
 	})
 
 	It("IT-AA-KA-065-211: escalates to permanent Failed once the capacity-exceeded retry budget is exhausted", func() {
-		analysis := newCapacityRetryAnalysis(ns.Name, "cap-retry-exhausted", 5) // attempt=5 >= ErrorClassifier.maxRetries(5)
+		// #2189: exhaustion is now deadline-bound, not attempt-count-bound
+		// -- a low Generation (1) with a session older than
+		// DefaultMaxInvestigationDuration proves the investigation's own
+		// deadline (not a fixed retry count) is what triggers permanent
+		// failure.
+		analysis := newCapacityRetryAnalysis(ns.Name, "cap-retry-exhausted", 1, handlers.DefaultMaxInvestigationDuration+time.Minute)
 		desiredStatus := analysis.Status
 		Expect(realWatch.Create(ctx, analysis)).To(Succeed())
 		analysis.Status = desiredStatus
