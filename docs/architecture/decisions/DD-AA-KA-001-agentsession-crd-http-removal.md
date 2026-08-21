@@ -899,6 +899,154 @@ reads `Failed`). No production code changed.
 **Validation:** 10/10 full-suite reruns at `--race --procs=4` after the fix; `make
 test-unit-kubernautagent` (35 suites, 112+ specs) passes clean on `helios08`.
 
+## Amendment: #2214 — AF-owned terminal-phase-close via AgentSession watch (2026-08-21)
+
+Gap 1 above narrowed AA's `InvestigationSession` (IS) RBAC to a single write-only purpose:
+`K8sISPhaseUpdater.SetTerminalPhase` (`pkg/aianalysis/handlers/is_checker.go`), called from
+`InvestigatingHandler.setISTerminalPhase` (normal completion) and
+`AIAnalysisReconciler.cascadeCancelToIS` (external cascade-cancel, #1421). This was the last
+place AA writes to a CRD it does not own — IS is AF's resource (`pkg/apifrontend/session`),
+originally written by AA only because AF had no persistent controller watching `AgentSession`
+to close IS itself.
+
+**Decision**: eliminate this last write. AF gains a new controller-runtime reconciler,
+`AgentSessionTerminalCloseReconciler` (`internal/controller/apifrontend/agentsession_close.go`),
+watching `AgentSession` and closing the correlated IS via the already-existing
+`CRDSessionService.FinalizeSessionByRR` (`pkg/apifrontend/session/service.go`) — the same
+primitive AF's own MCP complete/cancel tools already use. AA no longer watches or writes IS in
+any form.
+
+**Gap found during spike**: the #1421 cascade-cancel path does not naturally surface on
+`AgentSession` — RO's `cascadeToAIAnalysis` (`internal/controller/remediationorchestrator/cascade_terminal.go`)
+*patches* `AIAnalysis.Status` directly (`Phase=Failed`, `Reason=ParentCancelled`); it does not
+delete the object, so no owner-cascade reaches the child `AgentSession`. An AF reconciler that
+only reacts to `AgentSession.Status` transitions would miss cancellation entirely.
+
+**Options considered**:
+- (A) AF additionally watches `RemediationRequest.Status.Phase` for cancellation — avoids new
+  AA-side code, but reintroduces a new watched type and RBAC grant in AF for a single case.
+- (B) Split the migration: move only the normal-completion path to AF, leave AA's narrow
+  cascade-cancel IS-write as-is — lowest risk, but leaves AA with residual IS coupling
+  indefinitely.
+- (C) **Chosen.** AA explicitly deletes the `AgentSession` on cascade-cancel
+  (`creator.AgentSessionCreator.DeleteForCascadeCancel`, mirroring the existing
+  `DeleteForRetry`), and AF's reconciler treats `AgentSession` deletion as a terminal
+  (`Cancelled`) signal, uniformly with `Completed`/`Failed` status transitions.
+
+Option C was chosen because KA's dispatcher already handles `AgentSession` deletion safely and
+delete-source-agnostically today: `Dispatcher.cancelOnDelete`
+(`internal/kubernautagent/agentsession/dispatcher.go`) stops the in-memory investigation
+goroutine on any `watch.Deleted` event, regardless of who deleted it. No KA-side change is
+needed — this reuses production-proven infrastructure rather than adding new coupling, and
+it has the added benefit (over A/B) of actually halting KA's in-flight work on cascade-cancel,
+which a Status-only write would not.
+
+**Implementation note — delete-event object capture**: controller-runtime's default `For()`
+handler loses the deleted object's `Spec` (`Reconcile`'s `Get()` 404s after delete), which would
+lose the RR name needed to find the correlated IS. `AgentSessionTerminalCloseReconciler`
+therefore registers via `Watches(&agentsessionv1.AgentSession{}, handler.Funcs{...})` (not
+`For`), whose `DeleteFunc` reads `Spec.RemediationRequestRef` directly off the informer's
+last-known object (`event.DeleteEvent.Object`) and calls `FinalizeSessionByRR` immediately,
+bypassing the reconcile queue for that path only — the same structural idea as KA's own
+raw-watch `cancelOnDelete`, applied via the manager's cache instead of a second raw watch. This
+is best-effort, matching the existing `SetTerminalPhase` framing: the rare case where a
+long apiserver disconnection causes `client-go` to relist and lose the object body
+(`cache.DeletedFinalStateUnknown`) is an accepted gap, not a correctness requirement.
+
+**Consequences**: AA's RBAC on `investigationsessions`/`investigationsessions/status` (Gap 1's
+narrow write-only grant) is removed entirely — AA has zero IS interaction after this change. AF
+gains no new RBAC (`get/list/watch` on `agentsessions` already existed for MCP-tool reads); the
+persistent session-controller manager's scheme (`cmd/apifrontend/session_infra.go:
+buildSessionScheme`) gains `agentsessionv1` registration, which it previously lacked (only the
+separate non-cached MCP-tool client had it).
+
+**Follow-up (separate repo, out of scope for #2214)**: `kubernaut-operator` maintains its own
+generated RBAC mirroring these kubebuilder markers; narrowing AA's grant here requires a
+follow-up PR there to stay in sync.
+
+### Post-merge correction: `handler.Funcs.DeleteFunc` capture replaced with a finalizer (2026-08-21)
+
+CI RCA (PR #2222, run [32513171970](https://github.com/jordigilh/kubernaut/actions/runs/32513171970))
+surfaced that `IT-AF-2214-002` (the delete-driven Cancelled path) failed intermittently. Root-caused
+by reproducing against the exact failing commit and the exact CI-built amd64 images (loaded via
+`KUBERNAUT_CI_ARTIFACT_TAG`) on an amd64 host under `--race --procs=4` (matching the CI job): **3 of
+15, then 3 of the first 8, runs failed** with the `AgentSessionTerminalCloseReconciler`'s delete
+handler never firing at all — zero log output for the entire 10s window, while the sibling
+Update-triggered path always completed within ~2s in the same run.
+
+Root cause: the `Watches(&agentsessionv1.AgentSession{}, handler.Funcs{...})` design chosen above
+(to capture `Spec.RemediationRequestRef` before `Reconcile`'s own `Get()` would 404 after deletion)
+delivers its `DeleteFunc` callback as a **raw, at-most-once informer event** — outside
+controller-runtime's workqueue, and therefore outside its retry-on-error machinery. Under CPU
+contention (this suite's own `--procs=4` running several envtest+manager instances concurrently),
+that single ephemeral event can be dropped entirely, with no recovery short of the informer's next
+full relist (a client-go/apiserver watch-bounce, typically ~5-10 minutes — far outside any
+reasonable production or test detection budget). This is precisely the "same structural idea as
+KA's own raw-watch `Dispatcher.cancelOnDelete`" risk called out when this design was chosen above —
+except KA's use is a fire-and-forget in-memory goroutine stop (safe to occasionally miss under load,
+self-corrects on the goroutine's own timeout), while AF's use gated a durable, audited CRD state
+transition with no comparable self-correction on any short time budget.
+
+**Fix**: replaced the raw `DeleteFunc` capture with the standard Kubernetes finalizer pattern —
+`terminalCloseFinalizer` (`apifrontend.kubernaut.ai/agentsession-terminal-close`) defers actual
+`AgentSession` removal until `Reconcile()` (the same workqueue-backed, retried path already proven
+at 0% failure for the Update case) observes `DeletionTimestamp != nil`, closes IS to `Cancelled`, and
+removes the finalizer. `SetupWithManager` reverts to a plain `For(&agentsessionv1.AgentSession{})` —
+no custom event capture is needed once deletion is reliably observable through normal reconcile
+dispatch. AF's RBAC on `agentsessions` gains `update`/`patch` (metadata-only, for the finalizer;
+still no `agentsessions/status` grant — AF still never writes KA's Status field).
+
+**Verification**: re-ran the same reproduction harness (real CI images, `--race --procs=4`, amd64) on
+the fixed code — see PR #2222 for the run count and result at time of merge.
+
+**Cross-check (not fixed here, flagged for awareness, tracked as [#2231](https://github.com/jordigilh/kubernaut/issues/2231))**:
+KA's `Dispatcher.watchLoop` reacts to a raw `watch.Deleted` event for the same `AgentSession` type
+via `cancelOnDelete` — the same structural pattern this fix moved AF *away* from, for the same
+underlying reason. Deferring the actual delete via AF's finalizer does not meaningfully change KA's
+exposure (the finalizer is removed within milliseconds in practice, and KA's use case tolerates an
+occasional miss as noted above), but KA's own watch-delete reliance is an independent, pre-existing
+latent risk out of scope for #2214 — filed as #2231 to quantify the actual blast radius and decide
+whether a design fix (or an explicit documented accepted-risk note) is warranted.
+
+### Post-merge correction: two more RBAC-verb drifts surfaced by the finalizer fix (2026-08-21)
+
+CI RCA (PR #2222, run [32525130330](https://github.com/jordigilh/kubernaut/actions/runs/32525130330)
+and run [32529373504](https://github.com/jordigilh/kubernaut/actions/runs/32529373504)) surfaced two
+more instances of the same "N independent RBAC copies drift out of sync" defect this decision already
+flagged above (the "three sources" lesson), both triggered directly by the finalizer fix landing:
+
+1. **AA's `DeleteForRetry` needs `update`, not just `delete`.** Once `DeleteForRetry` was changed to
+   strip `agentsessionv1.TerminalCloseFinalizer` itself before deleting (so the capacity-exceeded
+   retry path gets an immediately-absent object instead of waiting on AF's async reconciler), every
+   retry attempt failed permanently with `"cannot update resource \"agentsessions\""`. Fixed by adding
+   `update` to all **three** of AA's RBAC sources named in the "three sources" lesson above
+   (`internal/controller/aianalysis/aianalysis_controller.go`'s kubebuilder marker →
+   `config/rbac/role.yaml`; `charts/kubernaut/templates/aianalysis/aianalysis.yaml`; and
+   `test/infrastructure/aianalysis_e2e.go`'s hand-rolled `ClusterRole`).
+
+2. **A fourth, previously-undocumented `agentsessions` RBAC copy exists for AF itself**:
+   `deploy/apifrontend/base/02-rbac.yaml`, a Kustomize-style base manifest read directly (via
+   `os.ReadFile` + `kubectl apply`, not `kustomize build`) by the AF-only E2E deployment path
+   (`test/infrastructure/apifrontend_e2e.go`'s `afDeployE2ERBAC`; full-pipeline E2E instead installs
+   the real Helm chart, so it was never exposed to this gap). This file had **no `agentsessions` rule
+   at all** — the `AgentSessionTerminalCloseReconciler`'s informer could never complete its initial
+   `List`, so its cache-sync timed out ~5 minutes into the run (the very timeout budget added earlier
+   in this amendment) and crashed the session controller manager, which then failed `readyz` and broke
+   every in-flight port-forward with cascading `"connection reset by peer"` failures across unrelated
+   specs. Fixed by adding the same `get/list/watch/update/patch` grant already present in
+   `charts/kubernaut/templates/apifrontend/apifrontend.yaml`. Also added a `DescribeTable` entry for
+   `agentsessions` to `test/infrastructure/rbac_parity_test.go`'s existing `UT-INFRA-RBAC-001`
+   structural parity suite (which already covers this same file for every *other* resource AF needs,
+   but had no entry for this one) so a future regression fails fast in the parity test instead of via
+   a cryptic E2E cache-sync timeout.
+
+The systemic gap named in the original "three sources" lesson (no single source of truth for
+`AgentSession` RBAC, `AGENTS.md`'s "grep before declaring a client call wired" discipline being the
+only real guard) is now a **four-sources** problem in practice. `rbac_parity_test.go` narrows the
+blast radius for AF's own copy going forward, but AA's three sources still have no equivalent
+automated parity test — left as a Future Consideration below rather than added in this already-large
+amendment.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

@@ -99,6 +99,24 @@ func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext
 // mapInvestigationResultToResponse, targeting the CRD-native type instead
 // of the retired ogen agentclient.IncidentResponse.
 func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentsessionv1.AgentSessionResult {
+	// A nil r is a legitimate call pattern, not a caller bug:
+	// session.Manager.CompleteUserDriving is documented (manager_query.go)
+	// to invoke the disconnect/inactivity-timeout completion path with a
+	// nil result, and the terminal hook still fires with StatusCompleted
+	// when no SetPendingDecisionResult was ever attached (e.g. a session
+	// released via GracefulSessionClosedHandler before any investigation
+	// produced a result). Every other field below unconditionally
+	// dereferences r, so this must be the first check (CI RCA, PR #2222,
+	// run 32488044647: an unguarded nil r here crashed the whole KA pod).
+	if r == nil {
+		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, returning curated empty result", "incidentID", incidentID)
+		return &agentsessionv1.AgentSessionResult{
+			IncidentID: incidentID,
+			Analysis:   "session completed with no investigation result recorded",
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
 	res := &agentsessionv1.AgentSessionResult{
 		IncidentID:        incidentID,
 		Analysis:          r.RCASummary,

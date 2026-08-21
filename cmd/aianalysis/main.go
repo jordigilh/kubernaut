@@ -44,7 +44,6 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
@@ -70,9 +69,11 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
-	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
 	// DD-AA-KA-001: AgentSession replaces the retired pkg/agentclient HTTP
-	// channel -- AA creates it and watches its Status.
+	// channel -- AA creates it and watches its Status. #2214 Amendment: AA no
+	// longer registers the InvestigationSession scheme -- it has no
+	// remaining IS interaction (AF's AgentSessionTerminalCloseReconciler
+	// owns IS terminal-phase closure exclusively now).
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
 }
 
@@ -123,9 +124,9 @@ func loadAIAnalysisConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*c
 }
 
 // buildAIAnalysisManager constructs the controller manager with the
-// namespace-restricted AIAnalysis/InvestigationSession caches and
+// namespace-restricted AIAnalysis/AgentSession caches and
 // metrics/health-probe/leader election settings from cfg, then registers
-// the BR-INTERACTIVE-010 field indexes used for IS<->AA lookups by RR name.
+// the BR-INTERACTIVE-010 field index used for AIAnalysis lookups by RR name.
 // Exits the process on any failure, matching main()'s original fail-fast
 // behavior.
 func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manager {
@@ -134,11 +135,6 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 		Cache: cache.Options{
 			ByObject: map[crclient.Object]cache.ByObject{
 				&aianalysisv1.AIAnalysis{}: {
-					Namespaces: map[string]cache.Config{
-						controllerNS: {},
-					},
-				},
-				&isv1alpha1.InvestigationSession{}: {
 					Namespaces: map[string]cache.Config{
 						controllerNS: {},
 					},
@@ -159,25 +155,6 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	// BR-INTERACTIVE-010: Register field index for InvestigationSession lookups by RR name.
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(),
-		&isv1alpha1.InvestigationSession{},
-		handlers.ISFieldIndexRRName,
-		func(obj crclient.Object) []string {
-			is, ok := obj.(*isv1alpha1.InvestigationSession)
-			if !ok {
-				return nil
-			}
-			if is.Spec.RemediationRequestRef.Name == "" {
-				return nil
-			}
-			return []string{is.Spec.RemediationRequestRef.Name}
-		},
-	); err != nil {
-		setupLog.Error(err, "unable to register InvestigationSession field index")
 		os.Exit(1)
 	}
 
@@ -287,7 +264,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 // including the cache-sync-aware readyz check that prevents premature
 // reconciliation before controller watches are established. Exits the
 // process on any failure, matching main()'s original fail-fast behavior.
-func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerNS string, clients *aiAnalysisClients, dsGate *readiness.Gate) *metrics.Metrics {
+func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, clients *aiAnalysisClients, dsGate *readiness.Gate) *metrics.Metrics {
 	// DD-METRICS-001: Per V1.0 Service Maturity Requirements - P0 Blocker.
 	setupLog.Info("Initializing AIAnalysis metrics (DD-METRICS-001)")
 	aianalysisMetrics := metrics.NewMetrics()
@@ -295,14 +272,14 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
-	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
 	// DD-AA-KA-001: AgentSessionCreator replaces the retired pkg/agentclient
 	// HTTP channel -- GetOrCreate is naturally idempotent, so it serves both
-	// the historical "submit" and "poll" call sites.
+	// the historical "submit" and "poll" call sites. #2214 Amendment: also
+	// reused for cascade-cancel (DeleteForCascadeCancel), replacing the
+	// retired direct InvestigationSession terminal-close write.
 	agentSessionCreator := creator.NewAgentSessionCreator(mgr.GetClient(), mgr.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, controllerLog, aianalysisMetrics, clients.auditClient,
 		handlers.WithRecorder(eventRecorder),                         // DD-EVENT-001: Session lifecycle events
-		handlers.WithISPhaseUpdater(isPhaseUpdater),                  // #1376: Write-only IS terminal-close
 		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor)) // BR-AI-088.4, #1828: operator-configurable floor
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
@@ -313,15 +290,15 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-KA-001)")
 
 	aaReconciler := &aianalysis.AIAnalysisReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Recorder:         eventRecorder,
-		Log:              controllerLog,
-		Metrics:          aianalysisMetrics,   // DD-METRICS-001: Injected metrics (P0)
-		StatusManager:    statusManager,       // DD-PERF-001: Atomic status updates
-		AnalyzingHandler: analyzingHandler,    // BR-AI-012: Rego policy evaluation
-		AuditClient:      clients.auditClient, // DD-AUDIT-003: P0 audit traces
-		ISPhaseUpdater:   isPhaseUpdater,      // #1421: Cascade cancel to IS in terminal branch
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            eventRecorder,
+		Log:                 controllerLog,
+		Metrics:             aianalysisMetrics,   // DD-METRICS-001: Injected metrics (P0)
+		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
+		AnalyzingHandler:    analyzingHandler,    // BR-AI-012: Rego policy evaluation
+		AuditClient:         clients.auditClient, // DD-AUDIT-003: P0 audit traces
+		AgentSessionCreator: agentSessionCreator, // #1421, amended #2214: cascade-cancel deletes AgentSession in terminal branch
 	}
 	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
 	// #2204 RCA (2026-08-20): explicit worker count, not the bare SetupWithManager(mgr)
@@ -471,7 +448,7 @@ func run() int {
 	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
 	defer dsGate.Stop()
 
-	setupAIAnalysisReconciler(mgr, cfg, controllerNS, clients, dsGate)
+	setupAIAnalysisReconciler(mgr, cfg, clients, dsGate)
 
 	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
 	defer cleanupHotReload()

@@ -29,9 +29,13 @@ import (
 )
 
 // maxStatusUpdateRetries bounds retry-on-conflict for Status subresource
-// updates. KA is the sole writer of AgentSession.Status (BR-AA-KA-065.9),
-// so a conflict here means a concurrent write by this same Dispatcher (e.g.
-// a renewal race), never a cross-service writer collision.
+// updates. KA is the sole writer of AgentSession.Status (BR-AA-KA-065.9), so
+// a conflict here is never a Status-field collision -- but resourceVersion
+// is shared across the whole object, so a same-version conflict can also
+// originate from AF's AgentSessionTerminalCloseReconciler adding or
+// removing its metadata-only terminalCloseFinalizer (#2214) on the same
+// object, alongside this Dispatcher's own renewal-race case. Either source
+// resolves the same way: re-Get and retry.
 const maxStatusUpdateRetries = 3
 
 // updateStatus fetches the current AgentSession, applies mutate, and

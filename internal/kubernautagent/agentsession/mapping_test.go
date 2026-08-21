@@ -268,4 +268,31 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(res.RootCauseAnalysis).To(BeNil())
 		})
 	})
+
+	// CI RCA (PR #2222, run 32488044647, E2E-FP fullpipeline must-gather):
+	// KA panicked with a nil pointer dereference in buildRootCauseAnalysisMap
+	// when Dispatcher.writeTerminalStatus's StatusCompleted branch called
+	// this function with result=nil. That is a legitimate, documented call
+	// pattern -- session.Manager.CompleteUserDriving's own comment
+	// (manager_query.go) states the disconnect/inactivity-timeout handlers
+	// call it with result=nil, and finalResult stays nil when no
+	// SetPendingDecisionResult was ever attached (e.g. a session released
+	// via GracefulSessionClosedHandler before any investigation result
+	// existed) -- crashing the whole KA pod (exit code 2, CrashLoopBackOff),
+	// unrelated to the AA/AF changes in that PR.
+	Describe("UT-AA-KA-065-016: a nil InvestigationResult never panics", func() {
+		It("should return a curated, non-nil AgentSessionResult carrying only IncidentID and Timestamp", func() {
+			var res *agentsessionv1.AgentSessionResult
+			Expect(func() {
+				res = agentsession.MapInvestigationResultToAgentSessionResult(logger, nil, "incident-7")
+			}).NotTo(Panic())
+
+			Expect(res).NotTo(BeNil())
+			Expect(res.IncidentID).To(Equal("incident-7"))
+			Expect(res.Timestamp).NotTo(BeEmpty())
+			Expect(res.Analysis).NotTo(BeEmpty(), "a curated explanation must be present when no investigation result exists")
+			Expect(res.RootCauseAnalysis).To(BeNil())
+			Expect(res.SelectedWorkflow).To(BeNil())
+		})
+	})
 })

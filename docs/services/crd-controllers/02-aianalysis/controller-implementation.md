@@ -185,8 +185,11 @@ type AIAnalysisReconciler struct {
     // AuditClient for DD-AUDIT-003 audit trail recording
     AuditClient *audit.AuditClient
 
-    // ISPhaseUpdater cascades terminal-state transitions to the InvestigationSession CRD
-    ISPhaseUpdater handlers.ISPhaseUpdater
+    // AgentSessionCreator; on external ParentCancelled, DeleteForCascadeCancel
+    // deletes the AgentSession -- AF's own AgentSessionTerminalCloseReconciler
+    // (watching AgentSession) now owns InvestigationSession terminal-phase
+    // closure (#2214 / DD-AA-KA-001 Amendment).
+    AgentSessionCreator *creator.AgentSessionCreator
 }
 
 // Reconcile implements the reconciliation loop for AIAnalysis

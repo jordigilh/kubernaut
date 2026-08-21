@@ -28,10 +28,18 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 
 ### SC-1: IS CRD as Interactive Signal (AA Detection)
 
-1. AA registers a field index on `spec.remediationRequestRef.name` for InvestigationSession CRDs
-2. Before submitting to KA, AA queries IS by field selector — if an Active IS exists for the RR, `interactive=true` is set on the IncidentRequest
-3. AA watches InvestigationSession CRDs; creation of a new IS for an RR with an active KA session triggers cancel + re-submit with `interactive=true`
-4. AA watches InvestigationSession CRDs; deletion of an IS for an RR with an active KA session triggers cancel + AIAnalysis transition to `PhaseFailed` with `ReasonInteractiveCancelled`
+**Amendment (2026-08-21, DD-AA-KA-001 / #2214)**: bullets 1-4 below describe the pre-`AgentSession`-CRD,
+HTTP-poll-based mechanism (superseded by DD-AA-KA-001, 2026-08-17). Interactive detection is now
+`AgentSession.Status.Interactive`, read directly by both AA and AF — not re-derived from IS
+existence/deletion. As of #2214, AA no longer watches, queries, or writes `InvestigationSession`
+in any form; IS lifecycle (including terminal-phase closure) is owned exclusively by AF, driven by
+an `AgentSession`-watching reconciler (`AgentSessionTerminalCloseReconciler`). Retained below for
+historical context only.
+
+1. ~~AA registers a field index on `spec.remediationRequestRef.name` for InvestigationSession CRDs~~
+2. ~~Before submitting to KA, AA queries IS by field selector — if an Active IS exists for the RR, `interactive=true` is set on the IncidentRequest~~
+3. ~~AA watches InvestigationSession CRDs; creation of a new IS for an RR with an active KA session triggers cancel + re-submit with `interactive=true`~~
+4. ~~AA watches InvestigationSession CRDs; deletion of an IS for an RR with an active KA session triggers cancel + AIAnalysis transition to `PhaseFailed` with `ReasonInteractiveCancelled`~~
 
 ### SC-2: KA Interactive Session Lifecycle
 
@@ -79,9 +87,20 @@ path that is not subject to cooldown. No RO changes are required.
 
 ### SC-7: AA Poll Status Handling
 
-1. AA's investigating handler explicitly handles `"cancelled"` poll status (currently falls to `default` → treated as pending)
-2. On `"cancelled"` with IS still Active: re-submit with `interactive=true` (session was cancelled for takeover)
-3. On `"cancelled"` with IS deleted: transition AIAnalysis to `PhaseFailed` with `ReasonInteractiveCancelled`
+**Amendment (2026-08-21, DD-AA-KA-001 / #2214)**: superseded — AA no longer polls KA over HTTP
+(DD-AA-KA-001 replaced polling with `AgentSession` watch+`Status`), so there is no "poll status" to
+handle. Retained below for historical context only.
+
+1. ~~AA's investigating handler explicitly handles `"cancelled"` poll status (currently falls to `default` → treated as pending)~~
+2. ~~On `"cancelled"` with IS still Active: re-submit with `interactive=true` (session was cancelled for takeover)~~
+3. ~~On `"cancelled"` with IS deleted: transition AIAnalysis to `PhaseFailed` with `ReasonInteractiveCancelled`~~
+
+### SC-9: AF-Owned IS Terminal-Phase Closure via AgentSession Watch (#2214)
+
+1. AF's `AgentSessionTerminalCloseReconciler` watches `AgentSession`; on `Status.Phase` transitioning to `Completed` or `Failed`, it closes the correlated IS (by `spec.remediationRequestRef.name`) to the matching terminal phase via `CRDSessionService.FinalizeSessionByRR`
+2. On `AgentSession` deletion (AA's explicit cascade-cancel delete, or any other deletion source), the reconciler closes the correlated IS to `Cancelled`, uniformly with the `Completed`/`Failed` case
+3. AA has zero read or write interaction with `InvestigationSession` after this change — closure is fully AF-owned, matching AF's ownership of IS creation and TTL cleanup (`SessionCleanupReconciler`)
+4. Idempotent: closing an already-terminal IS is a no-op (`FinalizeSessionByRR`'s existing behavior)
 
 ### SC-8: AF Interactive Flow Orchestration
 
@@ -127,5 +146,6 @@ path that is not subject to cooldown. No RO changes are required.
 | SC-4 | ~~RO~~ | ~~CANCELLED~~ | CANCELLED BY DESIGN — AF bypasses RO cooldown |
 | SC-5 | AF | Unit | UT-AF-1293-001..005 |
 | SC-6 | KA | Unit | UT-KA-1293-011 |
-| SC-7 | AA | Unit | UT-AA-1293-004..005 |
+| SC-7 | ~~AA~~ | ~~Unit~~ | SUPERSEDED — see SC-9 |
 | SC-8 | AF | Unit + E2E | E2E-1293-001..006 |
+| SC-9 | AF, AA | Unit + Integration | UT-AF-2214-001..003b, UT-AA-2214-001..005, IT-AF-2214-001..002, IT-AA-2214-001..001b |
