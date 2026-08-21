@@ -311,8 +311,13 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 			By("Verifying OperatorOverride event was emitted on RR")
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-			Expect(string(rr.Status.OverallPhase)).To(Equal("Executing"))
+			// WE creation and the RR.Status.OverallPhase="Executing" write happen as
+			// separate steps of the same reconcile; a bare Expect right after the WE
+			// Eventually above can observe the RR microseconds before that write lands.
+			Eventually(func() string {
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("Executing"))
 		})
 	})
 })

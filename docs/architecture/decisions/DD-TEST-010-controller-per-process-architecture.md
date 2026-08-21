@@ -510,8 +510,8 @@ go test -race ./test/integration/[service]/...
 | Service | Current Pattern | Migration Status | Priority | Estimated Effort |
 |---------|----------------|------------------|----------|-----------------|
 | **WorkflowExecution** | ✅ Multi-Controller | N/A (reference) | - | 0h (complete) |
-| **AIAnalysis** | ❌ Single-Controller | 🔄 In Progress | P0 | 4-6h |
-| **RemediationOrchestrator** | ❌ Single-Controller | 📋 Planned | P1 | 4-6h |
+| **AIAnalysis** | ❌ Single-Controller | ✅ Migrated (Amendment 1) | P0 | 4-6h |
+| **RemediationOrchestrator** | ✅ Shared-Envtest (Amendment 1) | ✅ Migrated (Amendment 1) | P1 | 4-6h |
 | **SignalProcessing** | ❌ Single-Controller | 📋 Planned | P1 | 4-6h |
 | **Notification** | ❌ Single-Controller | 📋 Planned | P1 | 4-6h |
 | **Gateway** | N/A (no controller) | N/A | - | 0h |
@@ -598,4 +598,54 @@ watchers/namespace assumptions to audit, same as AA's controller cache + KA disp
 explicitly out of scope here; tracked in
 [issue #2213](https://github.com/jordigilh/kubernaut/issues/2213) rather than applied
 mechanically.
+
+### `remediationorchestrator` migrated (2026-08-21, issue #2213)
+
+**Preflight**: `remediationorchestrator`'s pre-migration `suite_test.go` had a *simpler* starting
+point than `aianalysis`'s -- no per-process sidecar container to re-namespace (RO has no equivalent
+of AA's KA dispatcher), and its manager cache already used precise `Cache.ByObject` namespace
+scoping. It ran *two* envtest instances (one for DD-AUTH-014's DataStorage auth bootstrap, one for
+the controller itself); the migration collapsed these to the single shared one Phase 1 already
+started for DataStorage auth, following the exact Phase 1/Phase 2 kubeconfig-serialization pattern
+established for `aianalysis` above (`ROControllerNamespace` const → per-process var, computed as
+`kubernaut-system-p<N>` in Phase 2). A Serena-backed `find_referencing_symbols` audit of all 33
+test files referencing `ROControllerNamespace` confirmed no cross-namespace assumptions (manager
+cache scoping + apiReader server-side filtering make bare `k8sClient.List`/`k8sManager.GetAPIReader()`
+calls namespace-safe under the new per-process-namespace model).
+
+**Validated on `helios08` at `TEST_PROCS=4`**: 141/141 specs green, reproducible across repeated
+runs, after fixing two classes of pre-existing issues the shared-envtest's added apiserver latency
+reliably exposed (neither is a defect in the migration's own `suite_test.go` changes):
+
+1. **Five latent test-synchronization races** (test-only fixes, no production code): three bare
+   `Expect()`s immediately following an `Eventually` on a *sibling* resource, not the field being
+   asserted on next (`override_flow_test.go`, `lifecycle_test.go`, `characterization_integration_test.go`);
+   one forward-reference-before-create ordering bug (`dedup_propagation_integration_test.go`,
+   `IT-RO-190-002`, reordered to create the referent first, mirroring the already-correct
+   `IT-RO-190-001`/`IT-RO-190-003` patterns in the same file -- and, on first attempt, a related
+   Create()-strips-status-subresource mistake in that same reorder, fixed by re-setting `Phase`
+   before the follow-up `Status().Update()`, exactly like those sibling tests already do).
+2. **One genuine production bug**, found (not just exposed) by this migration: `transitionPhase`'s
+   optimistic-concurrency conflict-retry guard (`internal/controller/remediationorchestrator/terminal_transitions.go`)
+   only re-validated `OverallPhase == oldPhase` on retry, not that `WorkflowExecutionRef` (set by an
+   earlier, separate write) was still present. A retry landing after a concurrent
+   status-update-failure recovery (which clears `WorkflowExecutionRef` and reverts `OverallPhase`
+   together -- `IT-RO-189-005`'s scenario, and per its own doc comment, `BR-ORCH-031`'s real-world
+   motivating case) could pass that guard and commit `OverallPhase=Executing` on top of the
+   now-missing ref, which `executing_handler.go` then treated as a permanent, non-retryable
+   "corrupted state" failure -- no timeout could have fixed this, since it doesn't resolve with more
+   waiting. Fixed by also requiring `WorkflowExecutionRef != nil` before committing
+   Advance-to-Executing (requeues instead, giving the Analyzing handler's Get-before-Create
+   idempotency another chance); reproduced deterministically in `UT-AT-013`/`UT-AT-014`
+   (`apply_transition_test.go`), no timing race needed to trigger it.
+
+**Lesson for future migrations under this issue**: budget time for exactly this kind of
+discovery. Shared-envtest's added latency is not just "the same tests, slower" -- it's a more
+sensitive detector for latent assumptions (both test-level ordering assumptions and, in this case,
+a real optimistic-concurrency guard gap) that a fully-isolated-per-process control plane was
+masking by construction (less contention == fewer opportunities for the retry window in question to
+be hit). Do not assume a suite that passes at `TEST_PROCS=1` in isolation is unaffected; validate at
+`TEST_PROCS=4` (matching CI) before declaring a per-service migration done, and treat unexplained
+failures under contention as a signal to keep root-causing rather than reach for a longer timeout
+first.
 

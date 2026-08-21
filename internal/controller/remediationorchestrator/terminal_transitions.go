@@ -258,6 +258,21 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 			return fmt.Errorf("%w: expected %s, got %s", errPhaseConflict,
 				oldPhase, rr.Status.OverallPhase)
 		}
+		// BR-ORCH-031 / Issue #189, #2213: Advance-to-Executing depends on
+		// WorkflowExecutionRef having already been persisted by an earlier,
+		// separate write (CreateWFEAndTransition). The OverallPhase guard
+		// above does not cover this: a conflict-triggered retry re-fetches
+		// fresh state and can observe WorkflowExecutionRef cleared by a
+		// concurrent status-update-failure recovery (IT-RO-189-005) even
+		// though OverallPhase still matches oldPhase (that recovery reverts
+		// both fields together). Without this check, committing Executing
+		// here corrupts the RR into a state executing_handler.go treats as
+		// a permanent, non-retryable failure. Requeueing instead gives the
+		// Analyzing handler's idempotent Get-before-Create another chance
+		// to restore the ref before Executing is committed.
+		if newPhase == phase.Executing && rr.Status.EnsurePhaseProgress().WorkflowExecutionRef == nil {
+			return fmt.Errorf("%w: WorkflowExecutionRef missing for phase %s", errPhaseConflict, newPhase)
+		}
 		r.applyPhaseTransitionFields(rr, newPhase)
 		return nil
 	})

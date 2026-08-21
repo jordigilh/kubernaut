@@ -1,0 +1,42 @@
+suite: "Issue #2218: DataStorage database.connMaxIdleTime hardcoded while its 3 struct siblings are schema-driven"
+# templates/datastorage/datastorage.yaml's database block: maxOpenConns,
+# maxIdleConns, connMaxLifetime are all schema-driven via
+# datastorage.config.database.*; connMaxIdleTime alone was a bare "10m"
+# literal. pkg/datastorage/config DatabaseConfig.ConnMaxIdleTime is a real,
+# actively-read field (pkg/datastorage/server/server_construction.go wires
+# it into sql.DB.SetConnMaxIdleTime), so this was a genuine override gap.
+templates:
+  - templates/datastorage/datastorage.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no database.connMaxIdleTime override) renders connMaxIdleTime: 10m, matching the Go default exactly"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxIdleTime: 10m'
+
+  - it: "an explicit database.connMaxIdleTime override renders through instead of being silently discarded"
+    set:
+      datastorage:
+        config:
+          database:
+            connMaxIdleTime: "20m"
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxIdleTime: 20m'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'connMaxIdleTime: 10m'

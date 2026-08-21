@@ -279,6 +279,60 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 	})
 
 	// ========================================
+	// BR-ORCH-031 / Issue #189, #2213: transitionPhase must not commit
+	// Advance-to-Executing without a WorkflowExecutionRef. Root-caused during
+	// the DD-TEST-010 Amendment 1 migration (issue #2213): IT-RO-189-005
+	// simulates a status-update-failure recovery by clearing
+	// WorkflowExecutionRef while reverting OverallPhase back to Analyzing.
+	// transitionPhase's conflict-retry guard only re-validates
+	// OverallPhase == oldPhase, so a retry that observes this reverted (but
+	// self-consistent: ref=nil + phase=Analyzing) state still passes the
+	// guard and commits OverallPhase=Executing on top of the now-missing
+	// ref — producing the "corrupted state: no WorkflowExecutionRef"
+	// terminal failure in executing_handler.go. This is reproducible
+	// deterministically without any timing race: the guard never checked
+	// the ref at all, so a single Advance(Executing) call against an RR
+	// with WorkflowExecutionRef==nil is enough to trigger it.
+	// ========================================
+	Describe("BR-ORCH-031: Advance-to-Executing requires WorkflowExecutionRef", func() {
+
+		It("UT-AT-013: does not commit Executing when WorkflowExecutionRef is missing", func() {
+			rr := newRemediationRequest("test-exec-no-ref", defaultFixture, remediationv1.PhaseAnalyzing)
+			rr.Status.StartTime = ptrMetaTime(time.Now())
+			// WorkflowExecutionRef intentionally left nil — simulates the
+			// IT-RO-189-005 status-update-failure recovery state.
+			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+
+			intent := phase.Advance(phase.Executing, "WFE created")
+			result, err := r.ApplyTransition(ctx, rr, intent)
+			Expect(err).ToNot(HaveOccurred(), "missing precondition should requeue, not error out")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "should requeue to allow the Analyzing handler to recover the ref")
+			Expect(string(rr.Status.OverallPhase)).To(Equal(string(remediationv1.PhaseAnalyzing)),
+				"must not commit Executing without WorkflowExecutionRef set")
+		})
+
+		It("UT-AT-014: commits Executing normally once WorkflowExecutionRef is set", func() {
+			rr := newRemediationRequest("test-exec-with-ref", defaultFixture, remediationv1.PhaseAnalyzing)
+			rr.Status.StartTime = ptrMetaTime(time.Now())
+			rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
+				APIVersion: "workflowexecution.kubernaut.ai/v1alpha1",
+				Kind:       "WorkflowExecution",
+				Name:       "we-test-exec-with-ref",
+				Namespace:  defaultFixture,
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+
+			intent := phase.Advance(phase.Executing, "WFE created")
+			result, err := r.ApplyTransition(ctx, rr, intent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(string(rr.Status.OverallPhase)).To(Equal(string(remediationv1.PhaseExecuting)))
+		})
+	})
+
+	// ========================================
 	// ToBlockingCondition mapping
 	// ========================================
 	Describe("ToBlockingCondition mapping", func() {
