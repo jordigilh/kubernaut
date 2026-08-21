@@ -47,6 +47,23 @@ config knobs can land and merge undetected — the same class of gap that allowe
 (a config field silently ignored in favor of a hardcoded literal) to go unnoticed until a manual
 audit was performed.
 
+**Correction (2026-08-21, tool implementation)**: the 202/63/41/22 figures above came from a
+narrower, ad-hoc preflight spike (Python, grep-based, scoped to the 11 services' `config:`
+subtrees only). The finished tool, built exactly per this BR's own FR-1 spec ("same walk shape as
+`gen-helm-defaults`'s `walkDefaults`" — i.e. every top-level schema property's full tree, not just
+`config:` subtrees), found **356 total leaves / 265 real gaps** once run against the actual
+schema. A full manual spot-check of every one of the 66 gaps a moderate `$v.<path>`/`.Values.<path>`
+pattern search couldn't confirm (not just a naive grep — actual template/helper reads) found 265
+of the 266 originally-counted gaps are genuinely wired (via `_helpers.tpl` macro indirection:
+`kubernaut.scheduling`, `kubernaut.additionalClusterRoleBindings`, merged-`$v` per-pseudo-service
+patterns for `tls`/`postgresql`/`valkey`/`networkPolicies`/etc.) — confirming the "boilerplate,
+just untested" characterization holds at the larger scale too. One field,
+`datastorage.config.redis.tls.insecureSkipVerify`, was found to be genuinely dead (no template
+wiring, no Go struct field, and contradictory to `redis_tls_test.go`'s existing SC-8 guarantee that
+TLS verification is never skippable) and was removed from the schema rather than allowlisted. The
+seeded allowlist (`charts/kubernaut/.helm-coverage-allowlist.yaml`) therefore has 243 entries
+(265 gaps − 22 backfilled in this PR), not the originally-estimated ~41.
+
 **Addendum (2026-08-21, [PR #2225 review](https://github.com/jordigilh/kubernaut/pull/2225#issuecomment-5371062661))**:
 a related but distinct failure mode was flagged during that PR's review. For a config knob that
 carries a real Go-side default in addition to its schema-declared one
@@ -83,9 +100,10 @@ lower-priority gap.
 2. The tool runs as a new step in the existing `helm-unittest` CI job
    (`.github/workflows/ci-pipeline.yml`) and fails the build when a schema-defaulted field is
    uncovered and not present in a seeded allowlist.
-3. `charts/kubernaut/.helm-coverage-allowlist.yaml` is seeded with the ~41 pre-existing boilerplate
-   gaps identified during triage, so the gate is green on merge and only prevents *new*,
-   unreviewed coverage regressions going forward.
+3. `charts/kubernaut/.helm-coverage-allowlist.yaml` is seeded with the 243 pre-existing,
+   verified-genuinely-wired-but-untested gaps identified during triage (see Problem Statement
+   correction above), so the gate is green on merge (once the 22-field backfill lands) and only
+   prevents *new*, unreviewed coverage regressions going forward.
 4. The 22 fields confirmed genuinely wired-but-untested are backfilled with real `helm-unittest`
    assertions (default value + at least one explicit-override-renders-through case each), across
    `gateway` (2 fields), `datastorage` (3 fields), and `remediationorchestrator` (17 fields — its
@@ -126,6 +144,14 @@ lower-priority gap.
   `remediationorchestrator.config.{timeouts,routing,effectivenessAssessment,asyncPropagation,
   notifications,retention}` sub-fields) receive new `helm-unittest` assertions only — no template
   or schema changes, since these are test-coverage gaps, not bugs.
+- **FR-5a (Dead-field removal, unplanned corollary finding)**:
+  `datastorage.config.redis.tls.insecureSkipVerify` was removed from `values.schema.json` (and its
+  materialized default/docs regenerated) after verification found it had no template wiring, no
+  corresponding Go struct field, and directly contradicted `pkg/datastorage/redis_tls_test.go`'s
+  existing `UT-DS-1048-P5-064` assertion that TLS verification is never skippable (SC-8). This is
+  the tool's own coverage-gate premise validating itself: a schema field that looks
+  user-configurable but silently does nothing is exactly the failure class this BR exists to make
+  impossible to introduce (or, as here, to leave undetected) going forward.
 - **FR-6 (Go-vs-schema default drift detection)**: a table-driven Ginkgo test
   (`pkg/apifrontend/config/schema_default_drift_test.go`, `TC-P2C-04`) reads the real
   `charts/kubernaut/values.schema.json`, resolves each dual-sourced MCP duration field's declared
@@ -140,10 +166,13 @@ lower-priority gap.
 
 ## Non-Goals
 
-- Does not attempt to reach 100% coverage of all 202 fields in this PR — the ~41 pre-existing
-  boilerplate gaps (`replicas`, `image.*`, secret refs, autoscaling knobs, CORS/rate-limit/
-  retention knobs not yet in scope, etc.) are deliberately seeded into the allowlist as a known,
-  lower-priority backlog rather than blocking this gate's introduction.
+- Does not attempt to reach 100% coverage of all 356 fields in this PR — the 243 pre-existing
+  boilerplate gaps (`replicas`, `image.*`, secret refs, autoscaling knobs, `nodeSelector`/`pdb`/
+  `tolerations`, `postgresql.*`/`valkey.*`/`tls.*`/`networkPolicies.*`, CORS/rate-limit/retention
+  knobs not yet in scope, etc.) are deliberately seeded into the allowlist as a known,
+  lower-priority backlog rather than blocking this gate's introduction. Each was individually
+  spot-checked against its actual template/helper wiring (not just grepped) before being
+  allowlisted — see the Problem Statement correction above.
 - Does not change any chart template or schema wiring — this BR is exclusively about
   *detecting and closing test-coverage gaps* for already-correct wiring, complementing
   BR-PLATFORM-010 (which hardens the schema's *input-validation* contract) rather than overlapping
