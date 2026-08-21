@@ -62,12 +62,12 @@ controller:
   leaderElection: false
   leaderElectionId: "signalprocessing.kubernaut.ai"
 enrichment:
-  cacheTtl: "5m"
+  cacheTtl: {{ $v.config.enrichment.cacheTtl | quote }}
   timeout: "10s"
 classifier:
   regoConfigMapName: "signalprocessing-policy"
   regoConfigMapKey: "policy.rego"
-  hotReloadInterval: "30s"
+  hotReloadInterval: {{ $v.config.classifier.hotReloadInterval | quote }}
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"

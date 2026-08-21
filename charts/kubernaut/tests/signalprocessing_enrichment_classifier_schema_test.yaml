@@ -1,0 +1,70 @@
+suite: "Issue #2216: signalprocessing enrichment.cacheTtl / classifier.hotReloadInterval hardcoded, no schema field"
+# templates/signalprocessing/signalprocessing.yaml hardcoded enrichment.cacheTtl
+# ("5m") and classifier.hotReloadInterval ("30s") as bare literals with no
+# corresponding values.schema.json entry, so neither could be overridden via
+# `helm install --set`. Both are real, actively-read Go config fields
+# (pkg/signalprocessing/config/config.go EnrichmentConfig.CacheTTL /
+# ClassifierConfig.HotReloadInterval, wired in cmd/signalprocessing/main.go) --
+# unlike #2215 (aianalysis agent.*), which turned out to be dead config
+# already removed by #2204.
+templates:
+  - templates/signalprocessing/signalprocessing.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (no enrichment.cacheTtl override) renders cacheTtl: \"5m\", matching the Go default exactly (EnrichmentConfig.CacheTTL default = 5 * time.Minute)"
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'cacheTtl: "5m"'
+
+  - it: "default install (no classifier.hotReloadInterval override) renders hotReloadInterval: \"30s\", matching the Go default exactly (ClassifierConfig.HotReloadInterval default = 30 * time.Second)"
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'hotReloadInterval: "30s"'
+
+  - it: "an explicit enrichment.cacheTtl override renders through instead of being silently discarded"
+    set:
+      signalprocessing:
+        config:
+          enrichment:
+            cacheTtl: "10m"
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'cacheTtl: "10m"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'cacheTtl: "5m"'
+
+  - it: "an explicit classifier.hotReloadInterval override renders through instead of being silently discarded"
+    set:
+      signalprocessing:
+        config:
+          classifier:
+            hotReloadInterval: "45s"
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'hotReloadInterval: "45s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'hotReloadInterval: "30s"'

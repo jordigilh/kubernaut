@@ -636,6 +636,11 @@ var _ = Describe("TC-P2C-03: DefaultConfig field assertions", func() {
 		Expect(cfg.Resilience.DS.CBFailureThreshold).To(BeNumerically(">", 0))
 		Expect(cfg.Resilience.K8s.CBFailureThreshold).To(BeNumerically(">", 0))
 	})
+
+	It("TC-P2C-03d: Issue #2220 DefaultConfig sets MCP.SessionIdleTimeout to 30m explicitly (single source of truth, no longer relying on the removed cmd/apifrontend zero-value fallback)", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.MCP.SessionIdleTimeout).To(Equal(30 * time.Minute))
+	})
 })
 
 var _ = Describe("Tier 5b: Configurable Ports (Issue #1339)", func() {

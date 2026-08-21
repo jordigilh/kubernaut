@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/model"
@@ -53,17 +52,13 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 		ScopeChecker:          d.Backends.ScopeChecker,
 	}
 
-	mcpSessionTimeout := d.Cfg.MCP.SessionIdleTimeout
-	if mcpSessionTimeout == 0 {
-		mcpSessionTimeout = 30 * time.Minute
-	}
 	h, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:     "kubernaut-apifrontend",
 		ServerVersion:  version.Version,
 		Enabled:        d.Cfg.MCP.Enabled,
 		Bridge:         bridgeCfg,
 		Auditor:        d.Auditor,
-		SessionTimeout: mcpSessionTimeout,
+		SessionTimeout: d.Cfg.MCP.SessionIdleTimeout,
 	})
 	if err != nil {
 		return nil, nil, err
