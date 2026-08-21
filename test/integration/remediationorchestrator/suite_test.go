@@ -33,6 +33,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,21 +101,25 @@ const (
 	// roRedisPort is the Redis/Valkey port for RO integration tests.
 	// Reused by FMC scope cache in fleet tests (same instance, disjoint key prefixes).
 	roRedisPort = 16381
-
-	// ROControllerNamespace is where RO creates and watches all CRDs (ADR-057).
-	// Must match Cache.ByObject in suite setup - tests create RR in this namespace.
-	ROControllerNamespace = "kubernaut-system"
 )
 
 // Package-level variables for test environment
 var (
 	ctx        context.Context
 	cancel     context.CancelFunc
-	testEnv    *envtest.Environment
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
+
+	// ROControllerNamespace is where THIS PROCESS creates and watches all CRDs (ADR-057).
+	// DD-TEST-010 Amendment 1 (issue #2213): computed per-process in Phase 2 as
+	// "kubernaut-system-p<N>" now that all processes share a single envtest API
+	// server instead of one embedded control plane each. Isolation between
+	// parallel processes comes from this namespace boundary (plus the manager's
+	// namespace-scoped cache below) instead of a separate-cluster boundary.
+	// Must match Cache.ByObject in suite setup - tests create RR in this namespace.
+	ROControllerNamespace string
 
 	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
 	dsClients *integration.AuthenticatedDataStorageClients
@@ -129,9 +135,10 @@ func TestRemediationOrchestratorIntegration(t *testing.T) {
 }
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
-// DD-TEST-010 Pattern: Multi-Controller (per-process controller isolation)
-// Phase 1: Infrastructure ONLY (shared across all processes)
-// Phase 2: Per-process controller setup (isolated envtest + controller instances)
+// DD-TEST-010 Amendment 1 Pattern: shared envtest + namespace-scoped per-process controllers.
+// Phase 1: Infrastructure setup, INCLUDING the one shared envtest (process 1 only)
+// Phase 2: Per-process controller setup (own manager + reconciler, own namespace,
+// all connected to the SAME shared envtest API server started in Phase 1)
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// ======================================================================
 	// PHASE 1: INFRASTRUCTURE SETUP (ONCE - GLOBAL)
@@ -158,9 +165,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	var err error
 
-	// DD-AUTH-014: Start shared envtest for DataStorage auth
-	// This is different from per-process envtest pattern because DataStorage
-	// container (started in Phase 1) needs to access envtest API server
+	// DD-AUTH-014 + DD-TEST-010 Amendment 1: Start the ONE envtest for the whole
+	// suite. Originally started here only for DataStorage auth (Phase 2 used to
+	// bootstrap its own separate per-process envtest for the controller); now
+	// every Phase 2 process reconnects to this same instance (see kubeconfig
+	// serialization below), so this is the sole control plane for the suite.
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
 
 	// DD-AUTH-014: Force envtest to bind to IPv4 by pre-setting SecureServing.Address
@@ -228,19 +237,42 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-AUTH-014: Serialize token for Phase 2 DataStorage client
-	return []byte(authConfig.Token)
+	// DD-TEST-010 Amendment 1 (issue #2213): serialize the shared envtest's
+	// kubeconfig to a file so every Phase 2 process can reconstruct the exact
+	// same *rest.Config -- Phase 2 no longer starts its own envtest.Environment
+	// (see the Phase 2 function below). This collapses N embedded control
+	// planes (etcd + kube-apiserver per process) down to 1, eliminating the
+	// resource contention that caused intermittent "connection refused"
+	// failures under CPU load (root-caused for aianalysis in PR #2189).
+	By("Serializing shared envtest kubeconfig for Phase 2")
+	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedCfg, "remediationorchestrator-shared")
+	Expect(err).ToNot(HaveOccurred(), "shared envtest kubeconfig must serialize for Phase 2")
+
+	// DD-AUTH-014 + DD-TEST-010: Phase 1 -> Phase 2 data passing (token + kubeconfig path)
+	type phase1Data struct {
+		Token          string `json:"token"`
+		KubeconfigPath string `json:"kubeconfig_path"`
+	}
+	payload, err := json.Marshal(phase1Data{
+		Token:          authConfig.Token,
+		KubeconfigPath: kubeconfigPath,
+	})
+	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
+	return payload
 }, func(data []byte) {
 	// ======================================================================
-	// PHASE 2: PER-PROCESS CONTROLLER SETUP (ISOLATED)
+	// PHASE 2: PER-PROCESS CONTROLLER SETUP (NAMESPACE-ISOLATED)
 	// ======================================================================
 	// Runs on ALL parallel processes (including process 1)
 	// Each process gets its own:
-	// - envtest (isolated K8s API server for controller)
-	// - k8sManager (isolated controller instance)
-	// - Controller reconciler (isolated event handlers)
+	// - k8sManager (own controller instance, cache scoped to this process's namespace)
+	// - Controller reconciler (own event handlers)
+	// All processes reconstruct a client to the SAME shared envtest API server
+	// Phase 1 started (via its serialized kubeconfig) -- there is no per-process
+	// envtest anymore. Isolation comes from ROControllerNamespace (computed
+	// below) instead of a separate cluster per process.
 	//
-	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// DD-TEST-010 Amendment 1 (issue #2213): Shared-Envtest + Namespace-Scoping
 	// DD-AUTH-014: DataStorage client uses real ServiceAccount token (from Phase 1)
 	// Authority: docs/architecture/decisions/DD-TEST-010-controller-per-process-architecture.md
 	// ======================================================================
@@ -251,8 +283,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("PHASE 2: Per-Process Controller Setup (DD-TEST-010 + DD-AUTH-014)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-AUTH-014: Deserialize ServiceAccount token from Phase 1
-	token := string(data)
+	// DD-AUTH-014 + DD-TEST-010: Deserialize token and shared envtest kubeconfig path from Phase 1
+	type phase1Data struct {
+		Token          string `json:"token"`
+		KubeconfigPath string `json:"kubeconfig_path"`
+	}
+	var p1 phase1Data
+	Expect(json.Unmarshal(data, &p1)).To(Succeed(), "Phase 1 data must deserialize successfully")
+	token := p1.Token
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("DD-AUTH-014 DEBUG: ServiceAccount Token Received\n")
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -260,6 +298,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Printf("  Token Prefix: %s...\n", token[:min(50, len(token))])
 	GinkgoWriter.Printf("  Token Suffix: ...%s\n", token[max(len(token)-20, 0):])
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// DD-TEST-010 Amendment 1 (issue #2213): every process now shares the ONE
+	// envtest apiserver Phase 1 started, so process isolation must come from a
+	// namespace boundary instead of a cluster boundary. ROControllerNamespace
+	// is this process's own namespace, referenced unmodified by every existing
+	// test file (Cache.ByObject below, and 33 dependent _test.go files).
+	processNum := GinkgoParallelProcess()
+	ROControllerNamespace = fmt.Sprintf("kubernaut-system-p%d", processNum)
+	GinkgoWriter.Printf("✅ [Process %d] Own namespace: %s (shared envtest)\n", processNum, ROControllerNamespace)
 
 	// Create per-process context for controller lifecycle
 	ctx, cancel = context.WithCancel(context.Background())
@@ -294,15 +341,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = remediationworkflowv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping per-process envtest with ALL CRDs")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
-
-	cfg, err = testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
+	By(fmt.Sprintf("[Process %d] Reconstructing shared envtest connection", processNum))
+	// DD-TEST-010 Amendment 1: reconstruct cfg from the ONE envtest Phase 1
+	// started (via its serialized kubeconfig) instead of starting a separate
+	// per-process envtest.Environment.
+	cfg, err = clientcmd.BuildConfigFromFlags("", p1.KubeconfigPath)
+	Expect(err).NotTo(HaveOccurred(), "shared envtest kubeconfig must be loadable")
 	Expect(cfg).NotTo(BeNil())
 
 	By("Creating controller-runtime client")
@@ -311,26 +355,28 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(k8sClient).NotTo(BeNil())
 
 	By("Creating required namespaces")
-	// Create kubernaut-system namespace for controller
+	// Create this process's own controller namespace (unique per process; no
+	// AlreadyExists tolerance needed since no other process uses this name).
 	systemNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-system",
+			Name:   ROControllerNamespace,
+			Labels: map[string]string{"kubernaut.ai/managed": "true"},
 		},
 	}
-	err = k8sClient.Create(ctx, systemNs)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		Expect(err).NotTo(HaveOccurred())
-	}
+	Expect(k8sClient.Create(ctx, systemNs)).To(Succeed())
 
-	// Create default namespace for tests
+	// Create default namespace for tests (shared across processes; envtest
+	// creates this automatically, but tolerate AlreadyExists defensively).
 	defaultNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default",
 		},
 	}
-	_ = k8sClient.Create(ctx, defaultNs) // May already exist
+	if err := k8sClient.Create(ctx, defaultNs); err != nil && !apierrors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
 
-	GinkgoWriter.Println("✅ Namespaces created: kubernaut-system, default")
+	GinkgoWriter.Printf("✅ Namespaces created: %s, default\n", ROControllerNamespace)
 
 	// ADR-057: Align integration test with production - RO watches only controller namespace.
 	// Without this, the test manager would watch all namespaces while production restricts to
@@ -567,14 +613,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution
-// DD-TEST-010: Per-process cleanup (Phase 1) + shared infrastructure cleanup (Phase 2)
+// DD-TEST-010 Amendment 1: Per-process controller cleanup (Phase 1) + shared
+// envtest/infrastructure cleanup, once, on the last process (Phase 2)
 var _ = SynchronizedAfterSuite(func() {
 	// ======================================================================
 	// PHASE 1: PER-PROCESS CLEANUP (RUNS ON ALL PROCESSES)
 	// ======================================================================
-	// Each parallel process cleans up its own controller and envtest instance
+	// Each parallel process stops its own controller manager. The shared
+	// envtest itself is stopped once below (Phase 2, last process only).
 	//
-	// DD-TEST-010: Multi-Controller Pattern Cleanup
+	// DD-TEST-010 Amendment 1: Shared-Envtest + Namespace-Scoping Cleanup
 	// ======================================================================
 	By("Tearing down per-process test environment")
 
@@ -583,15 +631,11 @@ var _ = SynchronizedAfterSuite(func() {
 		cancel()
 	}
 
-	// Stop per-process envtest
-	if testEnv != nil {
-		err := testEnv.Stop()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Failed to stop envtest: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Per-process envtest stopped")
-		}
-	}
+	// DD-TEST-010 Amendment 1: there is no per-process envtest.Environment to
+	// stop anymore -- every process shares the ONE envtest Phase 1 started,
+	// torn down once via sharedTestEnv.Stop() (DeferCleanup, Phase 1 closure).
+	// This process's own namespace (ROControllerNamespace) is left in place;
+	// it disappears along with the whole shared apiserver when that happens.
 
 	// Close per-process audit store
 	if auditStore != nil {
