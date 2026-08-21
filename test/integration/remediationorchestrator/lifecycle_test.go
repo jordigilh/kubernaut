@@ -255,8 +255,13 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			By("Verifying RR status updated")
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+			// NR creation and the RR.Status.OverallPhase=Failed write happen as separate
+			// steps; a bare Expect right after the NR Eventually above can observe the RR
+			// before that write lands (mirrors the override_flow_test.go:315 fix).
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 			Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-036: ManualReview notification created for WorkflowResolutionFailed\n")

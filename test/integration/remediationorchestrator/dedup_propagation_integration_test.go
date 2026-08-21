@@ -191,28 +191,15 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 	It("IT-RO-190-002: RR inherits Failed from original WFE with FailurePhaseDeduplicated", func() {
 		rr := driveToExecuting(ns, "rr-dedup-002")
 
-		By("Marking the WFE as Failed/Deduplicated")
-		weName := fmt.Sprintf("we-%s", rr.Name)
-		we := &workflowexecutionv1.WorkflowExecution{}
-		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
-		}, timeout, interval).Should(Succeed())
-
 		originalWFEName := "original-wfe-it-002"
-		we.Status.Phase = workflowexecutionv1.PhaseFailed
-		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
-			FailedAt: metav1.Now(),
-		}
-		we.Status.DeduplicatedBy = originalWFEName
-		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
-
-		By("Waiting for DeduplicatedByWE to be set on the RR")
-		Eventually(func() string {
-			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return rr.Status.EnsureRoutingStatus().DeduplicatedByWE
-		}, timeout, interval).Should(Equal(originalWFEName))
-
+		// DD-TEST-010 Amendment 1 fix: create the original WFE (already Failed) BEFORE
+		// setting DeduplicatedBy on the current WE, mirroring IT-RO-190-001's pattern
+		// ("avoids RO NotFound -> Failed race"). RO's handleDedupResultPropagation
+		// treats a NotFound on the DeduplicatedBy-referenced WFE as a terminal dangling
+		// reference (correct for IT-RO-190-003's genuine-deletion case) with no retry,
+		// so setting a forward reference to a not-yet-created object here was a latent
+		// test race: it depended on the test's own follow-up Create() call always
+		// outrunning the controller's self-triggered reconcile of its own status write.
 		By("Creating the original WFE as Failed")
 		originalWFE := &workflowexecutionv1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{
@@ -235,8 +222,36 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			},
 		}
 		Expect(k8sClient.Create(ctx, originalWFE)).To(Succeed())
+		// Create() on a status-subresource CRD strips .status from the API
+		// server's response and repopulates the local object with it, so
+		// Phase must be re-set here (mirrors IT-RO-190-001's Create+re-set
+		// pattern above) -- otherwise this persists Phase="", which
+		// handleDedupResultPropagation's default case treats as
+		// "still in progress" forever, hanging this test.
+		originalWFE.Status.Phase = workflowexecutionv1.PhaseFailed
 		originalWFE.Status.FailureReason = "OOM killed"
 		Expect(k8sClient.Status().Update(ctx, originalWFE)).To(Succeed())
+
+		By("Marking the WFE as Failed/Deduplicated")
+		weName := fmt.Sprintf("we-%s", rr.Name)
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
+		}, timeout, interval).Should(Succeed())
+
+		we.Status.Phase = workflowexecutionv1.PhaseFailed
+		we.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
+			Reason:   workflowexecutionv1.FailureReasonDeduplicated,
+			FailedAt: metav1.Now(),
+		}
+		we.Status.DeduplicatedBy = originalWFEName
+		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+
+		By("Waiting for DeduplicatedByWE to be set on the RR")
+		Eventually(func() string {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.EnsureRoutingStatus().DeduplicatedByWE
+		}, timeout, interval).Should(Equal(originalWFEName))
 
 		By("Verifying RR inherits Failed with FailurePhaseDeduplicated")
 		Eventually(func() remediationv1.RemediationPhase {

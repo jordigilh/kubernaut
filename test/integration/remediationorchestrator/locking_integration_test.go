@@ -470,7 +470,16 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
-			// Wait for reconciler to retry and recover via Get-before-Create
+			// Wait for reconciler to retry and recover via Get-before-Create.
+			// Root cause (found while migrating this suite under #2213): this
+			// revert races the controller's own in-flight Advance-to-Executing
+			// retry, which could previously commit OverallPhase=Executing on
+			// top of the now-nil ref (transitionPhase's conflict-retry guard
+			// only re-validated OverallPhase, not WorkflowExecutionRef) —
+			// producing a PERMANENT terminal failure in executing_handler.go
+			// that no timeout would recover from. Fixed in terminal_transitions.go
+			// (BR-ORCH-031 guard, UT-AT-013/014); the standard timeout here is
+			// sufficient again since recovery is now a normal, fast retry loop.
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 					return false

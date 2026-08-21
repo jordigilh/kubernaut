@@ -133,6 +133,17 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		Expect(fetched.Status.EnsureCompletionStatus().FailurePhase).To(HaveValue(Equal(remediationv1.FailurePhaseAIAnalysis)),
 			"FailurePhase should be AIAnalysis")
 
+		By("Waiting for the one-time RetentionExpiryTime backfill (#265) to settle before the idempotency check")
+		// Issue #265: a separate, asynchronous reconcile backfills RetentionExpiryTime
+		// shortly after the Failed transition. Capturing firstResourceVersion before
+		// this lands would race against a legitimate (not idempotency-violating) write.
+		Eventually(func() *metav1.Time {
+			_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: rrName, Namespace: ROControllerNamespace,
+			}, fetched)
+			return fetched.Status.RetentionExpiryTime
+		}, timeout, interval).ShouldNot(BeNil(), "RetentionExpiryTime backfill should complete")
+
 		By("Verifying idempotency: second reconcile does not change Failed RR state")
 		firstResourceVersion := fetched.ResourceVersion
 		// ✅ APPROVED EXCEPTION: Intentional delay to allow controller reconcile loop
