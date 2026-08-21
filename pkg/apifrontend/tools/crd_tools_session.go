@@ -184,8 +184,10 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 // DD-AA-KA-001 Amendment Gap 1 / Issue #2172: AF watches KA's own
 // authoritative ack directly instead of polling the retired
 // IS.Status.Phase=Active signal AA used to write (that write was itself
-// removed from AA in #2170 -- see pkg/aianalysis/handlers/interfaces.go's
-// ISPhaseUpdater, which is now write-only for terminal phases).
+// removed from AA in #2170). #2214 Amendment: AA's remaining write-only
+// InvestigationSession terminal-close path was retired too -- AF's own
+// AgentSessionTerminalCloseReconciler (watching AgentSession) now owns IS
+// terminal-phase closure exclusively; AA no longer interacts with IS at all.
 // ========================================
 
 // agentSessionInteractivePollInterval is the poll-fallback interval, used
