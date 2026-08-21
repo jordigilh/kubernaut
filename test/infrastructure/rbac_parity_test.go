@@ -124,6 +124,13 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 		Entry("leases",              "coordination.k8s.io", "leases",                   []string{"get", "list", "watch"}),
 		Entry("aianalyses",          "kubernaut.ai", "aianalyses",                      []string{"get", "list", "watch"}),
 		Entry("IT-AF-1460-040: EA CRD", "kubernaut.ai", "effectivenessassessments",     []string{"get", "list", "watch"}),
+		// #2214: AgentSessionTerminalCloseReconciler watches AgentSession and
+		// adds/removes its own metadata-only finalizer. This entry was missing
+		// when 02-rbac.yaml drifted from charts/kubernaut/templates/apifrontend/
+		// apifrontend.yaml (CI run 32529373504, "E2E (apifrontend)"): the
+		// AgentSession informer could never complete its initial List, so the
+		// cache-sync timeout crashed the session controller manager mid-run.
+		Entry("agentsessions (#2214)", "kubernaut.ai", "agentsessions",                 []string{"get", "list", "watch", "update", "patch"}),
 		Entry("SAR",                 "authorization.k8s.io", "subjectaccessreviews",    []string{"create"}),
 		Entry("token reviews",       "authentication.k8s.io", "tokenreviews",           []string{"create"}),
 	)

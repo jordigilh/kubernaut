@@ -1008,6 +1008,45 @@ occasional miss as noted above), but KA's own watch-delete reliance is an indepe
 latent risk out of scope for #2214 — filed as #2231 to quantify the actual blast radius and decide
 whether a design fix (or an explicit documented accepted-risk note) is warranted.
 
+### Post-merge correction: two more RBAC-verb drifts surfaced by the finalizer fix (2026-08-21)
+
+CI RCA (PR #2222, run [32525130330](https://github.com/jordigilh/kubernaut/actions/runs/32525130330)
+and run [32529373504](https://github.com/jordigilh/kubernaut/actions/runs/32529373504)) surfaced two
+more instances of the same "N independent RBAC copies drift out of sync" defect this decision already
+flagged above (the "three sources" lesson), both triggered directly by the finalizer fix landing:
+
+1. **AA's `DeleteForRetry` needs `update`, not just `delete`.** Once `DeleteForRetry` was changed to
+   strip `agentsessionv1.TerminalCloseFinalizer` itself before deleting (so the capacity-exceeded
+   retry path gets an immediately-absent object instead of waiting on AF's async reconciler), every
+   retry attempt failed permanently with `"cannot update resource \"agentsessions\""`. Fixed by adding
+   `update` to all **three** of AA's RBAC sources named in the "three sources" lesson above
+   (`internal/controller/aianalysis/aianalysis_controller.go`'s kubebuilder marker →
+   `config/rbac/role.yaml`; `charts/kubernaut/templates/aianalysis/aianalysis.yaml`; and
+   `test/infrastructure/aianalysis_e2e.go`'s hand-rolled `ClusterRole`).
+
+2. **A fourth, previously-undocumented `agentsessions` RBAC copy exists for AF itself**:
+   `deploy/apifrontend/base/02-rbac.yaml`, a Kustomize-style base manifest read directly (via
+   `os.ReadFile` + `kubectl apply`, not `kustomize build`) by the AF-only E2E deployment path
+   (`test/infrastructure/apifrontend_e2e.go`'s `afDeployE2ERBAC`; full-pipeline E2E instead installs
+   the real Helm chart, so it was never exposed to this gap). This file had **no `agentsessions` rule
+   at all** — the `AgentSessionTerminalCloseReconciler`'s informer could never complete its initial
+   `List`, so its cache-sync timed out ~5 minutes into the run (the very timeout budget added earlier
+   in this amendment) and crashed the session controller manager, which then failed `readyz` and broke
+   every in-flight port-forward with cascading `"connection reset by peer"` failures across unrelated
+   specs. Fixed by adding the same `get/list/watch/update/patch` grant already present in
+   `charts/kubernaut/templates/apifrontend/apifrontend.yaml`. Also added a `DescribeTable` entry for
+   `agentsessions` to `test/infrastructure/rbac_parity_test.go`'s existing `UT-INFRA-RBAC-001`
+   structural parity suite (which already covers this same file for every *other* resource AF needs,
+   but had no entry for this one) so a future regression fails fast in the parity test instead of via
+   a cryptic E2E cache-sync timeout.
+
+The systemic gap named in the original "three sources" lesson (no single source of truth for
+`AgentSession` RBAC, `AGENTS.md`'s "grep before declaring a client call wired" discipline being the
+only real guard) is now a **four-sources** problem in practice. `rbac_parity_test.go` narrows the
+blast radius for AF's own copy going forward, but AA's three sources still have no equivalent
+automated parity test — left as a Future Consideration below rather than added in this already-large
+amendment.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

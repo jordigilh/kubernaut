@@ -59,6 +59,24 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses"]
     verbs: ["get", "list", "watch"]
+  # AgentSession (#2214 AF-owned IS terminal-close, DD-AA-KA-001 amendment):
+  # AgentSessionTerminalCloseReconciler watches AgentSession and closes the
+  # correlated InvestigationSession on terminal phase; adds/removes its own
+  # metadata-only finalizer (agentsessionv1.TerminalCloseFinalizer) to
+  # reliably observe deletion via Reconcile instead of a best-effort raw
+  # watch delete event -- no "agentsessions/status" grant, AF never writes
+  # Status, only KA does (BR-AA-KA-065.9). This base manifest (used only by
+  # the AF-only E2E deployment path, test/infrastructure/apifrontend_e2e.go's
+  # afDeployE2ERBAC -- full-pipeline E2E instead deploys the real Helm chart)
+  # had drifted from charts/kubernaut/templates/apifrontend/apifrontend.yaml,
+  # which already carries this grant: the AgentSession informer could never
+  # complete its initial List, so AgentSessionTerminalCloseReconciler's cache
+  # sync timed out ~5 min into the run and crashed the session controller
+  # manager (CI run 32529373504, "E2E (apifrontend)": cascading "connection
+  # reset by peer" once the pod's readyz started failing).
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   # EffectivenessAssessment: fetch stabilizationWindow for progress artifacts (#1403),
   # watch EA sub-phase transitions for status/subscribe SSE stream (#1460)
   - apiGroups: ["kubernaut.ai"]
