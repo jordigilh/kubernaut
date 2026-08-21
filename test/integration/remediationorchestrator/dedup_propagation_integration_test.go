@@ -222,6 +222,13 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			},
 		}
 		Expect(k8sClient.Create(ctx, originalWFE)).To(Succeed())
+		// Create() on a status-subresource CRD strips .status from the API
+		// server's response and repopulates the local object with it, so
+		// Phase must be re-set here (mirrors IT-RO-190-001's Create+re-set
+		// pattern above) -- otherwise this persists Phase="", which
+		// handleDedupResultPropagation's default case treats as
+		// "still in progress" forever, hanging this test.
+		originalWFE.Status.Phase = workflowexecutionv1.PhaseFailed
 		originalWFE.Status.FailureReason = "OOM killed"
 		Expect(k8sClient.Status().Update(ctx, originalWFE)).To(Succeed())
 
