@@ -16,8 +16,8 @@ server:
   host: "0.0.0.0"
   healthPort: 8081
   metricsPort: 9090
-  readTimeout: 30s
-  writeTimeout: 30s
+  readTimeout: {{ $v.config.server.readTimeout }}
+  writeTimeout: {{ $v.config.server.writeTimeout }}
   # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
   maxBodySize: {{ $v.config.server.maxBodySize | quote }}
   # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)

@@ -160,6 +160,7 @@ datastorage:
                 requestsPerSecond: 50
             readTimeout: 30s
             signerCertDir: /etc/certs
+            writeTimeout: 30s
     dbExistingSecret: ""
     logging:
         level: INFO

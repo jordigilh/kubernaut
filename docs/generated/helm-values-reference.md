@@ -180,6 +180,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.server.rateLimit.requestsPerSecond` | number | Sustained per-IP requests/second | `50` | No |
 | `config.server.readTimeout` | string | Server read timeout | `"30s"` | No |
 | `config.server.signerCertDir` | string | #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key) | `"/etc/certs"` | No |
+| `config.server.writeTimeout` | string | Issue #2219: exact peer of readTimeout, previously missing entirely. Server write timeout | `"30s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `dbExistingSecret` | string | DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret. | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |

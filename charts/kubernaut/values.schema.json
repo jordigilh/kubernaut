@@ -1183,6 +1183,15 @@
                   "default": "30s",
                   "description": "Server read timeout"
                 },
+                "writeTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Issue #2219: exact peer of readTimeout, previously missing entirely. Server write timeout"
+                },
                 "corsAllowedOrigins": {
                   "type": "array",
                   "items": {
