@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -108,14 +108,14 @@ var _ = Describe("Re-invocation Fallback", func() {
 	}
 
 	textEvent := func() *adksession.Event {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(ctx, "inv-1")
 		evt.Author = agent
 		evt.Content = genai.NewContentFromText("analysis complete", genai.RoleModel)
 		return evt
 	}
 
 	toolCallEvent := func() *adksession.Event {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(ctx, "inv-1")
 		evt.Author = agent
 		evt.Content = &genai.Content{
 			Role: string(genai.RoleModel),

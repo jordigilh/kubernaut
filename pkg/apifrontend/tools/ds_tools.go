@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 )
@@ -97,7 +98,7 @@ func NewGetRemediationHistoryTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation_history",
 		Description: "Query historical remediations from the Data Store. Required params: kind, name, spec_hash. Optional: namespace, since.",
-	}, func(ctx tool.Context, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
+	}, func(ctx agent.Context, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
 		return HandleGetRemediationHistory(ctx, client, args)
 	})
 }
@@ -139,7 +140,7 @@ func NewGetEffectivenessTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_effectiveness",
 		Description: "Get effectiveness scores and metrics for remediation workflows",
-	}, func(ctx tool.Context, args GetEffectivenessArgs) (GetEffectivenessResult, error) {
+	}, func(ctx agent.Context, args GetEffectivenessArgs) (GetEffectivenessResult, error) {
 		return HandleGetEffectiveness(ctx, client, args)
 	})
 }
@@ -301,7 +302,7 @@ func NewGetAuditTrailTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_audit_trail",
 		Description: "Retrieve the audit trail for a remediation, showing all actions and decisions",
-	}, func(ctx tool.Context, args GetAuditTrailArgs) (GetAuditTrailResult, error) {
+	}, func(ctx agent.Context, args GetAuditTrailArgs) (GetAuditTrailResult, error) {
 		return HandleGetAuditTrail(ctx, client, args)
 	})
 }

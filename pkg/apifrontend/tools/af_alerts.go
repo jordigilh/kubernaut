@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
@@ -341,7 +342,7 @@ func NewListAlertsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "list_alerts",
 		Description: "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
-	}, func(ctx tool.Context, args ListAlertsArgs) (ListAlertsResult, error) {
+	}, func(ctx agent.Context, args ListAlertsArgs) (ListAlertsResult, error) {
 		return HandleListAlerts(ctx, client, args)
 	})
 }
@@ -351,7 +352,7 @@ func NewGetAlertDetailsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "get_alert_details",
 		Description: "Get details of a specific Prometheus/Thanos alert by name, optionally filtered by namespace",
-	}, func(ctx tool.Context, args GetAlertDetailsArgs) (GetAlertDetailsResult, error) {
+	}, func(ctx agent.Context, args GetAlertDetailsArgs) (GetAlertDetailsResult, error) {
 		return HandleGetAlertDetails(ctx, client, args)
 	})
 }

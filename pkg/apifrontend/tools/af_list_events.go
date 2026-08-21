@@ -10,8 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -184,7 +185,7 @@ func NewKubectlListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, err
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_list_events",
 		Description: "List Kubernetes Events in a namespace, optionally filtered by reason or involved resource kind",
-	}, func(ctx tool.Context, args ListEventsArgs) (ListEventsResult, error) {
+	}, func(ctx agent.Context, args ListEventsArgs) (ListEventsResult, error) {
 		client, err := factory(ctx)
 		if err != nil {
 			return ListEventsResult{}, fmt.Errorf("%w", ErrK8sUnavailable)

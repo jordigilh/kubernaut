@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"

@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -149,11 +150,11 @@ func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, contr
 		ScopeChecker: scopeChecker,
 	}
 	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_remediate",
+		Name: "kubernaut_remediate",
 		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. " +
 			"The pipeline will analyze and remediate automatically. " +
 			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the resource lives on; omit for the local hub cluster.",
-	}, func(ctx tool.Context, args RemediateArgs) (RemediateResult, error) {
+	}, func(ctx agent.Context, args RemediateArgs) (RemediateResult, error) {
 		return HandleRemediate(ctx, d, &args, usernameFromContext(ctx))
 	})
 }

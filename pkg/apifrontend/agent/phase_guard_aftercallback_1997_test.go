@@ -23,7 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
@@ -54,8 +55,8 @@ import (
 var _ = Describe("phaseGuardAfter AfterToolCallback contract (#1997)", func() {
 	var (
 		state   *mapState
-		toolCtx tool.Context
-		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		toolCtx agent.Context
+		after   func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {

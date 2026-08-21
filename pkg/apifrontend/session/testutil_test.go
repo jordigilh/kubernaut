@@ -3,7 +3,7 @@ package session_test
 import (
 	"context"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 

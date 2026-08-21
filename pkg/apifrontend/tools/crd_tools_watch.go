@@ -7,8 +7,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/watch"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -394,7 +395,7 @@ func NewWatchTool(client crclient.WithWatch, controllerNS string) (tool.Tool, er
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
-	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
+	}, func(ctx agent.Context, args WatchArgs) (WatchResult, error) {
 		args.Namespace = controllerNS
 		return HandleWatch(ctx, client, args)
 	})

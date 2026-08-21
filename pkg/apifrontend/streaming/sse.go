@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 )
 
 // StateKeyTerminal is set in an event's StateDelta to signal that the

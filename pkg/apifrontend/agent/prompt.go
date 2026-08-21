@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
