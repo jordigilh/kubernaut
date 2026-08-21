@@ -192,12 +192,26 @@ var _ = Describe("Controller Shutdown", func() {
 
 		// Test 5: Shutdown timeout enforcement
 		It("should enforce shutdown timeout", func() {
-			// Create context with shutdown timeout
+			// Shutdown timeout flake RCA (CI run 32504237170, PR #2222):
+			// context.WithTimeout computes its deadline from its OWN internal
+			// time.Now() call. Capturing `start` on the line after -- as this
+			// test previously did -- leaves a measurement gap between the
+			// context's clock read and start's: any scheduling delay in that
+			// gap (goroutine preemption, GC pause, CPU steal on a shared CI
+			// runner) leaks out of `elapsed`, so `elapsed >= shutdownTimeout`
+			// can fail even though the context's actual deadline had already
+			// elapsed (observed: elapsed=48.998814ms vs required >=50ms, a
+			// ~1ms gap consistent with exactly this). Capturing `start` BEFORE
+			// creating the context eliminates the gap: `elapsed` is then an
+			// upper bound on the context's own age, so it can only be >=
+			// shutdownTimeout once Done() fires. Same recurring class of bug
+			// as #1552/#1714/#2140 (hard wall-clock assertions racing CI
+			// runner jitter), but this instance's fix is a genuine ordering
+			// bug, not just a tolerance to loosen.
 			shutdownTimeout := 50 * time.Millisecond
+			start := time.Now()
 			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
-
-			start := time.Now()
 
 			// Wait for context to expire
 			<-ctx.Done()
