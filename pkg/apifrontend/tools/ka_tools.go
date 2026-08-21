@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
@@ -246,7 +247,7 @@ func NewDiscoverWorkflowsTool(mcpClient ka.MCPClient) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_discover_workflows",
 		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_investigate first.",
-	}, func(ctx tool.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
+	}, func(ctx agent.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
 		return HandleDiscoverWorkflows(ctx, mcpClient, args)
 	})
 }
@@ -318,7 +319,7 @@ func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
 		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_investigate first.",
-	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
+	}, func(ctx agent.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
 		return HandleSelectWorkflow(ctx, mcpClient, args, auditor)
 	})
 }
@@ -436,7 +437,7 @@ func NewPresentDecisionTool() (tool.Tool, error) {
 		Name:          "kubernaut_present_decision",
 		Description:   "Present investigation results and remediation options to the user for a decision",
 		IsLongRunning: true,
-	}, func(ctx tool.Context, args PresentDecisionArgs) (PresentDecisionResult, error) {
+	}, func(ctx agent.Context, args PresentDecisionArgs) (PresentDecisionResult, error) {
 		return HandlePresentDecision(args), nil
 	})
 }

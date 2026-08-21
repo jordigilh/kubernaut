@@ -10,8 +10,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/agent"
-	adksession "google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	adksession "google.golang.org/adk/v2/session"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"

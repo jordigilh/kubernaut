@@ -24,11 +24,11 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/plugin"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/server/adka2a"
-	adksession "google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/plugin"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/server/adka2a"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -254,7 +254,7 @@ func (r *reinvokingRunner) clearCheckpointFlags(ctx context.Context, userID, ses
 		return
 	}
 
-	event := adksession.NewEvent("checkpoint-clear")
+	event := adksession.NewEvent(ctx, "checkpoint-clear")
 	event.Actions.StateDelta = map[string]any{
 		session.StateKeyPhase2Blocked: false,
 		session.StateKeyPhase3Blocked: false,

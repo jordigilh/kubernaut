@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -96,7 +97,7 @@ func NewCheckExistingRemediationTool(client crclient.Client, controllerNS string
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_check_existing_remediation",
 		Description: "Check if an active remediation already exists for a target resource (deduplication check)",
-	}, func(ctx tool.Context, args CheckExistingRRArgs) (CheckExistingRRResult, error) {
+	}, func(ctx agent.Context, args CheckExistingRRArgs) (CheckExistingRRResult, error) {
 		return HandleCheckExistingRR(ctx, client, controllerNS, args)
 	})
 }

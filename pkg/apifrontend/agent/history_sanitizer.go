@@ -2,8 +2,8 @@ package agent
 
 import (
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 )
 
@@ -29,7 +29,7 @@ import (
 // returns non-nil LLMResponse or error, the actual model call is skipped."
 // A non-nil *model.LLMResponse here would skip the real model call entirely,
 // which this history-patching callback must never do (Issue #1546 Tier 2).
-func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
+func historySanitizer(ctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 	if len(req.Contents) == 0 {
 		return nil, nil // nolint:nilnil
 	}

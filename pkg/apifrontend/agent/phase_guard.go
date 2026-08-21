@@ -21,11 +21,11 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	adksession "google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	adksession "google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -147,7 +147,7 @@ var sessionTerminalTools = map[string]bool{
 // When registry is non-nil, the after-callback also manages the
 // ActiveContextRegistry for multi-turn session continuity (BR-SESS-020).
 func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
-	return phaseGuardBefore, func(ctx tool.Context, t tool.Tool, inputArgs, resp map[string]any, callErr error) (map[string]any, error) {
+	return phaseGuardBefore, func(ctx agent.Context, t tool.Tool, inputArgs, resp map[string]any, callErr error) (map[string]any, error) {
 		return phaseGuardAfter(registry, ctx, t, inputArgs, resp, callErr)
 	}
 }
@@ -162,7 +162,7 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 // normally" signal, not our design choice — a non-nil map here would
 // short-circuit the actual tool call (see newMetricsToolCallbacks in
 // root.go for the full rationale) (Issue #1546 Tier 2).
-func phaseGuardBefore(ctx tool.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
+func phaseGuardBefore(ctx agent.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
 	// #2047 (main clone of #2023): mutates args in place (never
 	// short-circuits the call) so present_decision still executes and the
 	// AU-3 structured artifact is always emitted -- only a fabricated
@@ -306,7 +306,7 @@ func injectStoredRRID(state adksession.State, args map[string]any, toolName stri
 // Re-returning the original resp/callErr here looked harmless but silently
 // skipped every AfterToolCallback registered after this one (afterLog) for
 // any tool call at all, not just the ones this guard cares about.
-func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context, t tool.Tool, inputArgs, resp map[string]any, callErr error) (map[string]any, error) {
+func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context, t tool.Tool, inputArgs, resp map[string]any, callErr error) (map[string]any, error) {
 	toolName := t.Name()
 	isEntry := driverEntryTools[toolName]
 	isTerminal := sessionTerminalTools[toolName]
@@ -377,7 +377,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 //     "extracted from the KA complete event" the way this struct's own doc
 //     comment describes, so it must not be cached as an authoritative fact --
 //     same treatment as "no structured rca at all".
-func recordInvestigateGroundingState(ctx tool.Context, resp map[string]any, isSuccess bool) {
+func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isSuccess bool) {
 	state := ctx.State()
 	if state == nil {
 		return
@@ -412,7 +412,7 @@ func toolCallSucceeded(callErr error, resp map[string]any) bool {
 	return true
 }
 
-func refreshActiveContext(registry *launcher.ActiveContextRegistry, ctx tool.Context) {
+func refreshActiveContext(registry *launcher.ActiveContextRegistry, ctx agent.Context) {
 	if identity := auth.UserIdentityFromContext(ctx); identity != nil && identity.Username != "" {
 		registry.Refresh(identity.Username)
 	}
@@ -423,7 +423,7 @@ func refreshActiveContext(registry *launcher.ActiveContextRegistry, ctx tool.Con
 // blocked unless the session's interaction_mode is
 // full_remediation_autonomous, in which case the harness may auto-chain
 // straight into kubernaut_select_workflow within the same turn.
-func recordDiscoverWorkflowsCheckpoint(ctx tool.Context) {
+func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
 	state := ctx.State()
 	if state == nil {
 		return
@@ -448,7 +448,7 @@ func recordDiscoverWorkflowsCheckpoint(ctx tool.Context) {
 // phase2_blocked checkpoint flag it implies — kubernaut_reconnect resumes an
 // already-established session and leaves any prior mode/checkpoint state
 // untouched.
-func recordDriverEntryState(ctx tool.Context, toolName string, inputArgs, resp map[string]any) {
+func recordDriverEntryState(ctx agent.Context, toolName string, inputArgs, resp map[string]any) {
 	state := ctx.State()
 	if state == nil {
 		return
@@ -576,7 +576,7 @@ func storeActiveRRID(state adksession.State, resp, inputArgs map[string]any, log
 // checkpoint flag remained blocked, that stale flag could incorrectly
 // nudge reinvocation on a later text-only turn in the same chat session,
 // resurrecting a driver session the user had already ended.
-func clearDriverSessionState(ctx tool.Context) {
+func clearDriverSessionState(ctx agent.Context) {
 	state := ctx.State()
 	if state == nil {
 		return
@@ -595,7 +595,7 @@ func clearDriverSessionState(ctx tool.Context) {
 
 // syncActiveContextRegistry sets or clears the per-user ActiveContextRegistry
 // entry after a successful driver-entry or session-terminal tool call.
-func syncActiveContextRegistry(registry *launcher.ActiveContextRegistry, ctx tool.Context, isEntry, isTerminal bool) {
+func syncActiveContextRegistry(registry *launcher.ActiveContextRegistry, ctx agent.Context, isEntry, isTerminal bool) {
 	if registry == nil {
 		return
 	}
@@ -826,7 +826,7 @@ func substituteGroundedRCA(state adksession.State, args map[string]any) {
 // return), and the loop above already did its job by mutating
 // llmResponse.Content.Parts[*].FunctionCall.Args in place -- no replacement
 // response object is needed (second return).
-func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *model.LLMResponse, llmResponseErr error) (*model.LLMResponse, error) {
+func sanitizePresentDecisionResponse(ctx agent.Context, llmResponse *model.LLMResponse, llmResponseErr error) (*model.LLMResponse, error) {
 	if llmResponseErr != nil || llmResponse == nil || llmResponse.Content == nil {
 		return nil, nil //nolint:nilerr,nilnil // see doc comment above: not an error path, ADK's own "no override" sentinel
 	}
@@ -863,13 +863,13 @@ func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *mod
 // response reported, rather than trusting the LLM's own transcription of
 // those same facts into present_decision -- see substituteGroundedRCA.
 //
-// #2105 (v1.6 clone #2106): takes agent.CallbackContext (rather than
-// tool.Context) so the identical sanitization can run from both this
+// #2105 (v1.6 clone #2106): takes agent.Context (rather than
+// agent.Context) so the identical sanitization can run from both this
 // function's original BeforeToolCallback call site (phaseGuardBefore) and
 // sanitizePresentDecisionResponse's AfterModelCallback call site above --
-// agent.CallbackContext is the narrower interface both ADK callback types
+// agent.Context is the narrower interface both ADK callback types
 // satisfy (State() is all this function needs).
-func enforceGroundingGuard(ctx agent.CallbackContext, args map[string]any) {
+func enforceGroundingGuard(ctx agent.Context, args map[string]any) {
 	if args == nil {
 		return
 	}
@@ -907,8 +907,8 @@ func enforceGroundingGuard(ctx agent.CallbackContext, args map[string]any) {
 
 // NewPhaseGuardForTest exports the phase guard without registry for unit testing.
 func NewPhaseGuardForTest() (
-	func(tool.Context, tool.Tool, map[string]any) (map[string]any, error),
-	func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
+	func(agent.Context, tool.Tool, map[string]any) (map[string]any, error),
+	func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
 ) {
 	return newPhaseGuard(nil)
 }
@@ -916,8 +916,8 @@ func NewPhaseGuardForTest() (
 // NewPhaseGuardWithRegistryForTest exports the phase guard with registry for
 // session continuity integration testing (BR-SESS-020).
 func NewPhaseGuardWithRegistryForTest(registry *launcher.ActiveContextRegistry) (
-	func(tool.Context, tool.Tool, map[string]any) (map[string]any, error),
-	func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
+	func(agent.Context, tool.Tool, map[string]any) (map[string]any, error),
+	func(agent.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
 ) {
 	return newPhaseGuard(registry)
 }
@@ -943,7 +943,7 @@ func NewPhaseGuardWithRegistryForTest(registry *launcher.ActiveContextRegistry) 
 // actionable error) when the string is empty or does not parse as a JSON
 // array -- this must never mask genuinely malformed input as an
 // empty-but-valid payload (SI-11).
-func repairPresentDecisionOptions(ctx agent.CallbackContext, args map[string]any) {
+func repairPresentDecisionOptions(ctx agent.Context, args map[string]any) {
 	raw, ok := args["options"].(string)
 	if !ok {
 		return

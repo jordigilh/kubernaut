@@ -8,8 +8,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"

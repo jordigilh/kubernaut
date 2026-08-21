@@ -1,6 +1,7 @@
 package streaming_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
@@ -26,14 +27,14 @@ func TestStreamingSuite(t *testing.T) {
 
 var _ = Describe("SSE Event Formatting", func() {
 	textEvent := func(author, text string) *adksession.Event {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(context.Background(), "inv-1")
 		evt.Author = author
 		evt.Content = genai.NewContentFromText(text, genai.RoleModel)
 		return evt
 	}
 
 	toolCallEvent := func() *adksession.Event {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(context.Background(), "inv-1")
 		evt.Author = agent
 		evt.Content = &genai.Content{
 			Role: string(genai.RoleModel),
@@ -119,7 +120,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-009: nil Content event produces valid SSE frame", func() {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(context.Background(), "inv-1")
 		evt.Author = agent
 		evt.Content = nil
 		frame, err := streaming.FormatSSEFrame(evt, 10)
@@ -130,7 +131,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-010: done event with nil Content has default text", func() {
-		evt := adksession.NewEvent("inv-1")
+		evt := adksession.NewEvent(context.Background(), "inv-1")
 		evt.Author = agent
 		evt.Content = nil
 		evt.Actions.StateDelta = map[string]any{

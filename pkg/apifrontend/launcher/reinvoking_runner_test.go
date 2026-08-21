@@ -25,8 +25,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"google.golang.org/adk/agent"
-	adksession "google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -76,14 +76,14 @@ func (r *scriptedRunner) Run(ctx context.Context, userID, sessionID string, msg 
 }
 
 func textOnlyModelEvent(invocationID, text string) *adksession.Event {
-	event := adksession.NewEvent(invocationID)
+	event := adksession.NewEvent(context.Background(), invocationID)
 	event.Author = "model"
 	event.Content = genai.NewContentFromText(text, genai.RoleModel)
 	return event
 }
 
 func toolCallModelEvent(invocationID string) *adksession.Event {
-	event := adksession.NewEvent(invocationID)
+	event := adksession.NewEvent(context.Background(), invocationID)
 	event.Author = "model"
 	event.Content = &genai.Content{
 		Role: "model",
@@ -104,7 +104,7 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 		// DD-AF-011 (#1899): reinvocation now also requires an active driver
 		// session in state -- this test represents a genuinely stalled
 		// mid-investigation continuation, so declare one.
-		driverEvt := adksession.NewEvent("setup")
+		driverEvt := adksession.NewEvent(context.Background(), "setup")
 		driverEvt.Actions.StateDelta = map[string]any{session.StateKeyDriverActive: true}
 		Expect(sessionSvc.AppendEvent(context.Background(), createResp.Session, driverEvt)).To(Succeed())
 
@@ -190,7 +190,7 @@ func (r *checkpointObservingRunner) Run(ctx context.Context, userID, sessionID s
 		r.calls = append(r.calls, checkpointRunnerCall{phase2AtEntry: p2, phase3AtEntry: p3})
 
 		if delta, ok := r.sideEffects[callIdx]; ok {
-			effect := adksession.NewEvent("side-effect")
+			effect := adksession.NewEvent(context.Background(), "side-effect")
 			effect.Actions.StateDelta = delta
 			if appendErr := r.sessionSvc.AppendEvent(ctx, resp.Session, effect); appendErr != nil {
 				yield(nil, appendErr)
@@ -228,7 +228,7 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 
 		// Simulate leftover blocked checkpoints from a prior turn (e.g. the
 		// user asked a question mid-investigation and never confirmed).
-		leftover := adksession.NewEvent("leftover")
+		leftover := adksession.NewEvent(context.Background(), "leftover")
 		leftover.Actions.StateDelta = map[string]any{
 			session.StateKeyPhase2Blocked: true,
 			session.StateKeyPhase3Blocked: true,
@@ -259,7 +259,7 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		leftover := adksession.NewEvent("leftover")
+		leftover := adksession.NewEvent(context.Background(), "leftover")
 		leftover.Actions.StateDelta = map[string]any{
 			session.StateKeyPhase2Blocked: true,
 			session.StateKeyDriverActive:  true,
@@ -313,7 +313,7 @@ func toolResponseEvent(toolName, errMsg string) *adksession.Event {
 	} else {
 		resp["output"] = "ok"
 	}
-	event := adksession.NewEvent("inv-cb")
+	event := adksession.NewEvent(context.Background(), "inv-cb")
 	event.Author = genai.RoleModel
 	event.Content = &genai.Content{
 		Role: "user",

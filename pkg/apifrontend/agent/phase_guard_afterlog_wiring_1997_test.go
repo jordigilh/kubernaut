@@ -25,13 +25,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"google.golang.org/genai"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
@@ -90,7 +90,7 @@ var _ = Describe("phaseGuardAfter + afterLog production wiring (#1997/#1998, BR-
 		investigateTool, err := functiontool.New(functiontool.Config{
 			Name:        "kubernaut_investigate",
 			Description: "Start an interactive investigation (driver-entry tool)",
-		}, func(_ tool.Context, _ investigateArgs) (investigateResult, error) {
+		}, func(_ agent.Context, _ investigateArgs) (investigateResult, error) {
 			return investigateResult{SessionID: "sess-1997-wiring", Status: "active"}, nil
 		})
 		Expect(err).NotTo(HaveOccurred())

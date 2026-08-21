@@ -20,8 +20,9 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -69,7 +70,7 @@ func NewListClustersTool(reg registry.ClusterRegistry) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "list_clusters",
 		Description: "List all managed fleet clusters. Returns cluster IDs that can be passed as cluster_id to kubectl_get or kubectl_list for cross-cluster investigation.",
-	}, func(_ tool.Context, _ ListClustersArgs) (ListClustersResult, error) {
+	}, func(_ agent.Context, _ ListClustersArgs) (ListClustersResult, error) {
 		return HandleListClusters(context.Background(), reg)
 	})
 }

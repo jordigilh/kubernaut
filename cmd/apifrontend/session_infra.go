@@ -26,7 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
