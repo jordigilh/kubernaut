@@ -47,6 +47,21 @@ config knobs can land and merge undetected — the same class of gap that allowe
 (a config field silently ignored in favor of a hardcoded literal) to go unnoticed until a manual
 audit was performed.
 
+**Addendum (2026-08-21, [PR #2225 review](https://github.com/jordigilh/kubernaut/pull/2225#issuecomment-5371062661))**:
+a related but distinct failure mode was flagged during that PR's review. For a config knob that
+carries a real Go-side default in addition to its schema-declared one
+(`apifrontend.config.mcp.sessionIdleTimeout`/`toolTimeout`/`toolTimeouts`), the same conceptual
+value now exists in two independently-authored places — `pkg/apifrontend/config/config.go`'s
+`DefaultConfig()` (Go literal) and `values.schema.json`'s `"default"` (JSON literal) — kept in
+sync only by `make generate-helm-defaults` plus human code review, with no automated cross-check.
+This is structurally the same drift class that caused
+[kubernaut-operator#374](https://github.com/jordigilh/kubernaut-operator/pull/374): a
+hand-maintained copy of this exact `ToolTimeouts` map silently fell 2-of-4 entries out of date
+when AF's own binary default gained two new tools. Unlike #374, deleting the schema-side copy is
+not the right fix here — issue #2221 deliberately made these fields user-overridable via
+`values.yaml`, so the schema's own default must exist for `kubernaut.mergedValues` to materialize
+something when the user doesn't override it. The right fix is detection, not deletion: FR-6 below.
+
 ---
 
 ## Business Objective
@@ -77,6 +92,11 @@ lower-priority gap.
    first-ever chart test file).
 5. `helm unittest charts/kubernaut/`, `make check-helm-coverage`, `go build ./...`, and
    `golangci-lint run` all pass cleanly after the change.
+6. For the config-knob fields that carry a real Go-side default in addition to a schema-declared
+   one (`apifrontend.config.mcp.{sessionIdleTimeout,toolTimeout,toolTimeouts.*}`), a generic,
+   table-driven test proves `config.DefaultConfig()`'s Go value and `values.schema.json`'s declared
+   `"default"` are identical, so a future edit to only one side fails CI instead of silently
+   drifting (see Problem Statement addendum below).
 
 ---
 
@@ -106,6 +126,15 @@ lower-priority gap.
   `remediationorchestrator.config.{timeouts,routing,effectivenessAssessment,asyncPropagation,
   notifications,retention}` sub-fields) receive new `helm-unittest` assertions only — no template
   or schema changes, since these are test-coverage gaps, not bugs.
+- **FR-6 (Go-vs-schema default drift detection)**: a table-driven Ginkgo test
+  (`pkg/apifrontend/config/schema_default_drift_test.go`, `TC-P2C-04`) reads the real
+  `charts/kubernaut/values.schema.json`, resolves each dual-sourced MCP duration field's declared
+  `"default"`, and asserts it is `time.Duration`-equal to `config.DefaultConfig()`'s corresponding
+  Go value. This is deliberately a small, self-contained JSON-tree walk in the test file itself,
+  not a reuse of `hack/internal/helmschema` — that package is Go-`internal`-scoped to `hack/` (its
+  parent directory), so `pkg/` cannot import it, and blurring that boundary to serve one caller
+  isn't warranted. Adding a future dual-sourced default only requires one new `Entry()` row, not a
+  bespoke parsing/comparison test (the gap the single-field `TC-P2C-03d` had).
 
 ---
 
@@ -123,6 +152,13 @@ lower-priority gap.
   `generate-helm-config-docs` freshness checks; it is a new, independent gate in the same CI job.
 - Does not extend coverage checking to the Kubernaut Operator's Helm chart (out of scope; tracked
   separately if a parity gap is later identified there).
+- FR-6's drift detection is deliberately scoped to the three `apifrontend.config.mcp.*` fields
+  concretely identified as dual-sourced during PR #2225's review, not a fully generic
+  reflection-based comparison across every service's `DefaultConfig()` struct against the schema.
+  Several services' config structs don't follow a uniform pattern amenable to that today (e.g.
+  `pkg/datastorage/config` has no `DefaultConfig()` at all — its timeout fields are plain strings
+  with defaults, where they exist, scattered across `validate*()` methods) — generalizing further
+  is a separate, larger effort, not a byproduct of this fast-follow.
 
 ---
 
@@ -131,7 +167,7 @@ lower-priority gap.
 | Control | Requirement Satisfied |
 |---|---|
 | **SI-10** (Information Input Validation) | FR-1–FR-5: proves — via an enforced, structural CI gate rather than incidental test presence — that every schema-declared, defaulted config input is not just accepted (BR-PLATFORM-010's concern) but actually observably takes effect through the chart's rendering path, and that this property cannot silently regress. |
-| **CM-6** (Configuration Settings) | FR-3/FR-4: makes the chart's config-knob test-coverage state an explicit, machine-readable, version-controlled artifact (`.helm-coverage-allowlist.yaml`) rather than an unknown or manually-tracked property. |
+| **CM-6** (Configuration Settings) | FR-3/FR-4: makes the chart's config-knob test-coverage state an explicit, machine-readable, version-controlled artifact (`.helm-coverage-allowlist.yaml`) rather than an unknown or manually-tracked property. FR-6: proves the two independently-authored copies of a baseline configuration setting (Go default, schema default) remain a single logical value, not two that can silently diverge. |
 
 ---
 
@@ -149,6 +185,10 @@ lower-priority gap.
 - **Reusable component**: `hack/internal/helmschema` (`ParseSchema`, `ResolveNode`, `IsMap`,
   `IsObjectWithProperties`, `HasDefault`, `SortedKeys`), already shared by `hack/gen-helm-defaults`
   and `hack/gen-helm-config-docs`; this tool is a third consumer.
+- **FR-6 precedent**: [kubernaut-operator#374](https://github.com/jordigilh/kubernaut-operator/pull/374)
+  (the same `mcp.toolTimeouts` drift class, previously caused by an operator-side hand-maintained
+  copy — fixed there by deleting the redundant copy, which isn't viable for the chart's
+  deliberately user-overridable schema default, hence FR-6's detection-based approach instead).
 
 ---
 
