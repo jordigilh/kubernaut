@@ -999,12 +999,14 @@ still no `agentsessions/status` grant — AF still never writes KA's Status fiel
 **Verification**: re-ran the same reproduction harness (real CI images, `--race --procs=4`, amd64) on
 the fixed code — see PR #2222 for the run count and result at time of merge.
 
-**Cross-check (not fixed here, flagged for awareness)**: KA's `Dispatcher.watchLoop` reacts to a raw
-`watch.Deleted` event for the same `AgentSession` type via `cancelOnDelete` — the same structural
-pattern this fix moved AF *away* from, for the same underlying reason. Deferring the actual delete
-via AF's finalizer does not meaningfully change KA's exposure (the finalizer is removed within
-milliseconds in practice, and KA's use case tolerates an occasional miss as noted above), but KA's
-own watch-delete reliance is an independent, pre-existing latent risk out of scope for #2214.
+**Cross-check (not fixed here, flagged for awareness, tracked as [#2231](https://github.com/jordigilh/kubernaut/issues/2231))**:
+KA's `Dispatcher.watchLoop` reacts to a raw `watch.Deleted` event for the same `AgentSession` type
+via `cancelOnDelete` — the same structural pattern this fix moved AF *away* from, for the same
+underlying reason. Deferring the actual delete via AF's finalizer does not meaningfully change KA's
+exposure (the finalizer is removed within milliseconds in practice, and KA's use case tolerates an
+occasional miss as noted above), but KA's own watch-delete reliance is an independent, pre-existing
+latent risk out of scope for #2214 — filed as #2231 to quantify the actual blast radius and decide
+whether a design fix (or an explicit documented accepted-risk note) is warranted.
 
 ## Future Considerations (not a decision — revisit later)
 
