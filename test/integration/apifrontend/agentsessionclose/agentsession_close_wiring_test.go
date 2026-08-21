@@ -39,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"

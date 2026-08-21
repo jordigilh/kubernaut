@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
