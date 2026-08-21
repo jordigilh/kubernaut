@@ -156,10 +156,21 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 
 		By("Third status write: resubmitting an identical value must succeed (idempotent reconcile-retry safety)")
-		idempotentRetry := afterTamper.DeepCopy()
 		// No field changes at all — simulates a reconciler retry re-applying the
-		// same desired state after a transient conflict/requeue.
-		err = k8sClient.Status().Update(ctx, idempotentRetry)
-		Expect(err).ToNot(HaveOccurred(), "an update with an unchanged SelectedWorkflow value must not be rejected by the write-once CEL guard")
+		// same desired state after a transient conflict/requeue. Re-fetch
+		// immediately before writing (rather than reusing afterTamper's
+		// ResourceVersion) because the real AA controller in this process is
+		// concurrently reconciling this same object (Investigating →
+		// Completed) -- same class of fixture race documented in
+		// decision_expired_status_test.go's Issue #2032 note. A stale
+		// ResourceVersion here would 409 on this write-once CEL guard
+		// exactly as it would on any other optimistic-concurrency write.
+		Eventually(func() error {
+			var latest aianalysisv1.AIAnalysis
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest); err != nil {
+				return err
+			}
+			return k8sClient.Status().Update(ctx, &latest)
+		}, timeout, interval).Should(Succeed(), "an update with an unchanged SelectedWorkflow value must not be rejected by the write-once CEL guard")
 	})
 })
