@@ -541,6 +541,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
+| `config.classifier.hotReloadInterval` | string | Rego classification policy hot-reload poll interval (ClassifierConfig.HotReloadInterval) | `"30s"` | No |
+| `config.enrichment.cacheTtl` | string | Enrichment cache lifetime (EnrichmentConfig.CacheTTL) | `"5m"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch; empty watches all namespaces | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |

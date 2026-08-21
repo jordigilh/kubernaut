@@ -1569,6 +1569,43 @@
         },
         "tolerations": {
           "$ref": "#/definitions/tolerations"
+        },
+        "config": {
+          "type": "object",
+          "description": "Issue #2216: enrichment.cacheTtl/classifier.hotReloadInterval were hardcoded chart literals with no schema exposure, despite being real, actively-read Go config fields (pkg/signalprocessing/config/config.go).",
+          "additionalProperties": false,
+          "properties": {
+            "enrichment": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cacheTtl": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Enrichment cache lifetime (EnrichmentConfig.CacheTTL)"
+                }
+              }
+            },
+            "classifier": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "hotReloadInterval": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Rego classification policy hot-reload poll interval (ClassifierConfig.HotReloadInterval)"
+                }
+              }
+            }
+          }
         }
       }
     },

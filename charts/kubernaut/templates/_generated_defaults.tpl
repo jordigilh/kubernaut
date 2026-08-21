@@ -434,6 +434,11 @@ remediationorchestrator:
         enabled: true
     replicas: 1
 signalprocessing:
+    config:
+        classifier:
+            hotReloadInterval: 30s
+        enrichment:
+            cacheTtl: 5m
     fleet:
         namespace: ""
         oauth2:
