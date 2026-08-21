@@ -656,14 +656,19 @@ rules:
 # AgentSessionCreator.DeleteForRetry -- this hand-rolled manifest drifted
 # from the Helm chart a second time (E2E-AA-065's first two CI runs both hit
 # "agentsessions is forbidden" on delete; RCA in DD-AA-KA-001's Gap 5
-# amendment). Keep this rule's verbs in sync with both
+# amendment). "update" is for the same DeleteForRetry call: it strips
+# agentsessionv1.TerminalCloseFinalizer itself before deleting (#2214
+# finalizer fix), which needs Update, not just Delete -- this manifest
+# drifted a third time (CI run 32525130330, "E2E (aianalysis)": "cannot
+# update resource \"agentsessions\"" on every capacity-exceeded retry).
+# Keep this rule's verbs in sync with both
 # charts/kubernaut/templates/aianalysis/aianalysis.yaml and
 # config/rbac/role.yaml (kubebuilder marker in
 # internal/controller/aianalysis/aianalysis_controller.go) whenever any of
 # the three changes.
 - apiGroups: ["kubernaut.ai"]
   resources: ["agentsessions"]
-  verbs: ["get", "list", "watch", "create", "delete"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]

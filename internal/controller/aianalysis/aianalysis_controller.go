@@ -139,7 +139,13 @@ type AIAnalysisReconciler struct {
 // Failed+CapacityExceeded AgentSession so the next reconcile's GetOrCreate
 // falls through to Create for the retry attempt; also required by
 // DeleteForCascadeCancel (#2214) on external ParentCancelled.
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;delete
+// update on agentsessions (#2214 finalizer fix, CI run 32525130330 "E2E
+// (aianalysis)"): DeleteForRetry must strip agentsessionv1.TerminalCloseFinalizer
+// itself before deleting (so the retry gets an immediately-absent object
+// instead of waiting on AF's async AgentSessionTerminalCloseReconciler),
+// which needs Update, not just Delete. Missed when the finalizer was
+// introduced -- see DD-AA-KA-001's "three sources" lesson below.
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch

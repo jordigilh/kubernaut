@@ -88,11 +88,14 @@ rules:
   # InvestigatingHandler.retryCapacityExceeded to discard a stale
   # Failed+CapacityExceeded AgentSession so the retry attempt gets a fresh
   # one; also used by DeleteForCascadeCancel (#2214) on external
-  # ParentCancelled. No "agentsessions/status" grant -- AA never writes
-  # Status, only KA does (BR-AA-KA-065.9).
+  # ParentCancelled. "update" (#2214 finalizer fix, CI run 32525130330
+  # "E2E (aianalysis)": DeleteForRetry strips TerminalCloseFinalizer itself
+  # before deleting, which needs Update, not just Delete -- missed when the
+  # finalizer was introduced). No "agentsessions/status" grant -- AA never
+  # writes Status, only KA does (BR-AA-KA-065.9).
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
