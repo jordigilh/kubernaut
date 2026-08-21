@@ -474,6 +474,20 @@ var _ = Describe("session_active Fallback RCA Card Content — #1922", Ordered, 
 		}
 		// Give the first call time to create/reuse the RR and acquire KA's
 		// single-driver session before the second (contending) call arrives.
+		//
+		// KNOWN ANTI-PATTERN (#2228): this fixed-duration sleep is exactly
+		// the "hard wall-clock threshold racing CI runner jitter" pattern
+		// this repo's own methodology (AGENTS.md, Go Anti-Pattern Checklist)
+		// flags as a recurring flake source. #2228 (E2E-AF-1922-001,
+		// intermittent "investigation_summary artifact not found" failures)
+		// is suspected -- not yet confirmed -- to trace back to this sleep
+		// not always being long enough under CI load for KA to actually
+		// acquire the single-driver session before the second caller
+		// arrives. Should be replaced with an Eventually()-style
+		// poll-until-ready check on an observable signal of "KA has
+		// acquired the driver session" (e.g. a status field or SSE event
+		// already emitted on that path) instead of a fixed sleep -- see
+		// #2228 for the tracked follow-up.
 		time.Sleep(3 * time.Second)
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 30*time.Second)
