@@ -323,6 +323,13 @@ jobs:
             exit 1
           fi
 
+      # BR-PLATFORM-011 (issue #2226): fails the build when a schema-defaulted
+      # or map-typed config field has no helm-unittest assertion proving it
+      # renders and isn't in the seeded allowlist -- same rationale/placement
+      # as the two freshness checks above (fast, offline, Stage 1).
+      - name: Helm chart config-knob test-coverage gate
+        run: make check-helm-coverage
+
       # #1982: config/crd/bases/*.yaml (and its Helm chart + embedded-asset
       # copies) must reflect the current Go type definitions in api/ -- K8s
       # API servers silently prune fields absent from a structural-schema

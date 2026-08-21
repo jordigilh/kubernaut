@@ -1296,11 +1296,6 @@
                       "type": "string",
                       "default": "",
                       "description": "CA bundle to verify Redis server"
-                    },
-                    "insecureSkipVerify": {
-                      "type": "boolean",
-                      "default": false,
-                      "description": "Skip TLS verification (dev/test only)"
                     }
                   }
                 }
