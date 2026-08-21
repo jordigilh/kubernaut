@@ -82,7 +82,9 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 	// Helper to get counter value from reconciler's metrics (WorkflowExecution pattern)
 	// DD-TEST-010: Access metrics via reconciler.Metrics (process's own controller instance)
-	// Each process's controller only reconciles resources in its own envtest
+	// AA IT shared-envtest fix: each process's controller cache is scoped to
+	// its own namespace on the shared envtest, so it still only reconciles
+	// this process's own resources despite the apiserver now being shared.
 	getCounterValue := func(counter *prometheus.CounterVec, labelValues ...string) float64 {
 		return prometheusTestutil.ToFloat64(counter.WithLabelValues(labelValues...))
 	}
@@ -104,7 +106,9 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// Parallel execution causes timeout failures due to shared Prometheus registry
 		It("should emit reconciliation metrics during successful AIAnalysis flow - BR-AI-OBSERVABILITY-001", func() {
 			// DD-TEST-010: Access metrics via reconciler instance (WorkflowExecution pattern)
-			// Each process's reconciler only reconciles resources in its own envtest
+			// AA IT shared-envtest fix: each process's reconciler cache is
+			// namespace-scoped, so it still only reconciles this process's
+			// own resources on the shared envtest.
 			// 1. Create AIAnalysis CRD (triggers business logic)
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-%s", testID)

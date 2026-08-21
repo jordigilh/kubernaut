@@ -73,7 +73,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -104,7 +106,6 @@ const goosLinux = "linux"
 var (
 	ctx        context.Context
 	cancel     context.CancelFunc
-	testEnv    *envtest.Environment
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
@@ -122,6 +123,12 @@ var (
 
 	// DD-TEST-002: Unique namespace per test for parallel execution
 	testNamespace string
+
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): the per-process
+	// namespace computed once in Phase 2 (kubernaut-system-p<N>), read by
+	// the package-level BeforeEach below on every spec. Distinct from
+	// testNamespace only in that this is set once per process, not per-spec.
+	processNamespace string
 
 	// DD-METRICS-001: Per-process isolated Prometheus registry
 	testRegistry *prometheus.Registry
@@ -398,9 +405,46 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// below (see startPerProcessKubernautAgent), not here -- see the note
 	// above the removed shared-KA RBAC block for why.
 
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): create the static
+	// "kubernaut-system" namespace and the K8s enrichment fixtures ONCE
+	// here (process 1 only), rather than once per process in Phase 2.
+	// Both are process-agnostic, environment-wide test data (not scoped to
+	// any individual test/process's namespace) -- creating them N times on
+	// what is now a single shared envtest would either be pure redundant
+	// work (namespace) or an outright failure (enrichment fixtures use
+	// fixed object names with no AlreadyExists tolerance; see
+	// createITAAEnrichmentFixtures). "kubernaut-system" itself is kept only
+	// as a home for the RemediationWorkflow/ActionType fixtures Phase 1
+	// already seeds above into "default" -- KA's workflowcatalog informer
+	// cache watches cluster-wide (internal/kubernautagent/workflowcatalog/
+	// cache.go's NewInformerCache), so a per-process re-seed into a
+	// per-process namespace (as Phase 2 previously did) is unnecessary now
+	// that Phase 1 and Phase 2 share the exact same cluster.
+	By("Creating static kubernaut-system namespace for shared fixtures")
+	kubernautSystemNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kubernaut-system",
+			Labels: map[string]string{"kubernaut.ai/managed": "true"},
+		},
+	}
+	if createErr := k8sClient.Create(context.Background(), kubernautSystemNs); !apierrors.IsAlreadyExists(createErr) {
+		Expect(createErr).ToNot(HaveOccurred())
+	}
+
+	By("Creating K8s enrichment fixture resources (#704)")
+	createITAAEnrichmentFixtures(k8sClient)
+
 	GinkgoWriter.Println("✅ Infrastructure startup complete (Phase 1)")
 	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
 	GinkgoWriter.Println("")
+
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): serialize the
+	// shared envtest's kubeconfig to a file so every Phase 2 process can
+	// reconstruct the exact same *rest.Config -- Phase 2 no longer starts
+	// its own envtest.Environment (see the Phase 2 function below).
+	By("Serializing shared envtest kubeconfig for Phase 2")
+	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedCfg, "aianalysis-shared")
+	Expect(err).ToNot(HaveOccurred(), "shared envtest kubeconfig must serialize for Phase 2")
 
 	// DD-AUTH-014 + DD-TEST-010: Phase 1 → Phase 2 data passing
 	// Serialize token, workflowUUIDs, and the pre-built KA image tag for ALL
@@ -408,14 +452,16 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Phase 2 (see startPerProcessKubernautAgent) from this same image, so it
 	// must know the tag Phase 1 already built rather than rebuilding it.
 	type Phase1Data struct {
-		Token         string            `json:"token"`
-		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
-		KAImageName   string            `json:"ka_image_name"`
+		Token          string            `json:"token"`
+		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
+		KAImageName    string            `json:"ka_image_name"`
+		KubeconfigPath string            `json:"kubeconfig_path"`
 	}
 	phase1Data := Phase1Data{
-		Token:         authConfig.Token,
-		WorkflowUUIDs: workflowUUIDs,
-		KAImageName:   kaImageName,
+		Token:          authConfig.Token,
+		WorkflowUUIDs:  workflowUUIDs,
+		KAImageName:    kaImageName,
+		KubeconfigPath: kubeconfigPath,
 	}
 	phase1DataJSON, err := json.Marshal(phase1Data)
 	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
@@ -427,12 +473,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per DD-TEST-010: Each process gets its own controller, envtest, metrics, etc.
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// DD-AUTH-014 + DD-TEST-010: Deserialize token, workflow UUIDs, and the
-	// pre-built KA image tag from Phase 1
+	// DD-AUTH-014 + DD-TEST-010: Deserialize token, workflow UUIDs, the
+	// pre-built KA image tag, and the shared envtest kubeconfig path from
+	// Phase 1 (AA IT shared-envtest fix, DD-TEST-010 amendment).
 	type Phase1Data struct {
-		Token         string            `json:"token"`
-		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
-		KAImageName   string            `json:"ka_image_name"`
+		Token          string            `json:"token"`
+		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
+		KAImageName    string            `json:"ka_image_name"`
+		KubeconfigPath string            `json:"kubeconfig_path"`
 	}
 	var phase1Data Phase1Data
 	deserializeErr := json.Unmarshal(data, &phase1Data)
@@ -450,9 +498,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	serviceAccountToken = token
 
 	processNum := GinkgoParallelProcess()
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): every process now
+	// shares the ONE envtest apiserver Phase 1 started, so process
+	// isolation must come from a namespace boundary instead of a cluster
+	// boundary -- both AA's manager cache (below) and KA's dispatcher
+	// (via KUBERNAUT_AGENT_NAMESPACE, see startPerProcessKubernautAgent)
+	// are scoped to this namespace.
+	processNamespace = fmt.Sprintf("kubernaut-system-p%d", processNum)
 	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
 	GinkgoWriter.Printf("✅ [Process %d] Received ServiceAccount token (length: %d bytes)\n", processNum, len(token))
 	GinkgoWriter.Printf("✅ [Process %d] Received %d workflow UUID mappings from Phase 1\n", processNum, len(workflowUUIDs))
+	GinkgoWriter.Printf("✅ [Process %d] Own namespace: %s (shared envtest)\n", processNum, processNamespace)
 
 	// Declare Phase 2 variables
 	var err error
@@ -478,22 +534,28 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// is a per-process global singleton (client-go/kubernetes/scheme), and
 	// Ginkgo parallel processes are separate OS processes, so processes other
 	// than #1 never execute Phase 1's registration. Without this, every
-	// process except #1 fails "Per-process workflow re-seed" below with "no
-	// kind is registered for the type v1alpha1.RemediationWorkflow".
-	By(fmt.Sprintf("[Process %d] Registering RemediationWorkflow CRD scheme (DD-AA-KA-001 per-process re-seed)", processNum))
+	// process except #1 fails to construct a client.Client capable of
+	// reading RemediationWorkflow CRDs ("no kind is registered for the type
+	// v1alpha1.RemediationWorkflow") wherever this process's own code needs
+	// one -- e.g. handlers/tests that fetch a RemediationWorkflow directly.
+	By(fmt.Sprintf("[Process %d] Registering RemediationWorkflow CRD scheme", processNum))
 	err = rwv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))
-	// DD-TEST-010: Each process gets its OWN Kubernetes API server (envtest)
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
-
-	cfg, err = testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
+	By(fmt.Sprintf("[Process %d] Reconstructing shared envtest connection", processNum))
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): reconstruct cfg from
+	// the ONE envtest Phase 1 started (via its serialized kubeconfig)
+	// instead of starting a separate per-process envtest.Environment. This
+	// is the core change that collapses N embedded control planes (etcd +
+	// kube-apiserver per process) down to 1, eliminating the resource
+	// contention that caused "connection refused" flakiness under load
+	// (#2213 RCA). Cross-process isolation, previously a side effect of N
+	// separate clusters, is now provided explicitly via processNamespace
+	// (this process's own namespace, computed above) plus namespace-scoped
+	// caching on the manager below and KA's dispatcher watch (see
+	// startPerProcessKubernautAgent).
+	cfg, err = clientcmd.BuildConfigFromFlags("", phase1Data.KubeconfigPath)
+	Expect(err).NotTo(HaveOccurred(), "shared envtest kubeconfig must be loadable")
 	Expect(cfg).NotTo(BeNil())
 
 	By(fmt.Sprintf("[Process %d] Creating per-process K8s client", processNum))
@@ -501,31 +563,20 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By(fmt.Sprintf("[Process %d] Creating per-process namespaces", processNum))
-	// Create kubernaut-system namespace for controller
-	// Static namespace name - add managed label directly
-	systemNs := &corev1.Namespace{
+	By(fmt.Sprintf("[Process %d] Creating per-process-unique namespace", processNum))
+	// AA IT shared-envtest fix: unlike the old fixed "kubernaut-system"
+	// name (safe when every process had its own envtest), this name must
+	// be unique per process now that all processes share one apiserver.
+	processNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-system",
+			Name: processNamespace,
 			Labels: map[string]string{
 				"kubernaut.ai/managed": "true",
 			},
 		},
 	}
-	err = k8sClient.Create(ctx, systemNs)
+	err = k8sClient.Create(ctx, processNs)
 	Expect(err).NotTo(HaveOccurred())
-
-	// Create default namespace for tests
-	// Static namespace name - add managed label directly
-	defaultNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-			Labels: map[string]string{
-				"kubernaut.ai/managed": "true",
-			},
-		},
-	}
-	_ = k8sClient.Create(ctx, defaultNs) // May already exist
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller manager", processNum))
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
@@ -533,12 +584,26 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Metrics: metricsserver.Options{
 			BindAddress: "0", // Random port per process (no conflicts)
 		},
+		// AA IT shared-envtest fix (DD-TEST-010 amendment): scope this
+		// process's cache to its own namespace only. Previously omitted
+		// because each process had its own cluster (so cluster-wide vs.
+		// namespace-scoped caching made no observable difference); now
+		// that the apiserver is shared, an unscoped cache would make every
+		// process's reconciler see (and race to reconcile) every other
+		// process's AIAnalysis/AgentSession/InvestigationSession objects.
+		// AA's StatusManager bypasses this cache entirely via
+		// GetAPIReader() (DD-PERF-001), and RemediationWorkflow/ActionType
+		// lookups go through KA's own separate, cluster-wide-scoped
+		// workflowcatalog informer cache -- neither is affected.
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				processNamespace: {},
+			},
+		},
 	})
 	Expect(err).ToNot(HaveOccurred())
 
 	// BR-INTERACTIVE-010: Register field indexes for IS and AA RR name lookups.
-	// Note: Cache ByObject namespace restriction is omitted in integration tests because
-	// DD-TEST-002 uses per-test namespaces (testNamespace), not kubernaut-system only.
 	By(fmt.Sprintf("[Process %d] Registering InvestigationSession field index (BR-INTERACTIVE-010)", processNum))
 	err = k8sManager.GetFieldIndexer().IndexField(ctx,
 		&isv1alpha1.InvestigationSession{},
@@ -592,36 +657,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Create audit client for handlers
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
-	// DD-AA-KA-001: KA itself now moves per-process, right alongside its own
-	// AIAnalysisReconciler -- AA's channel to KA is the AgentSession CRD, so
-	// KA's dispatch watcher must watch this SAME per-process cfg/envtest,
-	// not the shared one DataStorage auth used above (see the Phase 1 note
-	// this replaces). Enrichment fixtures move here too, since KA's own
-	// live K8s enrichment queries now target this per-process cluster.
-	By(fmt.Sprintf("[Process %d] Creating enrichment fixture resources (#704)", processNum))
-	createITAAEnrichmentFixtures(k8sClient)
-
-	// DD-AA-KA-001: re-seed the SAME RemediationWorkflow/ActionType fixtures
-	// (Phase 1 seeded these into the SHARED envtest at "default" purely for
-	// Mock LLM's config file, back when KA was HTTP-mocked and never itself
-	// discovered workflows from a live cluster) into THIS process's own
-	// envtest. KA's workflowcatalog.Catalog is an informer-backed cache
-	// (internal/kubernautagent/workflowcatalog/catalog.go) built against
-	// whichever cluster KA's own kubeconfig points at -- now the per-process
-	// cfg started above, a completely separate API server from Phase 1's
-	// shared envtest. Without this, KA's real investigator sees an empty
-	// catalog ("workflow catalog returned 0 workflows") and every
-	// investigation falls back to human-review-required, even though the
-	// fixtures exist elsewhere -- confirmed live via `kubectl get
-	// remediationworkflows -A` against this process's envtest returning "No
-	// resources found" before this fix (helios08 repro, 2026-08-18).
-	// SeedTestWorkflowsViaDirectCRDCreation's IDs are content-hash
-	// deterministic (test/infrastructure/workflow_seeding_direct_crd.go), so
-	// re-seeding here reproduces the exact same workflow_ids Mock LLM's
-	// config file (written once in Phase 1) already references.
-	By(fmt.Sprintf("[Process %d] Re-seeding test workflows into per-process envtest for KA's catalog (DD-AA-KA-001)", processNum))
-	_, err = SeedTestWorkflowsViaDirectCRDCreation(ctx, k8sClient, "kubernaut-system", GinkgoWriter)
-	Expect(err).NotTo(HaveOccurred(), "Per-process workflow re-seed must succeed so KA's own workflowcatalog informer is non-empty")
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): the enrichment
+	// fixtures and the RemediationWorkflow/ActionType workflow catalog seed
+	// both moved to Phase 1 (process 1 only, see the note there) now that
+	// every process's KA container watches the SAME shared envtest Phase 1
+	// already seeded -- KA's workflowcatalog informer cache is cluster-wide
+	// (internal/kubernautagent/workflowcatalog/cache.go's
+	// NewInformerCache), so Phase 1's single seed is visible to every
+	// process's KA instance without a per-process re-seed. This replaces
+	// the DD-AA-KA-001 comment previously here, which explained why a
+	// per-process re-seed was required back when each process had its own
+	// separate envtest.
 
 	By(fmt.Sprintf("[Process %d] Starting per-process Kubernaut Agent HTTP service", processNum))
 	// #2190: this suite no longer constructs a direct-HTTP client against
@@ -633,7 +679,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// RBAC/return-value plumbing for it inside startPerProcessKubernautAgent,
 	// remain until #2190 deletes them together with KA's HTTP server (still
 	// load-bearing for the deferred test/e2e/kubernautagent/ suite).
-	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName)
+	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName, processNamespace)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Test-owned policy fixture decoupled from production config.
@@ -653,8 +699,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-AA-KA-001: AgentSessionCreator replaces the retired HTTP submit/poll
 	// channel; the reconciler has no dependency on KA's HTTP endpoint at all.
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
-	const controllerNS = "kubernaut-system"
-	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
+	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), processNamespace)
 	agentSessionCreator := creator.NewAgentSessionCreator(k8sManager.GetClient(), k8sManager.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),        // DD-EVENT-001: Session lifecycle events
@@ -759,13 +804,12 @@ var _ = SynchronizedAfterSuite(func() {
 		_ = os.RemoveAll(kaSATokenDir)
 	}
 
-	By(fmt.Sprintf("[Process %d] Tearing down envtest environment", processNum))
-	if testEnv != nil {
-		err := testEnv.Stop()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop envtest: %v\n", processNum, err)
-		}
-	}
+	// AA IT shared-envtest fix (DD-TEST-010 amendment): there is no
+	// per-process envtest.Environment to stop anymore -- every process
+	// shares the ONE envtest Phase 1 started, torn down once below by the
+	// last process via sharedTestEnv.Stop(). This process's own namespace
+	// (processNamespace) is left in place; it disappears along with the
+	// whole shared apiserver when that happens.
 
 	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete\n", processNum)
 }, func() {
@@ -839,24 +883,26 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
-// DD-TEST-002 Compliance (amended by DD-AA-KA-001 per-process KA): a fresh
-// namespace per test previously enabled parallel execution across processes
-// sharing one envtest. Now that each Ginkgo process owns its own isolated
-// envtest (DD-TEST-010), that cross-process collision risk no longer exists
-// -- but a new constraint replaces it: the per-process Kubernaut Agent
-// container's AgentSession dispatcher watches exactly one fixed namespace
-// (detectNamespace() in cmd/kubernautagent/health.go, which falls back to
-// "kubernaut-system" when no ServiceAccount "namespace" file is mounted --
-// see startPerProcessKubernautAgent, which deliberately does not mount one).
-// Any AIAnalysis/AgentSession created in a fresh per-test namespace would be
-// invisible to that watch, so tests needing real KA dispatch would poll
-// forever. testNamespace is therefore now the shared, already-existing
-// "kubernaut-system" namespace (created once per process above) rather than
-// a fresh namespace per test; per-test isolation instead comes from each
-// test's own timestamp/uuid-suffixed object names.
+// DD-TEST-002 Compliance (amended by DD-AA-KA-001 per-process KA, then by
+// the AA IT shared-envtest fix, DD-TEST-010 amendment): a fresh namespace
+// per test previously enabled parallel execution across processes sharing
+// one envtest. DD-AA-KA-001 replaced that per-test-namespace model with one
+// fixed namespace per PROCESS ("kubernaut-system"), because the per-process
+// Kubernaut Agent container's AgentSession dispatcher watches exactly one
+// namespace (detectNamespace() in cmd/kubernautagent/health.go) and a fresh
+// per-test namespace would be invisible to it. The shared-envtest fix keeps
+// that one-namespace-per-process model (tests still get isolation via their
+// own timestamp/uuid-suffixed object names, not a per-test namespace) but
+// that namespace is now per-process-UNIQUE (processNamespace, computed once
+// in Phase 2 as "kubernaut-system-p<N>") rather than the single literal
+// "kubernaut-system" every process used to share -- necessary now that all
+// processes watch the same apiserver instead of each having their own.
+// KA's dispatcher is told which namespace via KUBERNAUT_AGENT_NAMESPACE
+// (see startPerProcessKubernautAgent), matching AA's own manager cache
+// scope (Cache.DefaultNamespaces in Phase 2 above).
 
 var _ = BeforeEach(func() {
-	testNamespace = "kubernaut-system"
+	testNamespace = processNamespace
 })
 
 var _ = AfterEach(func() {
@@ -870,8 +916,13 @@ var _ = AfterEach(func() {
 
 // startPerProcessKubernautAgent starts a dedicated Kubernaut Agent HTTP
 // container for THIS Ginkgo parallel process, with its dispatch watcher
-// pointed at this process's own envtest (cfg) via a freshly-minted
-// kubeconfig -- not the shared envtest DataStorage auth uses (DD-AA-KA-001).
+// pointed at the shared envtest (cfg) via a freshly-minted kubeconfig, and
+// its dispatcher watch scoped to this process's own namespace via
+// KUBERNAUT_AGENT_NAMESPACE (AA IT shared-envtest fix, DD-TEST-010
+// amendment) -- necessary now that every process's KA container connects
+// to the SAME apiserver (previously each had its own, so KA's fallback to
+// the hardcoded "kubernaut-system" default never collided across
+// processes).
 //
 // AA's own channel to KA is the AgentSession CRD (creator.AgentSessionCreator,
 // wired by the caller), watched natively by KA's in-process dispatcher
@@ -885,7 +936,7 @@ var _ = AfterEach(func() {
 // Returns the per-process KA base URL and a caller Bearer token valid
 // against cfg's TokenReview API. Currently unused by this suite's caller --
 // see the #2190 note above.
-func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName string) (baseURL string, callerToken string) {
+func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName, namespace string) (baseURL string, callerToken string) {
 	// DD-AUTH-014: KA's ServiceAccount binding reuses the "datastorage-tokenreview"
 	// ClusterRole (generic TokenReview/SAR create verbs) -- CreateServiceAccountForHTTPService
 	// expects it to already exist; the shared envtest gets it from
@@ -1175,8 +1226,9 @@ timeoutSeconds: 120
 		Name:  fmt.Sprintf("aianalysis_ka_test_%d", processNum),
 		Image: kaImageName,
 		Env: map[string]string{
-			"KUBECONFIG":    "/tmp/kubeconfig",
-			"POD_NAMESPACE": "default",
+			"KUBECONFIG":                "/tmp/kubeconfig",
+			"POD_NAMESPACE":             "default",
+			"KUBERNAUT_AGENT_NAMESPACE": namespace,
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
