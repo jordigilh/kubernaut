@@ -524,7 +524,78 @@ go test -race ./test/integration/[service]/...
 
 **Document Owner**: Platform Architecture Team
 **Created**: 2026-01-10
-**Last Updated**: 2026-01-10
+**Last Updated**: 2026-08-21 (Amendment 1, below)
 **Next Review**: After Phase 1 pilot complete (AIAnalysis migration)
-**Status**: ✅ **APPROVED** - Authoritative standard for all CRD controller services
+**Status**: ✅ **APPROVED** - Authoritative standard for all CRD controller services, amended for `aianalysis` per Amendment 1
+
+---
+
+## Amendment 1 (2026-08-21): Shared-Envtest + Namespace-Scoping for `aianalysis`
+
+**Context**: PR [#2189](https://github.com/jordigilh/kubernaut/pull/2189) (AgentSession CRD Redesign,
+DD-AA-KA-001) roughly doubled the per-process reconciliation load in the `aianalysis` integration
+suite (AA's own controller plus a per-process Kubernaut Agent (KA) instance dispatching
+`AgentSession`s). Under that added load, both CI (GitHub Actions runners) and `helios08` (a shared,
+heavily-loaded dev host) began intermittently failing `Integration (aianalysis)` with
+`connection refused` against `127.0.0.1:<envtest-apiserver-port>` -- one process's embedded
+envtest `etcd`+`kube-apiserver` pair becoming unresponsive under CPU contention from the other
+`N-1` processes' own embedded envtest pairs running simultaneously on the same host.
+
+**Root cause, precisely**: this is **not** a claim that envtest itself doesn't scale, or that the
+multi-controller pattern above is wrong in principle. It is that running **N independent, real
+Kubernetes control planes** (`etcd` + `kube-apiserver`, one per parallel Ginkgo process, per this
+doc's own `Migration Priority`/`Resource Impact Analysis` sections above) on a single host
+multiplies host CPU contenders linearly with `TEST_PROCS`. `TEST_PROCS` defaults to `nproc`
+(`Makefile:43`), so on an N-core host this is always "one control plane per core" -- exactly the
+worst case for CPU contention once any process's reconcile load rises. The original 2026-01
+"Resource Impact Analysis" section above (10-20% CPU across 12 processes) reflected `aianalysis`'s
+pre-#2189 reconciliation load; it did not anticipate a ~2x load increase from a second, independently
+watching component (KA) added per process.
+
+**Amended pattern for `aianalysis` only**: a single shared envtest control plane, started once in
+Phase 1 of `SynchronizedBeforeSuite` (not once per process in Phase 2), with per-process **namespace
+scoping** substituting for per-process **API-server** isolation:
+
+- Phase 1 (process 1 only) starts the one shared `envtest.Environment`, creates the static
+  `kubernaut-system` namespace and its shared fixtures (`createITAAEnrichmentFixtures`, workflow
+  catalog seeding -- both fixed-name/idempotent, so safe to run exactly once), serializes the shared
+  kubeconfig to a temp file (`infrastructure.WriteEnvtestKubeconfigToFile`), and passes its path to
+  all processes via the `SynchronizedBeforeSuite` byte payload.
+- Phase 2 (all processes) reconstructs `cfg` from that shared kubeconfig
+  (`clientcmd.BuildConfigFromFlags`) instead of calling `testEnv.Start()` itself, computes a
+  per-process-unique namespace (`kubernaut-system-p<N>`), and:
+  - Scopes AA's `ctrl.NewManager` cache to that namespace via
+    `Cache.DefaultNamespaces: map[string]cache.Config{processNamespace: {}}`, so a process's
+    controller only reconciles its own `AIAnalysis`/`AgentSession` objects on the now-shared API
+    server instead of racing every other process's objects.
+  - Passes `KUBERNAUT_AGENT_NAMESPACE=<processNamespace>` to that process's KA container, via a new
+    env-var override in `detectNamespace()` (`cmd/kubernautagent/health.go`) that takes precedence
+    over the mounted-ServiceAccount-namespace/`kubernaut-system` production fallback (empty/unset
+    preserves production behavior exactly). Without this, every process's KA would watch the same
+    hardcoded `kubernaut-system` and race to dispatch every other process's `AgentSession`s.
+
+Both scoping changes are required together -- shared API server + unscoped caches/watches would
+silently reintroduce cross-process reconciliation races, which is precisely why this is documented
+as an amendment (a **safety condition** for sharing) rather than a reversion of the base decision.
+
+**Validated on `helios08` at `TEST_PROCS=4`** (matching CI parallelism): multiple consecutive full
+runs of `aianalysis` + its `capacityretry`/`schemarejection` sibling suites (which share a 15-minute
+wall-clock CI budget), all green, zero stray `etcd`/`kube-apiserver` processes left behind after
+teardown -- versus intermittent `connection refused` failures at the same parallelism under the
+unamended N-envtests-per-N-processes pattern.
+
+**Scope of this amendment**: `test/integration/aianalysis` only. The base decision (multi-controller,
+one envtest per process) remains the standard for all other CRD controller services. A grep-based
+audit at the time of this amendment found the same N-envtests-per-N-processes pattern still in use,
+unamended, by every other integration suite that starts an embedded envtest
+(`remediationorchestrator`, `workflowexecution`, `signalprocessing`, `notification`,
+`effectivenessmonitor`, `authwebhook`, `apifrontend`, `gateway`, `datastorage`,
+`fleetmetadatacache`, and the `kubernautagent/*` sub-suites) -- several of which (`apifrontend`,
+`datastorage`, `notification`, `remediationorchestrator`, `effectivenessmonitor`,
+`signalprocessing`) additionally start per-process Podman sidecar containers, compounding the same
+contention shape. Migrating any of those is a separate, per-service preflight (each has its own
+watchers/namespace assumptions to audit, same as AA's controller cache + KA dispatcher above) and
+explicitly out of scope here; tracked in
+[issue #2213](https://github.com/jordigilh/kubernaut/issues/2213) rather than applied
+mechanically.
 
