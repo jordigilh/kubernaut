@@ -18,10 +18,10 @@ package aianalysis_test
 
 import (
 	"context"
-	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +29,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/go-logr/logr"
@@ -38,6 +39,7 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
@@ -45,47 +47,28 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
-// mockISPhaseUpdater1421 tracks SetTerminalPhase calls for #1421 cascade tests.
-type mockISPhaseUpdater1421 struct {
-	mu             sync.Mutex
-	terminalCalls  []terminalCall1421
-	setTerminalErr error
-}
-
-type terminalCall1421 struct {
-	RRName string
-	Phase  isv1alpha1.SessionPhase
-}
-
-func (m *mockISPhaseUpdater1421) SetTerminalPhase(_ context.Context, rrName string, phase isv1alpha1.SessionPhase) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.terminalCalls = append(m.terminalCalls, terminalCall1421{RRName: rrName, Phase: phase})
-	return m.setTerminalErr
-}
-
-func (m *mockISPhaseUpdater1421) getTerminalCalls() []terminalCall1421 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]terminalCall1421, len(m.terminalCalls))
-	copy(out, m.terminalCalls)
-	return out
-}
-
 // ============================================================================
-// AA CONTROLLER CASCADE CANCEL TESTS (#1421)
+// AA CONTROLLER CASCADE CANCEL TESTS (#1421, amended #2214)
+//
+// BR-INTERACTIVE-010 SC-9 (AF-owned IS terminal-phase closure): on external
+// cascade-cancel, AA no longer writes InvestigationSession directly -- it
+// deletes the AgentSession, and AF's AgentSessionTerminalCloseReconciler
+// (watching AgentSession) closes the correlated IS to Cancelled. This lets
+// KA's already-proven Dispatcher.cancelOnDelete stop the in-flight
+// investigation goroutine too, which a Status-only write would not.
+//
 // FedRAMP Control Objectives:
 //   IR-4 (Incident Handling): Cancelled remediation sessions MUST be terminated
-//     promptly — orphaned AI investigation sessions represent uncontrolled
+//     promptly -- orphaned AI investigation sessions represent uncontrolled
 //     incident handling that violates IR-4(1) automated response mechanisms.
 //   AC-6 (Least Privilege): Active KA sessions hold elevated cluster access;
 //     failing to revoke them when the parent operation is cancelled violates
 //     the principle of least privilege by maintaining unnecessary access.
 //   SI-4 (Information System Monitoring): All state transitions in the
-//     remediation chain must be observable; a cancelled RR with an active IS
-//     creates a blind spot in monitoring.
+//     remediation chain must be observable; a cancelled RR with an active
+//     AgentSession creates a blind spot in monitoring.
 // ============================================================================
-var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]", func() {
+var _ = Describe("AA Controller Cascade Cancel to AgentSession (#1421, #2214) [IR-4, AC-6, SI-4]", func() {
 
 	var (
 		ctx         context.Context
@@ -103,12 +86,8 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		testMetrics = metrics.NewMetrics()
 	})
 
-	buildReconciler := func(updater handlers.ISPhaseUpdater) (*aianalysis.AIAnalysisReconciler, *mocks.MockAgentClient) {
+	buildReconciler := func(fakeClient client.Client, agentSessionCreator *creator.AgentSessionCreator) (*aianalysis.AIAnalysisReconciler, *mocks.MockAgentClient) {
 		mockClient := mocks.NewMockAgentClient().WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
-
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(scheme).
-			Build()
 
 		mockAuditStore := &MockAuditStore{}
 		auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-1421-audit"))
@@ -116,14 +95,14 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		regoEvaluator := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 
 		reconciler := &aianalysis.AIAnalysisReconciler{
-			Client:        fakeClient,
-			Scheme:        scheme,
-			Recorder:      record.NewFakeRecorder(20),
-			Log:           ctrl.Log.WithName("test-1421"),
-			Metrics:       testMetrics,
-			StatusManager: statusManager,
-			AuditClient:   auditClient,
-			ISPhaseUpdater: updater,
+			Client:              fakeClient,
+			Scheme:              scheme,
+			Recorder:            record.NewFakeRecorder(20),
+			Log:                 ctrl.Log.WithName("test-1421"),
+			Metrics:             testMetrics,
+			StatusManager:       statusManager,
+			AuditClient:         auditClient,
+			AgentSessionCreator: agentSessionCreator,
 		}
 		investigatingHandler := handlers.NewInvestigatingHandler(
 			mockClient, ctrl.Log.WithName("test-1421-handler"), testMetrics, auditClient,
@@ -137,11 +116,9 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		return reconciler, mockClient
 	}
 
-	// UT-AA-1421-001: IR-4(1) — Automated incident handling terminates IS when parent is cancelled
-	It("UT-AA-1421-001: should call SetTerminalPhase(Cancelled) when AA is Failed with ParentCancelled reason [IR-4(1)]", func() {
-		updater := &mockISPhaseUpdater1421{}
-		reconciler, _ := buildReconciler(updater)
-
+	// UT-AA-2214-001: IR-4(1) -- Automated incident handling deletes the
+	// AgentSession when the parent is cancelled, in place of writing IS.
+	It("UT-AA-2214-001: should delete AgentSession as-<rrName> when AA is Failed with ParentCancelled reason [IR-4(1)]", func() {
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "ai-1421-001",
@@ -163,31 +140,34 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 				ObservedGeneration: 1,
 			},
 		}
+		agentSession := &agentsessionv1.AgentSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "as-rr-1421-001",
+				Namespace: "default",
+			},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(analysis).
+			WithObjects(analysis, agentSession).
 			WithStatusSubresource(analysis).
 			Build()
-		reconciler.Client = fakeClient
-		reconciler.StatusManager = aistatus.NewManager(fakeClient, fakeClient)
+
+		reconciler, _ := buildReconciler(fakeClient, creator.NewAgentSessionCreator(fakeClient, scheme))
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "ai-1421-001", Namespace: "default"},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		calls := updater.getTerminalCalls()
-		Expect(calls).To(HaveLen(1), "SetTerminalPhase should be called once")
-		Expect(calls[0].RRName).To(Equal("rr-1421-001"))
-		Expect(calls[0].Phase).To(Equal(isv1alpha1.SessionPhaseCancelled))
+		var fetched agentsessionv1.AgentSession
+		getErr := fakeClient.Get(ctx, types.NamespacedName{Name: "as-rr-1421-001", Namespace: "default"}, &fetched)
+		Expect(apierrors.IsNotFound(getErr)).To(BeTrue(), "AgentSession must be deleted on cascade-cancel")
 	})
 
-	// UT-AA-1421-002: AC-6 — Normal failure paths must NOT trigger cascade (least privilege scope)
-	It("UT-AA-1421-002: should NOT cascade when AA is Failed with non-ParentCancelled reason [AC-6]", func() {
-		updater := &mockISPhaseUpdater1421{}
-		reconciler, _ := buildReconciler(updater)
-
+	// UT-AA-2214-002 (formerly UT-AA-1421-002): AC-6 -- Normal failure paths
+	// must NOT trigger cascade (least privilege scope).
+	It("UT-AA-2214-002: should NOT delete AgentSession when AA is Failed with non-ParentCancelled reason [AC-6]", func() {
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "ai-1421-002",
@@ -209,29 +189,34 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 				ObservedGeneration: 1,
 			},
 		}
+		agentSession := &agentsessionv1.AgentSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "as-rr-1421-002",
+				Namespace: "default",
+			},
+		}
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(analysis).
+			WithObjects(analysis, agentSession).
 			WithStatusSubresource(analysis).
 			Build()
-		reconciler.Client = fakeClient
-		reconciler.StatusManager = aistatus.NewManager(fakeClient, fakeClient)
+
+		reconciler, _ := buildReconciler(fakeClient, creator.NewAgentSessionCreator(fakeClient, scheme))
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "ai-1421-002", Namespace: "default"},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		calls := updater.getTerminalCalls()
-		Expect(calls).To(BeEmpty(),
-			"SetTerminalPhase should NOT be called for non-ParentCancelled reasons")
+		var fetched agentsessionv1.AgentSession
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "as-rr-1421-002", Namespace: "default"}, &fetched)).To(Succeed(),
+			"AgentSession must NOT be deleted for non-ParentCancelled reasons")
 	})
 
-	// UT-AA-1421-003: SI-4 — Controller resilience under degraded conditions (nil dependency)
-	It("UT-AA-1421-003: should not panic when ISPhaseUpdater is nil and reason is ParentCancelled [SI-4]", func() {
-		reconciler, _ := buildReconciler(nil)
-
+	// UT-AA-2214-003 (formerly UT-AA-1421-003): SI-4 -- Controller resilience
+	// under degraded conditions (nil AgentSessionCreator dependency).
+	It("UT-AA-2214-003: should not panic when AgentSessionCreator is nil and reason is ParentCancelled [SI-4]", func() {
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "ai-1421-003",
@@ -259,13 +244,13 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 			WithObjects(analysis).
 			WithStatusSubresource(analysis).
 			Build()
-		reconciler.Client = fakeClient
-		reconciler.StatusManager = aistatus.NewManager(fakeClient, fakeClient)
+
+		reconciler, _ := buildReconciler(fakeClient, nil)
 
 		Expect(func() {
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ai-1421-003", Namespace: "default"},
 			})
-		}).ToNot(Panic(), "Reconcile must not panic when ISPhaseUpdater is nil")
+		}).ToNot(Panic(), "Reconcile must not panic when AgentSessionCreator is nil")
 	})
 })

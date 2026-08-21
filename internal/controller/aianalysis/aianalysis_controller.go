@@ -47,9 +47,9 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
@@ -114,28 +114,31 @@ type AIAnalysisReconciler struct {
 	// Audit client for recording audit events (DD-AUDIT-003)
 	AuditClient *audit.AuditClient
 
-	// #1421: IS phase updater for cascade cancellation in terminal branch.
-	// When RO externally patches AA to Failed/ParentCancelled, the terminal
-	// branch uses this to transition IS to Cancelled.
-	ISPhaseUpdater handlers.ISPhaseUpdater
+	// #1421, amended #2214: AgentSession creator, reused for cascade
+	// cancellation in the terminal branch. When RO externally patches AA to
+	// Failed/ParentCancelled, the terminal branch deletes the AgentSession
+	// (instead of writing InvestigationSession directly) -- AF's
+	// AgentSessionTerminalCloseReconciler (watching AgentSession) closes the
+	// correlated IS to Cancelled, and KA's Dispatcher.cancelOnDelete stops
+	// the in-flight investigation goroutine.
+	AgentSessionCreator *creator.AgentSessionCreator
 }
 
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
-// DD-AA-KA-001 Amendment (Gap 1/3): AA no longer reads InvestigationSession
-// for decision-making. list;watch remain here (not get) because
-// K8sISPhaseUpdater.SetTerminalPhase (#1376) still does a cache-backed List
-// by RR-name field index for its best-effort terminal-close write --
-// controller-runtime's cached client requires list+watch RBAC to start that
-// informer even though the call site never reads Spec/Status content.
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=list;watch
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions/status,verbs=update;patch
+// DD-AA-KA-001 Amendment #2214: AA no longer interacts with
+// InvestigationSession at all (neither reads it for decision-making nor
+// writes its terminal phase) -- AF's AgentSessionTerminalCloseReconciler now
+// owns IS terminal-phase closure exclusively, driven by watching
+// AgentSession. AA's only remaining external-cascade signal is deleting the
+// AgentSession itself (see delete verb below).
 // delete on agentsessions (BR-AI-009, DD-AA-KA-001 amendment): required by
 // creator.AgentSessionCreator.DeleteForRetry, called from
 // InvestigatingHandler.retryCapacityExceeded to discard a stale
 // Failed+CapacityExceeded AgentSession so the next reconcile's GetOrCreate
-// falls through to Create for the retry attempt.
+// falls through to Create for the retry attempt; also required by
+// DeleteForCascadeCancel (#2214) on external ParentCancelled.
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -253,9 +256,10 @@ func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aian
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
-		// #1421: If externally cancelled (ParentCancelled), cascade to IS + KA session
+		// #1421, amended #2214: If externally cancelled (ParentCancelled),
+		// cascade by deleting the AgentSession (KA session).
 		if analysis.Status.Reason == aianalysisv1.ReasonParentCancelled {
-			r.cascadeCancelToIS(ctx, analysis)
+			r.cascadeCancelAgentSession(ctx, analysis)
 		}
 		// AA-BUG-005: Must call recordPhaseMetrics for terminal states to record analysis.completed event
 		return ctrl.Result{}, nil
@@ -483,13 +487,19 @@ func aiAnalysisUpdatePredicate() predicate.Predicate {
 // BR-AI-001: Initialize and transition to Investigating
 // Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
 
-// cascadeCancelToIS transitions the InvestigationSession to Cancelled when
-// the AIAnalysis is externally terminated (e.g., ParentCancelled from RO).
-// #1421: Kubernetes-native cascade — parent manages child lifecycle.
-func (r *AIAnalysisReconciler) cascadeCancelToIS(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+// cascadeCancelAgentSession deletes the AgentSession backing this
+// investigation when the AIAnalysis is externally terminated (e.g.,
+// ParentCancelled from RO). #1421: Kubernetes-native cascade — parent
+// manages child lifecycle. #2214 / DD-AA-KA-001 Amendment: replaces the
+// retired direct InvestigationSession write -- AF's
+// AgentSessionTerminalCloseReconciler (watching AgentSession) closes the
+// correlated IS to Cancelled, and KA's already-proven
+// Dispatcher.cancelOnDelete stops the in-flight investigation goroutine, both
+// reacting independently to the same delete signal.
+func (r *AIAnalysisReconciler) cascadeCancelAgentSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
 	log := r.Log.WithValues("aianalysis", analysis.Name)
 
-	if r.ISPhaseUpdater == nil {
+	if r.AgentSessionCreator == nil {
 		return
 	}
 
@@ -498,12 +508,12 @@ func (r *AIAnalysisReconciler) cascadeCancelToIS(ctx context.Context, analysis *
 		return
 	}
 
-	if err := r.ISPhaseUpdater.SetTerminalPhase(ctx, rrName, isv1alpha1.SessionPhaseCancelled); err != nil {
-		log.Error(err, "Failed to cascade cancel to InvestigationSession (best-effort)",
+	if err := r.AgentSessionCreator.DeleteForCascadeCancel(ctx, rrName, analysis.Namespace); err != nil {
+		log.Error(err, "Failed to cascade cancel AgentSession (best-effort)",
 			"rrName", rrName)
 	} else {
-		log.Info("Cascaded ParentCancelled to InvestigationSession",
-			"rrName", rrName, "isPhase", isv1alpha1.SessionPhaseCancelled)
+		log.Info("Cascaded ParentCancelled by deleting AgentSession",
+			"rrName", rrName)
 	}
 }
 

@@ -132,3 +132,28 @@ func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessi
 	}
 	return nil
 }
+
+// DeleteForCascadeCancel deletes the deterministically-named AgentSession
+// (as-<rrName>) for the given RemediationRequest on external cascade-cancel
+// (#1421 ParentCancelled), replacing AA's retired direct IS write
+// (K8sISPhaseUpdater.SetTerminalPhase) with an AgentSession delete (#2214 /
+// DD-AA-KA-001 Amendment). This lets two independent, already-proven
+// consumers react to the same signal without new coupling:
+//   - AF's AgentSessionTerminalCloseReconciler (watching AgentSession)
+//     closes the correlated InvestigationSession to Cancelled.
+//   - KA's Dispatcher.cancelOnDelete stops the in-flight investigation
+//     goroutine.
+//
+// Idempotent: a NotFound (e.g. the AgentSession was never created, or a
+// concurrent cascade-cancel already deleted it) is not an error, mirroring
+// DeleteForRetry's contract.
+func (c *AgentSessionCreator) DeleteForCascadeCancel(ctx context.Context, rrName, namespace string) error {
+	name := fmt.Sprintf("as-%s", rrName)
+	as := &agentsessionv1.AgentSession{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	}
+	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete AgentSession %s/%s for cascade-cancel: %w", namespace, name, err)
+	}
+	return nil
+}

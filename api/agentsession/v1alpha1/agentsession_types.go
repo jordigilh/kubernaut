@@ -22,7 +22,10 @@ import (
 )
 
 // AgentSessionPhase represents the lifecycle state of an AgentSession, as
-// exclusively written by KA (BR-AA-KA-065.4).
+// exclusively written by KA (BR-AA-KA-065.4). #2214 / DD-AA-KA-001 Amendment:
+// AA's external cascade-cancel signal is a *delete* of the AgentSession, not
+// a Status.Phase write, so this invariant still holds -- AA never writes
+// this field.
 type AgentSessionPhase string
 
 // AgentSessionPhase values.
@@ -314,7 +317,10 @@ type AgentSessionResult struct {
 }
 
 // AgentSessionStatus defines the observed state (mutable, KA-only per
-// BR-AA-KA-065.9 -- AA and AF never write Status, only watch it).
+// BR-AA-KA-065.9 -- AA and AF never write Status, only watch it). AA's
+// terminal-cancel signal and AF's terminal-close trigger are both driven by
+// watching this Status (or the object's deletion), never by writing to it
+// (#2214 / DD-AA-KA-001 Amendment).
 type AgentSessionStatus struct {
 	// Phase is the current lifecycle state, exclusively written by KA.
 	// +kubebuilder:validation:Enum=Pending;Investigating;Completed;Failed;Cancelled

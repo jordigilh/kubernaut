@@ -25,7 +25,6 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
@@ -104,28 +103,6 @@ type AnalyzingAuditClientInterface interface {
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 	// DD-AUDIT-003: Record analysis failure events
 	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
-}
-
-// ========================================
-// IS PHASE UPDATER INTERFACE (write-only, terminal-close only)
-// DD-AA-KA-001 Amendment (Gap 1): AA no longer reads InvestigationSession to
-// decide interactivity -- KA's dispatcher owns that determination now
-// (Status.Interactive on AgentSession). AF also no longer waits on
-// IS.Status.Phase=Active as its readiness signal; it watches
-// AgentSession.Status.Interactive directly. The only remaining AA->IS
-// interaction is this one: closing out AF's own IS bookkeeping when the
-// investigation reaches a terminal state (#1376), which is why AA's IS RBAC
-// is now write-only for this single field.
-// ========================================
-
-// ISPhaseUpdater sets terminal phases (Completed/Failed/Cancelled) on the
-// InvestigationSession CRD when the investigation finishes (#1376), so AF's
-// own bookkeeping reflects the outcome. Best-effort only.
-type ISPhaseUpdater interface {
-	// SetTerminalPhase finds the non-terminal IS CRD for the given RR and
-	// sets its status phase to the given terminal phase. Returns nil if no
-	// matching IS exists or if the IS is already terminal (best-effort).
-	SetTerminalPhase(ctx context.Context, rrName string, phase isv1alpha1.SessionPhase) error
 }
 
 // ========================================
