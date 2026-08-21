@@ -238,6 +238,14 @@ generate-helm-defaults: ## Generate materialized Helm chart defaults template fr
 		--output charts/kubernaut/templates/_generated_defaults.tpl
 	@echo "✅ Helm materialized defaults generated: charts/kubernaut/templates/_generated_defaults.tpl"
 
+.PHONY: check-helm-coverage
+check-helm-coverage: ## Fail if a schema-defaulted/map config field has no helm-unittest assertion proving it renders and isn't allowlisted (BR-PLATFORM-011, issue #2226)
+	@echo "📋 Checking Helm chart config-knob test coverage..."
+	@go run ./hack/check-helm-coverage \
+		--schema charts/kubernaut/values.schema.json \
+		--tests charts/kubernaut/tests \
+		--allowlist charts/kubernaut/.helm-coverage-allowlist.yaml
+
 .PHONY: verify-helm-defaults-parity
 verify-helm-defaults-parity: generate-helm-defaults ## Prove trimmed values.yaml renders identically to explicit-full-defaults (DD-PLATFORM-006 Decision Area 14)
 	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
