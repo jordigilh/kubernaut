@@ -54,6 +54,11 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.interactive.enabled` | boolean |  | `true` | No |
 | `config.mcp.enabled` | boolean |  | `true` | No |
 | `config.mcp.sessionIdleTimeout` | string | Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig(). | `"30m"` | No |
+| `config.mcp.toolTimeout` | string | Issue #2221: default per-tool MCP call timeout, previously never exposed via Helm despite being wired into the MCP bridge (cmd/apifrontend/mcp_a2a_handlers.go). | `"30s"` | No |
+| `config.mcp.toolTimeouts.kubernaut_await_session` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"3m"` | No |
+| `config.mcp.toolTimeouts.kubernaut_discover_workflows` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"60s"` | No |
+| `config.mcp.toolTimeouts.kubernaut_investigate` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15m"` | No |
+| `config.mcp.toolTimeouts.kubernaut_watch` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15m"` | No |
 | `config.rateLimit.ipRequestsPerSec` | integer |  | `10000` | No |
 | `config.rateLimit.maxConcurrentSessions` | integer |  | `50` | No |
 | `config.rateLimit.toolCallsPerMinute` | integer |  | `600` | No |

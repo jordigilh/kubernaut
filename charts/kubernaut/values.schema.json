@@ -2899,6 +2899,54 @@
                   ],
                   "default": "30m",
                   "description": "Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig()."
+                },
+                "toolTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Issue #2221: default per-tool MCP call timeout, previously never exposed via Helm despite being wired into the MCP bridge (cmd/apifrontend/mcp_a2a_handlers.go)."
+                },
+                "toolTimeouts": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Issue #2221: per-tool MCP call timeout overrides (map[string]time.Duration in Go), previously never exposed via Helm. Modeled as named properties (one per known MCP tool) rather than an arbitrary-key map, so each carries its own materialized default and a partial override of one tool never discards the other 3 defaults.",
+                  "properties": {
+                    "kubernaut_investigate": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "15m"
+                    },
+                    "kubernaut_await_session": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "3m"
+                    },
+                    "kubernaut_watch": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "15m"
+                    },
+                    "kubernaut_discover_workflows": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "60s"
+                    }
+                  }
                 }
               }
             },

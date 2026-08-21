@@ -50,6 +50,12 @@ apifrontend:
         mcp:
             enabled: true
             sessionIdleTimeout: 30m
+            toolTimeout: 30s
+            toolTimeouts:
+                kubernaut_await_session: 3m
+                kubernaut_discover_workflows: 60s
+                kubernaut_investigate: 15m
+                kubernaut_watch: 15m
         rateLimit:
             ipRequestsPerSec: 10000
             maxConcurrentSessions: 50

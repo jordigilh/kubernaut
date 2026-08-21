@@ -94,6 +94,15 @@ session:
 mcp:
   enabled: {{ $v.config.mcp.enabled }}
   sessionIdleTimeout: {{ $v.config.mcp.sessionIdleTimeout | quote }}
+  # Issue #2221: toolTimeout/toolTimeouts were wired into the MCP bridge
+  # (cmd/apifrontend/mcp_a2a_handlers.go) with real config.DefaultConfig()
+  # defaults, but never exposed via the chart at all.
+  toolTimeout: {{ $v.config.mcp.toolTimeout | quote }}
+  toolTimeouts:
+    kubernaut_investigate: {{ $v.config.mcp.toolTimeouts.kubernaut_investigate | quote }}
+    kubernaut_await_session: {{ $v.config.mcp.toolTimeouts.kubernaut_await_session | quote }}
+    kubernaut_watch: {{ $v.config.mcp.toolTimeouts.kubernaut_watch | quote }}
+    kubernaut_discover_workflows: {{ $v.config.mcp.toolTimeouts.kubernaut_discover_workflows | quote }}
 # DD-PLATFORM-006 DA14 (PR9): was `| default true` -- same bug as mcp.enabled
 # above.
 interactive:
