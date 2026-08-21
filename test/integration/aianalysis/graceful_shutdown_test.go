@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -91,6 +92,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("shutdown-test-%s", uniqueSuffix),
@@ -149,7 +156,8 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Or(
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),
 			), "Should complete analysis before shutdown")
@@ -184,6 +192,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
@@ -221,7 +235,8 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Or(
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),
 			), "Normal operation: analysis should complete (SIGTERM behavior would be tested in E2E)")
@@ -258,6 +273,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),
@@ -294,7 +315,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Or(
+			// #2204: bumped 60s->90s. A per-process KA container serves every
+			// spec run against it; when several specs' AgentSessions land on
+			// it in a short burst, KA legitimately runs multiple real
+			// LLM-tool-loop investigations concurrently, and any one of them
+			// can take longer than a short fixed timeout waits for.
+			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),
 			), "Analysis should complete and generate audit events")

@@ -252,14 +252,14 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 
 	// Mount config file if specified (DD-TEST-011 v2.0)
 	if config.ConfigFilePath != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/config/scenarios.yaml:ro", config.ConfigFilePath))
+		args = append(args, "-v", fmt.Sprintf("%s:/config/scenarios.yaml:ro,z", config.ConfigFilePath))
 		args = append(args, "-e", "MOCK_LLM_CONFIG_PATH=/config/scenarios.yaml")
 		_, _ = fmt.Fprintf(writer, "📋 Mounting config file: %s → /config/scenarios.yaml\n", config.ConfigFilePath)
 	}
 
 	// Mount golden transcripts directory if specified (BR-TESTING-001 Phase 7)
 	if config.GoldenDirPath != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/golden-transcripts:ro", config.GoldenDirPath))
+		args = append(args, "-v", fmt.Sprintf("%s:/golden-transcripts:ro,z", config.GoldenDirPath))
 		args = append(args, "-e", "MOCK_LLM_GOLDEN_DIR=/golden-transcripts")
 		_, _ = fmt.Fprintf(writer, "📋 Mounting golden transcripts: %s → /golden-transcripts\n", config.GoldenDirPath)
 	}

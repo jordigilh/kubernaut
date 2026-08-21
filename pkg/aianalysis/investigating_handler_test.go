@@ -26,9 +26,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
@@ -37,6 +37,9 @@ import (
 // ========================================
 // Test Mocks
 // ========================================
+
+// boolPtr returns a pointer to b, for AgentSessionResult.IsActionable fixtures.
+func boolPtr(b bool) *bool { return &b }
 
 // noopAuditClient is a no-op implementation of AuditClientInterface for unit tests.
 type noopAuditClient struct{}
@@ -58,14 +61,11 @@ func (n *noopAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *
 	// No-op: Unit tests don't need audit recording
 }
 
-// BR-AA-KA-064: Session audit no-ops
+// BR-AA-KA-065.1: Session audit no-ops
 func (n *noopAuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 }
 
 func (n *noopAuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
-}
-
-func (n *noopAuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 }
 
 // auditClientSpy is a spy implementation that records audit events for validation.
@@ -104,16 +104,12 @@ func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *a
 	// Not tracked in spy for Gap #7 tests
 }
 
-// BR-AA-KA-064: Session audit spy methods
+// BR-AA-KA-065.1: Session audit spy methods
 func (s *auditClientSpy) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	// Not tracked in spy for Gap #7 tests
 }
 
 func (s *auditClientSpy) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
-	// Not tracked in spy for Gap #7 tests
-}
-
-func (s *auditClientSpy) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 	// Not tracked in spy for Gap #7 tests
 }
 
@@ -341,7 +337,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			var auditSpy *auditClientSpy
 
 			BeforeEach(func() {
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 				// Use audit spy to capture failure events for Gap #7 validation
 				auditSpy = &auditClientSpy{}
 				testMetrics := metrics.NewMetrics()
@@ -751,16 +747,15 @@ var _ = Describe("InvestigatingHandler", func() {
 						"info",
 						[]string{"Transient condition", "Auto-recovery"},
 					)
-					mockClient.Response = &agentclient.IncidentResponse{
+					mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Investigated OOMKilled signal. Pod recovered automatically.",
 						RootCauseAnalysis: rcaMap,
 						Confidence:        0.85,
 						Timestamp:         "2025-12-07T10:00:00Z",
 						Warnings:          []string{"Problem self-resolved - no remediation required"},
-					}
-					mockClient.Response.NeedsHumanReview.SetTo(false)
-					mockClient.Err = nil
+						NeedsHumanReview:  false,
+					})
 				})
 
 				It("should complete as ProblemResolved and preserve RCA", func() {
@@ -792,16 +787,15 @@ var _ = Describe("InvestigatingHandler", func() {
 						"high",
 						[]string{"Insufficient memory limits", "Traffic spike"},
 					)
-					mockClient.Response = &agentclient.IncidentResponse{
+					mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Identified persistent OOM condition requiring intervention.",
 						RootCauseAnalysis: rcaMap,
 						Confidence:        0.88,
 						Timestamp:         "2025-12-07T10:00:00Z",
 						Warnings:          []string{},
-					}
-					mockClient.Response.NeedsHumanReview.SetTo(false)
-					mockClient.Err = nil
+						NeedsHumanReview:  false,
+					})
 				})
 
 				It("should escalate to human review (#208 preserved)", func() {
@@ -824,16 +818,15 @@ var _ = Describe("InvestigatingHandler", func() {
 						"info",
 						[]string{"Temporary memory spike", "Transient condition"},
 					)
-					mockClient.Response = &agentclient.IncidentResponse{
+					mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 						IncidentID:        "mock-incident-001",
 						Analysis:          "Memory pressure resolved after automatic restart.",
 						RootCauseAnalysis: rcaMap,
 						Confidence:        0.82,
 						Timestamp:         "2025-12-07T10:00:00Z",
 						Warnings:          []string{"Problem self-resolved - no remediation required"},
-					}
-					mockClient.Response.NeedsHumanReview.SetTo(false)
-					mockClient.Err = nil
+						NeedsHumanReview:  false,
+					})
 				})
 
 				It("should complete as ProblemResolved despite mixed factors", func() {
@@ -957,7 +950,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		Context("Error Classification - BR-AI-009 & BR-AI-010", func() {
 			It("should classify 503 Service Unavailable as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -969,7 +962,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 429 Too Many Requests as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&agentclient.APIError{StatusCode: 429, Message: "Too Many Requests"})
+				mockClient.WithError(k8sStatusError(429, "Too Many Requests"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -980,7 +973,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 			It("should classify 500 Internal Server Error as transient and retry", func() {
 				analysis := createTestAnalysis()
-				mockClient.WithError(&agentclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
+				mockClient.WithError(k8sStatusError(500, "Internal Server Error"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -998,17 +991,17 @@ var _ = Describe("InvestigatingHandler", func() {
 			It("should increase backoff duration with each retry attempt", func() {
 				By("First attempt")
 				analysis := createTestAnalysis()
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 				result1, _ := handler.Handle(ctx, analysis)
 				backoff1 := result1.RequeueAfter
 
 				By("Second attempt")
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 				result2, _ := handler.Handle(ctx, analysis)
 				backoff2 := result2.RequeueAfter
 
 				By("Third attempt")
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 				result3, _ := handler.Handle(ctx, analysis)
 				backoff3 := result3.RequeueAfter
 
@@ -1048,7 +1041,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
 
 				// Using transient error (503) to trigger retry path
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1065,7 +1058,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				// ConsecutiveFailures defaults to 0
 
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1081,7 +1074,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 2
 
-				mockClient.WithError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "Service Unavailable"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -1109,17 +1102,16 @@ var _ = Describe("InvestigatingHandler", func() {
 					"info",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &agentclient.IncidentResponse{
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 					IncidentID:        "mock-incident-388-001",
 					Analysis:          "These PVCs are leftover from completed batch jobs. They consume storage but do not affect any running workload. No remediation is needed.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.85,
 					Timestamp:         "2026-03-02T10:00:00Z",
 					Warnings:          []string{"Alert not actionable — no remediation warranted"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Response.IsActionable.SetTo(false)
-				mockClient.Err = nil
+					NeedsHumanReview:  false,
+					IsActionable:      boolPtr(false),
+				})
 			})
 
 			It("should complete as WorkflowNotNeeded/NotActionable", func() {
@@ -1160,17 +1152,16 @@ var _ = Describe("InvestigatingHandler", func() {
 					"info",
 					[]string{"Completed batch job artifacts", "No PVC cleanup policy configured"},
 				)
-				mockClient.Response = &agentclient.IncidentResponse{
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 					IncidentID:        "mock-incident-388-002",
 					Analysis:          "Found 12 orphaned PVCs. While they use storage, they don't impact running workloads.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.82,
 					Timestamp:         "2026-03-02T10:00:00Z",
 					Warnings:          []string{"Alert not actionable — no remediation warranted"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Response.IsActionable.SetTo(false)
-				mockClient.Err = nil
+					NeedsHumanReview:  false,
+					IsActionable:      boolPtr(false),
+				})
 			})
 
 			It("should complete despite substantive RCA", func() {
@@ -1206,17 +1197,16 @@ var _ = Describe("InvestigatingHandler", func() {
 					"info",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &agentclient.IncidentResponse{
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 					IncidentID:        "mock-incident-607-001",
 					Analysis:          "These PVCs are leftover from completed batch jobs.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.4,
 					Timestamp:         "2026-03-04T10:00:00Z",
 					Warnings:          []string{"Alert not actionable — no remediation warranted"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Response.IsActionable.SetTo(false)
-				mockClient.Err = nil
+					NeedsHumanReview:  false,
+					IsActionable:      boolPtr(false),
+				})
 			})
 
 			It("should complete as WorkflowNotNeeded/NotActionable despite low confidence", func() {
@@ -1241,17 +1231,16 @@ var _ = Describe("InvestigatingHandler", func() {
 					"info",
 					[]string{"Completed batch job artifacts"},
 				)
-				mockClient.Response = &agentclient.IncidentResponse{
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 					IncidentID:        "mock-incident-607-002",
 					Analysis:          "Stale resources with no impact.",
 					RootCauseAnalysis: rcaMap,
 					Confidence:        0.0,
 					Timestamp:         "2026-03-04T10:00:00Z",
 					Warnings:          []string{"Alert not actionable — no remediation warranted"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Response.IsActionable.SetTo(false)
-				mockClient.Err = nil
+					NeedsHumanReview:  false,
+					IsActionable:      boolPtr(false),
+				})
 			})
 
 			It("should complete as NotActionable even with zero confidence", func() {
@@ -1270,15 +1259,14 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-003: partial signal (warning only) does NOT route to NotActionable", func() {
 			BeforeEach(func() {
-				mockClient.Response = &agentclient.IncidentResponse{
-					IncidentID: "mock-incident-607-003",
-					Analysis:   "Some analysis",
-					Confidence: 0.0,
-					Timestamp:  "2026-03-04T10:00:00Z",
-					Warnings:   []string{"Alert not actionable — no remediation warranted"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Err = nil
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
+					IncidentID:       "mock-incident-607-003",
+					Analysis:         "Some analysis",
+					Confidence:       0.0,
+					Timestamp:        "2026-03-04T10:00:00Z",
+					Warnings:         []string{"Alert not actionable — no remediation warranted"},
+					NeedsHumanReview: false,
+				})
 			})
 
 			It("should fall through to terminal failure when is_actionable is missing", func() {
@@ -1296,15 +1284,14 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-004: resolved path still requires confidence >= 0.7", func() {
 			BeforeEach(func() {
-				mockClient.Response = &agentclient.IncidentResponse{
-					IncidentID: "mock-incident-607-004",
-					Analysis:   "Problem appears to have self-resolved.",
-					Confidence: 0.4,
-					Timestamp:  "2026-03-04T10:00:00Z",
-					Warnings:   []string{"Problem self-resolved - no remediation required"},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Err = nil
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
+					IncidentID:       "mock-incident-607-004",
+					Analysis:         "Problem appears to have self-resolved.",
+					Confidence:       0.4,
+					Timestamp:        "2026-03-04T10:00:00Z",
+					Warnings:         []string{"Problem self-resolved - no remediation required"},
+					NeedsHumanReview: false,
+				})
 			})
 
 			It("should NOT route to resolved when confidence is below 0.7", func() {
@@ -1321,15 +1308,14 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		Context("UT-AA-607-005: terminal failure path fires normally", func() {
 			BeforeEach(func() {
-				mockClient.Response = &agentclient.IncidentResponse{
-					IncidentID: "mock-incident-607-005",
-					Analysis:   "Unable to determine root cause.",
-					Confidence: 0.3,
-					Timestamp:  "2026-03-04T10:00:00Z",
-					Warnings:   []string{},
-				}
-				mockClient.Response.NeedsHumanReview.SetTo(false)
-				mockClient.Err = nil
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
+					IncidentID:       "mock-incident-607-005",
+					Analysis:         "Unable to determine root cause.",
+					Confidence:       0.3,
+					Timestamp:        "2026-03-04T10:00:00Z",
+					Warnings:         []string{},
+					NeedsHumanReview: false,
+				})
 			})
 
 			It("should route to Failed/WorkflowResolutionFailed with human review", func() {

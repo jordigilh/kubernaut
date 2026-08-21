@@ -8378,7 +8378,6 @@ const (
 	AIAnalysisPhaseTransitionPayloadAuditEventEventData                              AuditEventEventDataType = "aianalysis.phase.transition"
 	AuditEventEventDataAianalysisAiagentCallAuditEventEventData                      AuditEventEventDataType = "aianalysis.aiagent.call"
 	AuditEventEventDataAianalysisAiagentResultAuditEventEventData                    AuditEventEventDataType = "aianalysis.aiagent.result"
-	AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData               AuditEventEventDataType = "aianalysis.aiagent.session_lost"
 	AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData                    AuditEventEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventEventData                             AuditEventEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventEventData                               AuditEventEventDataType = "aianalysis.rego.evaluation"
@@ -8574,7 +8573,7 @@ func (s AuditEventEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 // IsAIAnalysisAIAgentCallPayload reports whether AuditEventEventData is AIAnalysisAIAgentCallPayload.
 func (s AuditEventEventData) IsAIAnalysisAIAgentCallPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 		return true
 	default:
 		return false
@@ -9522,13 +9521,6 @@ func NewAuditEventEventDataAianalysisAiagentCallAuditEventEventData(v AIAnalysis
 func NewAuditEventEventDataAianalysisAiagentResultAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentResultAuditEventEventData, v)
-	return s
-}
-
-// NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
-func NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
-	var s AuditEventEventData
-	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, v)
 	return s
 }
 
@@ -11960,7 +11952,6 @@ const (
 	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aianalysis.phase.transition"
 	AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData                      AuditEventRequestEventDataType = "aianalysis.aiagent.call"
 	AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData                    AuditEventRequestEventDataType = "aianalysis.aiagent.result"
-	AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData               AuditEventRequestEventDataType = "aianalysis.aiagent.session_lost"
 	AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData                    AuditEventRequestEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "aianalysis.rego.evaluation"
@@ -12156,7 +12147,7 @@ func (s AuditEventRequestEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 // IsAIAnalysisAIAgentCallPayload reports whether AuditEventRequestEventData is AIAnalysisAIAgentCallPayload.
 func (s AuditEventRequestEventData) IsAIAnalysisAIAgentCallPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -13104,13 +13095,6 @@ func NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventDat
 func NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, v)
-	return s
-}
-
-// NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
-func NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
-	var s AuditEventRequestEventData
-	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, v)
 	return s
 }
 

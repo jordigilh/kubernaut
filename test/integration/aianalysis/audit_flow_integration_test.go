@@ -51,6 +51,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -112,6 +113,31 @@ func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 // This requires adding Flush() method to audit client interface.
 //
 // See: DD-TESTING-001 for audit event validation standards
+//
+// #2204 follow-up (2026-08-20 CI RCA, revised): the Serial decorator
+// documented above was never actually applied to the Describe call below --
+// this file has run under --procs=$(TEST_PROCS) (parallel) since it was
+// written, contradicting its own "marked Serial" claim and matching the
+// documented 93-96% parallel pass rate exactly (a ~4-7% flake rate is
+// consistent with the single "Complete Workflow Audit Trail" timeout
+// observed in CI run 32399213648).
+//
+// This was briefly "fixed" by adding Serial, then reverted after helios08
+// validation (TEST_PROCS=4, round 12) showed a worse regression: `make
+// test-integration-aianalysis` runs three sibling Ginkgo suites in one CLI
+// invocation (aianalysis, capacityretry, schemarejection) sharing a single
+// --timeout=15m budget (Makefile TEST_TIMEOUT_INTEGRATION, matching CI's own
+// `timeout: 15` job-minutes for this matrix entry). Serial forces every spec
+// in this ~15-spec Describe to run back-to-back with zero overlap instead of
+// spread across 4 parallel workers; measured wall time was 902s (~15m) for
+// 62/64 specs, blowing the shared budget and leaving capacityretry and
+// schemarejection unable to run at all ("Suite did not run because the
+// timeout elapsed") -- a deterministic, total suite failure, strictly worse
+// than the ~4-7% flake rate Serial was meant to fix. Reverted to parallel:
+// the documented 93-96% pass rate is an accepted, bounded, pre-existing flake
+// budget, not a regression introduced by this PR. The real fix, if pursued,
+// is the "FUTURE IMPROVEMENTS" explicit audit-flush path documented above,
+// which removes the race without adding wall-clock cost.
 // ========================================
 var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Label("integration", "audit", "flow"), func() {
 	var (
@@ -122,7 +148,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		// DD-AA-KA-001 test-only fix: must match the per-process KA
+		// dispatcher's fixed watch namespace (testNamespace, set in the
+		// suite-level BeforeEach), not a hardcoded "default" -- otherwise
+		// AgentSession objects created here are invisible to KA's dispatch.
+		namespace = testNamespace
 
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// FIX: Creating unauthenticated client here caused HTTP 401 errors when querying audit events
@@ -154,13 +184,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Root cause under investigation. See commit 08ba84723 for partial fix.
 
 			By("Creating AIAnalysis resource requiring full workflow")
+			rrID := fmt.Sprintf("rr-complete-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-complete-workflow-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-complete-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-workflow-%s", uuid.New().String()[:8]),
@@ -194,7 +228,14 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 30*time.Second, 2*time.Second).Should(Equal("Completed"),
+				// #2204: bumped 30s->90s. A per-process KA container serves every
+				// spec run against it, not just this one -- when several specs'
+				// AgentSessions land on it in a short burst, KA legitimately runs
+				// multiple real LLM-tool-loop investigations concurrently, and any
+				// one of them can take longer than a short fixed timeout waits for.
+				// This is the tightest timeout in the file despite its own message
+				// already claiming "within 90 seconds" -- the literal never matched.
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete full workflow within 90 seconds")
 
 			By("Verifying complete audit trail in Data Storage")
@@ -423,13 +464,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource requiring investigation")
+			rrID := fmt.Sprintf("rr-investigation-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-investigation-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-investigation-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-investigation-%s", uuid.New().String()[:8]),
@@ -460,10 +505,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Or(
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal("Analyzing"),
 				Equal("Completed"),
-			), "Controller should complete investigation within 60 seconds")
+			), "Controller should complete investigation within 90 seconds")
 
 			By("Verifying AI agent call was automatically audited")
 
@@ -534,13 +580,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// to the AIAnalysis, which proves the audit trail is being generated.
 
 			By("Creating AIAnalysis with potentially problematic configuration")
+			rrID := fmt.Sprintf("rr-inv-error-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-investigation-error-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-inv-error-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-inv-error-%s", uuid.New().String()[:8]),
@@ -622,13 +672,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// ========================================
 
 			By("Creating AIAnalysis resource requiring approval decision")
+			rrID := fmt.Sprintf("rr-approval-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-approval-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-approval-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-approval-%s", uuid.New().String()[:8]),
@@ -664,8 +718,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
-				"Controller should complete analysis within 60 seconds")
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
+				"Controller should complete analysis within 90 seconds")
 
 			By("Verifying approval decision was automatically audited")
 
@@ -733,13 +788,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource that triggers Rego evaluation")
+			rrID := fmt.Sprintf("rr-rego-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-rego-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-rego-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-rego-%s", uuid.New().String()[:8]),
@@ -771,7 +830,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis with Rego evaluation")
 
 			By("Verifying Rego evaluation was automatically audited")
@@ -842,13 +902,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure all transitions are persisted before querying.
 
 			By("Creating AIAnalysis resource to trigger phase transitions")
+			rrID := fmt.Sprintf("rr-phases-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-phases-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-phases-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-phases-%s", uuid.New().String()[:8]),
@@ -880,7 +944,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"))
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 			By("Verifying phase transitions were automatically audited")
 
@@ -928,13 +993,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// ========================================
 
 			By("Creating AIAnalysis that will trigger AI agent error (using invalid signal type)")
+			rrID := fmt.Sprintf("rr-ka-error-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-ka-error-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-ka-error-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-ka-error-%s", uuid.New().String()[:8]),

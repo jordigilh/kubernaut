@@ -1,12 +1,28 @@
 # BR-AA-KA-064: Session-Based Pull Design for AA-KA Communication
 
-**Status**: APPROVED
+**Status**: ⚠️ SUPERSEDED by [BR-AA-KA-065](BR-AA-KA-065-agentsession-watch-design.md) (2026-08-17)
 **Version**: 1.1
 **Created**: 2026-02-09
 **Category**: AI
 **Priority**: P1 - High
 **Services Affected**: AIAnalysis Controller, Kubernaut Agent (KA)
 **GitHub Issue**: #64
+
+---
+
+## Superseded Notice (2026-08-17)
+
+The HTTP session-pull mechanism this BR specifies (`.1`–`.3`: async submit/poll/result over
+`pkg/agentclient`) is the confirmed root cause of
+[#2080](https://github.com/jordigilh/kubernaut/issues/2080)/[#2081](https://github.com/jordigilh/kubernaut/issues/2081):
+KA's per-session ownership authorization means AA's poll 404s once AF has taken over/correlated a
+different session, driving `.5`/`.6`'s regeneration-cap logic to a permanent `Failed` outcome —
+not a timing race, a structural consequence of re-deriving a fact from a secondhand poll instead
+of reading the authoritative source. [BR-AA-KA-065](BR-AA-KA-065-agentsession-watch-design.md)
+replaces the entire HTTP submit/poll/result channel (`.1`–`.6`, `.8`) with a K8s-native
+`AgentSession` CRD (watch + Lease dispatch), per
+[DD-AA-KA-001](../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md). This
+document is retained for historical context; do not implement against it.
 
 ---
 

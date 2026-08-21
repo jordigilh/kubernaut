@@ -493,6 +493,22 @@ func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPat
 		ReuseExisting:             true, // Original behavior: reuse if exists
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
+		// UsePodman: this suite's entire image pipeline (BuildImageForKind,
+		// ExportImageToTar, LoadImageFromTar in e2e_images.go/disk_space.go)
+		// shells out to `podman` exclusively, and LoadImageFromTar hardcodes
+		// KIND_EXPERIMENTAL_PROVIDER=podman unconditionally. Without this,
+		// `kind create cluster` falls back to the ambient default provider
+		// (Docker, when the docker binary is present and
+		// KIND_EXPERIMENTAL_PROVIDER isn't set in the shell -- e.g. a bare
+		// `make test-e2e-aianalysis` on a host with both runtimes installed),
+		// while every subsequent `kind load image-archive` call still forces
+		// podman -- a deterministic provider mismatch where kind looks for
+		// the cluster's nodes under the wrong runtime and reports "no nodes
+		// found for cluster". Every other E2E service (gateway, apifrontend,
+		// authwebhook, fleetmetadatacache, shared_e2e) already sets this;
+		// aianalysis was the one outlier. GitHub Actions CI runners never
+		// surfaced this because they don't have a competing Docker install.
+		UsePodman: true,
 	}
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return err
@@ -625,6 +641,29 @@ rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["investigationsessions/status"]
   verbs: ["get", "update", "patch"]
+# AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): mirrors the
+# production Helm chart's aianalysis-controller ClusterRole
+# (charts/kubernaut/templates/aianalysis/aianalysis.yaml) -- "create" for the
+# initial dispatch write, "get"/"list"/"watch" so AA's own AgentSession
+# EventSource informer can sync. Missing this grant here (this hand-rolled
+# E2E manifest had drifted from the Helm chart) is why the controller's cache
+# never synced: it retried "agentsessions is forbidden" every few seconds
+# until controller-runtime's 2-minute CacheSyncTimeout killed mgr.Start(),
+# crash-looping the whole aianalysis-controller pod (CI run 32280464090,
+# "E2E (aianalysis)": 34/36 specs failed, including trivial health checks --
+# consistent with the pod never becoming Ready at all).
+# "delete" (BR-AI-009, DD-AA-KA-001 amendment) is for
+# AgentSessionCreator.DeleteForRetry -- this hand-rolled manifest drifted
+# from the Helm chart a second time (E2E-AA-065's first two CI runs both hit
+# "agentsessions is forbidden" on delete; RCA in DD-AA-KA-001's Gap 5
+# amendment). Keep this rule's verbs in sync with both
+# charts/kubernaut/templates/aianalysis/aianalysis.yaml and
+# config/rbac/role.yaml (kubebuilder marker in
+# internal/controller/aianalysis/aianalysis_controller.go) whenever any of
+# the three changes.
+- apiGroups: ["kubernaut.ai"]
+  resources: ["agentsessions"]
+  verbs: ["get", "list", "watch", "create", "delete"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
@@ -779,16 +818,26 @@ spec:
 		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
+	// Deploy the Rego policy ConfigMap (inline fixture, self-contained) BEFORE
+	// the Deployment below, which mounts it as the "rego-policies" volume.
+	//
+	// CI RCA (runs 32220596605 and 32248622464, "E2E (aianalysis)"): applying
+	// the Deployment first and this ConfigMap second raced the kubelet's
+	// volume mount against ConfigMap creation ("configmap \"aianalysis-policies\"
+	// not found"), delaying pod start and eating into this job's timeout
+	// budget. Production's Helm chart isn't affected -- Helm's default
+	// install order always creates ConfigMaps before Deployments regardless
+	// of template file/declaration order (helm.sh/helm/v3/pkg/releaseutil
+	// InstallOrder) -- this ordering bug is test-infrastructure-only.
+	if err := createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
-	return createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer)
+	return cmd.Run()
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {

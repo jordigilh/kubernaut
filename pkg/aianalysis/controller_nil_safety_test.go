@@ -77,8 +77,8 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 	// ──────────────────────────────────────────────────────────────────
 	// GAP-5: NewInvestigatingHandler nil-checks for hgClient
 	// ──────────────────────────────────────────────────────────────────
-	Context("UT-AA-1116-005: NewInvestigatingHandler nil agent client", func() {
-		It("MUST panic when AgentClientInterface is nil", func() {
+	Context("UT-AA-1116-005: NewInvestigatingHandler nil agent session get-or-creator", func() {
+		It("MUST panic when AgentSessionGetOrCreator is nil", func() {
 			Expect(func() {
 				handlers.NewInvestigatingHandler(
 					nil,
@@ -86,7 +86,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 					testMetrics,
 					auditClient,
 				)
-			}).To(PanicWith(ContainSubstring("agent client")))
+			}).To(PanicWith(ContainSubstring("agent session get-or-creator")))
 		})
 	})
 

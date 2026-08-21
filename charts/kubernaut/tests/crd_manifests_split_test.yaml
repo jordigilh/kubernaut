@@ -24,14 +24,19 @@ set:
 tests:
   # hasDocuments counts all documents in the template's rendered output; it
   # does not apply documentSelector filtering (verified empirically -- see
-  # PR description). 10 per-CRD ConfigMaps + 1 Job = 11, vs. the pre-fix
+  # PR description). 11 per-CRD ConfigMaps + 1 Job = 12, vs. the pre-fix
   # 1 bundled ConfigMap + 1 Job = 2. The per-field assertions below (which DO
-  # apply the selector) independently confirm the 10 matched documents are
+  # apply the selector) independently confirm the 11 matched documents are
   # actually ConfigMaps with the expected shape.
-  - it: "renders 10 separate per-CRD ConfigMaps plus the Job (was 1 ConfigMap + 1 Job = 2 documents)"
+  #
+  # 11 (not the original 10): DD-AA-KA-001 (#2170) added
+  # pkg/shared/assets/crds/kubernaut.ai_agentsessions.yaml, embedded via
+  # assets.CRDsFS -- the crd-upgrade Job mounts every embedded CRD file, so
+  # this count tracks pkg/shared/assets/crds/*.yaml 1:1, not a fixed number.
+  - it: "renders 11 separate per-CRD ConfigMaps plus the Job (was 1 ConfigMap + 1 Job = 2 documents)"
     asserts:
       - hasDocuments:
-          count: 11
+          count: 12
 
   - it: "each per-CRD ConfigMap carries the pre-upgrade hook annotations"
     documentSelector:
@@ -73,7 +78,7 @@ tests:
           path: spec.template.spec.volumes[0].projected
       - lengthEqual:
           path: spec.template.spec.volumes[0].projected.sources
-          count: 10
+          count: 11
 
   - it: "the crd-upgrade Job's volume mount path and read-only flag are unchanged"
     documentSelector:

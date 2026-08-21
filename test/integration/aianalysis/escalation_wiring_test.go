@@ -54,19 +54,14 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 	BeforeEach(func() {
 		savedHandler = reconciler.InvestigatingHandler.Load()
 		mockClient = mocks.NewMockAgentClient()
-		mockClient.WithSessionPollStatus("completed")
 		mockClient.WithHumanReviewReasonEnum("operator_escalation", nil)
 
 		auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("escalation-wiring-test-audit"))
-		isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
 		reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
 			mockClient,
 			ctrl.Log.WithName("escalation-wiring-mock-handler"),
 			testMetrics,
 			auditClient,
-			handlers.WithSessionMode(),
-			handlers.WithSessionPollInterval(1*time.Second),
-			handlers.WithInvestigationSessionChecker(isChecker),
 			handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 		))
 	})
@@ -145,7 +140,7 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 			"IT-AA-1449-003: Full escalation wiring path must work: KA result → reconciler → ResponseProcessor → CRD status")
 
 		By("verifying mock KA client was called (proves wiring through handler)")
-		Expect(mockClient.GetPollCallCount()).To(BeNumerically(">=", 1),
-			"PollSession must have been called at least once by the reconciler")
+		Expect(mockClient.GetCallCount()).To(BeNumerically(">=", 1),
+			"GetOrCreate must have been called at least once by the reconciler")
 	})
 })

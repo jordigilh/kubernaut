@@ -172,6 +172,20 @@ type RRExistenceChecker interface {
 	RemediationRequestExists(ctx context.Context, rrID string) (bool, error)
 }
 
+// AgentSessionExistenceChecker reports whether an AgentSession CRD already
+// exists for a given RemediationRequest ID. Used by
+// upgradeOrCreateInteractiveSession (investigate_start.go) to distinguish a
+// genuinely-fresh RR (no AgentSession anywhere -- createFreshInteractiveSession
+// is the correct, only path) from one where AA has already created an
+// AgentSession that KA's own dispatcher just hasn't registered into
+// session.Manager yet (a race window, not a fresh-start case) -- see
+// waitForRaceyDispatch's doc comment for the full incident this closes
+// (#2189 CI evidence, E2E-FLEET-018). Implemented by a thin K8s client
+// wrapper at wiring time, mirroring RRExistenceChecker's convention.
+type AgentSessionExistenceChecker interface {
+	AgentSessionExists(ctx context.Context, rrID string) (bool, error)
+}
+
 // MessageRateLimiter enforces per-session rate limits on tool messages.
 // Implemented by *mcp.SessionRateLimiter.
 type MessageRateLimiter interface {
@@ -273,6 +287,7 @@ type InvestigateTool struct {
 	httpCompleter      HTTPSessionCompleter
 	signalResolver     SignalContextResolver
 	rrChecker          RRExistenceChecker
+	agentSessionExists AgentSessionExistenceChecker
 	catalog            WorkflowCatalog
 	metrics            ToolMetrics
 	rateLimiter        MessageRateLimiter
@@ -332,6 +347,19 @@ func WithRRExistenceChecker(checker RRExistenceChecker) InvestigateOption {
 	return func(t *InvestigateTool) {
 		if checker != nil {
 			t.rrChecker = checker
+		}
+	}
+}
+
+// WithAgentSessionExistenceChecker enables the race guard in
+// upgradeOrCreateInteractiveSession (investigate_start.go) that waits
+// briefly for KA's own dispatcher to register an already-existing
+// AgentSession into session.Manager, instead of immediately treating the RR
+// as genuinely fresh and starting a duplicate, competing investigation.
+func WithAgentSessionExistenceChecker(checker AgentSessionExistenceChecker) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if checker != nil {
+			t.agentSessionExists = checker
 		}
 	}
 }

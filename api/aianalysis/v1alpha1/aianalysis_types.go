@@ -688,8 +688,11 @@ type KASession struct {
 	// CreatedAt timestamp when the current session was created
 	// +optional
 	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
-	// PollCount tracks the number of poll attempts for observability
-	// BR-AA-KA-064.8: Constant 15s poll interval (configurable 1s–5m)
+	// PollCount tracks the number of handleSessionRunning reconciles for
+	// observability. #2204 (2026-08-20): no longer tied to a fixed poll
+	// interval -- the AgentSession watch drives most reconciles, with a
+	// deadline-driven backstop requeue (InvestigatingHandler.backstopRequeueAfter)
+	// as the only remaining safety net.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	PollCount int32 `json:"pollCount,omitempty"`

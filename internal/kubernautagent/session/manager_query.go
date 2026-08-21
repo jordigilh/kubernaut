@@ -55,15 +55,6 @@ func (m *Manager) FindPendingByRemediationID(rrID string) (string, bool) {
 	return "", false
 }
 
-// isFallbackSession reports whether sess is a placeholder created by
-// createFallbackSession (mode=interactive_fallback) rather than a genuine
-// investigation. Its canned RCASummary ("Interactive session — awaiting user
-// direction") must never be surfaced by the RCA-summary lookups below as if
-// it were real investigation output (#1640).
-func isFallbackSession(sess *Session) bool {
-	return sess.Metadata["mode"] == "interactive_fallback"
-}
-
 // WaitForCompletionByRemediationID returns a channel that closes once the
 // most recent investigation goroutine for the given remediation_id has fully
 // finished mutating session state (including any storePartialResult fallback
@@ -116,9 +107,6 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 		if sess.Metadata["remediation_id"] != rrID {
 			continue
 		}
-		if isFallbackSession(sess) {
-			continue
-		}
 		if sess.Result == nil || sess.Result.RCASummary == "" {
 			continue
 		}
@@ -146,9 +134,6 @@ func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.Inves
 	var latestResult *katypes.InvestigationResult
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] != rrID {
-			continue
-		}
-		if isFallbackSession(sess) {
 			continue
 		}
 		if sess.Result == nil {
@@ -333,6 +318,7 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	var correlationID string
 	var hasWorkflow bool
 	var humanReviewReason string
+	var finalResult *katypes.InvestigationResult
 	if sess != nil {
 		if sess.Metadata != nil {
 			correlationID = sess.Metadata["remediation_id"]
@@ -344,9 +330,17 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 		// SetPendingDecisionResult already attached, so logging the raw
 		// parameter would misreport an actually-preserved discovery as
 		// has_workflow=false.
-		if sess.Result != nil {
-			hasWorkflow = sess.Result.WorkflowID != ""
-			humanReviewReason = sess.Result.HumanReviewReason
+		//
+		// finalResult is captured here, still under RLock, for
+		// fireTerminalHook below -- reading sess.Result again after
+		// RUnlock() (as an earlier version of this code did) is a genuine
+		// data race with Store.SetResult writing it concurrently from the
+		// investigation goroutine (manager_events.go storePartialResult),
+		// caught by `go test -race` in CI (issue #2170 CI failure).
+		finalResult = sess.Result
+		if finalResult != nil {
+			hasWorkflow = finalResult.WorkflowID != ""
+			humanReviewReason = finalResult.HumanReviewReason
 		}
 	}
 	m.store.mu.RUnlock()
@@ -357,6 +351,13 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	}, nil, "completion_mode", "user_driving")
 	m.logger.Info("User-driven session completed",
 		"session_id", id, "has_workflow", hasWorkflow, "human_review_reason", humanReviewReason)
+	// BR-AA-KA-065.11: this is the winning commit point for a user-driven
+	// completion (select_workflow/complete_no_action) -- fire the hook with
+	// the final, actually-stored result (finalResult), not the raw
+	// parameter, for the same #2020 reason the logging above reads it.
+	if sess != nil {
+		m.fireTerminalHook(id, correlationID, StatusCompleted, finalResult, nil)
+	}
 	return nil
 }
 
@@ -445,6 +446,77 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 			EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
 			Outcome: audit.OutcomeSuccess, SessionID: c.id, CorrelationID: c.correlationID,
 		}, nil, "completion_mode", "force_complete", "previous_status", string(c.prevStatus))
+		// BR-AA-KA-065.11: this is the winning commit point for an
+		// out-of-band force-complete -- the cancelled goroutine's own later
+		// (rejected) store.Update, if any, will never reach this call site,
+		// closing the "no silent drop" race by construction.
+		m.fireTerminalHook(c.id, c.correlationID, StatusCompleted, result, nil)
+	}
+	return nil
+}
+
+// ForceCancelByRemediationID locates every non-terminal session (Running,
+// Pending, or UserDriving) matching the given remediation ID and forces each
+// one to StatusCancelled, cancelling its investigation goroutine if still
+// running. Mirrors ForceCompleteByRemediationID's (#1654) iterate-then-fire-
+// hooks-after-unlock pattern and multi-sibling-session semantics exactly.
+//
+// #2170 (DD-AA-KA-001 Amendment): this is the cleanup path for two
+// call sites that have no other way to stop an orphaned investigation
+// goroutine now that HTTP polling's CancelSession RPC is gone:
+//   - Dispatcher.handleEvent's watch.Deleted case: the AgentSession is
+//     already gone (directly deleted, or transitively via RR/AIAnalysis
+//     cascade deletion) by the time this fires, so there is no CRD left to
+//     poll or write a terminal status to -- the only actionable step is
+//     stopping the in-memory goroutine so it does not run (and burn LLM/tool
+//     budget) forever.
+//   - Dispatcher.resync's TimesOutAt self-enforcement: KA independently
+//     honors the same absolute deadline AA already enforces
+//     (checkInvestigationTimeout, DD-TIMEOUT-002/#2176) so a
+//     partitioned/crashed AA replica can never leave KA investigating
+//     forever.
+//
+// Returns ErrSessionNotFound when no non-terminal session matched at all.
+func (m *Manager) ForceCancelByRemediationID(rrID string) error {
+	m.store.mu.Lock()
+	type cancelledSession struct {
+		id            string
+		correlationID string
+	}
+	var cancelled []cancelledSession
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID || IsTerminal(sess.Status) {
+			continue
+		}
+		if sess.cancel != nil {
+			sess.cancel()
+		}
+		sess.Status = StatusCancelled
+		sess.lazySink.Set(nil)
+		if sess.eventChan != nil {
+			close(sess.eventChan)
+			sess.eventChan = nil
+		}
+		cancelled = append(cancelled, cancelledSession{id: id, correlationID: rrID})
+	}
+	m.store.mu.Unlock()
+
+	if len(cancelled) == 0 {
+		return ErrSessionNotFound
+	}
+
+	for _, c := range cancelled {
+		m.logger.Info("Force-cancelled session by remediation ID",
+			"remediation_id", rrID, "session_id", c.id)
+		m.emitSessionEvent(context.Background(), sessionEventParams{
+			EventType: audit.EventTypeSessionCancelled, Action: audit.ActionSessionCancelled,
+			Outcome: audit.OutcomeSuccess, SessionID: c.id, CorrelationID: c.correlationID,
+		}, nil)
+		// Mirrors ForceCompleteByRemediationID's winning-commit-point
+		// comment: firing the hook here (after unlock) is what makes this
+		// the authoritative terminal transition, regardless of whether the
+		// cancelled goroutine's own (now-rejected) completion race loses.
+		m.fireTerminalHook(c.id, c.correlationID, StatusCancelled, nil, nil)
 	}
 	return nil
 }

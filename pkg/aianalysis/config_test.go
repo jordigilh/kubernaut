@@ -19,7 +19,6 @@ package aianalysis_test
 import (
 	"os"
 	"path/filepath"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -53,9 +52,6 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			Expect(cfg.Controller.MetricsAddr).To(Equal(":9090"))
 			Expect(cfg.Controller.HealthProbeAddr).To(Equal(":8081"))
-			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
-			Expect(cfg.Agent.Timeout).To(Equal(180 * time.Second))
-			Expect(cfg.Agent.SessionPollInterval).To(Equal(15 * time.Second))
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 			Expect(cfg.Rego.PolicyPath).To(Equal("/etc/aianalysis/policies/approval.rego"))
 		})
@@ -64,6 +60,19 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			Expect(cfg.DataStorage.Buffer.BufferSize).To(Equal(20000))
 			Expect(cfg.DataStorage.Buffer.BatchSize).To(Equal(1000))
+		})
+
+		It("#2204: should default MaxConcurrentReconciles to 10 workers", func() {
+			// Prior to this fix, cmd/aianalysis/main.go called
+			// SetupWithManager(mgr) with no explicit worker count, so
+			// controller-runtime's implicit default of 1 silently serialized
+			// every AIAnalysis reconcile in production (and in the E2E Kind
+			// deployment, which runs this same binary) -- the exact
+			// bottleneck already fixed for the integration envtest suite
+			// (test/integration/aianalysis/suite_test.go: SetupWithManager(k8sManager, 10))
+			// but never wired into the production entry point itself.
+			cfg := config.DefaultConfig()
+			Expect(cfg.MaxConcurrentReconciles).To(Equal(10))
 		})
 	})
 
@@ -77,7 +86,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
 			Expect(cfg.Validate()).To(Succeed())
-			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
+			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 		})
 
 		It("should return defaults when path is empty", func() {
@@ -90,7 +99,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 		It("should return defaults gracefully when file does not exist", func() {
 			cfg, err := config.LoadFromFile("/nonexistent/path/config.yaml")
 			Expect(cfg).NotTo(BeNil())
-			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
+			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 			_ = err
 		})
 
@@ -121,30 +130,6 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("healthProbeAddr")))
 		})
 
-		It("BR-AI-007: should reject empty agent URL", func() {
-			cfg := config.DefaultConfig()
-			cfg.Agent.URL = ""
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("agent.url")))
-		})
-
-		It("should reject zero agent timeout", func() {
-			cfg := config.DefaultConfig()
-			cfg.Agent.Timeout = 0
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("agent.timeout")))
-		})
-
-		It("BR-AA-KA-064: should reject session poll interval below 1s", func() {
-			cfg := config.DefaultConfig()
-			cfg.Agent.SessionPollInterval = 0
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))
-		})
-
-		It("BR-AA-KA-064: should reject session poll interval above 5m", func() {
-			cfg := config.DefaultConfig()
-			cfg.Agent.SessionPollInterval = 10 * time.Minute
-			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))
-		})
-
 		It("ADR-030: should reject empty DataStorage URL", func() {
 			cfg := config.DefaultConfig()
 			cfg.DataStorage.URL = ""
@@ -155,6 +140,12 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			cfg.Rego.PolicyPath = ""
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("policyPath")))
+		})
+
+		It("#2204: should reject a maxConcurrentReconciles below 1", func() {
+			cfg := config.DefaultConfig()
+			cfg.MaxConcurrentReconciles = 0
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("maxConcurrentReconciles must be at least 1")))
 		})
 
 		It("should reject config loaded from invalid YAML testdata", func() {

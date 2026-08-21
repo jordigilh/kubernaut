@@ -33,6 +33,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
@@ -54,10 +55,6 @@ type mockISPhaseUpdater1421 struct {
 type terminalCall1421 struct {
 	RRName string
 	Phase  isv1alpha1.SessionPhase
-}
-
-func (m *mockISPhaseUpdater1421) SetActivePhase(_ context.Context, _ string) error {
-	return nil
 }
 
 func (m *mockISPhaseUpdater1421) SetTerminalPhase(_ context.Context, rrName string, phase isv1alpha1.SessionPhase) error {
@@ -102,12 +99,12 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		_ = clientgoscheme.AddToScheme(scheme)
 		_ = aianalysisv1.AddToScheme(scheme)
 		_ = isv1alpha1.AddToScheme(scheme)
+		_ = agentsessionv1.AddToScheme(scheme)
 		testMetrics = metrics.NewMetrics()
 	})
 
 	buildReconciler := func(updater handlers.ISPhaseUpdater) (*aianalysis.AIAnalysisReconciler, *mocks.MockAgentClient) {
-		mockClient := mocks.NewMockAgentClient()
-		mockClient.WithSessionPollStatus("investigating")
+		mockClient := mocks.NewMockAgentClient().WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -130,7 +127,6 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		}
 		investigatingHandler := handlers.NewInvestigatingHandler(
 			mockClient, ctrl.Log.WithName("test-1421-handler"), testMetrics, auditClient,
-			handlers.WithSessionMode(),
 			handlers.WithRecorder(record.NewFakeRecorder(20)),
 		)
 		reconciler.InvestigatingHandler.Store(investigatingHandler)

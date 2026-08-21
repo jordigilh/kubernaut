@@ -10,6 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v3.1 | 2026-08-20 | **#2204**: `DefaultSessionPollInterval` (flat 15s requeue) removed -- superseded by `InvestigatingHandler.backstopRequeueAfter`, a deadline-driven backstop requeue scheduled at the investigation's own deadline (`Spec.TimesOutAt`/`maxInvestigationDuration`). Flagged the `handleSessionSubmit`/`handleSessionPoll` HTTP-era code block below as stale against DD-AA-KA-001 (full rewrite out of scope for this fix). | #2204, DD-AA-KA-001 |
 | v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite, superseding the v2.0 STALE banner. Fixed the package structure to match the real code (`internal/controller/aianalysis/` for the reconciler, `pkg/aianalysis/handlers/` for phase logic, `pkg/agentclient` for the KA client — not `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt`, which do not exist); replaced the fictional `HolmesGPTClient holmesgpt.Client` reconciler field and single synchronous `Investigate()` call with the real async submit/poll/result session flow (`AgentClientInterface.SubmitInvestigation`/`PollSession`/`GetSessionResult`, BR-AA-KA-064); replaced the 60s/5s hardcoded phase timeouts with the real `DefaultSessionPollInterval` (15s) and `DefaultMaxInvestigationDuration` (25m) wall-clock cap; corrected `AIApprovalRequest` references to `RemediationApprovalRequest` | #1806, BR-AA-KA-064 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Fixed SignalProcessing naming; Removed legacy phases (recommending→analyzing); Removed HolmesGPTConfig/InvestigationScope; Added DetectedLabels/CustomLabels/OwnerChain; V1.0 4-phase flow | DD-WORKFLOW-001 v1.8, DD-RECOVERY-002 |
 | v1.1 | 2025-10-16 | Added self-documenting JSON format | DD-HOLMESGPT-009 |
@@ -273,6 +274,18 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
     return h.handleSessionPoll(ctx, analysis)
 }
 
+> **STALE (2026-08-20, #2204)**: the `handleSessionSubmit`/`handleSessionPoll` code
+> below, and every `SubmitInvestigation`/`PollSession`/`GetSessionResult` HTTP call it
+> references, describes the pre-[DD-AA-KA-001](../../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)
+> architecture and does not match current code (`pkg/aianalysis/handlers/investigating.go`).
+> DD-AA-KA-001 replaced this HTTP submit/poll/result channel with a watched
+> `AgentSession` CRD (`creator.AgentSessionCreator` + `WatchesRawSource`) — AA no longer
+> calls KA over HTTP at all for investigation dispatch. This section (and the matching
+> sections in `overview.md`, `integration-points.md`, `reconciliation-phases.md`) needs a
+> full rewrite against the current `AgentSession`-watch flow; that rewrite is out of scope
+> for #2204, which only fixed the requeue-cadence and `MaxConcurrentReconciles` items below.
+
+```go
 func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
     req := h.builder.BuildIncidentRequest(analysis)
     sessionID, err := h.kaClient.SubmitInvestigation(ctx, req) // POST /api/v1/incident/analyze -> 202 + session_id
@@ -308,17 +321,18 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 }
 ```
 
-**Wall-clock timeout** (`pkg/aianalysis/handlers/constants.go`): every poll checks `checkInvestigationTimeout`, which fails the analysis with `Reason=TransientError` if `time.Since(session.CreatedAt) > DefaultMaxInvestigationDuration` (**25 minutes**). This is a cap on the *entire session* (including any time spent in `user_driving` interactive mode) — it is not a per-HTTP-call timeout.
+**Wall-clock timeout** (`pkg/aianalysis/handlers/constants.go`): every reconcile of a still-running investigation checks `checkInvestigationTimeout`, which fails the analysis with `Reason=TransientError` if the investigation has passed its deadline (`Spec.TimesOutAt` when RO has set it, else `session.CreatedAt + DefaultMaxInvestigationDuration`, **25 minutes**). This is a cap on the *entire session* (including any time spent in `user_driving` interactive mode) — it is not a per-HTTP-call timeout.
+
+`DefaultSessionPollInterval` (a flat, unconditional 15s requeue) was removed in #2204: the `AgentSession` watch already wakes the reconciler immediately on every KA status write, so a periodic poll added reconcile/API-server volume with no relationship to when a check was actually due. The only remaining backstop requeue is `InvestigatingHandler.backstopRequeueAfter`, which schedules a single reconcile exactly at the investigation's own deadline (the same one `checkInvestigationTimeout` evaluates) — catching a hung KA that never writes another status update, without polling in between:
 
 ```go
 // pkg/aianalysis/handlers/constants.go
 const (
-    DefaultSessionPollInterval      = 15 * time.Second // constant poll cadence, not backoff
-    DefaultMaxInvestigationDuration = 25 * time.Minute  // wall-clock cap on the whole session
+    DefaultMaxInvestigationDuration = 25 * time.Minute // wall-clock cap on the whole session
 )
 ```
 
-Once `PollSession` reports `"completed"`, the handler calls `GetSessionResult` (`GET /api/v1/incident/session/{id}/result`) to fetch the `IncidentResponse` and delegates to `ResponseProcessor.ProcessIncidentResponse`, which populates `status.rootCauseAnalysis`, `status.selectedWorkflow`, and transitions to `Analyzing`.
+Once the watched `AgentSession`'s `status.phase` reaches `Completed`, the handler reads `status.result` directly off the CRD (no separate result-fetch call) and delegates to `ResponseProcessor.ProcessIncidentResponse`, which populates `status.rootCauseAnalysis`, `status.selectedWorkflow`, and transitions to `Analyzing`.
 
 ### Analyzing Phase
 

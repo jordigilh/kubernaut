@@ -1992,7 +1992,9 @@ components:
               'aianalysis.aiagent.call': '#/components/schemas/AIAnalysisAIAgentCallPayload'
               'aianalysis.aiagent.submit': '#/components/schemas/AIAnalysisAIAgentCallPayload'
               'aianalysis.aiagent.result': '#/components/schemas/AIAnalysisAIAgentCallPayload'
-              'aianalysis.aiagent.session_lost': '#/components/schemas/AIAnalysisAIAgentCallPayload'
+              # 'aianalysis.aiagent.session_lost' retired (DD-AA-KA-001, BR-AA-KA-065.7):
+              # RecordAIAgentSessionLost's sole caller (handleSessionLost) was deleted
+              # with the regeneration-cap mechanism it audited (closes #2080/#2081).
               'aianalysis.approval.decision': '#/components/schemas/AIAnalysisApprovalDecisionPayload'
               'aianalysis.rego.evaluation': '#/components/schemas/AIAnalysisRegoEvaluationPayload'
               'aianalysis.error.occurred': '#/components/schemas/AIAnalysisErrorPayload'

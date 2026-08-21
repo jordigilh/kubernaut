@@ -363,9 +363,15 @@ type investigationStack struct {
 	instrumentedAudit audit.AuditStore
 	phaseResolver     *investigator.DefaultPhaseResolver
 	inv               *investigator.Investigator
-	store             *session.Store
-	mgr               *session.Manager
-	ogenSrv           *agentclient.Server
+	// runner is inv wrapped with the alignment InvestigatorWrapper when
+	// alignment-check is enabled (identical to what kaserver.NewHandler
+	// used for the retired HTTP path) -- the AgentSession dispatcher
+	// (DD-AA-KA-001) reuses this exact value so alignment coverage is
+	// identical regardless of dispatch channel.
+	runner  kaserver.InvestigationRunner
+	store   *session.Store
+	mgr     *session.Manager
+	ogenSrv *agentclient.Server
 }
 
 // buildPinDecorator constructs the #1470 PinDecorator used by the
@@ -505,6 +511,7 @@ func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
 		instrumentedAudit: instrumentedAudit,
 		phaseResolver:     phaseResolver,
 		inv:               inv,
+		runner:            investigationRunner,
 		store:             store,
 		mgr:               mgr,
 		ogenSrv:           ogenSrv,

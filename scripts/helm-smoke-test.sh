@@ -512,10 +512,10 @@ run_pre_001() {
   if kubectl apply --server-side --force-conflicts -f "${CHART_PATH}/crds/" >/dev/null 2>&1; then
     local count
     count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-    if [[ "$count" -eq 10 ]]; then
-      tap_ok "$desc (10 CRDs created)"
+    if [[ "$count" -eq 11 ]]; then
+      tap_ok "$desc (11 CRDs created)"
     else
-      tap_not_ok "$desc" "Expected 10 CRDs, found ${count}"
+      tap_not_ok "$desc" "Expected 11 CRDs, found ${count}"
     fi
   else
     tap_not_ok "$desc" "kubectl apply failed"
@@ -1544,10 +1544,10 @@ run_uninst_001() {
 
   local crd_count
   crd_count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-  if [[ "$crd_count" -eq 10 ]]; then
-    tap_ok "ST-CHART-UNINST-001d: 10 CRDs retained"
+  if [[ "$crd_count" -eq 11 ]]; then
+    tap_ok "ST-CHART-UNINST-001d: 11 CRDs retained"
   else
-    tap_not_ok "ST-CHART-UNINST-001d: 10 CRDs retained" "Found ${crd_count} CRDs"
+    tap_not_ok "ST-CHART-UNINST-001d: 11 CRDs retained" "Found ${crd_count} CRDs"
   fi
 }
 
@@ -2395,12 +2395,16 @@ for d in docs:
       "interactive: block not found when interactive.enabled=true"
   fi
 
-  # HELM-02: interactive.enabled=true adds Lease RBAC under namespace-scoped Role
+  # HELM-02: Lease RBAC is present under the namespace-scoped Role.
+  # DD-AA-KA-001 (#2170): kubernaut-agent-leases is now unconditional (the
+  # AgentSession dispatch Lease is used regardless of interactive.enabled),
+  # so this only re-confirms presence when interactive.enabled=true, not
+  # gating.
   if echo "$interactive_out" | grep -q "coordination.k8s.io" && \
      echo "$interactive_out" | grep -q "leases" && \
      echo "$interactive_out" | grep -q "kind: Role" && \
-     echo "$interactive_out" | grep -q "kubernaut-agent-interactive-leases"; then
-    tap_ok "HELM-02: interactive.enabled=true adds coordination.k8s.io/leases under namespace-scoped Role"
+     echo "$interactive_out" | grep -q "kubernaut-agent-leases"; then
+    tap_ok "HELM-02: coordination.k8s.io/leases present under namespace-scoped Role"
   else
     tap_not_ok "HELM-02: Lease RBAC" \
       "coordination.k8s.io/leases RBAC not found under namespace-scoped Role when interactive enabled"

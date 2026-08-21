@@ -30,18 +30,18 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
@@ -76,25 +76,15 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 		}
 	}
 
-	buildDecisionExpiredResp := func() *client.IncidentResponse {
-		return &client.IncidentResponse{
-			IncidentID:       "inc-2020-001",
-			Analysis:         "Workflow discovered and presented, but no decision was received before the inactivity timeout.",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonDecisionExpired,
-				Set:   true,
-			},
-			Confidence: 0.9,
-			Timestamp:  "2026-08-08T12:00:00Z",
-			SelectedWorkflow: client.OptNilIncidentResponseSelectedWorkflow{
-				Value: client.IncidentResponseSelectedWorkflow{
-					"workflow_id": jx.Raw(`"wf-recommended-2020"`),
-					"confidence":  jx.Raw(`0.9`),
-					"rationale":   jx.Raw(`"restart the crashlooping pod"`),
-				},
-				Set: true,
-			},
+	buildDecisionExpiredResp := func() *agentsessionv1.AgentSessionResult {
+		return &agentsessionv1.AgentSessionResult{
+			IncidentID:        "inc-2020-001",
+			Analysis:          "Workflow discovered and presented, but no decision was received before the inactivity timeout.",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "decision_expired",
+			Confidence:        0.9,
+			Timestamp:         "2026-08-08T12:00:00Z",
+			SelectedWorkflow:  mocks.BuildMockSelectedWorkflow("wf-recommended-2020", "", 0.9, "restart the crashlooping pod"),
 		}
 	}
 
@@ -110,7 +100,7 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			analysis := createAnalysis()
 			resp := buildDecisionExpiredResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
@@ -125,7 +115,7 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			analysis := createAnalysis()
 			resp := buildDecisionExpiredResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.SubReason).To(Equal("DecisionExpired"),
@@ -136,7 +126,7 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			analysis := createAnalysis()
 			resp := buildDecisionExpiredResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
@@ -149,7 +139,7 @@ var _ = Describe("ResponseProcessor decision_expired (#2019/#2020)", func() {
 			analysis := createAnalysis()
 			resp := buildDecisionExpiredResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse(),

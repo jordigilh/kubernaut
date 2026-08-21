@@ -42,21 +42,37 @@ func seedMetricsWithAnalysis() {
 	ctx := context.Background()
 
 	// Create successful analysis to populate success metrics
+	// #2204 follow-up (2026-08-20 helios08 RCA): RemediationRequestRef.Name
+	// must be unique per call, not a static literal. AgentSessionCreator.
+	// GetOrCreate derives the child AgentSession's name deterministically
+	// from this field alone (as-<name>), with no ownership check against
+	// the calling AIAnalysis -- so seedMetricsWithAnalysis() (called once
+	// per Ginkgo *process*, not once total, via the package-level
+	// skipMetricsSeeding guard) reusing a fixed name here let every
+	// parallel process race to create/adopt the SAME AgentSession. The
+	// losing process's AIAnalysis silently inherited a foreign,
+	// already-terminal AgentSession it doesn't own, so the owner-scoped
+	// watch never woke its reconciler again -- it hung until the 25m
+	// deadline-driven backstop, well past this function's own Eventually.
+	// Confirmed live on helios08 (TEST_PROCS=4): the stuck AIAnalysis's
+	// AgentSession ownerReference pointed at a *different* AIAnalysis's
+	// UID. Giving each call its own suffix removes the collision.
+	seedSuffix := randomSuffix()
 	analysis := &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metrics-seed-success-" + randomSuffix(),
+			Name:      "metrics-seed-success-" + seedSuffix,
 			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
-				Name:      "metrics-seed-rem",
+				Name:      "metrics-seed-rem-" + seedSuffix,
 				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-001",
 			AnalysisRequest: aianalysisv1.AnalysisRequest{
 				SignalContext: aianalysisv1.SignalContextInput{
 					Fingerprint:      "metrics-seed-fp",
-					Severity:        "warning",
+					Severity:         "warning",
 					SignalName:       "PodCrashLooping",
 					Environment:      "staging",
 					BusinessPriority: "P2",
@@ -84,14 +100,17 @@ func seedMetricsWithAnalysis() {
 
 	// Create failed analysis to populate failure metrics
 	// BR-KA-197: Ensure aianalysis_failures_total metric is populated
+	// #2204 follow-up: same per-call-unique-name fix as the success
+	// analysis above, applied to the failure-path seed.
+	failedSuffix := randomSuffix()
 	failedAnalysis := &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metrics-seed-failed-" + randomSuffix(),
+			Name:      "metrics-seed-failed-" + failedSuffix,
 			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
-				Name:      "metrics-seed-rem-fail",
+				Name:      "metrics-seed-rem-fail-" + failedSuffix,
 				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-fail-001",

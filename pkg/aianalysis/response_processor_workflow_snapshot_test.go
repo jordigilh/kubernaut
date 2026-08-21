@@ -29,21 +29,31 @@ package aianalysis_test
 
 import (
 	"context"
+	"encoding/json"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// rawJSONWFSnap marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
+func rawJSONWFSnap(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
 
 var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1661 Change 11b)", func() {
 	var (
@@ -77,32 +87,29 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-338-001: extracts Dependencies/Resources/DeclaredParameterNames from the KA response into SelectedWorkflow", func() {
-		kaResp := &agentclient.IncidentResponse{
+		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-001",
 			Analysis:         "Root cause: memory pressure",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.92,
 			Timestamp:        "2026-07-16T12:00:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"increase-memory-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/increase-memory:v1.0"`),
-					"confidence":       jx.Raw(`0.92`),
-					"dependencies": jx.Raw(`{
-						"secrets": [{"name": "db-creds"}],
-						"configMaps": [{"name": "app-config"}]
-					}`),
-					"resources": jx.Raw(`{
-						"requests": {"cpu": "100m", "memory": "128Mi"},
-						"limits": {"cpu": "500m", "memory": "512Mi"}
-					}`),
-					"declared_parameter_names": jx.Raw(`{"TARGET_NAMESPACE": true, "REPLICAS": true}`),
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "increase-memory-v1",
+				"execution_bundle": "ghcr.io/kubernaut/increase-memory:v1.0",
+				"confidence":       0.92,
+				"dependencies": map[string]interface{}{
+					"secrets":    []map[string]interface{}{{"name": "db-creds"}},
+					"configMaps": []map[string]interface{}{{"name": "app-config"}},
 				},
-				Set: true,
-			},
+				"resources": map[string]interface{}{
+					"requests": map[string]interface{}{"cpu": "100m", "memory": "128Mi"},
+					"limits":   map[string]interface{}{"cpu": "500m", "memory": "512Mi"},
+				},
+				"declared_parameter_names": map[string]interface{}{"TARGET_NAMESPACE": true, "REPLICAS": true},
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
 		sw := analysis.Status.GetRCAResult().SelectedWorkflow
@@ -129,25 +136,22 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-338-002: leaves Dependencies/Resources/DeclaredParameterNames nil when absent from the KA response, without panicking", func() {
-		kaResp := &agentclient.IncidentResponse{
+		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-002",
 			Analysis:         "Root cause: crash loop",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.85,
 			Timestamp:        "2026-07-16T12:05:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-					"confidence":       jx.Raw(`0.85`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "restart-pod-v1",
+				"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+				"confidence":       0.85,
+			}),
 		}
 
 		var err error
 		Expect(func() {
-			_, err = processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+			_, err = processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		}).ToNot(Panic())
 		Expect(err).ToNot(HaveOccurred())
 
@@ -165,23 +169,20 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-338-003: preserveLowConfidenceWorkflow stamps SelectedAt (low-confidence terminal path)", func() {
-		kaResp := &agentclient.IncidentResponse{
+		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-003",
 			Analysis:         "Root cause: low confidence match",
-			NeedsHumanReview: agentclient.NewOptBool(true),
+			NeedsHumanReview: true,
 			Confidence:       0.4,
 			Timestamp:        "2026-07-16T12:10:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"low-confidence-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/low-confidence:v1.0"`),
-					"confidence":       jx.Raw(`0.4`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "low-confidence-v1",
+				"execution_bundle": "ghcr.io/kubernaut/low-confidence:v1.0",
+				"confidence":       0.4,
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
 		sw := analysis.Status.GetRCAResult().SelectedWorkflow
@@ -195,25 +196,22 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// ═══════════════════════════════════════════════════════════════════════
 
 	It("UT-AA-1661-653-001: storeSelectedWorkflow extracts ActionType/WorkflowName from the KA response", func() {
-		kaResp := &agentclient.IncidentResponse{
+		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-653a",
 			Analysis:         "Root cause: memory pressure",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.92,
 			Timestamp:        "2026-07-16T12:00:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"increase-memory-v1"`),
-					"workflow_name":    jx.Raw(`"increase-memory"`),
-					"action_type":      jx.Raw(`"ScaleReplicas"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/increase-memory:v1.0"`),
-					"confidence":       jx.Raw(`0.92`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "increase-memory-v1",
+				"workflow_name":    "increase-memory",
+				"action_type":      "ScaleReplicas",
+				"execution_bundle": "ghcr.io/kubernaut/increase-memory:v1.0",
+				"confidence":       0.92,
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
 		sw := analysis.Status.GetRCAResult().SelectedWorkflow
@@ -223,25 +221,22 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	})
 
 	It("UT-AA-1661-653-002: preserveLowConfidenceWorkflow extracts ActionType/WorkflowName from the KA response", func() {
-		kaResp := &agentclient.IncidentResponse{
+		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-653b",
 			Analysis:         "Root cause: low confidence match",
-			NeedsHumanReview: agentclient.NewOptBool(true),
+			NeedsHumanReview: true,
 			Confidence:       0.4,
 			Timestamp:        "2026-07-16T12:10:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"low-confidence-v1"`),
-					"workflow_name":    jx.Raw(`"low-confidence-fix"`),
-					"action_type":      jx.Raw(`"RestartPod"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/low-confidence:v1.0"`),
-					"confidence":       jx.Raw(`0.4`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "low-confidence-v1",
+				"workflow_name":    "low-confidence-fix",
+				"action_type":      "RestartPod",
+				"execution_bundle": "ghcr.io/kubernaut/low-confidence:v1.0",
+				"confidence":       0.4,
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
 		sw := analysis.Status.GetRCAResult().SelectedWorkflow
@@ -251,29 +246,23 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	})
 
 	It("UT-AA-1661-653-003: preservePartialSelectedWorkflow extracts ActionType/WorkflowName from the KA response (workflow-resolution-failure path)", func() {
-		kaResp := &agentclient.IncidentResponse{
-			IncidentID:       "test-wfsnap-653c",
-			Analysis:         "Workflow resolution failed",
-			NeedsHumanReview: agentclient.NewOptBool(true),
-			HumanReviewReason: agentclient.OptNilHumanReviewReason{
-				Value: agentclient.HumanReviewReasonParameterValidationFailed,
-				Set:   true,
-			},
-			Confidence: 0.8,
-			Timestamp:  "2026-07-16T12:15:00Z",
-			Warnings:   []string{"parameter validation failed"},
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"partial-v1"`),
-					"workflow_name":    jx.Raw(`"partial-fix"`),
-					"action_type":      jx.Raw(`"ScaleReplicas"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/partial:v1.0"`),
-				},
-				Set: true,
-			},
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "test-wfsnap-653c",
+			Analysis:          "Workflow resolution failed",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "parameter_validation_failed",
+			Confidence:        0.8,
+			Timestamp:         "2026-07-16T12:15:00Z",
+			Warnings:          []string{"parameter validation failed"},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "partial-v1",
+				"workflow_name":    "partial-fix",
+				"action_type":      "ScaleReplicas",
+				"execution_bundle": "ghcr.io/kubernaut/partial:v1.0",
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
 		sw := analysis.Status.GetRCAResult().SelectedWorkflow

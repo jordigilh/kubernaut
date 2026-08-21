@@ -16,40 +16,42 @@ GO-2026-5662:
   reason: "FALSE POSITIVE — fixed in Prometheus 3.11.2; kubernaut uses v0.312.0 (= 3.12.0). Go vuln DB cannot map Prometheus non-standard module versioning (noted in report itself). Web UI XSS; kubernaut does not expose Prometheus UI to end users."
   date: 2026-10-01T00:00:00Z
 
-# 2026-08-18: batch disclosure of 7 CVEs against github.com/lib/pq (CVE-2026-56868
-# through 56874), all "all versions, no known fixed" per pkg.go.dev/vuln. Kubernaut
-# is already on v1.12.3, the latest release (Apr 2026); lib/pq's own README states
-# it is in maintenance mode ("maintainers usually do not resolve reported issues";
-# recommends pgx for new work) so no patched release is expected soon. All 7 require
-# either a malicious/compromised PostgreSQL server or an active network attacker on
-# the unauthenticated wire between client and server -- Kubernaut's DataStorage
-# connects only to its own in-cluster PostgreSQL over the internal service network,
-# not to an attacker-controlled or externally-reachable endpoint. Re-assess at expiry
-# for an upstream fix or a driver migration (lib/pq -> pgx) decision.
-GO-2026-6166:
-  reason: "CVE-2026-56868 (no fix available). GSS auth completes without verifying mutual cryptographic proof; only exploitable if GSS/Kerberos auth is negotiated with a malicious/compromised Postgres server. Kubernaut's DataStorage uses password/TLS auth to its own in-cluster Postgres, not GSSAPI."
-  date: 2026-09-17T00:00:00Z
-
-GO-2026-6168:
-  reason: "CVE-2026-56869 (no fix available). SCRAM client accepts unbounded attacker-controlled iteration count, causing CPU exhaustion; requires a malicious/compromised Postgres server sending a crafted SCRAM server-first message. Not reachable from an untrusted external client of Kubernaut's own APIs."
-  date: 2026-09-17T00:00:00Z
-
-GO-2026-6169:
-  reason: "CVE-2026-56870 (no fix available). Wrong .pgpass credential disclosed via hostaddr-without-host misconfiguration. Kubernaut's DataStorage config always sets host explicitly (never hostaddr-only), so this misconfiguration pattern does not apply to our deployment."
-  date: 2026-09-17T00:00:00Z
-
-GO-2026-6170:
-  reason: "CVE-2026-56871 (no fix available). Malformed backend frame length (<4 bytes) causes a client-side panic; requires a malicious/compromised Postgres server or on-path attacker on the unauthenticated transport. Kubernaut's Postgres traffic stays within the cluster's internal service network."
-  date: 2026-09-17T00:00:00Z
-
-GO-2026-6171:
-  reason: "CVE-2026-56872 (no fix available). Malformed RowDescription/DataRow payloads cause a client-side panic; same malicious-server/on-path-attacker precondition as GO-2026-6170. Not reachable from Kubernaut's own external API surface."
-  date: 2026-09-17T00:00:00Z
-
-GO-2026-6172:
-  reason: "CVE-2026-56873 (no fix available). Backend-declared frame length is used to pre-allocate memory before validation, allowing a malicious server to force OOM; same malicious-server/on-path-attacker precondition as GO-2026-6170/6171."
-  date: 2026-09-17T00:00:00Z
+# github.com/lib/pq@v1.12.3 -- 7 vulnerabilities newly published upstream
+# (2026-08-18), none with a fixed version available. All require a malicious
+# or already-compromised PostgreSQL server driving the wire protocol; lib/pq
+# is used only against PostgreSQL instances deployed and owned by the Data
+# Storage Service within the cluster (DD-INFRA-001), not an
+# externally-attacker-reachable boundary. Long-term fix is migrating
+# pkg/datastorage's production code off lib/pq to jackc/pgx (already a
+# dependency, used in test infrastructure and other packages, not yet in
+# pkg/datastorage) -- tracked as follow-up work. Short expiry set to force
+# prompt re-assessment. Same exception already applied on release/v1.5
+# (PR #2191, commit 6947e7ba).
 
 GO-2026-6173:
-  reason: "CVE-2026-56874 (no fix available). Pre-protocol plain-text error reader has no byte limit, allowing a malicious server to force unbounded memory growth; same malicious-server/on-path-attacker precondition as GO-2026-6170/6171/6172."
-  date: 2026-09-17T00:00:00Z
+  reason: "No fix available (Fixed in: N/A). Pre-protocol error reader permits unbounded memory consumption in lib/pq. Requires a malicious/compromised PostgreSQL server sending a malformed pre-authentication error response; Kubernaut's PostgreSQL is in-cluster and Data-Storage-owned (DD-INFRA-001)."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6172:
+  reason: "No fix available (Fixed in: N/A). Backend frame lengths cause pre-validation memory exhaustion in lib/pq. Requires a malicious/compromised PostgreSQL server sending crafted frames; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6171:
+  reason: "No fix available (Fixed in: N/A). Malformed RowDescription/DataRow messages cause panics in lib/pq. Requires a malicious/compromised PostgreSQL server; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6170:
+  reason: "No fix available (Fixed in: N/A). Malformed backend frame length causes a panic in lib/pq. Requires a malicious/compromised PostgreSQL server; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6169:
+  reason: "No fix available (Fixed in: N/A). Disclosure of the wrong .pgpass credential via hostaddr in lib/pq. Kubernaut supplies PostgreSQL credentials via explicit connection strings/Secrets, not .pgpass files, so this parsing bug is unreachable in practice."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6168:
+  reason: "No fix available (Fixed in: N/A). Unbounded iteration count in lib/pq/scram causes CPU denial of service. Requires a malicious/compromised PostgreSQL server driving SCRAM negotiation; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6166:
+  reason: "No fix available (Fixed in: N/A). GSS authentication completes without mutual proof in lib/pq. Kubernaut's PostgreSQL connections use password/TLS-cert authentication, not GSSAPI/Kerberos, so this code path is not exercised."
+  date: 2026-09-18T00:00:00Z

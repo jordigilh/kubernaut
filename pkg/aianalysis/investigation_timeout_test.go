@@ -28,11 +28,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -77,7 +77,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: aianalysis.PhaseInvestigating,
 				KASession: &aianalysisv1.KASession{
-					ID:        "session-timeout-001",
+					ID:        "as-session-timeout-001",
 					CreatedAt: &cat,
 					PollCount: 5,
 				},
@@ -92,7 +92,6 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		testMetrics := metrics.NewMetrics()
 		handler = handlers.NewInvestigatingHandler(
 			mockClient, ctrl.Log.WithName("test-timeout"), testMetrics, &noopAuditClient{},
-			handlers.WithSessionMode(),
 			handlers.WithRecorder(recorder),
 			handlers.WithMaxInvestigationDuration(25*time.Minute),
 		)
@@ -101,7 +100,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 	Describe("UT-AA-1078-TOUT-001: Investigation timeout transitions to PhaseFailed", func() {
 		It("should transition to PhaseFailed when elapsed time exceeds MaxInvestigationDuration", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -117,7 +116,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 	Describe("UT-AA-1078-TOUT-002: Timeout message includes configured duration", func() {
 		It("should include the configured max duration in the failure message", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -130,7 +129,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 	Describe("UT-AA-1078-TOUT-003: Investigation within duration limit continues polling", func() {
 		It("should continue polling normally when within MaxInvestigationDuration", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-10 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -147,13 +146,12 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			testMetrics := metrics.NewMetrics()
 			defaultHandler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-default"), testMetrics, &noopAuditClient{},
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 			)
 
 			// Session created 30 minutes ago (exceeds default 25 minute limit)
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			_, err := defaultHandler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -167,7 +165,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		It("should reset ConsecutiveFailures to 0 on successful poll", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
 			analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 3
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -177,78 +175,37 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		})
 	})
 
-	Describe("UT-AA-1351-TOUT-005: user_driving respects MaxInvestigationDuration (AA-CRIT-1)", func() {
-		It("should transition to PhaseFailed when user_driving exceeds MaxInvestigationDuration", func() {
+	Describe("UT-AA-1351-TOUT-005: interactive session respects MaxInvestigationDuration (AA-CRIT-1)", func() {
+		It("should transition to PhaseFailed when an interactive session exceeds MaxInvestigationDuration", func() {
 			// Session created 30 minutes ago (exceeds 25 minute limit)
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("user_driving")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+				WithInteractive("oncall@example.com", nil)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-				"user_driving sessions must NOT bypass MaxInvestigationDuration (AA-CRIT-1)")
+				"interactive sessions must NOT bypass MaxInvestigationDuration (AA-CRIT-1)")
 			Expect(analysis.Status.Message).To(ContainSubstring("timed out"),
 				"timeout message must explain the failure reason")
 			Expect(result.RequeueAfter).To(BeZero(),
 				"timed-out analysis should not requeue for polling")
 		})
 
-		It("should continue polling user_driving within time limit", func() {
+		It("should continue polling an interactive session within time limit", func() {
 			// Session created 10 minutes ago (within 25 minute limit)
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-10 * time.Minute))
-			mockClient.WithSessionPollStatus("user_driving")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+				WithInteractive("oncall@example.com", nil)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
-				"user_driving within time limit must continue polling")
+				"interactive session within time limit must continue polling")
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
 				"should requeue for next poll")
-		})
-	})
-
-	Describe("UT-AA-1351-004: GetSessionResult 404 triggers session regeneration (AA-HIGH-1)", func() {
-		It("should increment generation and clear session ID like poll 404", func() {
-			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
-			mockClient.WithSessionPollStatus("completed")
-			mockClient.WithSessionResultError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
-
-			result, err := handler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)),
-				"GetSessionResult 404 must trigger handleSessionLost regeneration (AA-HIGH-1)")
-			Expect(analysis.Status.KASession.ID).To(BeEmpty(), "session ID should be cleared for re-submit")
-			// #2080: backs off instead of requeuing immediately (see UT-AA-064-008).
-			Expect(result.Requeue).To(BeFalse())
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "should back off before resubmit, not requeue immediately")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
-				"should not use handleError terminal path on result 404")
-		})
-	})
-
-	Describe("UT-AA-1351-005: handleSessionPollCancelled requeues on IS check error (AA-HIGH-2)", func() {
-		It("should requeue at poll interval when IS existence check fails", func() {
-			isChecker := &mockISChecker{err: fmt.Errorf("apiserver unavailable")}
-			isHandler := handlers.NewInvestigatingHandler(
-				mockClient, ctrl.Log.WithName("test-cancel-is-err"), metrics.NewMetrics(), &noopAuditClient{},
-				handlers.WithSessionMode(),
-				handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker),
-			)
-
-			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
-			mockClient.WithSessionPollStatus("cancelled")
-
-			result, err := isHandler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
-				"transient IS check error must not cause premature terminal state (AA-HIGH-2)")
-			Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
-				"should requeue to retry IS check instead of failing")
 		})
 	})
 
@@ -263,7 +220,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
 			pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 			analysis.Spec.TimesOutAt = &pastDeadline
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -280,7 +237,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
 			futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
 			analysis.Spec.TimesOutAt = &futureDeadline
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -293,7 +250,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		It("should fall back to session.CreatedAt+maxInvestigationDuration when Spec.TimesOutAt is nil (back-compat)", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
 			Expect(analysis.Spec.TimesOutAt).To(BeNil())
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -310,12 +267,11 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			testMetrics := metrics.NewMetrics()
 			auditedHandler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-timeout-audit"), testMetrics, spy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithMaxInvestigationDuration(25*time.Minute),
 			)
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			_, err := auditedHandler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -332,12 +288,11 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			testMetrics := metrics.NewMetrics()
 			auditedHandler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-timeout-audit-fail-open"), testMetrics, spy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithMaxInvestigationDuration(25*time.Minute),
 			)
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := auditedHandler.Handle(ctx, analysis)
 
@@ -350,15 +305,84 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		})
 	})
 
+	// #2204: the reconciler previously requeued a still-running investigation
+	// at a flat, hardcoded interval (sessionPollInterval) regardless of how
+	// far away the investigation's actual deadline was -- e.g. requeuing
+	// every 15s (or 2s under some test suites' overrides) for the entire
+	// lifetime of a 25-minute investigation, generating a per-process
+	// reconcile/API-server-hit volume with no relationship to when a check
+	// was actually needed. checkInvestigationTimeout already computes the
+	// authoritative deadline (Spec.TimesOutAt, else
+	// session.CreatedAt+maxInvestigationDuration) to decide *whether* to
+	// fail -- these tests prove the backstop requeue now reuses that same
+	// deadline to decide *when* to check next, collapsing the "still
+	// running" path to a single precisely-scheduled reconcile at the
+	// deadline instead of a periodic drumbeat.
+	Describe("UT-AA-2204-001: backstop requeue derives from the investigation deadline, not a flat interval", func() {
+		It("requeues close to Spec.TimesOutAt when it is sooner than any flat interval would have implied", func() {
+			// Session created 1 minute ago (irrelevant to the deadline
+			// computation once TimesOutAt is set) with TimesOutAt only 3s
+			// away. A flat-interval requeue would blow past this deadline
+			// by many seconds; the deadline-driven requeue must not.
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-1 * time.Minute))
+			deadline := metav1.NewTime(time.Now().Add(3 * time.Second))
+			analysis.Spec.TimesOutAt = &deadline
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"investigation still within its deadline must keep polling, not fail")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"#2204: requeue must track the imminent TimesOutAt deadline (~3s away), not a flat interval that would overshoot it")
+		})
+
+		It("requeues close to the maxInvestigationDuration-derived deadline when Spec.TimesOutAt is nil", func() {
+			testMetrics := metrics.NewMetrics()
+			shortMaxHandler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-short-max"), testMetrics, &noopAuditClient{},
+				handlers.WithRecorder(recorder),
+				handlers.WithMaxInvestigationDuration(10*time.Second),
+			)
+			// Session created 7s ago against a 10s max duration -- ~3s of
+			// deadline remains, and Spec.TimesOutAt is nil (back-compat
+			// fallback path).
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-7 * time.Second))
+			Expect(analysis.Spec.TimesOutAt).To(BeNil())
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
+
+			result, err := shortMaxHandler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"#2204: requeue must track the maxInvestigationDuration-derived deadline (~3s remaining), not a flat interval")
+		})
+
+		It("applies the same deadline-driven requeue while a user is actively driving an interactive session", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-1 * time.Minute))
+			deadline := metav1.NewTime(time.Now().Add(3 * time.Second))
+			analysis.Spec.TimesOutAt = &deadline
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+				WithInteractive("oncall@example.com", nil)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"AA-CRIT-1: interactive sessions share the same deadline-driven backstop, not a separate flat interval")
+		})
+	})
+
 	Describe("UT-AA-1351-008: handleSessionPollFailed sets Reason and SubReason (AA-MED-1)", func() {
 		It("should set structured failure fields when KA session poll returns failed", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
-			mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-				return &agentclient.SessionStatusResult{
-					Status: "failed",
-					Error:  "LLM provider error: rate limit exceeded",
-				}, nil
-			}
+			mockClient.WithFailed("LLM provider error: rate limit exceeded")
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())

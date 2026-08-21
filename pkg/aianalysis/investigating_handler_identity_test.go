@@ -26,9 +26,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
@@ -90,44 +90,33 @@ var _ = Describe("InvestigatingHandler Identity Propagation — #774, BR-INTERAC
 		recorder = record.NewFakeRecorder(20)
 		testMetrics := metrics.NewMetrics()
 		handler = handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-identity"), testMetrics, auditSpy,
-			handlers.WithSessionMode(), handlers.WithRecorder(recorder))
+			handlers.WithRecorder(recorder))
 	})
 
-	Describe("UT-KA-774-007: handleSessionPollUserDriving copies identity from poll result to CR status", func() {
+	Describe("UT-KA-774-007: syncKASessionStatus copies identity from AgentSession.Status to CR status", func() {
 		It("should write ActingUser and ActingUserGroups to InteractiveSession on the CR", func() {
 			analysis := createIdentityTestAnalysis()
-
-			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-				return &agentclient.SessionStatusResult{
-					Status:           "user_driving",
-					ActingUser:       "jane@example.com",
-					ActingUserGroups: []string{"sre-team", "oncall"},
-				}, nil
-			}
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+				WithInteractive("jane@example.com", []string{"sre-team", "oncall"})
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
-				"user_driving should requeue for continued polling")
+				"user_driving should requeue for the safety-net poll")
 
 			Expect(analysis.Status.InteractiveSession).NotTo(BeNil(),
-				"InteractiveSession should be populated by handleSessionPollUserDriving")
+				"InteractiveSession should be populated by syncKASessionStatus")
 			Expect(analysis.Status.InteractiveSession.ActingUser).To(Equal("jane@example.com"),
-				"ActingUser should be copied from poll result")
+				"ActingUser should be copied from AgentSession.Status")
 			Expect(analysis.Status.InteractiveSession.ActingUserGroups).To(Equal([]string{"sre-team", "oncall"}),
-				"ActingUserGroups should be copied from poll result")
+				"ActingUserGroups should be copied from AgentSession.Status")
 		})
 	})
 
-	Describe("UT-KA-774-008: handleSessionPollUserDriving with no identity in poll result", func() {
-		It("should not create InteractiveSession when poll result has no identity", func() {
+	Describe("UT-KA-774-008: syncKASessionStatus with no identity on AgentSession.Status", func() {
+		It("should not create InteractiveSession when AgentSession.Status has no identity", func() {
 			analysis := createIdentityTestAnalysis()
-
-			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-				return &agentclient.SessionStatusResult{
-					Status: "user_driving",
-				}, nil
-			}
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())

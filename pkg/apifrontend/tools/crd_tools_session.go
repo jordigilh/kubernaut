@@ -12,8 +12,7 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -36,16 +35,33 @@ type AwaitSessionResult struct {
 }
 
 // AwaitSessionTimeout is the maximum duration HandleAwaitSession waits for an
-// AIAnalysis CRD with a session ID. In production the AA controller may take
+// AgentSession CRD with a session ID. In production the AA controller may take
 // minutes to process an RR; in E2E tests this can be shortened.
 // Exported so that tests can override it without modifying production code.
 var AwaitSessionTimeout = 3 * time.Minute
 
 const awaitSessionPollInterval = 3 * time.Second
 
-// HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
-// a non-empty status.investigationSession.id. Returns the session ID when ready, or
-// times out after AwaitSessionTimeout.
+// HandleAwaitSession waits for an AgentSession resource (matching the given RR) to
+// have a non-empty status.sessionID -- KA's own internal investigation session
+// identifier (api/agentsession/v1alpha1: Status.SessionID), NOT
+// AIAnalysis.Status.KASession.ID.
+//
+// #2170/DD-AA-KA-001 correction (CI evidence: run 32215236666, E2E-FLEET-018):
+// this previously watched AIAnalysis and read Status.KASession.ID, which
+// DD-AA-KA-001 repurposed to hold the AgentSession's own deterministic object
+// name (see pkg/aianalysis/handlers/investigating.go's syncKASessionStatus
+// doc comment), not KA's real session ID -- a holdover from the pre-redesign
+// HTTP architecture where that field genuinely was KA's session ID. Passing
+// the AgentSession's object name back to KA as MCP action=start's
+// session_id caused LaunchDeferredInvestigation to fail with "session not
+// found" (real ID mismatch, not the benign ErrSessionNotPending race),
+// orphaning the correctly fleet-scoped pending session and falling through
+// to a duplicate, generically-enriched investigation. AgentSession's own
+// Status.SessionID is written by the dispatcher (writeDispatchedStatus,
+// internal/kubernautagent/agentsession/status_writer.go) as soon as the
+// pending session is created -- available well before interactive takeover.
+// Returns the session ID when ready, or times out after AwaitSessionTimeout.
 func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	if client == nil {
 		return AwaitSessionResult{}, ErrK8sUnavailable
@@ -69,8 +85,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 		return pollForSessionID(watchCtx, client, args)
 	}
 
-	var aiaList aiav1alpha1.AIAnalysisList
-	watcher, err := wc.Watch(watchCtx, &aiaList, crclient.InNamespace(args.Namespace))
+	var asList agentsessionv1.AgentSessionList
+	watcher, err := wc.Watch(watchCtx, &asList, crclient.InNamespace(args.Namespace))
 	if err != nil {
 		return pollForSessionID(watchCtx, client, args)
 	}
@@ -79,8 +95,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 	return watchForSessionID(watchCtx, watcher, args.RRName)
 }
 
-// watchForSessionID drains watcher's event channel until an AIAnalysis event
-// matching rrName carries a non-empty KASession.ID, the watch closes, or
+// watchForSessionID drains watcher's event channel until an AgentSession event
+// matching rrName carries a non-empty Status.SessionID, the watch closes, or
 // watchCtx is done (timeout).
 //
 //nolint:unparam // error is always nil here; signature matches pollForSessionID's (AwaitSessionResult, error), the interchangeable sibling branch at the shared call site (Issue #1546 Tier 4)
@@ -100,24 +116,24 @@ func watchForSessionID(watchCtx context.Context, watcher watch.Interface, rrName
 	}
 }
 
-// sessionIDFromEvent extracts the KA session ID from a watch event, if it is
-// an Added/Modified event for the AIAnalysis matching rrName with a
-// non-empty session ID already set. matched is true only in that case.
+// sessionIDFromEvent extracts KA's real session ID from a watch event, if it
+// is an Added/Modified event for the AgentSession matching rrName with a
+// non-empty Status.SessionID already set. matched is true only in that case.
 func sessionIDFromEvent(evt watch.Event, rrName string) (sessionID string, matched bool) {
 	if evt.Type != watch.Modified && evt.Type != watch.Added {
 		return "", false
 	}
-	aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
-	if !ok || aia.Spec.RemediationRequestRef.Name != rrName {
+	as, ok := evt.Object.(*agentsessionv1.AgentSession)
+	if !ok || as.Spec.RemediationRequestRef.Name != rrName {
 		return "", false
 	}
-	if aia.Status.KASession == nil || aia.Status.KASession.ID == "" {
+	if as.Status.SessionID == "" {
 		return "", false
 	}
-	return aia.Status.KASession.ID, true
+	return as.Status.SessionID, true
 }
 
-// pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
+// pollForSessionID is a fallback that polls AgentSession resources until session ID appears.
 func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	ticker := time.NewTicker(awaitSessionPollInterval)
 	defer ticker.Stop()
@@ -134,9 +150,9 @@ func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSes
 	}
 }
 
-// findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
+// findSessionIDByList lists AgentSessions for the given RR and returns the first non-empty session ID.
 func findSessionIDByList(ctx context.Context, client crclient.Client, args AwaitSessionArgs) string {
-	var list aiav1alpha1.AIAnalysisList
+	var list agentsessionv1.AgentSessionList
 	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
 		return ""
 	}
@@ -145,8 +161,8 @@ func findSessionIDByList(ctx context.Context, client crclient.Client, args Await
 		if item.Spec.RemediationRequestRef.Name != args.RRName {
 			continue
 		}
-		if item.Status.KASession != nil && item.Status.KASession.ID != "" {
-			return item.Status.KASession.ID
+		if item.Status.SessionID != "" {
+			return item.Status.SessionID
 		}
 	}
 	return ""
@@ -164,58 +180,133 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 }
 
 // ========================================
-// AwaitISPhaseActive: Poll IS CRD until AA sets Phase=Active
-// BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
+// AwaitAgentSessionInteractive: watch AgentSession.Status.Interactive
+// DD-AA-KA-001 Amendment Gap 1 / Issue #2172: AF watches KA's own
+// authoritative ack directly instead of polling the retired
+// IS.Status.Phase=Active signal AA used to write (that write was itself
+// removed from AA in #2170 -- see pkg/aianalysis/handlers/interfaces.go's
+// ISPhaseUpdater, which is now write-only for terminal phases).
 // ========================================
 
-const (
-	isPhaseInitialInterval = 500 * time.Millisecond
-	isPhaseMaxInterval     = 2 * time.Second
-	isPhaseDefaultTimeout  = 30 * time.Second
-)
+// agentSessionInteractivePollInterval is the poll-fallback interval, used
+// only when client does not implement crclient.WithWatch.
+const agentSessionInteractivePollInterval = 500 * time.Millisecond
 
-// AwaitISPhaseActive polls the IS CRD for the given RR name until its phase
-// becomes Active (set by the AA controller). Uses exponential backoff starting
-// at 500ms, capping at 2s. Returns true when Active is detected, false on
-// timeout. Errors from the API are silently retried (best-effort).
-// The poll respects the parent context deadline, capping at isPhaseDefaultTimeout.
-func AwaitISPhaseActive(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
-	if client == nil || namespace == "" || rrName == "" {
-		return false
+// AwaitAgentSessionInteractive waits for the AgentSession matching rrName
+// (in namespace) to have Status.Interactive == true -- KA's own
+// authoritative record that a human driver has taken over, written
+// atomically with the interactive-driver Lease actually being held
+// (BR-AA-KA-065.5). Returns (true, nil) once observed, (false, nil) on
+// timeout (the ctx deadline elapses first -- not treated as an error, since
+// the caller proceeds autonomously in that case), or (false, err) for
+// invalid input / an unavailable client. Mirrors HandleAwaitSession's
+// watch-first, poll-fallback shape: the AgentSession may not exist yet at
+// fresh-start time, so both branches list first before waiting.
+func AwaitAgentSessionInteractive(ctx context.Context, client crclient.Client, namespace, rrName string) (bool, error) {
+	if client == nil {
+		return false, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(namespace); err != nil {
+		return false, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if rrName == "" {
+		return false, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
 	}
 
+	if agentSessionInteractivePresent(ctx, client, namespace, rrName) {
+		return true, nil
+	}
+
+	watchCtx, cancel := context.WithTimeout(ctx, agentSessionInteractiveTimeout(ctx))
+	defer cancel()
+
+	wc, ok := client.(crclient.WithWatch)
+	if !ok {
+		return pollForAgentSessionInteractive(watchCtx, client, namespace, rrName)
+	}
+
+	var asList agentsessionv1.AgentSessionList
+	watcher, err := wc.Watch(watchCtx, &asList, crclient.InNamespace(namespace))
+	if err != nil {
+		return pollForAgentSessionInteractive(watchCtx, client, namespace, rrName)
+	}
+	defer watcher.Stop()
+
+	return watchForAgentSessionInteractive(watchCtx, watcher, rrName)
+}
+
+// agentSessionInteractiveTimeout caps the wait, respecting ctx's own
+// deadline if it is shorter than isPhaseDefaultTimeout (the same outer
+// bound the retired poll loop used; callers already apply their own
+// tighter timeouts via context.WithTimeout, e.g. isPhaseActivePollTimeout/
+// takeoverISPhaseTimeout in ka_investigate_mcp.go).
+func agentSessionInteractiveTimeout(ctx context.Context) time.Duration {
 	timeout := isPhaseDefaultTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining < timeout {
 			timeout = remaining
 		}
 	}
-	pollCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	return timeout
+}
 
-	interval := isPhaseInitialInterval
+// watchForAgentSessionInteractive drains watcher's event channel until an
+// AgentSession event matching rrName carries Status.Interactive == true,
+// the watch closes, or watchCtx is done (timeout).
+//
+//nolint:unparam // error is always nil here; signature matches pollForAgentSessionInteractive's (bool, error), the interchangeable sibling branch at the shared call site (same precedent as watchForSessionID above, Issue #1546 Tier 4)
+func watchForAgentSessionInteractive(watchCtx context.Context, watcher watch.Interface, rrName string) (bool, error) {
 	for {
-		if isActivePhasePresent(pollCtx, client, namespace, rrName) {
-			return true
-		}
-
 		select {
-		case <-pollCtx.Done():
-			return false
-		case <-time.After(interval):
-		}
-
-		interval *= 2
-		if interval > isPhaseMaxInterval {
-			interval = isPhaseMaxInterval
+		case <-watchCtx.Done():
+			return false, nil
+		case evt, ok := <-watcher.ResultChan():
+			if !ok {
+				return false, nil
+			}
+			if agentSessionInteractiveFromEvent(evt, rrName) {
+				return true, nil
+			}
 		}
 	}
 }
 
-// isActivePhasePresent lists IS CRDs in the namespace and returns true if any
-// non-terminal IS for the given RR has Phase=Active.
-func isActivePhasePresent(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
-	var list isv1alpha1.InvestigationSessionList
+// agentSessionInteractiveFromEvent reports whether evt is an Added/Modified
+// event for the AgentSession matching rrName with Status.Interactive true.
+func agentSessionInteractiveFromEvent(evt watch.Event, rrName string) bool {
+	if evt.Type != watch.Modified && evt.Type != watch.Added {
+		return false
+	}
+	as, ok := evt.Object.(*agentsessionv1.AgentSession)
+	if !ok || as.Spec.RemediationRequestRef.Name != rrName {
+		return false
+	}
+	return as.Status.Interactive
+}
+
+// pollForAgentSessionInteractive is a fallback that polls AgentSession
+// resources until Status.Interactive appears, for clients that do not
+// implement crclient.WithWatch.
+func pollForAgentSessionInteractive(ctx context.Context, client crclient.Client, namespace, rrName string) (bool, error) {
+	ticker := time.NewTicker(agentSessionInteractivePollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false, nil
+		case <-ticker.C:
+			if agentSessionInteractivePresent(ctx, client, namespace, rrName) {
+				return true, nil
+			}
+		}
+	}
+}
+
+// agentSessionInteractivePresent lists AgentSessions in the namespace and
+// returns true if any matching rrName has Status.Interactive == true.
+func agentSessionInteractivePresent(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
+	var list agentsessionv1.AgentSessionList
 	if err := client.List(ctx, &list, crclient.InNamespace(namespace)); err != nil {
 		return false
 	}
@@ -224,9 +315,17 @@ func isActivePhasePresent(ctx context.Context, client crclient.Client, namespace
 		if item.Spec.RemediationRequestRef.Name != rrName {
 			continue
 		}
-		if item.Status.Phase == isv1alpha1.SessionPhaseActive {
+		if item.Status.Interactive {
 			return true
 		}
 	}
 	return false
 }
+
+// isPhaseDefaultTimeout is the outer wait bound for
+// AwaitAgentSessionInteractive, respected unless ctx's own deadline is
+// shorter (the retired AwaitISPhaseActive poll loop used this same 30s
+// default; kept as-is since callers already apply their own tighter
+// timeouts, e.g. isPhaseActivePollTimeout/takeoverISPhaseTimeout in
+// ka_investigate_mcp.go).
+const isPhaseDefaultTimeout = 30 * time.Second

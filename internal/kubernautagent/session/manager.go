@@ -35,6 +35,37 @@ import (
 // with no safety benefit (#8 conscious decision).
 type InvestigateFunc func(ctx context.Context) (*katypes.InvestigationResult, error)
 
+// TerminalSnapshot carries the fields a TerminalHook needs to write a
+// curated AgentSession.Status (DD-AA-KA-001 Amendment Gap 2, BR-AA-KA-065.11)
+// without the hook implementation reaching back into Manager-internal
+// locking. Status is the just-committed Store status: StatusCompleted,
+// StatusFailed, or StatusCancelled for a genuine terminal outcome, or
+// StatusUserDriving when an autonomous investigation self-resolved into an
+// InteractiveHold (Result.InteractiveHold=true) -- distinct from an
+// explicit human takeover, which fires InteractiveUpgradeHookFunc instead.
+type TerminalSnapshot struct {
+	SessionID     string
+	RemediationID string
+	Status        Status
+	Result        *katypes.InvestigationResult
+	Err           error
+}
+
+// TerminalHookFunc is invoked exactly once for the single call site that
+// wins a session's terminal (or InteractiveHold) state transition --
+// handleInvestigationSuccess/handleInvestigationFailure/terminateSession
+// when the goroutine itself wins, or CompleteUserDriving/
+// ForceCompleteByRemediationID when an out-of-band MCP completion wins
+// instead. Nil-safe: Manager checks for a nil hook before calling.
+type TerminalHookFunc func(TerminalSnapshot)
+
+// InteractiveUpgradeHookFunc is invoked exactly once when a human driver
+// takes over a session -- UpgradeToInteractive (in-place jump-in),
+// TransitionToUserDriving, or ForceTransitionToUserDriving (dynamic
+// takeover). Distinct from an autonomous InteractiveHold (which has no
+// acting user yet and fires TerminalHookFunc instead). Nil-safe.
+type InteractiveUpgradeHookFunc func(sessionID, remediationID, username string, groups []string)
+
 // Manager orchestrates investigation sessions, running each in a
 // background goroutine and tracking progress via the Store.
 type Manager struct {
@@ -42,6 +73,14 @@ type Manager struct {
 	logger     logr.Logger
 	auditStore audit.AuditStore
 	metrics    *metrics.Metrics
+
+	// terminalHook and interactiveUpgradeHook are optional, nil-safe
+	// notification points for a CRD-status writer (agentsession.Dispatcher)
+	// registered once at wiring time (DD-AA-KA-001 Amendment Gap 2). Manager
+	// itself has no CRD awareness; it only reports the fact that a
+	// transition was committed.
+	terminalHook           TerminalHookFunc
+	interactiveUpgradeHook InteractiveUpgradeHookFunc
 }
 
 // NewManager creates a session manager backed by the given store.
@@ -52,6 +91,45 @@ func NewManager(store *Store, logger logr.Logger, auditStore audit.AuditStore, m
 		auditStore = audit.NopAuditStore{}
 	}
 	return &Manager{store: store, logger: logger, auditStore: auditStore, metrics: m}
+}
+
+// SetTerminalHook registers fn as the Manager's TerminalHook. Overwrites
+// any previously registered hook. Passing nil disables the hook.
+func (m *Manager) SetTerminalHook(fn TerminalHookFunc) {
+	m.terminalHook = fn
+}
+
+// SetInteractiveUpgradeHook registers fn as the Manager's
+// InteractiveUpgradeHook. Overwrites any previously registered hook.
+// Passing nil disables the hook.
+func (m *Manager) SetInteractiveUpgradeHook(fn InteractiveUpgradeHookFunc) {
+	m.interactiveUpgradeHook = fn
+}
+
+// fireTerminalHook invokes the registered TerminalHook, if any, with a
+// snapshot built from the session's post-commit state. correlationID is
+// passed explicitly (rather than re-read from sess) since callers already
+// hold it from the same critical section that committed the transition.
+func (m *Manager) fireTerminalHook(id, correlationID string, status Status, result *katypes.InvestigationResult, err error) {
+	if m.terminalHook == nil {
+		return
+	}
+	m.terminalHook(TerminalSnapshot{
+		SessionID:     id,
+		RemediationID: correlationID,
+		Status:        status,
+		Result:        result,
+		Err:           err,
+	})
+}
+
+// fireInteractiveUpgradeHook invokes the registered InteractiveUpgradeHook,
+// if any.
+func (m *Manager) fireInteractiveUpgradeHook(id, correlationID, username string, groups []string) {
+	if m.interactiveUpgradeHook == nil {
+		return
+	}
+	m.interactiveUpgradeHook(id, correlationID, username, groups)
 }
 
 // eventChannelBuffer is the capacity of the per-session event channel.
@@ -285,6 +363,7 @@ func (m *Manager) handleInvestigationFailure(bgCtx context.Context, id, correlat
 		EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
 		Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
 	}, fnErr)
+	m.fireTerminalHook(id, correlationID, StatusFailed, result, fnErr)
 }
 
 // handleInvestigationSuccess determines the session's terminal status from
@@ -317,4 +396,15 @@ func (m *Manager) handleInvestigationSuccess(bgCtx context.Context, id, correlat
 		EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
 		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
 	}, nil)
+	// Re-read the committed session rather than trusting the local
+	// targetStatus: store.Update's #1390 deterministic-upgrade path can
+	// silently promote StatusCompleted -> StatusUserDriving (and mutate
+	// result.InteractiveHold) inside its own lock when a concurrent
+	// UpgradeToInteractive won the race -- the hook must report what was
+	// actually committed, not what this goroutine merely requested.
+	finalStatus, finalResult := targetStatus, result
+	if sess, getErr := m.store.Get(id); getErr == nil {
+		finalStatus, finalResult = sess.Status, sess.Result
+	}
+	m.fireTerminalHook(id, correlationID, finalStatus, finalResult, nil)
 }

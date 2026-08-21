@@ -21,10 +21,6 @@ controller:
   healthProbeAddr: ":8081"
   leaderElection: false
   leaderElectionId: "aianalysis.kubernaut.ai"
-agent:
-  url: "https://kubernaut-agent:8443"
-  timeout: "180s"
-  sessionPollInterval: "15s"
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
@@ -85,6 +81,19 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
+  # AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): "create"
+  # for the initial dispatch write; "get"/"list"/"watch" because AgentSession
+  # is namespace-scoped in this controller's mgr.GetCache() ByObject config
+  # (cmd/aianalysis/main.go), so Get() reads go through the informer cache,
+  # not a direct API call. "delete" (BR-AI-009, DD-AA-KA-001 amendment) is for
+  # AgentSessionCreator.DeleteForRetry, called from
+  # InvestigatingHandler.retryCapacityExceeded to discard a stale
+  # Failed+CapacityExceeded AgentSession so the retry attempt gets a fresh
+  # one. No "agentsessions/status" grant -- AA never writes Status, only KA
+  # does (BR-AA-KA-065.9).
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
@@ -93,6 +102,12 @@ rules:
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
+# DD-AA-KA-001: AA no longer calls KA's HTTP endpoint (retired in favor of the
+# AgentSession CRD dispatch above), so AA no longer binds to this ClusterRole.
+# It is defined here (rather than in apifrontend.yaml) for historical reasons
+# but is now solely consumed by APIFrontend's binding to KA's surviving
+# /api/v1/mcp endpoint (DD-AUTH-MCP-001) -- see
+# charts/kubernaut/templates/apifrontend/apifrontend.yaml's RoleBinding.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -115,22 +130,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: aianalysis-controller
-subjects:
-  - kind: ServiceAccount
-    name: aianalysis-controller
-    namespace: {{ .Release.Namespace }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: aianalysis-controller-kubernaut-agent-access
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-agent-client
 subjects:
   - kind: ServiceAccount
     name: aianalysis-controller

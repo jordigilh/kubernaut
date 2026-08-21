@@ -43,10 +43,15 @@ const (
 	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
 	EventTypeError             = "aianalysis.error.occurred"
 
-	// Session audit event types (BR-AA-KA-064)
-	EventTypeAIAgentSubmit      = "aianalysis.aiagent.submit"
-	EventTypeAIAgentResult      = "aianalysis.aiagent.result"
-	EventTypeAIAgentSessionLost = "aianalysis.aiagent.session_lost"
+	// Session audit event types (BR-AA-KA-065.1/.2; repurposed from the
+	// retired HTTP submit/poll design's BR-AA-KA-064 naming -- see
+	// DD-AUDIT-003's AI Analysis Controller event catalog)
+	EventTypeAIAgentSubmit = "aianalysis.aiagent.submit"
+	EventTypeAIAgentResult = "aianalysis.aiagent.result"
+	// aianalysis.aiagent.session_lost (EventTypeAIAgentSessionLost) was
+	// retired, not repurposed, alongside RecordAIAgentSessionLost --
+	// DD-AA-KA-001, BR-AA-KA-065.7 -- its sole caller (handleSessionLost)
+	// was deleted with the regeneration-cap mechanism it audited.
 )
 
 // Event category constant (per DD-AUDIT-003)
@@ -453,12 +458,14 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 }
 
 // ========================================
-// SESSION AUDIT METHODS (BR-AA-KA-064)
-// Stubs for async submit/poll audit events - implementation in GREEN phase
+// SESSION AUDIT METHODS (BR-AA-KA-065.1/.2)
+// Fired at AgentSession create/Status-read time -- names/event types kept
+// unchanged from the retired BR-AA-KA-064 HTTP submit/poll design for
+// audit-trail/dashboard continuity (DD-AUDIT-003).
 // ========================================
 
-// RecordAIAgentSubmit records an async KA submit event with session ID.
-// BR-AA-KA-064: Audit trail for session creation
+// RecordAIAgentSubmit records a KA submit event (AgentSession Create) with session ID.
+// BR-AA-KA-065.1: Audit trail for session creation
 func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	payload := ogenclient.AIAnalysisAIAgentCallPayload{
 		Endpoint:       "session_submit",
@@ -482,8 +489,8 @@ func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianaly
 	}
 }
 
-// RecordAIAgentResult records an async KA result retrieval with investigation time.
-// BR-AA-KA-064: Audit trail for result retrieval.
+// RecordAIAgentResult records a KA result retrieval (AgentSession Status read) with investigation time.
+// BR-AA-KA-065.1: Audit trail for result retrieval.
 //
 // For backward compatibility with existing audit tests (DD-AUDIT-003), this also
 // emits an EventTypeAIAgentCall event, which is the sync-era equivalent of
@@ -515,31 +522,6 @@ func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianaly
 
 	// Backward compatibility: emit aiagent.call event (DD-AUDIT-003)
 	c.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", 200, int(investigationTimeMs))
-}
-
-// RecordAIAgentSessionLost records a session lost event with generation count.
-// BR-AA-KA-064: Audit trail for session regeneration
-func (c *AuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
-	payload := ogenclient.AIAnalysisAIAgentCallPayload{
-		Endpoint:       "session_lost",
-		HTTPStatusCode: 0,
-		DurationMs:     0,
-	}
-
-	event := audit.NewAuditEventRequest()
-	audit.SetEventType(event, EventTypeAIAgentSessionLost)
-	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, "aiagent_session_lost")
-	audit.SetEventOutcome(event, audit.OutcomeFailure)
-	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
-	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, getCorrelationID(analysis))
-	audit.SetNamespace(event, analysis.Namespace)
-	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData(payload)
-
-	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write AI agent session lost audit", "generation", generation)
-	}
 }
 
 // RecordAnalysisFailed records an audit event for analysis failure.

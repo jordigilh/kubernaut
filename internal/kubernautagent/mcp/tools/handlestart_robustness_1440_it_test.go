@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -41,6 +42,11 @@ type itFallbackAutoMgr struct {
 	startErr      error
 	pendingResult string
 	pendingOK     bool
+	// forceErr configures ForceTransitionToUserDriving's return value.
+	// Defaults to nil; IT-KA-1440-010's dependency-unavailable scenario
+	// sets this to session.ErrSessionNotFound to match the real Manager's
+	// behavior when genuinely no session exists for the RR.
+	forceErr error
 }
 
 func (m *itFallbackAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -52,7 +58,7 @@ func (m *itFallbackAutoMgr) TransitionToUserDriving(_ string, _ string, _ []stri
 	return nil
 }
 func (m *itFallbackAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
-	return nil
+	return m.forceErr
 }
 func (m *itFallbackAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
 	return m.upgradeErr
@@ -86,8 +92,19 @@ func (m *itFallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, boo
 
 var _ = Describe("Fix #1440 Integration: KA handleStart fallback session creation", func() {
 
-	Describe("IT-KA-1440-010: MCP action=start with no prior session creates interactive session and returns valid session_id (SC-24)", func() {
-		It("should create a session via StartInvestigation and return it in InvestigationSessionID", func() {
+	// IT-KA-1440-010 (superseded by DD-AA-KA-001 Amendment Gap 3,
+	// BR-AA-KA-065.12, revised post-#2189 CI evidence -- see
+	// UT-KA-2170-020/021 in investigate_start_fresh_investigation_test.go):
+	// SC-24's original placeholder-creation contract is gone, but a
+	// genuinely nonexistent RR-backed investigation no longer fails closed
+	// in general either -- it starts a real investigation via
+	// createFreshInteractiveSession. This test omits
+	// WithSignalContextResolver (unlike production, which always wires one
+	// via cmd/kubernautagent/routes.go), so it exercises only the
+	// defensive "signal-resolution dependency unavailable" branch that
+	// still fails closed.
+	Describe("IT-KA-1440-010: MCP action=start fails closed when the signal-resolution dependency is unavailable (SC-24 / Gap 3)", func() {
+		It("should return ErrCodeNoInvestigationAvailable without ever calling StartInvestigation", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "mcp-lease-it-010",
@@ -95,26 +112,23 @@ var _ = Describe("Fix #1440 Integration: KA handleStart fallback session creatio
 				},
 			}
 			autoMgr := &itFallbackAutoMgr{
-				findOK:      false,
-				startResult: "ka-session-it-010",
+				findOK:   false,
+				forceErr: session.ErrSessionNotFound,
 			}
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
-			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-it-no-session-010",
 				Action: mcptools.ActionStart,
 			}, mcpinternal.UserInfo{Username: "sre-alice", Groups: []string{"sre-team"}})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out.SessionID).To(Equal("mcp-lease-it-010"),
-				"MCP lease session must still be acquired")
-			Expect(out.Status).To(Equal("started"))
-			Expect(out.InvestigationSessionID).To(Equal("ka-session-it-010"),
-				"SC-24: InvestigationSessionID must be the freshly created session")
 
-			Expect(autoMgr.startCalled.Load()).To(Equal(int32(1)),
-				"SC-24: StartInvestigation must be called through production dispatch path")
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal(mcptools.ErrCodeNoInvestigationAvailable.Code))
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"Gap 3: StartInvestigation must never be called to fabricate an unbacked placeholder session")
 		})
 	})
 })

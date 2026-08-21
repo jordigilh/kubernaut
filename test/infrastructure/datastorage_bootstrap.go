@@ -734,12 +734,12 @@ func startDSBootstrapService(ctx context.Context, infra *DSBootstrapInfra, image
 
 	// AU-9: Mount signing certificate for audit export signing
 	if infra.SigningCertDir != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/etc/certs:ro", infra.SigningCertDir))
+		args = append(args, "-v", fmt.Sprintf("%s:/etc/certs:ro,z", infra.SigningCertDir))
 	}
 
 	// Common configuration
 	args = append(args,
-		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
+		"-v", fmt.Sprintf("%s:/etc/datastorage:ro,z", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
 		"-e", fmt.Sprintf("POSTGRES_HOST=%s", postgresHost),
 		"-e", fmt.Sprintf("POSTGRES_PORT=%d", postgresPort),
@@ -756,7 +756,7 @@ func startDSBootstrapService(ctx context.Context, infra *DSBootstrapInfra, image
 	if cfg.EnvtestKubeconfig != "" {
 		_, _ = fmt.Fprintf(writer, "   🔐 Mounting envtest kubeconfig (IPv4-rewritten): %s\n", cfg.EnvtestKubeconfig)
 		args = append(args,
-			"-v", fmt.Sprintf("%s:/tmp/kubeconfig:ro", cfg.EnvtestKubeconfig),
+			"-v", fmt.Sprintf("%s:/tmp/kubeconfig:ro,z", cfg.EnvtestKubeconfig),
 			"-e", "KUBECONFIG=/tmp/kubeconfig",
 			"-e", "POD_NAMESPACE=default",
 		)
@@ -765,7 +765,7 @@ func startDSBootstrapService(ctx context.Context, infra *DSBootstrapInfra, image
 		if cfg.DataStorageServiceTokenPath != "" {
 			_, _ = fmt.Fprintf(writer, "   🎫 Mounting DataStorage service token: %s\n", cfg.DataStorageServiceTokenPath)
 			args = append(args,
-				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro", cfg.DataStorageServiceTokenPath),
+				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro,z", cfg.DataStorageServiceTokenPath),
 			)
 		}
 	}

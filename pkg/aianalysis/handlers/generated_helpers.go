@@ -14,62 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package handlers provides helper functions for working with generated KA types
+// Package handlers provides map-extraction helpers used by ResponseProcessor
+// to read KA's free-form (raw-JSON) result fields (RootCauseAnalysis,
+// SelectedWorkflow, DetectedLabels on agentsessionv1.AgentSessionResult).
 package handlers
 
 import (
 	"encoding/json"
-
-	"github.com/go-faster/jx"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
-
-// Helper functions for extracting values from generated optional types
-
-// GetOptBoolValue returns the bool value from OptBool, or false if not set
-func GetOptBoolValue(opt agentclient.OptBool) bool {
-	if opt.Set {
-		return opt.Value
-	}
-	return false
-}
-
-// GetOptNilBoolValue returns a *bool from OptNilBool:
-// nil if not set or null, pointer to value otherwise.
-func GetOptNilBoolValue(opt agentclient.OptNilBool) *bool {
-	if opt.Set && !opt.Null {
-		v := opt.Value
-		return &v
-	}
-	return nil
-}
-
-// GetOptNilStringValue returns the string value from OptNilString, or empty string if not set
-func GetOptNilStringValue(opt agentclient.OptNilString) string {
-	if opt.Set && !opt.Null {
-		return opt.Value
-	}
-	return ""
-}
-
-// GetMapFromOptNil extracts a map from optional generated types using JSON marshaling
-func GetMapFromOptNil(data interface{}) map[string]interface{} {
-	if data == nil {
-		return nil
-	}
-
-	bytes, err := json.Marshal(data)
-	if err != nil {
-		return nil
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(bytes, &result); err != nil {
-		return nil
-	}
-
-	return result
-}
 
 // GetStringFromMap safely extracts a string from a map
 func GetStringFromMap(m map[string]interface{}, key string) string {
@@ -121,19 +73,6 @@ func GetStringSliceFromMap(m map[string]interface{}, key string) []string {
 	return nil
 }
 
-// GetMapFromMapSafe safely extracts a nested map
-func GetMapFromMapSafe(m map[string]interface{}, key string) map[string]interface{} {
-	if m == nil {
-		return nil
-	}
-	if val, ok := m[key]; ok {
-		if nested, ok := val.(map[string]interface{}); ok {
-			return nested
-		}
-	}
-	return nil
-}
-
 // GetBoolFromMap safely extracts a bool from a map
 func GetBoolFromMap(m map[string]interface{}, key string) bool {
 	if m == nil {
@@ -145,15 +84,6 @@ func GetBoolFromMap(m map[string]interface{}, key string) bool {
 		}
 	}
 	return false
-}
-
-// GetMapFromJxRaw extracts a map[string]interface{} from jx.Raw
-func GetMapFromJxRaw(raw jx.Raw) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // convertMapToStringMap converts map[string]interface{} to map[string]string

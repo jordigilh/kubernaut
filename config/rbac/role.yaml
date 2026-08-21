@@ -59,6 +59,22 @@ rules:
 - apiGroups:
   - kubernaut.ai
   resources:
+  - agentsessions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - agentsessions/status
+  verbs:
+  - get
+- apiGroups:
+  - kubernaut.ai
+  resources:
   - aianalyses
   - effectivenessassessments
   - notificationrequests
@@ -86,7 +102,6 @@ rules:
   resources:
   - aianalyses/status
   - effectivenessassessments/status
-  - investigationsessions/status
   - notificationrequests/status
   - signalprocessings/status
   - workflowexecutions/status
@@ -99,9 +114,15 @@ rules:
   resources:
   - investigationsessions
   verbs:
-  - get
   - list
   - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - investigationsessions/status
+  verbs:
+  - patch
+  - update
 - apiGroups:
   - networking.k8s.io
   resources:

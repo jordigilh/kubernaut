@@ -349,6 +349,12 @@ func main() {
 		DSGate: core.dsGate, Logger: logger,
 	})
 
+	// DD-AA-KA-001 (#2170): unconditional AgentSession dispatch watcher --
+	// replaces the retired pkg/agentclient HTTP submit channel. Runs
+	// regardless of interactive.enabled, since every investigation
+	// (autonomous or interactive) now dispatches through AgentSession.
+	startAgentSessionDispatcher(ctx, core.infra, stack.mgr, stack.runner, logger)
+
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
 		r: r, cfg: cfg, addr: addr, llmRuntimePath: llmRuntimePath,
 		swappable: swappable, phaseResolver: stack.phaseResolver, bootRuntime: llmRuntime, core: core, inv: stack.inv,

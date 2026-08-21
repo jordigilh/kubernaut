@@ -37,7 +37,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
@@ -169,10 +170,14 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 		return classification
 	}
 
-	// Check for API errors (HTTP status codes)
-	var apiErr *agentclient.APIError
-	if errors.As(err, &apiErr) {
-		return ec.classifyHTTPError(apiErr)
+	// Check for Kubernetes API errors (DD-AA-KA-001: GetOrCreate errors are
+	// now K8s API failures, not agentclient HTTP responses). apierrors'
+	// concrete error types (StatusError, etc.) all implement APIStatus,
+	// exposing the same HTTP-equivalent status code the retired
+	// agentclient.APIError carried.
+	var apiStatus apierrors.APIStatus
+	if errors.As(err, &apiStatus) {
+		return ec.classifyHTTPError(err, apiStatus)
 	}
 
 	// Check for connection refused errors
@@ -272,26 +277,32 @@ func (ec *ErrorClassifier) classifyNetworkError(err error) (ErrorClassification,
 	return ErrorClassification{}, false
 }
 
-// classifyHTTPError classifies HTTP status code errors. Dispatches to one
-// helper per classification family; the switch itself stays a thin lookup.
-func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) ErrorClassification {
-	switch apiErr.StatusCode {
+// classifyHTTPError classifies Kubernetes API errors by their HTTP-equivalent
+// status code (DD-AA-KA-001: GetOrCreate's errors are K8s API failures).
+// Dispatches to one helper per classification family; the switch itself
+// stays a thin lookup. Status-code cases are unchanged from the retired
+// agentclient.APIError-based classification.
+func (ec *ErrorClassifier) classifyHTTPError(err error, apiStatus apierrors.APIStatus) ErrorClassification {
+	status := apiStatus.Status()
+	code := int(status.Code)
+	message := status.Message
+	switch code {
 	case 401: // Authentication error
-		return ec.prefixedErrorClassification(apiErr, ErrorTypeAuthentication, "Authentication failed")
+		return ec.prefixedErrorClassification(err, message, ErrorTypeAuthentication, "Authentication failed")
 	case 403: // Authorization error
-		return ec.prefixedErrorClassification(apiErr, ErrorTypeAuthorization, "Authorization failed")
+		return ec.prefixedErrorClassification(err, message, ErrorTypeAuthorization, "Authorization failed")
 	case 404: // Configuration error
-		return ec.prefixedErrorClassification(apiErr, ErrorTypeConfiguration, "Resource not found")
+		return ec.prefixedErrorClassification(err, message, ErrorTypeConfiguration, "Resource not found")
 	case 422: // Unprocessable Entity - Validation error (permanent)
-		return ec.prefixedErrorClassification(apiErr, ErrorTypePermanent, "Client error (HTTP 422)")
+		return ec.prefixedErrorClassification(err, message, ErrorTypePermanent, "Client error (HTTP 422)")
 	case 429: // Too Many Requests - Rate limit error
 		return ErrorClassification{
 			ErrorType:     ErrorTypeRateLimit,
 			IsRetryable:   true,
-			ShouldAlert:   false,                           // Rate limiting is expected behavior
+			ShouldAlert:   false,                          // Rate limiting is expected behavior
 			RetryAfter:    ec.backoffConfig.BasePeriod * 2, // Wait longer for rate limits
-			Message:       fmt.Sprintf("Rate limit exceeded: %s", apiErr.Message),
-			OriginalError: apiErr,
+			Message:       fmt.Sprintf("Rate limit exceeded: %s", message),
+			OriginalError: err,
 		}
 	case 500, 502, 503, 504: // Server Errors - Transient errors
 		return ErrorClassification{
@@ -299,11 +310,11 @@ func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) Error
 			IsRetryable:   true,
 			ShouldAlert:   false, // Transient errors are expected
 			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       fmt.Sprintf("Server error (HTTP %d): %s", apiErr.StatusCode, apiErr.Message),
-			OriginalError: apiErr,
+			Message:       fmt.Sprintf("Server error (HTTP %d): %s", code, message),
+			OriginalError: err,
 		}
 	case 400: // Bad Request - Permanent error (invalid request data)
-		return ec.prefixedErrorClassification(apiErr, ErrorTypePermanent, "Client error (HTTP 400)")
+		return ec.prefixedErrorClassification(err, message, ErrorTypePermanent, "Client error (HTTP 400)")
 	default:
 		// 4xx Client Errors (other than explicitly handled) and any other
 		// unknown status code - Treat as Transient with alert. Rationale:
@@ -314,25 +325,25 @@ func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) Error
 			IsRetryable:   true,
 			ShouldAlert:   true, // Alert for investigation
 			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       fmt.Sprintf("Unknown HTTP status %d: %s", apiErr.StatusCode, apiErr.Message),
-			OriginalError: apiErr,
+			Message:       fmt.Sprintf("Unknown HTTP status %d: %s", code, message),
+			OriginalError: err,
 		}
 	}
 }
 
 // prefixedErrorClassification builds the common shape shared by the
 // non-retryable HTTP error classifications (401/403/404/422/400): message is
-// "<prefix>: <apiErr.Message>", never retryable, always alerts. Extracted
-// from classifyHTTPError (Wave 6 6c GREEN: funlen remediation) — pure code
+// "<prefix>: <message>", never retryable, always alerts. Extracted from
+// classifyHTTPError (Wave 6 6c GREEN: funlen remediation) — pure code
 // motion, no behavior change.
-func (ec *ErrorClassifier) prefixedErrorClassification(apiErr *agentclient.APIError, errType ErrorType, prefix string) ErrorClassification {
+func (ec *ErrorClassifier) prefixedErrorClassification(err error, message string, errType ErrorType, prefix string) ErrorClassification {
 	return ErrorClassification{
 		ErrorType:     errType,
 		IsRetryable:   false,
 		ShouldAlert:   true,
 		RetryAfter:    -1,
-		Message:       fmt.Sprintf("%s: %s", prefix, apiErr.Message),
-		OriginalError: apiErr,
+		Message:       fmt.Sprintf("%s: %s", prefix, message),
+		OriginalError: err,
 	}
 }
 

@@ -27,19 +27,20 @@ package aianalysis_test
 
 import (
 	"context"
+	"encoding/json"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func() {
@@ -57,29 +58,29 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// UT-AA-056-003: ProcessIncidentResponse populates PostRCAContext
+	// UT-AA-056-003: ProcessAgentSessionResult populates PostRCAContext
 	// ADR-056: DetectedLabels from KA response → PostRCAContext
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-056-003: should populate PostRCAContext.DetectedLabels from incident response", func() {
+	It("UT-AA-056-003: should populate PostRCAContext.DetectedLabels from the AgentSessionResult", func() {
 		// GIVEN: An AIAnalysis in Investigating phase with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
 
-		// AND: A successful KA incident response with detected_labels
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":   jx.Raw(`true`),
-			"pdbProtected":    jx.Raw(`true`),
-			"hpaEnabled":      jx.Raw(`false`),
-			"stateful":        jx.Raw(`true`),
-			"helmManaged":     jx.Raw(`false`),
-			"networkIsolated": jx.Raw(`true`),
-			"serviceMesh":     jx.Raw(`"istio"`),
-			"gitOpsTool":      jx.Raw(`"argocd"`),
+		// AND: A successful KA result with detected_labels
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged":   true,
+			"pdbProtected":    true,
+			"hpaEnabled":      false,
+			"stateful":        true,
+			"helmManaged":     false,
+			"networkIsolated": true,
+			"serviceMesh":     "istio",
+			"gitOpsTool":      "argocd",
 		})
 
-		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: PostRCAContext should be populated
 		Expect(err).ToNot(HaveOccurred())
@@ -107,13 +108,13 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A KA incident response with detected_labels
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"stateful": jx.Raw(`true`),
+		// AND: A KA result with detected_labels
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"stateful": true,
 		})
 
-		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: SetAt must be non-nil (immutability guard)
 		Expect(err).ToNot(HaveOccurred())
@@ -132,25 +133,22 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A successful KA incident response WITHOUT detected_labels
-		kaResp := &agentclient.IncidentResponse{
+		// AND: A successful KA result WITHOUT detected_labels
+		res := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-no-labels-001",
 			Analysis:         "Test analysis",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.85,
 			Timestamp:        "2026-02-17T12:00:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-					"confidence":       jx.Raw(`0.85`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: rawJSONPostRCA(map[string]interface{}{
+				"workflow_id":      "restart-pod-v1",
+				"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+				"confidence":       0.85,
+			}),
 		}
 
-		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: PostRCAContext should remain nil (no labels to extract)
 		Expect(err).ToNot(HaveOccurred())
@@ -168,18 +166,18 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		analysis = createAnalysisForPostRCA()
 
 		// AND: A KA response where some detections failed (RBAC denied)
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":    jx.Raw(`false`),
-			"pdbProtected":     jx.Raw(`false`),
-			"hpaEnabled":       jx.Raw(`false`),
-			"stateful":         jx.Raw(`true`),
-			"helmManaged":      jx.Raw(`false`),
-			"networkIsolated":  jx.Raw(`false`),
-			"failedDetections": jx.Raw(`["pdbProtected","hpaEnabled"]`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged":    false,
+			"pdbProtected":     false,
+			"hpaEnabled":       false,
+			"stateful":         true,
+			"helmManaged":      false,
+			"networkIsolated":  false,
+			"failedDetections": []string{"pdbProtected", "hpaEnabled"},
 		})
 
-		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: PostRCAContext should be populated with failedDetections
 		Expect(err).ToNot(HaveOccurred())
@@ -202,21 +200,21 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		analysis = createAnalysisForPostRCA()
 		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
 
-		// AND: A KA incident response with resourceQuotaConstrained=true and failedDetections including it
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":            jx.Raw(`false`),
-			"pdbProtected":             jx.Raw(`false`),
-			"hpaEnabled":               jx.Raw(`false`),
-			"stateful":                 jx.Raw(`false`),
-			"helmManaged":              jx.Raw(`false`),
-			"networkIsolated":          jx.Raw(`false`),
-			"serviceMesh":              jx.Raw(`""`),
-			"resourceQuotaConstrained": jx.Raw(`true`),
-			"failedDetections":         jx.Raw(`["resourceQuotaConstrained"]`),
+		// AND: A KA result with resourceQuotaConstrained=true and failedDetections including it
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged":            false,
+			"pdbProtected":             false,
+			"hpaEnabled":               false,
+			"stateful":                 false,
+			"helmManaged":              false,
+			"networkIsolated":          false,
+			"serviceMesh":              "",
+			"resourceQuotaConstrained": true,
+			"failedDetections":         []string{"resourceQuotaConstrained"},
 		})
 
-		// WHEN: Processing the incident response
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: PostRCAContext should be populated with the new field
 		Expect(err).ToNot(HaveOccurred())
@@ -238,29 +236,26 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	It("IT-AA-RESP-PARAMS-001: should map parameters from KA selected_workflow to AIAnalysis status", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := &agentclient.IncidentResponse{
+		res := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-params-001",
 			Analysis:         "Root cause: memory pressure on api-server",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.92,
 			Timestamp:        "2026-05-30T12:00:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"increase-memory-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/increase-memory:v1.0"`),
-					"confidence":       jx.Raw(`0.92`),
-					"parameters": jx.Raw(`{
-						"TARGET_RESOURCE_NAME": "memory-eater",
-						"TARGET_RESOURCE_KIND": "Deployment",
-						"TARGET_RESOURCE_NAMESPACE": "production",
-						"MEMORY_LIMIT_NEW": "512Mi"
-					}`),
+			SelectedWorkflow: rawJSONPostRCA(map[string]interface{}{
+				"workflow_id":      "increase-memory-v1",
+				"execution_bundle": "ghcr.io/kubernaut/increase-memory:v1.0",
+				"confidence":       0.92,
+				"parameters": map[string]interface{}{
+					"TARGET_RESOURCE_NAME":      "memory-eater",
+					"TARGET_RESOURCE_KIND":      "Deployment",
+					"TARGET_RESOURCE_NAMESPACE": "production",
+					"MEMORY_LIMIT_NEW":          "512Mi",
 				},
-				Set: true,
-			},
+			}),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
@@ -284,31 +279,24 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		// GIVEN: An AIAnalysis with no PostRCAContext
 		analysis = createAnalysisForPostRCA()
 
-		// AND: A KA incident response with detected_labels Set but Value is nil/invalid
-		// (simulates API returning non-object e.g. string "not_a_dict" - client would pass nil)
-		kaResp := &agentclient.IncidentResponse{
+		// AND: A KA result with DetectedLabels set but containing invalid JSON
+		// (simulates the API returning a non-object, e.g. a bare string)
+		res := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-malformed-labels-001",
 			Analysis:         "Test analysis",
-			NeedsHumanReview: agentclient.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.85,
 			Timestamp:        "2026-02-17T12:00:00Z",
-			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-				Value: agentclient.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-					"confidence":       jx.Raw(`0.85`),
-				},
-				Set: true,
-			},
-			DetectedLabels: agentclient.OptNilIncidentResponseDetectedLabels{
-				Value: nil, // malformed - not a valid map (e.g. API returned string)
-				Set:   true,
-				Null:  false,
-			},
+			SelectedWorkflow: rawJSONPostRCA(map[string]interface{}{
+				"workflow_id":      "restart-pod-v1",
+				"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+				"confidence":       0.85,
+			}),
+			DetectedLabels: &apiextensionsv1.JSON{Raw: []byte(`"not_a_dict"`)}, // malformed - not a valid map
 		}
 
-		// WHEN: Processing the incident response (must not panic)
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		// WHEN: Processing the result (must not panic)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 
 		// THEN: No error, PostRCAContext remains nil (malformed data skipped)
 		Expect(err).ToNot(HaveOccurred())
@@ -337,24 +325,28 @@ func createAnalysisForPostRCA() *aianalysisv1.AIAnalysis {
 	}
 }
 
-func buildIncidentResponseWithDetectedLabels(labels map[string]jx.Raw) *agentclient.IncidentResponse {
-	return &agentclient.IncidentResponse{
+// rawJSONPostRCA marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
+func rawJSONPostRCA(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
+
+func buildResultWithDetectedLabels(labels map[string]interface{}) *agentsessionv1.AgentSessionResult {
+	return &agentsessionv1.AgentSessionResult{
 		IncidentID:       "test-with-labels-001",
 		Analysis:         "Root cause: memory pressure",
-		NeedsHumanReview: agentclient.NewOptBool(false),
+		NeedsHumanReview: false,
 		Confidence:       0.90,
 		Timestamp:        "2026-02-17T12:00:00Z",
-		SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-			Value: agentclient.IncidentResponseSelectedWorkflow{
-				"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-				"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-				"confidence":       jx.Raw(`0.90`),
-			},
-			Set: true,
-		},
-		DetectedLabels: agentclient.NewOptNilIncidentResponseDetectedLabels(
-			agentclient.IncidentResponseDetectedLabels(labels),
-		),
+		SelectedWorkflow: rawJSONPostRCA(map[string]interface{}{
+			"workflow_id":      "restart-pod-v1",
+			"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+			"confidence":       0.90,
+		}),
+		DetectedLabels: rawJSONPostRCA(labels),
 	}
 }
 
@@ -378,16 +370,16 @@ var _ = Describe("CNV Label Extraction — #1400", func() {
 	It("UT-AA-1400-001: extractDetectedLabels maps all 4 CNV fields from KA response", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":  jx.Raw(`false`),
-			"stateful":       jx.Raw(`true`),
-			"virtualMachine": jx.Raw(`true`),
-			"liveMigratable": jx.Raw(`true`),
-			"cdiManaged":     jx.Raw(`false`),
-			"storageBackend": jx.Raw(`"odf-ceph"`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged":  false,
+			"stateful":       true,
+			"virtualMachine": true,
+			"liveMigratable": true,
+			"cdiManaged":     false,
+			"storageBackend": "odf-ceph",
 		})
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
 
@@ -401,12 +393,12 @@ var _ = Describe("CNV Label Extraction — #1400", func() {
 	It("UT-AA-1400-002: non-CNV input produces struct with false CNV fields (backward compat)", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged": jx.Raw(`true`),
-			"stateful":      jx.Raw(`true`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged": true,
+			"stateful":      true,
 		})
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
 
@@ -421,37 +413,37 @@ var _ = Describe("CNV Label Extraction — #1400", func() {
 	It("UT-AA-1400-003: extractDetectedLabels maps storageBackend string field", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"virtualMachine": jx.Raw(`true`),
-			"storageBackend": jx.Raw(`"lvms"`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"virtualMachine": true,
+			"storageBackend": "lvms",
 		})
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 
 		dl := analysis.Status.PostRCAContext.DetectedLabels
 		Expect(dl.StorageBackend).To(Equal("lvms"), "storageBackend=lvms must round-trip")
 	})
 
-	It("IT-AA-1400-001: ProcessIncidentResponse with CNV labels persists to PostRCAContext", func() {
+	It("IT-AA-1400-001: ProcessAgentSessionResult with CNV labels persists to PostRCAContext", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":            jx.Raw(`true`),
-			"pdbProtected":             jx.Raw(`true`),
-			"hpaEnabled":               jx.Raw(`false`),
-			"stateful":                 jx.Raw(`true`),
-			"helmManaged":              jx.Raw(`false`),
-			"networkIsolated":          jx.Raw(`false`),
-			"serviceMesh":              jx.Raw(`"istio"`),
-			"resourceQuotaConstrained": jx.Raw(`true`),
-			"virtualMachine":           jx.Raw(`true`),
-			"liveMigratable":           jx.Raw(`true`),
-			"cdiManaged":               jx.Raw(`true`),
-			"storageBackend":           jx.Raw(`"odf-ceph"`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged":            true,
+			"pdbProtected":             true,
+			"hpaEnabled":               false,
+			"stateful":                 true,
+			"helmManaged":              false,
+			"networkIsolated":          false,
+			"serviceMesh":              "istio",
+			"resourceQuotaConstrained": true,
+			"virtualMachine":           true,
+			"liveMigratable":           true,
+			"cdiManaged":               true,
+			"storageBackend":           "odf-ceph",
 		})
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
 
@@ -467,15 +459,15 @@ var _ = Describe("CNV Label Extraction — #1400", func() {
 		Expect(dl.StorageBackend).To(Equal("odf-ceph"))
 	})
 
-	It("IT-AA-1400-002: ProcessIncidentResponse without CNV keys still populates PostRCAContext", func() {
+	It("IT-AA-1400-002: ProcessAgentSessionResult without CNV keys still populates PostRCAContext", func() {
 		analysis = createAnalysisForPostRCA()
 
-		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged": jx.Raw(`true`),
-			"stateful":      jx.Raw(`false`),
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"gitOpsManaged": true,
+			"stateful":      false,
 		})
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
 

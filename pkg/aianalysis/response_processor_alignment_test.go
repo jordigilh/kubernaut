@@ -26,11 +26,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func() {
@@ -66,44 +66,35 @@ var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func()
 	}
 
 	// UT-AA-SCHEMA-001: alignment_verdict present -> maps to AIAnalysisStatus.GetReview().AlignmentVerdict
-	It("UT-AA-SCHEMA-001: maps alignment_verdict from IncidentResponse to AIAnalysisStatus", func() {
+	It("UT-AA-SCHEMA-001: maps AlignmentVerdict from AgentSessionResult to AIAnalysisStatus", func() {
 		analysis := createAnalysis()
 
-		resp := &client.IncidentResponse{
-			IncidentID: "aa-schema-001",
-			Analysis:   "RCA summary",
-			Confidence: 0.85,
-			Timestamp:  time.Now().Format(time.RFC3339),
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonAlignmentCheckFailed,
-				Set:   true,
-			},
-			Warnings: []string{"Shadow agent flagged suspicious content"},
-		}
-
-		// Set the AlignmentVerdict on the response — this field doesn't exist yet in ogen types
-		// RED: This should fail to compile because ogen hasn't generated AlignmentVerdict field
-		resp.AlignmentVerdict = client.OptNilAlignmentVerdict{
-			Value: client.AlignmentVerdict{
-				Result:                  client.AlignmentVerdictResultSuspicious,
-				CircuitBreakerActivated: client.NewOptBool(true),
-				Summary:                 client.NewOptString("Suspicious tool call detected"),
+		res := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "aa-schema-001",
+			Analysis:          "RCA summary",
+			Confidence:        0.85,
+			Timestamp:         time.Now().Format(time.RFC3339),
+			NeedsHumanReview:  true,
+			HumanReviewReason: "alignment_check_failed",
+			Warnings:          []string{"Shadow agent flagged suspicious content"},
+			AlignmentVerdict: &agentsessionv1.AgentSessionAlignmentVerdict{
+				Result:                  "suspicious",
+				CircuitBreakerActivated: true,
+				Summary:                 "Suspicious tool call detected",
 				Flagged:                 2,
 				Total:                   5,
-				Findings: []client.AlignmentFinding{
+				Findings: []agentsessionv1.AgentSessionAlignmentFinding{
 					{
 						StepIndex:   1,
-						StepKind:    client.AlignmentFindingStepKindToolResult,
-						Tool:        client.NewOptString("kubectl_get"),
+						StepKind:    "tool_result",
+						Tool:        "kubectl_get",
 						Explanation: "Data exfiltration pattern",
 					},
 				},
 			},
-			Set: true,
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Verify AlignmentVerdict mapped to CRD status
@@ -119,27 +110,24 @@ var _ = Describe("Fix 7: AA response processor AlignmentVerdict mapping", func()
 		Expect(analysis.Status.GetReview().AlignmentVerdict.Findings[0].Tool).To(Equal("kubectl_get"))
 	})
 
-	// UT-AA-SCHEMA-002: alignment_verdict null -> AlignmentVerdict nil on CRD (no crash)
-	It("UT-AA-SCHEMA-002: null alignment_verdict does not crash and leaves CRD field nil", func() {
+	// UT-AA-SCHEMA-002: alignment_verdict absent -> AlignmentVerdict nil on CRD (no crash)
+	It("UT-AA-SCHEMA-002: absent AlignmentVerdict does not crash and leaves CRD field nil", func() {
 		analysis := createAnalysis()
 
-		resp := &client.IncidentResponse{
-			IncidentID: "aa-schema-002",
-			Analysis:   "Normal RCA",
-			Confidence: 0.9,
-			Timestamp:  time.Now().Format(time.RFC3339),
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonLowConfidence,
-				Set:   true,
-			},
+		res := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "aa-schema-002",
+			Analysis:          "Normal RCA",
+			Confidence:        0.9,
+			Timestamp:         time.Now().Format(time.RFC3339),
+			NeedsHumanReview:  true,
+			HumanReviewReason: "low_confidence",
 		}
 
-		// AlignmentVerdict is NOT set (default zero value = not set)
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		// AlignmentVerdict is NOT set (nil)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(analysis.Status.GetReview().AlignmentVerdict).To(BeNil(),
-			"AlignmentVerdict must be nil when not present in response")
+			"AlignmentVerdict must be nil when not present in the result")
 	})
 })

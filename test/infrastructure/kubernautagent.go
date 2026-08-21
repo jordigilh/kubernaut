@@ -827,6 +827,23 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list"]
+  # AgentSession (DD-AA-KA-001, #2170): dispatch watcher + Status writer.
+  # Unconditional -- every investigation flows through AgentSession
+  # dispatch regardless of interactive.enabled. KA never writes Spec.
+  # Mirrors charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml's
+  # production ClusterRole -- this hand-rolled E2E-only RBAC manifest must be
+  # kept in sync with it manually (no shared source of truth between the two).
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions/status"]
+    verbs: ["get", "update", "patch"]
+  # InvestigationSession (DD-AA-KA-001 Amendment Gap 1, #2170): read-only,
+  # dispatch-time existence check ONLY -- KA never writes InvestigationSession.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch"]
   # Interactive mode: Lease-based session management (#703)
   # list required by ReconcileOrphanedLeases startup loop
   - apiGroups: ["coordination.k8s.io"]

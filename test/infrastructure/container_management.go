@@ -227,9 +227,54 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Add volumes
+	// Add volumes. ":z" relabels the host path with a shared SELinux
+	// context so containers can read it on enforcing hosts (e.g. RHEL);
+	// harmless no-op on non-SELinux hosts (macOS Podman VM). "z" (not "Z")
+	// because these host paths are commonly mounted read-only into more
+	// than one per-process container (e.g. envtest kubeconfig shared by
+	// DataStorage and the per-process KA container).
+	//
+	// CI RCA (2026-08-19, "Integration (fleetmetadatacache)" job,
+	// IT-FLEET-EAIGW-001, confirmed via `podman inspect` on helios08): the
+	// short `-v` form is host:container[:options], colon-delimited -- a
+	// COMMA before "z" (as this line previously read, "%s:%s,z") is not a
+	// field separator at all, so podman folds ",z" into the *container
+	// path* itself instead of parsing it as the relabel option (observed
+	// firsthand: `podman inspect` reported the actual bind Destination as
+	// the literal string "/etc/aigw,z", not "/etc/aigw"). Every container
+	// started through this function ends up bind-mounted one path off
+	// from what its own Cmd/config expects it to read, silently, with no
+	// error from podman itself -- only surfaced once EAIGWImage's `aigw`
+	// process failed fast with "no such file or directory" trying to open
+	// the (correct, comma-free) path it was told to use. Introduced by
+	// 7da8fa4fac ("fix(test-infra): add SELinux relabel to podman bind
+	// mounts", this same PR) -- a same-PR regression, not a pre-existing
+	// or external flake, despite passing intermittently elsewhere in this
+	// PR's own CI history (destinations that happen to already exist as a
+	// directory, or whose owning process tolerates/recreates a missing
+	// file, mask the same off-by-one-field mount on other services).
+	//
+	// CI RCA round 2 (2026-08-19, "Integration (aianalysis)" job,
+	// SynchronizedBeforeSuite, run 32273056176): the unconditional ":z"
+	// above assumed containerPath is always a bare directory, but several
+	// callers (test/integration/aianalysis/suite_test.go,
+	// test/integration/apifrontend/suite_test.go) bake an inline option
+	// straight into the map's containerPath value, e.g.
+	// "/etc/kubernautagent:ro". Blindly appending ":z" to that produced
+	// "hostPath:/etc/kubernautagent:ro:z" -- FOUR colon-delimited fields,
+	// which podman rejects outright ("incorrect volume format, should be
+	// [host-dir:]ctr-dir[:option]"), immediately failing every KA
+	// container start. containerPath already containing a colon means an
+	// OPTIONS field is already present, so "z" must join it as a second,
+	// comma-separated option (matching the working ":ro,z" pattern used
+	// directly in mock_llm.go/datastorage_bootstrap.go) rather than open a
+	// new colon field.
 	for hostPath, containerPath := range cfg.Volumes {
-		args = append(args, "-v", fmt.Sprintf("%s:%s", hostPath, containerPath))
+		if strings.Contains(containerPath, ":") {
+			args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
+		} else {
+			args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
+		}
 	}
 
 	// Add image

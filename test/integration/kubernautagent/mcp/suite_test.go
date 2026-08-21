@@ -42,6 +42,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
@@ -146,6 +147,10 @@ var _ = SynchronizedBeforeSuite(
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(rwv1alpha1.AddToScheme(scheme)).To(Succeed())
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		// #1818 race-guard IT: K8sAgentSessionExistenceChecker (production
+		// wiring: cmd/kubernautagent/routes.go) needs AgentSession registered
+		// to Get it through this suite's shared client.
+		Expect(agentsessionv1.AddToScheme(scheme)).To(Succeed())
 
 		k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")
@@ -262,6 +267,7 @@ var _ = SynchronizedBeforeSuite(
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			Expect(agentsessionv1.AddToScheme(scheme)).To(Succeed())
 
 			var err error
 			sharedK8sClient, err = client.New(sharedK8sConfig, client.Options{Scheme: scheme})

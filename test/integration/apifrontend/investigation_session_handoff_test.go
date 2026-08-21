@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
@@ -55,10 +55,10 @@ import (
 
 // handoffSession is a trackable PoolSession used by IT-AF-1332 and IT-AF-1387 tests.
 type handoffSession struct {
-	id       string
-	callFn   func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
-	pingFn   func(ctx context.Context, params *mcp.PingParams) error
-	closed   int32
+	id     string
+	callFn func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	pingFn func(ctx context.Context, params *mcp.PingParams) error
+	closed int32
 }
 
 func (s *handoffSession) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
@@ -600,32 +600,38 @@ var _ = Describe("Session ID Forwarding (#1452)", Label("integration", "session-
 				},
 			}
 
+			// #2170/DD-AA-KA-001: KA's real session ID now lives on
+			// AgentSession.Status.SessionID -- AIAnalysis.Status.KASession.ID
+			// was repurposed to hold the AgentSession CRD's own deterministic
+			// object name, not KA's session ID (see crd_tools_session.go's
+			// HandleAwaitSession doc comment). Root-caused from CI run
+			// 32215236666 (E2E-FLEET-018): AF was forwarding the AgentSession
+			// object name back to KA as session_id, which KA's in-memory
+			// store never used as a key, breaking LaunchDeferredInvestigation.
 			s := runtime.NewScheme()
-			_ = aiav1alpha1.AddToScheme(s)
+			_ = agentsessionv1.AddToScheme(s)
 			_ = corev1.AddToScheme(s)
 
-			aiaObj := &aiav1alpha1.AIAnalysis{
+			asObj := &agentsessionv1.AgentSession{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "kubernaut-system",
-					Name:      "aia-rr-it-1452-001",
+					Name:      "as-rr-it-1452-001",
 				},
-				Spec: aiav1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{
 						Name:      "rr-it-1452-001",
 						Namespace: "kubernaut-system",
 					},
 					RemediationID: "rr-it-1452-001",
 				},
-				Status: aiav1alpha1.AIAnalysisStatus{
-					KASession: &aiav1alpha1.KASession{
-						ID: aiaSessionID,
-					},
+				Status: agentsessionv1.AgentSessionStatus{
+					SessionID: aiaSessionID,
 				},
 			}
 			tc := fake.NewClientBuilder().
 				WithScheme(s).
-				WithObjects(aiaObj).
-				WithStatusSubresource(aiaObj).
+				WithObjects(asObj).
+				WithStatusSubresource(asObj).
 				Build()
 
 			recorder := &itAuditRecorder{}

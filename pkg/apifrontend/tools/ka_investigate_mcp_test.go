@@ -914,8 +914,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 				},
 			}
 
-			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-aia-001", "rr-aia-001", "ka-sess-external")
-			tc := newTypedAIAnalysisClient(aiaObj)
+			// #2170/DD-AA-KA-001: awaitInvestigationReady now resolves KA's
+			// real session ID from AgentSession.Status.SessionID, not
+			// AIAnalysis.Status.KASession.ID (see crd_tools_session.go's
+			// HandleAwaitSession doc comment) -- the fixture here must be an
+			// AgentSession CRD, not an AIAnalysis.
+			asObj := newTypedAgentSessionWithSessionID("as-rr-aia-001", "rr-aia-001", "ka-sess-external")
+			tc := newAgentSessionTypedClient(asObj)
 			registry := tools.NewMonitorRegistry()
 
 			start := time.Now()
@@ -933,7 +938,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-aia-found-001"))
 			Expect(elapsed).To(BeNumerically("<", 10*time.Second),
-				"should not block indefinitely when AIA exists but no Active IS")
+				"should not block indefinitely when AgentSession exists but no Active IS")
 		})
 	})
 
@@ -1239,8 +1244,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 				},
 			}
 
-			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-1452-001", "rr-1452-001", "ka-sess-1452-001")
-			tc := newTypedAIAnalysisClient(aiaObj)
+			// #2170/DD-AA-KA-001: see UT-AF-1326-073's doc comment above --
+			// KA's real session ID now lives on AgentSession.Status.SessionID.
+			asObj := newTypedAgentSessionWithSessionID("as-rr-1452-001", "rr-1452-001", "ka-sess-1452-001")
+			tc := newAgentSessionTypedClient(asObj)
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
@@ -1254,7 +1261,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(receivedArgs.SessionID).To(Equal("ka-sess-1452-001"),
-				"SI-4: AIA CRD session ID must be forwarded to KA for deterministic session lookup")
+				"SI-4: AgentSession CRD session ID must be forwarded to KA for deterministic session lookup")
 		})
 	})
 
@@ -1309,8 +1316,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 				},
 			}
 
-			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-1452-005", "rr-1452-005", aiaSessionID)
-			tc := newTypedAIAnalysisClient(aiaObj)
+			// #2170/DD-AA-KA-001: see UT-AF-1326-073's doc comment above --
+			// KA's real session ID now lives on AgentSession.Status.SessionID.
+			asObj := newTypedAgentSessionWithSessionID("as-rr-1452-005", "rr-1452-005", aiaSessionID)
+			tc := newAgentSessionTypedClient(asObj)
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(

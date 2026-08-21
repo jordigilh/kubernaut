@@ -43,6 +43,16 @@ import (
 // designed safety net for this specific failure.
 var _ = Describe("Fix #2100: handleStart fail-closed on fallback exhaustion", func() {
 
+	// Note (DD-AA-KA-001 Amendment Gap 3 revision, post-#2189 CI evidence):
+	// reattachOrCreateFallback no longer returns "" merely because there is
+	// no autonomous session/RCA -- it now starts a genuinely real
+	// investigation via createFreshInteractiveSession (see
+	// UT-KA-2170-020/021). This test still exercises the exhaustion path
+	// because it omits WithSignalContextResolver, so
+	// createFreshInteractiveSession hits its own defensive
+	// dependency-unavailable branch and returns "" before startErr would
+	// even matter -- startErr is retained here only as a belt-and-braces
+	// guard against a regression that removed that nil check.
 	Describe("UT-KA-2100-003: handleStart releases the lease and fails closed when every fallback path is exhausted", func() {
 		It("should call Release and return ErrCodeNoInvestigationAvailable instead of silently succeeding with an empty InvestigationSessionID", func() {
 			sessionMgr := &mockSessionManager{

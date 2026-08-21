@@ -23,36 +23,32 @@ package handlers
 import (
 	"context"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // ========================================
-// HOLMESGPT-API CLIENT INTERFACE
-// BR-AI-007: KA integration for investigation
+// AGENTSESSION GET-OR-CREATOR INTERFACE
+// DD-AA-KA-001, BR-AA-KA-065.1: AA<->KA channel via the AgentSession CRD
 // ========================================
 
-// AgentClientInterface defines the contract for calling the Kubernaut Agent.
-// Uses generated OpenAPI types for type-safe KA contract compliance.
-//
-// Methods:
-// - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint
-// - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-KA-064.1)
-// - PollSession: (Async) Polls session status (BR-AA-KA-064.2)
-// - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-KA-064.3)
-type AgentClientInterface interface {
-	// Legacy synchronous methods (will be deprecated)
-	Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
+// AgentSessionGetOrCreator gets-or-creates the AgentSession CRD backing an
+// investigation, replacing the retired AgentClientInterface's
+// SubmitInvestigation/PollSession/GetSessionResult trio. GetOrCreate is
+// naturally idempotent -- Create on the first call (no AgentSession exists
+// yet), a plain Get on every call thereafter -- so the old submit-vs-poll
+// distinction collapses into a single call site: Handle() calls this once
+// per reconcile and branches on the returned object's Status.Phase.
+type AgentSessionGetOrCreator interface {
+	GetOrCreate(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error)
 
-	// Async session methods (BR-AA-KA-064)
-	SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
-	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
-	GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
-
-	// BR-INTERACTIVE-010: Cancel a running KA session
-	CancelSession(ctx context.Context, sessionID string) error
+	// DeleteForRetry deletes as so the next GetOrCreate call falls through
+	// to Create, giving a BR-AI-009 capacity-exceeded retry attempt a fresh
+	// AgentSession (DD-AA-KA-001 amendment). Idempotent: NotFound is not an
+	// error.
+	DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error
 }
 
 // ========================================
@@ -66,9 +62,11 @@ type AgentClientInterface interface {
 // Methods:
 // - RecordAIAgentCall: Records AI agent API calls with status and duration
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
-// - RecordAIAgentSubmit: Records async AI agent submit event (BR-AA-KA-064)
-// - RecordAIAgentResult: Records async AI agent result retrieval event (BR-AA-KA-064)
-// - RecordAIAgentSessionLost: Records session lost event (BR-AA-KA-064)
+// - RecordAIAgentSubmit: Records AI agent submit event at AgentSession create time (BR-AA-KA-065.1)
+// - RecordAIAgentResult: Records AI agent result retrieval at AgentSession Status-read time (BR-AA-KA-065.1)
+//
+// RecordAIAgentSessionLost (BR-AA-KA-064) was retired, not repurposed, along with the
+// regeneration-cap mechanism it audited -- see DD-AA-KA-001, BR-AA-KA-065.7.
 type AuditClientInterface interface {
 	RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
@@ -78,15 +76,13 @@ type AuditClientInterface interface {
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 
 	// ========================================
-	// Session audit methods (BR-AA-KA-064)
+	// Session audit methods (BR-AA-KA-065.1)
 	// ========================================
 
-	// RecordAIAgentSubmit records an async AI agent submit event with session ID
+	// RecordAIAgentSubmit records an AI agent submit event with session ID
 	RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string)
-	// RecordAIAgentResult records an async AI agent result retrieval with investigation time
+	// RecordAIAgentResult records an AI agent result retrieval with investigation time
 	RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64)
-	// RecordAIAgentSessionLost records a session lost event with generation count
-	RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32)
 }
 
 // AnalyzingAuditClientInterface defines audit methods for the Analyzing phase.
@@ -111,43 +107,24 @@ type AnalyzingAuditClientInterface interface {
 }
 
 // ========================================
-// INVESTIGATION SESSION CHECKER INTERFACE
-// BR-INTERACTIVE-010: Check IS CRD existence before submit
+// IS PHASE UPDATER INTERFACE (write-only, terminal-close only)
+// DD-AA-KA-001 Amendment (Gap 1): AA no longer reads InvestigationSession to
+// decide interactivity -- KA's dispatcher owns that determination now
+// (Status.Interactive on AgentSession). AF also no longer waits on
+// IS.Status.Phase=Active as its readiness signal; it watches
+// AgentSession.Status.Interactive directly. The only remaining AA->IS
+// interaction is this one: closing out AF's own IS bookkeeping when the
+// investigation reaches a terminal state (#1376), which is why AA's IS RBAC
+// is now write-only for this single field.
 // ========================================
 
-// InvestigationSessionChecker queries whether an InvestigationSession CRD exists
-// for a given RemediationRequest. Used by InvestigatingHandler to set interactive=true
-// on the KA IncidentRequest when an IS is present. BR-INTERACTIVE-010.
-type InvestigationSessionChecker interface {
-	// HasActiveSession returns true if an InvestigationSession CRD exists
-	// with spec.remediationRequestRef.name matching the given rrName.
-	HasActiveSession(ctx context.Context, rrName string) (bool, error)
-	// FindSessionPhase returns the phase of any IS CRD for the RR, regardless of
-	// terminal state. Returns ("", false, nil) if no IS exists at all.
-	// Used to distinguish "IS deleted" from "IS in terminal phase" in cancel handling.
-	FindSessionPhase(ctx context.Context, rrName string) (isv1alpha1.SessionPhase, bool, error)
-	// CorrelatedSessionID returns the KA session ID AF has most recently
-	// correlated onto this RR's InvestigationSession (status.kaCorrelationID),
-	// and whether that IS is still in a non-terminal phase. Returns ("", false, nil)
-	// if no IS exists or no correlation has been recorded yet.
-	// #2030 Part B: lets AA adopt a live session that AF correlated onto a
-	// takeover IS after AA's original session already went stale/terminal.
-	CorrelatedSessionID(ctx context.Context, rrName string) (id string, active bool, err error)
-}
-
-// ISPhaseUpdater transitions an InvestigationSession CRD phase. AA uses this
-// to set Phase=Active after successfully submitting to KA with interactive=true,
-// signalling to AF that the pending session is ready for action=start, and to
-// set terminal phases (Completed/Failed) when the investigation finishes (#1376).
+// ISPhaseUpdater sets terminal phases (Completed/Failed/Cancelled) on the
+// InvestigationSession CRD when the investigation finishes (#1376), so AF's
+// own bookkeeping reflects the outcome. Best-effort only.
 type ISPhaseUpdater interface {
-	// SetActivePhase finds the IS CRD for the given RR and sets its status
-	// phase to Active. Returns nil if no matching IS exists (best-effort).
-	SetActivePhase(ctx context.Context, rrName string) error
-
-	// SetTerminalPhase finds the IS CRD for the given RR and sets its status
-	// phase to the given terminal phase (Completed, Failed, or Cancelled).
-	// Returns nil if no matching IS exists or if the IS is already terminal
-	// (best-effort). Called by AA when the investigation session ends (#1376).
+	// SetTerminalPhase finds the non-terminal IS CRD for the given RR and
+	// sets its status phase to the given terminal phase. Returns nil if no
+	// matching IS exists or if the IS is already terminal (best-effort).
 	SetTerminalPhase(ctx context.Context, rrName string, phase isv1alpha1.SessionPhase) error
 }
 

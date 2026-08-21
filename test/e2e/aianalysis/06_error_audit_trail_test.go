@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -58,6 +59,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-error-audit-ka-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-error-audit-ka-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -79,7 +84,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			remediationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: AA's audit client (pkg/aianalysis/audit.getCorrelationID)
+			// tags every event with RemediationRequestRef.Name (falling back to RemediationID only
+			// when the ref is unset) -- since these fixtures set BOTH to distinct values (required
+			// by AgentSessionCreator.GetOrCreate, commit 3cfb40ad4), the query must match on the
+			// same field the writer used, or it finds zero events.
+			remediationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Querying Data Storage for AI agent call audit events")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
@@ -123,6 +133,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-error-retry-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-error-retry-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -144,7 +158,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			remediationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: AA's audit client (pkg/aianalysis/audit.getCorrelationID)
+			// tags every event with RemediationRequestRef.Name (falling back to RemediationID only
+			// when the ref is unset) -- since these fixtures set BOTH to distinct values (required
+			// by AgentSessionCreator.GetOrCreate, commit 3cfb40ad4), the query must match on the
+			// same field the writer used, or it finds zero events.
+			remediationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Verifying audit trail exists regardless of AIAnalysis completion state (DD-API-001)")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
@@ -192,6 +211,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-error-investigation-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-error-investigation-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -214,7 +237,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			remediationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: AA's audit client (pkg/aianalysis/audit.getCorrelationID)
+			// tags every event with RemediationRequestRef.Name (falling back to RemediationID only
+			// when the ref is unset) -- since these fixtures set BOTH to distinct values (required
+			// by AgentSessionCreator.GetOrCreate, commit 3cfb40ad4), the query must match on the
+			// same field the writer used, or it finds zero events.
+			remediationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Verifying audit trail exists for this AIAnalysis (DD-API-001)")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
@@ -268,6 +296,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-restart-audit-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-restart-audit-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -290,7 +322,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			remediationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: AA's audit client (pkg/aianalysis/audit.getCorrelationID)
+			// tags every event with RemediationRequestRef.Name (falling back to RemediationID only
+			// when the ref is unset) -- since these fixtures set BOTH to distinct values (required
+			// by AgentSessionCreator.GetOrCreate, commit 3cfb40ad4), the query must match on the
+			// same field the writer used, or it finds zero events.
+			remediationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Capturing initial audit event count (DD-API-001)")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
@@ -344,6 +381,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-metadata-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-metadata-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -365,7 +406,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			remediationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: AA's audit client (pkg/aianalysis/audit.getCorrelationID)
+			// tags every event with RemediationRequestRef.Name (falling back to RemediationID only
+			// when the ref is unset) -- since these fixtures set BOTH to distinct values (required
+			// by AgentSessionCreator.GetOrCreate, commit 3cfb40ad4), the query must match on the
+			// same field the writer used, or it finds zero events.
+			remediationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Querying all audit events for metadata validation (DD-API-001)")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()

@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -269,6 +270,15 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
 		By("Verifying InteractiveSession audit record completeness [AU-3]")
+		// DD-AA-KA-001: AgentSession.Status.SessionID/Interactive are written
+		// at dispatch time (before any takeover), while ActingUser is written
+		// separately and later, by OnInteractiveUpgrade during the actual
+		// takeover (dispatcher.go). Waiting only for InteractiveSession != nil
+		// races that second write: this Eventually could (and did, in CI)
+		// exit on its first check with a non-nil InteractiveSession whose
+		// ActingUser is still empty, before OnInteractiveUpgrade's status
+		// write has propagated to AA. Wait for ActingUser itself, the field
+		// this test actually asserts on next.
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			keepAliveCtx, keepAliveCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -281,6 +291,8 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil(),
 				"AU-3: InteractiveSession must be populated to prove human-driven incident handling")
+			g.Expect(aa.Status.InteractiveSession.ActingUser).NotTo(BeEmpty(),
+				"AU-3: ActingUser must be populated once OnInteractiveUpgrade's status write propagates")
 		}, 90*time.Second, 5*time.Second).Should(Succeed())
 
 		GinkgoWriter.Printf("  InteractiveSession: driver=%s, sessionID=%s\n",
@@ -728,9 +740,32 @@ var _ = Describe("FP-MCP-1452: AF session ID forwarding (#1452)", Label("e2e", "
 		GinkgoWriter.Printf("  InteractiveSession.SessionID (post-takeover): %s\n",
 			aa.Status.InteractiveSession.SessionID)
 
-		Expect(aa.Status.InteractiveSession.SessionID).To(Equal(aiaSessionID),
-			"SI-4+AC-4: InteractiveSession.SessionID must match AIA KASession.ID — "+
-				"proves AF forwarded the session ID and KA used it for direct lookup "+
-				"instead of RRID scan (which could resolve a different session)")
+		// DD-AA-KA-001: KASession.ID (aiaSessionID, captured pre-takeover) is
+		// now the AgentSession CRD's own deterministic object name, not KA's
+		// internal session-manager ID -- see syncKASessionStatus's doc
+		// comment (pkg/aianalysis/handlers/investigating.go). It therefore
+		// no longer equals InteractiveSession.SessionID (as.Status.SessionID,
+		// KA's internal UUID) by construction; those are two intentionally
+		// distinct identifier namespaces post-redesign, not a regression.
+		//
+		// What #1452 actually needs proven -- that the session AF/AIA is
+		// tracking by aiaSessionID really is the one that ended up
+		// user-driving, not some other session resolved by a same-RRID scan
+		// -- is proven directly here instead: fetch the AgentSession CRD by
+		// that exact name and assert its own Status.SessionID (the source
+		// AA's InteractiveSession.SessionID was populated from) matches what
+		// ended up on the AIAnalysis. Under this CRD-native design there is
+		// exactly one AgentSession per AIAnalysis (1:1 owner ref,
+		// BR-AA-KA-065.1), so this also documents that 1:1 invariant rather
+		// than a same-RRID-could-resolve-differently ambiguity that no
+		// longer exists.
+		as := &agentsessionv1.AgentSession{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aiaSessionID, Namespace: namespace}, as)).To(Succeed(),
+			"SI-4+AC-4: the AgentSession CRD named by KASession.ID must exist -- "+
+				"proves AF/AIA's captured identity resolves to a real, findable AgentSession")
+		Expect(as.Status.SessionID).To(Equal(aa.Status.InteractiveSession.SessionID),
+			"SI-4+AC-4: the AgentSession identified by KASession.ID must be the exact same "+
+				"session that ended up user-driving -- proves there is no RRID-scan ambiguity "+
+				"under the CRD-native 1:1 AgentSession<->AIAnalysis design")
 	})
 })

@@ -30,21 +30,22 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // statusLeak1916Scheme registers both AIAnalysis (session-ready check) and
-// InvestigationSession (IS-phase-active check) so a single fake client can
-// drive either await path independently, without requiring both to be
-// registered in each of the package's other single-purpose test schemes.
+// AgentSession (AwaitAgentSessionInteractive check, #2172) so a single fake
+// client can drive either await path independently, without requiring both
+// to be registered in each of the package's other single-purpose test
+// schemes.
 func statusLeak1916Scheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = aiav1alpha1.AddToScheme(s)
-	_ = isv1alpha1.AddToScheme(s)
+	_ = agentsessionv1.AddToScheme(s)
 	return s
 }
 
@@ -78,7 +79,11 @@ func statusTextsFrom(queue *bridgeQueue) []string {
 var _ = Describe("Interactive investigation status messages — no internal-name leakage (#1916)", func() {
 
 	It("UT-AF-1916-001 [SI-11]: session-ready status omits internal acronym KA", func() {
-		tc := newStatusLeak1916Client(newTypedAIAnalysisWithSession("rr-1916-001", "sess-1916-001"))
+		// #2170/DD-AA-KA-001: HandleAwaitSession's session-ready signal now
+		// comes from AgentSession.Status.SessionID, not
+		// AIAnalysis.Status.KASession.ID (see crd_tools_session.go's
+		// HandleAwaitSession doc comment).
+		tc := newStatusLeak1916Client(newTypedAgentSessionWithSessionID("as-1916-001", "rr-1916-001", "sess-1916-001"))
 
 		mockMCP := &ka.MockMCPClient{
 			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -126,9 +131,9 @@ var _ = Describe("Interactive investigation status messages — no internal-name
 		defer func() { tools.AwaitSessionTimeout = origTimeout }()
 
 		// Deliberately no AIAnalysis-with-session object: isolates the
-		// IS-phase-active path from the session-ready path covered by
-		// UT-AF-1916-001.
-		tc := newStatusLeak1916Client(newTypedIS("isess-1916-002", "rr-1916-002", isv1alpha1.SessionPhaseActive))
+		// AgentSession-Interactive path (#2172) from the session-ready path
+		// covered by UT-AF-1916-001.
+		tc := newStatusLeak1916Client(newTypedAgentSession("as-1916-002", "rr-1916-002", true))
 
 		mockMCP := &ka.MockMCPClient{
 			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {

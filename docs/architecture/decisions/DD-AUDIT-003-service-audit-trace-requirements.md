@@ -309,7 +309,39 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `aianalysis.analysis.failed` | AI analysis failed (KA timeout, invalid response, etc.) | **P0** |
 | `aianalysis.phase.transition` | AIAnalysis phase state machine transition | P0 |
 | `aianalysis.aiagent.call` | Call to Kubernaut Agent (KA) recorded (endpoint, HTTP status, duration) | P0 |
-| `aianalysis.aiagent.submit` / `.result` / `.session_lost` | Async submit/poll/result session lifecycle with KA (BR-AA-KA-064) | P0 |
+| `aianalysis.aiagent.submit` / `.result` | `AgentSession` lifecycle with KA (BR-AA-KA-065.1/.2) | P0 |
+| `aianalysis.aiagent.session_lost` | **Retired** — see note below | — |
+
+> **Updated (2026-08-18, [DD-AA-KA-001](DD-AA-KA-001-agentsession-crd-http-removal.md) /
+> [BR-AA-KA-065](../../requirements/BR-AA-KA-065-agentsession-watch-design.md) / issue
+> [#2170](https://github.com/jordigilh/kubernaut/issues/2170))**: BR-AA-KA-064's async HTTP
+> submit/poll design (and this table's original `BR-AA-KA-064` citation) is superseded by
+> BR-AA-KA-065's `AgentSession` CRD. The event *types* and their firing call sites
+> (`pkg/aianalysis/handlers/investigating.go`) are unchanged, but their meaning shifted:
+> - `aianalysis.aiagent.submit` now fires when AA **creates** the `AgentSession` (was: HTTP POST
+>   submit), and `aianalysis.aiagent.result` now fires when AA reads a terminal result off
+>   `AgentSession.Status` (was: HTTP GET poll response). `RecordAIAgentResult` also still emits a
+>   backward-compatible `aianalysis.aiagent.call` event with a vestigial hardcoded
+>   `/api/v1/incident/analyze` endpoint string in its payload — kept only for dashboard/query
+>   continuity on that field; it no longer reflects an actual HTTP call.
+> - `aianalysis.aiagent.session_lost` (`EventTypeAIAgentSessionLost` /
+>   `RecordAIAgentSessionLost`) is **retired, not repurposed**: its sole production caller,
+>   `handleSessionLost`, was deleted along with the regeneration-cap mechanism it audited
+>   (confirmed root cause of
+>   [#2080](https://github.com/jordigilh/kubernaut/issues/2080)/[#2081](https://github.com/jordigilh/kubernaut/issues/2081)).
+>   The constant and method were deleted from `pkg/aianalysis/audit/audit.go` (2026-08-18), along
+>   with the now-pointless no-op implementations in three test doubles
+>   (`pkg/aianalysis/investigating_handler_test.go`,
+>   `internal/controller/aianalysis/schema_rejection_retry_test.go`,
+>   `test/integration/aianalysis/schemarejection/retry_test.go`) — `AuditClientInterface` never
+>   declared this method to begin with, so removing it changed no contract. The
+>   `aianalysis.aiagent.session_lost` discriminator-mapping entry was also removed from
+>   `api/openapi/data-storage-v1.yaml` and `pkg/datastorage/ogen-client` regenerated via
+>   `make generate-datastorage-client` (2026-08-18) — the shared `AIAnalysisAIAgentCallPayload`
+>   schema itself is untouched (still used by `.call`/`.submit`/`.result`); only the
+>   `session_lost` event-type route was removed, since no producer emits it anymore. See
+>   [docs/testing/2170/TEST_PLAN.md](../../testing/2170/TEST_PLAN.md) for the full BR/control
+>   coverage record.
 | `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
 | `aianalysis.rego.evaluation` | Rego policy evaluation result | P0 |
 | `aianalysis.error.occurred` | Structured error event | P0 |

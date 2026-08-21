@@ -23,22 +23,32 @@ package aianalysis_test
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
+
+// rawJSON marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
+func rawJSON(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
 
 var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() {
 	var (
@@ -72,24 +82,21 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 		}
 	}
 
-	buildNoMatchingWorkflowsResp := func() *client.IncidentResponse {
-		return &client.IncidentResponse{
-			IncidentID:       "inc-768-001",
-			Analysis:         "The namespace-quota ResourceQuota in demo-quota is 100% exhausted on memory.",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonNoMatchingWorkflows,
-				Set:   true,
-			},
-			Confidence: 0.98,
-			Timestamp:  "2026-04-21T00:00:00Z",
-			Warnings:   []string{"No workflows matched the alert criteria"},
-			RootCauseAnalysis: client.IncidentResponseRootCauseAnalysis{
-				"summary":             jx.Raw(`"The namespace-quota ResourceQuota is exhausted"`),
-				"severity":            jx.Raw(`"medium"`),
-				"contributing_factors": jx.Raw(`["ResourceQuota caps memory at 512Mi","Each pod requests 256Mi"]`),
-				"remediationTarget": jx.Raw(`{"kind":"Deployment","name":"api-server","namespace":"demo-quota"}`),
-			},
+	buildNoMatchingWorkflowsResp := func() *agentsessionv1.AgentSessionResult {
+		return &agentsessionv1.AgentSessionResult{
+			IncidentID:        "inc-768-001",
+			Analysis:          "The namespace-quota ResourceQuota in demo-quota is 100% exhausted on memory.",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "no_matching_workflows",
+			Confidence:        0.98,
+			Timestamp:         "2026-04-21T00:00:00Z",
+			Warnings:          []string{"No workflows matched the alert criteria"},
+			RootCauseAnalysis: rawJSON(map[string]interface{}{
+				"summary":              "The namespace-quota ResourceQuota is exhausted",
+				"severity":             "medium",
+				"contributing_factors": []string{"ResourceQuota caps memory at 512Mi", "Each pod requests 256Mi"},
+				"remediationTarget":    map[string]interface{}{"kind": "Deployment", "name": "api-server", "namespace": "demo-quota"},
+			}),
 		}
 	}
 
@@ -111,7 +118,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
@@ -128,7 +135,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			assertCondition(analysis.Status.Conditions, aianalysis.ConditionInvestigationComplete,
@@ -141,7 +148,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			assertCondition(analysis.Status.Conditions, aianalysis.ConditionWorkflowResolved,
@@ -156,7 +163,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := proc.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := proc.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(auditSpy.completeCount).To(Equal(1),
@@ -166,30 +173,27 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 		})
 
 		It("UT-AA-768-005: preserves Phase=Failed for other humanReviewReasons", func() {
-			otherReasons := []client.HumanReviewReason{
-				client.HumanReviewReasonParameterValidationFailed,
-				client.HumanReviewReasonImageMismatch,
-				client.HumanReviewReasonLowConfidence,
-				client.HumanReviewReasonLlmParsingError,
-				client.HumanReviewReasonInvestigationInconclusive,
-				client.HumanReviewReasonRcaIncomplete,
+			otherReasons := []string{
+				"parameter_validation_failed",
+				"image_mismatch",
+				"low_confidence",
+				"llm_parsing_error",
+				"investigation_inconclusive",
+				"rca_incomplete",
 			}
 
 			for _, reason := range otherReasons {
 				analysis := createAnalysis()
-				resp := &client.IncidentResponse{
-					IncidentID:       "inc-768-other",
-					Analysis:         "Test other reason",
-					NeedsHumanReview: client.NewOptBool(true),
-					HumanReviewReason: client.OptNilHumanReviewReason{
-						Value: reason,
-						Set:   true,
-					},
-					Confidence: 0.5,
-					Timestamp:  "2026-04-21T00:00:00Z",
+				resp := &agentsessionv1.AgentSessionResult{
+					IncidentID:        "inc-768-other",
+					Analysis:          "Test other reason",
+					NeedsHumanReview:  true,
+					HumanReviewReason: reason,
+					Confidence:        0.5,
+					Timestamp:         "2026-04-21T00:00:00Z",
 				}
 
-				_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+				_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 					"Phase must remain Failed for humanReviewReason=%s", reason)
@@ -206,7 +210,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.GetRCAResult().RootCause).To(Equal("The namespace-quota ResourceQuota is exhausted"),
@@ -217,7 +221,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).ToNot(BeNil(),
@@ -236,7 +240,7 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 			resp := buildNoMatchingWorkflowsResp()
 			resp.RootCauseAnalysis = nil
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.GetRCAResult().RootCause).To(BeEmpty())

@@ -56,14 +56,21 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 
 		BeforeEach(func() {
 			_ = createTestNamespace(ctx, "e2e-607-not-actionable")
+			// #2204 follow-up (2026-08-20 helios08 RCA): RemediationRequestRef.Name
+			// must be unique per call, not a static literal -- AgentSessionCreator.
+			// GetOrCreate derives the child AgentSession's name deterministically
+			// from this field alone (as-<name>) with no ownership check, so a
+			// static value risks a cross-spec/cross-process name collision (see
+			// test/e2e/aianalysis/03_full_flow_test.go for the confirmed repro).
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-not-actionable-607-" + randomSuffix(),
+					Name:      "e2e-not-actionable-607-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-607",
+						Name:      "e2e-remediation-607-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-607-not-actionable",

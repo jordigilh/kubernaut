@@ -35,11 +35,6 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	defaultFixture = "default"
-)
-
 // ========================================
 // METRICS INTEGRATION TESTS
 // Business Requirement: BR-AI-OBSERVABILITY-001
@@ -77,12 +72,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		Expect(reconciler.Metrics).ToNot(BeNil(), "Reconciler metrics must be initialized")
 
 		ctx = context.Background()
-		namespace = defaultFixture // Use default namespace for integration tests
+		// DD-AA-KA-001 test-only fix: must match the per-process KA
+		// dispatcher's fixed watch namespace (testNamespace, set in the
+		// suite-level BeforeEach), not the hardcoded defaultFixture --
+		// otherwise AgentSession objects created here are invisible to KA's
+		// dispatch.
+		namespace = testNamespace
 	})
 
 	// Helper to get counter value from reconciler's metrics (WorkflowExecution pattern)
 	// DD-TEST-010: Access metrics via reconciler.Metrics (process's own controller instance)
-	// Each process's controller only reconciles resources in its own envtest
+	// AA IT shared-envtest fix: each process's controller cache is scoped to
+	// its own namespace on the shared envtest, so it still only reconciles
+	// this process's own resources despite the apiserver now being shared.
 	getCounterValue := func(counter *prometheus.CounterVec, labelValues ...string) float64 {
 		return prometheusTestutil.ToFloat64(counter.WithLabelValues(labelValues...))
 	}
@@ -104,7 +106,9 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// Parallel execution causes timeout failures due to shared Prometheus registry
 		It("should emit reconciliation metrics during successful AIAnalysis flow - BR-AI-OBSERVABILITY-001", func() {
 			// DD-TEST-010: Access metrics via reconciler instance (WorkflowExecution pattern)
-			// Each process's reconciler only reconciles resources in its own envtest
+			// AA IT shared-envtest fix: each process's reconciler cache is
+			// namespace-scoped, so it still only reconciles this process's
+			// own resources on the shared envtest.
 			// 1. Create AIAnalysis CRD (triggers business logic)
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-%s", testID)
@@ -147,7 +151,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+			// #2204: bumped 60s->90s. A per-process KA container serves every
+			// spec run against it; when several specs' AgentSessions land on
+			// it in a short burst, KA legitimately runs multiple real
+			// LLM-tool-loop investigations concurrently, and any one of them
+			// can take longer than a short fixed timeout waits for.
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
 		})
 
@@ -201,7 +210,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"AIAnalysis should complete successfully with mock returning success")
 
 			// 4. Verify failure metrics were NOT incremented
@@ -263,7 +273,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.Phase == "AwaitingApproval" || updated.Status.Phase == "Completed"
-			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify approval decision metrics were emitted
 			Eventually(func() float64 {
@@ -325,7 +336,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.GetRCAResult().SelectedWorkflow != nil
-			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify confidence score histogram was populated
 			Eventually(func() int {
@@ -381,7 +393,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
 
 			// 3. Verify Rego evaluation metrics were emitted
 			Eventually(func() float64 {

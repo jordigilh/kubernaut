@@ -293,7 +293,16 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 }
 
 // detectNamespace reads the pod's namespace from the mounted ServiceAccount.
+//
+// KUBERNAUT_AGENT_NAMESPACE takes precedence when set: this lets multiple
+// per-process KA instances sharing a single envtest apiserver (AA IT
+// shared-envtest fix, DD-TEST-010 amendment) each be scoped to their own
+// process-unique namespace instead of racing over the same hardcoded
+// default. Empty/unset preserves production behavior exactly.
 func detectNamespace() string {
+	if ns := os.Getenv("KUBERNAUT_AGENT_NAMESPACE"); ns != "" {
+		return ns
+	}
 	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err == nil && len(data) > 0 {
 		return strings.TrimSpace(string(data))

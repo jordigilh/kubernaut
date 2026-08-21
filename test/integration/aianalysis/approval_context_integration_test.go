@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -78,6 +79,13 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			},
 			Spec: aianalysisv1.AIAnalysisSpec{
 				RemediationID: remediationID,
+				// DD-AA-KA-001: AgentSessionCreator names the child
+				// AgentSession "as-<RemediationRequestRef.Name>" -- an empty
+				// Name here is a permanent error at Investigating time.
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      remediationID,
+					Namespace: testNamespace,
+				},
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      fmt.Sprintf("fp-%s", uuid.New().String()[:8]),

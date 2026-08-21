@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 
@@ -152,8 +153,24 @@ func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katype
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 
-	Describe("UT-KA-1440-010: handleStart creates fresh interactive session when no session exists for RR", func() {
-		It("should create a fresh session and return valid session_id when no prior session found", func() {
+	// UT-KA-1440-010 (superseded by DD-AA-KA-001 Amendment Gap 3, BR-AA-KA-065.12,
+	// revised post-#2189 CI evidence -- see UT-KA-2170-020/021 in
+	// investigate_start_fresh_investigation_test.go):
+	// SC-24's original fix created a hardcoded placeholder session so a Lease
+	// was never left with nothing to drive. Gap 3 replaced that placeholder
+	// with a fail-closed contract, on the assumption a genuinely nonexistent
+	// RR-backed investigation was always a dead end. That assumption was
+	// wrong -- test/e2e/fullpipeline's "FP-MCP-002: AF-style fresh start"
+	// (and equivalents in apifrontend/fleet/kubernautagent) proved this is a
+	// legitimate journey, so handleStart now starts a genuinely real
+	// investigation instead (createFreshInteractiveSession) whenever signal
+	// resolution is available. This test no longer exercises "genuinely no
+	// session exists" in general -- it's narrowed to the one case that still
+	// fails closed: the signal-resolution dependency itself unavailable
+	// (forceErr alone is not enough to trigger that any more; see this
+	// test's own WithSignalContextResolver omission below).
+	Describe("UT-KA-1440-010: handleStart fails closed when the signal-resolution dependency is unavailable (not a placeholder)", func() {
+		It("should release the lease and return ErrCodeNoInvestigationAvailable", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "lease-sess-1440-010",
@@ -161,30 +178,38 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 				},
 			}
 			autoMgr := &fallbackAutoMgr{
-				findOK:      false, // no running session
-				startResult: "fresh-investigation-010",
+				findOK:   false, // no running session
+				forceErr: session.ErrSessionNotFound,
 			}
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
+			// No WithSignalContextResolver: production always wires one
+			// (cmd/kubernautagent/routes.go), so this exercises only the
+			// defensive "dependency not configured" branch of
+			// createFreshInteractiveSession, not a general "no session"
+			// scenario (which now succeeds -- see UT-KA-2170-020).
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
-			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-no-session-010",
 				Action: mcptools.ActionStart,
 			}, mcpinternal.UserInfo{Username: "sre-alice", Groups: []string{"sre-team"}})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out.SessionID).NotTo(BeEmpty())
-			Expect(out.Status).To(Equal("started"))
-			Expect(out.InvestigationSessionID).NotTo(BeEmpty(),
-				"SC-24: InvestigationSessionID must be populated — user must never get a lease without an investigation")
 
-			Expect(autoMgr.startCalled.Load()).To(Equal(int32(1)),
-				"SC-24: StartInvestigation must be called to create a fresh session when none exists")
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal(mcptools.ErrCodeNoInvestigationAvailable.Code))
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"StartInvestigation must never be called to fabricate an unbacked placeholder session, and must not be attempted when signal resolution is unavailable")
 		})
 	})
 
-	Describe("UT-KA-1440-011: handleStart creates fresh interactive session when prior session is terminal", func() {
-		It("should create a fresh session when UpgradeToInteractive returns ErrSessionTerminal and force-transition also fails", func() {
+	// UT-KA-1440-011 (updated for Gap 3): a terminal session still has a
+	// real, if stale, session to fall back to -- reusing autoSessionID
+	// directly (this path never reported exhausted=true, see the doc
+	// comment on upgradeOrCreateInteractiveSession). Without a real RCA to
+	// seed a fresh session with, no fresh session is created.
+	Describe("UT-KA-1440-011: handleStart reuses the terminal session's own ID when it has no real RCA to reattach", func() {
+		It("should fall back to autoSessionID directly, without calling StartInvestigation, when UpgradeToInteractive reports terminal and no RCA exists", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "lease-sess-1440-011",
@@ -192,10 +217,9 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 				},
 			}
 			autoMgr := &fallbackAutoMgr{
-				findResult:  "old-completed-session-011",
-				findOK:      true,
-				upgradeErr:  session.ErrSessionTerminal,
-				startResult: "fresh-investigation-011",
+				findResult: "old-completed-session-011",
+				findOK:     true,
+				upgradeErr: session.ErrSessionTerminal,
 			}
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
@@ -207,11 +231,11 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 			}, mcpinternal.UserInfo{Username: "sre-bob", Groups: []string{"sre-team"}})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("started"))
-			Expect(out.InvestigationSessionID).NotTo(BeEmpty(),
-				"SC-24: must create fresh session when prior is terminal — user needs an investigation to drive")
+			Expect(out.InvestigationSessionID).To(Equal("old-completed-session-011"),
+				"Gap 3: with no real RCA to reattach, fall back to the terminal session's own (real, if stale) ID rather than fabricating a placeholder")
 
-			Expect(autoMgr.startCalled.Load()).To(Equal(int32(1)),
-				"SC-24: StartInvestigation must be called as fallback when session is terminal")
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"Gap 3: StartInvestigation must not be called when there is nothing real to seed a fresh session with")
 		})
 	})
 
@@ -223,13 +247,23 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 					CorrelationID: "rr-context-012",
 				},
 			}
+			realRCA := &katypes.InvestigationResult{
+				RCASummary: "Pod OOMKilled due to memory leak in /api/v2/reports endpoint",
+			}
 			autoMgr := &fallbackAutoMgr{
 				findResult:  "old-completed-session-012",
 				findOK:      true,
 				upgradeErr:  session.ErrSessionTerminal,
 				startResult: "fresh-investigation-012",
-				rcaSummary:  "Pod OOMKilled due to memory leak in /api/v2/reports endpoint",
-				rcaFound:    true,
+				// #1818 / Gap 3: GetLatestRCASummaryByRemediationID and
+				// GetLatestRCAResultByRemediationID both read off the same
+				// underlying sess.Result in the real Manager, so a completed
+				// session with an RCA summary always has a matching seed
+				// result too -- both must be configured consistently here.
+				rcaSummary: realRCA.RCASummary,
+				rcaFound:   true,
+				rcaResult:  realRCA,
+				rcaOK:      true,
 			}
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
@@ -246,6 +280,7 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 				"SC-24: StartInvestigation must be called for terminal session fallback")
 			Expect(out.InvestigationSessionID).To(Equal("fresh-investigation-012"),
 				"SC-24: InvestigationSessionID must be the fresh session, not the terminal one")
+			Expect(autoMgr.capturedMode()).To(Equal("interactive_reattached"))
 
 			reconHistory := tool.GetReconstructedHistory("rr-context-012")
 			Expect(reconHistory).NotTo(BeNil(),
@@ -371,8 +406,8 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 		})
 	})
 
-	Describe("UT-KA-1818-004: handleStart falls back to a genuine placeholder when neither a user_driving session nor a real RCA exists", func() {
-		It("should tag the fresh session interactive_fallback (regression guard for the pre-#1818 behavior)", func() {
+	Describe("UT-KA-1818-004 / DD-AA-KA-001 Amendment Gap 3, BR-AA-KA-065.12: reattachOrCreateFallback returns exhausted (not a placeholder) when neither a user_driving session nor a real RCA exists", func() {
+		It("should skip StartInvestigation entirely and let handleStart's existing #2100 fail-closed path release the lease and return ErrCodeNoInvestigationAvailable", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "lease-sess-1818-004",
@@ -380,9 +415,13 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 				},
 			}
 			autoMgr := &fallbackAutoMgr{
-				findOK:      false,
-				startResult: "fresh-investigation-1818-004",
-				rcaOK:       false,
+				findOK: false, // no autonomous session at all for this RR
+				rcaOK:  false, // ...and no completed RCA anywhere either
+				// #2100-shaped fail-closed contract: ForceTransitionToUserDriving
+				// on a genuinely nonexistent session returns ErrSessionNotFound in
+				// the real Manager (manager_interactive.go) -- there is nothing,
+				// anywhere, for this rr_id to attach to.
+				forceErr: session.ErrSessionNotFound,
 			}
 			completer := &reattachHTTPCompleter{found: false}
 			runner := &mockInvestigatorRunner{}
@@ -393,15 +432,20 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 				RRID:   "rr-no-rca-004",
 				Action: mcptools.ActionStart,
 			}, mcpinternal.UserInfo{Username: "sre-dave", Groups: []string{"sre-team"}})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out.InvestigationSessionID).To(Equal("fresh-investigation-1818-004"))
 
-			Expect(autoMgr.capturedMode()).To(Equal("interactive_fallback"),
-				"#1818: with no user_driving session and no real RCA, must still create the genuine placeholder session")
-			seeded := autoMgr.capturedResult()
-			Expect(seeded).NotTo(BeNil())
-			Expect(seeded.RCASummary).To(Equal("Interactive session — awaiting user direction"))
-			Expect(seeded.InteractiveHold).To(BeTrue())
+			Expect(err).To(HaveOccurred(),
+				"Gap 3: without an RR-backed investigation to attach to, AF's two supported flows (interactive remediation, autonomous fix) both dead-end -- fail closed rather than hand back a chat session with no execution path")
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal(mcptools.ErrCodeNoInvestigationAvailable.Code))
+			Expect(out).To(Equal(mcptools.InvestigateOutput{}))
+
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"Gap 3: StartInvestigation must never be called to fabricate an unbacked placeholder session")
+
+			releasedID, releasedReason := sessionMgr.getReleased()
+			Expect(releasedID).To(Equal("lease-sess-1818-004"))
+			Expect(releasedReason).To(Equal("no_investigation_available"))
 		})
 	})
 })

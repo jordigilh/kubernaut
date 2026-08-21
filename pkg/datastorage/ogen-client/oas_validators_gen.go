@@ -3171,7 +3171,7 @@ func (s AuditEventEventData) Validate() error {
 		return nil // no validation needed
 	case AIAnalysisPhaseTransitionPayloadAuditEventEventData:
 		return nil // no validation needed
-	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 		return nil // no validation needed
 	case AIAnalysisApprovalDecisionPayloadAuditEventEventData:
 		if err := s.AIAnalysisApprovalDecisionPayload.Validate(); err != nil {
@@ -3829,7 +3829,7 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil // no validation needed
 	case AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData:
 		return nil // no validation needed
-	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 		return nil // no validation needed
 	case AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData:
 		if err := s.AIAnalysisApprovalDecisionPayload.Validate(); err != nil {

@@ -25,17 +25,15 @@ package aianalysis_test
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -77,24 +75,17 @@ func buildLowConfidenceFloorTestAnalysis() *aianalysisv1.AIAnalysis {
 	}
 }
 
-// buildIncidentResponseWithWorkflowConfidence returns a KA IncidentResponse
-// with a selected_workflow at the given confidence and needs_human_review
-// unset (false), so ProcessIncidentResponse falls through to the
+// buildIncidentResponseWithWorkflowConfidence returns an AgentSessionResult
+// with a SelectedWorkflow at the given confidence and NeedsHumanReview unset
+// (false), so ProcessAgentSessionResult falls through to the
 // low-confidence-floor check (BR-HAPI-197 AC-4).
-func buildIncidentResponseWithWorkflowConfidence(confidence float64) *agentclient.IncidentResponse {
-	return &agentclient.IncidentResponse{
-		IncidentID: "test-incident-1828",
-		Analysis:   "Investigated OOMKilled signal",
-		Confidence: confidence,
-		Timestamp:  "2026-07-29T00:00:00Z",
-		SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-			Value: agentclient.IncidentResponseSelectedWorkflow{
-				"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-				"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-				"confidence":       jx.Raw(fmt.Sprintf("%.2f", confidence)),
-			},
-			Set: true,
-		},
+func buildIncidentResponseWithWorkflowConfidence(confidence float64) *agentsessionv1.AgentSessionResult {
+	return &agentsessionv1.AgentSessionResult{
+		IncidentID:       "test-incident-1828",
+		Analysis:         "Investigated OOMKilled signal",
+		Confidence:       confidence,
+		Timestamp:        "2026-07-29T00:00:00Z",
+		SelectedWorkflow: mocks.BuildMockSelectedWorkflow("restart-pod-v1", "ghcr.io/kubernaut/restart-pod:v1.0", confidence, ""),
 	}
 }
 
@@ -114,7 +105,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		analysis := buildLowConfidenceFloorTestAnalysis()
 		resp := buildIncidentResponseWithWorkflowConfidence(0.65) // below the 0.7 default
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
@@ -128,7 +119,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		analysis := buildLowConfidenceFloorTestAnalysis()
 		resp := buildIncidentResponseWithWorkflowConfidence(0.65) // below 0.7 default, above the 0.5 custom floor
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing),
@@ -142,7 +133,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		analysis := buildLowConfidenceFloorTestAnalysis()
 		resp := buildIncidentResponseWithWorkflowConfidence(0.3) // below both the 0.5 custom floor and the 0.7 default
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
@@ -157,7 +148,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		analysis := buildLowConfidenceFloorTestAnalysis()
 		resp := buildIncidentResponseWithWorkflowConfidence(0.3)
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 
 		Expect(err).ToNot(HaveOccurred())
 		events := spy.getFailedEvents()
@@ -171,7 +162,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 	It("IT-AA-1828-001: handlers.WithLowConfidenceFloor wires the floor through NewInvestigatingHandler into the ResponseProcessor", func() {
 		floor := 0.5
 		mockClient := mocks.NewMockAgentClient()
-		mockClient.Response = buildIncidentResponseWithWorkflowConfidence(0.6) // below 0.7 default, above 0.5 custom floor
+		mockClient.WithResult(buildIncidentResponseWithWorkflowConfidence(0.6)) // below 0.7 default, above 0.5 custom floor
 		handler := handlers.NewInvestigatingHandler(mockClient, logr.Discard(), m, &noopAuditClient{},
 			handlers.WithLowConfidenceFloor(&floor))
 		analysis := buildLowConfidenceFloorTestAnalysis()

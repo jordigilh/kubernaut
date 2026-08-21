@@ -135,17 +135,35 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.SelectedAt).ToNot(BeNil(), "SelectedAt must persist as the immutability sentinel")
 		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 
+		// The real AA controller in this process keeps reconciling this same
+		// object for the rest of the test (creating its AgentSession,
+		// processing the investigation, transitioning phases) -- each of
+		// those reconciles bumps ResourceVersion via unrelated status
+		// fields. Reusing one early snapshot (e.g. `persisted`) across
+		// multiple tampering attempts below would race that controller: a
+		// stale ResourceVersion 409s as a plain Conflict, which would be
+		// mistaken for the CEL rejection this test actually intends to
+		// prove. attemptTamperedWrite re-fetches immediately before each
+		// write so the only possible rejection reason is the write-once CEL
+		// guard itself, never a stale-version race.
+		attemptTamperedWrite := func(mutate func(sw *aianalysisv1.SelectedWorkflow)) error {
+			var latest aianalysisv1.AIAnalysis
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
+			mutate(latest.Status.RCAResult.SelectedWorkflow)
+			return k8sClient.Status().Update(ctx, &latest)
+		}
+
 		By("Second status write: tampering with DeclaredParameterNames must be rejected by the API server")
-		tampered := persisted.DeepCopy()
-		tampered.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true}
-		err := k8sClient.Status().Update(ctx, tampered)
+		err := attemptTamperedWrite(func(sw *aianalysisv1.SelectedWorkflow) {
+			sw.DeclaredParameterNames = map[string]bool{"TARGET_NAMESPACE": true, "INJECTED_PARAM": true}
+		})
 		Expect(err).To(HaveOccurred(), "CEL must reject any mutation once selectedAt is populated (DD-WORKFLOW-018)")
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an Invalid admission error, got: %v", err)
 
 		By("Second status write attempt: tampering with WorkflowID must also be rejected")
-		tamperedID := persisted.DeepCopy()
-		tamperedID.Status.RCAResult.SelectedWorkflow.WorkflowID = "a-different-workflow-v2"
-		err = k8sClient.Status().Update(ctx, tamperedID)
+		err = attemptTamperedWrite(func(sw *aianalysisv1.SelectedWorkflow) {
+			sw.WorkflowID = "a-different-workflow-v2"
+		})
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an Invalid admission error, got: %v", err)
 
@@ -156,10 +174,21 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		Expect(afterTamper.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 
 		By("Third status write: resubmitting an identical value must succeed (idempotent reconcile-retry safety)")
-		idempotentRetry := afterTamper.DeepCopy()
 		// No field changes at all — simulates a reconciler retry re-applying the
-		// same desired state after a transient conflict/requeue.
-		err = k8sClient.Status().Update(ctx, idempotentRetry)
-		Expect(err).ToNot(HaveOccurred(), "an update with an unchanged SelectedWorkflow value must not be rejected by the write-once CEL guard")
+		// same desired state after a transient conflict/requeue. Re-fetch
+		// immediately before writing (rather than reusing afterTamper's
+		// ResourceVersion) because the real AA controller in this process is
+		// concurrently reconciling this same object (Investigating →
+		// Completed) -- same class of fixture race documented in
+		// decision_expired_status_test.go's Issue #2032 note. A stale
+		// ResourceVersion here would 409 on this write-once CEL guard
+		// exactly as it would on any other optimistic-concurrency write.
+		Eventually(func() error {
+			var latest aianalysisv1.AIAnalysis
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest); err != nil {
+				return err
+			}
+			return k8sClient.Status().Update(ctx, &latest)
+		}, timeout, interval).Should(Succeed(), "an update with an unchanged SelectedWorkflow value must not be rejected by the write-once CEL guard")
 	})
 })

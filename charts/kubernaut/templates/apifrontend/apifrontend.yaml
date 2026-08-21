@@ -366,6 +366,12 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
+  # AwaitAgentSessionInteractive (DD-AA-KA-001 Amendment Gap 1, #2172):
+  # read-only watch of KA's own ack signal. No "agentsessions/status" grant
+  # -- AF never writes Status, only KA does (BR-AA-KA-065.9).
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

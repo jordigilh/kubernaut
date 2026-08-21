@@ -79,35 +79,27 @@ const (
 
 // ========================================
 // SESSION CONFIGURATION (BR-AA-KA-064)
-// Async submit/poll session management
+// AgentSession-watch-driven session management (DD-AA-KA-001)
 // ========================================
+//
+// #2204 (2026-08-20): DefaultSessionPollInterval / WithSessionPollInterval
+// were removed. They were a vestige of the pre-AgentSession-CRD design,
+// where AA polled KA over HTTP on a fixed cadence because there was no other
+// signal that a session had progressed. Since DD-AA-KA-001 replaced that
+// HTTP channel with a watched AgentSession CRD, the watch is the real
+// completion signal (fires immediately on any KA status write); the
+// InvestigatingHandler's only remaining need is a backstop reconcile to
+// catch a hung KA that never writes again, and that backstop is now
+// scheduled exactly at the investigation's own deadline
+// (investigationDeadline/backstopRequeueAfter in investigating.go) rather
+// than on a periodic interval unrelated to it.
 
 const (
-	// MaxSessionRegenerations is the maximum number of session regenerations
-	// before the investigation fails with SessionRegenerationExceeded.
-	// BR-AA-KA-064.6: Cap at 5 regenerations
-	MaxSessionRegenerations int32 = 5
-
-	// MaxConsecutiveGetResultErrors is the maximum number of consecutive 409 errors
-	// from GetSessionResult before the session is regenerated. #1390: Breaks the
-	// nil-result 409 polling loop by treating repeated 409s as a non-recoverable state.
-	MaxConsecutiveGetResultErrors int32 = 3
-
-	// DefaultSessionPollInterval is the constant polling interval for session status checks.
-	// BR-AA-KA-064.8: Polling is not error recovery -- KA is healthy, just not done yet.
-	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
-	// Configurable via WithSessionPollInterval option or --session-poll-interval flag.
-	DefaultSessionPollInterval = 15 * time.Second
-
 	// DefaultMaxInvestigationDuration is the wall-clock cap for an investigation session.
 	// #1078: If a session exceeds this duration, the handler transitions to PhaseFailed
 	// with Reason=TransientError to prevent unbounded resource consumption.
 	DefaultMaxInvestigationDuration = 25 * time.Minute
 )
-
-
-
-
 
 
 

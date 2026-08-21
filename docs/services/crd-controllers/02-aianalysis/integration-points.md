@@ -57,7 +57,7 @@ graph LR
     SP -->|"EnrichmentResults<br/>(KubernetesContext, BusinessClassification)"| RO
     RO -->|"Creates AIAnalysis<br/>with copied enrichment"| AIA
     CTRL -->|"1. POST /api/v1/incident/analyze<br/>(202 Accepted + session_id)"| KA
-    CTRL -->|"2. GET .../session/{id}<br/>(poll every 15s)"| KA
+    CTRL -->|"2. Watches AgentSession<br/>(+ deadline-driven backstop, #2204)"| KA
     CTRL -->|"3. GET .../session/{id}/result"| KA
     KA -->|"IncidentResponse"| CTRL
     CTRL -->|"Update status"| AIA
@@ -208,7 +208,7 @@ sequenceDiagram
     KA-->>CTRL: 202 Accepted {session_id}
     CTRL->>CTRL: status.investigationSession = {id, generation: 0}
 
-    loop Every 15s (DefaultSessionPollInterval), requeued reconciles
+    loop Watched AgentSession status updates, plus a deadline-driven backstop requeue (#2204)
         CTRL->>KA: GET /api/v1/incident/session/{id}
         KA-->>CTRL: {status: "investigating" | "user_driving" | "completed" | "failed"}
     end
@@ -225,8 +225,7 @@ sequenceDiagram
 
 | Constant | Value | Source | Meaning |
 |---|---|---|---|
-| `DefaultSessionPollInterval` | 15s | `pkg/aianalysis/handlers/constants.go` | Fixed poll cadence — polling is not error recovery, KA is healthy and just not done yet |
-| `DefaultMaxInvestigationDuration` | **25 minutes** | `pkg/aianalysis/handlers/constants.go` | Wall-clock cap on the *entire session* (checked via `checkInvestigationTimeout`), not a per-HTTP-call timeout. Exceeding it transitions the analysis to `Failed`/`TransientError` (#1078) |
+| `DefaultMaxInvestigationDuration` | **25 minutes** | `pkg/aianalysis/handlers/constants.go` | Wall-clock cap on the *entire session* (checked via `checkInvestigationTimeout`), not a per-HTTP-call timeout. Exceeding it transitions the analysis to `Failed`/`TransientError` (#1078). #2204 (2026-08-20): the flat `DefaultSessionPollInterval` (15s) requeue was removed — the backstop requeue (`InvestigatingHandler.backstopRequeueAfter`) now schedules exactly at this same deadline (or `Spec.TimesOutAt` when RO has set it) instead of polling on an unrelated fixed interval |
 | `MaxSessionRegenerations` | 5 | same | Cap on session regenerations after a 404 (KA pod restart) before giving up with `SessionRegenerationExceeded` |
 | `MaxConsecutiveGetResultErrors` | 3 | same | Consecutive `409` responses from the result endpoint before the session is regenerated (#1390, breaks a stuck polling loop) |
 
@@ -521,7 +520,7 @@ spec:
 |---|---|
 | `pkg/clients/holmesgpt/` Go client, 18 files | `pkg/agentclient/`, ogen-generated from `internal/kubernautagent/api/openapi.json` |
 | "HolmesGPT-API", port 8080/8090 | "Kubernaut Agent (KA)", port 8443 (HTTPS) |
-| Single synchronous `POST /api/v1/incident/analyze` returning the full result, 30s timeout, 3 retries | Async: `POST` returns `202 Accepted` + `session_id`; poll `GET .../session/{id}` every 15s; fetch `GET .../session/{id}/result`. Wall-clock cap is 25 minutes (`DefaultMaxInvestigationDuration`), not a per-call timeout |
+| Single synchronous `POST /api/v1/incident/analyze` returning the full result, 30s timeout, 3 retries | Async: AA creates an `AgentSession` CRD and watches it (DD-AA-KA-001); a deadline-driven backstop requeue (#2204) catches a hung KA. Wall-clock cap is 25 minutes (`DefaultMaxInvestigationDuration`), not a per-call timeout |
 | "Toolkit-based architecture", internal `search_workflow_catalog` tool call to Data Storage | Not part of AIAnalysis's contract — that specific catalog-lookup call is internal to KA's own process, not made by AIAnalysis. (AIAnalysis *does* call Data Storage directly, but only to write audit events, DD-AUDIT-003 — see [Service Dependencies](#service-dependencies)) |
 | `target_in_owner_chain` boolean in response/Rego input | `remediationTarget`/`remediation_target` structured object (ADR-055) |
 | `detectedLabels`/`ownerChain`/`customLabels` as top-level `enrichment_results` fields sent *to* KA | `detectedLabels` is KA's **output**, not input (ADR-056); `ownerChain`/`customLabels` live on `enrichmentResults.kubernetesContext`, not top-level |

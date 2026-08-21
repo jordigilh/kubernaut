@@ -26,9 +26,22 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
+
+// k8sStatusError builds a Kubernetes API error with an arbitrary
+// HTTP-equivalent status code and message, standing in for the K8s API
+// server failures GetOrCreate can now return (DD-AA-KA-001: replaces the
+// retired agentclient.APIError{StatusCode, Message} fixture).
+func k8sStatusError(code int32, message string) error {
+	return &apierrors.StatusError{ErrStatus: metav1.Status{
+		Code:    code,
+		Message: message,
+	}}
+}
 
 // ========================================
 // ERROR CLASSIFIER UNIT TESTS
@@ -75,10 +88,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 401 as Authentication Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 401,
-				Message:    "Unauthorized",
-			}
+			apiErr := k8sStatusError(401, "Unauthorized")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -101,10 +111,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 403 as Authorization Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 403,
-				Message:    "Forbidden",
-			}
+			apiErr := k8sStatusError(403, "Forbidden")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -124,10 +131,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 404 as Configuration Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 404,
-				Message:    "Endpoint not found",
-			}
+			apiErr := k8sStatusError(404, "Endpoint not found")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -147,10 +151,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 429 as Rate Limit Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 429,
-				Message:    "Too many requests",
-			}
+			apiErr := k8sStatusError(429, "Too many requests")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -172,10 +173,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 500 as Transient Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 500,
-				Message:    "Internal server error",
-			}
+			apiErr := k8sStatusError(500, "Internal server error")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -197,10 +195,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 502 as Transient Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 502,
-				Message:    "Bad gateway",
-			}
+			apiErr := k8sStatusError(502, "Bad gateway")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -217,10 +212,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 503 as Transient Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 503,
-				Message:    "Service unavailable",
-			}
+			apiErr := k8sStatusError(503, "Service unavailable")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -237,10 +229,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 504 as Transient Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 504,
-				Message:    "Gateway timeout",
-			}
+			apiErr := k8sStatusError(504, "Gateway timeout")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -257,10 +246,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 400 as Permanent Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 400,
-				Message:    "Bad request - invalid parameter",
-			}
+			apiErr := k8sStatusError(400, "Bad request - invalid parameter")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -280,10 +266,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify 422 as Permanent Error", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 422,
-				Message:    "Validation failed",
-			}
+			apiErr := k8sStatusError(422, "Validation failed")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)
@@ -300,10 +283,7 @@ var _ = Describe("ErrorClassifier", func() {
 		// ========================================
 		It("should classify unknown HTTP status codes as Transient with alert", func() {
 			// Arrange
-			apiErr := &agentclient.APIError{
-				StatusCode: 418,
-				Message:    "I'm a teapot",
-			}
+			apiErr := k8sStatusError(418, "I'm a teapot")
 
 			// Act
 			classification := errorClassifier.ClassifyError(apiErr)

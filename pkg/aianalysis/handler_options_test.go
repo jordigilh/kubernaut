@@ -19,7 +19,6 @@ package aianalysis_test
 
 import (
 	"context"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,7 +26,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("UT-AA-668-001: AnalyzingHandler WithConfidenceThreshold", func() {
@@ -60,28 +58,8 @@ var _ = Describe("UT-AA-668-001: AnalyzingHandler WithConfidenceThreshold", func
 	})
 })
 
-var _ = Describe("UT-AA-668-003: InvestigatingHandler WithSessionPollInterval", func() {
-	It("BR-AI-011: should configure custom session poll interval", func() {
-		mockClient := mocks.NewMockAgentClient()
-		m := metrics.NewMetrics()
-		log := ctrl.Log.WithName("test")
-
-		customInterval := 5 * time.Second
-		handler := handlers.NewInvestigatingHandler(
-			mockClient, log, m, &noopAuditClient{},
-			handlers.WithSessionPollInterval(customInterval),
-		)
-
-		Expect(handler).NotTo(BeNil())
-	})
-
-	It("BR-AI-011: should use default poll interval when option not provided", func() {
-		mockClient := mocks.NewMockAgentClient()
-		m := metrics.NewMetrics()
-		log := ctrl.Log.WithName("test")
-
-		handler := handlers.NewInvestigatingHandler(mockClient, log, m, &noopAuditClient{})
-
-		Expect(handler).NotTo(BeNil())
-	})
-})
+// #2204 (2026-08-20): UT-AA-668-003 (WithSessionPollInterval) removed along
+// with the option itself -- see pkg/aianalysis/handlers/constants.go's
+// "SESSION CONFIGURATION" doc comment for the rationale (AgentSession watch
+// is the completion signal; the backstop is now deadline-derived, not a
+// configurable poll cadence).

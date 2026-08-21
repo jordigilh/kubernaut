@@ -54,8 +54,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -70,27 +70,21 @@ import (
 // Test doubles
 // ----------------------------------------------------------------------------
 
-// fakeKAClientAlwaysErrors implements handlers.AgentClientInterface. Investigate
-// returns a generic (unclassified) error, which InvestigatingHandler's
-// ErrorClassifier treats as a permanent error -- naturally driving
-// analysis.Status.Phase to Failed in memory without needing a real KA server.
-// The resulting Status().Update() attempt is what these tests' schema-
-// rejection interceptors target.
+// fakeKAClientAlwaysErrors implements handlers.AgentSessionGetOrCreator.
+// GetOrCreate always returns a generic (unclassified) error, which
+// InvestigatingHandler's ErrorClassifier treats as a permanent error --
+// naturally driving analysis.Status.Phase to Failed in memory without
+// needing a real Kubernetes API server. The resulting Status().Update()
+// attempt is what these tests' schema-rejection interceptors target.
 type fakeKAClientAlwaysErrors struct{}
 
-func (fakeKAClientAlwaysErrors) Investigate(_ context.Context, _ *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
+func (fakeKAClientAlwaysErrors) GetOrCreate(_ context.Context, _ *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error) {
 	return nil, errors.New("simulated KA outage (test double, #2030)")
 }
-func (fakeKAClientAlwaysErrors) SubmitInvestigation(_ context.Context, _ *agentclient.IncidentRequest) (string, error) {
-	return "", errors.New("not implemented in test double (#2030): session mode unused")
+
+func (fakeKAClientAlwaysErrors) DeleteForRetry(_ context.Context, _ *agentsessionv1.AgentSession) error {
+	return nil
 }
-func (fakeKAClientAlwaysErrors) PollSession(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-	return nil, errors.New("not implemented in test double (#2030): session mode unused")
-}
-func (fakeKAClientAlwaysErrors) GetSessionResult(_ context.Context, _ string) (*agentclient.IncidentResponse, error) {
-	return nil, errors.New("not implemented in test double (#2030): session mode unused")
-}
-func (fakeKAClientAlwaysErrors) CancelSession(_ context.Context, _ string) error { return nil }
 
 // noopAuditClient implements handlers.AuditClientInterface. These tests
 // assert on Status/annotation state, not audit emission.
@@ -107,8 +101,6 @@ func (noopAuditClient) RecordAnalysisComplete(_ context.Context, _ *aianalysisv1
 func (noopAuditClient) RecordAIAgentSubmit(_ context.Context, _ *aianalysisv1.AIAnalysis, _ string) {
 }
 func (noopAuditClient) RecordAIAgentResult(_ context.Context, _ *aianalysisv1.AIAnalysis, _ int64) {}
-func (noopAuditClient) RecordAIAgentSessionLost(_ context.Context, _ *aianalysisv1.AIAnalysis, _ int32) {
-}
 
 // noopAnalyzingAuditClient implements handlers.AnalyzingAuditClientInterface.
 type noopAnalyzingAuditClient struct{}
