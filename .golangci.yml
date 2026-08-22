@@ -383,15 +383,16 @@ linters:
     # Defense-in-depth on top of `generated: strict`'s "Code generated ...
     # DO NOT EDIT" header sniffing: scoped by filename pattern (not the whole
     # directory) so the hand-written wrapper files living alongside the ogen
-    # output -- pkg/agentclient/client.go (DD-KA-003 business-friendly
-    # wrapper) and pkg/datastorage/ogen-client/gen.go (go:generate directive)
-    # -- stay fully linted. Verified: with this config removed, `dupl`+
-    # `unused` alone raise ~140 findings across the two ogen output dirs'
-    # generated boilerplate (identical per-operation encode/decode/validate
-    # shapes) that no one can act on without hand-editing generated code.
+    # output -- pkg/datastorage/ogen-client/gen.go (go:generate directive) --
+    # stays fully linted. Verified: with this config removed, `dupl`+
+    # `unused` alone raise findings across the ogen output dir's generated
+    # boilerplate (identical per-operation encode/decode/validate shapes)
+    # that no one can act on without hand-editing generated code.
+    #
+    # #2190: pkg/agentclient/oas_.*\.go's exclusion was removed alongside the
+    # package itself (retired HTTP session API, superseded by AgentSession CRD).
     paths:
       - pkg/datastorage/ogen-client/oas_.*\.go
-      - pkg/agentclient/oas_.*\.go
     rules:
       # Exclude test setup/teardown and infrastructure code from Close() checks
       - path: (_test\.go|test/)

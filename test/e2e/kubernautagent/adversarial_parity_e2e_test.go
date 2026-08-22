@@ -25,6 +25,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -143,42 +146,48 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	// GAP-004/016: RFC 7807 Error Handling
 	// ===================================================================
 
-	Context("GAP-004/016: RFC 7807 errors", func() {
+	// #2190: RFC 7807's role (structured "detail" on a rejected request) is
+	// now played by the K8s API server's own Invalid-typed error on Create,
+	// which AgentSession's OpenAPI schema (minLength:1 on incidentID/
+	// remediationID/signalName, matching DD-WORKFLOW-002 v2.2's porting of
+	// the retired agentclient.IncidentRequest schema's own minLength:1) is
+	// the sole remaining enforcement point for -- Create() itself never
+	// reaches KA's dispatcher when validation fails, same fail-fast contract
+	// the retired HTTP 400/422 responses provided.
+	Context("GAP-004/016: CRD schema validation rejects incomplete AgentSessions", func() {
 
-		It("E2E-KA-433-ADV-005: Invalid request returns error with detail field", func() {
-			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
-				strings.NewReader(`{"invalid": "missing required fields"}`))
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(SatisfyAny(
-				Equal(http.StatusBadRequest),
-				Equal(http.StatusUnprocessableEntity),
-			), "malformed request should return 400 or 422")
+		It("E2E-KA-433-ADV-005: AgentSession missing all required fields is rejected as Invalid", func() {
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{Name: "as-adv-005-invalid", Namespace: sharedNamespace},
+				Spec:       agentsessionv1.AgentSessionSpec{},
+			}
+			err := k8sClient.Create(ctx, as)
+			Expect(err).To(HaveOccurred(), "AgentSession missing all required fields should be rejected")
+			Expect(apierrors.IsInvalid(err)).To(BeTrue(), "rejection should be a schema validation error (Invalid), got: %v", err)
 		})
 
-		It("E2E-KA-433-ADV-006: Missing remediation_id → HTTP 422 or 400", func() {
-			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
-				strings.NewReader(`{"incident_id": "test", "signal_name": "OOMKilled"}`))
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(SatisfyAny(
-				Equal(http.StatusBadRequest),
-				Equal(http.StatusUnprocessableEntity),
-			), "missing remediation_id should be rejected")
+		It("E2E-KA-433-ADV-006: AgentSession missing remediationID is rejected as Invalid", func() {
+			spec := buildRequest("adv-006", "OOMKilled", "high")
+			spec.RemediationID = ""
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{Name: "as-adv-006-missing-remid", Namespace: sharedNamespace},
+				Spec:       spec,
+			}
+			err := k8sClient.Create(ctx, as)
+			Expect(err).To(HaveOccurred(), "AgentSession missing remediationID should be rejected")
+			Expect(apierrors.IsInvalid(err)).To(BeTrue(), "rejection should be a schema validation error (Invalid), got: %v", err)
 		})
 
-		It("E2E-KA-433-ADV-007: Missing incident_id → HTTP 422 or 400", func() {
-			resp, err := authHTTPClient.Post(kaURL+"/api/v1/incident/analyze", "application/json",
-				strings.NewReader(`{"remediation_id": "rem-test", "signal_name": "OOMKilled"}`))
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(SatisfyAny(
-				Equal(http.StatusBadRequest),
-				Equal(http.StatusUnprocessableEntity),
-			), "missing incident_id should be rejected")
+		It("E2E-KA-433-ADV-007: AgentSession missing incidentID is rejected as Invalid", func() {
+			spec := buildRequest("adv-007", "OOMKilled", "high")
+			spec.IncidentID = ""
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{Name: "as-adv-007-missing-incid", Namespace: sharedNamespace},
+				Spec:       spec,
+			}
+			err := k8sClient.Create(ctx, as)
+			Expect(err).To(HaveOccurred(), "AgentSession missing incidentID should be rejected")
+			Expect(apierrors.IsInvalid(err)).To(BeTrue(), "rejection should be a schema validation error (Invalid), got: %v", err)
 		})
 	})
 

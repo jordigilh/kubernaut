@@ -32,16 +32,17 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Kubernaut Agent E2E Test Suite (#433)
 //
-// Validates API contract parity with the retired Python KA service.
-// Uses the same ogen-generated client (pkg/agentclient) since KA
-// implements the same OpenAPI Handler interface.
+// #2190: KA's HTTP session API (pkg/agentclient, /api/v1/incident/*) has
+// been retired in favor of the AgentSession CRD (DD-AA-KA-001). Tests drive
+// investigations by creating AgentSession objects directly via k8sClient
+// (playing AA's role) and polling Status, instead of the retired
+// ogen-generated session client.
 //
 // Infrastructure: Kind cluster + DataStorage + Mock LLM + Kubernaut Agent (Go)
 // Replaces: test/e2e/kubernaut-agent/ (Python KA E2E tests)
@@ -73,14 +74,9 @@ var (
 
 	sharedNamespace string = "kubernaut-agent-e2e"
 
-	// kaClient is the ogen-generated client (error-path tests)
-	kaClient *agentclient.Client
-
-	// sessionClient is the session-aware wrapper (submit/poll/result)
-	sessionClient *agentclient.KubernautAgentClient
-
-	// authHTTPClient carries the ServiceAccount Bearer token for raw HTTP tests
-	// (e.g., RFC 7807 validation) that bypass the ogen client.
+	// authHTTPClient carries the ServiceAccount Bearer token for raw HTTP
+	// tests against services other than KA's retired session API (e.g.
+	// DataStorage audit queries) and for KA's own metrics/health endpoints.
 	authHTTPClient *http.Client
 
 	// authHTTPClientB carries a DIFFERENT ServiceAccount token (kubernaut-agent-e2e-sa-2)
@@ -173,21 +169,6 @@ var _ = SynchronizedBeforeSuite(
 
 		saTransport := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saToken))
 
-		kaClient, err = agentclient.NewClient(
-			kaURL,
-			agentclient.WithClient(&http.Client{
-				Transport: saTransport,
-				Timeout:   60 * time.Second,
-			}),
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
-
-		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
-			agentclient.Config{BaseURL: kaURL},
-			saTransport,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
-
 		authHTTPClient = &http.Client{
 			Transport: saTransport,
 			Timeout:   30 * time.Second,
@@ -242,21 +223,6 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
 
 		saTransport := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saToken))
-
-		kaClient, err = agentclient.NewClient(
-			kaURL,
-			agentclient.WithClient(&http.Client{
-				Transport: saTransport,
-				Timeout:   60 * time.Second,
-			}),
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated client")
-
-		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
-			agentclient.Config{BaseURL: kaURL},
-			saTransport,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
 
 		authHTTPClient = &http.Client{
 			Transport: saTransport,

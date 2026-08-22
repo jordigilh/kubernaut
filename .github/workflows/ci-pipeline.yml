@@ -154,11 +154,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
 
       - name: Generate Go code (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
@@ -393,11 +392,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
 
       - name: Generate Go code (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
@@ -552,11 +550,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
 
       - name: Generate required files (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
@@ -698,11 +695,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
 
       - name: Generate required files (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
@@ -886,11 +882,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
       - name: Generate OpenAPI specs (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
@@ -1118,11 +1113,10 @@ jobs:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
             pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
             pkg/datastorage/ogen-client/oas_*.go
             pkg/datastorage/server/middleware/openapi_spec_data.yaml
             pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
       - name: Generate OpenAPI specs (cache miss)
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate

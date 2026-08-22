@@ -78,15 +78,13 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 			result := triggerInvestigation("obs-001", "OOMKilled")
 			Expect(result).NotTo(BeNil())
 
-			By("Hitting a non-existent session to trigger authz_denied metric")
-			req, err := http.NewRequestWithContext(ctx, "GET",
-				kaURL+"/api/v1/incident/session/non-existent-obs-001", nil)
-			Expect(err).NotTo(HaveOccurred())
-			resp, err := authHTTPClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			_ = resp.Body.Close()
-
-			By("Checking all 9 metric families appear")
+			// #2190: authz_denied_total was emitted by the retired HTTP
+			// handler's cross-user session-ownership check (no direct HTTP
+			// caller identity to compare against an AgentSession owner in
+			// the CRD model -- same reason E2E-KA-AUTHZ-001-style
+			// cross-user-authz tests have no CRD equivalent, see
+			// session_authz_test.go's removal). No longer asserted here.
+			By("Checking metric families are exposed")
 			allMetrics := []string{
 				metrics.MetricNameSessionsStartedTotal,
 				metrics.MetricNameSessionsCompletedTotal,
@@ -94,7 +92,6 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 				metrics.MetricNameSessionDurationSeconds,
 				metrics.MetricNameHTTPRequestDurationSeconds,
 				metrics.MetricNameHTTPRequestsInFlight,
-				metrics.MetricNameAuthzDeniedTotal,
 				metrics.MetricNameAuditEventsEmittedTotal,
 			}
 			// http_rate_limited_total only appears as HELP when no 429 has occurred.
