@@ -53,6 +53,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -732,6 +733,31 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s (target: %s)\n", ROControllerNamespace, name, targetNamespace)
 	return rr
+}
+
+// approveRAR fetches the named RemediationApprovalRequest, applies mutate to
+// its Status, and persists it with retry-on-conflict.
+//
+// #2235 RCA: ApprovalCreator.persistApprovalRequest
+// (pkg/remediationorchestrator/creator/approval.go) creates the RAR and then
+// immediately issues a second Status().Update() to persist its initial
+// ApprovalPending/Decided/Expired conditions -- a real, narrow window
+// between RAR creation and that second write during which a test's own
+// naive Get-then-Status().Update() can read a resourceVersion that is about
+// to be superseded, and lose the race with "the object has been modified".
+// Retrying (mirroring the production convention already used by
+// RARReconciler.persistAuditRecordedCondition and this suite's own
+// injectTerminalStatus) re-fetches the latest version instead of failing
+// the whole spec outright.
+func approveRAR(rarName string, mutate func(rar *remediationv1.RemediationApprovalRequest)) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		rar := &remediationv1.RemediationApprovalRequest{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar); err != nil {
+			return err
+		}
+		mutate(rar)
+		return k8sClient.Status().Update(ctx, rar)
+	})
 }
 
 // updateSPStatus updates the SignalProcessing status to simulate completion.

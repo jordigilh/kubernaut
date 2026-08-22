@@ -184,17 +184,17 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}, timeout, interval).Should(Succeed())
 
 			By("Approving with workflow override")
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = operatorKubernautAi
-			rar.Status.DecisionMessage = "Override to drain-restart"
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-				WorkflowName: rwName,
-				Rationale:    "prefer drain-restart",
-			}
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = operatorKubernautAi
+				rar.Status.DecisionMessage = "Override to drain-restart"
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
+					WorkflowName: rwName,
+					Rationale:    "prefer drain-restart",
+				}
+			})).To(Succeed())
 
 			By("Verifying WE is created with override spec")
 			weName := fmt.Sprintf("we-%s", rrName)
@@ -220,13 +220,13 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}, timeout, interval).Should(Succeed())
 
 			By("Approving without override (standard flow)")
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = operatorKubernautAi
-			rar.Status.DecisionMessage = "Approved as recommended"
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = operatorKubernautAi
+				rar.Status.DecisionMessage = "Approved as recommended"
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+			})).To(Succeed())
 
 			By("Verifying WE is created with AIA spec")
 			weName := fmt.Sprintf("we-%s", rrName)
@@ -252,17 +252,17 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}, timeout, interval).Should(Succeed())
 
 			By("Approving with params-only override")
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = operatorKubernautAi
-			rar.Status.DecisionMessage = "Override params"
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-				Parameters: map[string]string{"TIMEOUT": "60s"},
-				Rationale:  "increase timeout",
-			}
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = operatorKubernautAi
+				rar.Status.DecisionMessage = "Override params"
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
+					Parameters: map[string]string{"TIMEOUT": "60s"},
+					Rationale:  "increase timeout",
+				}
+			})).To(Succeed())
 
 			By("Verifying WE has AIA workflow but override params")
 			weName := fmt.Sprintf("we-%s", rrName)
@@ -291,16 +291,16 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			}, timeout, interval).Should(Succeed())
 
 			By("Approving with override")
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = operatorKubernautAi
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
-				WorkflowName: rwName,
-				Rationale:    "prefer drain-restart",
-			}
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = operatorKubernautAi
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+				rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{
+					WorkflowName: rwName,
+					Rationale:    "prefer drain-restart",
+				}
+			})).To(Succeed())
 
 			By("Waiting for WE creation (confirms reconciler processed the override)")
 			weName := fmt.Sprintf("we-%s", rrName)
