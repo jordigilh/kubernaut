@@ -23,6 +23,11 @@ updates:
       # fixes it. Remove this ignore rule once a fixed release is out.
       - dependency-name: "google.golang.org/adk/v2"
         versions: [">= 2.1.0"]
+      # Same google/adk-go#1356 regression, v1 module line (no "/v2" suffix
+      # -- only an indirect dep on main today, but pinned here too for
+      # symmetry with release/v1.5's direct dep on this module below).
+      - dependency-name: "google.golang.org/adk"
+        versions: [">= 1.6.0"]
     groups:
       all-go-deps:
         patterns:
@@ -105,6 +110,13 @@ updates:
       # fixes it. Remove this ignore rule once a fixed release is out.
       - dependency-name: "google.golang.org/adk/v2"
         versions: [">= 2.1.0"]
+      # release/v1.5 predates the v2 module migration and still depends
+      # directly on the v1 line, which carries the same google/adk-go#1356
+      # regression starting v1.6.0 (confirmed clean on v1.5.1 -- see
+      # google/adk-go#1354's repro). Caught when PR #2179 tried to bump
+      # straight into the regressed version.
+      - dependency-name: "google.golang.org/adk"
+        versions: [">= 1.6.0"]
     groups:
       all-go-deps:
         patterns:
