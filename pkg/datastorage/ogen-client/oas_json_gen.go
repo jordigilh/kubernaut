@@ -7728,6 +7728,263 @@ func (s *ActionTypeWebhookAuditPayloadEventType) UnmarshalJSON(data []byte) erro
 }
 
 // Encode implements json.Marshaler.
+func (s *AgentSessionWebhookAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AgentSessionWebhookAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("crd_name")
+		e.Str(s.CrdName)
+	}
+	{
+		e.FieldStart("crd_namespace")
+		e.Str(s.CrdNamespace)
+	}
+	{
+		e.FieldStart("action")
+		s.Action.Encode(e)
+	}
+	{
+		if s.RemediationRequestRef.Set {
+			e.FieldStart("remediation_request_ref")
+			s.RemediationRequestRef.Encode(e)
+		}
+	}
+	{
+		if s.DenialReason.Set {
+			e.FieldStart("denial_reason")
+			s.DenialReason.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAgentSessionWebhookAuditPayload = [6]string{
+	0: "event_type",
+	1: "crd_name",
+	2: "crd_namespace",
+	3: "action",
+	4: "remediation_request_ref",
+	5: "denial_reason",
+}
+
+// Decode decodes AgentSessionWebhookAuditPayload from json.
+func (s *AgentSessionWebhookAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AgentSessionWebhookAuditPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "crd_name":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.CrdName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"crd_name\"")
+			}
+		case "crd_namespace":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.CrdNamespace = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"crd_namespace\"")
+			}
+		case "action":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Action.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action\"")
+			}
+		case "remediation_request_ref":
+			if err := func() error {
+				s.RemediationRequestRef.Reset()
+				if err := s.RemediationRequestRef.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediation_request_ref\"")
+			}
+		case "denial_reason":
+			if err := func() error {
+				s.DenialReason.Reset()
+				if err := s.DenialReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"denial_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AgentSessionWebhookAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAgentSessionWebhookAuditPayload) {
+					name = jsonFieldsNameOfAgentSessionWebhookAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AgentSessionWebhookAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AgentSessionWebhookAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AgentSessionWebhookAuditPayloadAction as json.
+func (s AgentSessionWebhookAuditPayloadAction) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AgentSessionWebhookAuditPayloadAction from json.
+func (s *AgentSessionWebhookAuditPayloadAction) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AgentSessionWebhookAuditPayloadAction to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AgentSessionWebhookAuditPayloadAction(v) {
+	case AgentSessionWebhookAuditPayloadActionCreate:
+		*s = AgentSessionWebhookAuditPayloadActionCreate
+	case AgentSessionWebhookAuditPayloadActionDenied:
+		*s = AgentSessionWebhookAuditPayloadActionDenied
+	default:
+		*s = AgentSessionWebhookAuditPayloadAction(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AgentSessionWebhookAuditPayloadAction) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AgentSessionWebhookAuditPayloadAction) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AgentSessionWebhookAuditPayloadEventType as json.
+func (s AgentSessionWebhookAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AgentSessionWebhookAuditPayloadEventType from json.
+func (s *AgentSessionWebhookAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AgentSessionWebhookAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AgentSessionWebhookAuditPayloadEventType(v) {
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate:
+		*s = AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate:
+		*s = AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate
+	default:
+		*s = AgentSessionWebhookAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AgentSessionWebhookAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AgentSessionWebhookAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ApifrontendA2ATaskCompletedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -15157,6 +15414,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryApifrontend
 	case AuditEventEventCategorySecurity:
 		*s = AuditEventEventCategorySecurity
+	case AuditEventEventCategoryAgentsession:
+		*s = AuditEventEventCategoryAgentsession
 	default:
 		*s = AuditEventEventCategory(v)
 	}
@@ -17914,6 +18173,42 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData, AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData:
+		switch s.Type {
+		case AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("agentsession.admitted.create")
+		case AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("agentsession.denied.create")
+		}
+		{
+			s := s.AgentSessionWebhookAuditPayload
+			{
+				e.FieldStart("crd_name")
+				e.Str(s.CrdName)
+			}
+			{
+				e.FieldStart("crd_namespace")
+				e.Str(s.CrdNamespace)
+			}
+			{
+				e.FieldStart("action")
+				s.Action.Encode(e)
+			}
+			{
+				if s.RemediationRequestRef.Set {
+					e.FieldStart("remediation_request_ref")
+					s.RemediationRequestRef.Encode(e)
+				}
+			}
+			{
+				if s.DenialReason.Set {
+					e.FieldStart("denial_reason")
+					s.DenialReason.Encode(e)
+				}
+			}
+		}
 	case ApifrontendTriageStartedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("apifrontend.triage.started")
@@ -19096,6 +19391,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "actiontype.denied.update":
 					s.Type = AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData
 					found = true
+				case "agentsession.admitted.create":
+					s.Type = AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData
+					found = true
+				case "agentsession.denied.create":
+					s.Type = AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData
+					found = true
 				case "apifrontend.triage.started":
 					s.Type = ApifrontendTriageStartedPayloadAuditEventEventData
 					found = true
@@ -19446,6 +19747,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData:
 		if err := s.ActionTypeWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData, AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData:
+		if err := s.AgentSessionWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendTriageStartedPayloadAuditEventEventData:
@@ -20153,6 +20458,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryApifrontend
 	case AuditEventRequestEventCategorySecurity:
 		*s = AuditEventRequestEventCategorySecurity
+	case AuditEventRequestEventCategoryAgentsession:
+		*s = AuditEventRequestEventCategoryAgentsession
 	default:
 		*s = AuditEventRequestEventCategory(v)
 	}
@@ -22910,6 +23217,42 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData:
+		switch s.Type {
+		case AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("agentsession.admitted.create")
+		case AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("agentsession.denied.create")
+		}
+		{
+			s := s.AgentSessionWebhookAuditPayload
+			{
+				e.FieldStart("crd_name")
+				e.Str(s.CrdName)
+			}
+			{
+				e.FieldStart("crd_namespace")
+				e.Str(s.CrdNamespace)
+			}
+			{
+				e.FieldStart("action")
+				s.Action.Encode(e)
+			}
+			{
+				if s.RemediationRequestRef.Set {
+					e.FieldStart("remediation_request_ref")
+					s.RemediationRequestRef.Encode(e)
+				}
+			}
+			{
+				if s.DenialReason.Set {
+					e.FieldStart("denial_reason")
+					s.DenialReason.Encode(e)
+				}
+			}
+		}
 	case ApifrontendTriageStartedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("apifrontend.triage.started")
@@ -24092,6 +24435,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "actiontype.denied.update":
 					s.Type = AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData
 					found = true
+				case "agentsession.admitted.create":
+					s.Type = AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData
+					found = true
+				case "agentsession.denied.create":
+					s.Type = AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData
+					found = true
 				case "apifrontend.triage.started":
 					s.Type = ApifrontendTriageStartedPayloadAuditEventRequestEventData
 					found = true
@@ -24442,6 +24791,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData:
 		if err := s.ActionTypeWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData:
+		if err := s.AgentSessionWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendTriageStartedPayloadAuditEventRequestEventData:

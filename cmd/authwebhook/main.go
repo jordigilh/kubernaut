@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -47,6 +48,7 @@ func init() {
 	utilruntime.Must(notificationv1.AddToScheme(scheme))
 	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme))
 	utilruntime.Must(actiontypev1.AddToScheme(scheme))
+	utilruntime.Must(agentsessionv1alpha1.AddToScheme(scheme))
 }
 
 // loadAuthWebhookConfig loads the YAML config (or defaults, ADR-030),
@@ -272,11 +274,12 @@ func registerAuthWebhookCRUDHandlers(mgr ctrl.Manager, auditStore audit.AuditSto
 	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
 }
 
-// registerAuthWebhookWorkflowHandlers wires the RemediationWorkflow and
-// ActionType admission handlers (ADR-058, ADR-059), the RemediationWorkflow
-// finalizer reconciler (Issue #418), and the startup reconciler that syncs
-// existing CRDs with DataStorage on boot (Issue #548, #1246). Exits the
-// process on any failure, matching main()'s original fail-fast behavior.
+// registerAuthWebhookWorkflowHandlers wires the RemediationWorkflow,
+// ActionType (ADR-058, ADR-059), and AgentSession (Issue #2244) admission
+// handlers, the RemediationWorkflow finalizer reconciler (Issue #418), and
+// the startup reconciler that syncs existing CRDs with DataStorage on boot
+// (Issue #548, #1246). Exits the process on any failure, matching main()'s
+// original fail-fast behavior.
 func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditStore audit.AuditStore) {
 	webhookServer := mgr.GetWebhookServer()
 
@@ -316,6 +319,12 @@ func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config,
 	atHandler := authwebhook.NewActionTypeHandler(auditStore, mgr.GetClient())
 	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
 	setupLog.Info("Registered ActionType webhook handler with audit store")
+
+	// Issue #2244, BR-AA-KA-065.13: AgentSession CREATE existence gate
+	// (RemediationRequestRef must resolve to a real RemediationRequest).
+	asHandler := authwebhook.NewAgentSessionHandler(auditStore, mgr.GetClient())
+	webhookServer.Register("/validate-agentsession", &webhook.Admission{Handler: asHandler})
+	setupLog.Info("Registered AgentSession webhook handler with audit store")
 
 	// Issue #548: Startup reconciler syncs existing CRDs with DataStorage on boot.
 	// Issue #1246: Graceful degradation — individual RW failures don't crash the pod.

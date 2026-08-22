@@ -3980,6 +3980,163 @@ func (s *ActionTypeWebhookAuditPayloadEventType) UnmarshalText(data []byte) erro
 	}
 }
 
+// AW audit payload for AgentSession CRD admission events (RemediationRequest existence gate, Issue
+// #2244, BR-AA-KA-065.13).
+// Ref: #/components/schemas/AgentSessionWebhookAuditPayload
+type AgentSessionWebhookAuditPayload struct {
+	EventType AgentSessionWebhookAuditPayloadEventType `json:"event_type"`
+	// K8s metadata.name.
+	CrdName string `json:"crd_name"`
+	// K8s namespace.
+	CrdNamespace string                                `json:"crd_namespace"`
+	Action       AgentSessionWebhookAuditPayloadAction `json:"action"`
+	// Spec.RemediationRequestRef.Name being validated for existence.
+	RemediationRequestRef OptString `json:"remediation_request_ref"`
+	DenialReason          OptString `json:"denial_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AgentSessionWebhookAuditPayload) GetEventType() AgentSessionWebhookAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetCrdName returns the value of CrdName.
+func (s *AgentSessionWebhookAuditPayload) GetCrdName() string {
+	return s.CrdName
+}
+
+// GetCrdNamespace returns the value of CrdNamespace.
+func (s *AgentSessionWebhookAuditPayload) GetCrdNamespace() string {
+	return s.CrdNamespace
+}
+
+// GetAction returns the value of Action.
+func (s *AgentSessionWebhookAuditPayload) GetAction() AgentSessionWebhookAuditPayloadAction {
+	return s.Action
+}
+
+// GetRemediationRequestRef returns the value of RemediationRequestRef.
+func (s *AgentSessionWebhookAuditPayload) GetRemediationRequestRef() OptString {
+	return s.RemediationRequestRef
+}
+
+// GetDenialReason returns the value of DenialReason.
+func (s *AgentSessionWebhookAuditPayload) GetDenialReason() OptString {
+	return s.DenialReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AgentSessionWebhookAuditPayload) SetEventType(val AgentSessionWebhookAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetCrdName sets the value of CrdName.
+func (s *AgentSessionWebhookAuditPayload) SetCrdName(val string) {
+	s.CrdName = val
+}
+
+// SetCrdNamespace sets the value of CrdNamespace.
+func (s *AgentSessionWebhookAuditPayload) SetCrdNamespace(val string) {
+	s.CrdNamespace = val
+}
+
+// SetAction sets the value of Action.
+func (s *AgentSessionWebhookAuditPayload) SetAction(val AgentSessionWebhookAuditPayloadAction) {
+	s.Action = val
+}
+
+// SetRemediationRequestRef sets the value of RemediationRequestRef.
+func (s *AgentSessionWebhookAuditPayload) SetRemediationRequestRef(val OptString) {
+	s.RemediationRequestRef = val
+}
+
+// SetDenialReason sets the value of DenialReason.
+func (s *AgentSessionWebhookAuditPayload) SetDenialReason(val OptString) {
+	s.DenialReason = val
+}
+
+type AgentSessionWebhookAuditPayloadAction string
+
+const (
+	AgentSessionWebhookAuditPayloadActionCreate AgentSessionWebhookAuditPayloadAction = "create"
+	AgentSessionWebhookAuditPayloadActionDenied AgentSessionWebhookAuditPayloadAction = "denied"
+)
+
+// AllValues returns all AgentSessionWebhookAuditPayloadAction values.
+func (AgentSessionWebhookAuditPayloadAction) AllValues() []AgentSessionWebhookAuditPayloadAction {
+	return []AgentSessionWebhookAuditPayloadAction{
+		AgentSessionWebhookAuditPayloadActionCreate,
+		AgentSessionWebhookAuditPayloadActionDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AgentSessionWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
+	switch s {
+	case AgentSessionWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case AgentSessionWebhookAuditPayloadActionDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AgentSessionWebhookAuditPayloadAction) UnmarshalText(data []byte) error {
+	switch AgentSessionWebhookAuditPayloadAction(data) {
+	case AgentSessionWebhookAuditPayloadActionCreate:
+		*s = AgentSessionWebhookAuditPayloadActionCreate
+		return nil
+	case AgentSessionWebhookAuditPayloadActionDenied:
+		*s = AgentSessionWebhookAuditPayloadActionDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AgentSessionWebhookAuditPayloadEventType string
+
+const (
+	AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate AgentSessionWebhookAuditPayloadEventType = "agentsession.admitted.create"
+	AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate   AgentSessionWebhookAuditPayloadEventType = "agentsession.denied.create"
+)
+
+// AllValues returns all AgentSessionWebhookAuditPayloadEventType values.
+func (AgentSessionWebhookAuditPayloadEventType) AllValues() []AgentSessionWebhookAuditPayloadEventType {
+	return []AgentSessionWebhookAuditPayloadEventType{
+		AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate,
+		AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AgentSessionWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate:
+		return []byte(s), nil
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AgentSessionWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch AgentSessionWebhookAuditPayloadEventType(data) {
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate:
+		*s = AgentSessionWebhookAuditPayloadEventTypeAgentsessionAdmittedCreate
+		return nil
+	case AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate:
+		*s = AgentSessionWebhookAuditPayloadEventTypeAgentsessionDeniedCreate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // A2A task completed event payload (apifrontend.a2a.task_completed) — A2A task execution succeeded
 // (SOC2 CC7.2, Issue.
 // Ref: #/components/schemas/ApifrontendA2ATaskCompletedPayload
@@ -7732,7 +7889,8 @@ type AuditEvent struct {
 	// - apifrontend: API Frontend service — triage, session, delegation, and user decision events
 	// (Issue #1021)
 	// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
-	// tied to a single business domain (GAP-09, Issue #1505).
+	// tied to a single business domain (GAP-09, Issue #1505)
+	// - agentsession: AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244).
 	EventCategory AuditEventEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -8107,7 +8265,8 @@ func (s *AuditEvent) SetLegalHoldPlacedAt(val OptNilDateTime) {
 // - apifrontend: API Frontend service — triage, session, delegation, and user decision events
 // (Issue #1021)
 // - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
-// tied to a single business domain (GAP-09, Issue #1505).
+// tied to a single business domain (GAP-09, Issue #1505)
+// - agentsession: AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244).
 type AuditEventEventCategory string
 
 const (
@@ -8124,6 +8283,7 @@ const (
 	AuditEventEventCategoryActiontype        AuditEventEventCategory = "actiontype"
 	AuditEventEventCategoryApifrontend       AuditEventEventCategory = "apifrontend"
 	AuditEventEventCategorySecurity          AuditEventEventCategory = "security"
+	AuditEventEventCategoryAgentsession      AuditEventEventCategory = "agentsession"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -8142,6 +8302,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryActiontype,
 		AuditEventEventCategoryApifrontend,
 		AuditEventEventCategorySecurity,
+		AuditEventEventCategoryAgentsession,
 	}
 }
 
@@ -8173,6 +8334,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryApifrontend:
 		return []byte(s), nil
 	case AuditEventEventCategorySecurity:
+		return []byte(s), nil
+	case AuditEventEventCategoryAgentsession:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -8220,6 +8383,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategorySecurity:
 		*s = AuditEventEventCategorySecurity
+		return nil
+	case AuditEventEventCategoryAgentsession:
+		*s = AuditEventEventCategoryAgentsession
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -8292,6 +8458,7 @@ type AuditEventEventData struct {
 	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
 	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
 	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
+	AgentSessionWebhookAuditPayload              AgentSessionWebhookAuditPayload
 	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
 	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
 	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
@@ -8439,6 +8606,8 @@ const (
 	AuditEventEventDataActiontypeDeniedCreateAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.create"
 	AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.delete"
 	AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.update"
+	AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData                 AuditEventEventDataType = "agentsession.admitted.create"
+	AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData                   AuditEventEventDataType = "agentsession.denied.create"
 	ApifrontendTriageStartedPayloadAuditEventEventData                               AuditEventEventDataType = "apifrontend.triage.started"
 	ApifrontendTriageCompletedPayloadAuditEventEventData                             AuditEventEventDataType = "apifrontend.triage.completed"
 	ApifrontendRRCreatedPayloadAuditEventEventData                                   AuditEventEventDataType = "apifrontend.rr.created"
@@ -8819,6 +8988,16 @@ func (s AuditEventEventData) IsActionTypeCatalogDisableDeniedPayload() bool {
 func (s AuditEventEventData) IsActionTypeWebhookAuditPayload() bool {
 	switch s.Type {
 	case AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsAgentSessionWebhookAuditPayload reports whether AuditEventEventData is AgentSessionWebhookAuditPayload.
+func (s AuditEventEventData) IsAgentSessionWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData, AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData:
 		return true
 	default:
 		return false
@@ -10607,6 +10786,38 @@ func NewAuditEventEventDataActiontypeDeniedUpdateAuditEventEventData(v ActionTyp
 	return s
 }
 
+// SetAgentSessionWebhookAuditPayload sets AuditEventEventData to AgentSessionWebhookAuditPayload.
+// panics if `t` is not associated with AgentSessionWebhookAuditPayload
+func (s *AuditEventEventData) SetAgentSessionWebhookAuditPayload(t AuditEventEventDataType, v AgentSessionWebhookAuditPayload) {
+	s.Type = t
+	s.AgentSessionWebhookAuditPayload = v
+	if !s.IsAgentSessionWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not AgentSessionWebhookAuditPayload", t))
+	}
+}
+
+// GetAgentSessionWebhookAuditPayload returns AgentSessionWebhookAuditPayload and true boolean if AuditEventEventData is AgentSessionWebhookAuditPayload.
+func (s AuditEventEventData) GetAgentSessionWebhookAuditPayload() (v AgentSessionWebhookAuditPayload, ok bool) {
+	if !s.IsAgentSessionWebhookAuditPayload() {
+		return v, false
+	}
+	return s.AgentSessionWebhookAuditPayload, true
+}
+
+// NewAuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData returns new AuditEventEventData from AgentSessionWebhookAuditPayload.
+func NewAuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData(v AgentSessionWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAgentSessionWebhookAuditPayload(AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAgentsessionDeniedCreateAuditEventEventData returns new AuditEventEventData from AgentSessionWebhookAuditPayload.
+func NewAuditEventEventDataAgentsessionDeniedCreateAuditEventEventData(v AgentSessionWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAgentSessionWebhookAuditPayload(AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData, v)
+	return s
+}
+
 // SetApifrontendTriageStartedPayload sets AuditEventEventData to ApifrontendTriageStartedPayload.
 func (s *AuditEventEventData) SetApifrontendTriageStartedPayload(v ApifrontendTriageStartedPayload) {
 	s.Type = ApifrontendTriageStartedPayloadAuditEventEventData
@@ -11396,7 +11607,8 @@ type AuditEventRequest struct {
 	// - apifrontend: API Frontend service — triage, session, delegation, and user decision events
 	// (Issue #1021)
 	// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
-	// tied to a single business domain (GAP-09, Issue #1505).
+	// tied to a single business domain (GAP-09, Issue #1505)
+	// - agentsession: AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -11681,7 +11893,8 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - apifrontend: API Frontend service — triage, session, delegation, and user decision events
 // (Issue #1021)
 // - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
-// tied to a single business domain (GAP-09, Issue #1505).
+// tied to a single business domain (GAP-09, Issue #1505)
+// - agentsession: AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244).
 type AuditEventRequestEventCategory string
 
 const (
@@ -11698,6 +11911,7 @@ const (
 	AuditEventRequestEventCategoryActiontype        AuditEventRequestEventCategory = "actiontype"
 	AuditEventRequestEventCategoryApifrontend       AuditEventRequestEventCategory = "apifrontend"
 	AuditEventRequestEventCategorySecurity          AuditEventRequestEventCategory = "security"
+	AuditEventRequestEventCategoryAgentsession      AuditEventRequestEventCategory = "agentsession"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -11716,6 +11930,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryActiontype,
 		AuditEventRequestEventCategoryApifrontend,
 		AuditEventRequestEventCategorySecurity,
+		AuditEventRequestEventCategoryAgentsession,
 	}
 }
 
@@ -11747,6 +11962,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryApifrontend:
 		return []byte(s), nil
 	case AuditEventRequestEventCategorySecurity:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryAgentsession:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -11794,6 +12011,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategorySecurity:
 		*s = AuditEventRequestEventCategorySecurity
+		return nil
+	case AuditEventRequestEventCategoryAgentsession:
+		*s = AuditEventRequestEventCategoryAgentsession
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -11866,6 +12086,7 @@ type AuditEventRequestEventData struct {
 	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
 	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
 	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
+	AgentSessionWebhookAuditPayload              AgentSessionWebhookAuditPayload
 	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
 	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
 	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
@@ -12013,6 +12234,8 @@ const (
 	AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.create"
 	AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.delete"
 	AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.update"
+	AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData                 AuditEventRequestEventDataType = "agentsession.admitted.create"
+	AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData                   AuditEventRequestEventDataType = "agentsession.denied.create"
 	ApifrontendTriageStartedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "apifrontend.triage.started"
 	ApifrontendTriageCompletedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "apifrontend.triage.completed"
 	ApifrontendRRCreatedPayloadAuditEventRequestEventData                                          AuditEventRequestEventDataType = "apifrontend.rr.created"
@@ -12393,6 +12616,16 @@ func (s AuditEventRequestEventData) IsActionTypeCatalogDisableDeniedPayload() bo
 func (s AuditEventRequestEventData) IsActionTypeWebhookAuditPayload() bool {
 	switch s.Type {
 	case AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsAgentSessionWebhookAuditPayload reports whether AuditEventRequestEventData is AgentSessionWebhookAuditPayload.
+func (s AuditEventRequestEventData) IsAgentSessionWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -14178,6 +14411,38 @@ func NewAuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventDa
 func NewAuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData, v)
+	return s
+}
+
+// SetAgentSessionWebhookAuditPayload sets AuditEventRequestEventData to AgentSessionWebhookAuditPayload.
+// panics if `t` is not associated with AgentSessionWebhookAuditPayload
+func (s *AuditEventRequestEventData) SetAgentSessionWebhookAuditPayload(t AuditEventRequestEventDataType, v AgentSessionWebhookAuditPayload) {
+	s.Type = t
+	s.AgentSessionWebhookAuditPayload = v
+	if !s.IsAgentSessionWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not AgentSessionWebhookAuditPayload", t))
+	}
+}
+
+// GetAgentSessionWebhookAuditPayload returns AgentSessionWebhookAuditPayload and true boolean if AuditEventRequestEventData is AgentSessionWebhookAuditPayload.
+func (s AuditEventRequestEventData) GetAgentSessionWebhookAuditPayload() (v AgentSessionWebhookAuditPayload, ok bool) {
+	if !s.IsAgentSessionWebhookAuditPayload() {
+		return v, false
+	}
+	return s.AgentSessionWebhookAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from AgentSessionWebhookAuditPayload.
+func NewAuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData(v AgentSessionWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAgentSessionWebhookAuditPayload(AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from AgentSessionWebhookAuditPayload.
+func NewAuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData(v AgentSessionWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAgentSessionWebhookAuditPayload(AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData, v)
 	return s
 }
 

@@ -1744,7 +1744,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend, security]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend, security, agentsession]
           description: |
             Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
@@ -1763,6 +1763,7 @@ components:
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
             - apifrontend: API Frontend service — triage, session, delegation, and user decision events (Issue #1021)
             - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not tied to a single business domain (GAP-09, Issue #1505)
+            - agentsession: AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244)
           example: gateway
         event_action:
           type: string
@@ -1903,6 +1904,7 @@ components:
             - $ref: '#/components/schemas/ActionTypeCatalogReenabledPayload'
             - $ref: '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
             - $ref: '#/components/schemas/ActionTypeWebhookAuditPayload'
+            - $ref: '#/components/schemas/AgentSessionWebhookAuditPayload'
             - $ref: '#/components/schemas/ApifrontendTriageStartedPayload'
             - $ref: '#/components/schemas/ApifrontendTriageCompletedPayload'
             - $ref: '#/components/schemas/ApifrontendRRCreatedPayload'
@@ -2052,6 +2054,8 @@ components:
               'actiontype.denied.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'agentsession.admitted.create': '#/components/schemas/AgentSessionWebhookAuditPayload'
+              'agentsession.denied.create': '#/components/schemas/AgentSessionWebhookAuditPayload'
               'apifrontend.triage.started': '#/components/schemas/ApifrontendTriageStartedPayload'
               'apifrontend.triage.completed': '#/components/schemas/ApifrontendTriageCompletedPayload'
               'apifrontend.rr.created': '#/components/schemas/ApifrontendRRCreatedPayload'
@@ -6169,6 +6173,35 @@ components:
         denial_reason:
           type: string
         denial_operation:
+          type: string
+
+    AgentSessionWebhookAuditPayload:
+      type: object
+      description: "AW audit payload for AgentSession CRD admission events (RemediationRequest existence gate, Issue #2244, BR-AA-KA-065.13)"
+      required:
+        - event_type
+        - crd_name
+        - crd_namespace
+        - action
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'agentsession.admitted.create'
+            - 'agentsession.denied.create'
+        crd_name:
+          type: string
+          description: "K8s metadata.name"
+        crd_namespace:
+          type: string
+          description: "K8s namespace"
+        action:
+          type: string
+          enum: ['create', 'denied']
+        remediation_request_ref:
+          type: string
+          description: "Spec.RemediationRequestRef.Name being validated for existence"
+        denial_reason:
           type: string
 
     # ── Apifrontend Audit Payloads (Issue #1021) ──────────────────────────
