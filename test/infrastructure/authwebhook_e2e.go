@@ -637,6 +637,27 @@ webhooks:
     scope: "Namespaced"
   sideEffects: NoneOnDryRun
   timeoutSeconds: 15
+- name: agentsession.validate.kubernaut.ai
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: authwebhook
+      namespace: %[1]s
+      path: /validate-agentsession
+    caBundle: ""
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: %[1]s
+  rules:
+  - apiGroups: ["kubernaut.ai"]
+    apiVersions: ["v1alpha1"]
+    operations: ["CREATE"]
+    resources: ["agentsessions"]
+    scope: "Namespaced"
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 15
 `, namespace, imageTag, pullPolicy, dataStorageURL, dataStorageHealthURL)
 }
 
@@ -755,9 +776,9 @@ func patchWebhookConfigurations(ctx context.Context, kubeconfigPath string, writ
 		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", webhookName)
 	}
 
-	// Patch ValidatingWebhookConfiguration (3 webhooks: notificationrequest + remediationworkflow + actiontype)
+	// Patch ValidatingWebhookConfiguration (4 webhooks: notificationrequest + remediationworkflow + actiontype + agentsession, #2244)
 	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration webhooks...")
-	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai", "actiontype.validate.kubernaut.ai"}
+	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai", "actiontype.validate.kubernaut.ai", "agentsession.validate.kubernaut.ai"}
 	for i, vwName := range validatingWebhookNames {
 		patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
 			"--kubeconfig", kubeconfigPath,

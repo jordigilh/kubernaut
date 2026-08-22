@@ -118,8 +118,13 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
+  # #2243 (BR-RBAC-020, FedRAMP AC-6): remediationrequests was previously
+  # granted here alongside signalprocessings, but SP never performs CRUD
+  # against the RemediationRequest CRD -- it only reads
+  # Spec.RemediationRequestRef.Name (a plain string field) for audit
+  # correlation. Removed as an unused, least-privilege-violating grant.
   - apiGroups: ["kubernaut.ai"]
-    resources: ["signalprocessings", "remediationrequests"]
+    resources: ["signalprocessings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["signalprocessings/status", "signalprocessings/finalizers"]

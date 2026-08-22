@@ -134,3 +134,23 @@ webhooks:
         scope: "Namespaced"
     sideEffects: NoneOnDryRun
     timeoutSeconds: 15
+  - name: agentsession.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-agentsession
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["agentsessions"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15

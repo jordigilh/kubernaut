@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -252,6 +253,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 	err = remediationworkflowv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = agentsessionv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating controller-runtime Manager (follows production pattern)")
 	// Pattern: cmd/authwebhook/main.go (same Manager setup as production)
@@ -341,6 +344,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred())
 	webhookServer.Register("/mutate-remediationrequest", &webhook.Admission{Handler: rrHandler})
 	GinkgoWriter.Println("   ✅ Registered RemediationRequest webhook handler")
+
+	// Register AgentSession CREATE existence-gate validator (Issue #2244, BR-AA-KA-065.13)
+	asHandler := authwebhook.NewAgentSessionHandler(auditStore, k8sManager.GetClient())
+	webhookServer.Register("/validate-agentsession", &webhook.Admission{Handler: asHandler})
+	GinkgoWriter.Println("   ✅ Registered AgentSession webhook handler")
 
 	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
 	nrValidator := authwebhook.NewNotificationRequestValidator(auditStore)

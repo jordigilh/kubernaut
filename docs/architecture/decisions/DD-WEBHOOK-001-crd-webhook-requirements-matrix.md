@@ -7,6 +7,7 @@
 **Scope**: All Kubernetes CRDs in Kubernaut requiring user authentication
 
 **Version History**:
+- **v1.5** (August 22, 2026): Issue #2244 — Added `AgentSession` (CREATE-only) as 5th webhook handler. `AgentSessionHandler` gates CREATE on `Spec.RemediationRequestRef` resolving to a real `RemediationRequest` in the same namespace, denying otherwise (SI-10 input validation at the trust boundary, before KA's dispatcher observes the object). Existence-gate pattern mirrors `#1661`/`DD-WORKFLOW-018` and the existing `validateActionTypeExists` precedent in `remediationworkflow_handler.go`. `AgentSessionSpec` is CEL-immutable (`self == oldSelf`), so no UPDATE gate is needed. Zero new RBAC (reuses AW's existing `get/list/watch` grant on `remediationrequests`). `failurePolicy: Fail`, matching RW/ActionType's entries. New BR: `BR-AA-KA-065.13`.
 - **v1.4** (April 21, 2026): Issue #773 — RemediationWorkflow operations updated from CREATE/DELETE to CREATE/UPDATE/DELETE. UPDATE now triggers DS re-registration with content integrity enforcement (409 on same version + different content). Distinct `remediationworkflow.admitted.update` audit event type added (SOC2 CC8.1).
 - **v1.3** (March 4, 2026): Added RemediationWorkflow (CREATE/DELETE) as 4th webhook handler. Workflow registration now uses CRD + ValidatingWebhook (ADR-058), replacing REST-only approach. Corrects v1.1 note about workflow CRUD using HTTP middleware.
 - **v1.2** (January 6, 2026): **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers. Updated implementation approach and timelines. Added references to comprehensive implementation and test plans.
@@ -57,6 +58,10 @@
 │  │    → CREATE: registers in DS, updates .status async      │ │
 │  │    → DELETE: disables in DS (best-effort)                │ │
 │  │                                                           │ │
+│  │  Route: /validate-agentsession                            │ │
+│  │    → AgentSessionHandler (#2244)                          │ │
+│  │    → CREATE: denies if RemediationRequestRef unresolvable│ │
+│  │                                                           │ │
 │  │  Shared: ExtractAuthenticatedUser(req.UserInfo)          │ │
 │  └──────────────────────────────────────────────────────────┘ │
 │                                                                 │
@@ -95,6 +100,7 @@ pkg/authwebhook/notificationrequest_handler.go        # NR-specific logic
 pkg/authwebhook/remediationworkflow_handler.go        # RW-specific logic (ADR-058)
 pkg/authwebhook/remediationworkflow_audit.go          # RW audit helpers
 pkg/authwebhook/ds_client.go                          # DS client adapter for RW handler
+pkg/authwebhook/agentsession_handler.go               # AS-specific logic (#2244)
 ```
 
 **Comprehensive Plans**:
@@ -182,7 +188,7 @@ env:
 
 ## 📊 **CRD Webhook Requirements Matrix**
 
-### **CRDs Requiring Webhooks** ✅ (4 Total)
+### **CRDs Requiring Webhooks** ✅ (5 Total)
 
 | CRD | Use Case | Status Fields Requiring Auth | SOC2 Control | Implementation Owner | Priority | Target Version |
 |-----|----------|------------------------------|--------------|----------------------|----------|----------------|
@@ -190,8 +196,11 @@ env:
 | **RemediationApprovalRequest** | Approval Decisions | `status.approvalRequest` | CC8.1 (Attribution) | RO Team | P0 | v1.0 |
 | **NotificationRequest** | Cancellation Attribution | `metadata.deletionTimestamp` (DELETE) | CC8.1 (Attribution) | Notification Team | P0 | v1.1 |
 | **RemediationWorkflow** | CRD-Based Registration/Disable/Re-Registration | `status.workflowId`, `status.catalogStatus` (CREATE/UPDATE/DELETE) | CC8.1 (Attribution) | Webhook Team | P0 | v1.0 |
+| **AgentSession** | RemediationRequest Existence Gate (CREATE-only) | N/A (no status write; pure Allow/Deny) | N/A — SI-10 (input validation) | Webhook Team | P1 | v1.5 |
 
 **Note**: RemediationWorkflow registration uses a ValidatingWebhookConfiguration that bridges CRD lifecycle to the DS workflow catalog (ADR-058, BR-WORKFLOW-006). The DS REST API for workflow registration is internal-only.
+
+**Note (v1.5)**: `AgentSession`'s webhook is not driven by the standard Criterion 1-4 decision tree (no manual intervention, no SOC2 attribution need — `AgentSession.Status` is exclusively KA-owned per DD-AA-KA-001). It exists instead as a **cross-resource existence gate**: `Spec.RemediationRequestRef` is set by the client at CREATE and is CEL-immutable thereafter, but nothing at the CRD-schema level can verify the referenced `RemediationRequest` actually exists (CEL/`x-kubernetes-validations` cannot look up a different object). The webhook is the only enforcement point capable of denying a dangling reference before AA's dispatcher ever observes it (SI-10). See Use Case 5 below.
 
 ### **CRDs NOT Requiring Webhooks** ❌
 
@@ -427,6 +436,39 @@ kubectl delete notificationrequest <nr-name> -n <namespace>
 
 ---
 
+### **Use Case 5: AgentSession → RemediationRequest Existence Gate** (v1.5)
+
+**Business Requirement**: `BR-AA-KA-065.13` (Issue [#2244](https://github.com/jordigilh/kubernaut/issues/2244))
+
+**Scenario**: `AgentSession` is created with `Spec.RemediationRequestRef` pointing at the `RemediationRequest` that triggered the investigation. Nothing at the CRD-schema level (CEL/`x-kubernetes-validations`) can verify a *different* object exists — only the object's own fields are evaluated. Without an admission-time check, a dangling reference (typo, stale fixture, race between RR deletion and AS creation) would reach KA's dispatcher undetected.
+
+**Why Webhook Required**:
+1. ✅ **Input Validation at the Trust Boundary (SI-10)**: the reference must be verified before KA ever observes the object, not downstream in application code.
+2. ❌ Does **not** meet Criteria 1-3 (no manual intervention, no SOC2 attribution, no approval workflow) — this is a pure existence-gate, not an attribution webhook. Included in this matrix because it is still an admission-time authenticated denial with an audit trail, following the same architectural pattern (and shared `pkg/authwebhook` plumbing) as the other four handlers.
+4. ✅ **Precedent**: identical existence-gate shape to `#1661`'s `validateActionTypeExists` (RemediationWorkflow → ActionType) and documented generally in [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md).
+
+**Operations Intercepted**:
+- **CREATE only**: denies if `client.Get` on `Spec.RemediationRequestRef.{Name,Namespace}` returns `NotFound` or a lookup error.
+- **No UPDATE/DELETE gate**: `AgentSessionSpec` carries `+kubebuilder:validation:XValidation:rule="self == oldSelf"` (CEL-immutable) — the reference cannot change post-create, so there is nothing for an UPDATE gate to re-validate.
+
+**Status Fields**: none. `AgentSession.Status` is exclusively KA-owned (`DD-AA-KA-001`); the handler never writes `.status` and requires no async goroutine, unlike RW/ActionType's `.status`-writing handlers.
+
+**Audit Events** (synchronous, before the admission response returns):
+- `agentsession.admitted.create`: CREATE admitted (RR resolved)
+- `agentsession.denied.create`: CREATE denied (RR not found or lookup error)
+
+**RBAC**: zero new grants — reuses AW's existing `get/list/watch` on `remediationrequests` ([charts/kubernaut/templates/authwebhook/authwebhook.yaml](../../../charts/kubernaut/templates/authwebhook/authwebhook.yaml)).
+
+**Webhook Type**: **ValidatingWebhookConfiguration** (CREATE only), namespace-scoped (`.Release.Namespace`), `failurePolicy: Fail` (matches RW/ActionType's entries — see Changelog v1.5 rationale).
+
+**Implementation Owner**: Webhook Team
+
+**Timeline**: Implemented (v1.5, Issue #2244)
+
+**Reference**: [DD-WORKFLOW-018-etcd-single-source-of-truth.md](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (existence-gate pattern precedent)
+
+---
+
 ## 🚫 **Anti-Patterns - When NOT to Use Webhooks**
 
 ### **❌ Anti-Pattern 1: Controller-Only Status Updates**
@@ -594,6 +636,7 @@ Is this an approval workflow or override action?
 | **RemediationApprovalRequest** | ✅ YES | Webhook Team | Phase 3 (Day 3) | 1 day | Phase 1 complete |
 | **NotificationRequest** (v1.1) | ✅ YES | Webhook Team | Phase 4 (Day 4) | 1 day | Phase 1 complete |
 | **RemediationWorkflow** (v1.3) | ✅ YES | Webhook Team | Implemented (Issue #299) | Implemented | ADR-058, BR-WORKFLOW-006 |
+| **AgentSession** (v1.5) | ✅ YES | Webhook Team | Implemented (Issue #2244) | Implemented | #1661, DD-WORKFLOW-018, BR-AA-KA-065.13 |
 | **SignalProcessing** | ❌ NO | N/A | N/A | N/A | N/A (K8s enrichment automated) |
 | **AIAnalysis** | ❌ NO | N/A | N/A | N/A | N/A (AI investigation automated) |
 | **RemediationRequest** | ❌ NO | N/A | N/A | N/A | N/A (routing automated) |
@@ -786,6 +829,8 @@ This DD is successfully implemented when:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **1.5** | **2026-08-22** | Issue #2244 — Added `AgentSession` as 5th webhook handler (ValidatingWebhookConfiguration, CREATE-only). `AgentSessionHandler` gates admission on `Spec.RemediationRequestRef` resolving to a real `RemediationRequest` in the same namespace (SI-10). Not an attribution webhook (no `.status` write; `AgentSession.Status` is exclusively KA-owned per DD-AA-KA-001) — included in this matrix as a cross-resource existence gate following the `#1661`/`DD-WORKFLOW-018` pattern. No UPDATE/DELETE gate needed: `AgentSessionSpec` is CEL-immutable (`self == oldSelf`). Zero new RBAC (reuses AW's existing `remediationrequests` read grant). `failurePolicy: Fail`, matching RW/ActionType. New BR: `BR-AA-KA-065.13`. Added Use Case 5, updated matrix (4→5), team responsibility matrix, and architecture diagram/file structure. |
+| **1.4** | **2026-04-21** | Issue #773 — RemediationWorkflow operations updated from CREATE/DELETE to CREATE/UPDATE/DELETE. UPDATE now triggers DS re-registration with content integrity enforcement (409 on same version + different content). Distinct `remediationworkflow.admitted.update` audit event type added (SOC2 CC8.1). |
 | **1.3** | **2026-03-04** | Added RemediationWorkflow as 4th webhook handler (ValidatingWebhookConfiguration for CREATE/DELETE). Workflow registration now uses CRD + AW bridge to DS (ADR-058, BR-WORKFLOW-006). Corrects v1.1 note: workflow operations now use CRD webhook, not HTTP middleware. Updated architecture diagram, file structure, matrix (3→4), team responsibility matrix, and timeline. |
 | 1.2 | 2026-01-06 | **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers instead of 3 separate webhooks. Added consolidated architecture section with benefits (66% memory reduction, 3× faster deployments, guaranteed consistency). Updated team responsibility matrix for unified Webhook Team ownership. Updated implementation timeline to 5-6 days consolidated approach. Added comprehensive [implementation plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md) and [test plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md) references. Updated all DD-AUTH-002 references to DD-AUTH-003 (sidecar pattern supersedes middleware). |
 | 1.1 | 2026-01-06 | Added NotificationRequest (DELETE attribution). Workflow CRUD uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook. |
@@ -796,7 +841,7 @@ This DD is successfully implemented when:
 ---
 
 **Document Status**: ✅ **AUTHORITATIVE**
-**Version**: 1.3
+**Version**: 1.5
 **Authority**: Decision criteria for all CRD webhook implementations
-**Next Review**: 2026-06-04 (3 months)
+**Next Review**: 2026-11-22 (3 months)
 
