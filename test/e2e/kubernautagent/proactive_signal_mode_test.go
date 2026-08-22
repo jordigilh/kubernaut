@@ -17,15 +17,17 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// BR-AA-KA-064: All success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
-// endpoints are now async-only (202 Accepted).
+// #2190: migrated from the retired agentclient.IncidentRequest HTTP flow to
+// infrastructure.InvestigateViaAgentSession's CRD-based flow.
 
 // Proactive Signal Mode E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md (Category G)
@@ -58,32 +60,31 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ========================================
 			// ARRANGE: Create request with signal_mode=proactive
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-proactive-055",
-				RemediationID:     "test-rem-proactive-055",
-				SignalName:        "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "api-server-abc123",
-				ErrorMessage:      "Predicted memory exhaustion based on trend analysis",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-proactive-055", Namespace: sharedNamespace},
+				IncidentID:            "test-proactive-055",
+				RemediationID:         "test-rem-proactive-055",
+				SignalName:            "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "api-server-abc123",
+				ErrorMessage:          "Predicted memory exhaustion based on trend analysis",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// BR-AI-084: Set signal_mode to proactive
-			req.SignalMode = agentclient.NewOptNilSignalMode(
-				agentclient.SignalModeProactive,
-			)
+			spec.SignalMode = "proactive"
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -96,10 +97,8 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				"Mock LLM 'oomkilled_predictive' scenario returns confidence = 0.88 ± 0.05")
 
 			// CORRECTNESS: Workflow should be selected (oomkill-increase-memory-v1)
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be set for proactive OOMKill scenario")
-			Expect(incidentResp.SelectedWorkflow.Null).To(BeFalse(),
-				"selected_workflow must not be null for proactive OOMKill scenario")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be set for proactive OOMKill scenario")
 
 			// CORRECTNESS: Analysis should reference prediction/prevention language
 			// The Mock LLM oomkilled_predictive root_cause contains:
@@ -138,32 +137,31 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ========================================
 			// ARRANGE: Create request with explicit reactive signal mode
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-reactive-056",
-				RemediationID:     "test-rem-reactive-056",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "worker-pod-def456",
-				ErrorMessage:      "Container killed due to OOM",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-reactive-056", Namespace: sharedNamespace},
+				IncidentID:            "test-reactive-056",
+				RemediationID:         "test-rem-reactive-056",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "worker-pod-def456",
+				ErrorMessage:          "Container killed due to OOM",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// Set explicit reactive mode
-			req.SignalMode = agentclient.NewOptNilSignalMode(
-				agentclient.SignalModeReactive,
-			)
+			spec.SignalMode = "reactive"
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -176,8 +174,8 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				"Reactive analysis should have positive confidence")
 
 			// CORRECTNESS: Workflow should be selected (standard oomkilled scenario)
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be set for reactive OOMKilled scenario")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be set for reactive OOMKilled scenario")
 
 			// BUSINESS IMPACT: Existing reactive flow unchanged by ADR-054
 		})
@@ -195,29 +193,30 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ========================================
 			// ARRANGE: Request without setting signal_mode
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-default-057",
-				RemediationID:     "test-rem-default-057",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "app-pod-ghi789",
-				ErrorMessage:      "Container exceeded memory limit",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-default-057", Namespace: sharedNamespace},
+				IncidentID:            "test-default-057",
+				RemediationID:         "test-rem-default-057",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "app-pod-ghi789",
+				ErrorMessage:          "Container exceeded memory limit",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// signal_mode intentionally NOT set — defaults to reactive
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
@@ -230,8 +229,8 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				"Default analysis should have positive confidence")
 
 			// CORRECTNESS: Workflow should be selected (standard oomkilled scenario)
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be set for default (reactive) OOMKilled scenario")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be set for default (reactive) OOMKilled scenario")
 
 			// BUSINESS IMPACT: Pre-ADR-054 clients continue working without modification
 		})

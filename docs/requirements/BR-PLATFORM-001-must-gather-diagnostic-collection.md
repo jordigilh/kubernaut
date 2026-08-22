@@ -55,13 +55,21 @@ This capability follows established Kubernetes ecosystem best practices:
 #### BR-PLATFORM-001.2: CRD Resource Collection
 **MUST** collect all Kubernaut Custom Resource Definitions and instances:
 
-**CRDs to Collect**:
+**CRDs to Collect** (Issue #2187: kept in sync with `charts/kubernaut/crds/`
+via `cmd/must-gather/test/test_crds.bats::UT-MG-2187-001`, which fails if this
+list -- or, more precisely, the ClusterRole allowlist it documents -- drifts
+from what the chart actually ships):
 - `remediationrequests.kubernaut.ai`
 - `signalprocessings.kubernaut.ai`
 - `aianalyses.kubernaut.ai`
 - `workflowexecutions.kubernaut.ai`
 - `remediationapprovalrequests.kubernaut.ai`
 - `notificationrequests.kubernaut.ai`
+- `agentsessions.kubernaut.ai`
+- `investigationsessions.kubernaut.ai`
+- `actiontypes.kubernaut.ai`
+- `effectivenessassessments.kubernaut.ai`
+- `remediationworkflows.kubernaut.ai`
 
 **Collection Scope**:
 - **All Namespaces**: Collect CRD instances across all namespaces
@@ -445,7 +453,7 @@ email: user@[REDACTED]
   "cluster_name": "prod-us-east-1",
   "collection_duration_seconds": 127,
   "namespaces_collected": ["kubernaut-system", "kubernaut-workflows"],
-  "crds_collected": 6,
+  "crds_collected": 11,
   "pods_collected": 23,
   "logs_collected": 45,
   "events_collected": 1247,
@@ -586,7 +594,7 @@ find . -type f -exec sha256sum {} \; > SHA256SUMS
 
 ### 4.1 Functional Validation
 - ✅ Must-gather image builds and runs on OpenShift and vanilla Kubernetes
-- ✅ Collects all 8 Kubernaut CRD types successfully
+- ✅ Collects all 11 Kubernaut CRD types successfully
 - ✅ Captures logs from all Kubernaut service pods
 - ✅ Produces valid, compressed tarball output
 - ✅ Sanitizes all sensitive data patterns

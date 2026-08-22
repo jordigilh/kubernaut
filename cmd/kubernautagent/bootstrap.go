@@ -24,7 +24,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -356,8 +355,7 @@ type investigationRunnerParams struct {
 
 // investigationStack groups the constructed investigation-stack components
 // that main() needs after buildInvestigationRunner: the investigator itself
-// (needed by buildMCPHandler), the metrics/audit/session infrastructure, and
-// the ogen server mounted on the router.
+// (needed by buildMCPHandler) and the metrics/audit/session infrastructure.
 type investigationStack struct {
 	agentMetrics      *kametrics.Metrics
 	instrumentedAudit audit.AuditStore
@@ -368,10 +366,9 @@ type investigationStack struct {
 	// used for the retired HTTP path) -- the AgentSession dispatcher
 	// (DD-AA-KA-001) reuses this exact value so alignment coverage is
 	// identical regardless of dispatch channel.
-	runner  kaserver.InvestigationRunner
-	store   *session.Store
-	mgr     *session.Manager
-	ogenSrv *agentclient.Server
+	runner kaserver.InvestigationRunner
+	store  *session.Store
+	mgr    *session.Manager
 }
 
 // buildPinDecorator constructs the #1470 PinDecorator used by the
@@ -498,14 +495,6 @@ func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
 	)
 	mgr := session.NewManager(store, p.logger, instrumentedAudit, agentMetrics)
 
-	handler := kaserver.NewHandler(mgr, investigationRunner, p.logger, agentMetrics)
-
-	ogenSrv, err := agentclient.NewServer(handler)
-	if err != nil {
-		p.logger.Error(err, "failed to create ogen server")
-		os.Exit(1)
-	}
-
 	return &investigationStack{
 		agentMetrics:      agentMetrics,
 		instrumentedAudit: instrumentedAudit,
@@ -514,7 +503,6 @@ func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
 		runner:            investigationRunner,
 		store:             store,
 		mgr:               mgr,
-		ogenSrv:           ogenSrv,
 	}
 }
 

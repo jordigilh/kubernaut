@@ -25,8 +25,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -74,28 +74,29 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			// ========================================
 			remediationID := "test-audit-045-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-045",
-				RemediationID:     remediationID,
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-045",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-045",
+				RemediationID:         remediationID,
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-045",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT: Call KA incident analysis via session client (BR-AA-KA-064)
+			// ACT: Call KA incident analysis (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Query DataStorage for audit events with retry (async buffering)
@@ -159,28 +160,29 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			// ========================================
 			remediationID := "test-audit-046-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-046",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-046",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-046",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-046",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
@@ -241,28 +243,29 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			// ========================================
 			remediationID := "test-audit-047-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-047",
-				RemediationID:     remediationID,
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-047",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-047",
+				RemediationID:         remediationID,
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-047",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT: Call KA (triggers validation) (BR-AA-KA-064: async session flow)
+			// ACT: Call KA (triggers validation) (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
@@ -323,28 +326,29 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			// ========================================
 			remediationID := "test-audit-048-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-048",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-048",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-048",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-048",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Validate complete trail
@@ -417,24 +421,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		It("E2E-KA-1111-001: RCA complete and tool call events persisted", func() {
 			remediationID := "test-audit-1111-001-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-1111-001",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-1111-001",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-1111-001",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-1111-001",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
 
 			// Wait for at least LLM request/response (proves basic audit pipeline)
@@ -488,24 +494,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			incidentID := "test-audit-1111-002"
 			remediationID := "test-audit-1111-002-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        incidentID,
-				RemediationID:     remediationID,
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-1111-002",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            incidentID,
+				RemediationID:         remediationID,
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-1111-002",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
 
 			// Wait for basic audit pipeline (LLM response by remediationID)
@@ -560,24 +568,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		It("E2E-KA-1111-003: Workflow discovery events persisted after Phase 1 fix", func() {
 			remediationID := "test-audit-1111-003-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-1111-003",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-1111-003",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-1111-003",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-1111-003",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
 
 			// Wait for basic audit pipeline (LLM response proves investigation ran)
@@ -632,24 +642,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		It("E2E-KA-433-AP-001: Full investigation audit trail with populated payloads", func() {
 			remediationID := "test-audit-ap-001-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-ap-001",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Deployment",
-				ResourceName:      "test-deploy-ap-001",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-ap-001",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Deployment",
+				ResourceName:          "test-deploy-ap-001",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			var events []ogenclient.AuditEvent
@@ -701,24 +713,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		It("E2E-KA-433-AP-002: response.complete contains IncidentResponseData", func() {
 			remediationID := "test-audit-ap-002-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-ap-002",
-				RemediationID:     remediationID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Deployment",
-				ResourceName:      "test-deploy-ap-002",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-ap-002",
+				RemediationID:         remediationID,
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Deployment",
+				ResourceName:          "test-deploy-ap-002",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred())
 
 			var events []ogenclient.AuditEvent
@@ -751,24 +765,26 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		It("E2E-KA-433-AP-003: All audit events carry actor attribution", func() {
 			remediationID := "test-audit-ap-003-" + time.Now().Format("20060102150405")
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-audit-ap-003",
-				RemediationID:     remediationID,
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-ap-003",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-ap-003",
+				RemediationID:         remediationID,
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-ap-003",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			_, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred())
 
 			var events []ogenclient.AuditEvent

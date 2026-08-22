@@ -18,6 +18,7 @@ package kubernautagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -29,14 +30,16 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // ADR-056 SoC: E2E tests for DetectedLabels in KA responses.
@@ -53,11 +56,11 @@ import (
 
 var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", "detected-labels"), func() {
 	var (
-		testCtx      context.Context
-		testCancel   context.CancelFunc
-		clientset    *kubernetes.Clientset
-		testNS       string
-		deployName   string
+		testCtx    context.Context
+		testCancel context.CancelFunc
+		clientset  *kubernetes.Clientset
+		testNS     string
+		deployName string
 	)
 
 	BeforeEach(func() {
@@ -101,8 +104,8 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -133,32 +136,34 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 	Context("Incident Analysis with DetectedLabels", func() {
 		It("E2E-KA-056-001: should include detected_labels in incident analysis response", func() {
 			By("Sending incident analysis request targeting test namespace resources")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "e2e-dl-001",
-				RemediationID:     "req-e2e-dl-001",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: testNS,
-				ResourceKind:      "Deployment",
-				ResourceName:      deployName,
-				ErrorMessage:      "Container restarted 5 times",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-dl-001", Namespace: sharedNamespace},
+				IncidentID:            "e2e-dl-001",
+				RemediationID:         "req-e2e-dl-001",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     testNS,
+				ResourceKind:          "Deployment",
+				ResourceName:          deployName,
+				ErrorMessage:          "Container restarted 5 times",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
-			resp, err := sessionClient.Investigate(testCtx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			resp, err := infrastructure.InvestigateViaAgentSession(testCtx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).NotTo(HaveOccurred(), "KA incident analysis should succeed")
 			Expect(resp).NotTo(BeNil())
 
-			By("Verifying detected_labels is present in response")
+			By("Verifying detectedLabels is present in response")
 			// ADR-056: KA computes DetectedLabels on-demand during list_available_actions
 			// and includes them in the response via inject_detected_labels.
-			Expect(resp.DetectedLabels.Set).To(BeTrue(),
-				"detected_labels should be present in KA response (ADR-056)")
+			Expect(resp.DetectedLabels).NotTo(BeNil(),
+				"detectedLabels should be present in KA response (ADR-056)")
 		})
 	})
 
@@ -210,33 +215,36 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 			Expect(err).NotTo(HaveOccurred(), "Failed to create HPA")
 
 			By("Sending incident analysis request targeting test namespace")
-			resp, err := sessionClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "e2e-dl-003",
-				RemediationID:     "req-e2e-dl-003",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: testNS,
-				ResourceKind:      "Deployment",
-				ResourceName:      deployName,
-				ErrorMessage:      "Container restarted",
-				Environment:       "production",
-				Priority:          "P0",
-				RiskTolerance:     "low",
-				BusinessCategory:  "critical",
-				ClusterName:       "e2e-test",
-			})
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			resp, err := infrastructure.InvestigateViaAgentSession(testCtx, k8sClient, sharedNamespace, agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-dl-003", Namespace: sharedNamespace},
+				IncidentID:            "e2e-dl-003",
+				RemediationID:         "req-e2e-dl-003",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     testNS,
+				ResourceKind:          "Deployment",
+				ResourceName:          deployName,
+				ErrorMessage:          "Container restarted",
+				Environment:           "production",
+				Priority:              "P0",
+				RiskTolerance:         "low",
+				BusinessCategory:      "critical",
+				ClusterName:           "e2e-test",
+			}, 2*time.Minute)
 
 			Expect(err).NotTo(HaveOccurred(), "KA should succeed with K8s resources present")
 			Expect(resp).NotTo(BeNil())
 
-			By("Verifying detected_labels reflect PDB and HPA presence")
-			Expect(resp.DetectedLabels.Set).To(BeTrue(),
-				"detected_labels should be present when K8s resources exist")
+			By("Verifying detectedLabels reflect PDB and HPA presence")
+			Expect(resp.DetectedLabels).NotTo(BeNil(),
+				"detectedLabels should be present when K8s resources exist")
 
 			// If KA successfully detected labels, verify PDB and HPA detection
-			if !resp.DetectedLabels.Null && len(resp.DetectedLabels.Value) > 0 {
-				GinkgoWriter.Printf("detected_labels keys: %v\n", getMapKeys(resp.DetectedLabels.Value))
+			dl := decodeDetectedLabels(resp.DetectedLabels)
+			if len(dl) > 0 {
+				GinkgoWriter.Printf("detected_labels keys: %v\n", getMapKeys(dl))
 			}
 		})
 	})
@@ -249,4 +257,20 @@ func getMapKeys[K comparable, V any](m map[K]V) []K {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// decodeDetectedLabels unmarshals AgentSessionResult.DetectedLabels (a
+// free-form *apiextensionsv1.JSON per KA's schema) into the
+// map[string]json.RawMessage shape the old agentclient.IncidentResponse's
+// DetectedLabels exposed, so per-field assertions (#2190 migration) don't
+// need to change shape. Returns nil if labels is nil/empty/unparseable.
+func decodeDetectedLabels(labels *apiextensionsv1.JSON) map[string]json.RawMessage {
+	if labels == nil || len(labels.Raw) == 0 {
+		return nil
+	}
+	var dl map[string]json.RawMessage
+	if err := json.Unmarshal(labels.Raw, &dl); err != nil {
+		return nil
+	}
+	return dl
 }

@@ -17,10 +17,13 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E tests for #1507: Alertmanager + Node Proxy tools
@@ -51,24 +54,26 @@ var _ = Describe("E2E-KA-1507: Alertmanager & Node Proxy Tools", Label("e2e", "k
 			//   - Calls get_alerts (queries real AlertManager in Kind)
 			//   - Calls nodes_stats_summary (queries real kubelet via nodes/proxy)
 
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "e2e-ka-1507-tools",
-				RemediationID:     "req-e2e-ka-1507",
-				SignalName:        "MOCK_ALERTMANAGER_NODE_TOOLS",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "api-server-abc",
-				ErrorMessage:      "Node resource exhaustion detected",
-				Environment:       "production",
-				Priority:          "high",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "web-application",
-				ClusterName:       "kubernaut-agent-e2e",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-ka-1507", Namespace: sharedNamespace},
+				IncidentID:            "e2e-ka-1507-tools",
+				RemediationID:         "req-e2e-ka-1507",
+				SignalName:            "MOCK_ALERTMANAGER_NODE_TOOLS",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "api-server-abc",
+				ErrorMessage:          "Node resource exhaustion detected",
+				Environment:           "production",
+				Priority:              "high",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "web-application",
+				ClusterName:           "kubernaut-agent-e2e",
 			}
 
-			result, err := sessionClient.Investigate(ctx, req)
+			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).NotTo(HaveOccurred(), "MOCK_ALERTMANAGER_NODE_TOOLS investigation should succeed")
 			Expect(result).NotTo(BeNil())
 			Expect(result.IncidentID).To(Equal("e2e-ka-1507-tools"))

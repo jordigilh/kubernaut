@@ -52,7 +52,6 @@ RACE_FLAG ?= --race
 
 # Coverage Configuration: Exclude Generated Code
 # - DataStorage: Excludes pkg/datastorage/ogen-client (OpenAPI-generated) and mocks
-# - AgentClient: pkg/agentclient contains oas_*_gen.go (ogen-generated client)
 #
 # Why DataStorage unit coverage is ~27%: Unit tests (462 specs) cover builders, validation, config,
 # aggregation handlers (with mocks). The remaining ~349 functions at 0% are HTTP handlers, DLQ worker,
@@ -181,8 +180,6 @@ generate: controller-gen ogen generate-helm-config-docs generate-helm-defaults #
 	@go generate ./pkg/audit/...
 	@echo "📋 Generating DataStorage ogen client..."
 	@go generate ./pkg/datastorage/ogen-client/...
-	@echo "📋 Generating AgentClient (ogen)..."
-	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/agentclient/...
 	@echo "✅ Generation complete"
 
 .PHONY: gen-diff
@@ -199,12 +196,6 @@ generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from sp
 	@echo "📋 Generating DataStorage Go client from api/openapi/data-storage-v1.yaml..."
 	@go generate ./pkg/datastorage/ogen-client/...
 	@echo "✅ Go client generated: pkg/datastorage/ogen-client/oas_*_gen.go"
-
-.PHONY: generate-agentclient
-generate-agentclient: ogen ## Generate AgentClient from OpenAPI spec
-	@echo "📋 Generating AgentClient from OpenAPI spec..."
-	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/agentclient/...
-	@echo "✅ AgentClient generated successfully"
 
 .PHONY: generate-crd-docs
 generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
@@ -805,7 +796,7 @@ validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI -
 	@echo "✅ Data Storage OpenAPI spec is valid"
 
 .PHONY: test-e2e-kubernautagent
-test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-agentclient ## Run Kubernaut Agent E2E tests (Kind cluster, ~10 min)
+test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E tests (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity)"
 	@echo "════════════════════════════════════════════════════════════════════════"
