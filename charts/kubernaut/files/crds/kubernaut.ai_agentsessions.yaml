@@ -110,6 +110,7 @@ spec:
               incidentID:
                 description: IncidentID is the unique incident identifier (AIAnalysis
                   CR name).
+                minLength: 1
                 type: string
               isDuplicate:
                 description: IsDuplicate reports whether this is a duplicate signal.
@@ -131,7 +132,11 @@ spec:
               remediationID:
                 description: |-
                   RemediationID is for audit correlation ONLY -- never used for RCA or
-                  workflow matching.
+                  workflow matching. MANDATORY per DD-WORKFLOW-002 v2.2 -- the retired
+                  agentclient.IncidentRequest HTTP schema enforced the same minLength:1
+                  server-side (issue #2190); this preserves that guarantee now that
+                  AgentSession's own OpenAPI schema is the sole enforcement point.
+                minLength: 1
                 type: string
               remediationRequestRef:
                 description: |-
@@ -208,6 +213,7 @@ spec:
                 type: string
               signalName:
                 description: SignalName is the canonical signal name (e.g. OOMKilled).
+                minLength: 1
                 type: string
               signalSource:
                 description: SignalSource is the monitoring system that produced the

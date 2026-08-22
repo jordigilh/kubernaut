@@ -17,18 +17,31 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
-	"github.com/jordigilh/kubernaut/pkg/ogenx"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// BR-AA-KA-064: Success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
-// endpoints are now async-only (202 Accepted).
-// Error-path tests (E2E-KA-007, 008) retain the ogen client for strict
-// type-safe validation of 4xx error responses.
+// Issue #2190: migrated from the retired pkg/agentclient HTTP submit/poll/
+// result channel to direct AgentSession CRD Create/watch (DD-AA-KA-001).
+// investigateViaAgentSession Creates the AgentSession directly (playing AA's
+// role -- no AA controller runs in this KA-focused suite) and polls
+// Status.Phase to a terminal state, replacing sessionClient.Investigate().
+// AgentSessionSpec is documented as a 1:1, lossless translation of the
+// retired agentclient.IncidentRequest body (see
+// api/agentsession/v1alpha1/agentsession_types.go), so field-for-field this
+// migration is a rename, not a redesign -- except E2E-KA-007/008 (invalid
+// request rejection), which move from ogen HTTP validation to the CRD's own
+// OpenAPI schema validation (apierrors.IsInvalid), a different mechanism
+// proving the same business intent (SI-10: bad investigation-identity input
+// rejected clearly, before ever reaching KA's investigation logic).
 
 // Incident Analysis E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
@@ -53,47 +66,47 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE: Create request with MOCK_NO_WORKFLOW_FOUND
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-edge-001",
-				RemediationID:     "test-rem-001",
-				SignalName:        "MOCK_NO_WORKFLOW_FOUND",
-				Severity:          "high",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "No automation available",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-001", Namespace: sharedNamespace},
+				IncidentID:            "test-edge-001",
+				RemediationID:         "test-rem-001",
+				SignalName:            "MOCK_NO_WORKFLOW_FOUND",
+				Severity:              "high",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "No automation available",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT: Call KA incident analysis via session client (BR-AA-KA-064)
+			// ACT: Investigate via AgentSession CRD (BR-AA-KA-064, #2190)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
 			// ========================================
 			// BEHAVIOR: Human review required
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
-				"needs_human_review must be true when no workflow found")
-			Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonNoMatchingWorkflows),
-				"human_review_reason must indicate no matching workflows")
-			Expect(incidentResp.SelectedWorkflow.Value).To(BeNil(),
-				"selected_workflow.value must be nil when no workflow found (OpenAPI client bug: .Set=true for null)")
+			Expect(result.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true when no workflow found")
+			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"humanReviewReason must indicate no matching workflows")
+			Expect(result.SelectedWorkflow).To(BeNil(),
+				"selectedWorkflow must be absent when no workflow found")
 
 			// CORRECTNESS: Zero confidence
-			Expect(incidentResp.Confidence).To(BeNumerically("==", 0.0),
+			Expect(result.Confidence).To(BeNumerically("==", 0.0),
 				"confidence must be 0.0 when no automation possible")
 
 			// CORRECTNESS: Warnings present (may or may not contain "MOCK" - implementation detail)
-			// E2E-KA-001 FIX: Removed "MOCK" substring requirement - tests business behavior, not implementation
-			Expect(incidentResp.Warnings).ToNot(BeEmpty(),
+			Expect(result.Warnings).ToNot(BeEmpty(),
 				"warnings must be present when no workflow found")
 
 			// BUSINESS IMPACT: (verified by integration tests - AIAnalysis sets RequiresHumanReview phase)
@@ -114,46 +127,47 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-edge-002",
-				RemediationID:     "test-rem-002",
-				SignalName:        "MOCK_LOW_CONFIDENCE",
-				Severity:          "high",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-2",
-				ErrorMessage:      "Uncertain root cause",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-002", Namespace: sharedNamespace},
+				IncidentID:            "test-edge-002",
+				RemediationID:         "test-rem-002",
+				SignalName:            "MOCK_LOW_CONFIDENCE",
+				Severity:              "high",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-2",
+				ErrorMessage:          "Uncertain root cause",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BR-KA-197 + BR-AI-088: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"KA should NOT set needs_human_review based on confidence thresholds (BR-KA-197)")
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present")
+			Expect(result.NeedsHumanReview).To(BeFalse(),
+				"KA should NOT set needsHumanReview based on confidence thresholds (BR-KA-197)")
+			Expect(result.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present")
 
 			// CORRECTNESS: Low confidence returned for AIAnalysis to evaluate
-			Expect(incidentResp.Confidence).To(BeNumerically("<", 0.5),
+			Expect(result.Confidence).To(BeNumerically("<", 0.5),
 				"confidence < 0.5 signals low confidence to AIAnalysis")
 
 			// CORRECTNESS: Alternatives provided for AIAnalysis evaluation
-			Expect(incidentResp.AlternativeWorkflows).ToNot(BeEmpty(),
-				"alternative_workflows help AIAnalysis when confidence is low")
+			Expect(result.AlternativeWorkflows).ToNot(BeEmpty(),
+				"alternativeWorkflows help AIAnalysis when confidence is low")
 
 			// BUSINESS IMPACT: AIAnalysis applies 70% threshold, sees 0.35 < 0.70, sets needs_human_review=true
 		})
@@ -170,51 +184,52 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-edge-003",
-				RemediationID:     "test-rem-003",
-				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED",
-				Severity:          "high",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-3",
-				ErrorMessage:      "Validation failed",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-003", Namespace: sharedNamespace},
+				IncidentID:            "test-edge-003",
+				RemediationID:         "test-rem-003",
+				SignalName:            "MOCK_MAX_RETRIES_EXHAUSTED",
+				Severity:              "high",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-3",
+				ErrorMessage:          "Validation failed",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: AI gave up after max retries
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
-				"needs_human_review must be true when max retries exhausted")
-			Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonLlmParsingError),
-				"human_review_reason must indicate LLM parsing error")
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeFalse(),
-				"selected_workflow must be null when parsing failed")
+			Expect(result.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true when max retries exhausted")
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"),
+				"humanReviewReason must indicate LLM parsing error")
+			Expect(result.SelectedWorkflow).To(BeNil(),
+				"selectedWorkflow must be absent when parsing failed")
 
 			// CORRECTNESS: Complete audit trail
-			Expect(incidentResp.ValidationAttemptsHistory).ToNot(BeEmpty(),
-				"validation_attempts_history must be present for debugging")
-			Expect(incidentResp.ValidationAttemptsHistory).To(HaveLen(3), "MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
+			Expect(result.ValidationAttemptsHistory).ToNot(BeEmpty(),
+				"validationAttemptsHistory must be present for debugging")
+			Expect(result.ValidationAttemptsHistory).To(HaveLen(3), "MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
 
 			// Verify each attempt has required fields
-			for i, attempt := range incidentResp.ValidationAttemptsHistory {
+			for i, attempt := range result.ValidationAttemptsHistory {
 				Expect(attempt.Attempt).To(Equal(i+1),
 					"attempt number must be sequential")
 				Expect(attempt.IsValid).To(BeFalse(),
-					"is_valid must be false for failed validation")
+					"isValid must be false for failed validation")
 				Expect(attempt.Errors).ToNot(BeEmpty(),
 					"errors must be present for failed validation")
 				Expect(attempt.Timestamp).ToNot(BeEmpty(),
@@ -239,42 +254,43 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-happy-004",
-				RemediationID:     "test-rem-004",
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-4",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-004", Namespace: sharedNamespace},
+				IncidentID:            "test-happy-004",
+				RemediationID:         "test-rem-004",
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-4",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Confident recommendation provided
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"needs_human_review must be false for confident recommendation")
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present")
-			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
+			Expect(result.NeedsHumanReview).To(BeFalse(),
+				"needsHumanReview must be false for confident recommendation")
+			Expect(result.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present")
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Mock LLM 'oomkilled' scenario returns confidence = 0.95 ± 0.05")
 
 			// CORRECTNESS: Workflow matches signal type
-			// Note: selectedWorkflow is map[string]jx.Raw - detailed field validation skipped in E2E
+			// Note: selectedWorkflow is raw JSON - detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
 
 			// BUSINESS IMPACT: AIAnalysis creates WorkflowExecution automatically
@@ -295,43 +311,40 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-struct-005",
-				RemediationID:     "test-rem-005",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-5",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-005", Namespace: sharedNamespace},
+				IncidentID:            "test-struct-005",
+				RemediationID:         "test-rem-005",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-5",
+				ErrorMessage:          "Container restarting repeatedly",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Complete response structure
-			Expect(incidentResp.IncidentID).To(Equal("test-struct-005"),
-				"incident_id must match request")
-			Expect(incidentResp.Analysis).ToNot(BeEmpty(), "analysis field must be present")
-			Expect(true).To(BeTrue(),
-				"root_cause_analysis field must be present")
-			Expect(true).To(BeTrue(),
-				"confidence field must be present")
+			Expect(result.IncidentID).To(Equal("test-struct-005"),
+				"incidentID must match request")
+			Expect(result.Analysis).ToNot(BeEmpty(), "analysis field must be present")
 
 			// CORRECTNESS: Exact confidence value from Mock LLM
-			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Mock LLM 'crashloop' scenario returns confidence = 0.95 ± 0.05")
 
 			// BUSINESS IMPACT: AIAnalysis can parse response without errors
@@ -349,17 +362,18 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-enrich-006",
-				RemediationID:     "test-rem-006",
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-6",
-				ErrorMessage:      "Container memory limit exceeded",
-				// EnrichmentResults: TODO - complex Opt struct creation
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-006", Namespace: sharedNamespace},
+				IncidentID:            "test-enrich-006",
+				RemediationID:         "test-rem-006",
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-6",
+				ErrorMessage:          "Container memory limit exceeded",
+				// EnrichmentResults: TODO - complex raw-JSON construction
 				Environment:      "production",
 				Priority:         "P1",
 				RiskTolerance:    "medium",
@@ -368,17 +382,17 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Workflow selection influenced by labels
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present")
+			Expect(result.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present")
 
 			// CORRECTNESS: Appropriate workflow for label context
 			// (Workflow should respect GitOps/PDB/stateful constraints)
@@ -398,20 +412,29 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Business Outcome: Invalid requests rejected with clear error messages
 			// Ported from: test_workflow_selection_e2e.py:342 (Python KA, deprecated)
 			// BR: BR-KA-200
+			//
+			// #2190: redesigned from ogen HTTP validation (4xx) to the
+			// AgentSession CRD's own OpenAPI schema validation -- same
+			// business intent (bad input rejected before ever reaching KA's
+			// investigation logic), different enforcement point now that
+			// pkg/agentclient's HTTP channel is retired.
 
 			// ========================================
-			// ARRANGE: Create request with missing required fields
+			// ARRANGE: Create AgentSession with missing required fields
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID: "test-invalid-007",
-				// Missing remediation_id, signal_type, severity, etc.
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{Name: "as-test-invalid-007", Namespace: sharedNamespace},
+				Spec: agentsessionv1.AgentSessionSpec{
+					IncidentID: "test-invalid-007",
+					// Missing remediationRequestRef, remediationID, signalName,
+					// severity, etc.
+				},
 			}
 
 			// ========================================
 			// ACT
 			// ========================================
-			resp, err := kaClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
-			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
+			err := k8sClient.Create(ctx, as)
 
 			// ========================================
 			// ASSERT
@@ -419,10 +442,8 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// BEHAVIOR: Request rejected
 			Expect(err).To(HaveOccurred(),
 				"Invalid request should be rejected")
-
-			// CORRECTNESS: Error indicates missing fields
-			// (Exact error format depends on OpenAPI client validation)
-			// Typically: "required field missing" or similar
+			Expect(apierrors.IsInvalid(err)).To(BeTrue(),
+				"rejection must be a schema-validation error (missing required fields), not e.g. RBAC/network")
 
 			// BUSINESS IMPACT: Caller knows what to fix
 		})
@@ -435,43 +456,47 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Business Outcome: remediation_id is mandatory for audit trail correlation
 			// Ported from: test_workflow_selection_e2e.py:364 (Python KA, deprecated)
 			// BR: DD-WORKFLOW-002
+			//
+			// #2190: redesigned per E2E-KA-007 above. AgentSessionSpec.RemediationID
+			// carries the same kubebuilder MinLength=1 constraint the retired
+			// agentclient.IncidentRequest OpenAPI schema enforced (issue #2190).
 
 			// ========================================
-			// ARRANGE: Create request WITHOUT remediation_id
+			// ARRANGE: Create AgentSession WITHOUT remediationID
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID: "test-no-rem-008",
-				// remediation_id is MISSING
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-8",
-				ErrorMessage:      "Container memory limit exceeded",
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{Name: "as-test-no-rem-008", Namespace: sharedNamespace},
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-no-rem-008", Namespace: sharedNamespace},
+					IncidentID:            "test-no-rem-008",
+					// RemediationID is MISSING
+					SignalName:        "OOMKilled",
+					Severity:          "high",
+					SignalSource:      "kubernetes",
+					ResourceNamespace: "default",
+					ResourceKind:      "Pod",
+					ResourceName:      "test-pod-8",
+					ErrorMessage:      "Container memory limit exceeded",
+				},
 			}
 
 			// ========================================
 			// ACT
 			// ========================================
-			resp, err := kaClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
-			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
+			err := k8sClient.Create(ctx, as)
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Request rejected
 			Expect(err).To(HaveOccurred(),
-				"Request without remediation_id should be rejected")
+				"Request without remediationID should be rejected")
+			Expect(apierrors.IsInvalid(err)).To(BeTrue(),
+				"rejection must be a schema-validation error")
 
-			// CORRECTNESS: Ogen schema enforces minLength:1 on remediation_id.
-			// The server-side validator rejects the request before the handler runs,
-			// so the client receives either a validation error or a decode error.
-			Expect(err.Error()).To(Or(
-				ContainSubstring("remediation"),
-				ContainSubstring("validate"),
-				ContainSubstring("decode"),
-			), "Error should indicate missing/invalid remediation_id")
+			// CORRECTNESS: kubebuilder's MinLength=1 constraint enforces this server-side.
+			Expect(err.Error()).To(ContainSubstring("remediationID"),
+				"Error should indicate the missing/invalid remediationID field")
 
 			// BUSINESS IMPACT: Audit trail can correlate events
 		})

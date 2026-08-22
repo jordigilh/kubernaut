@@ -30,6 +30,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -79,6 +81,13 @@ var (
 	// authHTTPClientB carries a DIFFERENT ServiceAccount token (kubernaut-agent-e2e-sa-2)
 	// for cross-user authorization tests (E2E-KA-AUTHZ-001).
 	authHTTPClientB *http.Client
+
+	// k8sClient talks directly to the Kind cluster's AgentSession CRD
+	// (issue #2190): tests that Create an AgentSession and poll its
+	// Status play AA's role directly, since no AA controller runs in this
+	// KA-focused suite. Replaces sessionClient.Investigate() for tests
+	// migrated off the retired pkg/agentclient HTTP channel.
+	k8sClient client.Client
 
 	anyTestFailed  bool
 	setupSucceeded bool
@@ -199,6 +208,9 @@ var _ = SynchronizedBeforeSuite(
 			Timeout:   30 * time.Second,
 		}
 
+		k8sClient, err = infrastructure.NewKubeconfigAgentSessionClient(kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create AgentSession-scoped k8s client (#2190)")
+
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
@@ -253,6 +265,9 @@ var _ = SynchronizedBeforeSuite(
 			Transport: saTransportB,
 			Timeout:   30 * time.Second,
 		}
+
+		k8sClient, err = infrastructure.NewKubeconfigAgentSessionClient(kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create AgentSession-scoped k8s client (#2190)")
 	},
 )
 
