@@ -65,6 +65,28 @@ const (
 // cheap) as a second layer for any AgentSession that predates this change.
 const TerminalCloseFinalizer = "apifrontend.kubernaut.ai/agentsession-terminal-close"
 
+// DispatchCleanupFinalizer defers actual removal of an AgentSession until
+// KA's Dispatcher.Reconcile has observed the DeletionTimestamp and stopped
+// any in-memory investigation goroutine still running for it (#2231 /
+// DD-AA-KA-001 Amendment).
+//
+// Exported here (mirroring TerminalCloseFinalizer, above) so AA's
+// AgentSessionCreator.DeleteForRetry can strip it before deleting: that
+// function's contract is a *synchronous* delete (the deterministic
+// as-<rrName> name must be free again immediately for the retry's own
+// Create), and leaving this finalizer attached would defer removal to KA's
+// Dispatcher.Reconcile instead, reintroducing a race between AA's retry
+// Create and the still-terminating object of the same name. Safe to strip
+// unconditionally there: DeleteForRetry is only ever called for a
+// Status.Reason=CapacityExceeded AgentSession, i.e. one whose investigation
+// never started, so there is nothing for KA's Dispatcher to clean up on
+// delete in that specific case regardless. Unlike TerminalCloseFinalizer,
+// KA's own Dispatcher.Reconcile is the sole source of truth for adding this
+// finalizer (no synchronous set-at-Create is needed here: an AgentSession
+// deleted before Dispatcher's first reconcile ever observes it has no
+// dispatched investigation yet either, so there is nothing to lose).
+const DispatchCleanupFinalizer = "kubernautagent.kubernaut.ai/agentsession-dispatch-cleanup"
+
 // AgentSessionStatus.Reason values.
 const (
 	// AgentSessionReasonCapacityExceeded means KA rejected dispatch because
