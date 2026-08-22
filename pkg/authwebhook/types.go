@@ -29,15 +29,21 @@ const (
 	EventTypeATDeniedCreate   = "actiontype.denied.create"
 	EventTypeATDeniedUpdate   = "actiontype.denied.update"
 	EventTypeATDeniedDelete   = "actiontype.denied.delete"
+
+	// Issue #2244, BR-AA-KA-065.13: AgentSession CRD admission event types
+	// (RemediationRequest existence gate, CREATE-only).
+	EventTypeASAdmittedCreate = "agentsession.admitted.create"
+	EventTypeASDeniedCreate   = "agentsession.denied.create"
 )
 
 // Event category constants per ADR-034 v1.8: event_category = business domain
 const (
-	EventCategoryActionType       = "actiontype"
-	EventCategoryWorkflow         = "workflow"
-	EventCategoryWorkflowExec     = "workflowexecution"
-	EventCategoryApproval         = "approval"
-	EventCategoryNotification     = "notification"
+	EventCategoryActionType   = "actiontype"
+	EventCategoryWorkflow     = "workflow"
+	EventCategoryWorkflowExec = "workflowexecution"
+	EventCategoryApproval     = "approval"
+	EventCategoryNotification = "notification"
+	EventCategoryAgentSession = "agentsession"
 )
 
 // AuthContext holds authenticated user information extracted from admission requests.

@@ -1587,6 +1587,62 @@ func (s ActionTypeWebhookAuditPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AgentSessionWebhookAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Action.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "action",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AgentSessionWebhookAuditPayloadAction) Validate() error {
+	switch s {
+	case "create":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s AgentSessionWebhookAuditPayloadEventType) Validate() error {
+	switch s {
+	case "agentsession.admitted.create":
+		return nil
+	case "agentsession.denied.create":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendA2ATaskCompletedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3110,6 +3166,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "security":
 		return nil
+	case "agentsession":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -3382,6 +3440,11 @@ func (s AuditEventEventData) Validate() error {
 		return nil
 	case AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData:
 		if err := s.ActionTypeWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventEventDataAgentsessionAdmittedCreateAuditEventEventData, AuditEventEventDataAgentsessionDeniedCreateAuditEventEventData:
+		if err := s.AgentSessionWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -3768,6 +3831,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "security":
 		return nil
+	case "agentsession":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -4040,6 +4105,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData:
 		if err := s.ActionTypeWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventRequestEventDataAgentsessionAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataAgentsessionDeniedCreateAuditEventRequestEventData:
+		if err := s.AgentSessionWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

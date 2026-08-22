@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -270,6 +271,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(remediationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(remediationworkflowv1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(agentsessionv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 		k8sClient, err = client.New(restConfig, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
