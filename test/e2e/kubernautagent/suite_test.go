@@ -52,6 +52,11 @@ func TestKubernautAgentE2E(t *testing.T) {
 	RunSpecs(t, "Kubernaut Agent E2E Suite — #433")
 }
 
+// goconst dedup: test-fixture literal shared across many files in this
+// package (previously defined in the now-deleted session_endpoints_test.go,
+// #2190).
+const errorFixture = "error"
+
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
