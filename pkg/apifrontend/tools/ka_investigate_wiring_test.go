@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -315,6 +316,128 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			Expect(ok).To(BeTrue(), "AU-3/SI-10: rca.causal_chain must be present so the Console's hasRCAData guard renders the RCA card (#1922)")
 			Expect(causalChain).NotTo(BeEmpty(), "AU-3/SI-10: rca.causal_chain must be non-empty so the Console's hasRCAData guard renders the RCA card (#1922)")
 		})
+	})
+})
+
+// =============================================================================
+// Issue #2247: investigation_summary must be emitted for genuinely-completed
+// investigations, not just the no-RCA fallback path.
+//
+// Root cause: runBlockingInvestigation only called emitFallbackInvestigationArtifact
+// (schema=investigation_summary) when the KA bridge produced NO rca at all
+// (rca == nil). When KA's investigation genuinely completes with a real RCA
+// (EventTypeComplete carrying a non-empty Severity), captureCompleteEventRCA
+// emits an early_rca decision event but runBlockingInvestigation's fallback
+// block was skipped entirely (its condition requires rca == nil), so the
+// SI-10-required investigation_summary artifact was never produced for the
+// success path -- confirmed via live E2E repro (helios08, #2247 RCA comment).
+// =============================================================================
+
+var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary on genuine completion (#2247)", func() {
+
+	It("UT-AF-WIRE-2247-001: SI-10 investigation_summary artifact is emitted when KA completes with a real RCA", func() {
+		origTimeout := tools.AwaitSessionTimeout
+		tools.AwaitSessionTimeout = 10 * time.Millisecond
+		defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+		rcaPayload := map[string]interface{}{
+			"severity":         "critical",
+			"confidence":       0.92,
+			"causal_chain":     []string{"Memory leak", "OOMKill"},
+			"target":           "Deployment/worker in production",
+			"rca_summary":      "OOMKill caused by memory leak",
+			"total_llm_turns":  17,
+			"total_tool_calls": 19,
+		}
+		rcaJSON, err := json.Marshal(rcaPayload)
+		Expect(err).NotTo(HaveOccurred())
+
+		eventCh := make(chan ka.InvestigationEvent, 1)
+		eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
+		close(eventCh)
+
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-2247-001",
+					Status:    "started",
+					Events:    eventCh,
+					Closer:    func() {},
+				}, nil
+			},
+		}
+
+		// Severity triage (rrSeverity="warning") deliberately differs from
+		// KA's own RCA severity ("critical") below, so the assertion that
+		// the emitted artifact carries "critical" proves the fix uses KA's
+		// real RCA -- not the rrSeverity-only synthesized fallback -- when
+		// both are available (mirrors the live #2247 repro's RR.spec.severity
+		// of "warning" while KA's investigation concluded a distinct finding).
+		mockProm := &mockPromClientForWiring{
+			alerts: []prom.Alert{
+				{
+					State: "firing",
+					Labels: map[string]string{
+						"alertname": "HighCPU",
+						"severity":  "warning",
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "worker-2247",
+					},
+				},
+			},
+		}
+		triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(
+			auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice",
+				Groups:   []string{"sre"},
+			}),
+			queue, "task-2247-001", "ctx-2247-001", nil,
+		)
+
+		tc := newTypedClientForInvestigate()
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			ctx, &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Client:    tc,
+				Namespace: "kubernaut-system",
+				Triager:   triager,
+			}, tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  "prod",
+				Kind:       "Deployment",
+				Name:       "worker-2247",
+			},
+			true, "alice",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).NotTo(BeEmpty())
+
+		var artifactEvt *a2a.TaskArtifactUpdateEvent
+		for _, evt := range queue.Events() {
+			if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				if schema, _ := art.Artifact.Metadata["schema"].(string); schema == "investigation_summary" {
+					artifactEvt = art
+					break
+				}
+			}
+		}
+		Expect(artifactEvt).NotTo(BeNil(),
+			"SI-10: a genuinely-completed investigation (real RCA from KA) must still emit an investigation_summary artifact, not just early_rca (#2247)")
+
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "artifact must carry a DataPart")
+		Expect(dp.Data).To(HaveKey("summary"), "SI-10: investigation_summary must include summary field")
+		rcaData, ok := dp.Data["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(), "artifact data must include an rca object")
+		Expect(rcaData["severity"]).To(Equal("critical"), "investigation_summary must carry KA's real RCA severity, not a synthesized one")
+		causalChain, ok := rcaData["causal_chain"].([]string)
+		Expect(ok).To(BeTrue())
+		Expect(causalChain).To(ConsistOf("Memory leak", "OOMKill"),
+			"investigation_summary must carry KA's real causal_chain, not the fallback placeholder")
 	})
 })
 
