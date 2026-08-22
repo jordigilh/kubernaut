@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -68,25 +68,27 @@ var _ = Describe("E2E-KA-AUDIT-001: Reasoning captured in audit trail, reconstru
 	It("E2E-KA-AUDIT-001: reasoning is captured on both per-turn and RCA-complete audit events, reconstructable by correlation_id (SOC2 CC8.1)", func() {
 		remediationID := "test-audit-reasoning-001-" + time.Now().Format("20060102150405")
 
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "test-audit-reasoning-001",
-			RemediationID:     remediationID,
-			SignalName:        "MOCK_REASONING_CAPTURE",
-			Severity:          "critical",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "production",
-			ResourceKind:      "Deployment",
-			ResourceName:      "api-server",
-			ErrorMessage:      "mock_reasoning_capture triggered for BR-AI-086 AC6 E2E audit reconstruction test",
-			Environment:       "production",
-			Priority:          "P1",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+			IncidentID:            "test-audit-reasoning-001",
+			RemediationID:         remediationID,
+			SignalName:            "MOCK_REASONING_CAPTURE",
+			Severity:              "critical",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "production",
+			ResourceKind:          "Deployment",
+			ResourceName:          "api-server",
+			ErrorMessage:          "mock_reasoning_capture triggered for BR-AI-086 AC6 E2E audit reconstruction test",
+			Environment:           "production",
+			Priority:              "P1",
+			RiskTolerance:         "medium",
+			BusinessCategory:      "standard",
+			ClusterName:           "e2e-test",
 		}
 
-		_, err := sessionClient.Investigate(ctx, req)
-		Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+		_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+		Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 		// ASSERT: every event persisted under this remediation_id must be
 		// reconstructable by correlation_id alone (SOC2 CC8.1) — query once,

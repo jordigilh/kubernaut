@@ -113,11 +113,17 @@ type AgentSessionSpec struct {
 	RemediationRequestRef ObjectRef `json:"remediationRequestRef"`
 
 	// IncidentID is the unique incident identifier (AIAnalysis CR name).
+	// +kubebuilder:validation:MinLength=1
 	IncidentID string `json:"incidentID"`
 	// RemediationID is for audit correlation ONLY -- never used for RCA or
-	// workflow matching.
+	// workflow matching. MANDATORY per DD-WORKFLOW-002 v2.2 -- the retired
+	// agentclient.IncidentRequest HTTP schema enforced the same minLength:1
+	// server-side (issue #2190); this preserves that guarantee now that
+	// AgentSession's own OpenAPI schema is the sole enforcement point.
+	// +kubebuilder:validation:MinLength=1
 	RemediationID string `json:"remediationID"`
 	// SignalName is the canonical signal name (e.g. OOMKilled).
+	// +kubebuilder:validation:MinLength=1
 	SignalName string `json:"signalName"`
 	// Severity is the signal severity (BR-SEVERITY-001).
 	// +kubebuilder:validation:Enum=critical;high;warning;info;unknown

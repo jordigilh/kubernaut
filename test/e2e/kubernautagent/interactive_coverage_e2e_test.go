@@ -19,17 +19,16 @@ package kubernautagent
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -64,25 +63,31 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			rrID := fmt.Sprintf("rr-int008-%d", time.Now().UnixNano())
 			createTestRemediationRequest(ctx, rrID)
 
-			By("Step 1: Starting an autonomous investigation via REST")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-int008",
-				RemediationID:     rrID,
-				SignalName:        "OOMKilled",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: sharedNamespace,
-				ResourceKind:      "Pod",
-				ResourceName:      "int008-pod",
-				ErrorMessage:      "Container OOMKilled",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			By("Step 1: Starting an autonomous investigation via AgentSession CRD")
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "as-test-int008",
+					Namespace: sharedNamespace,
+				},
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{Name: rrID, Namespace: sharedNamespace},
+					IncidentID:            "test-int008",
+					RemediationID:         rrID,
+					SignalName:            "OOMKilled",
+					Severity:              "high",
+					SignalSource:          "kubernetes",
+					ResourceNamespace:     sharedNamespace,
+					ResourceKind:          "Pod",
+					ResourceName:          "int008-pod",
+					ErrorMessage:          "Container OOMKilled",
+					Environment:           "production",
+					Priority:              "P1",
+					RiskTolerance:         "medium",
+					BusinessCategory:      "standard",
+					ClusterName:           "e2e-test",
+				},
 			}
-			_, err := sessionClient.SubmitInvestigation(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Create(ctx, as)).To(Succeed())
 
 			By("Step 2: Waiting briefly for autonomous investigation to start (but not complete)")
 			time.Sleep(2 * time.Second)
@@ -321,250 +326,82 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 	})
 
 	// ---------------------------------------------------------------
-	// E2E-KA-CANCEL-003: REST cancel unknown session returns 404
-	// BR: BR-SESSION-002
+	// E2E-KA-CANCEL-003 (REST cancel unknown session → 404) and
+	// E2E-KA-SSE-002 (SSE subscribe after completion) are deleted outright
+	// (issue #2190, DD-AA-KA-001): the /cancel and /stream HTTP endpoints
+	// they exercised no longer exist, and neither has a CRD equivalent —
+	// AgentSession has no cancel RPC (cancellation is delete-based, see
+	// dispatcher.go's cancelOnDelete) and no streaming transport (K8s
+	// watch is a different protocol with no comparable SSE framing).
 	// ---------------------------------------------------------------
-	Describe("E2E-KA-CANCEL-003: REST cancel unknown session returns 404", func() {
-		It("should return 404 with RFC 7807 fields for unknown session [E2E-KA-CANCEL-003]", func() {
-			fakeID := uuid.New().String()
-
-			cancelReq, err := http.NewRequestWithContext(ctx, "POST",
-				fmt.Sprintf("%s/api/v1/incident/session/%s/cancel", kaURL, fakeID), nil)
-			Expect(err).NotTo(HaveOccurred())
-			cancelResp, err := authHTTPClient.Do(cancelReq)
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = cancelResp.Body.Close() }()
-
-			body, _ := io.ReadAll(cancelResp.Body)
-			Expect(cancelResp.StatusCode).To(Equal(http.StatusNotFound),
-				"cancel on unknown session should return 404, got body: %s", string(body))
-
-			var problemDetail map[string]interface{}
-			if err := json.Unmarshal(body, &problemDetail); err == nil {
-				Expect(problemDetail).To(HaveKey("type"),
-					"RFC 7807: response should have 'type' field")
-				Expect(problemDetail).To(HaveKey("title"),
-					"RFC 7807: response should have 'title' field")
-			}
-
-			GinkgoWriter.Println("CANCEL-003: Unknown session cancel returns 404 validated")
-		})
-	})
 
 	// ---------------------------------------------------------------
-	// E2E-KA-SSE-002: SSE subscribe after session completed returns synthetic SSE stream
-	// BR: BR-SESSION-002
-	// Production behavior: terminal sessions return 200 with a synthetic SSE
-	// "complete" event so reconnecting clients (e.g. AF after a dropped
-	// connection) always receive a valid SSE stream.
-	// ---------------------------------------------------------------
-	Describe("E2E-KA-SSE-002: SSE subscribe after session completed returns SSE complete event", func() {
-		It("should return 200 with SSE complete event when subscribing to completed session stream [E2E-KA-SSE-002]", func() {
-			By("Submitting investigation and waiting for completion")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-sse-002",
-				RemediationID:     "test-rem-sse-002",
-				SignalName:        "OOMKilled",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "sse-pod-002",
-				ErrorMessage:      "Container OOMKilled",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
-			}
-
-			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-
-			Eventually(func() string {
-				status, pollErr := sessionClient.PollSession(ctx, sessionID)
-				if pollErr != nil {
-					return errorFixture
-				}
-				return status.Status
-			}, 60*time.Second, 1*time.Second).Should(Equal("completed"))
-
-			By("Subscribing to SSE stream after completion")
-			streamReq, err := http.NewRequestWithContext(ctx, "GET",
-				fmt.Sprintf("%s/api/v1/incident/session/%s/stream", kaURL, sessionID), nil)
-			Expect(err).NotTo(HaveOccurred())
-			streamReq.Header.Set("Accept", "text/event-stream")
-
-			resp, err := authHTTPClient.Do(streamReq)
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(resp.Body)
-
-			Expect(resp.StatusCode).To(Equal(http.StatusOK),
-				"SSE subscribe after completion should return 200 with SSE stream, got body: %s", string(body))
-			Expect(string(body)).To(ContainSubstring("event: complete"),
-				"SSE stream for terminal session must contain a synthetic 'complete' event")
-
-			GinkgoWriter.Println("SSE-002: Subscribe after completed returns SSE complete event validated")
-		})
-	})
-
-	// ---------------------------------------------------------------
-	// E2E-KA-SNAP-006: Snapshot includes error field on failed investigation
+	// E2E-KA-SNAP-006: Completed AgentSession's Status carries a curated
+	// error/reason even for a scenario that internally struggled (LLM
+	// parsing retries) before eventually completing. Trigger mechanism
+	// migrated off the retired HTTP session endpoints (issue #2190) —
+	// the retired snapshot endpoint's cancelled_phase/token-count fields
+	// have no CRD carrier today (AgentSessionResult/Status expose neither),
+	// so those specific sub-assertions are dropped; the surviving
+	// business assertion (status + curated error visibility) is preserved.
 	// BR: BR-SESSION-002, BR-AUDIT-070
 	// ---------------------------------------------------------------
-	Describe("E2E-KA-SNAP-006: Snapshot includes error field on failed investigation", func() {
-		It("should have error field present on MOCK_MAX_RETRIES_EXHAUSTED scenario [E2E-KA-SNAP-006]", func() {
-			By("Submitting investigation with MOCK_MAX_RETRIES_EXHAUSTED scenario")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-snap-006",
-				RemediationID:     "test-rem-snap-006",
-				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "snap-pod-006",
-				ErrorMessage:      "Container restarting",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+	Describe("E2E-KA-SNAP-006: Completed AgentSession surfaces curated status after retries", func() {
+		It("should reach Completed with a structured Result for MOCK_MAX_RETRIES_EXHAUSTED [E2E-KA-SNAP-006]", func() {
+			By("Creating an AgentSession with the MOCK_MAX_RETRIES_EXHAUSTED scenario")
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "as-test-snap-006",
+					Namespace: sharedNamespace,
+				},
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-snap-006", Namespace: sharedNamespace},
+					IncidentID:            "test-snap-006",
+					RemediationID:         "test-rem-snap-006",
+					SignalName:            "MOCK_MAX_RETRIES_EXHAUSTED",
+					Severity:              "high",
+					SignalSource:          "kubernetes",
+					ResourceNamespace:     sharedNamespace,
+					ResourceKind:          "Pod",
+					ResourceName:          "snap-pod-006",
+					ErrorMessage:          "Container restarting",
+					Environment:           "production",
+					Priority:              "P1",
+					RiskTolerance:         "medium",
+					BusinessCategory:      "standard",
+					ClusterName:           "e2e-test",
+				},
 			}
+			Expect(k8sClient.Create(ctx, as)).To(Succeed())
 
-			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-
-			Eventually(func() string {
-				status, pollErr := sessionClient.PollSession(ctx, sessionID)
-				if pollErr != nil {
-					return errorFixture
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(as), as); err != nil {
+					return ""
 				}
-				return status.Status
-			}, 60*time.Second, 1*time.Second).Should(Equal("completed"),
+				return as.Status.Phase
+			}, 60*time.Second, 1*time.Second).Should(Equal(agentsessionv1.AgentSessionPhaseCompleted),
 				"MOCK_MAX_RETRIES_EXHAUSTED should eventually complete")
 
-			By("Fetching snapshot")
-			snapRes, err := kaClient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx,
-				agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams{
-					SessionID: sessionID,
-				})
-			Expect(err).NotTo(HaveOccurred())
+			By("Asserting curated status is visible on the CRD")
+			Expect(as.Status.Result).ToNot(BeNil(), "Status.Result must be populated on Completed")
+			Expect(as.Status.Result.NeedsHumanReview).To(BeTrue(),
+				"needs_human_review must be true when max retries exhausted")
+			Expect(as.Status.Result.ValidationAttemptsHistory).ToNot(BeEmpty(),
+				"validation_attempts_history must be present for debugging")
 
-			snap, ok := snapRes.(*agentclient.SessionSnapshot)
-			Expect(ok).To(BeTrue(), "response should be *SessionSnapshot, got %T", snapRes)
-
-			By("Asserting error-related fields")
-			Expect(snap.Status).To(Equal("completed"))
-
-			if errField, hasErr := snap.Error.Get(); hasErr {
-				Expect(errField).NotTo(BeEmpty(),
-					"error field should be non-empty for failed investigation")
-				GinkgoWriter.Printf("Snapshot error: %s\n", errField)
-			}
-
-			cancelledPhase, hasPhase := snap.CancelledPhase.Get()
-			if hasPhase {
-				GinkgoWriter.Printf("cancelled_phase unexpectedly present: %s\n", cancelledPhase)
-			}
-
-			if promptTokens, hasPrompt := snap.TotalPromptTokens.Get(); hasPrompt {
-				Expect(promptTokens).To(BeNumerically(">=", 0))
-			}
-
-			GinkgoWriter.Println("SNAP-006: Error field on failed investigation validated")
+			GinkgoWriter.Println("SNAP-006: Curated status after retries validated")
 		})
 	})
 
 	// ---------------------------------------------------------------
-	// E2E-KA-SNAP-007: Snapshot cancelled session has cancelled_phase
-	// BR: BR-SESSION-002
+	// E2E-KA-SNAP-007 (snapshot cancelled_phase) is deleted outright
+	// (issue #2190, DD-AA-KA-001): cancellation is delete-based with no
+	// finalizer (dispatcher.go's cancelOnDelete stops the in-memory
+	// investigation AFTER the AgentSession object is already gone), so a
+	// cancelled investigation's terminal state — including which phase
+	// was interrupted — is never observable via Get. There is no CRD
+	// equivalent to assert against.
 	// ---------------------------------------------------------------
-	Describe("E2E-KA-SNAP-007: Snapshot cancelled session has cancelled_phase", func() {
-		It("should have cancelled_phase set when session is cancelled [E2E-KA-SNAP-007]", func() {
-			By("Submitting investigation")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-snap-007",
-				RemediationID:     "test-rem-snap-007",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "snap-pod-007",
-				ErrorMessage:      "Container restarting",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
-			}
-
-			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Waiting for investigation to be active")
-			Eventually(func() string {
-				status, pollErr := sessionClient.PollSession(ctx, sessionID)
-				if pollErr != nil {
-					return errorFixture
-				}
-				return status.Status
-			}, 15*time.Second, 500*time.Millisecond).Should(
-				SatisfyAny(Equal("investigating"), Equal("completed")))
-
-			By("Cancelling the investigation")
-			cancelReq, err := http.NewRequestWithContext(ctx, "POST",
-				fmt.Sprintf("%s/api/v1/incident/session/%s/cancel", kaURL, sessionID), nil)
-			Expect(err).NotTo(HaveOccurred())
-			cancelResp, err := authHTTPClient.Do(cancelReq)
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = cancelResp.Body.Close() }()
-
-			Expect(cancelResp.StatusCode).To(SatisfyAny(
-				Equal(http.StatusOK),
-				Equal(http.StatusConflict),
-			))
-
-			By("Waiting for terminal state")
-			var finalStatus string
-			Eventually(func() string {
-				status, pollErr := sessionClient.PollSession(ctx, sessionID)
-				if pollErr != nil {
-					return errorFixture
-				}
-				finalStatus = status.Status
-				return status.Status
-			}, 15*time.Second, 500*time.Millisecond).Should(
-				SatisfyAny(Equal("cancelled"), Equal("completed")))
-
-			if finalStatus != "cancelled" {
-				GinkgoWriter.Println("SNAP-007: Session completed before cancel took effect — skipping cancelled_phase assertion")
-				return
-			}
-
-			By("Fetching snapshot for cancelled session")
-			snapRes, err := kaClient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx,
-				agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams{
-					SessionID: sessionID,
-				})
-			Expect(err).NotTo(HaveOccurred())
-
-			snap, ok := snapRes.(*agentclient.SessionSnapshot)
-			Expect(ok).To(BeTrue(), "response should be *SessionSnapshot")
-			Expect(snap.Status).To(Equal("cancelled"))
-
-			cancelledPhase, hasPhase := snap.CancelledPhase.Get()
-			if hasPhase {
-				Expect(cancelledPhase).NotTo(BeEmpty(),
-					"cancelled_phase should indicate which phase was interrupted")
-				GinkgoWriter.Printf("cancelled_phase: %s\n", cancelledPhase)
-			}
-
-			GinkgoWriter.Println("SNAP-007: Cancelled session snapshot validated")
-		})
-	})
 
 	// ---------------------------------------------------------------
 	// E2E-KA-STATUS-001: action:status returns "not_found" for unknown RR
@@ -672,25 +509,31 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			rrID := fmt.Sprintf("rr-status003-%d", time.Now().UnixNano())
 			createTestRemediationRequest(ctx, rrID)
 
-			By("Starting an autonomous investigation via REST")
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-status003",
-				RemediationID:     rrID,
-				SignalName:        "CrashLoopBackOff",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: sharedNamespace,
-				ResourceKind:      "Pod",
-				ResourceName:      "status003-pod",
-				ErrorMessage:      "Container restarting repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			By("Starting an autonomous investigation via AgentSession CRD")
+			as := &agentsessionv1.AgentSession{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "as-test-status003",
+					Namespace: sharedNamespace,
+				},
+				Spec: agentsessionv1.AgentSessionSpec{
+					RemediationRequestRef: agentsessionv1.ObjectRef{Name: rrID, Namespace: sharedNamespace},
+					IncidentID:            "test-status003",
+					RemediationID:         rrID,
+					SignalName:            "CrashLoopBackOff",
+					Severity:              "high",
+					SignalSource:          "kubernetes",
+					ResourceNamespace:     sharedNamespace,
+					ResourceKind:          "Pod",
+					ResourceName:          "status003-pod",
+					ErrorMessage:          "Container restarting repeatedly",
+					Environment:           "production",
+					Priority:              "P1",
+					RiskTolerance:         "medium",
+					BusinessCategory:      "standard",
+					ClusterName:           "e2e-test",
+				},
 			}
-			_, err := sessionClient.SubmitInvestigation(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Create(ctx, as)).To(Succeed())
 
 			By("Connecting MCP client and polling status until autonomous is observed")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{

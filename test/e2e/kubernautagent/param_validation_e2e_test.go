@@ -21,8 +21,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	"strings"
+	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // BR-KA-191: Parameter validation self-correction E2E tests (#1170)
@@ -47,45 +49,46 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-param-val-001",
-				RemediationID:     "test-rem-param-001",
-				SignalName:        "MOCK_PARAM_VALIDATION_SELFCORRECT",
-				Severity:          "high",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "api-server-xyz",
-				ErrorMessage:      "Scaling needed",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-param-001", Namespace: sharedNamespace},
+				IncidentID:            "test-param-val-001",
+				RemediationID:         "test-rem-param-001",
+				SignalName:            "MOCK_PARAM_VALIDATION_SELFCORRECT",
+				Severity:              "high",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "api-server-xyz",
+				ErrorMessage:          "Scaling needed",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 
 			// BEHAVIOR: Self-correction succeeded — valid workflow selected
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present after successful self-correction")
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"needs_human_review should be false when self-correction succeeds")
+			Expect(result.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present after successful self-correction")
+			Expect(result.NeedsHumanReview).To(BeFalse(),
+				"needsHumanReview should be false when self-correction succeeds")
 
 			// CORRECTNESS: ValidationAttemptsHistory captures the correction journey
-			Expect(incidentResp.ValidationAttemptsHistory).To(HaveLen(2),
+			Expect(result.ValidationAttemptsHistory).To(HaveLen(2),
 				"Should have 2 validation attempts: 1 failed + 1 passed")
 
 			// First attempt: bad params (type mismatch on REPLICA_COUNT)
-			firstAttempt := incidentResp.ValidationAttemptsHistory[0]
+			firstAttempt := result.ValidationAttemptsHistory[0]
 			Expect(firstAttempt.Attempt).To(Equal(1),
 				"First attempt number should be 1")
 			Expect(firstAttempt.IsValid).To(BeFalse(),
@@ -102,18 +105,18 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 				"First attempt errors should identify specific parameter constraint failures")
 
 			// Second attempt: corrected params pass validation
-			secondAttempt := incidentResp.ValidationAttemptsHistory[1]
+			secondAttempt := result.ValidationAttemptsHistory[1]
 			Expect(secondAttempt.Attempt).To(Equal(2),
 				"Second attempt number should be 2")
 			Expect(secondAttempt.IsValid).To(BeTrue(),
 				"Second attempt should pass with corrected parameters")
 
 			// E2E-KA-1170-002 (consolidated): Final response has valid params, undeclared stripped
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"E2E-KA-1170-002: selected_workflow must be present with valid parameters")
+			Expect(result.SelectedWorkflow).ToNot(BeNil(),
+				"E2E-KA-1170-002: selectedWorkflow must be present with valid parameters")
 
 			// E2E-KA-1170-003 (consolidated): validation_attempts_history shape
-			for i, attempt := range incidentResp.ValidationAttemptsHistory {
+			for i, attempt := range result.ValidationAttemptsHistory {
 				Expect(attempt.Attempt).To(Equal(i+1),
 					"E2E-KA-1170-003: attempt numbers must be sequential")
 				Expect(attempt.Timestamp).ToNot(BeEmpty(),

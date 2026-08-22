@@ -19,8 +19,6 @@ package session_test
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -28,9 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -40,7 +36,6 @@ var _ = Describe("UserDriving Integration — #774, BR-INTERACTIVE-001", func() 
 		It("should transition session, cancel goroutine, and handler returns user_driving status with identity", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
-			handler := server.NewHandler(manager, nil, logr.Discard(), nil)
 
 			ctxCancelled := make(chan struct{})
 			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
@@ -65,47 +60,6 @@ var _ = Describe("UserDriving Integration — #774, BR-INTERACTIVE-001", func() 
 			err = json.Unmarshal([]byte(sess.Metadata["acting_user_groups"]), &groups)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(groups).To(ConsistOf("sre", "production-oncall"))
-
-			_ = handler
-		})
-	})
-
-	Describe("IT-KA-774-002: HTTP round-trip through real ogen handler returns user_driving with identity", func() {
-		It("should serve user_driving status with acting_user fields via the production handler pipeline", func() {
-			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
-			handler := server.NewHandler(manager, nil, logr.Discard(), nil)
-
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				<-ctx.Done()
-				return nil, ctx.Err()
-			}, map[string]string{})
-			Expect(err).NotTo(HaveOccurred())
-
-			err = manager.TransitionToUserDriving(id, "operator@company.com", []string{"sre"})
-			Expect(err).NotTo(HaveOccurred())
-
-			// QE-1: Use the real ogen Server wrapping the production handler —
-			// this validates that SessionStatus.ActingUser and ActingUserGroups
-			// are emitted by the actual handler, not a test stub.
-			ogenSrv, err := agentclient.NewServer(handler)
-			Expect(err).NotTo(HaveOccurred())
-
-			ts := httptest.NewServer(ogenSrv)
-			defer ts.Close()
-
-			client, err := agentclient.NewKubernautAgentClientWithTransport(
-				agentclient.Config{BaseURL: ts.URL, Timeout: 5 * time.Second},
-				http.DefaultTransport,
-			)
-			Expect(err).NotTo(HaveOccurred())
-
-			result, err := client.PollSession(context.Background(), id)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(result.Status).To(Equal("user_driving"))
-			Expect(result.ActingUser).To(Equal("operator@company.com"))
-			Expect(result.ActingUserGroups).To(ConsistOf("sre"))
 		})
 	})
 })

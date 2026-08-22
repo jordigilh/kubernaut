@@ -17,10 +17,13 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Workflow Catalog E2E Tests
@@ -33,9 +36,8 @@ import (
 // NOTE: These tests validate the workflow catalog tool (used by KA internally for LLM-driven workflow search).
 // The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident analysis.
 //
-// BR-AA-KA-064: All success-path tests migrated from ogen direct client (sync 200) to
-// sessionClient.Investigate() (async submit/poll/result wrapper) because KA
-// endpoints are now async-only (202 Accepted).
+// #2190: migrated from the retired agentclient.IncidentRequest HTTP flow to
+// infrastructure.InvestigateViaAgentSession's CRD-based flow.
 
 var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func() {
 
@@ -53,38 +55,39 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE: Create incident request that will trigger workflow catalog search
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-030",
-				RemediationID:     "test-rem-030",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-030",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-030", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-030",
+				RemediationID:         "test-rem-030",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-030",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
 			// ACT: Call KA (which internally uses workflow catalog)
-			// (BR-AA-KA-064: async session flow)
+			// (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Successful semantic search
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present (semantic search succeeded)")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present (semantic search succeeded)")
 
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
 
 			// BUSINESS IMPACT: LLM finds relevant workflows without exact keyword matching
@@ -102,34 +105,35 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-031",
-				RemediationID:     "test-rem-031",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod-031",
-				ErrorMessage:      "Container memory limit exceeded",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-031", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-031",
+				RemediationID:         "test-rem-031",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod-031",
+				ErrorMessage:          "Container memory limit exceeded",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Results sorted by confidence descending
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
 
 			// Note: Alternative workflows should also be sorted by confidence
@@ -147,39 +151,40 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// Ported from: test_workflow_catalog_data_storage_integration.py:303
 			// BR: BR-KA-250
 
-		// ========================================
-		// ARRANGE: Create request with Mock LLM scenario for no workflow found
-		// ========================================
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "test-catalog-032",
-			RemediationID:     "test-rem-032",
-			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
-			Severity:          "high",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "default",
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod",
-			ErrorMessage:      "Test error",
-			Environment:       "production",
-			Priority:          "P1",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
-		}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ARRANGE: Create request with Mock LLM scenario for no workflow found
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-032", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-032",
+				RemediationID:         "test-rem-032",
+				SignalName:            "MOCK_NO_WORKFLOW_FOUND", // Mock LLM scenario
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
+			}
+			// ========================================
+			// ACT (#2190: AgentSession CRD flow)
+			// ========================================
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Graceful empty results (escalates to human review)
-		Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
-			"needs_human_review must be true when no workflows found")
-		Expect(incidentResp.HumanReviewReason.Value).To(Equal(agentclient.HumanReviewReasonNoMatchingWorkflows),
-			"human_review_reason must indicate no matching workflows")
+			Expect(incidentResp.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true when no workflows found")
+			Expect(incidentResp.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"humanReviewReason must indicate no matching workflows")
 
 			// BUSINESS IMPACT: LLM can tell operator "No automated remediation available"
 		})
@@ -196,37 +201,38 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-033",
-				RemediationID:     "test-rem-033",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-033", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-033",
+				RemediationID:         "test-rem-033",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Filtered results
-			if incidentResp.SelectedWorkflow.Set {
+			if incidentResp.SelectedWorkflow != nil {
 				// Workflow should match CrashLoopBackOff signal type
 				// (DD-WORKFLOW-002 v3.0: signal_type is singular string)
-				Expect(incidentResp.SelectedWorkflow.Value).ToNot(BeNil(),
-					"selected workflow should be non-nil when Set is true")
+				Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+					"selected workflow should be non-nil when present")
 			}
 
 			// BUSINESS IMPACT: Workflows match incident type (no irrelevant suggestions)
@@ -244,27 +250,28 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-034",
-				RemediationID:     "test-rem-034",
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-034", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-034",
+				RemediationID:         "test-rem-034",
+				SignalName:            "OOMKilled",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
@@ -273,7 +280,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// KA returns selected_workflow (top 1) + alternative_workflows (typically top 5-10)
 			// Total should not exceed reasonable LLM context limits
 
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Mock LLM confidence validation done in integration tests
 
 			// BUSINESS IMPACT: LLM doesn't get overwhelmed with too many options
@@ -295,37 +302,38 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-036",
-				RemediationID:     "test-rem-036",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-036", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-036",
+				RemediationID:         "test-rem-036",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT: Simulate LLM completing RCA for OOMKilled
-			// (BR-AA-KA-064: async session flow)
+			// (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Relevant workflow found
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present for OOMKilled")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present for OOMKilled")
 
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
 
 			// BUSINESS IMPACT: Operator presented with actionable remediation
@@ -343,36 +351,37 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-037",
-				RemediationID:     "test-rem-037",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-037", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-037",
+				RemediationID:         "test-rem-037",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Relevant workflow found
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present for CrashLoopBackOff")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present for CrashLoopBackOff")
 
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
 
 			// BUSINESS IMPACT: Operator has automated restart remediation option
@@ -387,37 +396,38 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// Ported from: test_workflow_catalog_e2e.py:218
 			// BR: BR-KA-250
 
-		// ========================================
-		// ARRANGE: Use Mock LLM scenario for no workflow found
-		// ========================================
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "test-catalog-038",
-			RemediationID:     "test-rem-038",
-			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
-			Severity:          "high",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "default",
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod",
-			ErrorMessage:      "Test error",
-			Environment:       "production",
-			Priority:          "P1",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
-		}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ARRANGE: Use Mock LLM scenario for no workflow found
 			// ========================================
-			respObj, err := sessionClient.Investigate(ctx, req)
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-038", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-038",
+				RemediationID:         "test-rem-038",
+				SignalName:            "MOCK_NO_WORKFLOW_FOUND", // Mock LLM scenario
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
+			}
+			// ========================================
+			// ACT (#2190: AgentSession CRD flow)
+			// ========================================
+			respObj, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Graceful empty results
-			Expect(respObj.NeedsHumanReview.Value).To(BeTrue(),
-				"needs_human_review must be true when no workflows found")
+			Expect(respObj.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true when no workflows found")
 
 			// BUSINESS IMPACT: AI informs operator "No workflows found for this incident"
 		})
@@ -438,33 +448,34 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-040",
-				RemediationID:     "test-rem-040",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-040", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-040",
+				RemediationID:         "test-rem-040",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: container_image included
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Container image validation done in integration tests
 
 			// BUSINESS IMPACT: WorkflowExecution can pull and execute container without additional lookups
@@ -482,33 +493,34 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-041",
-				RemediationID:     "test-rem-041",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-041", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-041",
+				RemediationID:         "test-rem-041",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: container_digest included
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Container digest validation done in integration tests
 
 			// BUSINESS IMPACT: WorkflowExecution uses immutable digest (security requirement)
@@ -526,33 +538,34 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-042",
-				RemediationID:     "test-rem-042",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-042", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-042",
+				RemediationID:         "test-rem-042",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Complete workflow data
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// Required fields validation done in integration tests
 
 			// BUSINESS IMPACT: AIAnalysis has all data to create WorkflowExecution CRD
@@ -570,33 +583,34 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// ========================================
 			// ARRANGE
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-catalog-043",
-				RemediationID:     "test-rem-043",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test error",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-043", Namespace: sharedNamespace},
+				IncidentID:            "test-catalog-043",
+				RemediationID:         "test-rem-043",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "Test error",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			_, err := sessionClient.Investigate(ctx, req)
-			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
+			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
 			// BEHAVIOR: Valid OCI references
-			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
+			// Note: SelectedWorkflow is a free-form *apiextensionsv1.JSON, so detailed field validation skipped in E2E
 			// OCI format validation done in integration tests
 
 			// BUSINESS IMPACT: Container runtime can pull images without format errors

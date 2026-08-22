@@ -45,7 +45,11 @@ rules:
     - jobs
   verbs: ["get", "list"]
 
-# Kubernaut CRDs (all 6 types)
+# Kubernaut CRDs (all 11 types). Issue #2187: this is a static, maintained
+# allowlist -- unlike crds.sh's dynamic discovery (#2037), a type missing
+# here is a silent partial-collection gap (crds.sh finds it, kubectl 403s
+# reading it). test/test_crds.bats::UT-MG-2187-001 asserts this list stays
+# in sync with the CRDs actually shipped in charts/kubernaut/crds/.
 - apiGroups: ["kubernaut.ai"]
   resources:
     - remediationrequests
@@ -54,6 +58,11 @@ rules:
     - aianalyses
     - workflowexecutions
     - notificationrequests
+    - agentsessions
+    - investigationsessions
+    - actiontypes
+    - effectivenessassessments
+    - remediationworkflows
   verbs: ["get", "list"]
 
 # Tekton resources (CRITICAL for V1.0)

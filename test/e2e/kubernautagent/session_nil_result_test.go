@@ -22,57 +22,44 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E-KA-1390-001: Nil-result resilience — session completes with nil result →
-// GET /result returns HTTP 200 with structured synthetic result → no 409 loop.
+// AgentSession.Status.Result must still be a structured, non-empty body (no
+// caller-visible nil/empty-result gap). Trigger mechanism migrated off the
+// retired HTTP session endpoints to direct AgentSession CRD creation
+// (issue #2190, DD-AA-KA-001) — business assertion is unaffected.
 var _ = Describe("E2E-KA-1390-001: Nil-Result Resilience", Label("e2e", "ka", "1390"), func() {
 
 	It("should return structured result for completed session with nil result [SC-24, SI-13]", func() {
-		// Submit an investigation that will complete. After the mock LLM
-		// completes, the session reaches a terminal state. If the mock
-		// scenario returns an empty/nil result, GetResult must still
-		// return HTTP 200 with a synthetic result body.
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "test-nil-result-1390",
-			RemediationID:     "rem-nil-result-1390",
-			SignalName:        "CrashLoopBackOff",
-			Severity:          "warning",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "default",
-			ResourceKind:      "Pod",
-			ResourceName:      "nil-result-pod",
-			ErrorMessage:      "Container exited with code 137",
-			Environment:       "staging",
-			Priority:          "P2",
-			RiskTolerance:     "high",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
+		// Create an AgentSession that will complete. If the mock scenario
+		// returns an empty/nil result, Status.Result must still be a
+		// synthetic, structured, non-empty body once Phase=Completed.
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "rem-nil-result-1390", Namespace: sharedNamespace},
+			IncidentID:            "test-nil-result-1390",
+			RemediationID:         "rem-nil-result-1390",
+			SignalName:            "CrashLoopBackOff",
+			Severity:              "warning",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "default",
+			ResourceKind:          "Pod",
+			ResourceName:          "nil-result-pod",
+			ErrorMessage:          "Container exited with code 137",
+			Environment:           "staging",
+			Priority:              "P2",
+			RiskTolerance:         "high",
+			BusinessCategory:      "standard",
+			ClusterName:           "e2e-test",
 		}
 
-		By("submitting investigation")
-		sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(sessionID).ToNot(BeEmpty())
-
-		By("waiting for session to reach terminal state")
-		Eventually(func() string {
-			result, pollErr := sessionClient.PollSession(ctx, sessionID)
-			if pollErr != nil || result == nil {
-				return errorFixture
-			}
-			return result.Status
-		}, 2*time.Minute, 2*time.Second).Should(
-			BeElementOf("completed", "failed", "cancelled"),
-			"session must reach terminal state",
-		)
-
-		By("fetching result — must return 200, not 409")
-		result, err := sessionClient.GetSessionResult(ctx, sessionID)
+		By("creating the AgentSession and waiting for a terminal phase")
+		result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 		Expect(err).ToNot(HaveOccurred(),
-			"GET /result must return 200 for terminal sessions — nil-result 409 loop prevented")
-		Expect(result).ToNot(BeNil(), "response must contain a structured result body")
+			"AgentSession must reach Completed with a structured Result — nil-result gap prevented")
+		Expect(result).ToNot(BeNil(), "Status.Result must contain a structured result body")
 		Expect(result.Analysis).ToNot(BeEmpty(),
 			"synthetic result must include non-empty analysis field")
 	})
