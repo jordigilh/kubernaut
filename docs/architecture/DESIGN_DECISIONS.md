@@ -85,6 +85,7 @@
 | DD-GATEWAY-014 | Service-Level Circuit Breaker Deferral | ⏸️ Deferred | 2025-12-13 | [DD-GATEWAY-014-circuit-breaker-deferral.md](decisions/DD-GATEWAY-014-circuit-breaker-deferral.md) |
 | DD-GATEWAY-015 | Storm Detection Logic Removal | ✅ IMPLEMENTED | 2025-12-13 | [DD-GATEWAY-015-storm-detection-removal.md](decisions/DD-GATEWAY-015-storm-detection-removal.md) |
 | DD-GATEWAY-016 | Kubernetes API Circuit Breaker Implementation | ✅ IMPLEMENTED | 2026-01-03 | [DD-GATEWAY-016-k8s-api-circuit-breaker.md](decisions/DD-GATEWAY-016-k8s-api-circuit-breaker.md) |
+| DD-GATEWAY-019 | Signal Fingerprint/Deduplication Consolidation — Triage & Recommendation (rejects AuthWebhook single-entry-point; recommends shared in-process package for GW+AF) | 🔄 Proposed | 2026-08-22 | [DD-GATEWAY-019-signal-dedup-consolidation-triage.md](decisions/DD-GATEWAY-019-signal-dedup-consolidation-triage.md) |
 | DD-GATEWAY-CLUSTER-SCOPE-SIGNALS | Cluster-Scoped Signal Support (`ClusterScope` pseudo-Kind + opt-in mechanism) | 📋 Proposed | 2026-07-01 | [DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md](decisions/DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md) |
 | DD-KA-002 | Custom Labels Workflow-Matching Architecture | ✅ Approved | 2025-11-30 | [DD-KA-002-custom-labels-auto-append.md](decisions/DD-KA-002-custom-labels-auto-append.md) |
 | DD-KA-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-KA-003-mandatory-openapi-client-usage.md](decisions/DD-KA-003-mandatory-openapi-client-usage.md) |
