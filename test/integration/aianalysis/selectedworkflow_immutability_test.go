@@ -151,17 +151,15 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		// against the controller can never be mistaken for the write-once
 		// guard, or vice versa.
 		attemptTamperedWrite := func(mutate func(sw *aianalysisv1.SelectedWorkflow)) error {
-			deadline := time.Now().Add(timeout)
-			for {
+			var lastErr error
+			Eventually(func() bool {
 				var latest aianalysisv1.AIAnalysis
 				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
 				mutate(latest.Status.RCAResult.SelectedWorkflow)
-				err := k8sClient.Status().Update(ctx, &latest)
-				if err == nil || !apierrors.IsConflict(err) || time.Now().After(deadline) {
-					return err
-				}
-				time.Sleep(interval)
-			}
+				lastErr = k8sClient.Status().Update(ctx, &latest)
+				return lastErr == nil || !apierrors.IsConflict(lastErr)
+			}, timeout, interval).Should(BeTrue(), "gave up waiting for a definitive (non-conflict) write result")
+			return lastErr
 		}
 
 		By("Second status write: tampering with DeclaredParameterNames must be rejected by the API server")
