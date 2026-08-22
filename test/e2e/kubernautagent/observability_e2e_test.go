@@ -22,12 +22,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E Observability Tests — BR-KA-OBSERVABILITY-001
@@ -48,18 +50,20 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 		return string(body)
 	}
 
-	triggerInvestigation := func(id string, signalName string) *agentclient.IncidentResponse {
-		req := &agentclient.IncidentRequest{
-			IncidentID:        id,
-			RemediationID:     "rem-obs-" + id,
-			SignalName:        signalName,
-			Severity:          agentclient.SeverityHigh,
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "production",
-			ResourceKind:      "Pod",
-			ResourceName:      "obs-test-pod",
+	triggerInvestigation := func(id string, signalName string) *agentsessionv1.AgentSessionResult {
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "rem-obs-" + id, Namespace: sharedNamespace},
+			IncidentID:            id,
+			RemediationID:         "rem-obs-" + id,
+			SignalName:            signalName,
+			Severity:              "high",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "production",
+			ResourceKind:          "Pod",
+			ResourceName:          "obs-test-pod",
 		}
-		result, err := sessionClient.Investigate(ctx, req)
+		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+		result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "investigation should complete without error")
 		return result
 	}
