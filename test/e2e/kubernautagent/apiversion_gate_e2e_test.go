@@ -23,8 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -80,43 +80,42 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 			// ========================================
 			// ARRANGE: Pod signal that triggers ambiguous_kind scenario
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "e2e-1044-001-pod-ambiguous",
-				RemediationID:     "req-e2e-1044-001",
-				SignalName:        "MOCK_AMBIGUOUS_KIND",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "mock_ambiguous_kind: TestWidget misconfiguration detected",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "infrastructure",
-				ClusterName:       "kubernaut-agent-e2e",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-1044-001", Namespace: sharedNamespace},
+				IncidentID:            "e2e-1044-001-pod-ambiguous",
+				RemediationID:         "req-e2e-1044-001",
+				SignalName:            "MOCK_AMBIGUOUS_KIND",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "mock_ambiguous_kind: TestWidget misconfiguration detected",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "infrastructure",
+				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// ========================================
-			// ACT: Full investigation pipeline
+			// ACT: Full investigation pipeline (#2190: AgentSession CRD flow)
 			// ========================================
-			result, err := sessionClient.Investigate(ctx, req)
-			Expect(err).NotTo(HaveOccurred(), "investigation API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).NotTo(HaveOccurred(), "investigation should succeed")
 			Expect(result).NotTo(BeNil(), "response should not be nil")
 
 			// ========================================
 			// ASSERT: Gate exhaustion → human review
 			// ========================================
-			Expect(result.NeedsHumanReview.Value).To(BeTrue(),
-				"needs_human_review must be true when gate exhausts retries for ambiguous kind without api_version")
+			Expect(result.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true when gate exhausts retries for ambiguous kind without api_version")
 
-			hrReason, ok := result.HumanReviewReason.Get()
-			Expect(ok).To(BeTrue(), "human_review_reason must be set")
-			Expect(hrReason).To(Equal(agentclient.HumanReviewReasonRcaIncomplete),
-				"human_review_reason should be rca_incomplete (gate could not resolve ambiguous kind)")
+			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
+				"humanReviewReason should be rca_incomplete (gate could not resolve ambiguous kind)")
 
-			Expect(result.SelectedWorkflow.Value).To(BeNil(),
-				"selected_workflow must be nil when gate escalates to human review")
+			Expect(result.SelectedWorkflow).To(BeNil(),
+				"selectedWorkflow must be nil when gate escalates to human review")
 
 			Expect(result.Warnings).NotTo(BeEmpty(),
 				"warnings should be present when gate exhausts retries for ambiguous kind")
@@ -133,7 +132,7 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 			var gateEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				params := ogenclient.QueryAuditEventsParams{}
-				params.CorrelationID.SetTo(req.RemediationID)
+				params.CorrelationID.SetTo(spec.RemediationID)
 				params.EventType.SetTo(kaaudit.EventTypeLLMRequest)
 				params.Limit.SetTo(100)
 
@@ -177,40 +176,39 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 			// ========================================
 			// ARRANGE: TestWidget signal (ambiguous kind as signal resource)
 			// ========================================
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "e2e-1044-002-widget-direct",
-				RemediationID:     "req-e2e-1044-002",
-				SignalName:        "MOCK_AMBIGUOUS_KIND",
-				Severity:          agentclient.SeverityHigh,
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "default",
-				ResourceKind:      "TestWidget",
-				ResourceName:      "test-widget-instance",
-				ErrorMessage:      "mock_ambiguous_kind: TestWidget spec misconfiguration",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "infrastructure",
-				ClusterName:       "kubernaut-agent-e2e",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-1044-002", Namespace: sharedNamespace},
+				IncidentID:            "e2e-1044-002-widget-direct",
+				RemediationID:         "req-e2e-1044-002",
+				SignalName:            "MOCK_AMBIGUOUS_KIND",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "TestWidget",
+				ResourceName:          "test-widget-instance",
+				ErrorMessage:          "mock_ambiguous_kind: TestWidget spec misconfiguration",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "infrastructure",
+				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// ========================================
-			// ACT
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			result, err := sessionClient.Investigate(ctx, req)
-			Expect(err).NotTo(HaveOccurred(), "investigation API call should succeed")
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).NotTo(HaveOccurred(), "investigation should succeed")
 			Expect(result).NotTo(BeNil(), "response should not be nil")
 
 			// ========================================
 			// ASSERT: Same gate exhaustion behavior
 			// ========================================
-			Expect(result.NeedsHumanReview.Value).To(BeTrue(),
-				"needs_human_review must be true for ambiguous TestWidget kind without api_version")
+			Expect(result.NeedsHumanReview).To(BeTrue(),
+				"needsHumanReview must be true for ambiguous TestWidget kind without api_version")
 
-			hrReason, ok := result.HumanReviewReason.Get()
-			Expect(ok).To(BeTrue(), "human_review_reason must be set")
-			Expect(hrReason).To(Equal(agentclient.HumanReviewReasonRcaIncomplete),
-				"human_review_reason should be rca_incomplete")
+			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
+				"humanReviewReason should be rca_incomplete")
 
 			Expect(result.Warnings).NotTo(BeEmpty(),
 				"warnings should be present when gate exhausts retries")

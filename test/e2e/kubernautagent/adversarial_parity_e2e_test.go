@@ -20,11 +20,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // TP-433-ADV Phase 8: E2E Adversarial Parity Tests
@@ -40,32 +42,39 @@ import (
 var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", "adversarial"), func() {
 
 	// Helper to build a standard request with the mock keyword as signal name
-	buildRequest := func(incidentID, signalName, severity string) *agentclient.IncidentRequest {
-		sev := agentclient.SeverityCritical
+	buildRequest := func(incidentID, signalName, severity string) agentsessionv1.AgentSessionSpec {
+		sev := "critical"
 		switch severity {
 		case "high":
-			sev = agentclient.SeverityHigh
+			sev = "high"
 		case "medium":
-			sev = agentclient.SeverityWarning
+			sev = "warning"
 		case "info":
-			sev = agentclient.SeverityInfo
+			sev = "info"
 		}
-		return &agentclient.IncidentRequest{
-			IncidentID:        incidentID,
-			RemediationID:     "rem-adv-" + incidentID,
-			SignalName:        signalName,
-			Severity:          sev,
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "production",
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod-adv",
-			ErrorMessage:      signalName + " triggered for adversarial test",
-			Environment:       "production",
-			Priority:          "high",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "test",
-			ClusterName:       "kubernaut-agent-e2e",
+		return agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "rem-adv-" + incidentID, Namespace: sharedNamespace},
+			IncidentID:            incidentID,
+			RemediationID:         "rem-adv-" + incidentID,
+			SignalName:            signalName,
+			Severity:              sev,
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "production",
+			ResourceKind:          "Pod",
+			ResourceName:          "test-pod-adv",
+			ErrorMessage:          signalName + " triggered for adversarial test",
+			Environment:           "production",
+			Priority:              "high",
+			RiskTolerance:         "medium",
+			BusinessCategory:      "test",
+			ClusterName:           "kubernaut-agent-e2e",
 		}
+	}
+
+	// investigate is a shorthand for the CRD-based flow (#2190), mirroring
+	// the retired sessionClient.Investigate(ctx, req) call shape.
+	investigate := func(spec agentsessionv1.AgentSessionSpec) (*agentsessionv1.AgentSessionResult, error) {
+		return infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 	}
 
 	// ===================================================================
@@ -75,45 +84,42 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-002: Outcome routing", func() {
 
 		It("E2E-KA-433-ADV-001: problem_resolved → is_actionable=false, no workflow", func() {
-			req := buildRequest("adv-001", "mock_problem_resolved", "low")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-001", "mock_problem_resolved", "low")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			isActionable, hasActionable := result.IsActionable.Get()
-			Expect(hasActionable).To(BeTrue(),
-				"M1: is_actionable must be set for problem_resolved outcome")
-			Expect(isActionable).To(BeFalse(),
-				"problem_resolved should set is_actionable=false")
+			Expect(result.IsActionable).NotTo(BeNil(),
+				"M1: isActionable must be set for problem_resolved outcome")
+			Expect(*result.IsActionable).To(BeFalse(),
+				"problem_resolved should set isActionable=false")
 
-			_, hasSW := result.SelectedWorkflow.Get()
-			Expect(hasSW).To(BeFalse(),
+			Expect(result.SelectedWorkflow).To(BeNil(),
 				"problem_resolved should not select a workflow")
 		})
 
 		It("E2E-KA-433-ADV-002: predictive_no_action → is_actionable=false", func() {
-			req := buildRequest("adv-002", "mock_predictive_no_action", "low")
-			req.SignalMode.SetTo(agentclient.SignalModeProactive)
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-002", "mock_predictive_no_action", "low")
+			spec.SignalMode = "proactive"
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			isActionable, hasActionable := result.IsActionable.Get()
-			Expect(hasActionable).To(BeTrue(),
-				"M1: is_actionable must be set for predictive_no_action outcome")
-			Expect(isActionable).To(BeFalse(),
-				"predictive_no_action should set is_actionable=false")
+			Expect(result.IsActionable).NotTo(BeNil(),
+				"M1: isActionable must be set for predictive_no_action outcome")
+			Expect(*result.IsActionable).To(BeFalse(),
+				"predictive_no_action should set isActionable=false")
 		})
 
 		It("E2E-KA-433-ADV-003: problem_resolved_contradiction → needs_human_review=false (#301 override)", func() {
-			req := buildRequest("adv-003", "mock_problem_resolved_contradiction", "low")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-003", "mock_problem_resolved_contradiction", "low")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
 			// #301: When investigation_outcome=problem_resolved AND needs_human_review=true,
 			// the resolution takes precedence. Python KA enforced this override; KA matches.
-			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
+			Expect(result.NeedsHumanReview).To(BeFalse(),
 				"#301: problem_resolved overrides contradictory needs_human_review=true")
 		})
 	})
@@ -125,8 +131,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-001: Post-RCA enrichment", func() {
 
 		It("E2E-KA-433-ADV-004: OOMKilled enrichment produces detected_labels", func() {
-			req := buildRequest("adv-004", "OOMKilled", "high")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-004", "OOMKilled", "high")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Analysis).NotTo(BeEmpty())
@@ -183,8 +189,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-006: LLM metrics", func() {
 
 		It("E2E-KA-433-ADV-008: /metrics has aiagent_api_llm_requests_total after investigation", func() {
-			req := buildRequest("adv-008", "OOMKilled", "high")
-			_, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-008", "OOMKilled", "high")
+			_, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 
 			resp, err := http.Get(kaMetricsURL + "/metrics")
@@ -201,8 +207,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 
 		It("E2E-KA-433-ADV-009: /metrics has aiagent_api_llm_tokens_total after investigation", func() {
 			// M5-fix: ensure at least one investigation has run so metrics are populated
-			req := buildRequest("adv-009-tokens", "OOMKilled", "high")
-			_, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-009-tokens", "OOMKilled", "high")
+			_, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 
 			resp, err := http.Get(kaMetricsURL + "/metrics")
@@ -225,23 +231,23 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-009: ExecutionBundle and AlternativeWorkflows", func() {
 
 		It("E2E-KA-433-ADV-010: Successful investigation selected_workflow present", func() {
-			req := buildRequest("adv-010", "OOMKilled", "high")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-010", "OOMKilled", "high")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			needsHR, hasHR := result.NeedsHumanReview.Get()
-			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
-			if !needsHR {
-				sw, hasSW := result.SelectedWorkflow.Get()
-				Expect(hasSW).To(BeTrue(), "actionable result should have selected_workflow")
+			// AgentSessionResult.NeedsHumanReview is a plain, always-set bool
+			// (unlike the retired client's optional field), so no hasHR check.
+			if !result.NeedsHumanReview {
+				Expect(result.SelectedWorkflow).NotTo(BeNil(), "actionable result should have selectedWorkflow")
+				sw := decodeDetectedLabels(result.SelectedWorkflow)
 				Expect(sw).To(HaveKey("workflow_id"))
 			}
 		})
 
 		It("E2E-KA-433-ADV-011: Low confidence result produces investigation output", func() {
-			req := buildRequest("adv-011", "mock_low_confidence", "critical")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-011", "mock_low_confidence", "critical")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Analysis).NotTo(BeEmpty())
@@ -256,16 +262,16 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-011: Audit trail", func() {
 
 		It("E2E-KA-433-ADV-012: Investigation completes with incident correlation", func() {
-			req := buildRequest("adv-012-audit", "OOMKilled", "high")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-012-audit", "OOMKilled", "high")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.IncidentID).To(Equal("adv-012-audit"))
 		})
 
 		It("E2E-KA-433-ADV-013: Investigation produces non-empty analysis", func() {
-			req := buildRequest("adv-013-prompt", "OOMKilled", "high")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-013-prompt", "OOMKilled", "high")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Analysis).NotTo(BeEmpty(),
@@ -273,8 +279,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		})
 
 		It("E2E-KA-433-ADV-014: Authenticated investigation preserves SA identity", func() {
-			req := buildRequest("adv-014-auth", "OOMKilled", "high")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-014-auth", "OOMKilled", "high")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 		})
@@ -287,18 +293,15 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 	Context("GAP-015: Human review reason alignment", func() {
 
 		It("E2E-KA-433-ADV-015: no_workflow_found → correct HR reason enum", func() {
-			req := buildRequest("adv-015", "mock_no_workflow_found", "critical")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("adv-015", "mock_no_workflow_found", "critical")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			needsHR, hasHR := result.NeedsHumanReview.Get()
-			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
-			Expect(needsHR).To(BeTrue(),
+			Expect(result.NeedsHumanReview).To(BeTrue(),
 				"no_workflow_found should require human review")
-			hrReason, hasReason := result.HumanReviewReason.Get()
-			Expect(hasReason).To(BeTrue())
-			Expect(string(hrReason)).To(SatisfyAny(
+			Expect(result.HumanReviewReason).NotTo(BeEmpty())
+			Expect(result.HumanReviewReason).To(SatisfyAny(
 				Equal("no_matching_workflows"),
 				Equal("investigation_inconclusive"),
 				Equal("workflow_not_found"),
@@ -311,27 +314,23 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		// mock LLM returns generic-restart-v1 workflow.
 		// Replaces E2E-KA-433-ADV-016 which asserted rca_incomplete.
 		It("E2E-KA-1039-001: deleted resource proceeds to workflow selection", func() {
-			req := buildRequest("1039-001", "mock_rca_incomplete", "critical")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("1039-001", "mock_rca_incomplete", "critical")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
 			// Pipeline must NOT abort with rca_incomplete.
-			needsHR, hasHR := result.NeedsHumanReview.Get()
-			if hasHR && needsHR {
-				hrReason, hasReason := result.HumanReviewReason.Get()
-				if hasReason {
-					Expect(string(hrReason)).NotTo(Equal("rca_incomplete"),
-						"E2E-KA-1039-001: deleted resource must NOT trigger rca_incomplete")
-				}
+			if result.NeedsHumanReview && result.HumanReviewReason != "" {
+				Expect(result.HumanReviewReason).NotTo(Equal("rca_incomplete"),
+					"E2E-KA-1039-001: deleted resource must NOT trigger rca_incomplete")
 			}
 
 			// Workflow selection must have run and produced a result.
-			sw, hasSW := result.SelectedWorkflow.Get()
-			Expect(hasSW).To(BeTrue(),
-				"E2E-KA-1039-001: selected_workflow must be present (pipeline continued)")
+			Expect(result.SelectedWorkflow).NotTo(BeNil(),
+				"E2E-KA-1039-001: selectedWorkflow must be present (pipeline continued)")
+			sw := decodeDetectedLabels(result.SelectedWorkflow)
 			Expect(sw).To(HaveKey("workflow_id"),
-				"E2E-KA-1039-001: selected_workflow must contain workflow_id")
+				"E2E-KA-1039-001: selectedWorkflow must contain workflow_id")
 
 			Expect(result.Confidence).To(BeNumerically(">=", 0.5),
 				"E2E-KA-1039-001: confidence must reflect LLM assessment (mock returns 0.88)")
@@ -343,8 +342,8 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		// Verifies observability: when enrichment detects a deleted target,
 		// a warning is added to the investigation response.
 		It("E2E-KA-1039-002: deleted resource warning in response", func() {
-			req := buildRequest("1039-002", "mock_rca_incomplete", "critical")
-			result, err := sessionClient.Investigate(ctx, req)
+			spec := buildRequest("1039-002", "mock_rca_incomplete", "critical")
+			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -359,11 +358,11 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 				"E2E-KA-1039-002: warnings must contain a 'deleted' resource notice")
 
 			// Investigation must still succeed despite the warning.
-			sw, hasSW := result.SelectedWorkflow.Get()
-			Expect(hasSW).To(BeTrue(),
+			Expect(result.SelectedWorkflow).NotTo(BeNil(),
 				"E2E-KA-1039-002: investigation must succeed with workflow selected")
+			sw := decodeDetectedLabels(result.SelectedWorkflow)
 			Expect(sw).To(HaveKey("workflow_id"),
-				"E2E-KA-1039-002: selected_workflow must contain workflow_id")
+				"E2E-KA-1039-002: selectedWorkflow must contain workflow_id")
 		})
 	})
 })
