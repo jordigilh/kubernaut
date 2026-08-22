@@ -71,6 +71,15 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		// backoff cycle after that delay, which left near-zero margin in a fixed 2m
 		// budget. E2E-FLEET-015 tolerates the same delay because it also accepts an
 		// earlier OOMKilled termination-state signal, not just CrashLoopBackOff.
+		//
+		// Widened again 4m to 7m (PR #2245 CI run 32589487121): must-gather events
+		// showed 6 container restarts by T+174s alone -- kubelet's CrashLoopBackOff
+		// delay doubles each cycle (10s/20s/40s/80s/160s/300s-cap), so by the 6th-7th
+		// restart the backoff window itself can approach/exceed the 300s cap, which a
+		// fixed 4m (240s) budget doesn't comfortably clear even without added node
+		// contention. 7m gives margin past that cap plus the same node-contention
+		// slack as the prior widening, rather than assuming the 4m bump alone
+		// accounted for the backoff curve's own scaling.
 		Eventually(func() bool {
 			pods := &corev1.PodList{}
 			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(namespace),
@@ -87,7 +96,7 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 				}
 			}
 			return false
-		}, 4*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
+		}, 7*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
 
 		By("Step 2: Sending synthetic cluster-tagged alert to Gateway (AC-4, no real event-exporter bridge)")
 		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", "high",
