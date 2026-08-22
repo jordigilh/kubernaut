@@ -1006,11 +1006,14 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 			// (dispatch-time interactive check), workflow catalog
 			// (RemediationWorkflow/ActionType, DD-WORKFLOW-019), and Lease
 			// for dispatch coordination -- mirrors charts/kubernaut/templates/
-			// kubernaut-agent/kubernaut-agent.yaml's RBAC.
+			// kubernaut-agent/kubernaut-agent.yaml's RBAC. "update"/"patch"
+			// (#2231, DD-AA-KA-001 Amendment): the Dispatcher Reconciler's
+			// dispatchCleanupFinalizer is a metadata-only write on the base
+			// resource, not the status subresource.
 			{
 				APIGroups: []string{"kubernaut.ai"},
 				Resources: []string{"agentsessions"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     []string{"get", "list", "watch", "update", "patch"},
 			},
 			{
 				APIGroups: []string{"kubernaut.ai"},

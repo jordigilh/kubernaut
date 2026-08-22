@@ -1047,6 +1047,122 @@ blast radius for AF's own copy going forward, but AA's three sources still have 
 automated parity test — left as a Future Consideration below rather than added in this already-large
 amendment.
 
+## Amendment: #2231 — KA-side Dispatcher migrates from raw watch to controller-runtime Reconciler + finalizer (2026-08-22)
+
+Resolves the cross-check flagged above (2026-08-21): KA's `Dispatcher.watchLoop` reacted to a
+raw `watch.Deleted` event for `AgentSession` via `cancelOnDelete` — the same at-most-once,
+outside-the-workqueue delivery shape whose failure mode was already confirmed live for AF's
+structurally-identical prior design (the `handler.Funcs.DeleteFunc` correction above, PR #2222,
+3/13 local repro under `--race --procs=4`). Filed as #2231 to quantify KA's actual exposure and
+decide whether a design fix was warranted, since KA's case tolerates an occasional miss (a
+fire-and-forget in-memory goroutine stop, self-corrected by `session.Store`'s 60-minute
+`maxSessionAge` backstop) that AF's durable CRD-state case did not.
+
+**Quantified blast radius**: a missed `watch.Deleted` event wastes at most 60 minutes of
+LLM/tool budget per affected `AgentSession` (the `maxSessionAge` backstop), not unbounded —
+lower severity than AF's case, but not zero, and the underlying reliability gap is identical.
+
+**Options considered**:
+- **(A) Accept as documented risk, no code change**: lowest effort, but leaves a confirmed-live
+  failure mode (proven for AF's identical shape) undocumented as *accepted* rather than
+  *unaddressed*, and does nothing to close the gap when KA's dispatch volume grows.
+- **(B) Add a periodic resync sweep as a backstop** (Dispatcher already had one,
+  `defaultResyncInterval`'s ticker — widen its role to be the primary delete-detection
+  mechanism, not just a Lease-staleness/TimeOutAt check): mitigates without fixing —
+  the raw watch's *unreliable* event delivery is still the primary path; resync only bounds
+  the worst case to one resync interval, not to zero. Still a raw, no-informer, no-workqueue
+  client underneath, so every other reliability property controller-runtime provides
+  (retry-with-backoff on transient errors, automatic reconnect/relist, per-key rate limiting)
+  remains absent.
+- **(C) Chosen. Adopt the full controller-runtime `Manager` + `Reconciler` + finalizer
+  pattern** — mirroring AF's own (now twice-hardened) `AgentSessionTerminalCloseReconciler`
+  exactly: `dispatchCleanupFinalizer` defers actual `AgentSession` removal until `Reconcile`
+  (the same workqueue-backed, retried path used for every other AgentSession event) observes
+  `DeletionTimestamp != nil` and has stopped any in-memory investigation goroutine
+  (`cancelOnDelete`, unchanged), then removes the finalizer.
+
+Option C was chosen over B specifically because it **fixes** the reliability gap rather than
+**bounding** it, using infrastructure already proven twice in this codebase (AF's original
+`Watches(handler.Funcs{...})` attempt, and the finalizer fix that replaced it after CI caught
+the exact failure mode B would have left in place). It was preferred over the narrower "just
+watch, don't adopt a Manager" framing this decision's original design deliberately avoided
+(2026-08-17, above: "the one piece of infrastructure that would have made full removal
+impractical") because three things changed since then:
+
+1. **KA is now itself CRD-driven** (`AgentSession`) rather than the purely agentic,
+   synchronous/SSE/MCP/A2A-shaped service the original no-Manager stance was scoped to — the
+   argument that a controller-runtime `Manager` "does not make sense" for KA applied to KA's
+   *investigation-serving* surface, not to `AgentSession` dispatch, which is already
+   fundamentally a reconcile-shaped problem (react to CRD state, converge, retry on failure).
+2. **The committed v1.7 direction (Future Considerations, above) already anticipates KA's
+   dispatch/coordination surface converging toward "architecturally the same shape AA already
+   has"** once the LLM/tool-calling harness is extracted into independent OCI agent pods
+   (#1536, ADR-KA-002) — adopting the Reconciler pattern for the dispatch surface now is a
+   step *toward* that documented direction, not a detour from it. (`PROPOSAL-EXT-003`'s
+   `goose-server` framing, which the original no-Manager stance also referenced as adjacent
+   context, is superseded by #1536's runtime-agnostic bring-your-own-OCI-agent model; this
+   amendment does not depend on or reference it.)
+3. **AF's own dispatch-adjacent controller (`AgentSessionTerminalCloseReconciler`) already
+   proves the pattern end-to-end against this exact CRD**, including the specific finalizer-vs-
+   raw-delete-capture lesson this amendment reuses directly — de-risking the KA-side adoption
+   to a largely mechanical port rather than a novel design.
+
+**Scope**: `Dispatcher` becomes a `reconcile.Reconciler` (`Reconcile(ctx, ctrl.Request)
+(ctrl.Result, error)`), registered via `SetupWithManager` on a namespace-scoped `ctrl.Manager`
+built in `cmd/kubernautagent/agentsession_wiring.go` (mirroring
+`cmd/apifrontend/session_infra.go`'s `newSessionControllerManager`: `LeaderElection: false`,
+metrics/health probes disabled — KA already serves its own `/healthz`/`/readyz`/metrics
+endpoints independently). Deliberately **not** adopted for `Dispatcher`'s actual API
+reads/writes: `Reconcile` continues to use the same raw, uncached
+`buildAgentSessionDispatcherClient` client for every `Get`/`List`/`Create`/`Update`/`Delete`
+call (dispatch-Lease races, Status writes) exactly as before — only event *delivery* (watch ->
+workqueue -> `Reconcile`) moves onto the Manager's informer/cache; this preserves the existing
+Lease-race consistency semantics unchanged and keeps the blast radius of this change scoped to
+delete-reliability, not a wholesale client migration.
+
+`considerAgentSession`'s Pending/Investigating dispatch logic, `tryDispatch`,
+`cancelOnTimeout`, and the dispatch-Lease machinery are unchanged in content, only in caller:
+`Reconcile` invokes `tryDispatch`/`cancelOnTimeout` via `go` exactly as `considerAgentSession`
+always did, so a real dispatch attempt never blocks controller-runtime's single default
+worker — this is the same reasoning that let the original per-event goroutine-launch design
+scale across concurrent `AgentSession`s despite a single-threaded event loop, now expressed as
+"don't block the reconcile worker" instead of "don't block the watch loop." The former ticker-
+driven `resync` (Lists every `AgentSession` on `defaultResyncInterval`) is replaced by
+per-object `ctrl.Result{RequeueAfter: resyncInterval}`, requeueing only non-terminal
+`AgentSession`s individually — functionally equivalent for the stale-Lease-reclaim and
+`TimesOutAt`-expiry checks it existed for, without a blanket List every tick. The watch-
+reconnect gap `resync` also covered is now closed by construction: controller-runtime's
+informer relists automatically on reconnect and never silently drops a create/update/delete
+the way a raw `watch.Interface` could.
+
+**RBAC**: KA's ServiceAccount gains `update`/`patch` on `agentsessions` (metadata-only, for
+`dispatchCleanupFinalizer`) in both existing RBAC sources —
+`charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml` (production) and
+`test/infrastructure/kubernautagent.go`'s hand-rolled E2E-only copy (explicitly documented
+there as manually-synced, no shared source of truth). No `+kubebuilder:rbac` marker is added:
+`make manifests`' `controller-gen` invocation only scans `./internal/controller/...`
+(`Makefile`), not `internal/kubernautagent/...`, so `config/rbac/role.yaml` was never KA's RBAC
+source of truth to begin with — consistent with KA's pre-existing pattern of hand-maintaining
+both copies directly.
+
+**Consequences**:
+- **Positive**: closes a confirmed-live reliability gap (same failure mode, same root cause,
+  same fix shape already proven for AF) using no new infrastructure — controller-runtime is
+  already a first-class dependency of this codebase. Dispatch throughput is unaffected (see
+  goroutine-launch preservation above). `Reconcile`'s Get -> finalizer -> dispatch shape is now
+  directly testable via the same direct-`Reconcile()`-call UT pattern AF's
+  `agentsession_close_test.go` established, removing this package's prior dependence on
+  `Eventually`-polling a background watch loop for its own dispatch tests.
+- **Negative**: KA's ServiceAccount gains a `metadata.finalizers` write it did not previously
+  need (`update`/`patch` on the base `agentsessions` resource, not just its `status`
+  subresource) — **Mitigation**: scoped to exactly the verbs needed for finalizer add/remove,
+  matching AF's identical, already-reviewed grant shape for the same CRD.
+- **Neutral**: `Dispatcher.namespace` (previously used only by the raw watch's `listOpts`) now
+  additionally back a defensive `WithEventFilter` namespace predicate on the Manager-driven
+  watch, redundant with (but not solely reliant on) the Manager's own namespace-scoped
+  `cache.Options` in production — belt-and-suspenders, not a behavior change for the
+  already-namespace-scoped production deployment.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

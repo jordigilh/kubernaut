@@ -28,8 +28,10 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -49,17 +51,25 @@ const dispatchLeaseDuration = 15 * time.Minute
 // wait) is in flight.
 const dispatchLeaseRenewInterval = dispatchLeaseDuration / 3
 
-// defaultResyncInterval is how often watchLoop re-Lists and re-considers
-// every non-terminal AgentSession, independent of watch events. This is the
-// standard reflector/informer resync pattern, needed here for two reasons
-// this raw (non-cached, no-informer) watch does not otherwise cover: (1) a
-// dropped/reconnected watch has a gap between the old connection ending and
-// the new one's List establishing continuity, and (2) it is what actually
-// drives the stale dispatch-Lease reclaim path (isLeaseStale) for a
-// long-Investigating AgentSession whose owning replica crashed -- without a
-// resync, nothing re-examines an Investigating AgentSession once its
-// initial watch event has been consumed.
+// defaultResyncInterval is how often a non-terminal AgentSession is
+// re-Reconciled even with no new watch event (Reconcile's own
+// ctrl.Result{RequeueAfter: ...}, #2231 / DD-AA-KA-001 Amendment -- the
+// per-object successor to the retired ticker-driven resync's blanket List).
+// Needed for two reasons a pure watch-driven Reconcile would not otherwise
+// cover on its own: (1) it drives the stale dispatch-Lease reclaim path
+// (isLeaseStale) for a long-Investigating AgentSession whose owning replica
+// crashed -- without a periodic revisit, nothing re-examines an
+// Investigating AgentSession once its initial Create/Update has been
+// reconciled, and (2) it self-enforces an expired Spec.TimesOutAt deadline
+// (isTimedOut) even when nothing else changes the object in the meantime.
 const defaultResyncInterval = 30 * time.Second
+
+// dispatchCleanupFinalizer is agentsessionv1.DispatchCleanupFinalizer,
+// aliased locally for readability. See that constant's doc comment for the
+// full rationale and the CI-confirmed failure mode (AF's structurally
+// identical prior design, DD-AA-KA-001's "Post-merge correction" amendment)
+// this replaces the old raw watch.Deleted handling to avoid.
+const dispatchCleanupFinalizer = agentsessionv1.DispatchCleanupFinalizer
 
 // listTimeout bounds the one-shot List/Get/Create/Update calls this
 // Dispatcher makes outside of the long-lived Watch itself (resync's List,
@@ -75,11 +85,19 @@ type InvestigationRunner interface {
 	Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error)
 }
 
-// Dispatcher watches AgentSession Create/Update events on a raw
-// crclient.WithWatch (no informer cache, no controller-runtime Manager --
-// DD-AA-KA-001 mirrors AF's HandleAwaitSession pattern), races other KA
-// replicas for a per-AgentSession dispatch Lease, and launches exactly one
-// investigation per AgentSession via the existing session.Manager.
+// Dispatcher is a controller-runtime Reconciler for AgentSession (#2231 /
+// DD-AA-KA-001 Amendment: superseding this type's original raw
+// crclient.WithWatch watch loop). Every actual API read/write inside
+// Reconcile/reconcileDelete/tryDispatch/etc. still goes through Dispatcher's
+// own client field -- the same uncached, direct client used since
+// DD-AA-KA-001 (buildAgentSessionDispatcherClient,
+// cmd/kubernautagent/agentsession_wiring.go) -- preserving the
+// dispatch-Lease race's existing consistency semantics unchanged; only
+// event *delivery* (watch -> workqueue -> Reconcile) moves onto a
+// controller-runtime Manager's informer/cache, registered via
+// SetupWithManager. Races other KA replicas for a per-AgentSession dispatch
+// Lease, and launches exactly one investigation per AgentSession via the
+// existing session.Manager.
 type Dispatcher struct {
 	client         crclient.WithWatch
 	namespace      string
@@ -130,78 +148,164 @@ func NewDispatcher(client crclient.WithWatch, namespace, holderIdentity string, 
 	return d
 }
 
-// Start runs the watch loop until ctx is cancelled, transparently
-// re-establishing the watch (with a short backoff) if the underlying
-// connection drops -- a raw watch.Interface has no built-in reconnect.
-func (d *Dispatcher) Start(ctx context.Context) {
-	for ctx.Err() == nil {
-		if err := d.watchLoop(ctx); err != nil {
-			d.logger.Error(err, "agentsession watch failed, retrying")
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(2 * time.Second):
-			}
+// Reconcile is the controller-runtime entry point (#2231 / DD-AA-KA-001
+// Amendment): replaces the retired raw-watch watchLoop/handleEvent/resync
+// with the standard Get -> finalizer -> dispatch shape already proven by
+// AF's AgentSessionTerminalCloseReconciler
+// (internal/controller/apifrontend/agentsession_close.go).
+// dispatchCleanupFinalizer defers actual deletion until reconcileDelete has
+// stopped any in-memory investigation goroutine, closing the exact gap a
+// raw watch.Deleted event left open: that event was delivered at-most-once
+// outside controller-runtime's workqueue retry machinery, so a dropped
+// delivery (confirmed live for AF's structurally-identical prior design,
+// DD-AA-KA-001's "Post-merge correction" amendment) had no recovery short
+// of the informer's next full relist (typically ~5-10 minutes) -- during
+// which KA keeps investigating a remediation nothing will ever read the
+// result of, bounded today only by session.Store's 60-minute maxSessionAge
+// backstop.
+//
+// A not-found AgentSession is a benign no-op (fully deleted, finalizer
+// already removed by a prior reconcile). tryDispatch/cancelOnTimeout are
+// launched via goroutines here exactly as considerAgentSession always did
+// pre-#2231: Reconcile itself must return quickly, since
+// controller-runtime's default MaxConcurrentReconciles=1 would otherwise
+// serialize every AgentSession's dispatch attempt behind this one worker --
+// a throughput regression this change must not introduce.
+func (d *Dispatcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	as := &agentsessionv1.AgentSession{}
+	if err := d.client.Get(ctx, req.NamespacedName, as); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("get agentsession %s: %w", req.NamespacedName, err)
+	}
+
+	if !as.GetDeletionTimestamp().IsZero() {
+		return d.reconcileDelete(ctx, as)
+	}
+
+	if !controllerutil.ContainsFinalizer(as, dispatchCleanupFinalizer) {
+		controllerutil.AddFinalizer(as, dispatchCleanupFinalizer)
+		if err := d.client.Update(ctx, as); err != nil {
+			return ctrl.Result{}, fmt.Errorf("add %s finalizer: %w", dispatchCleanupFinalizer, err)
 		}
 	}
+
+	d.considerAgentSession(ctx, as)
+	if isTerminalPhase(as.Status.Phase) {
+		return ctrl.Result{}, nil
+	}
+	// Re-visit this non-terminal AgentSession even with no new watch event
+	// -- see defaultResyncInterval's doc comment for why (stale
+	// dispatch-Lease reclaim, self-enforced TimesOutAt expiry).
+	return ctrl.Result{RequeueAfter: d.resyncInterval}, nil
 }
 
-func (d *Dispatcher) listOpts() []crclient.ListOption {
-	if d.namespace == "" {
-		return nil
+// reconcileDelete stops any in-memory investigation goroutine for a
+// DeletionTimestamp-set AgentSession (cancelOnDelete, unchanged), then
+// removes dispatchCleanupFinalizer to let the actual delete proceed.
+// Mirrors AgentSessionTerminalCloseReconciler.reconcileDelete's finalizer-
+// removal shape; see Reconcile's doc comment for why this replaces the
+// prior raw watch.Deleted handling. Re-Gets before removing the finalizer
+// (see removeDispatchCleanupFinalizer) rather than reusing as directly: as
+// may be stale by the time this runs, since cancelOnDelete's
+// ForceCancelByRemediationID call can itself synchronously trigger a
+// Status write on this exact object via the TerminalHook
+// (OnTerminal -> writeTerminalStatus) before returning here.
+//
+// An AgentSession without the finalizer (e.g. one created by a pre-upgrade
+// replica before this Reconciler first observed it) falls through
+// untouched -- a narrow, self-healing transitional gap bounded to objects
+// already in flight at upgrade time; session.Store's maxSessionAge backstop
+// remains the safety net for that window, same as it always has been for
+// any missed cleanup.
+func (d *Dispatcher) reconcileDelete(ctx context.Context, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(as, dispatchCleanupFinalizer) {
+		return ctrl.Result{}, nil
 	}
-	return []crclient.ListOption{crclient.InNamespace(d.namespace)}
+
+	d.cancelOnDelete(as) //nolint:contextcheck // cancelOnDelete's own ForceCancelByRemediationID call is a pure in-memory map operation (see cancelOnDelete's doc comment) with no I/O to cancel; ctx is otherwise unused on this path
+
+	if err := d.removeDispatchCleanupFinalizer(ctx, crclient.ObjectKeyFromObject(as)); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
 
-// resync Lists every AgentSession in scope and re-considers each
-// non-terminal one for dispatch. Called once before the watch is
-// established (closing the gap between "KA starts watching" and "KA has
-// seen every AgentSession that already existed") and then periodically on
-// resyncInterval (closing the same gap after a watch reconnect, and driving
-// the stale dispatch-Lease reclaim path for a stuck Investigating
-// AgentSession -- see defaultResyncInterval's doc comment).
-func (d *Dispatcher) resync(ctx context.Context) {
-	// Bounded per-call deadline: the dispatcher's client (buildAgentSessionDispatcherClient)
-	// deliberately carries no rest.Config.Timeout (that would also cut short
-	// this same client's long-lived Watch), so this one-shot List call needs
-	// its own timeout instead of inheriting one from the client.
-	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
-	defer cancel()
-
-	list := &agentsessionv1.AgentSessionList{}
-	if err := d.client.List(listCtx, list, d.listOpts()...); err != nil {
-		d.logger.Error(err, "agentsession resync: list failed")
-		return
+// removeDispatchCleanupFinalizer re-Gets key and removes
+// dispatchCleanupFinalizer, retrying on Conflict (mirrors updateStatus's
+// retry loop, status_writer.go). A confirmed-live race during #2231
+// development (UT-AA-2170-DELETE-001): cancelOnDelete's synchronous
+// ForceCancelByRemediationID call can itself trigger a Status write via
+// the TerminalHook on this exact object before this function's own Update
+// runs, bumping resourceVersion out from under a stale copy -- a plain
+// single-shot Update (no re-Get, no retry) intermittently failed with
+// Conflict as a result.
+func (d *Dispatcher) removeDispatchCleanupFinalizer(ctx context.Context, key crclient.ObjectKey) error {
+	for attempt := 0; attempt < maxStatusUpdateRetries; attempt++ {
+		fresh := &agentsessionv1.AgentSession{}
+		if err := d.client.Get(ctx, key, fresh); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("get agentsession %s before removing finalizer: %w", key, err)
+		}
+		if !controllerutil.RemoveFinalizer(fresh, dispatchCleanupFinalizer) {
+			return nil
+		}
+		err := d.client.Update(ctx, fresh)
+		if err == nil {
+			return nil
+		}
+		if apierrors.IsConflict(err) {
+			continue
+		}
+		return fmt.Errorf("remove %s finalizer: %w", dispatchCleanupFinalizer, err)
 	}
-	for i := range list.Items {
-		d.considerAgentSession(ctx, list.Items[i].DeepCopy())
-	}
+	return fmt.Errorf("remove %s finalizer: retries exhausted for agentsession %s", dispatchCleanupFinalizer, key)
 }
 
-// considerAgentSession is the shared entry point for both the watch's
-// Added/Modified events and resync's periodic re-List: skip terminal
-// AgentSessions, self-enforce an expired Spec.TimesOutAt deadline (#2170,
-// DD-AA-KA-001 Amendment N) in preference to dispatching, and otherwise
-// attempt normal dispatch. Applying the TimesOutAt check here -- not only
-// in resync -- matters because a watch.Added event for an AgentSession
-// created already past its deadline (e.g. from a backlog) would otherwise
-// win the race to tryDispatch before the next resync tick ever runs.
+// SetupWithManager registers the Dispatcher as a controller-runtime
+// Reconciler for AgentSession (#2231 / DD-AA-KA-001 Amendment). mgr's cache
+// is used exclusively to drive reliable Reconcile dispatch (watch ->
+// workqueue -> Reconcile, with automatic reconnect/relist and per-key
+// retry-with-backoff on error, none of which a raw watch.Interface
+// provided) -- never for reads; see Dispatcher's doc comment. The
+// WithEventFilter namespace predicate is defense-in-depth, redundant with
+// (but not solely reliant on) the Manager's own namespace-scoped
+// cache.Options in production (cmd/kubernautagent/agentsession_wiring.go).
+func (d *Dispatcher) SetupWithManager(mgr ctrl.Manager) error {
+	bldr := ctrl.NewControllerManagedBy(mgr).
+		Named("agentsession-dispatcher").
+		For(&agentsessionv1.AgentSession{})
+	if d.namespace != "" {
+		ns := d.namespace
+		bldr = bldr.WithEventFilter(predicate.NewPredicateFuncs(func(obj crclient.Object) bool {
+			return obj.GetNamespace() == ns
+		}))
+	}
+	return bldr.Complete(d)
+}
+
+// considerAgentSession is Reconcile's shared dispatch-decision logic: skip
+// terminal AgentSessions, self-enforce an expired Spec.TimesOutAt deadline
+// (#2170, DD-AA-KA-001 Amendment N) in preference to dispatching, and
+// otherwise attempt normal dispatch.
 func (d *Dispatcher) considerAgentSession(ctx context.Context, as *agentsessionv1.AgentSession) {
 	// #2204 follow-up (2026-08-20, IT-AA CI RCA): unexplained silent-stall
 	// RCA target -- an Integration(aianalysis) run observed an AgentSession
 	// created and immediately requeued by AA (backstop ~25m away), then
 	// zero further activity of any kind (no enrichment, no LLM call, no
 	// dispatch-lease log) for the entire 90s test window, despite this
-	// replica's watch+resync loop having started well before the
-	// AgentSession existed. This entry-level log is the cheapest possible
-	// proof point: if it is missing for a given AgentSession name in a
-	// future occurrence, the watch/resync loop itself never visited the
-	// object (a KA-side observation gap); if present, the stall is further
-	// downstream (Lease race, session.Manager capacity, or the
-	// investigation itself). Debug, not Info: fires on every watch event
-	// AND every resync tick for every non-terminal AgentSession, so at
-	// production's 30s resync interval under real fleet volume this would
-	// otherwise be noisy at Info.
+	// replica's Reconciler having started well before the AgentSession
+	// existed. This entry-level log is the cheapest possible proof point:
+	// if it is missing for a given AgentSession name in a future
+	// occurrence, Reconcile itself never visited the object (a KA-side
+	// observation gap); if present, the stall is further downstream (Lease
+	// race, session.Manager capacity, or the investigation itself). Debug,
+	// not Info: fires on every Reconcile call for every non-terminal
+	// AgentSession, so at production's 30s requeue interval under real
+	// fleet volume this would otherwise be noisy at Info.
 	d.logger.V(1).Info("considering agentsession for dispatch",
 		"agentSession", as.Name, "namespace", as.Namespace, "phase", as.Status.Phase)
 	if isTerminalPhase(as.Status.Phase) {
@@ -224,71 +328,14 @@ func isTimedOut(as *agentsessionv1.AgentSession) bool {
 	return as.Spec.TimesOutAt != nil && metav1.Now().After(as.Spec.TimesOutAt.Time)
 }
 
-func (d *Dispatcher) watchLoop(ctx context.Context) error {
-	d.resync(ctx)
-
-	w, err := d.client.Watch(ctx, &agentsessionv1.AgentSessionList{}, d.listOpts()...)
-	if err != nil {
-		return fmt.Errorf("watch agentsessions: %w", err)
-	}
-	defer w.Stop()
-
-	ticker := time.NewTicker(d.resyncInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			d.resync(ctx)
-		case evt, ok := <-w.ResultChan():
-			if !ok {
-				return fmt.Errorf("agentsession watch channel closed")
-			}
-			d.handleEvent(ctx, evt)
-		}
-	}
-}
-
-// handleEvent filters watch events to those worth a dispatch attempt: any
-// AgentSession not yet in a terminal phase. Re-considering Pending AND
-// Investigating (not just Pending) on every resync is what makes crash
-// recovery work -- a healthy Investigating session's dispatch Lease is
-// still fresh, so tryDispatch's Lease acquisition is a safe no-op; only a
-// stale Lease (owning replica crashed) allows a reclaim.
-//
-// watch.Deleted (DD-AA-KA-001 Amendment N, #2170) is handled separately: the
-// AgentSession is already gone by the time this fires (directly deleted, or
-// transitively via RR/AIAnalysis cascade deletion), so there is no CRD left
-// to dispatch against or write a terminal Status to -- only the in-memory
-// investigation goroutine can still be stopped.
-func (d *Dispatcher) handleEvent(ctx context.Context, evt watch.Event) {
-	switch evt.Type {
-	case watch.Added, watch.Modified:
-		as, ok := evt.Object.(*agentsessionv1.AgentSession)
-		if !ok {
-			return
-		}
-		d.considerAgentSession(ctx, as.DeepCopy())
-	case watch.Deleted:
-		as, ok := evt.Object.(*agentsessionv1.AgentSession)
-		if !ok {
-			return
-		}
-		go d.cancelOnDelete(as) //nolint:contextcheck // cancelOnDelete runs detached: the AgentSession (and any ctx tied to its watch event) is already gone by the time this fires, only the in-memory goroutine cleanup remains
-	case watch.Bookmark, watch.Error:
-		// No AgentSession payload to act on for these event types.
-	}
-}
-
 // cancelOnDelete stops the in-memory investigation goroutine (if any) for a
-// deleted AgentSession. #2170: this is the only stop mechanism left now
-// that HTTP polling's CancelSession RPC is gone -- without it, deleting the
-// owning RR/AIAnalysis (which cascade-deletes the AgentSession, Kubernetes
-// garbage-collecting the owner chain transitively) would leave KA
-// investigating a remediation nothing will ever read the result of, forever
-// burning LLM/tool budget. ErrSessionNotFound is expected and silent: most
+// deleted AgentSession, called from reconcileDelete once a DeletionTimestamp
+// is observed. #2170: this is the only stop mechanism left now that HTTP
+// polling's CancelSession RPC is gone -- without it, deleting the owning
+// RR/AIAnalysis (which cascade-deletes the AgentSession, Kubernetes garbage-
+// collecting the owner chain transitively) would leave KA investigating a
+// remediation nothing will ever read the result of, forever burning
+// LLM/tool budget. ErrSessionNotFound is expected and silent: most
 // deletions arrive after the investigation has already reached a terminal
 // phase and been cleaned up.
 func (d *Dispatcher) cancelOnDelete(as *agentsessionv1.AgentSession) {
@@ -385,8 +432,8 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 		// CI RCA): this tryDispatch call just won (Created or reclaimed) the
 		// dispatch Lease above, but the fresh Get shows the AgentSession
 		// already terminal -- a benign race where a concurrent tryDispatch
-		// call for the same AgentSession (typically a resync tick firing
-		// against a stale, pre-rejection list snapshot) reached
+		// call for the same AgentSession (typically a redundant Reconcile
+		// firing against a stale, pre-rejection snapshot) reached
 		// acquireDispatchLease after the original attempt's own
 		// deleteDispatchLease had already run, winning a brand-new Lease
 		// for work that's already done. Without this, that Lease is

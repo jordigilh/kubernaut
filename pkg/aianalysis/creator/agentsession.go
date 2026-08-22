@@ -145,9 +145,20 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 // immediately for GetOrCreate's same-named Create, which would otherwise
 // collide with a terminating-but-not-yet-removed object of that name).
 func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error {
-	if controllerutil.RemoveFinalizer(as, agentsessionv1.TerminalCloseFinalizer) {
+	removedTerminalClose := controllerutil.RemoveFinalizer(as, agentsessionv1.TerminalCloseFinalizer)
+	// #2231 / DD-AA-KA-001 Amendment: KA's Dispatcher now also carries
+	// DispatchCleanupFinalizer (replacing its prior raw watch.Deleted
+	// handling). Left unstripped, this Delete would defer to KA's own
+	// Dispatcher.Reconcile to observe the DeletionTimestamp before the
+	// object actually disappears -- reintroducing exactly the "retry Create
+	// collides with a still-present, terminating object" race this
+	// function's synchronous-delete contract exists to avoid. Safe to strip
+	// unconditionally: see DispatchCleanupFinalizer's doc comment for why
+	// this specific call site never has an in-memory investigation to lose.
+	removedDispatchCleanup := controllerutil.RemoveFinalizer(as, agentsessionv1.DispatchCleanupFinalizer)
+	if removedTerminalClose || removedDispatchCleanup {
 		if err := c.client.Update(ctx, as); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to remove terminal-close finalizer from AgentSession %s/%s before retry delete: %w", as.Namespace, as.Name, err)
+			return fmt.Errorf("failed to remove finalizers from AgentSession %s/%s before retry delete: %w", as.Namespace, as.Name, err)
 		}
 	}
 	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {

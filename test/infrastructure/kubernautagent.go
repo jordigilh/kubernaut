@@ -833,9 +833,12 @@ rules:
   # Mirrors charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml's
   # production ClusterRole -- this hand-rolled E2E-only RBAC manifest must be
   # kept in sync with it manually (no shared source of truth between the two).
+  # "update"/"patch" on the base resource (#2231, DD-AA-KA-001 Amendment):
+  # the Dispatcher Reconciler's dispatchCleanupFinalizer is a metadata-only
+  # write, not a status-subresource write.
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions/status"]
     verbs: ["get", "update", "patch"]

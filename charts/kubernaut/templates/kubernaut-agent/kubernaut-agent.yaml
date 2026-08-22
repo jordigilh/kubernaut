@@ -417,9 +417,12 @@ rules:
   # ── AgentSession (DD-AA-KA-001, #2170): dispatch watcher + Status writer.
   # Unconditional -- every investigation flows through AgentSession
   # dispatch regardless of interactive.enabled. KA never writes Spec.
+  # "update"/"patch" (#2231, DD-AA-KA-001 Amendment): the Dispatcher
+  # Reconciler's dispatchCleanupFinalizer is a metadata-only write on the
+  # base resource, not the status subresource.
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions/status"]
     verbs: ["get", "update", "patch"]
