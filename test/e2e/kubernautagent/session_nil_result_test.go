@@ -38,20 +38,21 @@ var _ = Describe("E2E-KA-1390-001: Nil-Result Resilience", Label("e2e", "ka", "1
 		// returns an empty/nil result, Status.Result must still be a
 		// synthetic, structured, non-empty body once Phase=Completed.
 		spec := agentsessionv1.AgentSessionSpec{
-			IncidentID:        "test-nil-result-1390",
-			RemediationID:     "rem-nil-result-1390",
-			SignalName:        "CrashLoopBackOff",
-			Severity:          "warning",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "default",
-			ResourceKind:      "Pod",
-			ResourceName:      "nil-result-pod",
-			ErrorMessage:      "Container exited with code 137",
-			Environment:       "staging",
-			Priority:          "P2",
-			RiskTolerance:     "high",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "rem-nil-result-1390", Namespace: sharedNamespace},
+			IncidentID:            "test-nil-result-1390",
+			RemediationID:         "rem-nil-result-1390",
+			SignalName:            "CrashLoopBackOff",
+			Severity:              "warning",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "default",
+			ResourceKind:          "Pod",
+			ResourceName:          "nil-result-pod",
+			ErrorMessage:          "Container exited with code 137",
+			Environment:           "staging",
+			Priority:              "P2",
+			RiskTolerance:         "high",
+			BusinessCategory:      "standard",
+			ClusterName:           "e2e-test",
 		}
 
 		By("creating the AgentSession and waiting for a terminal phase")

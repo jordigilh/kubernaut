@@ -116,7 +116,13 @@ teardown() {
         local def_file="${crd_dir}crd-definition.yaml"
 
         assert_file_exists "${def_file}"
-        run grep -iE "Forbidden|Error from server|cannot (get|list) resource" "${def_file}"
+        # Match kubectl's actual RBAC-403 error phrasing, not a bare
+        # "Forbidden" -- CRDs can legitimately document RBAC concepts in
+        # their own OpenAPI schema `description:` text (e.g.
+        # NotificationRequestStatus.DegradedReason's doc comment "(e.g.,
+        # RBAC Forbidden for the target CRD)"), which a bare-word match
+        # false-positives on even though it's schema prose, not a denial.
+        run grep -iE "Error from server \(Forbidden\)|is forbidden:|cannot (get|list) resource \"customresourcedefinitions\"" "${def_file}"
         [ "$status" -ne 0 ] || {
             echo "RBAC denial leaked into ${crd_name}/crd-definition.yaml: $output"
             return 1
