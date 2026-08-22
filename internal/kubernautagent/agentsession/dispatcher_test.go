@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -112,6 +113,19 @@ func wireHooks(mgr *session.Manager, dispatchers ...*agentsession.Dispatcher) {
 	})
 }
 
+// mustReconcile calls d.Reconcile for as's ObjectKey and fails the test on
+// error -- the direct-Reconcile()-call convention this package's tests now
+// use (mirroring internal/controller/apifrontend/agentsession_close_test.go),
+// replacing the retired go d.Start(ctx) background watch loop (#2231,
+// DD-AA-KA-001 Amendment). Callers invoke this at every point a watch event
+// (Create/Update/Delete) previously drove the dispatcher automatically;
+// dispatch itself remains goroutine-driven, so Eventually is still needed
+// to observe its (async) outcome.
+func mustReconcile(ctx context.Context, d *agentsession.Dispatcher, as *agentsessionv1.AgentSession) {
+	_, err := d.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(as)})
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func newPendingAgentSession(name string) *agentsessionv1.AgentSession {
 	return &agentsessionv1.AgentSession{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
@@ -151,10 +165,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "leak found", Confidence: 0.9}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-1")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 
 			key := crclient.ObjectKeyFromObject(as)
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -191,10 +205,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.8}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession(longName)
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -225,10 +239,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{delay: 2 * time.Second, result: &katypes.InvestigationResult{RCASummary: "first, still running"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", cappedMgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(cappedMgr, d)
-			go d.Start(ctx)
 
 			first := newPendingAgentSession("as-cap-1")
 			Expect(cli.Create(ctx, first)).To(Succeed())
+			mustReconcile(ctx, d, first)
 			firstKey := crclient.ObjectKeyFromObject(first)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -240,6 +254,7 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 
 			second := newPendingAgentSession("as-cap-2")
 			Expect(cli.Create(ctx, second)).To(Succeed())
+			mustReconcile(ctx, d, second)
 			secondKey := crclient.ObjectKeyFromObject(second)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -306,10 +321,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{delay: 50 * time.Millisecond, result: &katypes.InvestigationResult{RCASummary: "first"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", cappedMgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(cappedMgr, d)
-			go d.Start(ctx)
 
 			first := newPendingAgentSession("as-retry-1")
 			Expect(cli.Create(ctx, first)).To(Succeed())
+			mustReconcile(ctx, d, first)
 			firstKey := crclient.ObjectKeyFromObject(first)
 			Eventually(func() agentsessionv1.AgentSessionPhase {
 				got := &agentsessionv1.AgentSession{}
@@ -320,6 +335,7 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 
 			rejected := newPendingAgentSession("as-retry-2")
 			Expect(cli.Create(ctx, rejected)).To(Succeed())
+			mustReconcile(ctx, d, rejected)
 			rejectedKey := crclient.ObjectKeyFromObject(rejected)
 			Eventually(func() agentsessionv1.AgentSessionPhase {
 				got := &agentsessionv1.AgentSession{}
@@ -331,7 +347,16 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			// AA's retry: delete the rejected AgentSession, then recreate a
 			// fresh one under the identical name -- exactly what
 			// AgentSessionCreator.DeleteForRetry + the next GetOrCreate does.
-			Expect(cli.Delete(ctx, rejected)).To(Succeed())
+			// #2231: production's DeleteForRetry strips
+			// agentsessionv1.DispatchCleanupFinalizer itself before
+			// deleting (keeping the delete synchronous for the immediate
+			// same-name recreate below); this test mirrors that by
+			// reconciling the delete immediately instead of leaving the
+			// finalizer to defer removal to a later Reconcile.
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, rejectedKey, got)).To(Succeed())
+			Expect(cli.Delete(ctx, got)).To(Succeed())
+			mustReconcile(ctx, d, got)
 			// The first investigation finishes on its own (50ms delay),
 			// freeing the sole slot for the retry attempt.
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -342,6 +367,7 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 
 			retry := newPendingAgentSession("as-retry-2")
 			Expect(cli.Create(ctx, retry)).To(Succeed())
+			mustReconcile(ctx, d, retry)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
 				got := &agentsessionv1.AgentSession{}
@@ -357,10 +383,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{err: errors.New("llm timeout: raw internal detail")}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-2")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -387,11 +413,15 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			// Lease and registered the remediationID mapping -- try both,
 			// OnTerminal is a no-op log when its own map has no entry.
 			wireHooks(mgr, d1, d2)
-			go d1.Start(ctx)
-			go d2.Start(ctx)
 
 			as := newPendingAgentSession("as-3")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			// Both replicas react to the same Create -- exactly the race
+			// two independent watch-driven Reconciles would have produced
+			// pre-#2231, just expressed as two sequential (but internally
+			// goroutine-async) Reconcile calls here.
+			mustReconcile(ctx, d1, as)
+			mustReconcile(ctx, d2, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -409,7 +439,6 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "should not run"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-4")
 			// A human called AF's MCP `start` action before AA even reached
@@ -428,6 +457,7 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			}
 			Expect(cli.Create(ctx, isCR)).To(Succeed())
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() string {
@@ -454,10 +484,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "autonomous, no IS"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-6")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -493,9 +523,9 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "recovered", Confidence: 0.7}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-new", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			key := crclient.ObjectKeyFromObject(as)
+			mustReconcile(ctx, d, as)
 			Eventually(func() agentsessionv1.AgentSessionPhase {
 				got := &agentsessionv1.AgentSession{}
 				Expect(cli.Get(ctx, key, got)).To(Succeed())
@@ -514,10 +544,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{delay: 30 * time.Second, result: &katypes.InvestigationResult{RCASummary: "should never complete"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-delete-1")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			var sessionID string
@@ -534,6 +564,11 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			got := &agentsessionv1.AgentSession{}
 			Expect(cli.Get(ctx, key, got)).To(Succeed())
 			Expect(cli.Delete(ctx, got)).To(Succeed())
+			// #2231: deletion now defers via dispatchCleanupFinalizer until
+			// Reconcile observes the DeletionTimestamp -- drive that
+			// reconcile explicitly, mirroring what the Manager's workqueue
+			// would do automatically in production.
+			mustReconcile(ctx, d, got)
 
 			Eventually(func() session.Status {
 				s, err := mgr.GetSession(sessionID)
@@ -551,12 +586,12 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "should never run"}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-timeout-1")
 			pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Hour))
 			as.Spec.TimesOutAt = &pastDeadline
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -578,12 +613,12 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.7}}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-timeout-2")
 			futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
 			as.Spec.TimesOutAt = &futureDeadline
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			Eventually(func() agentsessionv1.AgentSessionPhase {
@@ -612,10 +647,10 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			runner := &fakeInvestigationRunner{block: block}
 			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
 			wireHooks(mgr, d)
-			go d.Start(ctx)
 
 			as := newPendingAgentSession("as-2233-1")
 			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
 			key := crclient.ObjectKeyFromObject(as)
 
 			var sessionID string
@@ -661,6 +696,123 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			Expect(got.Status.Result).NotTo(BeNil())
 			Expect(got.Status.Result.Analysis).To(Equal("Investigation completed without result"))
 			Expect(got.Status.Result.Confidence).To(Equal(0.0))
+		})
+	})
+
+	Describe("UT-AA-2231-001 / DD-AA-KA-001 Amendment #2231: Reconcile on a deleted, dispatched AgentSession stops the in-memory investigation and removes the finalizer", func() {
+		It("should cancel the running investigation, remove dispatchCleanupFinalizer, and let the object actually disappear", func() {
+			runner := &fakeInvestigationRunner{delay: 30 * time.Second, result: &katypes.InvestigationResult{RCASummary: "should never complete"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+
+			as := newPendingAgentSession("as-2231-1")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			mustReconcile(ctx, d, as)
+			key := crclient.ObjectKeyFromObject(as)
+
+			var sessionID string
+			Eventually(func() bool {
+				id, ok := mgr.FindByRemediationID(as.Spec.RemediationID)
+				if ok {
+					sessionID = id
+				}
+				return ok
+			}, "2s", "10ms").Should(BeTrue(), "the investigation must actually be running before delete is exercised")
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(got.GetFinalizers()).To(ContainElement(agentsessionv1.DispatchCleanupFinalizer),
+				"Reconcile's earlier pass must have added the finalizer before this AgentSession can be safely deleted")
+			Expect(cli.Delete(ctx, got)).To(Succeed())
+
+			mustReconcile(ctx, d, got)
+
+			Eventually(func() session.Status {
+				s, err := mgr.GetSession(sessionID)
+				if err != nil {
+					return ""
+				}
+				return s.Status
+			}, "2s", "10ms").Should(Equal(session.StatusCancelled),
+				"BR-AA-KA-065 (delete-reliability, #2231): Reconcile's workqueue-backed delete path must stop the in-memory investigation session")
+
+			afterDelete := &agentsessionv1.AgentSession{}
+			err := cli.Get(ctx, key, afterDelete)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+				"once dispatchCleanupFinalizer is removed, the fake client's tracker must let the deletion actually complete")
+		})
+	})
+
+	Describe("UT-AA-2231-002: Reconcile on a fresh, no-finalizer AgentSession adds dispatchCleanupFinalizer before attempting dispatch", func() {
+		It("should persist the finalizer on the very first Reconcile call", func() {
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.6}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+
+			as := newPendingAgentSession("as-2231-2")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			Expect(as.GetFinalizers()).To(BeEmpty(), "a freshly-Created AgentSession must not carry the finalizer yet")
+
+			mustReconcile(ctx, d, as)
+
+			key := crclient.ObjectKeyFromObject(as)
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(got.GetFinalizers()).To(ContainElement(agentsessionv1.DispatchCleanupFinalizer),
+				"BR-AA-KA-065.9: Reconcile must add dispatchCleanupFinalizer on its very first pass over a new AgentSession")
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted),
+				"adding the finalizer must not block normal dispatch")
+		})
+	})
+
+	Describe("UT-AA-2231-003: Reconcile returns promptly instead of blocking on a slow investigation", func() {
+		It("should not serialize dispatch attempts behind controller-runtime's single reconcile worker", func() {
+			runner := &fakeInvestigationRunner{delay: 2 * time.Second, result: &katypes.InvestigationResult{RCASummary: "slow"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+
+			as := newPendingAgentSession("as-2231-3")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+
+			start := time.Now()
+			mustReconcile(ctx, d, as)
+			elapsed := time.Since(start)
+
+			Expect(elapsed).To(BeNumerically("<", 500*time.Millisecond),
+				"BR-AA-KA-065 (concurrency, #2231): Reconcile must launch tryDispatch via goroutine, not block on the 2s investigation delay")
+		})
+	})
+
+	Describe("UT-AA-2231-004: an AgentSession deleted without dispatchCleanupFinalizer (pre-upgrade transitional gap) falls through untouched", func() {
+		It("should not panic and should return no error", func() {
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "unused"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+
+			as := newPendingAgentSession("as-2231-4")
+			now := metav1.Now()
+			as.DeletionTimestamp = &now
+			as.Finalizers = []string{"some.other/finalizer"}
+			Expect(cli.Create(ctx, as)).To(Succeed())
+
+			_, err := d.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(as)})
+			Expect(err).NotTo(HaveOccurred(),
+				"an AgentSession without dispatchCleanupFinalizer must fall through reconcileDelete as a no-op, not error")
+		})
+	})
+
+	Describe("UT-AA-2231-005: Reconcile on a not-found (fully deleted) AgentSession is a benign no-op", func() {
+		It("should return no error and no requeue", func() {
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "unused"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+
+			result, err := d.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKey{Name: "as-does-not-exist", Namespace: testNamespace}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
 		})
 	})
 })
