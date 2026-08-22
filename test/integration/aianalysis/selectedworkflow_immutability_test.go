@@ -143,14 +143,25 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		// multiple tampering attempts below would race that controller: a
 		// stale ResourceVersion 409s as a plain Conflict, which would be
 		// mistaken for the CEL rejection this test actually intends to
-		// prove. attemptTamperedWrite re-fetches immediately before each
-		// write so the only possible rejection reason is the write-once CEL
-		// guard itself, never a stale-version race.
+		// prove. Re-fetching immediately before each write (as introduced
+		// in #2170) narrows that race window but does not close it -- the
+		// controller can still land a reconcile between this helper's Get
+		// and Update. Retry transparently on a plain Conflict (never on the
+		// CEL Invalid rejection this test is asserting) so a losing race
+		// against the controller can never be mistaken for the write-once
+		// guard, or vice versa.
 		attemptTamperedWrite := func(mutate func(sw *aianalysisv1.SelectedWorkflow)) error {
-			var latest aianalysisv1.AIAnalysis
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
-			mutate(latest.Status.RCAResult.SelectedWorkflow)
-			return k8sClient.Status().Update(ctx, &latest)
+			deadline := time.Now().Add(timeout)
+			for {
+				var latest aianalysisv1.AIAnalysis
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
+				mutate(latest.Status.RCAResult.SelectedWorkflow)
+				err := k8sClient.Status().Update(ctx, &latest)
+				if err == nil || !apierrors.IsConflict(err) || time.Now().After(deadline) {
+					return err
+				}
+				time.Sleep(interval)
+			}
 		}
 
 		By("Second status write: tampering with DeclaredParameterNames must be rejected by the API server")
