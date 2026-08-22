@@ -19,6 +19,10 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "sigs.k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
+      # fixes it. Remove this ignore rule once a fixed release is out.
+      - dependency-name: "google.golang.org/adk/v2"
+        versions: [">= 2.1.0"]
     groups:
       all-go-deps:
         patterns:
@@ -97,6 +101,10 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "sigs.k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # google/adk-go#1356 (impacts v2.1.0+): pin to v2.0.x until upstream
+      # fixes it. Remove this ignore rule once a fixed release is out.
+      - dependency-name: "google.golang.org/adk/v2"
+        versions: [">= 2.1.0"]
     groups:
       all-go-deps:
         patterns:
