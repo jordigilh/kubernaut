@@ -92,6 +92,48 @@ teardown() {
     [ "$collected_crd_count" -eq "$expected_crd_count" ]
 }
 
+@test "IT-MG-2187-001: Must-gather's RBAC actually grants read access to EVERY discovered CRD type, not just enumerates them" {
+    # Business Outcome: BR-PLATFORM-001.3.2 -- discovery (#2037) and RBAC
+    # (#2187) are two independently-maintained things; a type crds.sh
+    # discovers but the ClusterRole can't read is a silent partial-collection
+    # gap that IT-MG-2037-001 above cannot catch, because crds.sh does
+    # `mkdir -p "${CRD_DIR}/${crd_name}"` BEFORE the RBAC-gated `kubectl get`
+    # call -- the per-type directory exists either way, so a directory-count
+    # match alone proves discovery worked, not that RBAC did. This asserts
+    # actual file CONTENT for every dynamically-discovered type: it must
+    # neither contain an RBAC-403 error signature nor be empty/placeholder
+    # (mirrors IT-MG-2037-003's content-vs-presence distinction for logs.sh).
+    bash "${GATHER_SCRIPT}" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --since=1h
+
+    local collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+    assert_directory_exists "${collection_dir}/crds"
+
+    local checked_count=0
+    for crd_dir in "${collection_dir}/crds"/*/; do
+        local crd_name=$(basename "${crd_dir}")
+        local def_file="${crd_dir}crd-definition.yaml"
+
+        assert_file_exists "${def_file}"
+        # Match kubectl's actual RBAC-403 error phrasing, not a bare
+        # "Forbidden" -- CRDs can legitimately document RBAC concepts in
+        # their own OpenAPI schema `description:` text (e.g.
+        # NotificationRequestStatus.DegradedReason's doc comment "(e.g.,
+        # RBAC Forbidden for the target CRD)"), which a bare-word match
+        # false-positives on even though it's schema prose, not a denial.
+        run grep -iE "Error from server \(Forbidden\)|is forbidden:|cannot (get|list) resource \"customresourcedefinitions\"" "${def_file}"
+        [ "$status" -ne 0 ] || {
+            echo "RBAC denial leaked into ${crd_name}/crd-definition.yaml: $output"
+            return 1
+        }
+        assert_file_contains "${def_file}" "kind: CustomResourceDefinition"
+
+        checked_count=$((checked_count + 1))
+    done
+    [ "${checked_count}" -gt 0 ]  # sanity: the test cluster must have discoverable Kubernaut CRDs
+}
+
 @test "IT-MG-2037-002: --namespace/--workflow-namespace flags flow through to the recorded collection namespaces" {
     # Business Outcome: BR-PLATFORM-001 -- support engineers running against a
     # non-default Helm release namespace get the RIGHT namespace collected, not

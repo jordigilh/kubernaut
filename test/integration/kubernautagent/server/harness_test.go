@@ -17,152 +17,37 @@ limitations under the License.
 package server_test
 
 import (
-	"context"
-	"github.com/go-logr/logr"
-	"net/http"
-	"net/http/httptest"
-	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
-	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
-// testHarness holds a running httptest.Server with the same route stack as
-// cmd/kubernautagent/main.go: chi → rate limiter → auth middleware →
-// SSEHeadersMiddleware → ogen server.
+// testHarness gives IT-WIRE-SIGTERM (sigterm_test.go) a bare session.Manager
+// to drive Shutdown() against.
+//
+// #2190: previously built the entire retired HTTP route stack (chi router,
+// ogen handler, rate limiter, auth middleware) via httptest.Server, even
+// though this test never touches h.Server -- only h.Manager. Now that the
+// HTTP transport is gone (pkg/agentclient, internal/kubernautagent/server's
+// ogen Handler), this harness shrinks to exactly what the test exercises:
+// Manager.Shutdown()'s effect on in-flight investigations.
 type testHarness struct {
-	Server      *httptest.Server
-	Manager     *session.Manager
-	Store       *session.Store
-	AuditStore  *syncAuditRecorder
-	RateLimiter *kaserver.RateLimiter
+	Manager *session.Manager
 }
 
-// harnessOption configures the test harness.
-type harnessOption func(*harnessConfig)
-
-type harnessConfig struct {
-	rateLimitCfg *kaserver.RateLimitConfig
-	authUser     string
-	investigator kaserver.InvestigationRunner
-}
-
-func withRateLimit(cfg kaserver.RateLimitConfig) harnessOption {
-	return func(c *harnessConfig) { c.rateLimitCfg = &cfg }
-}
-
-func withAuthUser(user string) harnessOption {
-	return func(c *harnessConfig) { c.authUser = user }
-}
-
-// newTestHarness builds the full route stack and returns a running httptest.Server.
-func newTestHarness(opts ...harnessOption) *testHarness {
-	cfg := &harnessConfig{}
-	for _, o := range opts {
-		o(cfg)
-	}
-
+// newTestHarness builds a session.Manager backed by a fresh in-memory Store
+// and a no-op audit sink (this test asserts on session state, not audit
+// events).
+func newTestHarness() *testHarness {
 	store := session.NewStore(30 * time.Minute)
-	auditRec := &syncAuditRecorder{}
-	mgr := session.NewManager(store, logr.Discard(), auditRec, nil)
-
-	inv := cfg.investigator
-	if inv == nil {
-		inv = &blockingInvestigator{}
-	}
-
-	handler := kaserver.NewHandler(mgr, inv, logr.Discard(), nil)
-	ogenSrv, _ := agentclient.NewServer(handler)
-
-	r := chi.NewRouter()
-
-	var rl *kaserver.RateLimiter
-	if cfg.rateLimitCfg != nil {
-		rl = kaserver.NewRateLimiter(*cfg.rateLimitCfg, nil)
-	} else {
-		defaultCfg := kaserver.DefaultRateLimitConfig()
-		rl = kaserver.NewRateLimiter(defaultCfg, nil)
-	}
-	r.Use(rl.Middleware)
-
-	if cfg.authUser != "" {
-		r.Use(fakeAuthMiddleware(cfg.authUser))
-	}
-
-	r.Mount("/", kaserver.SSEHeadersMiddleware(ogenSrv))
-
-	ts := httptest.NewServer(r)
-	return &testHarness{
-		Server:      ts,
-		Manager:     mgr,
-		Store:       store,
-		AuditStore:  auditRec,
-		RateLimiter: rl,
-	}
+	mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
+	return &testHarness{Manager: mgr}
 }
 
-func (h *testHarness) Close() {
-	h.Server.Close()
-	if h.RateLimiter != nil {
-		h.RateLimiter.Stop()
-	}
-}
-
-// fakeAuthMiddleware injects a fixed user identity into the request context,
-// matching the production auth middleware's behavior.
-func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), auth.UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// blockingInvestigator blocks until context is cancelled.
-type blockingInvestigator struct{}
-
-func (b *blockingInvestigator) Investigate(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	<-ctx.Done()
-	return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
-}
-
-// syncAuditRecorder is a thread-safe audit event recorder implementing audit.AuditStore.
-type syncAuditRecorder struct {
-	mu     sync.Mutex
-	events []*audit.AuditEvent
-}
-
-func (r *syncAuditRecorder) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
-	r.mu.Lock()
-	r.events = append(r.events, event)
-	r.mu.Unlock()
-	return nil
-}
-
-func (r *syncAuditRecorder) Events() []*audit.AuditEvent {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	cp := make([]*audit.AuditEvent, len(r.events))
-	copy(cp, r.events)
-	return cp
-}
-
-func (r *syncAuditRecorder) EventsOfType(eventType string) []*audit.AuditEvent {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var matched []*audit.AuditEvent
-	for _, e := range r.events {
-		if e.EventType == eventType {
-			matched = append(matched, e)
-		}
-	}
-	return matched
-}
+// Close is a no-op today (no external resources to release) but kept so
+// sigterm_test.go's `defer h.Close()` needs no change if the harness grows
+// resources again later.
+func (h *testHarness) Close() {}

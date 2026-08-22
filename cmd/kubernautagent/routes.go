@@ -124,7 +124,6 @@ type apiRoutesParams struct {
 	mgr                  *session.Manager
 	agentMetrics         *kametrics.Metrics
 	instrumentedAudit    audit.AuditStore
-	ogenSrv              http.Handler
 	eventEmitter         *karbac.EventEmitter
 	interactiveReadiness *karbac.InteractiveReadiness
 	apiRateLimiter       *kaserver.RateLimiter
@@ -135,12 +134,11 @@ type apiRoutesParams struct {
 
 // registerAPIRoutes mounts the /api/v1 route tree onto r: request body-size
 // limiting, optional concurrency throttling, HTTP metrics, API rate limiting,
-// auth middleware (DD-AUTH-014), the optional MCP interactive endpoint, and
-// the ogen-generated REST API as the catch-all. Returns the MCP session
-// drainer (nil when interactive mode is disabled or handler construction
-// failed) and the auth middleware's JWKS cache cleanup func (nil when auth
-// is disabled), both intended to be handled by the caller after this
-// function returns.
+// auth middleware (DD-AUTH-014), and the optional MCP interactive endpoint.
+// Returns the MCP session drainer (nil when interactive mode is disabled or
+// handler construction failed) and the auth middleware's JWKS cache cleanup
+// func (nil when auth is disabled), both intended to be handled by the
+// caller after this function returns.
 func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*mcpkg.SessionDrainer, func()) {
 	var sessionDrainer *mcpkg.SessionDrainer
 	var authCleanupRef func()
@@ -193,8 +191,6 @@ func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*m
 		if p.cfg.Interactive.Enabled {
 			sessionDrainer = mountInteractiveMCPRoute(r, ctx, p, authMw)
 		}
-
-		r.Handle("/*", kaserver.SSEHeadersMiddleware(p.ogenSrv))
 	})
 
 	return sessionDrainer, authCleanupRef

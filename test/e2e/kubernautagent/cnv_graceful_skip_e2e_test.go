@@ -29,13 +29,14 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E-KA-1378-001: CNV Graceful Skip on non-CNV cluster.
@@ -130,33 +131,35 @@ var _ = Describe("E2E-KA-1378 CNV Graceful Skip", Label("e2e", "ka", "cnv", "137
 
 	It("E2E-KA-1378-001: CNV fields are zero-valued and NOT in failedDetections on non-CNV cluster", func() {
 		By("Sending incident analysis request for a standard Deployment (no KubeVirt CRDs on Kind)")
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "e2e-cnv-001",
-			RemediationID:     "req-e2e-cnv-001",
-			SignalName:        "CrashLoopBackOff",
-			Severity:          "critical",
-			SignalSource:      "prometheus",
-			ResourceNamespace: testNS,
-			ResourceKind:      "Deployment",
-			ResourceName:      deployName,
-			ErrorMessage:      "Container restarted 5 times",
-			Environment:       "production",
-			Priority:          "P1",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-cnv-001", Namespace: sharedNamespace},
+			IncidentID:            "e2e-cnv-001",
+			RemediationID:         "req-e2e-cnv-001",
+			SignalName:            "CrashLoopBackOff",
+			Severity:              "critical",
+			SignalSource:          "prometheus",
+			ResourceNamespace:     testNS,
+			ResourceKind:          "Deployment",
+			ResourceName:          deployName,
+			ErrorMessage:          "Container restarted 5 times",
+			Environment:           "production",
+			Priority:              "P1",
+			RiskTolerance:         "medium",
+			BusinessCategory:      "standard",
+			ClusterName:           "e2e-test",
 		}
 
-		resp, err := sessionClient.Investigate(testCtx, req)
+		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+		resp, err := infrastructure.InvestigateViaAgentSession(testCtx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 		Expect(err).NotTo(HaveOccurred(), "KA incident analysis should succeed")
 		Expect(resp).NotTo(BeNil())
 
-		By("Verifying detected_labels is present in response")
-		Expect(resp.DetectedLabels.Set).To(BeTrue(),
-			"detected_labels should be present in KA response")
+		By("Verifying detectedLabels is present in response")
+		Expect(resp.DetectedLabels).NotTo(BeNil(),
+			"detectedLabels should be present in KA response")
 
 		By("Verifying CNV fields are absent or zero-valued")
-		dl := resp.DetectedLabels.Value
+		dl := decodeDetectedLabels(resp.DetectedLabels)
 		if len(dl) > 0 {
 			GinkgoWriter.Printf("detected_labels keys: %v\n", getMapKeys(dl))
 
@@ -202,34 +205,36 @@ var _ = Describe("E2E-KA-1378 CNV Graceful Skip", Label("e2e", "ka", "cnv", "137
 
 	It("E2E-KA-1400-001: CNV label extraction pipeline persists fields to AIAnalysis CRD", Label("e2e", "ka", "cnv", "1400"), func() {
 		By("Triggering investigation (CNV fields will be false on Kind cluster)")
-		req := &agentclient.IncidentRequest{
-			IncidentID:        "e2e-cnv-1400",
-			RemediationID:     "req-e2e-cnv-1400-" + uuid.New().String()[:8],
-			SignalName:        "OOMKilled",
-			Severity:          "high",
-			SignalSource:      "kubernetes",
-			ResourceNamespace: testNS,
-			ResourceKind:      "Deployment",
-			ResourceName:      deployName,
-			ErrorMessage:      "Container memory limit exceeded",
-			Environment:       "production",
-			Priority:          "P1",
-			RiskTolerance:     "medium",
-			BusinessCategory:  "standard",
-			ClusterName:       "e2e-test",
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-cnv-1400-" + uuid.New().String()[:8], Namespace: sharedNamespace},
+			IncidentID:            "e2e-cnv-1400",
+			RemediationID:         "req-e2e-cnv-1400-" + uuid.New().String()[:8],
+			SignalName:            "OOMKilled",
+			Severity:              "high",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     testNS,
+			ResourceKind:          "Deployment",
+			ResourceName:          deployName,
+			ErrorMessage:          "Container memory limit exceeded",
+			Environment:           "production",
+			Priority:              "P1",
+			RiskTolerance:         "medium",
+			BusinessCategory:      "standard",
+			ClusterName:           "e2e-test",
 		}
 
-		resp, err := sessionClient.Investigate(testCtx, req)
+		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+		resp, err := infrastructure.InvestigateViaAgentSession(testCtx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 		Expect(err).NotTo(HaveOccurred(), "KA incident analysis should succeed")
 		Expect(resp).NotTo(BeNil())
 
-		By("Verifying detected_labels is present in KA response")
-		Expect(resp.DetectedLabels.Set).To(BeTrue(),
-			"detected_labels should be present in KA response (extraction pipeline active)")
+		By("Verifying detectedLabels is present in KA response")
+		Expect(resp.DetectedLabels).NotTo(BeNil(),
+			"detectedLabels should be present in KA response (extraction pipeline active)")
 
 		By("Verifying CNV boolean fields are present and not dropped by extraction")
-		dl := resp.DetectedLabels.Value
-		Expect(dl).NotTo(BeEmpty(), "detected_labels map should not be empty")
+		dl := decodeDetectedLabels(resp.DetectedLabels)
+		Expect(dl).NotTo(BeEmpty(), "detectedLabels map should not be empty")
 
 		cnvBoolFields := []string{"virtualMachine", "liveMigratable", "cdiManaged"}
 		for _, field := range cnvBoolFields {

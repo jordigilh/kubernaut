@@ -17,10 +17,13 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // ========================================
@@ -67,27 +70,28 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			//   Step 2: list_workflows(action_type="IncreaseMemoryLimits") → DS returns workflows
 			//   Step 3: get_workflow(workflow_id=<oomkill-increase-memory-v1 UUID>) → DS returns full detail
 			//   Step 4: Final analysis with selected_workflow
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-discovery-017-001",
-				RemediationID:     "test-rem-017-001",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "prometheus",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "api-server-abc123",
-				ErrorMessage:      "Container memory limit exceeded - testing three-step discovery",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-017-001", Namespace: sharedNamespace},
+				IncidentID:            "test-discovery-017-001",
+				RemediationID:         "test-rem-017-001",
+				SignalName:            "OOMKilled",
+				Severity:              "critical",
+				SignalSource:          "prometheus",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "api-server-abc123",
+				ErrorMessage:          "Container memory limit exceeded - testing three-step discovery",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT (BR-AA-KA-064: async session flow)
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed with three-step discovery")
 
 			// ========================================
@@ -95,16 +99,16 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// ========================================
 
 			// BEHAVIOR: Workflow selected via three-step discovery
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present — three-step discovery should find oomkill-increase-memory-v1")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present — three-step discovery should find oomkill-increase-memory-v1")
 
 			// CORRECTNESS: Confident recommendation (Mock LLM oomkilled scenario returns 0.95)
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.10),
 				"Confidence should be ~0.95 for OOMKilled scenario via three-step discovery")
 
 			// BEHAVIOR: No human review needed for confident recommendation
-			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"needs_human_review must be false when three-step discovery finds a confident workflow")
+			Expect(incidentResp.NeedsHumanReview).To(BeFalse(),
+				"needsHumanReview must be false when three-step discovery finds a confident workflow")
 
 			// CORRECTNESS: Analysis contains RCA
 			Expect(incidentResp.Analysis).ToNot(BeEmpty(),
@@ -113,7 +117,7 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			logger.Info("✅ E2E-KA-017-001-001: Incident three-step discovery PASSED",
 				"incident_id", incidentResp.IncidentID,
 				"confidence", incidentResp.Confidence,
-				"selected_workflow_set", incidentResp.SelectedWorkflow.Set)
+				"selected_workflow_set", incidentResp.SelectedWorkflow != nil)
 		})
 
 		It("E2E-KA-017-001-001b: CrashLoop incident also uses three-step discovery", func() {
@@ -129,34 +133,35 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// ========================================
 			// CrashLoopBackOff triggers the "crashloop" Mock LLM scenario.
 			// Three-step: list_available_actions → list_workflows(RestartDeployment) → get_workflow
-			req := &agentclient.IncidentRequest{
-				IncidentID:        "test-discovery-017-001b",
-				RemediationID:     "test-rem-017-001b",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "high",
-				SignalSource:      "kubernetes",
-				ResourceNamespace: "staging",
-				ResourceKind:      "Pod",
-				ResourceName:      "worker-pod-xyz",
-				ErrorMessage:      "Container failing due to config error - testing three-step variant",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: "test-rem-017-001b", Namespace: sharedNamespace},
+				IncidentID:            "test-discovery-017-001b",
+				RemediationID:         "test-rem-017-001b",
+				SignalName:            "CrashLoopBackOff",
+				Severity:              "high",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "staging",
+				ResourceKind:          "Pod",
+				ResourceName:          "worker-pod-xyz",
+				ErrorMessage:          "Container failing due to config error - testing three-step variant",
+				Environment:           "production",
+				Priority:              "P1",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
-			// ACT
+			// ACT (#2190: AgentSession CRD flow)
 			// ========================================
-			incidentResp, err := sessionClient.Investigate(ctx, req)
+			incidentResp, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed for CrashLoop via three-step")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be present for CrashLoop via three-step discovery")
+			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
+				"selectedWorkflow must be present for CrashLoop via three-step discovery")
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Confidence should be ~0.95 for CrashLoop scenario")
 

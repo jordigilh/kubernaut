@@ -33,7 +33,6 @@ import (
 	"go.uber.org/zap"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -119,7 +118,6 @@ type apiServerStartParams struct {
 	store              *session.Store
 	agentMetrics       *kametrics.Metrics
 	instrumentedAudit  audit.AuditStore
-	ogenSrv            *agentclient.Server
 	apiRateLimiter     *kaserver.RateLimiter
 	maxRequestBodySize int64
 	apiServerReady     *int32
@@ -141,7 +139,7 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 	sessionDrainer, authCleanup := registerAPIRoutes(p.r, ctx, apiRoutesParams{
 		cfg: p.cfg, infra: p.core.infra, ds: p.core.ds, inv: p.inv, enricher: p.core.enricher,
 		mgr: p.mgr, agentMetrics: p.agentMetrics, instrumentedAudit: p.instrumentedAudit,
-		ogenSrv: p.ogenSrv, eventEmitter: p.core.eventEmitter, interactiveReadiness: p.core.interactiveReadiness,
+		eventEmitter: p.core.eventEmitter, interactiveReadiness: p.core.interactiveReadiness,
 		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize,
 		wfCatalog: p.core.wfCatalog, logger: p.logger,
 	})
@@ -359,7 +357,7 @@ func main() {
 		r: r, cfg: cfg, addr: addr, llmRuntimePath: llmRuntimePath,
 		swappable: swappable, phaseResolver: stack.phaseResolver, bootRuntime: llmRuntime, core: core, inv: stack.inv,
 		mgr: stack.mgr, store: stack.store, agentMetrics: stack.agentMetrics, instrumentedAudit: stack.instrumentedAudit,
-		ogenSrv: stack.ogenSrv, apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize,
+		apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize,
 		apiServerReady: &apiServerReady, logger: logger,
 	})
 	defer cleanupServers()

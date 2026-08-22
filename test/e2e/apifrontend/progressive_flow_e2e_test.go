@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -257,84 +258,114 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 		return httpClient.Do(req)
 	}
 
+	// #2245 CI RCA: this flow's investigation_summary artifact only fires
+	// once kubernaut_present_decision runs, which AF's phase-guard blocks
+	// with reason=discover_workflows_not_yet_succeeded until KA's RCA
+	// resolution completes. Under normal load that's ~1-13s (confirmed from
+	// a passing run's own Ginkgo timings); under concurrent E2E/CI
+	// contention it was observed taking ~2.5min (KA-side phase-guard log:
+	// discover_workflows finally succeeded ~150s after session start) --
+	// past AF's short interactive.awaitSessionTimeout/bridgeInactivityTimeout
+	// (10s/15s, deliberately tight so E2E-AF-1407's fallback-RCA path fires
+	// promptly when there's no AA controller in this cluster), so the SSE
+	// stream ends early on the fallback artifact alone. Loosening that
+	// shared config would slow #1407's fallback for every run to paper over
+	// a rare contention spike, so instead this test retries the whole
+	// request with a fresh contextId (a brand-new RR/session, not a replay
+	// of the stalled one) -- consistent with #1911's precedent that
+	// discover_workflows contention under concurrent E2E load is handled
+	// with resilience/retries, not by lengthening every deployment's
+	// timeouts.
 	It("E2E-AF-1408-001: SI-10 — artifact DataPart contains type=investigation_summary and schema_version=1.0", func() {
-		readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-		defer cancel()
+		const maxAttempts = 2
+		var found bool
+		var lastArtifactCount int
 
-		resp, err := a2aSSEPost(readCtx, a2aMessageStream("e2e-artifact-1408-001", "progressive investigate"))
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
+		for attempt := 1; attempt <= maxAttempts && !found; attempt++ {
+			readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			defer cancel()
 
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+			taskID := fmt.Sprintf("e2e-artifact-1408-001-%d", attempt)
+			resp, err := a2aSSEPost(readCtx, a2aMessageStream(taskID, "progressive investigate"))
+			Expect(err).NotTo(HaveOccurred())
 
-		var artifactEvents []map[string]any
-		sc := bufio.NewScanner(resp.Body)
-		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
 
-		for sc.Scan() {
-			line := strings.TrimRight(sc.Text(), "\r")
-			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
-				continue
+			var artifactEvents []map[string]any
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+					continue
+				}
+				data := strings.TrimPrefix(strings.TrimSpace(line), "data:")
+				data = strings.TrimSpace(data)
+				if data == "" || !strings.HasPrefix(data, "{") {
+					continue
+				}
+
+				var envelope struct {
+					Result json.RawMessage `json:"result"`
+				}
+				if json.Unmarshal([]byte(data), &envelope) != nil || len(envelope.Result) == 0 {
+					continue
+				}
+
+				var raw map[string]any
+				if json.Unmarshal(envelope.Result, &raw) != nil {
+					continue
+				}
+
+				if kind, _ := raw["kind"].(string); kind == artifactUpdate {
+					artifactEvents = append(artifactEvents, raw)
+				}
 			}
-			data := strings.TrimPrefix(strings.TrimSpace(line), "data:")
-			data = strings.TrimSpace(data)
-			if data == "" || !strings.HasPrefix(data, "{") {
-				continue
-			}
+			_ = resp.Body.Close()
 
-			var envelope struct {
-				Result json.RawMessage `json:"result"`
-			}
-			if json.Unmarshal([]byte(data), &envelope) != nil || len(envelope.Result) == 0 {
-				continue
-			}
+			GinkgoWriter.Printf("Structured artifact contract (attempt %d/%d): %d artifact events collected\n",
+				attempt, maxAttempts, len(artifactEvents))
+			lastArtifactCount = len(artifactEvents)
 
-			var raw map[string]any
-			if json.Unmarshal(envelope.Result, &raw) != nil {
-				continue
-			}
-
-			if kind, _ := raw["kind"].(string); kind == artifactUpdate {
-				artifactEvents = append(artifactEvents, raw)
-			}
-		}
-
-		GinkgoWriter.Printf("Structured artifact contract: %d artifact events collected\n", len(artifactEvents))
-		Expect(artifactEvents).NotTo(BeEmpty(),
-			"SI-10: progressive flow must emit at least one artifact-update event")
-
-		By("SI-10: artifact metadata must identify schema (per #1411: schema fields live in metadata, not DataPart body)")
-		found := false
-		for _, evt := range artifactEvents {
-			artifact, _ := evt["artifact"].(map[string]any)
-			if artifact == nil {
-				continue
-			}
-			meta, _ := artifact["metadata"].(map[string]any)
-			if meta["schema"] == "investigation_summary" && meta["schema_version"] == "1.0" {
-				parts, _ := artifact["parts"].([]any)
-				for _, p := range parts {
-					part, _ := p.(map[string]any)
-					if part == nil {
-						continue
+			for _, evt := range artifactEvents {
+				artifact, _ := evt["artifact"].(map[string]any)
+				if artifact == nil {
+					continue
+				}
+				meta, _ := artifact["metadata"].(map[string]any)
+				if meta["schema"] == "investigation_summary" && meta["schema_version"] == "1.0" {
+					parts, _ := artifact["parts"].([]any)
+					for _, p := range parts {
+						part, _ := p.(map[string]any)
+						if part == nil {
+							continue
+						}
+						dpData, _ := part["data"].(map[string]any)
+						if dpData == nil {
+							continue
+						}
+						Expect(dpData).To(HaveKey("summary"),
+							"SI-10: investigation_summary must include summary field")
+						found = true
+						break
 					}
-					dpData, _ := part["data"].(map[string]any)
-					if dpData == nil {
-						continue
-					}
-					Expect(dpData).To(HaveKey("summary"),
-						"SI-10: investigation_summary must include summary field")
-					found = true
+				}
+				if found {
 					break
 				}
 			}
-			if found {
-				break
+
+			if !found && attempt < maxAttempts {
+				GinkgoWriter.Printf("  attempt %d/%d did not observe investigation_summary artifact — retrying with a fresh session\n",
+					attempt, maxAttempts)
 			}
 		}
+
 		Expect(found).To(BeTrue(),
-			"SI-10: at least one artifact must have metadata schema=investigation_summary with DataPart containing summary")
+			"SI-10: at least one artifact must have metadata schema=investigation_summary with DataPart containing summary "+
+				"(last attempt collected %d artifact events)", lastArtifactCount)
 	})
 })
 

@@ -37,7 +37,6 @@ import (
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
@@ -250,7 +249,6 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)
 	}
-	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
 	if !cfg.Runtime.Server.DisableProfiling {
 		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
 		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)

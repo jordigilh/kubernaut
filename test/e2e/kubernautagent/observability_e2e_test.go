@@ -22,12 +22,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E Observability Tests — BR-KA-OBSERVABILITY-001
@@ -48,18 +50,20 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 		return string(body)
 	}
 
-	triggerInvestigation := func(id string, signalName string) *agentclient.IncidentResponse {
-		req := &agentclient.IncidentRequest{
-			IncidentID:        id,
-			RemediationID:     "rem-obs-" + id,
-			SignalName:        signalName,
-			Severity:          agentclient.SeverityHigh,
-			SignalSource:      "kubernetes",
-			ResourceNamespace: "production",
-			ResourceKind:      "Pod",
-			ResourceName:      "obs-test-pod",
+	triggerInvestigation := func(id string, signalName string) *agentsessionv1.AgentSessionResult {
+		spec := agentsessionv1.AgentSessionSpec{
+			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "rem-obs-" + id, Namespace: sharedNamespace},
+			IncidentID:            id,
+			RemediationID:         "rem-obs-" + id,
+			SignalName:            signalName,
+			Severity:              "high",
+			SignalSource:          "kubernetes",
+			ResourceNamespace:     "production",
+			ResourceKind:          "Pod",
+			ResourceName:          "obs-test-pod",
 		}
-		result, err := sessionClient.Investigate(ctx, req)
+		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
+		result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "investigation should complete without error")
 		return result
 	}
@@ -74,23 +78,31 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 			result := triggerInvestigation("obs-001", "OOMKilled")
 			Expect(result).NotTo(BeNil())
 
-			By("Hitting a non-existent session to trigger authz_denied metric")
-			req, err := http.NewRequestWithContext(ctx, "GET",
-				kaURL+"/api/v1/incident/session/non-existent-obs-001", nil)
-			Expect(err).NotTo(HaveOccurred())
-			resp, err := authHTTPClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			_ = resp.Body.Close()
-
-			By("Checking all 9 metric families appear")
+			// #2190: authz_denied_total was emitted by the retired HTTP
+			// handler's cross-user session-ownership check (no direct HTTP
+			// caller identity to compare against an AgentSession owner in
+			// the CRD model -- same reason E2E-KA-AUTHZ-001-style
+			// cross-user-authz tests have no CRD equivalent, see
+			// session_authz_test.go's removal). No longer asserted here.
+			//
+			// #2190: HTTPRequestDurationSeconds/HTTPRequestsInFlight are
+			// also dropped from this list -- triggerInvestigation() now
+			// creates the AgentSession directly against the K8s API
+			// (playing AA's role), generating zero HTTP traffic to KA's
+			// business surface. The metric + middleware are still valid
+			// production code (still wired for the MCP interactive HTTP
+			// route, see cmd/kubernautagent/routes.go), just never
+			// exercised by this autonomous/CRD-only trigger path -- unlike
+			// authz_denied_total, this isn't a retired feature, so the
+			// metric name itself stays; only the "must be sample-producing
+			// for this flow" expectation is removed (see E2E-KA-OBS-003's
+			// deletion below for the same reasoning).
+			By("Checking metric families are exposed")
 			allMetrics := []string{
 				metrics.MetricNameSessionsStartedTotal,
 				metrics.MetricNameSessionsCompletedTotal,
 				metrics.MetricNameSessionsActive,
 				metrics.MetricNameSessionDurationSeconds,
-				metrics.MetricNameHTTPRequestDurationSeconds,
-				metrics.MetricNameHTTPRequestsInFlight,
-				metrics.MetricNameAuthzDeniedTotal,
 				metrics.MetricNameAuditEventsEmittedTotal,
 			}
 			// http_rate_limited_total only appears as HELP when no 429 has occurred.
@@ -161,31 +173,17 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 		})
 	})
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// E2E-KA-OBS-003: HTTP request duration has method/endpoint/status labels
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("E2E-KA-OBS-003: HTTP request metrics labels", func() {
-		It("http_request_duration_seconds has endpoint, method, and status labels", func() {
-			By("The investigation generates HTTP traffic; check labels")
-			triggerInvestigation("obs-003", "OOMKilled")
-
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_count{`) ||
-					strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_bucket{`)
-			}, "15s", "2s").Should(BeTrue(),
-				"HTTP request duration should expose count/bucket lines")
-
-			body := fetchMetrics()
-			Expect(body).To(MatchRegexp(
-				`aiagent_http_request_duration_seconds_\w+\{.*method="POST".*\}`),
-				"HTTP metrics should include method=\"POST\"")
-			Expect(body).To(MatchRegexp(
-				`aiagent_http_request_duration_seconds_\w+\{.*status="\d+".*\}`),
-				"HTTP metrics should include numeric status label")
-		})
-	})
+	// E2E-KA-OBS-003 ("HTTP request duration has method/endpoint/status
+	// labels") is deleted (issue #2190, DD-AA-KA-001): it asserted on HTTP
+	// traffic generated by triggerInvestigation() hitting KA's business
+	// API over HTTP with method=POST. That call site is now a direct
+	// AgentSession CRD Create against the K8s API -- no HTTP request to
+	// KA's business surface occurs at all for this trigger path, so the
+	// assertion is permanently unsatisfiable, not flaky. Same disposition
+	// as two other now-obsolete HTTP-only assertions removed in this same
+	// migration: the SSE / cross-user session-ownership specs deleted from
+	// the retired session_v15 E2E suite, and the authz_denied_total metric
+	// dropped from this file's own metric list above.
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// E2E-KA-OBS-004: Audit events emitted metric increments
