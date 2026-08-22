@@ -467,6 +467,14 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
+		// discover_workflows requires KA's RCA resolution to have completed
+		// (resolveRCAForDiscovery falls back to reconstructing conversation
+		// context from data-storage audit traces when no cached autonomous
+		// result exists yet), which the #2245 CI RCA showed taking ~2min
+		// under concurrent E2E load (must-gather: AgentSession dispatched at
+		// T+0, phase=Completed only at T+2m). 60s was too tight for that --
+		// align with this same file's own timeout var (10*time.Minute,
+		// "real LLM needs more time") rather than a bespoke short bound.
 		By("Calling discover_workflows (with retry — KA session may need time after takeover)")
 		Eventually(func(g Gomega) {
 			discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
@@ -477,7 +485,7 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 			})
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
-		}, 60*time.Second, 5*time.Second).Should(Succeed())
+		}, timeout, 5*time.Second).Should(Succeed())
 
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)
