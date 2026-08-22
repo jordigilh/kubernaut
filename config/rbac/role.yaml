@@ -65,6 +65,7 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - kubernaut.ai
@@ -107,20 +108,6 @@ rules:
   - workflowexecutions/status
   verbs:
   - get
-  - patch
-  - update
-- apiGroups:
-  - kubernaut.ai
-  resources:
-  - investigationsessions
-  verbs:
-  - list
-  - watch
-- apiGroups:
-  - kubernaut.ai
-  resources:
-  - investigationsessions/status
-  verbs:
   - patch
   - update
 - apiGroups:

@@ -94,6 +94,15 @@ session:
 mcp:
   enabled: {{ $v.config.mcp.enabled }}
   sessionIdleTimeout: {{ $v.config.mcp.sessionIdleTimeout | quote }}
+  # Issue #2221: toolTimeout/toolTimeouts were wired into the MCP bridge
+  # (cmd/apifrontend/mcp_a2a_handlers.go) with real config.DefaultConfig()
+  # defaults, but never exposed via the chart at all.
+  toolTimeout: {{ $v.config.mcp.toolTimeout | quote }}
+  toolTimeouts:
+    kubernaut_investigate: {{ $v.config.mcp.toolTimeouts.kubernaut_investigate | quote }}
+    kubernaut_await_session: {{ $v.config.mcp.toolTimeouts.kubernaut_await_session | quote }}
+    kubernaut_watch: {{ $v.config.mcp.toolTimeouts.kubernaut_watch | quote }}
+    kubernaut_discover_workflows: {{ $v.config.mcp.toolTimeouts.kubernaut_discover_workflows | quote }}
 # DD-PLATFORM-006 DA14 (PR9): was `| default true` -- same bug as mcp.enabled
 # above.
 interactive:
@@ -369,9 +378,14 @@ rules:
   # AwaitAgentSessionInteractive (DD-AA-KA-001 Amendment Gap 1, #2172):
   # read-only watch of KA's own ack signal. No "agentsessions/status" grant
   # -- AF never writes Status, only KA does (BR-AA-KA-065.9).
+  # update/patch (#2214 finalizer redesign, CI RCA PR #2222 run 32513171970):
+  # AgentSessionTerminalCloseReconciler adds/removes its own metadata-only
+  # finalizer (terminalCloseFinalizer) to reliably observe deletion via
+  # Reconcile instead of a best-effort raw watch delete event -- still no
+  # "agentsessions/status" grant, this only touches metadata.finalizers.
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

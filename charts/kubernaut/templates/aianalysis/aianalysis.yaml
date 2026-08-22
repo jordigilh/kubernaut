@@ -75,12 +75,10 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses/status"]
     verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions/status"]
-    verbs: ["get", "update", "patch"]
+  # #2214 / DD-AA-KA-001 Amendment: AA no longer interacts with
+  # InvestigationSession at all (RBAC narrowing) -- AF's
+  # AgentSessionTerminalCloseReconciler now owns IS terminal-phase closure
+  # exclusively, driven by watching AgentSession (see below).
   # AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): "create"
   # for the initial dispatch write; "get"/"list"/"watch" because AgentSession
   # is namespace-scoped in this controller's mgr.GetCache() ByObject config
@@ -89,11 +87,15 @@ rules:
   # AgentSessionCreator.DeleteForRetry, called from
   # InvestigatingHandler.retryCapacityExceeded to discard a stale
   # Failed+CapacityExceeded AgentSession so the retry attempt gets a fresh
-  # one. No "agentsessions/status" grant -- AA never writes Status, only KA
-  # does (BR-AA-KA-065.9).
+  # one; also used by DeleteForCascadeCancel (#2214) on external
+  # ParentCancelled. "update" (#2214 finalizer fix, CI run 32525130330
+  # "E2E (aianalysis)": DeleteForRetry strips TerminalCloseFinalizer itself
+  # before deleting, which needs Update, not just Delete -- missed when the
+  # finalizer was introduced). No "agentsessions/status" grant -- AA never
+  # writes Status, only KA does (BR-AA-KA-065.9).
   - apiGroups: ["kubernaut.ai"]
     resources: ["agentsessions"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

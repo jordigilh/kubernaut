@@ -8,8 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -132,7 +133,7 @@ func NewKubectlGetTool(factory auth.DynamicClientFactory, mapper meta.RESTMapper
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_get",
 		Description: desc,
-	}, func(ctx tool.Context, args KubectlGetArgs) (KubectlGetResult, error) {
+	}, func(ctx agent.Context, args KubectlGetArgs) (KubectlGetResult, error) {
 		var reader ResourceReader
 		if readerFactory != nil && args.ClusterID != "" {
 			r, err := readerFactory(ctx, args.ClusterID)

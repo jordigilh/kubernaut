@@ -407,12 +407,13 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				}, rar)
 			}, timeout, interval).Should(Succeed(), "RAR should be created by the RO controller")
 
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "test-user@kubernaut.ai"
-			rar.Status.DecisionMessage = "Testing locking on approval path"
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = "test-user@kubernaut.ai"
+				rar.Status.DecisionMessage = "Testing locking on approval path"
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+			})).To(Succeed())
 
 			// Wait for RR2 to be processed after approval
 			Eventually(func() string {

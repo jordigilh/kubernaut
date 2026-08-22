@@ -49,7 +49,13 @@ apifrontend:
             enabled: true
         mcp:
             enabled: true
-            sessionIdleTimeout: 5m
+            sessionIdleTimeout: 30m
+            toolTimeout: 30s
+            toolTimeouts:
+                kubernaut_await_session: 3m
+                kubernaut_discover_workflows: 60s
+                kubernaut_investigate: 15m
+                kubernaut_watch: 15m
         rateLimit:
             ipRequestsPerSec: 10000
             maxConcurrentSessions: 50
@@ -135,6 +141,7 @@ datastorage:
             existingSecret: ""
             secretKey: hmacKey
         database:
+            connMaxIdleTime: 10m
             connMaxLifetime: 1h
             maxIdleConns: 20
             maxOpenConns: 100
@@ -144,7 +151,6 @@ datastorage:
             tls:
                 caFile: ""
                 certFile: ""
-                insecureSkipVerify: false
                 keyFile: ""
         retention:
             batchSize: 1000
@@ -159,6 +165,7 @@ datastorage:
                 requestsPerSecond: 50
             readTimeout: 30s
             signerCertDir: /etc/certs
+            writeTimeout: 30s
     dbExistingSecret: ""
     logging:
         level: INFO
@@ -215,6 +222,7 @@ gateway:
         middleware:
             trustedProxyCIDRs: []
         server:
+            idleTimeout: 120s
             k8sRequestTimeout: 15s
             maxConcurrentRequests: 100
             readTimeout: 30s
@@ -434,6 +442,11 @@ remediationorchestrator:
         enabled: true
     replicas: 1
 signalprocessing:
+    config:
+        classifier:
+            hotReloadInterval: 30s
+        enrichment:
+            cacheTtl: 5m
     fleet:
         namespace: ""
         oauth2:

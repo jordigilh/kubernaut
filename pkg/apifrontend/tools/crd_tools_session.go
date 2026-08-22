@@ -7,8 +7,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/watch"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -173,7 +174,7 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_await_session",
 		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
-	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	}, func(ctx agent.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
 		args.Namespace = controllerNS
 		return HandleAwaitSession(ctx, client, args)
 	})
@@ -184,8 +185,10 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 // DD-AA-KA-001 Amendment Gap 1 / Issue #2172: AF watches KA's own
 // authoritative ack directly instead of polling the retired
 // IS.Status.Phase=Active signal AA used to write (that write was itself
-// removed from AA in #2170 -- see pkg/aianalysis/handlers/interfaces.go's
-// ISPhaseUpdater, which is now write-only for terminal phases).
+// removed from AA in #2170). #2214 Amendment: AA's remaining write-only
+// InvestigationSession terminal-close path was retired too -- AF's own
+// AgentSessionTerminalCloseReconciler (watching AgentSession) now owns IS
+// terminal-phase closure exclusively; AA no longer interacts with IS at all.
 // ========================================
 
 // agentSessionInteractivePollInterval is the poll-fallback interval, used

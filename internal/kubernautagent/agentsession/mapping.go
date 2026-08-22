@@ -99,6 +99,30 @@ func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext
 // mapInvestigationResultToResponse, targeting the CRD-native type instead
 // of the retired ogen agentclient.IncidentResponse.
 func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentsessionv1.AgentSessionResult {
+	// A nil r is a legitimate call pattern, not a caller bug:
+	// session.Manager.CompleteUserDriving is documented (manager_query.go)
+	// to invoke the disconnect/inactivity-timeout completion path with a
+	// nil result, and the terminal hook still fires with StatusCompleted
+	// when no SetPendingDecisionResult was ever attached (e.g. a session
+	// released via GracefulSessionClosedHandler before any investigation
+	// produced a result). Every other field below unconditionally
+	// dereferences r, so this must be the first check (CI RCA, PR #2222,
+	// run 32488044647; re-confirmed independently via #2233, run
+	// 32524002195: an unguarded nil r here crashed the whole KA pod).
+	//
+	// #2233: the synthesized placeholder deliberately mirrors the retired
+	// HTTP-polling handler's synthesizeNilResult default branch
+	// (internal/kubernautagent/server/handler.go, #1390) instead of an
+	// ad-hoc literal -- AA's isSessionTimedOutWithoutResult
+	// (pkg/aianalysis/handlers/investigating.go) already detects that
+	// exact literal+confidence combination and reclassifies
+	// SubReason=InvestigationInconclusive, so no AA-side change is needed
+	// to correctly surface this outcome.
+	if r == nil {
+		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, synthesizing curated placeholder", "incidentID", incidentID)
+		r = &katypes.InvestigationResult{RCASummary: "Investigation completed without result"}
+	}
+
 	res := &agentsessionv1.AgentSessionResult{
 		IncidentID:        incidentID,
 		Analysis:          r.RCASummary,

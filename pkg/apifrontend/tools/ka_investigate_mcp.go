@@ -24,8 +24,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"k8s.io/apimachinery/pkg/api/meta"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -816,7 +817,7 @@ func NewInvestigateMCPTool(cfg *InvestigateConfig, mapper meta.RESTMapper) (tool
 			"This tool blocks until the investigation completes and returns " +
 			"the root-cause analysis summary. Live progress events stream " +
 			"to the user automatically while the investigation runs.",
-	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
+	}, func(ctx agent.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
 		toolCtx := ContextWithRESTMapper(ctx, mapper)
 		return HandleInvestigationMCPWithRegistry(toolCtx, cfg, args, true, user)

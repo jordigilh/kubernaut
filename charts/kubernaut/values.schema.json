@@ -992,6 +992,15 @@
                   ],
                   "default": "30s"
                 },
+                "idleTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "120s",
+                  "description": "Issue #2217: was a bare template literal while its 3 struct siblings (maxConcurrentRequests/readTimeout/writeTimeout) were already schema-driven"
+                },
                 "k8sRequestTimeout": {
                   "allOf": [
                     {
@@ -1174,6 +1183,15 @@
                   "default": "30s",
                   "description": "Server read timeout"
                 },
+                "writeTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Issue #2219: exact peer of readTimeout, previously missing entirely. Server write timeout"
+                },
                 "corsAllowedOrigins": {
                   "type": "array",
                   "items": {
@@ -1236,6 +1254,15 @@
                   ],
                   "default": "1h",
                   "description": "Maximum connection lifetime"
+                },
+                "connMaxIdleTime": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10m",
+                  "description": "Issue #2218: was a bare template literal while its 3 struct siblings (maxOpenConns/maxIdleConns/connMaxLifetime) were already schema-driven. Maximum connection idle time"
                 }
               }
             },
@@ -1269,11 +1296,6 @@
                       "type": "string",
                       "default": "",
                       "description": "CA bundle to verify Redis server"
-                    },
-                    "insecureSkipVerify": {
-                      "type": "boolean",
-                      "default": false,
-                      "description": "Skip TLS verification (dev/test only)"
                     }
                   }
                 }
@@ -1569,6 +1591,43 @@
         },
         "tolerations": {
           "$ref": "#/definitions/tolerations"
+        },
+        "config": {
+          "type": "object",
+          "description": "Issue #2216: enrichment.cacheTtl/classifier.hotReloadInterval were hardcoded chart literals with no schema exposure, despite being real, actively-read Go config fields (pkg/signalprocessing/config/config.go).",
+          "additionalProperties": false,
+          "properties": {
+            "enrichment": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cacheTtl": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Enrichment cache lifetime (EnrichmentConfig.CacheTTL)"
+                }
+              }
+            },
+            "classifier": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "hotReloadInterval": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Rego classification policy hot-reload poll interval (ClassifierConfig.HotReloadInterval)"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -2833,7 +2892,56 @@
                       "$ref": "#/definitions/goDuration"
                     }
                   ],
-                  "default": "5m"
+                  "default": "30m",
+                  "description": "Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig()."
+                },
+                "toolTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Issue #2221: default per-tool MCP call timeout, previously never exposed via Helm despite being wired into the MCP bridge (cmd/apifrontend/mcp_a2a_handlers.go)."
+                },
+                "toolTimeouts": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Issue #2221: per-tool MCP call timeout overrides (map[string]time.Duration in Go), previously never exposed via Helm. Modeled as named properties (one per known MCP tool) rather than an arbitrary-key map, so each carries its own materialized default and a partial override of one tool never discards the other 3 defaults.",
+                  "properties": {
+                    "kubernaut_investigate": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "15m"
+                    },
+                    "kubernaut_await_session": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "3m"
+                    },
+                    "kubernaut_watch": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "15m"
+                    },
+                    "kubernaut_discover_workflows": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "60s"
+                    }
+                  }
                 }
               }
             },

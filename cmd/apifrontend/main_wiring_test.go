@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -642,6 +642,11 @@ func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
 
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.MCP.Enabled = true
+		// Issue #2220: cmd/apifrontend no longer falls back to 30m when this
+		// is zero (config.DefaultConfig() is now the single source of truth
+		// for that default) -- set it explicitly here so this fixture
+		// doesn't silently pass a 0 SessionTimeout into NewMCPHandler.
+		d.Cfg.MCP.SessionIdleTimeout = 30 * time.Minute
 		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL})
 		d.Backends.DSResilientTransport = resilience.NewCircuitBreakerTransport(
 			http.DefaultTransport,

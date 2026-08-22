@@ -47,6 +47,7 @@ import (
 type fakeInvestigationRunner struct {
 	calls  atomic.Int32
 	delay  time.Duration
+	block  chan struct{}
 	result *katypes.InvestigationResult
 	err    error
 }
@@ -56,6 +57,18 @@ func (f *fakeInvestigationRunner) Investigate(ctx context.Context, _ katypes.Sig
 	if f.delay > 0 {
 		select {
 		case <-time.After(f.delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	// block, when set, lets a test hold this goroutine "running" (never
+	// producing a result) until it explicitly releases it or the context
+	// is cancelled -- used to reproduce a user-driving session whose
+	// client disconnects before any InvestigationResult is ever stored
+	// (issue #2233).
+	if f.block != nil {
+		select {
+		case <-f.block:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -580,6 +593,74 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted))
 
 			Expect(int(runner.calls.Load())).To(Equal(1))
+		})
+	})
+
+	Describe("IT-AA-KA-2233-001 (issue #2233): a user-driving session disconnected before producing any result completes with KA's synthesized \"no result\" placeholder instead of crashing the dispatcher", func() {
+		It("should not panic and should write Phase=Completed with AA's well-known no-result placeholder", func() {
+			// RCA (CI run 32524002195, E2E-FP-1456-001): the disconnect
+			// handler's grace-period-expiry path
+			// (mcp/tools.CompleteHTTPSession, cmd/kubernautagent/routes.go)
+			// calls session.Manager.CompleteUserDriving(id, nil) whenever an
+			// MCP client disconnects -- if the investigation goroutine
+			// (still blocked here on `block`) never stored a result first,
+			// this used to panic inside
+			// agentsession.MapInvestigationResultToAgentSessionResult and
+			// crash the whole kubernaut-agent process, resetting every
+			// other in-flight MCP session on that pod.
+			block := make(chan struct{})
+			runner := &fakeInvestigationRunner{block: block}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			go d.Start(ctx)
+
+			as := newPendingAgentSession("as-2233-1")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			key := crclient.ObjectKeyFromObject(as)
+
+			var sessionID string
+			Eventually(func() string {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				sessionID = got.Status.SessionID
+				return sessionID
+			}, "2s", "10ms").ShouldNot(BeEmpty())
+
+			// Mirrors a user jumping in to drive the investigation
+			// interactively. Releasing `block` now lets the investigation
+			// goroutine return its zero-value (nil, nil) -- store.Update's
+			// #1390 deterministic-upgrade path (store.go:278) then forces
+			// the session into StatusUserDriving with sess.Result left
+			// nil, exactly reproducing "never produced a result" before
+			// the disconnect below.
+			Expect(mgr.UpgradeToInteractive(sessionID, "alice", nil)).To(Succeed())
+			close(block)
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(sessionID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}, "2s", "10ms").Should(Equal(session.StatusUserDriving))
+
+			// The MCP client disconnects before ever calling
+			// select_workflow/complete_no_action -- the disconnect
+			// handler's grace-period-expiry path calls this with a nil
+			// result (mcp/tools.CompleteHTTPSession).
+			Expect(mgr.CompleteUserDriving(sessionID, nil)).To(Succeed())
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted))
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(got.Status.Result).NotTo(BeNil())
+			Expect(got.Status.Result.Analysis).To(Equal("Investigation completed without result"))
+			Expect(got.Status.Result.Confidence).To(Equal(0.0))
 		})
 	})
 })

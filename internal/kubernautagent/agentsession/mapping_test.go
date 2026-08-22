@@ -268,4 +268,45 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(res.RootCauseAnalysis).To(BeNil())
 		})
 	})
+
+	Describe("UT-AA-KA-065-016 (issue #2233, supersedes an earlier, less precise nil-guard merged via PR #2222/commit 76bc20270): a nil InvestigationResult synthesizes KA's own \"no result\" placeholder instead of panicking", func() {
+		It("should not panic and should produce the exact placeholder AA's isSessionTimedOutWithoutResult already special-cases", func() {
+			// #2233 RCA: writeTerminalStatus's StatusCompleted branch
+			// (status_writer.go) calls this function unconditionally,
+			// including on the CompleteUserDriving disconnect/inactivity-
+			// timeout path where no InvestigationResult was ever produced
+			// (session/manager_query.go's CompleteUserDriving, called with
+			// result=nil by mcp/tools/session_teardown.go on grace-period
+			// expiry). Before this fix, r == nil panicked here with a nil
+			// pointer dereference, crashing the whole kubernaut-agent
+			// process and resetting every other in-flight MCP session on
+			// that pod.
+			//
+			// The synthesized placeholder deliberately mirrors the retired
+			// HTTP-polling handler's synthesizeNilResult default branch
+			// (internal/kubernautagent/server/handler.go:685-690, #1390) --
+			// AA's isSessionTimedOutWithoutResult
+			// (pkg/aianalysis/handlers/investigating.go) already detects
+			// this exact literal+confidence combination and reclassifies
+			// SubReason=InvestigationInconclusive, so no AA-side change is
+			// needed to correctly surface this outcome. An earlier,
+			// independent nil-guard (PR #2222, commit 76bc20270) used a
+			// different ad-hoc literal ("session completed with no
+			// investigation result recorded") that prevented the panic but
+			// did not match AA's detection literal -- this supersedes it.
+			var res *agentsessionv1.AgentSessionResult
+			Expect(func() {
+				res = agentsession.MapInvestigationResultToAgentSessionResult(logger, nil, "incident-nil")
+			}).NotTo(Panic())
+
+			Expect(res).NotTo(BeNil())
+			Expect(res.IncidentID).To(Equal("incident-nil"))
+			Expect(res.Timestamp).NotTo(BeEmpty())
+			Expect(res.Analysis).To(Equal("Investigation completed without result"))
+			Expect(res.Confidence).To(Equal(0.0))
+			Expect(res.NeedsHumanReview).To(BeFalse())
+			Expect(res.RootCauseAnalysis).NotTo(BeNil())
+			Expect(res.SelectedWorkflow).To(BeNil())
+		})
+	})
 })

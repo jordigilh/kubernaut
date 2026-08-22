@@ -274,12 +274,13 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			Eventually(func() error {
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
 			}, timeout, interval).Should(Succeed())
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "test-admin@kubernaut.ai"
-			rar.Status.DecisionMessage = "Approved for event test"
-			decidedAt := metav1.Now()
-			rar.Status.DecidedAt = &decidedAt
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(approveRAR(rarName, func(rar *remediationv1.RemediationApprovalRequest) {
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = "test-admin@kubernaut.ai"
+				rar.Status.DecisionMessage = "Approved for event test"
+				decidedAt := metav1.Now()
+				rar.Status.DecidedAt = &decidedAt
+			})).To(Succeed())
 
 			By("Waiting for Executing phase")
 			Eventually(func() string {

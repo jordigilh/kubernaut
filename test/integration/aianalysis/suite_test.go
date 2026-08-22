@@ -84,7 +84,6 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
@@ -521,10 +520,6 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By(fmt.Sprintf("[Process %d] Registering InvestigationSession CRD scheme (BR-INTERACTIVE-010)", processNum))
-	err = isv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
 	By(fmt.Sprintf("[Process %d] Registering AgentSession CRD scheme (DD-AA-KA-001)", processNum))
 	err = agentsessionv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -603,21 +598,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	// BR-INTERACTIVE-010: Register field indexes for IS and AA RR name lookups.
-	By(fmt.Sprintf("[Process %d] Registering InvestigationSession field index (BR-INTERACTIVE-010)", processNum))
-	err = k8sManager.GetFieldIndexer().IndexField(ctx,
-		&isv1alpha1.InvestigationSession{},
-		handlers.ISFieldIndexRRName,
-		func(obj client.Object) []string {
-			is := obj.(*isv1alpha1.InvestigationSession)
-			if is.Spec.RemediationRequestRef.Name == "" {
-				return nil
-			}
-			return []string{is.Spec.RemediationRequestRef.Name}
-		},
-	)
-	Expect(err).NotTo(HaveOccurred())
-
+	// #2214 / DD-AA-KA-001 Amendment: AA no longer interacts with
+	// InvestigationSession at all -- the RR-name field index it previously
+	// used for the retired terminal-close write is gone. AF's own
+	// AgentSessionTerminalCloseReconciler owns IS terminal-phase closure now.
 	By(fmt.Sprintf("[Process %d] Registering AIAnalysis RR name field index (BR-INTERACTIVE-010)", processNum))
 	err = k8sManager.GetFieldIndexer().IndexField(ctx,
 		&aianalysisv1alpha1.AIAnalysis{},
@@ -699,11 +683,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-AA-KA-001: AgentSessionCreator replaces the retired HTTP submit/poll
 	// channel; the reconciler has no dependency on KA's HTTP endpoint at all.
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
-	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), processNamespace)
 	agentSessionCreator := creator.NewAgentSessionCreator(k8sManager.GetClient(), k8sManager.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),        // DD-EVENT-001: Session lifecycle events
-		handlers.WithISPhaseUpdater(isPhaseUpdater)) // #1376: Write-only IS terminal-close
+		handlers.WithRecorder(eventRecorder)) // DD-EVENT-001: Session lifecycle events
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
@@ -714,14 +696,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
 	// Storing reconciler enables tests to access metrics via reconciler.Metrics
 	reconciler = &aianalysis.AIAnalysisReconciler{
-		Metrics:          testMetrics, // DD-METRICS-001: Per-process metrics
-		Client:           k8sManager.GetClient(),
-		Scheme:           k8sManager.GetScheme(),
-		Recorder:         eventRecorder,
-		Log:              ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-KA-001: Cache-bypassed refetch
-		AnalyzingHandler: analyzingHandler,
-		AuditClient:      auditClient,
+		Metrics:             testMetrics, // DD-METRICS-001: Per-process metrics
+		Client:              k8sManager.GetClient(),
+		Scheme:              k8sManager.GetScheme(),
+		Recorder:            eventRecorder,
+		Log:                 ctrl.Log.WithName("aianalysis-controller"),
+		StatusManager:       status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-KA-001: Cache-bypassed refetch
+		AnalyzingHandler:    analyzingHandler,
+		AuditClient:         auditClient,
+		AgentSessionCreator: agentSessionCreator, // #2214: cascade-cancel deletes AgentSession instead of writing IS
 	}
 	reconciler.InvestigatingHandler.Store(investigatingHandler)
 	// #2204 RCA (2026-08-20): 10 workers, mirroring the

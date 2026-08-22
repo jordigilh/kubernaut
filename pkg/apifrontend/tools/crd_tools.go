@@ -10,8 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -93,7 +94,7 @@ func NewListRemediationsTool(client crclient.Client, controllerNS string) (tool.
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_remediations",
 		Description: "List active remediations with optional filtering by phase or kind",
-	}, func(ctx tool.Context, args ListRemediationsArgs) (ListRemediationsResult, error) {
+	}, func(ctx agent.Context, args ListRemediationsArgs) (ListRemediationsResult, error) {
 		args.Namespace = controllerNS
 		return HandleListRemediations(ctx, client, args)
 	})
@@ -149,7 +150,7 @@ func NewGetRemediationTool(client crclient.Client, controllerNS string) (tool.To
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
 		Description: "Get detailed information about a specific remediation by rr_id or name",
-	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
+	}, func(ctx agent.Context, args GetRemediationArgs) (GetRemediationResult, error) {
 		args.Namespace = controllerNS
 		return HandleGetRemediation(ctx, client, args)
 	})
@@ -251,7 +252,7 @@ func NewListApprovalRequestsTool(client crclient.Client, controllerNS string) (t
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_approval_requests",
 		Description: "List remediation approval requests with optional filtering by decision status (pending, approved, rejected, expired)",
-	}, func(ctx tool.Context, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+	}, func(ctx agent.Context, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
 		args.Namespace = controllerNS
 		return HandleListApprovalRequests(ctx, client, args)
 	})
@@ -406,7 +407,7 @@ func NewGetApprovalRequestTool(client crclient.Client, controllerNS string) (too
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_approval_request",
 		Description: "Get full details of a specific remediation approval request for review before deciding",
-	}, func(ctx tool.Context, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+	}, func(ctx agent.Context, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
 		args.Namespace = controllerNS
 		return HandleGetApprovalRequest(ctx, client, args)
 	})
@@ -492,7 +493,7 @@ func NewApproveTool(client crclient.Client, controllerNS string) (tool.Tool, err
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request. The decision field accepts exactly 'Approved' or 'Rejected'.",
 		InputSchema: approveInputSchema(),
-	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
+	}, func(ctx agent.Context, args ApproveArgs) (ApproveResult, error) {
 		args.Namespace = controllerNS
 		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
@@ -599,7 +600,7 @@ func NewCancelRemediationTool(client crclient.Client, controllerNS string) (tool
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",
-	}, func(ctx tool.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
+	}, func(ctx agent.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
 		args.Namespace = controllerNS
 		return HandleCancelRemediation(ctx, client, args)
 	})

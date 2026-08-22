@@ -53,7 +53,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"180s"` | No |
 | `config.interactive.enabled` | boolean |  | `true` | No |
 | `config.mcp.enabled` | boolean |  | `true` | No |
-| `config.mcp.sessionIdleTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5m"` | No |
+| `config.mcp.sessionIdleTimeout` | string | Issue #2220: was 5m, inconsistent with the 30m the Go-side cmd/apifrontend fallback silently applied whenever this was unset. Consolidated to a single 30m default, now also set explicitly in config.DefaultConfig(). | `"30m"` | No |
+| `config.mcp.toolTimeout` | string | Issue #2221: default per-tool MCP call timeout, previously never exposed via Helm despite being wired into the MCP bridge (cmd/apifrontend/mcp_a2a_handlers.go). | `"30s"` | No |
+| `config.mcp.toolTimeouts.kubernaut_await_session` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"3m"` | No |
+| `config.mcp.toolTimeouts.kubernaut_discover_workflows` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"60s"` | No |
+| `config.mcp.toolTimeouts.kubernaut_investigate` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15m"` | No |
+| `config.mcp.toolTimeouts.kubernaut_watch` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15m"` | No |
 | `config.rateLimit.ipRequestsPerSec` | integer |  | `10000` | No |
 | `config.rateLimit.maxConcurrentSessions` | integer |  | `50` | No |
 | `config.rateLimit.toolCallsPerMinute` | integer |  | `600` | No |
@@ -159,6 +164,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `autoscaling.minReplicas` | integer |  | `1` | No |
 | `config.auditHashKey.existingSecret` | string | Pre-created Secret name; defaults to datastorage-audit-hmac-key when unset | `""` | No |
 | `config.auditHashKey.secretKey` | string | Key name within the secret's audit-hmac-key.yaml file | `"hmacKey"` | No |
+| `config.database.connMaxIdleTime` | string | Issue #2218: was a bare template literal while its 3 struct siblings (maxOpenConns/maxIdleConns/connMaxLifetime) were already schema-driven. Maximum connection idle time | `"10m"` | No |
 | `config.database.connMaxLifetime` | string | Maximum connection lifetime | `"1h"` | No |
 | `config.database.maxIdleConns` | integer | Maximum idle database connections | `20` | No |
 | `config.database.maxOpenConns` | integer | Maximum open database connections | `100` | No |
@@ -166,7 +172,6 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.redis.dlqMaxLen` | integer | #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound | `10000` | No |
 | `config.redis.tls.caFile` | string | CA bundle to verify Redis server | `""` | No |
 | `config.redis.tls.certFile` | string | Client certificate file path (mTLS) | `""` | No |
-| `config.redis.tls.insecureSkipVerify` | boolean | Skip TLS verification (dev/test only) | `false` | No |
 | `config.redis.tls.keyFile` | string | Client key file path (mTLS) | `""` | No |
 | `config.retention.batchSize` | integer | Max rows per DELETE batch | `1000` | No |
 | `config.retention.defaultDays` | integer | Application-level default retention in days (ADR-034: 7 years) | `2555` | No |
@@ -179,6 +184,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.server.rateLimit.requestsPerSecond` | number | Sustained per-IP requests/second | `50` | No |
 | `config.server.readTimeout` | string | Server read timeout | `"30s"` | No |
 | `config.server.signerCertDir` | string | #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key) | `"/etc/certs"` | No |
+| `config.server.writeTimeout` | string | Issue #2219: exact peer of readTimeout, previously missing entirely. Server write timeout | `"30s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `dbExistingSecret` | string | DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret. | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
@@ -271,6 +277,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.cors.maxAge` | integer | Preflight cache duration in seconds. | `300` | No |
 | `config.deduplication.cooldownPeriod` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5m"` | No |
 | `config.middleware.trustedProxyCIDRs` | array of string | Issue #673 L-1: CIDRs whose proxy headers are trusted | `[]` | No |
+| `config.server.idleTimeout` | string | Issue #2217: was a bare template literal while its 3 struct siblings (maxConcurrentRequests/readTimeout/writeTimeout) were already schema-driven | `"120s"` | No |
 | `config.server.k8sRequestTimeout` | string | Per-handler K8s API timeout (BR-GATEWAY-102) | `"15s"` | No |
 | `config.server.maxConcurrentRequests` | integer |  | `100` | No |
 | `config.server.readTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |
@@ -541,6 +548,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
+| `config.classifier.hotReloadInterval` | string | Rego classification policy hot-reload poll interval (ClassifierConfig.HotReloadInterval) | `"30s"` | No |
+| `config.enrichment.cacheTtl` | string | Enrichment cache lifetime (EnrichmentConfig.CacheTTL) | `"5m"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch; empty watches all namespaces | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |

@@ -17,14 +17,16 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
-	adksession "google.golang.org/adk/session"
+	adksession "google.golang.org/adk/v2/session"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
@@ -84,8 +86,10 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 }
 
 // buildSessionScheme constructs the runtime scheme used by the session
-// controller manager, registering the coordination (Lease) and
-// InvestigationSession API groups.
+// controller manager, registering the coordination (Lease), InvestigationSession,
+// and AgentSession API groups. AgentSession registration (#2214) is required
+// for AgentSessionTerminalCloseReconciler to watch it -- the manager's cache
+// can only watch/list types present in its own scheme.
 func buildSessionScheme() (*k8sruntime.Scheme, error) {
 	scheme := k8sruntime.NewScheme()
 	if err := coordinationv1.AddToScheme(scheme); err != nil {
@@ -93,6 +97,9 @@ func buildSessionScheme() (*k8sruntime.Scheme, error) {
 	}
 	if err := isv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register InvestigationSession scheme: %w", err)
+	}
+	if err := agentsessionv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register AgentSession scheme: %w", err)
 	}
 	return scheme, nil
 }
@@ -122,6 +129,26 @@ func newSessionControllerManager(restCfg *rest.Config, scheme *k8sruntime.Scheme
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "",
 		LeaderElection:         false,
+		// CacheSyncTimeout override (default is 2 minutes): CI RCA, PR
+		// #2222, run 32497709499, E2E apifrontend must-gather. This
+		// manager runs three sibling controllers (session-cleanup,
+		// lease-sync, agentsession-terminal-close) that together start
+		// informers for both InvestigationSession and AgentSession against
+		// the same apiserver at manager startup. Under a fully-loaded Kind
+		// E2E apiserver (dozens of parallel Ginkgo procs hammering it with
+		// CRD churn), adding the AgentSession informer (#2214) pushed the
+		// pre-existing InvestigationSession informer shared by
+		// session-cleanup/lease-sync over the 2-minute default too --
+		// it's shared apiserver/informer-goroutine contention across all
+		// three controllers, not a single controller's own cost. Set at
+		// the manager level (config.Controller default) so every
+		// controller registered here inherits the same generous timeout,
+		// rather than special-casing one. A cache-sync failure on any one
+		// of them is fatal to the whole manager (session_infra.go's shared
+		// Healthy flag flips false, /readyz returns 503, kube-proxy drops
+		// the pod from Service endpoints -- breaking every other AF
+		// request in flight, unrelated to session/IS closure).
+		Controller: ctrlconfig.Controller{CacheSyncTimeout: 5 * time.Minute},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create session controller manager: %w", err)
@@ -164,11 +191,22 @@ func registerSessionReconcilers(mgr ctrl.Manager, scheme *k8sruntime.Scheme, cfg
 		logger.WithName("lease-sync"),
 	)
 
+	// #2214 / DD-AA-KA-001 Amendment: AF, not AA, closes IS to a terminal
+	// phase in response to the correlated AgentSession's terminal state.
+	agentSessionClose := controller.NewAgentSessionTerminalCloseReconciler(
+		k8sClient,
+		svc,
+		logger.WithName("agentsession-terminal-close"),
+	)
+
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, nil, fmt.Errorf("register session reconciler: %w", err)
 	}
 	if err := leaseSync.SetupWithManager(mgr); err != nil {
 		return nil, nil, fmt.Errorf("register lease-sync reconciler: %w", err)
+	}
+	if err := agentSessionClose.SetupWithManager(mgr); err != nil {
+		return nil, nil, fmt.Errorf("register agentsession-terminal-close reconciler: %w", err)
 	}
 	return svc, reconciler, nil
 }

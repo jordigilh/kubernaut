@@ -32,7 +32,6 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -59,7 +58,6 @@ type InvestigatingHandler struct {
 	errorClassifier          *ErrorClassifier     // P2.1: Error classification and retry logic
 	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
 	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
-	isPhaseUpdater           ISPhaseUpdater       // #1376: Write-only IS terminal-close (DD-AA-KA-001 Amendment)
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -79,16 +77,6 @@ func WithRecorder(r record.EventRecorder) InvestigatingHandlerOption {
 func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.maxInvestigationDuration = d
-	}
-}
-
-// WithISPhaseUpdater injects the IS phase updater used to close out AF's own
-// InvestigationSession bookkeeping when the investigation reaches a terminal
-// state (#1376). DD-AA-KA-001 Amendment (Gap 1): this is now the only
-// AA->IS interaction; it does not affect interactivity detection.
-func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.isPhaseUpdater = updater
 	}
 }
 
@@ -367,9 +355,6 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 		"maxDuration", h.maxInvestigationDuration,
 		"timesOutAt", analysis.Spec.TimesOutAt,
 	)
-	// #1376: Close the InvestigationSession CRD on timeout.
-	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
-
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation
@@ -409,9 +394,6 @@ func (h *InvestigatingHandler) handleSessionCompleted(ctx context.Context, analy
 		now := metav1.Now()
 		iss.CompletedAt = &now
 	}
-
-	// #1376: Close the InvestigationSession CRD now that KA has finished.
-	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseCompleted)
 
 	var investigationTime int64
 	if session.CreatedAt != nil {
@@ -499,9 +481,6 @@ func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis
 		"pollCount", session.PollCount,
 		"error", as.Status.Error,
 	)
-
-	// #1376: Close the InvestigationSession CRD on failure.
-	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
@@ -741,23 +720,5 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 	default:
 		// Fallback for unknown error types
 		return aianalysisv1.SubReasonTransientError
-	}
-}
-
-// setISTerminalPhase transitions the InvestigationSession CRD to a terminal
-// phase. Best-effort: errors are logged but do not block the investigation
-// pipeline. Called when the KA session finishes (completed, failed, timed out).
-// #1376: Prevents stale Active IS CRDs after autonomous investigations.
-func (h *InvestigatingHandler) setISTerminalPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, phase isv1alpha1.SessionPhase) {
-	if h.isPhaseUpdater == nil {
-		return
-	}
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
-		return
-	}
-	if err := h.isPhaseUpdater.SetTerminalPhase(ctx, rrName, phase); err != nil {
-		h.log.Error(err, "Failed to set IS terminal phase (best-effort)",
-			"rrName", rrName, "phase", phase)
 	}
 }

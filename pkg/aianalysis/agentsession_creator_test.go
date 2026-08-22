@@ -96,6 +96,27 @@ var _ = Describe("AgentSessionCreator", func() {
 			Expect(*created.OwnerReferences[0].BlockOwnerDeletion).To(BeTrue())
 		})
 
+		// UT-AA-2214-006 (finalizer bootstrap-race fix, CI RCA PR #2222):
+		// the finalizer must be set in the SAME Create call that brings the
+		// AgentSession into existence, not left for AF's reconciler to add
+		// reactively -- otherwise an immediate DeleteForCascadeCancel
+		// landing before that reconciler's first pass removes the object
+		// with no finalizer ever attached, reproducing the same
+		// delete-event race the finalizer exists to close.
+		It("UT-AA-2214-006: sets agentsessionv1.TerminalCloseFinalizer at creation", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+
+			as, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &agentsessionv1.AgentSession{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: as.Name, Namespace: "default"}, created)).To(Succeed())
+			Expect(created.Finalizers).To(ContainElement(agentsessionv1.TerminalCloseFinalizer))
+		})
+
 		It("UT-AA-KA-065-203: should populate Spec via BuildAgentSessionSpec (no content loss from the retired HTTP body)", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			c := creator.NewAgentSessionCreator(fakeClient, scheme)

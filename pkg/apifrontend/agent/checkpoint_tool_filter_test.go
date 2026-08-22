@@ -22,8 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/adk/model"
-	adksession "google.golang.org/adk/session"
+	"google.golang.org/adk/v2/model"
+	adksession "google.golang.org/adk/v2/session"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )

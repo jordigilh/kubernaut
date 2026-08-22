@@ -80,3 +80,41 @@ Console → RR(Cancelled) → RO Reconcile
 **Kubernetes-native pattern**: Parent controller (RO) manages child lifecycle.
 Children do NOT watch the parent's phase — parent pushes terminal state down.
 This mirrors Deployment→ReplicaSet→Pod cascade behavior.
+
+## Amendment: #2214 — AA cascade-cancel deletes AgentSession, not IS (2026-08-21)
+
+The "AA Controller IS Cleanup" scenarios above (`UT-AA-1421-001..003`,
+`IT-AA-1421-001`) described AA's original direct-write path
+(`cascadeCancelToIS` → `K8sISPhaseUpdater.SetTerminalPhase` → IS status
+update). That path was retired by
+[DD-AA-KA-001's #2214 amendment](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md):
+AA no longer writes `InvestigationSession` at all. On external
+`ParentCancelled`, AA now deletes the correlated `AgentSession`
+(`creator.AgentSessionCreator.DeleteForCascadeCancel`), and two independent,
+already-proven consumers react to that same delete signal:
+
+- AF's `AgentSessionTerminalCloseReconciler` (watching `AgentSession`) closes
+  the correlated IS to `Cancelled` — the same outward-observable outcome
+  `IT-AA-1421-001` originally asserted, now proven end-to-end by the
+  `IT-AA-2214-001`/`IT-AF-2214-002` pairing: `IT-AA-2214-001` (and its
+  idempotency twin `IT-AA-2214-001b`,
+  `test/integration/aianalysis/cascadecancel/cascade_cancel_wiring_test.go` —
+  a dedicated lightweight envtest suite, isolated from the heavy shared
+  `test/integration/aianalysis` suite for the same reason as the sibling
+  `capacityretry`/`schemarejection` suites) proves the real
+  `AIAnalysisReconciler` deletes the `AgentSession` against a genuine API
+  server; `IT-AF-2214-002`
+  (`test/integration/apifrontend/agentsessionclose/`) proves AF's reconciler
+  observes that delete and closes IS to `Cancelled`.
+- KA's `Dispatcher.cancelOnDelete` stops the in-flight investigation
+  goroutine — a capability the old Status-only write did not provide.
+
+Superseded IDs: `UT-AA-1421-001..003` → `UT-AA-2214-001..003`
+(`pkg/aianalysis/controller_cascade_cancel_test.go`) plus `UT-AA-2214-004..005`
+(`pkg/aianalysis/creator/agentsession_test.go`); `IT-AA-1421-001` → the
+`IT-AA-2214-001`/`IT-AF-2214-002` pairing above. See
+[BR-INTERACTIVE-010 SC-9](../../requirements/BR-INTERACTIVE-010.md) for the
+current business-requirement anchor. The RO-side scenarios
+(`UT-RO-1421-*`, `IT-RO-1421-*`) and architecture diagram above are
+otherwise unaffected by this amendment — only the AA→IS leg changed to an
+AA→AgentSession→AF→IS leg.
