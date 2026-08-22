@@ -1861,11 +1861,261 @@ jobs:
           podman system prune -a -f 2>/dev/null || true
 
   # ========================================
+  # MUST-GATHER E2E TEST (Live Cluster, Deterministic Drift Detection)
+  # Moved from must-gather-tests.yml (PR #2245 CI investigation): that
+  # workflow's own E2E job pulled a hand-pinned quay.io/kubernaut-ai/*
+  # chart image tag (1.6.0-rc1) instead of this PR's own freshly-built
+  # images -- disconnecting its pass/fail signal from the code under review
+  # (e.g. rc1 had drifted 3 release candidates behind rc4 by the time this
+  # was caught, so a failure here could be pure image staleness, and a pass
+  # could just as easily mask a real regression the PR introduced). Runs
+  # here instead, after build-images/build-infra-images, loading the SAME
+  # artifact-based images (registry=localhost, tag=needs.build-images.
+  # outputs.tag) every other Kind job in this pipeline already uses -- see
+  # helm-smoke-test above for the artifact-handoff rationale. must-gather-
+  # tests.yml keeps its own Unit Tests (52 bats) and Container Build jobs
+  # (path-filtered, fast feedback for must-gather-only changes) -- neither
+  # depends on other services' images, so neither was affected by the
+  # staleness this migration fixes.
+  # ========================================
+
+  must-gather-e2e-test:
+    name: Must-Gather E2E (Live Cluster)
+    needs: [detect-changes, build-images, build-infra-images, unit-tests]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      KIND_CLUSTER_NAME: must-gather-e2e
+      RELEASE_NAMESPACE: kubernaut-system
+      WORKFLOW_NAMESPACE: kubernaut-workflows
+      OPERATOR_NAMESPACE: kubernaut-operator-system
+      IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
+      # kubernaut-operator is a separate, standalone repo/release, not built
+      # by this pipeline -- distinct concern from the quay.io chart-image
+      # staleness this migration fixes. Bump if the operator's own CRD/RBAC
+      # drifts from this chart's expectations.
+      OPERATOR_VERSION: v1.5.7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: recursive
+
+      - name: Install Podman
+        uses: ./.github/actions/install-podman
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.32.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Download pre-built image artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: image-*-amd64
+          path: /tmp/ci-images
+          merge-multiple: true
+
+      - name: Load images directly into Kind (no registry, no pull secret)
+        run: |
+          shopt -s nullglob
+          tars=(/tmp/ci-images/*.tar)
+          if [ ${#tars[@]} -eq 0 ]; then
+            echo "::error::No image tarballs found in /tmp/ci-images"
+            exit 1
+          fi
+          for tar in "${tars[@]}"; do
+            echo "📦 Loading $(basename "$tar") into Kind cluster ${KIND_CLUSTER_NAME}..."
+            kind load image-archive "$tar" --name "$KIND_CLUSTER_NAME"
+          done
+
+      - name: Create Helm chart prerequisite secrets (chart deliberately does not generate credential material)
+        run: |
+          # charts/kubernaut/templates/infrastructure/secrets.yaml expects these
+          # to already exist -- same minimal contract the fullpipeline E2E suite
+          # uses (test/infrastructure/fullpipeline_e2e_helm.go
+          # createFullPipelineHelmSecrets). llm-credentials-primary is a
+          # placeholder: no test here actually triggers an LLM call, it just
+          # needs to exist for KubernautAgent's volume mount / profile
+          # validation to succeed at pod startup.
+          kubectl create namespace "$RELEASE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n "$RELEASE_NAMESPACE" -f - <<'EOF'
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: postgresql-secret
+          type: Opaque
+          stringData:
+            POSTGRES_USER: slm_user
+            POSTGRES_PASSWORD: kubernaut-e2e-password
+            POSTGRES_DB: action_history
+            db-secrets.yaml: |
+              username: slm_user
+              password: kubernaut-e2e-password
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: valkey-secret
+          type: Opaque
+          stringData:
+            valkey-secrets.yaml: |
+              password: ""
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: llm-credentials-primary
+          type: Opaque
+          stringData:
+            api_key: mock-llm-e2e-key
+          EOF
+
+      - name: "Write minimal OPA policy files (BR-PLATFORM-010: policies.content is mandatory)"
+        run: |
+          # charts/kubernaut/values.schema.json requires exactly one of
+          # policies.content/existingConfigMap for both services -- this
+          # job only needs *some* valid policy so the chart installs and
+          # the controllers start cleanly (not exercising policy business
+          # logic), so reuse the same proven-valid content the fullpipeline
+          # E2E suite injects (test/infrastructure/fullpipeline_e2e_helm.go).
+          mkdir -p /tmp/must-gather-e2e-policies
+          cat > /tmp/must-gather-e2e-policies/sp-policy.rego <<'EOF'
+          package signalprocessing
+
+          import rego.v1
+
+          default environment := {"environment": "unknown", "source": "default"}
+          default severity := "unknown"
+          default priority := {"priority": "P3", "policy_name": "default"}
+          EOF
+          cat > /tmp/must-gather-e2e-policies/aa-policy.rego <<'EOF'
+          package aianalysis.approval
+
+          import rego.v1
+
+          default require_approval := false
+          default reason := "Auto-approved"
+          EOF
+
+      - name: Install Kubernaut Helm chart (PR-built images, loaded directly into Kind)
+        run: |
+          # Deliberately NO --wait: charts/kubernaut/templates/hooks/migration-job.yaml
+          # is a post-install hook, and DataStorage's own readiness depends on
+          # that migration having already run (DD-PLATFORM-002 documents this
+          # exact deadlock for ArgoCD's PostSync hooks; `--wait` reproduces the
+          # same deadlock for the Helm CLI, since it blocks the main-resource
+          # wait BEFORE post-install hooks run at all). Helm still waits for the
+          # hook Job itself synchronously before this command returns, so by
+          # the time we get here the schema already exists and the explicit
+          # wait below just lets DataStorage's own crash-loop backoff recover
+          # the pod.
+          helm install kubernaut charts/kubernaut/ \
+            --namespace "$RELEASE_NAMESPACE" --create-namespace \
+            --set global.image.registry=localhost \
+            --set global.image.namespace="" \
+            --set global.image.tag="${IMAGE_TAG}" \
+            --set-file signalprocessing.policies.content=/tmp/must-gather-e2e-policies/sp-policy.rego \
+            --set-file aianalysis.policies.content=/tmp/must-gather-e2e-policies/aa-policy.rego \
+            --set global.llmProfiles.primary.provider=openai_compatible \
+            --set global.llmProfiles.primary.model=mock-model \
+            --set global.llmProfiles.primary.endpoint="http://mock-llm.${RELEASE_NAMESPACE}.svc.cluster.local:8080" \
+            --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
+            --timeout 180s
+
+      - name: Wait for all chart-managed Deployments to become Available
+        run: |
+          kubectl wait --for=condition=Available deployment --all -n "$RELEASE_NAMESPACE" --timeout=180s
+
+      - name: Install kubernaut-operator (real controller-manager, for optional-namespace log collection coverage)
+        run: |
+          # The kubernaut-operator's controller-manager needs no external
+          # deps (Postgres/Valkey/LLM) to become Ready -- those only matter
+          # once a Kubernaut CR is reconciled, which this job never creates.
+          # dist/install.yaml is a self-contained kubebuilder bundle
+          # (Namespace, CRD, RBAC, Deployment) -- pulled directly, no OLM.
+          kubectl apply -f "https://raw.githubusercontent.com/jordigilh/kubernaut-operator/${OPERATOR_VERSION}/dist/install.yaml"
+          kubectl -n "$OPERATOR_NAMESPACE" rollout status deployment/kubernaut-operator-controller-manager --timeout=120s
+
+      - name: Build must-gather image
+        working-directory: cmd/must-gather
+        run: make build-local
+
+      - name: Generate in-cluster kubeconfig for containerized bats
+        run: |
+          # Issue #2037: --internal produces the in-Kind-network API server
+          # address (not the host-mapped 127.0.0.1 one), so the containerized
+          # bats suite -- joined to the Kind podman network below -- can reach it.
+          kind get kubeconfig --internal --name "$KIND_CLUSTER_NAME" > /tmp/kubeconfig-e2e
+
+      - name: Run must-gather E2E bats suite (containerized, against live cluster)
+        working-directory: cmd/must-gather
+        run: |
+          make test-e2e-container \
+            KUBECONFIG_PATH=/tmp/kubeconfig-e2e \
+            KIND_NETWORK=kind \
+            RELEASE_NAMESPACE="$RELEASE_NAMESPACE" \
+            WORKFLOW_NAMESPACE="$WORKFLOW_NAMESPACE" \
+            OPERATOR_NAMESPACE="$OPERATOR_NAMESPACE"
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A --no-headers 2>/dev/null || true
+          echo "=== CRDs ==="
+          kubectl get crd -o name 2>/dev/null | grep kubernaut.ai || true
+          echo "=== Events ==="
+          kubectl get events -n "$RELEASE_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== kubernaut-operator status ==="
+          kubectl get pods -n "$OPERATOR_NAMESPACE" 2>/dev/null || true
+          kubectl get events -n "$OPERATOR_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -20 || true
+          echo "=== Kind logs ==="
+          kind export logs /tmp/kind-e2e-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: must-gather-e2e-diagnostics-${{ github.run_id }}
+          path: /tmp/kind-e2e-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Cleanup Podman
+        if: always()
+        run: |
+          podman system prune -a -f 2>/dev/null || true
+
+  # ========================================
   # SUMMARY
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-unittest, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-unittest, helm-smoke-test, must-gather-e2e-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -2192,7 +2442,8 @@ jobs:
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-images,
             build-infra-images,
-            integration-tests, e2e-tests, helm-unittest, helm-smoke-test, summary]
+            integration-tests, e2e-tests, helm-unittest, helm-smoke-test,
+            must-gather-e2e-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -2214,6 +2465,7 @@ jobs:
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
           echo "  helm-unittest:        ${{ needs.helm-unittest.result }}"
           echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
+          echo "  must-gather-e2e-test: ${{ needs.must-gather-e2e-test.result }}"
           echo "  summary:              ${{ needs.summary.result }}"
           echo ""
 
