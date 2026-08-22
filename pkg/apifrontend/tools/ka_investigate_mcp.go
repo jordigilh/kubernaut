@@ -685,9 +685,10 @@ type blockingInvestigationParams struct {
 
 // runBlockingInvestigation bridges KA events into a collected RCA summary,
 // synthesizes a fallback RCA from severity triage when KA produced none,
-// and hands the MCP session off to the pool (if available) so subsequent
-// tool calls reuse the connection; otherwise it closes the session via
-// cleanup.
+// emits an investigation_summary artifact for every concluded investigation
+// (#2247, SI-10), and hands the MCP session off to the pool (if available)
+// so subsequent tool calls reuse the connection; otherwise it closes the
+// session via cleanup.
 func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blockingInvestigationParams) InvestigateMCPResult {
 	rrID, username, rrSeverity, result, cleanup, logger := p.RRID, p.Username, p.RRSeverity, p.Result, p.Cleanup, p.Logger
 	logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
@@ -711,10 +712,10 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 		})
 	}
 
-	// Fallback: when KA produced no RCA (e.g. user-driving mode with
-	// no autonomous session) but severity triage completed during RR
-	// creation, emit progressive events using the triage data so the
-	// user gets immediate severity feedback.
+	// Fallback: when KA produced no RCA at all (e.g. user-driving mode
+	// with no autonomous session) but severity triage completed during
+	// RR creation, synthesize a provisional RCA from the triage data so
+	// the user gets immediate severity feedback.
 	if rca == nil && rrSeverity != "" {
 		rca = &InvestigateRCA{
 			Severity:    rrSeverity,
@@ -723,12 +724,24 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 			RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
 		}
 		emitEarlyRCA(ctx, rca)
-		emitFallbackInvestigationArtifact(ctx, rca, rrID)
 		logger.Info("emitted fallback early_rca from severity triage",
 			"rr_id", rrID, "severity", rrSeverity)
 		if summary == "" {
 			summary = rca.RCASummary
 		}
+	}
+
+	// SI-10 (#2247): every concluded investigation -- whether KA returned a
+	// genuine RCA (early_rca already emitted above by captureCompleteEventRCA
+	// when the bridge processed EventTypeComplete) or only the severity-triage
+	// fallback synthesized just above -- must also produce a structured,
+	// audit-grade investigation_summary artifact. Previously this call was
+	// gated on rca == nil, so a genuinely-completed investigation (the
+	// common/happy path) never got this artifact at all, only the
+	// lighter-weight early_rca one; confirmed via live E2E repro (helios08)
+	// that this is a real compliance gap, not test/mock nondeterminism.
+	if rca != nil {
+		emitFallbackInvestigationArtifact(ctx, rca, rrID)
 	}
 
 	handoffOrCloseSession(ctx, cfg, rrID, username, result, cleanup, logger)

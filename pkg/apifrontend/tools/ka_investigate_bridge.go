@@ -296,9 +296,14 @@ func EmitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA,
 const fallbackCausalChainPlaceholder = "Full investigation in progress; preliminary severity assessed from resource metadata only"
 
 // emitFallbackInvestigationArtifact emits an artifact-update event with the
-// investigation_summary schema when the KA bridge produced no events but
-// severity triage data is available. This ensures the Console gets a
-// structured artifact even when the KA investigation is slow or unavailable.
+// investigation_summary schema for any concluded investigation, whether rca
+// is KA's own genuine result or a severity-triage-only value synthesized by
+// the caller when KA produced none (e.g. user-driving mode with no
+// autonomous session, or KA slow/unavailable). Despite the name (kept for
+// compatibility with existing call sites/tests), this is the single
+// terminal producer of the investigation_summary artifact for BOTH cases as
+// of #2247 -- it is not itself a "fallback-only" code path; SI-10 requires
+// every concluded investigation to leave behind this structured record.
 //
 // The emitted rca object always includes causal_chain/tool_calls_count/
 // llm_turns using the same field names as the final present_decision
