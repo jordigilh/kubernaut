@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -47,6 +48,9 @@ type ISSessionInitializer interface {
 	InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error
 	CreateInvestigationSession(ctx context.Context, cfg session.CreateISConfig) (string, error)
 	UpdateISCorrelation(ctx context.Context, crdName, kaSessionID string) error
+	// BackfillOwnerReference sets the OwnerReference on an IS CRD created
+	// before its target RR existed (#2265), once the RR is persisted.
+	BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID)
 }
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
@@ -758,4 +762,9 @@ func (a *isSignalerAdapter) SignalInteractive(ctx context.Context, rrNamespace, 
 
 func (a *isSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error {
 	return a.initializer.UpdateISCorrelation(ctx, crdName, kaSessionID)
+}
+
+// BackfillOwnerReference implements tools.OwnerReferenceBackfiller (#2265).
+func (a *isSignalerAdapter) BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID) {
+	a.initializer.BackfillOwnerReference(ctx, rrNamespace, rrName, rrUID)
 }

@@ -616,6 +616,86 @@ several of these stalls beginning *before* E2E-AA-065's own burst window even st
 burst as the trigger. #2204 predates this PR, is unrelated to `AgentSessionReasonCapacityExceeded` retry
 logic, and its suggested fix (raise the affected specs' `Eventually` timeouts) is out of scope for this PR.
 
+### Gap 6 (2026-08-23, #2265): Gap 1's "freshest possible read" still raced AF's own separate IS-create call for the fresh-start path
+
+Gap 1 above resolved the fresh-start case by moving the IS-existence check to KA's actual dispatch
+decision point — "the freshest possible read, and the only read that matters, since dispatch is the
+one moment the decision is actually consumed." That reasoning is correct *given* the IS CRD exists
+by the time dispatch runs. It missed a second, independent ordering problem one layer up: AF's own
+`kubernaut_investigate`/`kubernaut_investigate_alert` MCP tools, for a genuinely new RR (no `rr_id`
+supplied — the human names a resource directly), created the RR *first* via `HandleCreateRR`, then
+issued a *separate* `SignalInteractive` call afterward to create the IS. Once the RR existed, nothing
+serialized "RO promotes it → AIAnalysis is created → AA creates `AgentSession` → KA's dispatcher runs
+`hasInvestigationSession()`" against "AF's own IS `Create` call actually lands" — under real
+cluster latency (informer relist/propagation delay, apiserver/etcd load) dispatch could win that race
+and read "no IS yet," permanently deciding `Status.Interactive=false` for a session the human had
+already asked to drive interactively (`Status.Interactive` is a write-once ack per Gap 1 above — KA
+never re-checks). Confirmed via must-gather RCA on a CI E2E flake
+([E2E-FP-1912-001](https://github.com/jordigilh/kubernaut/issues/2265)): the IS CRD's own
+`creationTimestamp` postdated the `AgentSession`'s dispatch-time `Status.Interactive=false` write by
+tens of milliseconds — a real TOCTOU race, not a mock-LLM or test-harness artifact.
+
+**Options considered and rejected:**
+
+- **Bounded retry/re-check on KA's dispatcher** (re-run `hasInvestigationSession()` a few times with
+  backoff before committing to autonomous). Rejected: this narrows the race window but does not
+  remove it — it is fundamentally probabilistic, and this is a security-sensitive control-flow
+  decision (autonomous vs. human-driven investigation) where auto-execution can complete and act on
+  a cluster *before* a delayed retry would have flipped the answer. A probabilistic fix is not an
+  acceptable fix for this class of gap.
+- **RR annotation as an interactivity signal** (AF sets an annotation on the RR itself at create
+  time, read by downstream components instead of/alongside the IS CRD). Rejected on security
+  grounds: an annotation is a bare key/value string with no admission-time validation tying it to
+  the actual caller's identity or intent — it is a control-flow flag an actor with RR write access
+  could tamper with to force (or suppress) interactive routing they weren't entitled to, unlike the
+  IS CRD's existence check, which is anchored to a real, independently-RBAC'd resource.
+
+**Resolution: reorder AF's own two calls so the IS CRD is created *before* the RR it references,
+closing the race at its actual source instead of narrowing it downstream.** The IS CRD's
+`spec.remediationRequestRef.name` is a plain string, not a UID-anchored `OwnerReference` — nothing
+requires the referenced RR to exist yet, and RR names are client-generated (deterministic,
+pre-computable before the RR object is created), so `createRRForInvestigation`
+(`ka_investigate_mcp.go`) and `HandleInvestigateAlert` (`af_investigate_alert.go`) now pass a new
+`CreateRRHooks{BeforeCreate, AfterCreate}` pair into `HandleCreateRRWithHooks`
+(`af_create_rr.go`): `BeforeCreate` fires with the about-to-be-created RR's name after dedup has
+resolved to "genuinely new" but strictly before the RR's `client.Create` call — signaling
+interactively (`ISSignaler.SignalInteractive`/`AlertISSignaler.SignalInteractive`) here means the IS
+CRD is guaranteed to exist before *any* other component (RO, AA, KA) can possibly observe the RR at
+all, not just before KA's dispatch check specifically. `AfterCreate` fires once the RR is actually
+persisted (real UID assigned by the API server) and backfills the IS CRD's `OwnerReference` — deferred
+from `CreateInvestigationSession`'s existing best-effort `setRROwnerReference` lookup, which
+necessarily missed it since the RR didn't exist yet — via the new `OwnerReferenceBackfiller`
+interface, checked with a type assertion rather than added to `ISSignaler`/`AlertISSignaler` directly
+so every existing signaler implementation (including test doubles that don't need backfill) is
+unaffected. The pre-existing dedup (`AlreadyExists`) branch is untouched: that RR already existed
+before this call, so it was never at risk of this ordering race, and both call sites fall back to
+the original post-hoc `signalInteractiveSession`/`signalInteractiveIfConfigured` call exactly as
+before whenever the hook didn't fire (dedup hit) or fired but didn't produce a usable IS CRD name.
+
+**Fire-and-forget semantics preserved exactly per call site.** `ka_investigate_mcp.go`'s hook keeps
+its existing single-driver conflict check (`session_active` errors still propagate and abort RR
+creation — a genuine conflicting session must still block); `af_investigate_alert.go`'s hook keeps
+its existing best-effort contract (`BeforeCreate` never returns a non-nil error regardless of the
+signaler's outcome, matching #1440/SC-24's "a signaling failure must never fail RR creation").
+
+**Business Requirements**: BR-INTERACTIVE-010 (interactive investigation routing must be reliable,
+not probabilistic), SI-10 (this closes an information-flow ordering defect, not an input-validation
+one), AC-6 (rejecting the annotation option preserves least-privilege: interactivity control stays
+anchored to an RBAC'd CRD, never a tamperable free-form field).
+
+**Implemented**: `pkg/apifrontend/tools/af_create_rr.go` (`CreateRRHooks`, `HandleCreateRRWithHooks`,
+`OwnerReferenceBackfiller`); `pkg/apifrontend/tools/ka_investigate_mcp.go`
+(`buildPreCreateISHooks`, `resolveInvestigationRR`/`createRRForInvestigation` reordered);
+`pkg/apifrontend/tools/af_investigate_alert.go` (`buildAlertPreCreateISHooks`); `pkg/apifrontend/
+session/service.go` (`CRDSessionService.BackfillOwnerReference`); production adapter wiring in
+`pkg/apifrontend/agent/root.go` (`agentISSignalerAdapter`, `alertISSignalerAdapter`) and
+`pkg/apifrontend/handler/mcp_bridge.go` (`isSignalerAdapter`, `ISSessionInitializer` interface).
+Test coverage: `pkg/apifrontend/tools/af_create_rr_test.go` (UT-AF-2265-001..006, hook-layer),
+`pkg/apifrontend/tools/ka_investigate_intent_test.go` (UT-AF-2265-101..103, create-new-RR ordering),
+`pkg/apifrontend/tools/af_investigate_alert_1440_test.go` (UT-AF-2265-201..204, alert-path ordering),
+`pkg/apifrontend/tools/af_investigate_alert_1440_it_test.go` (IT-AF-2265-001, real
+`CRDSessionService`-backed production adapter wiring, not a test double).
+
 ## Amendment: #2204 — controller concurrency + deadline-driven backstop requeue (2026-08-20)
 
 **Problem.** Once E2E-AA-065's own flakiness was fixed (previous section), CI still showed

@@ -14,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -1270,4 +1271,7 @@ func (r *recordingSessionInitializer) CreateInvestigationSession(_ context.Conte
 func (r *recordingSessionInitializer) UpdateISCorrelation(_ context.Context, crdName, kaSessionID string) error {
 	r.correlations = append(r.correlations, correlationCall{crdName: crdName, kaSessionID: kaSessionID})
 	return nil
+}
+
+func (r *recordingSessionInitializer) BackfillOwnerReference(_ context.Context, _, _ string, _ k8stypes.UID) {
 }

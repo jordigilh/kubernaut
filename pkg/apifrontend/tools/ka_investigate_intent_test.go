@@ -26,8 +26,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -618,11 +621,141 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			Expect(confirmed.RRID).NotTo(BeEmpty())
 		})
 	})
+
+	// #2265 / DD-AF-013: for the create-new-RR path (api_version/kind/name,
+	// no rr_id given), SignalInteractive must fire from HandleCreateRR's
+	// BeforeCreate hook -- strictly before the RR becomes visible to any
+	// other component -- instead of the old post-hoc call issued after RR
+	// creation had already completed, which raced RO/AA/KA processing the
+	// RR before this call's own separate InvestigationSession Create landed.
+	Describe("IS-before-RR ordering for the create-new-RR path (#2265)", func() {
+		It("UT-AF-2265-101: SignalInteractive fires with the about-to-be-created RR's name before the RR is visible to any reader", func() {
+			tc := newTypedClientForInvestigateWithUIDAssignment()
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "ka-sess-2265-101", Status: "investigation_started", Closer: func() {}}, nil
+				},
+			}
+			recorder := &recordingISSignaler{}
+			var rrVisibleAtSignalTime bool
+			recorder.onSignal = func(ctx context.Context, rrNamespace, rrName string) {
+				var probe remediationv1.RemediationRequest
+				err := tc.Get(ctx, crclient.ObjectKey{Namespace: rrNamespace, Name: rrName}, &probe)
+				rrVisibleAtSignalTime = err == nil
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}})
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Signaler:  recorder,
+					Triager:   defaultTestTriager("prod", "Deployment", "web-2265"),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2265",
+				},
+				false, "sre-user",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.signalCalls).To(HaveLen(1), "SignalInteractive must fire exactly once for a fresh create-new-RR investigation")
+			Expect(recorder.signalCalls[0].joinMode).To(Equal("start"), "a brand-new RR cannot already have an autonomous investigation running")
+			Expect(recorder.signalCalls[0].rrName).To(Equal(result.RRID), "SignalInteractive must fire with exactly the name the RR is ultimately created under")
+			Expect(rrVisibleAtSignalTime).To(BeFalse(),
+				"#2265: SignalInteractive must fire before the RR becomes visible to any reader, closing the race where RO/AA/KA could process the RR before AF's own IS create lands")
+
+			verifyTypedRR(tc, "kubernaut-system", result.RRID)
+		})
+
+		It("UT-AF-2265-102: BackfillOwnerReference fires with the persisted RR's namespace/name/UID once the RR is created", func() {
+			tc := newTypedClientForInvestigateWithUIDAssignment()
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "ka-sess-2265-102", Status: "investigation_started", Closer: func() {}}, nil
+				},
+			}
+			recorder := &recordingISSignaler{}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}})
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Signaler:  recorder,
+					Triager:   defaultTestTriager("prod", "Deployment", "web-2265-b"),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2265-b",
+				},
+				false, "sre-user",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.backfillCalls).To(HaveLen(1), "#1300: OwnerReference backfill must fire once the RR exists")
+			Expect(recorder.backfillCalls[0].rrName).To(Equal(result.RRID))
+			Expect(recorder.backfillCalls[0].rrNamespace).To(Equal("kubernaut-system"), "the RR CRD lives in the AF controller namespace, not the workload namespace")
+			Expect(recorder.backfillCalls[0].rrUID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2265-103: the dedup (AlreadyExists) branch still signals via the existing post-hoc path, not the hook", func() {
+			tc := newTypedClientForInvestigateWithUIDAssignment()
+			triager := defaultTestTriager("prod", "Deployment", "dedup-2265")
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "ka-sess-2265-103", Status: "investigation_started", Closer: func() {}}, nil
+				},
+			}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre-first@kubernaut.ai", Groups: []string{"sre"}})
+
+			first, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager,
+				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "dedup-2265"},
+				false, "sre-first",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			recorder := &recordingISSignaler{}
+			second, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager, Signaler: recorder,
+				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "dedup-2265"},
+				false, "sre-second",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second.RRID).To(Equal(first.RRID), "the second call must hit the dedup branch and reuse the same RR")
+
+			Expect(recorder.signalCalls).To(HaveLen(1), "the dedup branch's RR predates this call -- it must still be signaled via the existing post-hoc call")
+			Expect(recorder.backfillCalls).To(BeEmpty(), "backfill only applies to a genuinely-new RR created by this call")
+		})
+	})
 })
+
+func newTypedClientForInvestigateWithUIDAssignment(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(investigateTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+				if obj.GetUID() == "" {
+					obj.SetUID(uuid.NewUUID())
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+}
 
 type recordingISSignaler struct {
 	signalCalls      []signalCall
 	correlationCalls []corrCall
+	backfillCalls    []backfillCall
+	// onSignal, when set, is invoked synchronously from SignalInteractive
+	// (before returning) so a test can probe co-temporal state (#2265's
+	// ordering proof: is the RR visible yet?).
+	onSignal func(ctx context.Context, rrNamespace, rrName string)
 }
 
 type signalCall struct {
@@ -634,7 +767,15 @@ type corrCall struct {
 	crdName, kaSessionID string
 }
 
-func (r *recordingISSignaler) SignalInteractive(_ context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+type backfillCall struct {
+	rrNamespace, rrName string
+	rrUID               k8stypes.UID
+}
+
+func (r *recordingISSignaler) SignalInteractive(ctx context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+	if r.onSignal != nil {
+		r.onSignal(ctx, rrNamespace, rrName)
+	}
 	r.signalCalls = append(r.signalCalls, signalCall{
 		rrNamespace: rrNamespace, rrName: rrName, taskID: taskID,
 		username: username, groups: groups, joinMode: joinMode,
@@ -645,4 +786,8 @@ func (r *recordingISSignaler) SignalInteractive(_ context.Context, rrNamespace, 
 func (r *recordingISSignaler) UpdateCorrelation(_ context.Context, crdName, kaSessionID string) error {
 	r.correlationCalls = append(r.correlationCalls, corrCall{crdName: crdName, kaSessionID: kaSessionID})
 	return nil
+}
+
+func (r *recordingISSignaler) BackfillOwnerReference(_ context.Context, rrNamespace, rrName string, rrUID k8stypes.UID) {
+	r.backfillCalls = append(r.backfillCalls, backfillCall{rrNamespace: rrNamespace, rrName: rrName, rrUID: rrUID})
 }

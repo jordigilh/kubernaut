@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -145,7 +146,8 @@ func HandleInvestigateAlert(
 		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 
-	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, username)
+	hooks, hookFired := buildAlertPreCreateISHooks(cfg.Signaler, username)
+	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, username, hooks)
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}
@@ -161,7 +163,14 @@ func HandleInvestigateAlert(
 		}, nil
 	}
 
-	signalInteractiveIfConfigured(ctx, cfg.Signaler, result.RRID, username)
+	// #2265: the dedup (AlreadyExists) branch predates this call -- its RR
+	// was never at risk of this ordering race, so it still goes through the
+	// original post-hoc signal below. A genuinely-new RR was already
+	// signaled from BeforeCreate, strictly before it became visible to any
+	// other component; signaling it again here would just be a duplicate.
+	if !*hookFired {
+		signalInteractiveIfConfigured(ctx, cfg.Signaler, result.RRID, username)
+	}
 
 	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, args.AlertName, result.ClusterID))
 
@@ -280,6 +289,48 @@ func signalInteractiveIfConfigured(ctx context.Context, signaler AlertISSignaler
 	taskID := "a2a-" + rrName
 	signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
 	_ = signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups)
+}
+
+// buildAlertPreCreateISHooks builds the CreateRRHooks (#2265) that let
+// HandleInvestigateAlert signal interactive intent (and later back-fill the
+// resulting IS CRD's OwnerReference) strictly between "the new RR's name is
+// known" and "the RR becomes visible to any other component" -- closing the
+// same ordering race documented on buildPreCreateISHooks in
+// ka_investigate_mcp.go. Unlike that path, this one preserves the existing
+// fire-and-forget contract exactly (#1440, SC-24): BeforeCreate never
+// aborts RR creation regardless of the signaler's outcome. The returned
+// *bool reports whether BeforeCreate fired at all (regardless of success),
+// so the caller knows whether to fall back to the original post-hoc
+// signalInteractiveIfConfigured call.
+func buildAlertPreCreateISHooks(signaler AlertISSignaler, username string) (CreateRRHooks, *bool) {
+	hookFired := new(bool)
+	if signaler == nil {
+		return CreateRRHooks{}, hookFired
+	}
+
+	signalSucceeded := false
+	hooks := CreateRRHooks{
+		BeforeCreate: func(ctx context.Context, rrName string) error {
+			*hookFired = true
+			taskID := "a2a-" + rrName
+			signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
+			if sigErr := signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups); sigErr != nil {
+				logr.FromContextOrDiscard(ctx).Error(sigErr, "failed to create IS CRD before RR (proceeding without IS signal)", "rr_name", rrName)
+				return nil
+			}
+			signalSucceeded = true
+			return nil
+		},
+		AfterCreate: func(ctx context.Context, rr *remediationv1.RemediationRequest) {
+			if !signalSucceeded {
+				return
+			}
+			if backfiller, ok := signaler.(OwnerReferenceBackfiller); ok {
+				backfiller.BackfillOwnerReference(ctx, rr.Namespace, rr.Name, rr.UID)
+			}
+		},
+	}
+	return hooks, hookFired
 }
 
 // extractRRNameFromID extracts the RR name from an RRID like "namespace/name".

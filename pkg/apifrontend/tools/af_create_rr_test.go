@@ -13,9 +13,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -144,6 +147,25 @@ func newDynEventClient(objects ...runtime.Object) dynamic.Interface {
 			eventsGVR: "EventList",
 		},
 		objects...)
+}
+
+// newTypedFakeClientWithUIDAssignment wraps a fake client's Create so it
+// assigns a UID like a real API server would (the fake client's own
+// ObjectTracker leaves UID empty, unlike a real cluster -- see #1300's
+// existing rr.SetUID(...) convention in session/deferred_crd_test.go for the
+// same underlying limitation).
+func newTypedFakeClientWithUIDAssignment() crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(rrTestScheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+				if obj.GetUID() == "" {
+					obj.SetUID(uuid.NewUUID())
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
 }
 
 func verifyTypedRR(tc crclient.Client, ns, name string) *remediationv1.RemediationRequest {
@@ -1086,6 +1108,123 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(rec.events[0].Detail["namespace"]).To(Equal("prod"))
 			Expect(rec.events[0].Detail["kind"]).To(Equal("Deployment"))
 			Expect(rec.events[0].Detail["name"]).To(Equal("web"))
+		})
+	})
+
+	// #2265 / DD-AF-013: BeforeCreate/AfterCreate hooks let a caller
+	// interleave InvestigationSession CRD creation strictly between "the
+	// new RR's name is known" and "the RR becomes visible to any other
+	// component" -- closing the race where RO/AA/KA can process a
+	// freshly-created RR before AF's own later, separate InvestigationSession
+	// Create call lands (see ka_investigate_mcp.go/af_investigate_alert.go
+	// for the actual reordering that consumes these hooks).
+	Describe("CreateRRHooks / HandleCreateRRWithHooks (#2265)", func() {
+		It("UT-AF-2265-001: BeforeCreate fires with the about-to-be-created RR's name strictly before the RR is visible to any reader", func() {
+			tc := newTypedFakeClient()
+			var hookRRName string
+			var rrVisibleAtHookTime bool
+			hooks := tools.CreateRRHooks{
+				BeforeCreate: func(ctx context.Context, rrName string) error {
+					hookRRName = rrName
+					var probe remediationv1.RemediationRequest
+					err := tc.Get(ctx, crclient.ObjectKey{Namespace: "prod", Name: rrName}, &probe)
+					rrVisibleAtHookTime = err == nil
+					return nil
+				},
+			}
+
+			result, err := tools.HandleCreateRRWithHooks(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "hook order test", APIVersion: "apps/v1",
+			}, "sre-user", hooks)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(hookRRName).To(Equal(result.RRID), "BeforeCreate must fire with exactly the name the RR is ultimately created under")
+			Expect(rrVisibleAtHookTime).To(BeFalse(),
+				"#2265: BeforeCreate must fire before the RR becomes visible to any reader, so a caller creating an InvestigationSession from this hook can never lose the race")
+			verifyTypedRR(tc, "prod", result.RRID)
+		})
+
+		It("UT-AF-2265-002: BeforeCreate is never invoked on the dedup (AlreadyExists) branch", func() {
+			tc := newTypedFakeClient()
+			triager := defaultTestTriager("prod", "Deployment", "dedup-hooks")
+			deps := &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager}
+			args := &tools.CreateRRArgs{Namespace: "prod", Kind: "Deployment", Name: "dedup-hooks", Description: "first", APIVersion: "apps/v1"}
+
+			first, err := tools.HandleCreateRR(context.Background(), deps, args, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first.AlreadyExists).To(BeFalse())
+
+			hookCalled := false
+			second, err := tools.HandleCreateRRWithHooks(context.Background(), deps, args, "user", tools.CreateRRHooks{
+				BeforeCreate: func(ctx context.Context, rrName string) error {
+					hookCalled = true
+					return nil
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second.AlreadyExists).To(BeTrue(), "the second call with identical fingerprint-producing args must hit the dedup branch")
+			Expect(second.RRID).To(Equal(first.RRID))
+			Expect(hookCalled).To(BeFalse(), "BeforeCreate must only fire for a genuinely new RR -- the dedup branch's RR predates this call, so no race exists for it")
+		})
+
+		It("UT-AF-2265-003: a BeforeCreate error aborts RR creation entirely", func() {
+			tc := newTypedFakeClient()
+			boom := errors.New("simulated InvestigationSession creation failure")
+
+			_, err := tools.HandleCreateRRWithHooks(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "abort-test")}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "abort-test", Description: "abort test", APIVersion: "apps/v1",
+			}, "user", tools.CreateRRHooks{
+				BeforeCreate: func(ctx context.Context, rrName string) error { return boom },
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, boom)).To(BeTrue())
+
+			var list remediationv1.RemediationRequestList
+			Expect(tc.List(context.Background(), &list, crclient.InNamespace("prod"))).To(Succeed())
+			Expect(list.Items).To(BeEmpty(), "an aborted BeforeCreate hook must prevent the RR from ever being created")
+		})
+
+		It("UT-AF-2265-004: AfterCreate fires with the persisted RR, real UID included, after Create succeeds", func() {
+			tc := newTypedFakeClientWithUIDAssignment()
+			var afterCreateRR *remediationv1.RemediationRequest
+
+			result, err := tools.HandleCreateRRWithHooks(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "backfill-test")}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "backfill-test", Description: "backfill test", APIVersion: "apps/v1",
+			}, "user", tools.CreateRRHooks{
+				AfterCreate: func(ctx context.Context, rr *remediationv1.RemediationRequest) { afterCreateRR = rr },
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(afterCreateRR).NotTo(BeNil())
+			Expect(afterCreateRR.Name).To(Equal(result.RRID))
+			Expect(afterCreateRR.UID).NotTo(BeEmpty(), "#1300: AfterCreate must see the real, persisted RR so its UID can back-fill the InvestigationSession's OwnerReference")
+		})
+
+		It("UT-AF-2265-005: AfterCreate is never invoked on the dedup (AlreadyExists) branch", func() {
+			tc := newTypedFakeClient()
+			triager := defaultTestTriager("prod", "Deployment", "dedup-after")
+			deps := &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager}
+			args := &tools.CreateRRArgs{Namespace: "prod", Kind: "Deployment", Name: "dedup-after", Description: "first", APIVersion: "apps/v1"}
+
+			_, err := tools.HandleCreateRR(context.Background(), deps, args, "user")
+			Expect(err).NotTo(HaveOccurred())
+
+			afterCreateCalled := false
+			second, err := tools.HandleCreateRRWithHooks(context.Background(), deps, args, "user", tools.CreateRRHooks{
+				AfterCreate: func(ctx context.Context, rr *remediationv1.RemediationRequest) { afterCreateCalled = true },
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second.AlreadyExists).To(BeTrue())
+			Expect(afterCreateCalled).To(BeFalse(), "AfterCreate must only fire for a genuinely new RR")
+		})
+
+		It("UT-AF-2265-006: HandleCreateRR (no hooks) behaves identically to HandleCreateRRWithHooks with an empty CreateRRHooks{}", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "backward compat", APIVersion: "apps/v1",
+			}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(result.AlreadyExists).To(BeFalse())
 		})
 	})
 })

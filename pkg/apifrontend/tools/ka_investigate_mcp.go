@@ -255,7 +255,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
 	}
 
-	rrSeverity, ambiguous, err := resolveInvestigationRR(ctx, cfg, &args)
+	rrSeverity, ambiguous, preSignaledISCRDName, err := resolveInvestigationRR(ctx, cfg, &args)
 	if err != nil {
 		return InvestigateMCPResult{}, err
 	}
@@ -269,9 +269,18 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
-	isCRDName, err := signalInteractiveSession(ctx, cfg, args.RRID, identity)
-	if err != nil {
-		return InvestigateMCPResult{}, err
+	// #2265: for a genuinely-new RR, createRRForInvestigation's BeforeCreate
+	// hook already signaled interactively -- strictly before the RR became
+	// visible to any other component. Calling signalInteractiveSession again
+	// here would be a redundant (if harmless) second attempt for that case,
+	// so it only runs when the hook didn't already succeed (pre-existing RR
+	// via rr_id, a dedup/AlreadyExists hit, or the hook itself fail-opened).
+	isCRDName := preSignaledISCRDName
+	if isCRDName == "" {
+		isCRDName, err = signalInteractiveSession(ctx, cfg, args.RRID, identity)
+		if err != nil {
+			return InvestigateMCPResult{}, err
+		}
 	}
 
 	kaSessionID := awaitInvestigationReady(ctx, cfg, args.RRID, isCRDName, blocking)
@@ -329,37 +338,40 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 // resolveInvestigationRR validates args, optionally creates a new RR from
 // resource args (rr_id vs api_version/kind/name), and seeds the EventBridge
 // RR context (#1423) for Console banner population. Returns the severity
-// assessed during RR creation (if any) for later fallback-RCA use.
-func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs) (rrSeverity string, ambiguous *CreateRRResult, err error) {
+// assessed during RR creation (if any) for later fallback-RCA use, and
+// (#2265) the IS CRD name if createRRForInvestigation's BeforeCreate hook
+// already signaled interactively for a genuinely-new RR -- empty otherwise,
+// so the caller falls back to its own post-hoc signalInteractiveSession call.
+func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs) (rrSeverity string, ambiguous *CreateRRResult, preSignaledISCRDName string, err error) {
 	hasRRID := args.RRID != ""
 	hasResourceArgs := args.APIVersion != "" || args.Kind != "" || args.Name != "" || args.Namespace != ""
 
 	if !hasRRID && !hasResourceArgs {
-		return "", nil, fmt.Errorf("rr_id or api_version/kind/name required")
+		return "", nil, "", fmt.Errorf("rr_id or api_version/kind/name required")
 	}
 	if hasRRID {
 		if err := validate.RRID(args.RRID); err != nil {
-			return "", nil, fmt.Errorf("invalid rr_id: %w", err)
+			return "", nil, "", fmt.Errorf("invalid rr_id: %w", err)
 		}
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
 
 	if !hasRRID && hasResourceArgs {
-		rrSeverity, ambiguous, err = createRRForInvestigation(ctx, cfg, args, identity)
+		rrSeverity, ambiguous, preSignaledISCRDName, err = createRRForInvestigation(ctx, cfg, args, identity)
 		if err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 		// DD-AF-012/#2027/#2028: no RR was created -- the caller must ask
 		// the user to confirm the candidate before retrying. args.RRID was
 		// never populated, so the takeover-fetch logic below must not run.
 		if ambiguous != nil {
-			return "", ambiguous, nil
+			return "", ambiguous, "", nil
 		}
 	}
 
 	if args.RRID == "" {
-		return "", nil, fmt.Errorf("rr_id is required for MCP investigation")
+		return "", nil, "", fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
 	// For the existing-RR path (rr_id provided as input, i.e. a takeover of
@@ -372,7 +384,7 @@ func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *I
 		setTakeoverRRContext(ctx, cfg, args.RRID)
 	}
 
-	return rrSeverity, nil, nil
+	return rrSeverity, nil, preSignaledISCRDName, nil
 }
 
 // setTakeoverRRContext seeds the EventBridge RR context for the takeover
@@ -411,13 +423,16 @@ func setTakeoverRRContext(ctx context.Context, cfg *InvestigateConfig, rrID stri
 // api_version/kind/name/namespace args, resolving cluster-scoped namespace
 // stripping and rejecting service-account-initiated interactive
 // investigations. Mutates args.RRID/args.Namespace and seeds the
-// EventBridge RR context (#1423, AU-3, SI-4).
-func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs, identity *auth.UserIdentity) (severityOut string, ambiguous *CreateRRResult, err error) {
+// EventBridge RR context (#1423, AU-3, SI-4). Returns (#2265) the IS CRD
+// name if buildPreCreateISHooks's BeforeCreate hook signaled interactively
+// for a genuinely-new RR -- empty when the hook didn't fire (dedup hit) or
+// fail-opened (signaler error other than a single-driver conflict).
+func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs, identity *auth.UserIdentity) (severityOut string, ambiguous *CreateRRResult, preSignaledISCRDName string, err error) {
 	if err := validate.APIVersion(args.APIVersion); err != nil {
-		return "", nil, fmt.Errorf("%w", err)
+		return "", nil, "", fmt.Errorf("%w", err)
 	}
 	if args.Kind == "" || args.Name == "" {
-		return "", nil, fmt.Errorf("kind and name required when providing api_version/kind/name")
+		return "", nil, "", fmt.Errorf("kind and name required when providing api_version/kind/name")
 	}
 
 	clusterScoped := resolveClusterScoped(ctx, args)
@@ -426,10 +441,10 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	}
 
 	if identity != nil && identity.IsServiceAccount {
-		return "", nil, fmt.Errorf("interactive investigation cannot be started by service accounts")
+		return "", nil, "", fmt.Errorf("interactive investigation cannot be started by service accounts")
 	}
 	if cfg.Client == nil {
-		return "", nil, fmt.Errorf("k8s client unavailable for RR creation")
+		return "", nil, "", fmt.Errorf("k8s client unavailable for RR creation")
 	}
 
 	createArgs := &CreateRRArgs{
@@ -445,20 +460,78 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	if identity != nil {
 		createUser = identity.Username
 	}
-	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, createUser)
+
+	hooks, signaledISCRDName := buildPreCreateISHooks(cfg, identity)
+	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, createUser, hooks)
 	if err != nil {
-		return "", nil, fmt.Errorf("create RR for investigation: %w", err)
+		return "", nil, "", fmt.Errorf("create RR for investigation: %w", err)
 	}
 	// DD-AF-012/#2027/#2028: no RR was created -- surface the candidate to
 	// the caller instead of treating this as a fatal error.
 	if result.Ambiguous {
-		return "", &result, nil
+		return "", &result, "", nil
 	}
 	args.RRID = result.RRID
 
 	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))
 
-	return result.Severity, nil, nil
+	return result.Severity, nil, *signaledISCRDName, nil
+}
+
+// buildPreCreateISHooks builds the CreateRRHooks (#2265) that let
+// createRRForInvestigation signal interactive intent (and later back-fill
+// the resulting IS CRD's OwnerReference) strictly between "the new RR's
+// name is known" and "the RR becomes visible to any other component" --
+// closing the race where RO/AA/KA could otherwise process the RR before
+// AF's own, separately-issued InvestigationSession Create call lands. The
+// returned *string is populated with the created IS CRD's name once
+// BeforeCreate succeeds (read by the caller after HandleCreateRRWithHooks
+// returns); it stays empty when no signaler is configured, the dedup branch
+// is hit (BeforeCreate never fires), or the signal itself fails open.
+func buildPreCreateISHooks(cfg *InvestigateConfig, identity *auth.UserIdentity) (CreateRRHooks, *string) {
+	signaledISCRDName := new(string)
+	if cfg.Signaler == nil || cfg.Client == nil || cfg.Namespace == "" {
+		return CreateRRHooks{}, signaledISCRDName
+	}
+
+	signalUsername := ""
+	var groups []string
+	if identity != nil {
+		signalUsername = identity.Username
+		groups = identity.Groups
+	}
+
+	hooks := CreateRRHooks{
+		BeforeCreate: func(hctx context.Context, rrName string) error {
+			// A genuinely-new RR cannot yet have an autonomous investigation
+			// running (AA needs the RR to exist and be processed by
+			// SignalProcessing -> RemediationOrchestrator -> AIAnalysis
+			// first) -- joinMode is unconditionally "start", unlike the
+			// pre-existing-RR takeover path in signalInteractiveSession.
+			taskID := fmt.Sprintf("a2a-%s", rrName)
+			isCRDName, sigErr := cfg.Signaler.SignalInteractive(hctx, cfg.Namespace, rrName, taskID, signalUsername, groups, "start")
+			if sigErr != nil {
+				logger := logr.FromContextOrDiscard(hctx)
+				if strings.Contains(sigErr.Error(), "session_active") {
+					logger.Info("IS CRD single-driver enforcement: rejecting duplicate session", "rr_id", rrName, "error", sigErr)
+					return sigErr
+				}
+				logger.Error(sigErr, "failed to create IS CRD before RR (proceeding without IS signal)", "rr_id", rrName)
+				return nil
+			}
+			*signaledISCRDName = isCRDName
+			return nil
+		},
+		AfterCreate: func(actx context.Context, rr *remediationv1.RemediationRequest) {
+			if *signaledISCRDName == "" {
+				return
+			}
+			if backfiller, ok := cfg.Signaler.(OwnerReferenceBackfiller); ok {
+				backfiller.BackfillOwnerReference(actx, rr.Namespace, rr.Name, rr.UID)
+			}
+		},
+	}
+	return hooks, signaledISCRDName
 }
 
 // resolveClusterScoped determines whether the target resource is

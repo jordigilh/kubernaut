@@ -781,6 +781,46 @@ func (s *CRDSessionService) UpdateISCorrelation(ctx context.Context, crdName, ka
 	return nil
 }
 
+// BackfillOwnerReference sets rrNamespace/rrName/rrUID as the OwnerReference
+// on the IS CRD for this RR (named deterministically as is-<rrName>, per
+// CreateInvestigationSession), enabling cascade-GC (#1300). This exists
+// because #2265 deliberately creates the IS *before* its target RR (closing
+// a TOCTOU race in KA's dispatch-time interactivity check) -- so
+// CreateInvestigationSession's own best-effort setRROwnerReference lookup,
+// which runs inline at IS-create time, necessarily misses an RR that
+// doesn't exist yet. This is the deferred completion of that same
+// best-effort contract, called once the RR is actually persisted.
+// Best-effort: failures are logged, not returned -- the RR is already
+// committed, so a backfill failure only delays cascade-GC, it doesn't lose
+// functionality. A no-op if the OwnerReference is already set (idempotent).
+func (s *CRDSessionService) BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID) {
+	crdName := fmt.Sprintf("is-%s", rrName)
+
+	var is v1alpha1.InvestigationSession
+	if err := s.getReader().Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: crdName}, &is); err != nil {
+		s.logger.Error(err, "backfill OwnerReference: get IS CRD failed", "is_name", crdName, "rr_ref", rrNamespace+"/"+rrName)
+		return
+	}
+	if len(is.OwnerReferences) > 0 {
+		return
+	}
+
+	patch := client.MergeFrom(is.DeepCopy())
+	is.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: "kubernaut.ai/v1alpha1",
+			Kind:       "RemediationRequest",
+			Name:       rrName,
+			UID:        rrUID,
+		},
+	}
+	if err := s.client.Patch(ctx, &is, patch); err != nil {
+		s.logger.Error(err, "backfill OwnerReference: patch IS CRD failed", "is_name", crdName, "rr_ref", rrNamespace+"/"+rrName)
+		return
+	}
+	s.logger.Info("IS CRD OwnerReference backfilled", "is_name", crdName, "rr_ref", rrNamespace+"/"+rrName)
+}
+
 var rrGVK = schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"}
 
 // setRROwnerReference looks up the RemediationRequest and, if found, sets an
