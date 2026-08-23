@@ -274,6 +274,13 @@ Helm-side behavior.
       */}}
       tlsCaFile: {{ $kaFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 {{- end }}
+{{- /* Issue #2262 Phase 2: only render keys the operator actually set --
+an unset field keeps mcpclient.DefaultResilienceConfig()'s pre-#2262
+default unchanged (see mcpclient.ResilienceConfigFromFleet). */}}
+{{- if $kaFleetPreamble.resilience }}
+    resilience:
+      {{- $kaFleetPreamble.resilience | toYaml | nindent 6 }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- define "kubernaut.kubernautAgent.llmRuntimeYAML" -}}

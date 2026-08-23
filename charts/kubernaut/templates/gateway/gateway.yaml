@@ -112,6 +112,16 @@ fleet:
     {{- end }}
     tlsCAFile: {{ $gatewayFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- end }}
+  {{- /* Issue #2262 Phase 2: only render keys the operator actually set (via
+  global.fleet.resilience or gateway.fleet.resilience) -- omitting a field
+  here means pkg/fleet.FleetConfig.Resilience's zero value for it, and
+  mcpclient.ResilienceConfigFromFleet only overrides a mcpclient default when
+  the FleetConfig field is non-zero, so an unset field is indistinguishable
+  from "not configured" and keeps its pre-#2262 hardcoded default. */}}
+  {{- if $gatewayFleetPreamble.resilience }}
+  resilience:
+    {{- $gatewayFleetPreamble.resilience | toYaml | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{- /*

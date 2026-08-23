@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -108,6 +109,47 @@ type FleetConfig struct {
 
 	// OAuth2 holds optional OAuth2 credentials for MCP Gateway authentication.
 	OAuth2 FleetOAuth2Config `yaml:"oauth2,omitempty"`
+
+	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
+	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
+	// preserves every existing deployment's current hardcoded defaults
+	// unchanged -- see mcpclient.ResilienceConfigFromFleet.
+	// +optional
+	Resilience FleetResilienceConfig `yaml:"resilience,omitempty"`
+}
+
+// FleetResilienceConfig is a plain DTO mirroring the tunable fields of
+// pkg/fleet/mcpclient.ResilienceConfig. It is defined here, not in
+// mcpclient, to avoid an import cycle: pkg/fleet/mcpclient already imports
+// pkg/fleet (reader_factory.go), so pkg/fleet cannot import mcpclient back.
+// mcpclient.ResilienceConfigFromFleet converts this DTO into the real
+// ResilienceConfig, merging any non-zero field here over
+// mcpclient.DefaultResilienceConfig().
+//
+// All fields are omitempty and zero-value-safe: a zero value here always
+// means "use the mcpclient default for this field", never "explicitly set
+// to zero" -- so an existing deployment that doesn't set a `resilience:`
+// block at all keeps its pre-#2262 behavior unchanged.
+type FleetResilienceConfig struct {
+	// InitialInterval is the starting backoff interval for startup retries.
+	// +optional
+	InitialInterval time.Duration `yaml:"initialInterval,omitempty"`
+	// MaxInterval is the maximum backoff interval.
+	// +optional
+	MaxInterval time.Duration `yaml:"maxInterval,omitempty"`
+	// MaxElapsedTime is the total time before giving up on startup.
+	// +optional
+	MaxElapsedTime time.Duration `yaml:"maxElapsedTime,omitempty"`
+	// TokenRefreshTimeout bounds OAuth2 token refresh HTTP calls.
+	// +optional
+	TokenRefreshTimeout time.Duration `yaml:"tokenRefreshTimeout,omitempty"`
+	// ConnectTimeout bounds each individual MCP connect attempt.
+	// +optional
+	ConnectTimeout time.Duration `yaml:"connectTimeout,omitempty"`
+	// DiscoverProbeTimeout bounds the SEP-2575 "server/discover" probe
+	// independently of ConnectTimeout (issue #2262).
+	// +optional
+	DiscoverProbeTimeout time.Duration `yaml:"discoverProbeTimeout,omitempty"`
 }
 
 // FleetOAuth2Config holds OAuth2 credentials for MCP Gateway authentication.
@@ -138,6 +180,11 @@ type MCPGatewayConfig struct {
 	Endpoint    string `yaml:"endpoint"`
 	GatewayType string `yaml:"gatewayType"`
 	Namespace   string `yaml:"namespace"`
+
+	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
+	// tuning (issue #2262 Phase 2). See FleetConfig.Resilience's doc comment.
+	// +optional
+	Resilience FleetResilienceConfig `yaml:"resilience,omitempty"`
 }
 
 // Validate checks that FleetConfig has all required fields when enabled.

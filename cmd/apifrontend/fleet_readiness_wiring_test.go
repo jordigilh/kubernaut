@@ -75,7 +75,7 @@ func TestWireFleetReadinessGate_AF_Unreachable_NotReady(t *testing.T) {
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	resilienceCfg.InitialInterval = 50 * time.Millisecond
 	resilienceCfg.MaxElapsedTime = 500 * time.Millisecond
-	fleetClient, connErr := mcpclient.NewResilient(ctx, "http://127.0.0.1:1/unreachable", resilienceCfg, logr.Discard())
+	fleetClient, connErr := mcpclient.NewResilient(ctx, unreachableTestEndpoint, resilienceCfg, logr.Discard())
 	_ = connErr
 	if fleetClient != nil {
 		t.Cleanup(func() { _ = fleetClient.Close() })

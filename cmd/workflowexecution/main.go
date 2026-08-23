@@ -461,7 +461,7 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 			"secretPath", basePath)
 	}
 
-	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
 	fleetResilientClient, fleetErr := fleetclient.NewResilient(
 		ctx, cfg.Fleet.Endpoint, resilienceCfg,
 		ctrl.Log.WithName("fleet-client"), fleetOpts...,

@@ -78,6 +78,12 @@ type FleetConfig struct {
 	// Namespace restricts the ClusterRegistry's CRD watch to a specific
 	// namespace. Empty means watch all namespaces (BR-FLEET-003, #1511).
 	Namespace string `yaml:"namespace,omitempty"`
+
+	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
+	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
+	// preserves SP's current hardcoded defaults unchanged.
+	// +optional
+	Resilience fleet.FleetResilienceConfig `yaml:"resilience,omitempty"`
 }
 
 // FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.

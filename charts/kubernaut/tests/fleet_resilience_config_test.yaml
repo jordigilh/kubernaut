@@ -1,0 +1,385 @@
+suite: "Issue #2262 Phase 2: global.fleet.resilience / <service>.fleet.resilience knob for pkg/fleet/mcpclient.ResilienceConfig"
+# pkg/fleet/mcpclient.ResilienceConfig (InitialInterval, MaxInterval,
+# MaxElapsedTime, TokenRefreshTimeout, ConnectTimeout, DiscoverProbeTimeout)
+# had zero Helm exposure before this issue -- every cmd/*/main.go call site
+# hardcoded mcpclient.DefaultResilienceConfig(). This suite proves the new
+# chart-side wiring: kubernaut.fleet.resilience (charts/kubernaut/templates/
+# _helpers.tpl) deep-merges global.fleet.resilience (shared baseline) with
+# each service's own <service>.fleet.resilience override (fleetmetadatacache
+# uses its own top-level fleetmetadatacache.resilience, and
+# workflowexecution has no per-service override at all, reading
+# global.fleet.resilience directly) -- mirroring the schema-default-must-
+# match-Go-default discipline established by
+# apifrontend_resilience_prometheus_timeout_test.yaml (#1839), but for the
+# shared fleet resilience config rather than an AF-only dependency.
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/workflowexecution/workflowexecution.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+    fleet:
+      enabled: true
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      backend: "fleetmetadatacache"
+      mcpGatewayType: "eaigw"
+      oauth2:
+        enabled: true
+        tokenURL: "https://dex.example.com/token"
+        credentialsSecretRef: fleet-oauth2-creds
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  # Issue #1984 Phase D: WE's own oauth2.credentialsSecretRef is a dedicated,
+  # non-fallback-able field (unlike the other 6 read-only fleet consumers) --
+  # required whenever global.fleet.mcpGatewayEndpoint is set, independent of
+  # anything this suite is actually testing.
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+tests:
+  # ---------------------------------------------------------------------
+  # Default install: no resilience.* override anywhere. Omitting the block
+  # entirely must keep mcpclient.DefaultResilienceConfig()'s existing
+  # values in effect -- proven by discoverProbeTimeout (unique to this
+  # fleet resilience spec; AF's PRE-EXISTING, unrelated
+  # resilience.prometheus.* block from #1839 also uses the generic
+  # `resilience:` key and even reuses `connectTimeout`, so asserting on
+  # the bare `resilience:` key would false-negative for AF specifically)
+  # being absent, not present-with-defaults (unlike AF's Prometheus
+  # resilience block, which always renders; this design avoids
+  # duplicating the same 6 defaults in both Go and YAML).
+  # ---------------------------------------------------------------------
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from gateway-config entirely"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from remediationorchestrator-config entirely"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - notMatchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from apifrontend-config entirely (AF's own pre-existing resilience.prometheus.* block from #1839 is unaffected and still renders)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*prometheus:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from effectivenessmonitor-config entirely"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-config
+    asserts:
+      - notMatchRegex:
+          path: data["effectivenessmonitor.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from signalprocessing-config entirely"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from fleetmetadatacache-config entirely"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from kubernaut-agent-config entirely"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  - it: "default install (no resilience.* override) omits discoverProbeTimeout from workflowexecution-config entirely"
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - notMatchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout:"
+
+  # ---------------------------------------------------------------------
+  # global.fleet.resilience propagates identically to every fleet-aware
+  # service via the shared kubernaut.fleet.resilience/kubernaut.fleet.preamble
+  # helper (7 of 8 services) or a direct .Values.global.fleet.resilience
+  # read (workflowexecution).
+  # ---------------------------------------------------------------------
+  - it: "global.fleet.resilience.connectTimeout propagates to gateway-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to remediationorchestrator-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to apifrontend-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to effectivenessmonitor-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-config
+    asserts:
+      - matchRegex:
+          path: data["effectivenessmonitor.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to signalprocessing-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to fleetmetadatacache-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout propagates to kubernaut-agent-config"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  - it: "global.fleet.resilience.connectTimeout reaches workflowexecution-config via its direct global.fleet.* read (WE has no per-service fleet.resilience override)"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+
+  # ---------------------------------------------------------------------
+  # Per-service override wins over the global baseline for the same
+  # field, while inheriting every other field from global (deep-merge
+  # semantics via kubernaut.fleet.resilience's mergeOverwrite).
+  # ---------------------------------------------------------------------
+  - it: "gateway.fleet.resilience.connectTimeout overrides the global value, while discoverProbeTimeout is inherited from global.fleet.resilience"
+    set:
+      global:
+        fleet:
+          resilience:
+            connectTimeout: "45s"
+            discoverProbeTimeout: "8s"
+      gateway:
+        fleet:
+          resilience:
+            connectTimeout: "12s"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 12s"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*connectTimeout: 45s"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*discoverProbeTimeout: 8s"
+
+  - it: "fleetmetadatacache.resilience.maxElapsedTime overrides the global value (FMC's own top-level resilience key, not nested under a fleet: block)"
+    set:
+      global:
+        fleet:
+          resilience:
+            maxElapsedTime: "5m"
+      fleetmetadatacache:
+        resilience:
+          maxElapsedTime: "2m"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxElapsedTime: 2m"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxElapsedTime: 5m"
+
+  - it: "signalprocessing.fleet.resilience.maxInterval overrides the global value, while tokenRefreshTimeout is inherited from global.fleet.resilience"
+    set:
+      global:
+        fleet:
+          resilience:
+            maxInterval: "30s"
+            tokenRefreshTimeout: "12s"
+      signalprocessing:
+        fleet:
+          resilience:
+            maxInterval: "45s"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxInterval: 45s"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxInterval: 30s"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenRefreshTimeout: 12s"
+
+  - it: "kubernautAgent.fleet.resilience.tokenRefreshTimeout overrides the global value, while initialInterval is inherited from global.fleet.resilience"
+    set:
+      global:
+        fleet:
+          resilience:
+            tokenRefreshTimeout: "10s"
+            initialInterval: "2s"
+      kubernautAgent:
+        fleet:
+          resilience:
+            tokenRefreshTimeout: "25s"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenRefreshTimeout: 25s"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenRefreshTimeout: 10s"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*initialInterval: 2s"

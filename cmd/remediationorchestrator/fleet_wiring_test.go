@@ -26,6 +26,8 @@ import (
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
@@ -160,5 +162,55 @@ func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t
 	}
 	if fc.Ready() {
 		t.Error("IT-RO-1553-001: the kept client must not report Ready() when its initial connection failed")
+	}
+}
+
+// TestBuildFleetReaderFactory_ResilienceOverrideReachesNewResilient proves
+// the issue #2262 Phase 2 wiring: a chart-shaped Config.Fleet.Resilience
+// override (fleet.FleetResilienceConfig) actually reaches the real
+// mcpclient.NewResilient call inside buildFleetReaderFactory
+// (cmd/remediationorchestrator/main.go), not just
+// mcpclient.ResilienceConfigFromFleet in isolation (already unit-tested by
+// UT-FLEET-RES-013/014). Asserts via ResilientClient.ResilienceConfig()
+// rather than timing, so the test is deterministic.
+func TestBuildFleetReaderFactory_ResilienceOverrideReachesNewResilient(t *testing.T) {
+	t.Parallel()
+
+	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	cfg := config.DefaultConfig()
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
+	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
+	cfg.Fleet.Resilience = fleet.FleetResilienceConfig{
+		ConnectTimeout:       7 * time.Second,
+		DiscoverProbeTimeout: 3 * time.Second,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, fc, err := buildFleetReaderFactory(ctx, localClient, cfg, logr.Discard())
+	if fc != nil {
+		t.Cleanup(func() { _ = fc.Close() })
+	}
+	if err != nil {
+		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
+	}
+	if fc == nil {
+		t.Fatal("expected a kept (non-nil) *mcpclient.ResilientClient even for an unreachable endpoint (#1553)")
+	}
+
+	got := fc.ResilienceConfig()
+	want := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
+	if got != want {
+		t.Fatalf("issue #2262 Phase 2: Config.Fleet.Resilience did not reach the real NewResilient call inside "+
+			"buildFleetReaderFactory -- got %+v, want %+v", got, want)
+	}
+	if got.ConnectTimeout != 7*time.Second || got.DiscoverProbeTimeout != 3*time.Second {
+		t.Fatalf("overridden fields did not survive the chart-shaped override -> NewResilient round trip: %+v", got)
+	}
+	defaults := mcpclient.DefaultResilienceConfig()
+	if got.InitialInterval != defaults.InitialInterval || got.MaxInterval != defaults.MaxInterval || got.MaxElapsedTime != defaults.MaxElapsedTime {
+		t.Fatalf("fields left unset in the override must keep mcpclient.DefaultResilienceConfig()'s values, got %+v", got)
 	}
 }

@@ -247,6 +247,16 @@ fleet:
     {{- end }}
     tlsCAFile: {{ .Values.global.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- end }}
+  {{- /* Issue #2262 Phase 2: WE has no per-service fleet.resilience override
+  (unlike GW/RO/SP/EM/KA/AF/FMC) -- it reads global.fleet.* directly with no
+  per-service fleet block at all (see file-top comment), so this reads
+  global.fleet.resilience directly too, with no merge needed. Only rendered
+  when the operator actually set it -- an unset field keeps
+  mcpclient.DefaultResilienceConfig()'s pre-#2262 default unchanged. */}}
+  {{- if .Values.global.fleet.resilience }}
+  resilience:
+    {{- .Values.global.fleet.resilience | toYaml | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}
 ---

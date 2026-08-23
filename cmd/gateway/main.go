@@ -380,7 +380,7 @@ func wireFleetOwnerResolution(
 		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2"))) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
-	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilienceCfg := fleetclient.ResilienceConfigFromFleet(serverCfg.Fleet.Resilience)
 	fleetResilientClient, fleetErr := fleetclient.NewResilient(
 		ctx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
 		logger.WithName("fleet-client"), fleetOpts...,

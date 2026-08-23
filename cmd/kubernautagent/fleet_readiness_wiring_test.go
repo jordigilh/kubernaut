@@ -26,9 +26,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
+
+// eaigwGatewayType is the fleet.GatewayType value for the Envoy AI Gateway
+// backend, used across this file's fleet readiness wiring specs (goconst
+// dedup).
+const eaigwGatewayType = "eaigw"
 
 // IT-FLEET-READY-KA-001: cmd/kubernautagent must wire a readiness.Gate from
 // the resilient client produced by registerFleetTools into readinessHandler
@@ -58,7 +64,7 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 
 			cfg := kaconfig.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = gw.URL()
-			cfg.Integrations.Fleet.GatewayType = "eaigw"
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			DeferCleanup(cancel)
@@ -74,7 +80,7 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 		It("IT-KA-1553-001: retains the client (not discarded) when the gateway is unreachable", func() {
 			cfg := kaconfig.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = "http://127.0.0.1:1/unreachable"
-			cfg.Integrations.Fleet.GatewayType = "eaigw"
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			DeferCleanup(cancel)
@@ -86,6 +92,43 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 
 			Expect(fc.Ready()).To(BeFalse(), "the kept client must not report Ready() when its initial connection failed")
 			Expect(resolver).To(BeNil(), "no fleet overlay resolver should be returned when the initial connection failed")
+		})
+
+		// Issue #2262 Phase 2: proves a chart-shaped
+		// Config.Integrations.Fleet.Resilience override actually reaches the
+		// real mcpclient.NewResilient call inside registerFleetTools
+		// (cmd/kubernautagent/toolregistry.go), not just
+		// mcpclient.ResilienceConfigFromFleet in isolation (already
+		// unit-tested by UT-FLEET-RES-013/014). Asserts via
+		// ResilientClient.ResilienceConfig() rather than timing, so the test
+		// is deterministic.
+		It("issue #2262: a Resilience override reaches the real NewResilient call", func() {
+			cfg := kaconfig.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = "http://127.0.0.1:1/unreachable"
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
+			cfg.Integrations.Fleet.Resilience = fleet.FleetResilienceConfig{
+				ConnectTimeout:       7 * time.Second,
+				DiscoverProbeTimeout: 3 * time.Second,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			DeferCleanup(cancel)
+
+			fc, _ := registerFleetTools(ctx, cfg, logr.Discard())
+			Expect(fc).NotTo(BeNil(), "*mcpclient.ResilientClient must be kept (not discarded) when the Fleet MCP Gateway is unreachable (#1553)")
+			DeferCleanup(func() { _ = fc.Close() })
+
+			got := fc.ResilienceConfig()
+			want := mcpclient.ResilienceConfigFromFleet(cfg.Integrations.Fleet.Resilience)
+			Expect(got).To(Equal(want), "issue #2262 Phase 2: Config.Integrations.Fleet.Resilience did not reach the real "+
+				"NewResilient call inside registerFleetTools")
+			Expect(got.ConnectTimeout).To(Equal(7 * time.Second))
+			Expect(got.DiscoverProbeTimeout).To(Equal(3 * time.Second))
+
+			defaults := mcpclient.DefaultResilienceConfig()
+			Expect(got.InitialInterval).To(Equal(defaults.InitialInterval), "fields left unset in the override must keep mcpclient.DefaultResilienceConfig()'s values")
+			Expect(got.MaxInterval).To(Equal(defaults.MaxInterval))
+			Expect(got.MaxElapsedTime).To(Equal(defaults.MaxElapsedTime))
 		})
 	})
 
