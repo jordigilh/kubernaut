@@ -233,7 +233,7 @@ Effectiveness Monitor's Level 1 (deterministic, non-AI) scoring is active in V1.
 
 ### **Business Context**
 - **[Business Requirements Overview](../requirements/00_REQUIREMENTS_OVERVIEW.md)** - Business requirements index across all modules
-- **Kubernaut Agent (KA) Integration** - Investigation service details (`internal/kubernautagent/`, `cmd/kubernautagent/`); service docs at [`docs/services/stateless/kubernaut-agent/`](../services/stateless/kubernaut-agent/)
+- **Kubernaut Agent (KA) Integration** - Investigation service details (`internal/kubernautagent/`, `cmd/kubernautagent/`); service docs at [`docs/services/kubernaut-agent/`](../services/kubernaut-agent/)
 
 ### **Implementation Guides**
 - **[Development Methodology](../../AGENTS.md)** - Pre-Implementation Workflow and TDD
