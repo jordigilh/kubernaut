@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
@@ -29,12 +30,24 @@ import (
 type Option func(*clientConfig)
 
 type clientConfig struct {
-	httpClient *http.Client
-	timeout    time.Duration
-	clusterID  string
-	toolPrefix string
-	reconnect  func(context.Context) error
-	scheme     *runtime.Scheme
+	httpClient           *http.Client
+	timeout              time.Duration
+	clusterID            string
+	toolPrefix           string
+	reconnect            func(context.Context) error
+	scheme               *runtime.Scheme
+	discoverProbeTimeout time.Duration
+	discoverProbeLogger  logr.Logger
+}
+
+// resolvedDiscoverProbeLogger returns cfg.discoverProbeLogger, defaulting to
+// a discard logger. Calling .Info() on a zero-value logr.Logger (nil sink)
+// panics, so New() must never wrap the transport with an unresolved logger.
+func (cfg *clientConfig) resolvedDiscoverProbeLogger() logr.Logger {
+	if cfg.discoverProbeLogger.GetSink() != nil {
+		return cfg.discoverProbeLogger
+	}
+	return logr.Discard()
 }
 
 // WithScheme sets the runtime.Scheme used to infer GroupVersionKind for
@@ -113,5 +126,30 @@ func WithTimeout(seconds int) Option {
 		} else {
 			cfg.httpClient.Timeout = cfg.timeout
 		}
+	}
+}
+
+// WithDiscoverProbeTimeout bounds go-sdk v1.7.0+'s SEP-2575 "server/discover"
+// probe with its own sub-timeout, independent of the caller's context
+// deadline (issue #2262). A zero (or unset) timeout disables this bound
+// entirely: New() leaves the transport untouched.
+//
+// See discoverProbeRoundTripper for why this exists: without it, a gateway
+// that hangs (rather than erroring) on server/discover can silently consume
+// the entire connect-attempt budget (ResilienceConfig.ConnectTimeout)
+// before go-sdk's own legacy "initialize" fallback ever gets a chance to
+// run.
+func WithDiscoverProbeTimeout(timeout time.Duration) Option {
+	return func(cfg *clientConfig) {
+		cfg.discoverProbeTimeout = timeout
+	}
+}
+
+// WithDiscoverProbeLogger sets the logger used to report a timed-out
+// server/discover probe (SOC2 CC7.2 diagnostic signal). Defaults to a
+// discard logger when not set, so New() never panics on a nil log sink.
+func WithDiscoverProbeLogger(logger logr.Logger) Option {
+	return func(cfg *clientConfig) {
+		cfg.discoverProbeLogger = logger
 	}
 }

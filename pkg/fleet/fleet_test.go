@@ -18,6 +18,7 @@ package fleet_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -625,5 +626,49 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred(),
 			"acm backend must still require explicit Endpoint")
+	})
+
+	// Issue #2262 Phase 2: FleetResilienceConfig is a plain DTO (no
+	// mcpclient dependency, to avoid the pkg/fleet <-> mcpclient import
+	// cycle) that carries operator/Helm-configured resilience overrides
+	// down to mcpclient.ResilienceConfigFromFleet.
+	It("UT-FLEET-CFG-090 [CM-6]: FleetResilienceConfig exposes all 6 tunable duration fields", func() {
+		cfg := fleet.FleetResilienceConfig{
+			InitialInterval:      1 * time.Second,
+			MaxInterval:          30 * time.Second,
+			MaxElapsedTime:       5 * time.Minute,
+			TokenRefreshTimeout:  10 * time.Second,
+			ConnectTimeout:       30 * time.Second,
+			DiscoverProbeTimeout: 5 * time.Second,
+		}
+
+		Expect(cfg.InitialInterval).To(Equal(1 * time.Second))
+		Expect(cfg.MaxInterval).To(Equal(30 * time.Second))
+		Expect(cfg.MaxElapsedTime).To(Equal(5 * time.Minute))
+		Expect(cfg.TokenRefreshTimeout).To(Equal(10 * time.Second))
+		Expect(cfg.ConnectTimeout).To(Equal(30 * time.Second))
+		Expect(cfg.DiscoverProbeTimeout).To(Equal(5 * time.Second))
+	})
+
+	It("UT-FLEET-CFG-091 [CM-6]: FleetResilienceConfig fields survive a YAML round-trip and omit when zero", func() {
+		cfg := fleet.FleetResilienceConfig{ConnectTimeout: 45 * time.Second}
+
+		data, err := yaml.Marshal(cfg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("connectTimeout"))
+		Expect(string(data)).ToNot(ContainSubstring("initialInterval"),
+			"zero-value fields must be omitted (omitempty) so an unset override never accidentally serializes as an explicit zero")
+
+		var roundTripped fleet.FleetResilienceConfig
+		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
+		Expect(roundTripped.ConnectTimeout).To(Equal(45 * time.Second))
+	})
+
+	It("UT-FLEET-CFG-092 [CM-6]: FleetConfig and MCPGatewayConfig each carry a Resilience field of type FleetResilienceConfig", func() {
+		fc := fleet.FleetConfig{Resilience: fleet.FleetResilienceConfig{ConnectTimeout: 45 * time.Second}}
+		Expect(fc.Resilience.ConnectTimeout).To(Equal(45 * time.Second))
+
+		mc := fleet.MCPGatewayConfig{Resilience: fleet.FleetResilienceConfig{DiscoverProbeTimeout: 2 * time.Second}}
+		Expect(mc.Resilience.DiscoverProbeTimeout).To(Equal(2 * time.Second))
 	})
 })
