@@ -29,6 +29,7 @@ import (
 	"google.golang.org/adk/v2/tool"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/types"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -534,6 +535,11 @@ func (a *agentISSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName,
 	return a.svc.UpdateISCorrelation(ctx, crdName, kaSessionID)
 }
 
+// BackfillOwnerReference implements tools.OwnerReferenceBackfiller (#2265).
+func (a *agentISSignalerAdapter) BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID) {
+	a.svc.BackfillOwnerReference(ctx, rrNamespace, rrName, rrUID)
+}
+
 // buildAlertISSignaler returns an AlertISSignaler wired to the CRDSessionService.
 // Returns nil when no SessionService is configured (backward compat).
 func buildAlertISSignaler(cfg AgentConfig) tools.AlertISSignaler {
@@ -558,6 +564,11 @@ func (a *alertISSignalerAdapter) SignalInteractive(ctx context.Context, taskID, 
 		JoinMode:    isv1alpha1.SessionJoinModeStart,
 	})
 	return err
+}
+
+// BackfillOwnerReference implements tools.OwnerReferenceBackfiller (#2265).
+func (a *alertISSignalerAdapter) BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID) {
+	a.svc.BackfillOwnerReference(ctx, rrNamespace, rrName, rrUID)
 }
 
 // newAuditToolCallback returns an AfterToolCallback that emits a structured
