@@ -7,12 +7,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 
 	adksession "google.golang.org/adk/v2/session"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -56,6 +58,12 @@ func (a *productionSignalerAdapter) SignalInteractive(ctx context.Context, taskI
 		JoinMode:    isv1alpha1.SessionJoinModeStart,
 	})
 	return err
+}
+
+// BackfillOwnerReference implements tools.OwnerReferenceBackfiller (#2265),
+// mirroring the production agent.alertISSignalerAdapter wiring.
+func (a *productionSignalerAdapter) BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID k8stypes.UID) {
+	a.svc.BackfillOwnerReference(ctx, rrNamespace, rrName, rrUID)
 }
 
 var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
@@ -111,4 +119,51 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 	// check before acquiring the dispatch Lease), not in AA. The
 	// InvestigationSession CRD itself is NOT removed (AF still owns it for
 	// reconnect/resume bookkeeping); only AA's consumption of it is gone.
+
+	Describe("IT-AF-2265-001: IS-before-RR ordering and OwnerReference backfill through the real production signaler wiring", func() {
+		It("creates the IS CRD strictly before the RR is visible, then backfills its OwnerReference once the RR is persisted", func() {
+			isClient := newISITClient()
+			svc := session.NewCRDSessionService(adksession.InMemoryService(), isClient, isITScheme(), "kubernaut-system")
+			signaler := &productionSignalerAdapter{svc: svc, namespace: "kubernaut-system"}
+			rrClient := newTypedFakeClientWithUIDAssignment()
+
+			cfg := tools.InvestigateAlertConfig{
+				Client:       rrClient,
+				ControllerNS: "kubernaut-system",
+				Signaler:     signaler,
+				Triager:      defaultTestTriager("prod", "Deployment", "web-2265-it"),
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-alice",
+				Groups:   []string{"sre-team"},
+			})
+
+			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{
+				AlertName:  "KubePodCrashLooping",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "web-2265-it",
+				Namespace:  "prod",
+			}, "sre-alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+
+			rrName := extractRRName(result.RRID)
+			expectedISName := "is-" + rrName
+
+			var is isv1alpha1.InvestigationSession
+			Expect(isClient.Get(ctx, crclient.ObjectKey{Namespace: "kubernaut-system", Name: expectedISName}, &is)).To(Succeed(),
+				"the IS CRD must exist via the real CreateInvestigationSession call")
+			Expect(is.OwnerReferences).To(HaveLen(1),
+				"#2265: the production BackfillOwnerReference call must set the RR OwnerReference once the RR is persisted")
+			Expect(is.OwnerReferences[0].Name).To(Equal(rrName))
+			Expect(is.OwnerReferences[0].UID).NotTo(BeEmpty())
+
+			var rr remediationv1.RemediationRequest
+			Expect(rrClient.Get(ctx, crclient.ObjectKey{Namespace: "kubernaut-system", Name: rrName}, &rr)).To(Succeed())
+			Expect(is.OwnerReferences[0].UID).To(Equal(rr.UID),
+				"the backfilled OwnerReference UID must match the actually-persisted RR's real UID")
+		})
+	})
 })

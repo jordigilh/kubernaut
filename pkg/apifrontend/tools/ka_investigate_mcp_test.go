@@ -1398,7 +1398,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-011", "ctx-1409-011", nil)
 
-		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-011"})
@@ -1425,7 +1425,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-012", "ctx-1409-012", nil)
 
-		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-012"})
@@ -1444,7 +1444,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-013", "ctx-1409-013", nil)
 
-		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-013"})
 		Expect(err).NotTo(HaveOccurred())
@@ -1646,7 +1646,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 	It("UT-AF-2025-050: rejects a new-RR investigation for an unmanaged target resource", func() {
 		tc := newTypedFakeClient()
-		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
 			Client:       tc,
 			Namespace:    "kubernaut-system",
 			Triager:      defaultTestTriager("prod", "Deployment", "web"),
@@ -1660,7 +1660,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 
 	It("UT-AF-2025-051: allows a new-RR investigation for a managed target resource", func() {
 		tc := newTypedFakeClient()
-		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
 			Client:       tc,
 			Namespace:    "kubernaut-system",
 			Triager:      defaultTestTriager("prod", "Deployment", "web"),
@@ -1679,7 +1679,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			},
 		}
 		tc := newTypedFakeClient(rr)
-		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+		_, _, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
 			Client:       tc,
 			Namespace:    "kubernaut-system",
 			ScopeChecker: &mocks.NeverManagedScopeChecker{},
