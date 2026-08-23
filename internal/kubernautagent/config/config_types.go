@@ -22,6 +22,7 @@ import (
 	"time"
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -95,6 +96,12 @@ type FleetConfig struct {
 	GatewayType    string                `yaml:"gatewayType"`
 	OAuth2         FleetOAuth2           `yaml:"oauth2"`
 	AlignmentCheck *AlignmentCheckConfig `yaml:"alignmentCheck,omitempty"`
+
+	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
+	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
+	// preserves KA's current hardcoded defaults unchanged.
+	// +optional
+	Resilience fleet.FleetResilienceConfig `yaml:"resilience,omitempty"`
 }
 
 // FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.

@@ -24,7 +24,9 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -93,7 +95,7 @@ func TestWireFleetReadinessGate_EnabledUnreachable_NotReady(t *testing.T) {
 	srv := newTestGatewayServer(t)
 	cfg := testServerConfig()
 	cfg.Fleet.Enabled = true
-	cfg.Fleet.MCPGatewayEndpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -118,5 +120,62 @@ func TestWireFleetReadinessGate_EnabledUnreachable_NotReady(t *testing.T) {
 	if err := gate.Check(httptest.NewRequest("GET", "/readyz", nil)); err == nil {
 		t.Fatal("BR-INTEGRATION-065 / #1553: gate must report NotReady when the configured MCP Gateway " +
 			"is unreachable, so Kubernetes removes the pod from Service endpoints (pod-wide fail closed)")
+	}
+}
+
+// TestRegisterAdapters_FleetResilienceOverrideReachesNewResilient proves the
+// issue #2262 Phase 2 wiring: a chart-shaped Config.Fleet.Resilience override
+// (fleet.FleetResilienceConfig, populated by the Helm chart's
+// kubernaut.fleet.resilience/kubernaut.fleet.preamble merge) actually reaches
+// the real mcpclient.NewResilient call inside registerAdapters ->
+// wireFleetOwnerResolution (cmd/gateway/main.go), not just
+// mcpclient.ResilienceConfigFromFleet in isolation (already unit-tested by
+// UT-FLEET-RES-013/014 in pkg/fleet/mcpclient/resilience_test.go). Asserts
+// via ResilientClient.ResilienceConfig() rather than timing, so the test is
+// deterministic (no reliance on an unreachable endpoint's connect/backoff
+// wall-clock behavior).
+func TestRegisterAdapters_FleetResilienceOverrideReachesNewResilient(t *testing.T) {
+	srv := newTestGatewayServer(t)
+	apiRegistry := adapters.NewTestAPIResourceRegistry()
+
+	cfg := testServerConfig()
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
+	cfg.Fleet.Resilience = fleet.FleetResilienceConfig{
+		ConnectTimeout:       7 * time.Second,
+		DiscoverProbeTimeout: 3 * time.Second,
+	}
+
+	// A short ctx deadline (rather than context.Background()) keeps this test
+	// fast: ResilientClient.config is set before connectWithBackoff's retry
+	// loop even starts (see NewResilient), so the assertion below is valid
+	// regardless of how many backoff attempts actually run before ctx.Done().
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	fleetClient, err := registerAdapters(ctx, srv, apiRegistry, cfg, logr.Discard())
+	if err != nil {
+		t.Fatalf("registerAdapters returned unexpected error: %v", err)
+	}
+	if fleetClient == nil {
+		t.Fatal("expected a non-nil fleet client (graceful degradation) even for an unreachable endpoint")
+	}
+	t.Cleanup(func() { _ = fleetClient.Close() })
+
+	got := fleetClient.ResilienceConfig()
+	want := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
+	if got != want {
+		t.Fatalf("issue #2262 Phase 2: Config.Fleet.Resilience did not reach the real NewResilient call inside "+
+			"registerAdapters/wireFleetOwnerResolution -- got %+v, want %+v (mcpclient.ResilienceConfigFromFleet "+
+			"applied to the same override)", got, want)
+	}
+	if got.ConnectTimeout != 7*time.Second || got.DiscoverProbeTimeout != 3*time.Second {
+		t.Fatalf("overridden fields did not survive the chart-shaped override -> NewResilient round trip: %+v", got)
+	}
+	// Fields the chart-shaped override left zero must still fall back to
+	// mcpclient.DefaultResilienceConfig(), not to Go zero values.
+	defaults := mcpclient.DefaultResilienceConfig()
+	if got.InitialInterval != defaults.InitialInterval || got.MaxInterval != defaults.MaxInterval || got.MaxElapsedTime != defaults.MaxElapsedTime {
+		t.Fatalf("fields left unset in the override must keep mcpclient.DefaultResilienceConfig()'s values, got %+v", got)
 	}
 }

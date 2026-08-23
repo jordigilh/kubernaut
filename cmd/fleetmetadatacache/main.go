@@ -173,7 +173,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		"tokenURL", cfg.OAuth2.TokenURL,
 		"credentialsDir", cfg.OAuth2.CredentialsDir)
 
-	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.MCPGateway.Resilience)
 	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGateway.Endpoint, resilienceCfg, logger, opts...)
 	if err != nil {
 		logger.Error(err, "Failed to connect to MCP Gateway")

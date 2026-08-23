@@ -30,6 +30,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
@@ -39,6 +41,12 @@ import (
 const (
 	mockModel = "mock-model"
 	testKey   = "test-key"
+	// unreachableTestEndpoint is a deliberately-unreachable address (port 1
+	// on loopback, RFC 6335 "system port" almost never listening) used
+	// across this package's fleet/DataStorage readiness wiring tests to
+	// force mcpclient.NewResilient/health-check dials to fail fast rather
+	// than hang or flake on an actually-reachable-but-wrong endpoint.
+	unreachableTestEndpoint = "http://127.0.0.1:1/unreachable"
 )
 
 // backendGVRListKinds mirrors the GVR the EAIGWRegistry watches (Envoy AI
@@ -146,7 +154,7 @@ func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *t
 	deps := &backendDeps{k8sDynClient: dynClient}
 	cfg := &config.Config{}
 	cfg.Fleet.Enabled = true
-	cfg.Fleet.MCPGatewayEndpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
 	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -170,6 +178,60 @@ func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *t
 		t.Error("IT-AF-1553-001: FleetReady() must report false when the initial connection failed")
 	}
 	t.Cleanup(deps.fleetReadinessGate.Stop)
+}
+
+// TestBuildFleetReaderDeps_ResilienceOverrideReachesNewResilient proves the
+// issue #2262 Phase 2 wiring: a chart-shaped Config.Fleet.Resilience
+// override (fleet.FleetResilienceConfig) actually reaches the real
+// mcpclient.NewResilient call inside buildFleetReaderDeps
+// (cmd/apifrontend/backend_deps.go), not just
+// mcpclient.ResilienceConfigFromFleet in isolation (already unit-tested by
+// UT-FLEET-RES-013/014). Asserts via ResilientClient.ResilienceConfig()
+// rather than timing, so the test is deterministic.
+func TestBuildFleetReaderDeps_ResilienceOverrideReachesNewResilient(t *testing.T) {
+	t.Parallel()
+
+	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), backendGVRListKinds)
+
+	deps := &backendDeps{k8sDynClient: dynClient}
+	cfg := &config.Config{}
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
+	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
+	cfg.Fleet.Resilience = fleet.FleetResilienceConfig{
+		ConnectTimeout:       7 * time.Second,
+		DiscoverProbeTimeout: 3 * time.Second,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := buildFleetReaderDeps(ctx, cfg, deps, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
+	}
+	fc := deps.FleetResilientClient()
+	if fc == nil {
+		t.Fatal("expected a kept (non-nil) *mcpclient.ResilientClient even for an unreachable endpoint (#1553)")
+	}
+	t.Cleanup(func() { _ = fc.Close() })
+	if deps.fleetReadinessGate != nil {
+		t.Cleanup(deps.fleetReadinessGate.Stop)
+	}
+
+	got := fc.ResilienceConfig()
+	want := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
+	if got != want {
+		t.Fatalf("issue #2262 Phase 2: Config.Fleet.Resilience did not reach the real NewResilient call inside "+
+			"buildFleetReaderDeps -- got %+v, want %+v", got, want)
+	}
+	if got.ConnectTimeout != 7*time.Second || got.DiscoverProbeTimeout != 3*time.Second {
+		t.Fatalf("overridden fields did not survive the chart-shaped override -> NewResilient round trip: %+v", got)
+	}
+	defaults := mcpclient.DefaultResilienceConfig()
+	if got.InitialInterval != defaults.InitialInterval || got.MaxInterval != defaults.MaxInterval || got.MaxElapsedTime != defaults.MaxElapsedTime {
+		t.Fatalf("fields left unset in the override must keep mcpclient.DefaultResilienceConfig()'s values, got %+v", got)
+	}
 }
 
 // TestBuildFleetReaderDeps_Enabled_WithNamespace_ScopesClusterRegistryWatch is
