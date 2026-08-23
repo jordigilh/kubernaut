@@ -444,7 +444,7 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 // newSecretAccessObserver builds the k8stools.SecretAccessObserver wired into
 // the K8s resource resolver (GAP-13, Issue #1505). It is the detective
 // control compensating for KubernautAgent's intentionally broad read RBAC on
-// Secrets (see docs/services/stateless/kubernaut-agent/security-configuration.md):
+// Secrets (see docs/services/kubernaut-agent/security-configuration.md):
 // every Secret Get/List — success or failure — becomes an independently
 // queryable aiagent.secret.accessed audit event, correlated to the
 // investigation via the correlationID set on ctx by

@@ -102,7 +102,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 ### Kubernaut Agent (KA) Integration
 | Document | Purpose | Architecture Link |
 |----------|---------|------------------|
-| **[services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
+| **[services/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) — ⚠️ target file not found in repo (pre-existing, not introduced by the kubernaut-agent/ directory move) |
 
 ### Vector Database
 | Document | Purpose | Architecture Link |

@@ -106,7 +106,7 @@ const (
 	// resource resolver reads a core Secret (Get or List), regardless of
 	// outcome (GAP-13, Issue #1505). KubernautAgent intentionally retains
 	// broad read RBAC on Secrets for investigation completeness (see
-	// docs/services/stateless/kubernaut-agent/security-configuration.md);
+	// docs/services/kubernaut-agent/security-configuration.md);
 	// this event is the detective control that compensates for not
 	// narrowing that RBAC — every Secret read is independently queryable
 	// for SOC2 CC7.2 / FedRAMP AU-12 review, separate from the generic

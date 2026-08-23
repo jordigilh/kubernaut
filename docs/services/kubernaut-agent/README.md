@@ -1,9 +1,9 @@
 # Kubernaut Agent (KA) - Documentation Hub
 
-**Version**: 1.0
-**Last Updated**: 2026-08-02
-**Service Type**: Stateless HTTP + MCP service (native Go)
-**HTTP Ports**: `8080` (main API), `8081` (health/admin), `9090` (metrics)
+**Version**: 2.0
+**Last Updated**: 2026-08-23
+**Service Type**: Hybrid — `AgentSession` CRD-dispatch (watch + Lease `Reconciler`, DD-AA-KA-001) + MCP service (native Go)
+**Ports**: `8443` HTTPS (MCP endpoint only — AF's channel, DD-AF-004), `8081` (health/admin), `9090` (metrics). AA's dispatch channel is the `AgentSession` CRD, not a port.
 
 ---
 
@@ -14,7 +14,7 @@
 | **[Overview](./overview.md)** | Purpose, architecture, key design decisions, system context diagram | 169 |
 | **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | Catalog of KA's `BR-KA-*` requirement documents | 60 |
 | **[BR Mapping](./BR_MAPPING.md)** | BR-to-test-file traceability | 74 |
-| **[API Specification](./api-specification.md)** | REST API contract (async session-based pattern) | 151 |
+| **[API Specification](./api-specification.md)** | `AgentSession` CRD contract (DD-AA-KA-001 dispatch model) | 151 |
 | **[Integration Points](./integration-points.md)** | Upstream caller (AIAnalysis) and downstream dependencies | 94 |
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, correlation ID propagation | 67 |
 | **[Testing Strategy](./testing-strategy.md)** | Test pyramid, framework, mock-LLM strategy | 88 |
@@ -53,7 +53,7 @@ kubernaut-agent/
 ├── overview.md                     - Architecture & design decisions
 ├── BUSINESS_REQUIREMENTS.md        - BR catalog
 ├── BR_MAPPING.md                   - BR-to-test traceability
-├── api-specification.md            - REST API contract
+├── api-specification.md            - AgentSession CRD contract
 ├── integration-points.md           - Upstream/downstream dependencies
 ├── observability-logging.md        - Logging & correlation IDs
 ├── testing-strategy.md             - Test pyramid & strategy
@@ -69,6 +69,7 @@ kubernaut-agent/
 
 ## 🔗 Related Documentation
 
-- [Stateless Services Overview](../README.md) — navigation hub for all stateless services
-- [DD-KA-019: Go Rewrite Design](../../../architecture/decisions/DD-KA-019-go-rewrite-design/) — why KA is a native Go rewrite, not a Python/HolmesGPT SDK wrapper
-- [AGENTS.md](../../../../AGENTS.md) — Kubernaut development methodology (TDD, BR mandate, SOC2/FedRAMP compliance)
+- [Stateless Services Overview](../stateless/README.md) — navigation hub for the other stateless services
+- [DD-KA-019: Go Rewrite Design](../../architecture/decisions/DD-KA-019-go-rewrite-design/) — why KA is a native Go rewrite, not a Python/HolmesGPT SDK wrapper
+- [DD-AA-KA-001: AgentSession CRD, HTTP Removal](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md) — why AA↔KA dispatch is a CRD, not HTTP
+- [AGENTS.md](../../../AGENTS.md) — Kubernaut development methodology (TDD, BR mandate, SOC2/FedRAMP compliance)

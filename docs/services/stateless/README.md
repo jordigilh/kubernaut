@@ -9,14 +9,19 @@
 
 ## 📋 Quick Navigation
 
-### **HTTP Services** (6 services)
+> **Kubernaut Agent (KA) has moved**: KA is no longer a pure stateless HTTP service — per
+> [DD-AA-KA-001](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md), AIAnalysis
+> now dispatches KA via the `AgentSession` CRD (watch + Lease), not HTTP submit/poll. Its docs have
+> moved to the top-level [`docs/services/kubernaut-agent/`](../kubernaut-agent/) alongside the
+> project's other hybrid/platform services. It is intentionally **not** listed below.
+
+### **HTTP Services** (5 services)
 
 1. **[Gateway Service](./gateway-service/)** - Signal ingestion and triage (Design B: adapter endpoints)
 2. **[Context API](./context-api/)** - Historical intelligence and pattern matching (read-only)
 3. **[Data Storage](./data-storage/)** - Audit trail persistence and embeddings (write-only)
-4. **[Kubernaut Agent (KA)](./kubernaut-agent/)** - AI investigation engine (native Go implementation, formerly a Python/HolmesGPT SDK wrapper)
-5. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
-6. **[Dynamic Toolset](./dynamic-toolset/)** - Kubernaut Agent toolset configuration management
+4. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
+5. **[Dynamic Toolset](./dynamic-toolset/)** - Kubernaut Agent toolset configuration management
 
 ---
 
@@ -40,9 +45,10 @@
 | **Gateway** | Signal ingestion | 8080 | ⏸️ Design | ✅ 100% |
 | **Context API** | Historical queries (read) | 8080 | ⏸️ Design | ✅ 100% |
 | **Data Storage** | Audit persistence (write) | 8080 | ⏸️ Design | ✅ 100% |
-| **Kubernaut Agent** | AI investigation | 8080 | ⏸️ Design | ✅ 100% |
 | **Notification** | Escalation delivery | 8080 | ⏸️ Design | ✅ 100% |
 | **Dynamic Toolset** | Toolset config | 8080 | ⏸️ Design | ✅ 100% |
+
+> **Kubernaut Agent** moved to [`docs/services/kubernaut-agent/`](../kubernaut-agent/) (hybrid: `AgentSession` CRD-dispatch + MCP) — see note above.
 
 ---
 
@@ -65,12 +71,6 @@
 - **Generates**: Vector embeddings for semantic search
 - **Storage**: Dual-write (PostgreSQL + Vector DB)
 - **Clients**: All CRD controllers write audit data here
-
-### **Kubernaut Agent** (AI Engine)
-- **Implementation**: Native Go service (rewritten from the original Python/HolmesGPT SDK design — see [DD-KA-019](../../architecture/decisions/DD-KA-019-go-rewrite-design/))
-- **Provides**: AI-powered root cause analysis via an async, session-based API (submit, then poll for status/result)
-- **Toolsets**: Kubernetes, Prometheus, Alertmanager (Grafana is not implemented)
-- **Multi-Provider**: VertexAI, Anthropic, Gemini, OpenAI, Azure OpenAI, Ollama, vLLM, LlamaStack, Mistral, HuggingFace TGI, DeepSeek
 
 ### **Notification Service** (Output)
 - ⚠️ **DEPRECATED**: Service migrated to CRD Controller (2025-10-12)
@@ -111,6 +111,7 @@ CRD Controllers
 ```
 stateless/
 ├── README.md                          ← You are here
+│                                       (kubernaut-agent/ moved to ../kubernaut-agent/, see note above)
 ├── gateway-service/                   ✅ 20+ documents
 │   ├── README.md
 │   ├── overview.md
@@ -125,20 +126,6 @@ stateless/
 │   ├── README.md                      ✅ NEW
 │   ├── overview.md
 │   └── api-specification.md
-├── kubernaut-agent/                     ✅ 13 documents
-│   ├── README.md
-│   ├── overview.md
-│   ├── BUSINESS_REQUIREMENTS.md
-│   ├── BR_MAPPING.md
-│   ├── api-specification.md
-│   ├── integration-points.md
-│   ├── observability-logging.md
-│   ├── testing-strategy.md
-│   ├── metrics-slos.md
-│   ├── security-configuration.md
-│   ├── configuration-reference.md
-│   ├── shadow-agent-configuration.md
-│   └── security/AUDIT_EVENT_CATALOG.md
 ├── notification-service/              ✅ Directory + subdirs
 │   ├── README.md                      ✅ NEW
 │   ├── triage/                        (2 files)
@@ -191,9 +178,10 @@ stateless/
 | **Gateway** | < 200ms | 100 req/s | 2-4 replicas |
 | **Context API** | < 200ms | 50 req/s | 2-4 replicas |
 | **Data Storage** | < 250ms | 50 req/s | 2-3 replicas |
-| **Kubernaut Agent** | < 5s | 10 req/s | 2-3 replicas |
 | **Notification** | < 1s | 20 req/s | 2-3 replicas |
 | **Dynamic Toolset** | < 300ms | 5 req/s | 1-2 replicas |
+
+> Kubernaut Agent's performance targets now live in [`docs/services/kubernaut-agent/metrics-slos.md`](../kubernaut-agent/metrics-slos.md) (no longer a request/s-shaped HTTP SLO, since dispatch is CRD-based).
 
 ---
 

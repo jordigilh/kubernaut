@@ -1347,7 +1347,7 @@ Documentation is complete when:
      standalone Context API service was deprecated and its capabilities absorbed into Data Storage
      (DD-CONTEXT-006). Query/caching testing now lives under data-storage/testing-strategy.md below. -->
 6. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
-7. [kubernaut-agent/testing-strategy.md](mdc:docs/services/stateless/kubernaut-agent/testing-strategy.md) - LLM and prompt testing
+7. [kubernaut-agent/testing-strategy.md](mdc:docs/services/kubernaut-agent/testing-strategy.md) - LLM and prompt testing
 8. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
 9. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
 

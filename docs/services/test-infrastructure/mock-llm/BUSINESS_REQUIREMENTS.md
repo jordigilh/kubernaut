@@ -1243,7 +1243,7 @@ Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `D
 
 - **Parent Issue**: [#531](https://github.com/jordigilh/kubernaut/issues/531) — Rewrite Mock LLM service in Go
 - **Parent Service**: [#433](https://github.com/jordigilh/kubernaut/issues/433) — Kubernaut Agent Go rewrite
-- **Kubernaut Agent Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md)
+- **Kubernaut Agent Business Requirements**: [BUSINESS_REQUIREMENTS.md](../../kubernaut-agent/BUSINESS_REQUIREMENTS.md)
 - **DD-TEST-011**: [Mock LLM Configuration Pattern](../../../architecture/decisions/DD-TEST-011-mock-llm-self-discovery-pattern.md) (supersedes the retired TD-HAPI-001, which proposed a Go mock-LLM server; DD-TEST-011's Python file-based mock is the actual implementation)
 - **#548**: Deterministic UUIDs in DataStorage
 - **#554**: Threat Remediation enhancement proposal
