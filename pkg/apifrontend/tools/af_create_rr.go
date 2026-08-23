@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -105,6 +106,50 @@ type CreateRRResult struct {
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
+// CreateRRHooks lets a caller interleave work strictly between "the new
+// RR's name is known" and "the RR becomes visible to any other component"
+// (#2265, DD-AF-013). Both fields are optional; the zero value preserves
+// HandleCreateRR's original behavior exactly (see HandleCreateRR's
+// delegation to HandleCreateRRWithHooks below) -- neither hook is invoked on
+// the dedup/AlreadyExists branch, since that RR predates this call and no
+// ordering race exists for it.
+type CreateRRHooks struct {
+	// BeforeCreate fires with the about-to-be-created RR's name after dedup
+	// has resolved to "genuinely new", strictly before the RR's Create call
+	// is issued. Returning a non-nil error aborts RR creation entirely --
+	// used by the interactive-investigation callers (ka_investigate_mcp.go,
+	// af_investigate_alert.go) to create the InvestigationSession CRD first,
+	// closing the race where RO/AA/KA could otherwise process the RR before
+	// AF's own, separately-issued InvestigationSession Create call lands.
+	BeforeCreate func(ctx context.Context, rrName string) error
+	// AfterCreate fires once the new RR is actually persisted (a real UID
+	// assigned by the API server) -- used to back-fill the
+	// InvestigationSession's OwnerReference (#1300 cascade-GC), which
+	// couldn't be set at BeforeCreate time since the RR didn't exist yet.
+	// Best-effort by design: unlike BeforeCreate, it has no error return --
+	// the RR is already committed at this point, so a backfill failure must
+	// never unwind a successful creation; callers log/handle their own
+	// errors internally (mirrors setRROwnerReference's existing
+	// best-effort convention).
+	AfterCreate func(ctx context.Context, rr *remediationv1.RemediationRequest)
+}
+
+// OwnerReferenceBackfiller is an optional capability an ISSignaler/
+// AlertISSignaler implementation may support, checked via type assertion
+// (#2265) so signaler implementations that don't need it -- including every
+// existing test double -- are unaffected. Implemented by the production
+// CRDSessionService-backed adapters to back-fill the InvestigationSession's
+// OwnerReference (#1300 cascade-GC) once its target RR (created after the IS
+// under the #2265 ordering) is actually persisted.
+type OwnerReferenceBackfiller interface {
+	// BackfillOwnerReference sets rrNamespace/rrName/rrUID as the
+	// OwnerReference on the InvestigationSession CRD for this RR (named
+	// deterministically as is-<rrName> per CreateInvestigationSession).
+	// Best-effort: implementations log failures internally rather than
+	// returning an error, since the RR is already committed at this point.
+	BackfillOwnerReference(ctx context.Context, rrNamespace, rrName string, rrUID types.UID)
+}
+
 // rrCreateGroup provides singleflight deduplication per fingerprint.
 // Dedup is intentionally user-agnostic: concurrent RR creation for the same
 // target resource is deduplicated regardless of which user initiated it.
@@ -159,6 +204,14 @@ func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, c
 // by the LLM. Severity is resolved via the triage pipeline when a triager is
 // available, otherwise defaults to "warning".
 func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, username string) (CreateRRResult, error) {
+	return HandleCreateRRWithHooks(ctx, d, args, username, CreateRRHooks{})
+}
+
+// HandleCreateRRWithHooks is HandleCreateRR with the addition of hooks
+// (#2265, DD-AF-013) letting a caller interleave work around the moment a
+// genuinely-new RR is created -- see CreateRRHooks' doc comment. An empty
+// CreateRRHooks{} makes this identical to HandleCreateRR.
+func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArgs, username string, hooks CreateRRHooks) (CreateRRResult, error) {
 	if d.Client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
@@ -209,7 +262,7 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 		return createOrReuseRR(ctx, d, createRRRequest{
 			Args: args, Username: username, Fingerprint: fingerprint,
 			SignalName: signalName, ResolvedSeverity: resolvedSeverity, TriageResult: triageResult,
-		})
+		}, hooks)
 	})
 	if err != nil {
 		return CreateRRResult{}, fmt.Errorf("create RR for %s/%s: %w", args.Kind, args.Name, err)
@@ -302,8 +355,11 @@ type createRRRequest struct {
 
 // createOrReuseRR is the singleflight-guarded body of HandleCreateRR: it
 // returns the existing RR if one is already active for req's fingerprint,
-// otherwise creates a new RemediationRequest CRD.
-func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*CreateRRResult, error) {
+// otherwise creates a new RemediationRequest CRD. hooks.BeforeCreate/
+// AfterCreate (#2265) fire only on this "genuinely new" path -- the dedup
+// branch above returns an RR that predates this call, so neither hook
+// applies to it (see CreateRRHooks' doc comment).
+func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest, hooks CreateRRHooks) (*CreateRRResult, error) {
 	existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, req.Fingerprint)
 	if checkErr != nil {
 		return nil, checkErr
@@ -320,8 +376,19 @@ func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*Cr
 	}
 
 	rrObj := buildRRObject(d.ControllerNS, req.Args, req.Fingerprint, req.SignalName, req.ResolvedSeverity, req.TriageResult)
+
+	if hooks.BeforeCreate != nil {
+		if hookErr := hooks.BeforeCreate(ctx, rrObj.Name); hookErr != nil {
+			return nil, hookErr
+		}
+	}
+
 	if createErr := d.Client.Create(ctx, rrObj); createErr != nil {
 		return nil, ToUserFriendlyError(createErr)
+	}
+
+	if hooks.AfterCreate != nil {
+		hooks.AfterCreate(ctx, rrObj)
 	}
 
 	out := &CreateRRResult{
