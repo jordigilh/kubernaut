@@ -57,7 +57,7 @@ type dynamicResourceResolver struct {
 // (GAP-13, Issue #1505 — SOC2 CC7.2 / FedRAMP AU-12 detective control).
 // KubernautAgent intentionally keeps broad read RBAC on Secrets for
 // investigation completeness (missing RBAC degrades RCA quality — see
-// docs/services/stateless/kubernaut-agent/security-configuration.md); this
+// docs/services/kubernaut-agent/security-configuration.md); this
 // hook lets callers record every access as a dedicated, queryable audit
 // event instead of narrowing that RBAC. verb is "get" or "list"; name is
 // empty for List. err is the outcome of the underlying API call (nil on

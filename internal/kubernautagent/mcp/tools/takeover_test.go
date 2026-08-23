@@ -589,7 +589,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 	})
 
 	// #2155: proves the AU-2/CC8.1-mapped aiagent.interactive.started audit
-	// event (docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md)
+	// event (docs/services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md)
 	// is unaffected by the completion-signal wait handleTakeover now performs
 	// before reconstructing context. emitInteractiveStarted runs before the
 	// (possibly-waiting) reconstruction call, so its session_id/acting_user
