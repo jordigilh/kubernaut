@@ -33,6 +33,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
+// unreachableTestEndpoint is a deliberately-unreachable address (port 1 on
+// loopback, RFC 6335 "system port" almost never listening) used across this
+// package's Fleet readiness wiring tests (goconst dedup).
+const unreachableTestEndpoint = "http://127.0.0.1:1/unreachable"
+
 // TestRegisterAdapters_FleetDisabled is a characterization test for
 // registerAdapters, extracted from main() in GO-ANTIPATTERN-AUDIT-2026-07-01
 // Wave 0a. Pins the default (Fleet federation disabled) contract: both
@@ -65,7 +70,7 @@ func TestRegisterAdapters_FleetEnabledUnreachable(t *testing.T) {
 
 	cfg := testServerConfig()
 	cfg.Fleet.Enabled = true
-	cfg.Fleet.MCPGatewayEndpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

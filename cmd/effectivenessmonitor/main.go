@@ -474,7 +474,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
-	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
 	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
 		// #1553: keep (don't discard) the disconnected client — the fleet

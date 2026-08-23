@@ -307,7 +307,7 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient cli
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
 	fleetOpts := buildFleetOAuth2Options(cfg) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
 	fleetResilientClient, fleetErr := fleetclient.NewResilient(
 		ctx, cfg.Fleet.Endpoint, resilienceCfg,
 		ctrl.Log.WithName("fleet-client"), fleetOpts...,

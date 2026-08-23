@@ -15,6 +15,67 @@
       "type": "string",
       "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))*$"
     },
+    "fleetResilienceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-attempt backoff/timeout tuning for pkg/fleet/mcpclient.ResilienceConfig (issue #2262). Every field is optional; omitting a field (or the whole block) keeps mcpclient.DefaultResilienceConfig()'s existing value for that field unchanged -- this is what makes it safe to newly expose an already-shipping default via Helm.",
+      "properties": {
+        "initialInterval": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "1s",
+          "description": "Starting backoff interval for startup connect retries."
+        },
+        "maxInterval": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "30s",
+          "description": "Maximum backoff interval between connect retries."
+        },
+        "maxElapsedTime": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "5m",
+          "description": "Total time before giving up on startup connection."
+        },
+        "tokenRefreshTimeout": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "10s",
+          "description": "Bounds OAuth2 token refresh HTTP calls."
+        },
+        "connectTimeout": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "30s",
+          "description": "Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934)."
+        },
+        "discoverProbeTimeout": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "5s",
+          "description": "Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262)."
+        }
+      }
+    },
     "k8sLabelSelector": {
       "description": "A Kubernetes LabelSelector (matchLabels/matchExpressions), used as a raw namespaceSelector value in a NetworkPolicy ingress peer.",
       "type": "object",
@@ -693,6 +754,15 @@
                   "description": "Shared CA bundle path for verifying tokenURL's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
                 }
               }
+            },
+            "resilience": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/fleetResilienceSpec"
+                }
+              ],
+              "default": {},
+              "description": "Shared default resilience/timeout tuning (issue #2262 Phase 2) for every fleet-integration-capable service's mcpclient.ResilienceConfig. Each service's own fleet.resilience (fleetmetadatacache.resilience for FMC) may override a subset of these 6 fields while inheriting the rest from here. Omitting this block entirely keeps every service's pre-#2262 hardcoded Go defaults unchanged."
             }
           }
         },
@@ -1136,6 +1206,9 @@
           "properties": {
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         }
@@ -1562,6 +1635,9 @@
             },
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         },
@@ -1858,6 +1934,9 @@
           "properties": {
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         }
@@ -2184,6 +2263,9 @@
             },
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         },
@@ -2442,6 +2524,9 @@
           "properties": {
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         },
@@ -2737,6 +2822,9 @@
         "oauth2": {
           "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
         },
+        "resilience": {
+          "$ref": "#/definitions/fleetResilienceSpec"
+        },
         "resources": {
           "$ref": "#/definitions/resources"
         },
@@ -2819,6 +2907,9 @@
             },
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            },
+            "resilience": {
+              "$ref": "#/definitions/fleetResilienceSpec"
             }
           }
         },

@@ -31,6 +31,8 @@ import (
 	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // Compile-time interface compliance.
@@ -54,6 +56,14 @@ type ResilienceConfig struct {
 	// service startup or reconnection -- forever, silently defeating
 	// MaxElapsedTime/MaxInterval.
 	ConnectTimeout time.Duration
+	// DiscoverProbeTimeout bounds go-sdk v1.7.0+'s SEP-2575 "server/discover"
+	// probe with its own sub-timeout, independent of ConnectTimeout. Without
+	// this, a gateway that hangs (rather than erroring) on server/discover
+	// can silently consume the entire ConnectTimeout budget before go-sdk's
+	// own legacy "initialize" fallback ever gets a chance to run (issue
+	// #2262) -- every connect attempt then fails identically, even though
+	// the fallback handshake itself works. Zero disables the bound.
+	DiscoverProbeTimeout time.Duration
 }
 
 // DefaultResilienceConfig returns production-ready defaults per Phase 6 plan.
@@ -66,7 +76,43 @@ func DefaultResilienceConfig() ResilienceConfig {
 		// Matches MaxInterval: a single attempt should never take longer
 		// than the max backoff interval we'd otherwise wait between attempts.
 		ConnectTimeout: 30 * time.Second,
+		// Generous relative to the manually-measured ~50ms round trip
+		// against a healthy gateway (issue #2262); operators can raise it
+		// via ResilienceConfig if a legitimately-slow-but-working gateway
+		// needs more headroom.
+		DiscoverProbeTimeout: 5 * time.Second,
 	}
+}
+
+// ResilienceConfigFromFleet converts a fleet.FleetResilienceConfig DTO
+// (populated from Helm-chart-rendered or operator-supplied Go config, issue
+// #2262 Phase 2) into a full ResilienceConfig, merging any non-zero field
+// in f over DefaultResilienceConfig(). A zero value in f always means "use
+// the default for this field" -- this is what makes adding this field to
+// existing config structs safe: an existing deployment with no
+// `resilience:` block set at all gets behavior identical to before this
+// field existed.
+func ResilienceConfigFromFleet(f fleet.FleetResilienceConfig) ResilienceConfig {
+	cfg := DefaultResilienceConfig()
+	if f.InitialInterval > 0 {
+		cfg.InitialInterval = f.InitialInterval
+	}
+	if f.MaxInterval > 0 {
+		cfg.MaxInterval = f.MaxInterval
+	}
+	if f.MaxElapsedTime > 0 {
+		cfg.MaxElapsedTime = f.MaxElapsedTime
+	}
+	if f.TokenRefreshTimeout > 0 {
+		cfg.TokenRefreshTimeout = f.TokenRefreshTimeout
+	}
+	if f.ConnectTimeout > 0 {
+		cfg.ConnectTimeout = f.ConnectTimeout
+	}
+	if f.DiscoverProbeTimeout > 0 {
+		cfg.DiscoverProbeTimeout = f.DiscoverProbeTimeout
+	}
+	return cfg
 }
 
 // ResilientClient wraps Client with reconnection, retry, and readiness semantics.
@@ -106,6 +152,16 @@ func NewResilient(ctx context.Context, endpoint string, cfg ResilienceConfig, lo
 // Ready returns true when the client has an active MCP session.
 func (rc *ResilientClient) Ready() bool {
 	return rc.ready.Load()
+}
+
+// ResilienceConfig returns the backoff/timeout configuration this client was
+// constructed with. Primarily for tests proving a chart-shaped
+// fleet.FleetResilienceConfig override (issue #2262 Phase 2) actually
+// reaches the real NewResilient call at each service's production wiring
+// point (e.g. cmd/gateway/main.go's registerAdapters), without relying on
+// timing-sensitive assertions against an unreachable/hanging endpoint.
+func (rc *ResilientClient) ResilienceConfig() ResilienceConfig {
+	return rc.config
 }
 
 // Get implements client.Reader with automatic reconnection on transient errors.
@@ -199,7 +255,7 @@ func (rc *ResilientClient) connectWithBackoff(ctx context.Context) error {
 
 		attemptCtx, cancel := context.WithTimeout(ctx, rc.config.ConnectTimeout)
 		defer cancel()
-		c, connErr := New(attemptCtx, rc.endpoint, rc.opts...)
+		c, connErr := New(attemptCtx, rc.endpoint, rc.connectOpts()...)
 		if connErr != nil {
 			lastErr = connErr
 			rc.logger.V(1).Info("Connection attempt failed, retrying",
@@ -258,7 +314,7 @@ func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 
 	attemptCtx, cancel := context.WithTimeout(ctx, rc.config.ConnectTimeout)
 	defer cancel()
-	c, err := New(attemptCtx, rc.endpoint, rc.opts...)
+	c, err := New(attemptCtx, rc.endpoint, rc.connectOpts()...)
 	if err != nil {
 		rc.logger.Error(err, "Reconnection failed")
 		return err
@@ -268,6 +324,22 @@ func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 	rc.ready.Store(true)
 	rc.logger.Info("Reconnected to MCP Gateway")
 	return nil
+}
+
+// connectOpts returns rc.opts with the DiscoverProbeTimeout bound and its
+// logger appended, so every New() call made by connectWithBackoff and
+// doReconnect gets the #2262 fix with zero changes required at any of the 8
+// cmd/*/main.go call sites that construct rc.opts. Appending (rather than
+// mutating rc.opts in place) is safe: since len(rc.opts) == cap(rc.opts) for
+// every slice built from a variadic ...Option parameter, append always
+// allocates a fresh backing array here, so concurrent callers (e.g. a
+// reconnect racing a readiness prober) never share or corrupt each other's
+// temporary slice.
+func (rc *ResilientClient) connectOpts() []Option {
+	return append(rc.opts,
+		WithDiscoverProbeTimeout(rc.config.DiscoverProbeTimeout),
+		WithDiscoverProbeLogger(rc.logger),
+	)
 }
 
 // findReloadableTransport walks the option chain to find a ReloadableOAuth2Transport.

@@ -36,6 +36,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
@@ -69,6 +70,12 @@ type Config struct {
 type FleetConfig struct {
 	Endpoint string      `yaml:"endpoint"`
 	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+
+	// Resilience overrides mcpclient.ResilienceConfig's backoff/timeout
+	// tuning (issue #2262 Phase 2). Zero value (the default when omitted)
+	// preserves WE's current hardcoded defaults unchanged.
+	// +optional
+	Resilience fleet.FleetResilienceConfig `yaml:"resilience,omitempty"`
 }
 
 // FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.

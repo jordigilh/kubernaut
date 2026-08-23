@@ -340,7 +340,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 			"tlsCaFile", cfg.Integrations.Fleet.OAuth2.TLSCaFile)
 	}
 
-	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Integrations.Fleet.Resilience)
 	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
 		// #1553: keep (don't discard) the disconnected client — the fleet

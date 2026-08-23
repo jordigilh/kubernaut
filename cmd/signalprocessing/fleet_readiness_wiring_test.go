@@ -29,6 +29,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
@@ -56,6 +57,11 @@ var backendGVRListKinds = map[schema.GroupVersionResource]string{
 	registry.BackendGVR: "BackendList",
 }
 
+// unreachableTestEndpoint is a deliberately-unreachable address (port 1 on
+// loopback, RFC 6335 "system port" almost never listening) used across this
+// package's Fleet readiness wiring tests (goconst dedup).
+const unreachableTestEndpoint = "http://127.0.0.1:1/unreachable"
+
 // newTestEnricher builds a K8sEnricher with an isolated (non-global)
 // metrics registry so repeated calls across test cases in this file don't
 // panic on duplicate Prometheus collector registration.
@@ -79,7 +85,7 @@ func TestWireFleetMCPClient_Disabled_NoOp(t *testing.T) {
 
 func TestWireFleetMCPClient_EnabledUnreachable_RetainsClient(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Fleet.Endpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.Endpoint = unreachableTestEndpoint
 	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -93,6 +99,47 @@ func TestWireFleetMCPClient_EnabledUnreachable_RetainsClient(t *testing.T) {
 	t.Cleanup(func() { _ = fc.Close() })
 	if fc.Ready() {
 		t.Error("IT-SP-1553-001: the kept client must not report Ready() when its initial connection failed")
+	}
+}
+
+// TestWireFleetMCPClient_ResilienceOverrideReachesNewResilient proves the
+// issue #2262 Phase 2 wiring: a chart-shaped Config.Fleet.Resilience
+// override (fleet.FleetResilienceConfig) actually reaches the real
+// mcpclient.NewResilient call inside wireFleetMCPClient
+// (cmd/signalprocessing/main.go), not just mcpclient.ResilienceConfigFromFleet
+// in isolation (already unit-tested by UT-FLEET-RES-013/014). Asserts via
+// ResilientClient.ResilienceConfig() rather than timing, so the test is
+// deterministic.
+func TestWireFleetMCPClient_ResilienceOverrideReachesNewResilient(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Fleet.Endpoint = unreachableTestEndpoint
+	cfg.Fleet.Resilience = fleet.FleetResilienceConfig{
+		ConnectTimeout:       7 * time.Second,
+		DiscoverProbeTimeout: 3 * time.Second,
+	}
+	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	fc := wireFleetMCPClient(ctx, cfg, localClient, newTestEnricher())
+	if fc == nil {
+		t.Fatal("expected a kept (non-nil) *mcpclient.ResilientClient even for an unreachable endpoint (#1553)")
+	}
+	t.Cleanup(func() { _ = fc.Close() })
+
+	got := fc.ResilienceConfig()
+	want := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
+	if got != want {
+		t.Fatalf("issue #2262 Phase 2: Config.Fleet.Resilience did not reach the real NewResilient call inside "+
+			"wireFleetMCPClient -- got %+v, want %+v", got, want)
+	}
+	if got.ConnectTimeout != 7*time.Second || got.DiscoverProbeTimeout != 3*time.Second {
+		t.Fatalf("overridden fields did not survive the chart-shaped override -> NewResilient round trip: %+v", got)
+	}
+	defaults := mcpclient.DefaultResilienceConfig()
+	if got.InitialInterval != defaults.InitialInterval || got.MaxInterval != defaults.MaxInterval || got.MaxElapsedTime != defaults.MaxElapsedTime {
+		t.Fatalf("fields left unset in the override must keep mcpclient.DefaultResilienceConfig()'s values, got %+v", got)
 	}
 }
 
@@ -204,7 +251,7 @@ func TestWireFleetReadinessGate_SP_MCPClientUnreachable_NotReady(t *testing.T) {
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	resilienceCfg.InitialInterval = 50 * time.Millisecond
 	resilienceCfg.MaxElapsedTime = 500 * time.Millisecond
-	fleetClient, connErr := mcpclient.NewResilient(ctx, "http://127.0.0.1:1/unreachable", resilienceCfg, logr.Discard())
+	fleetClient, connErr := mcpclient.NewResilient(ctx, unreachableTestEndpoint, resilienceCfg, logr.Discard())
 	_ = connErr
 	if fleetClient != nil {
 		t.Cleanup(func() { _ = fleetClient.Close() })

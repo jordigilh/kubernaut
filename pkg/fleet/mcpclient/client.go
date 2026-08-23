@@ -26,6 +26,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -68,6 +69,9 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if cfg.discoverProbeTimeout > 0 {
+		wrapTransportWithDiscoverProbe(cfg)
+	}
 
 	mcpClient := mcp.NewClient(
 		&mcp.Implementation{Name: "kubernaut-fleet-client", Version: "v0.1.0"},
@@ -85,6 +89,34 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 	}
 
 	return &Client{session: session, clusterID: cfg.clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}, nil
+}
+
+// wrapTransportWithDiscoverProbe wraps cfg.httpClient's transport with
+// discoverProbeRoundTripper as the outermost layer, applied after all
+// options have already been folded into cfg -- so it composes correctly
+// regardless of option ordering (e.g. on top of WithHTTPClient's OAuth2
+// transport). Creates a *http.Client if none was configured.
+func wrapTransportWithDiscoverProbe(cfg *clientConfig) {
+	wrapped := &discoverProbeRoundTripper{
+		next:    baseRoundTripper(cfg),
+		timeout: cfg.discoverProbeTimeout,
+		logger:  cfg.resolvedDiscoverProbeLogger(),
+	}
+	if cfg.httpClient == nil {
+		cfg.httpClient = &http.Client{Transport: wrapped}
+	} else {
+		cfg.httpClient.Transport = wrapped
+	}
+}
+
+// baseRoundTripper returns the transport already configured on cfg.httpClient
+// (e.g. an OAuth2 transport set by WithHTTPClient), or http.DefaultTransport
+// when none was configured.
+func baseRoundTripper(cfg *clientConfig) http.RoundTripper {
+	if cfg.httpClient != nil && cfg.httpClient.Transport != nil {
+		return cfg.httpClient.Transport
+	}
+	return http.DefaultTransport
 }
 
 // NewFromSession creates a Client from an existing MCP session, skipping the
