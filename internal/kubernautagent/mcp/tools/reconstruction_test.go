@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +28,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -304,6 +306,205 @@ var _ = Describe("BR-INTERACTIVE-010 SC-3, #2155: takeover waits for a real comp
 			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
 				"BR-KA-267/#1949: an already-cancelled context (e.g. inactivity timeout) must abort "+
 					"the wait immediately rather than blocking on a signal that may never close")
+		})
+	})
+})
+
+// selfHealAutoMgr simulates the #2259 self-heal scenario: no cached RCA and
+// no in-flight/pending session initially (so resolveRCAForDiscovery's dead-end
+// branch fires), but -- unlike fallbackAutoMgr's StartInvestigation, which
+// only records the call for inspection -- this mock's StartInvestigation
+// actually executes the given InvestigateFunc and caches its result, so a
+// subsequent GetLatestRCAResultByRemediationID call can observe it, letting
+// tests assert on the self-heal path end-to-end without a real
+// session.Manager.
+type selfHealAutoMgr struct {
+	fallbackAutoMgr
+
+	// waitCh, if set, is returned by WaitForCompletionByRemediationID
+	// instead of an already-closed channel, letting tests simulate a
+	// still-running self-heal investigation the wait must block on.
+	waitCh <-chan struct{}
+
+	// runningRRID, if set, makes FindByRemediationID report an in-flight
+	// investigation for that rr_id, exercising the idempotency guard
+	// (UT-KA-2259-002): triggerFreshInvestigationForDiscovery must not call
+	// StartInvestigation again when one is already running.
+	runningRRID string
+
+	mu       sync.Mutex
+	result   *katypes.InvestigationResult
+	resultOK bool
+}
+
+func (m *selfHealAutoMgr) FindByRemediationID(rrID string) (string, bool) {
+	if m.runningRRID != "" && m.runningRRID == rrID {
+		return "auto-running", true
+	}
+	return "", false
+}
+
+func (m *selfHealAutoMgr) StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error) {
+	_, _ = m.fallbackAutoMgr.StartInvestigation(ctx, fn, metadata)
+	result, _ := fn(ctx)
+	m.mu.Lock()
+	m.result = result
+	m.resultOK = true
+	m.mu.Unlock()
+	return "self-heal-session", nil
+}
+
+func (m *selfHealAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.result, m.resultOK
+}
+
+// setResult presets the RCA result as if already produced by the in-flight
+// investigation UT-KA-2259-002 simulates via runningRRID, so the test can
+// assert that triggerFreshInvestigationForDiscovery reuses it instead of
+// calling StartInvestigation again.
+func (m *selfHealAutoMgr) setResult(result *katypes.InvestigationResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.result = result
+	m.resultOK = true
+}
+
+func (m *selfHealAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	if m.waitCh != nil {
+		return m.waitCh
+	}
+	return mcptools.ClosedChan()
+}
+
+var _ = Describe("BR-INTERACTIVE-010 SC-5, #2259: discover_workflows self-heals a takeover that raced ahead of the first LLM call", func() {
+
+	Describe("UT-KA-2259-001: dead end (no cached RCA, no reconstructable turns, no in-flight investigation) triggers a fresh investigation", func() {
+		It("should self-heal via a fresh investigation and return workflows_discovered instead of failing permanently", func() {
+			const rrID = "rr-2259-001"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-2259-001",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{isActive: true, getDriverResult: sess}
+			autoMgr := &selfHealAutoMgr{}
+			recon := &mockContextReconstructor{} // no reconstructable turns
+			runner := &mockInvestigatorRunner{
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary: "self-healed: OOMKilled on api-server",
+					Confidence: 0.88,
+				},
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary: "self-healed: OOMKilled on api-server",
+					WorkflowID: "restart-pod-v1",
+					Confidence: 0.88,
+				},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "restart-pod-v1", WorkflowName: "Restart Pod"},
+				}))
+
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred(),
+				"#2259: a genuine dead end (no RCA, no reconstructable audit trail) must self-heal, not fail permanently")
+			Expect(out.Status).To(Equal("workflows_discovered"))
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(1)),
+				"a fresh investigation must be started via the existing createFreshInteractiveSession pipeline")
+			Expect(autoMgr.capturedMode()).To(Equal("interactive_fresh_start"))
+		})
+	})
+
+	Describe("UT-KA-2259-002: an already-in-flight self-heal investigation is reused instead of duplicated", func() {
+		It("should wait on the existing investigation and reuse its result without calling StartInvestigation again", func() {
+			const rrID = "rr-2259-002"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-2259-002",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{isActive: true, getDriverResult: sess}
+			waitCh := make(chan struct{})
+			autoMgr := &selfHealAutoMgr{
+				runningRRID: rrID, // simulates a self-heal investigation already in flight
+				waitCh:      waitCh,
+			}
+			recon := &mockContextReconstructor{}
+			runner := &mockInvestigatorRunner{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "already-running-wf", WorkflowName: "Already Running"},
+				}))
+
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				autoMgr.setResult(&katypes.InvestigationResult{
+					RCASummary: "produced by the already-in-flight investigation",
+					WorkflowID: "already-running-wf",
+					Confidence: 0.7,
+				})
+				close(waitCh)
+			}()
+
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("workflows_discovered"))
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"#2259: must not launch a duplicate self-heal investigation when one is already in flight for this rr_id")
+		})
+	})
+
+	Describe("UT-KA-2259-003: ctx cancelled while a self-heal investigation is still in flight returns a retriable error", func() {
+		It("should return promptly with a distinguishable, retriable error instead of the old permanent-dead-end wording", func() {
+			const rrID = "rr-2259-003"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-2259-003",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{isActive: true, getDriverResult: sess}
+			autoMgr := &selfHealAutoMgr{
+				runningRRID: rrID,
+				waitCh:      make(chan struct{}), // never closes
+			}
+			recon := &mockContextReconstructor{}
+			runner := &mockInvestigatorRunner{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{}))
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			start := time.Now()
+			_, err := tool.Handle(ctx, mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			elapsed := time.Since(start)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("in progress"),
+				"#2259: the error must signal the investigation is still in progress and retriable")
+			Expect(err.Error()).NotTo(ContainSubstring("no conversation context available"),
+				"#2259: must not resurface the old wording that implied a permanent dead end")
+			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
+				"an already-cancelled context must abort the wait immediately, not block indefinitely")
 		})
 	})
 })
