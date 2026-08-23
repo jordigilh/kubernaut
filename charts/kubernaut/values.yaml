@@ -64,6 +64,24 @@ global:
     oauth2:
       # -- OAuth2 client_credentials auth on/off for MCP Gateway authentication.
       enabled: false
+    # -- Shared backoff/timeout tuning for every fleet-integration-capable
+    # service's mcpclient.ResilienceConfig (issue #2262 Phase 2). Every field
+    # is optional; omitting a field (or this whole block) keeps
+    # mcpclient.DefaultResilienceConfig()'s existing value unchanged -- this
+    # is what makes it safe to newly expose an already-shipping default via
+    # Helm. Each service's own fleet.resilience (fleetmetadatacache.resilience
+    # for FMC) may override a subset of these fields while inheriting the
+    # rest from here.
+    # resilience:
+    #   initialInterval: 1s     # starting backoff interval for startup connect retries
+    #   maxInterval: 30s        # maximum backoff interval between connect retries
+    #   maxElapsedTime: 5m      # total time before giving up on startup connection
+    #   tokenRefreshTimeout: 10s  # bounds OAuth2 token refresh HTTP calls
+    #   connectTimeout: 30s     # bounds each individual MCP connect attempt (issue #1934)
+    #   discoverProbeTimeout: 5s # bounds the SEP-2575 server/discover probe independently
+    #                            # of connectTimeout, so a gateway that hangs (rather than
+    #                            # erroring) on it cannot starve the legacy initialize
+    #                            # handshake fallback (issue #2262)
   # -- Named LLM provider profiles (DD-PLATFORM-007), referenced by name from
   # kubernautAgent.llmProfileRef (required), kubernautAgent.phaseModels,
   # kubernautAgent.alignmentCheck.llmProfileRef, apifrontend.llmProfileRef,

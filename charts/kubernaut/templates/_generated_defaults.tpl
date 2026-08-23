@@ -87,6 +87,13 @@ apifrontend:
         namespace: ""
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     image:
         pullPolicy: IfNotPresent
         repository: ghcr.io/jordigilh/kubernaut/apifrontend
@@ -185,6 +192,13 @@ effectivenessmonitor:
         namespace: ""
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     logging:
         level: INFO
     pdb:
@@ -203,6 +217,13 @@ fleetmetadatacache:
     pdb:
         enabled: true
     replicas: 1
+    resilience:
+        connectTimeout: 30s
+        discoverProbeTimeout: 5s
+        initialInterval: 1s
+        maxElapsedTime: 5m
+        maxInterval: 30s
+        tokenRefreshTimeout: 10s
     syncInterval: 30s
     valkeyAddr: ""
     valkeyTLS:
@@ -231,6 +252,13 @@ gateway:
     fleet:
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     ingress:
         annotations: {}
         className: ""
@@ -261,6 +289,13 @@ global:
             scopes: []
             tlsCAFile: ""
             tokenURL: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
         tlsCAFile: ""
         tokenSecretRef: ""
     image:
@@ -294,6 +329,13 @@ kubernautAgent:
     fleet:
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     interactive:
         enabled: false
         inactivityTimeout: 10m
@@ -436,6 +478,13 @@ remediationorchestrator:
     fleet:
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     logging:
         level: INFO
     pdb:
@@ -451,6 +500,13 @@ signalprocessing:
         namespace: ""
         oauth2:
             credentialsSecretRef: ""
+        resilience:
+            connectTimeout: 30s
+            discoverProbeTimeout: 5s
+            initialInterval: 1s
+            maxElapsedTime: 5m
+            maxInterval: 30s
+            tokenRefreshTimeout: 10s
     logging:
         level: INFO
     pdb:

@@ -22,6 +22,15 @@ mcpGateway:
   $v.namespace's own schema default ("kubernaut-system") is the final
   fallback when neither is set, preserving pre-#1730 behavior. */}}
   namespace: {{ $fmcFleetPreamble.config.namespace | default $v.namespace | quote }}
+  {{- /* Issue #2262 Phase 2: fleet.MCPGatewayConfig.Resilience (pkg/fleet/config.go)
+  nests under mcpGateway, unlike every other service's fleet.resilience --
+  only render keys the operator actually set; an unset field keeps
+  mcpclient.DefaultResilienceConfig()'s pre-#2262 default unchanged (see
+  mcpclient.ResilienceConfigFromFleet). */}}
+  {{- if $fmcFleetPreamble.resilience }}
+  resilience:
+    {{- $fmcFleetPreamble.resilience | toYaml | nindent 4 }}
+  {{- end }}
 valkey:
   {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
   instance", but left unimplemented that default actually falls through to

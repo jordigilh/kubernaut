@@ -143,20 +143,50 @@ Usage:
 {{- end }}
 
 {{/*
-Combines kubernaut.fleet.oauth2 and kubernaut.fleet.config into a single
-call, replacing the two-line `include | fromYaml` preamble every
-fleet-capable service (gateway, remediationorchestrator, signalprocessing,
-effectivenessmonitor, apifrontend, fleetmetadatacache) previously repeated
-at its own top. Returns a dict with "oauth2" and "config" keys (both
-already fromYaml-parsed).
+Merged fleet resilience config (issue #2262 Phase 2): deep-merges
+global.fleet.resilience (shared baseline) with a service's own
+fleet.resilience override. Unlike kubernaut.fleet.oauth2/kubernaut.fleet.config
+(which enumerate specific known keys with per-field fallback), this is a
+generic dict merge -- every field of the `fleetResilienceSpec` schema follows
+the identical "per-service field wins if set, otherwise inherit the global
+value" rule, so a future new field is covered automatically without a helper
+change.
+Sprig's `merge`/`mergeOverwrite` mutate their first argument in place, so
+`deepCopy` is applied to both operands first to avoid mutating the shared
+`global.fleet.resilience` dict (and hence leaking one service's resolved
+values into another's) across the multiple calls this template receives, one
+per fleet-capable service, in a single `helm template` render.
+`mergeOverwrite` (not `merge`) is used so the per-service dict's own fields
+take precedence over the global baseline for any key both define -- Sprig's
+`merge` gives precedence to its FIRST argument instead, which would silently
+make the global value win over an explicit per-service override.
+Usage:
+  {{- $r := include "kubernaut.fleet.resilience" (dict "root" $ "svc" .Values.gateway.fleet.resilience) | fromYaml }}
+  {{ $r.discoverProbeTimeout }}
+*/}}
+{{- define "kubernaut.fleet.resilience" -}}
+{{- $g := .root.Values.global.fleet.resilience | default dict -}}
+{{- $svc := .svc | default dict -}}
+{{- mergeOverwrite (deepCopy $g) (deepCopy $svc) | toYaml -}}
+{{- end }}
+
+{{/*
+Combines kubernaut.fleet.oauth2, kubernaut.fleet.config and
+kubernaut.fleet.resilience into a single call, replacing the two-line
+`include | fromYaml` preamble every fleet-capable service (gateway,
+remediationorchestrator, signalprocessing, effectivenessmonitor, apifrontend,
+kubernautAgent, fleetmetadatacache) previously repeated at its own top.
+Returns a dict with "oauth2", "config" and "resilience" keys (all already
+fromYaml-parsed).
 Usage:
   {{- $f := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml -}}
-  {{ $f.oauth2.tokenURL }} / {{ $f.config.mcpGatewayEndpoint }}
+  {{ $f.oauth2.tokenURL }} / {{ $f.config.mcpGatewayEndpoint }} / {{ $f.resilience.discoverProbeTimeout }}
 */}}
 {{- define "kubernaut.fleet.preamble" -}}
 {{- $oauth2 := include "kubernaut.fleet.oauth2" (dict "root" .root "svc" .oauth2) | fromYaml -}}
 {{- $config := include "kubernaut.fleet.config" (dict "root" .root "svc" .fleet) | fromYaml -}}
-{{- dict "oauth2" $oauth2 "config" $config | toYaml -}}
+{{- $resilience := include "kubernaut.fleet.resilience" (dict "root" .root "svc" (.fleet.resilience | default dict)) | fromYaml -}}
+{{- dict "oauth2" $oauth2 "config" $config "resilience" $resilience | toYaml -}}
 {{- end }}
 
 {{/*

@@ -65,6 +65,13 @@ fleet:
     {{- end }}
     tlsCAFile: {{ $effectivenessmonitorFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
   {{- end }}
+  {{- /* Issue #2262 Phase 2: only render keys the operator actually set --
+  an unset field keeps mcpclient.DefaultResilienceConfig()'s pre-#2262
+  default unchanged (see mcpclient.ResilienceConfigFromFleet). */}}
+  {{- if $effectivenessmonitorFleetPreamble.resilience }}
+  resilience:
+    {{- $effectivenessmonitorFleetPreamble.resilience | toYaml | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap (it
