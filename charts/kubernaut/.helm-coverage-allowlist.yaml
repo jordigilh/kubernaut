@@ -96,6 +96,12 @@
 - global.fleet.oauth2.scopes
 - global.fleet.oauth2.tlsCAFile
 - global.fleet.oauth2.tokenURL
+- global.fleet.resilience.connectTimeout
+- global.fleet.resilience.discoverProbeTimeout
+- global.fleet.resilience.initialInterval
+- global.fleet.resilience.maxElapsedTime
+- global.fleet.resilience.maxInterval
+- global.fleet.resilience.tokenRefreshTimeout
 - global.fleet.tlsCAFile
 - global.fleet.tokenSecretRef
 - global.image.digest
@@ -119,6 +125,12 @@
 - kubernautAgent.alignmentCheck.maxStepTokens
 - kubernautAgent.alignmentCheck.timeout
 - kubernautAgent.fleet.oauth2.credentialsSecretRef
+- kubernautAgent.fleet.resilience.connectTimeout
+- kubernautAgent.fleet.resilience.discoverProbeTimeout
+- kubernautAgent.fleet.resilience.initialInterval
+- kubernautAgent.fleet.resilience.maxElapsedTime
+- kubernautAgent.fleet.resilience.maxInterval
+- kubernautAgent.fleet.resilience.tokenRefreshTimeout
 - kubernautAgent.interactive.enabled
 - kubernautAgent.interactive.inactivityTimeout
 - kubernautAgent.interactive.maxAnalyzingTimeout

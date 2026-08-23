@@ -332,6 +332,32 @@ tests:
           path: data["config.yaml"]
           pattern: "(?m)^\\s*maxElapsedTime: 5m"
 
+  - it: "signalprocessing.fleet.resilience.maxInterval overrides the global value, while tokenRefreshTimeout is inherited from global.fleet.resilience"
+    set:
+      global:
+        fleet:
+          resilience:
+            maxInterval: "30s"
+            tokenRefreshTimeout: "12s"
+      signalprocessing:
+        fleet:
+          resilience:
+            maxInterval: "45s"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxInterval: 45s"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxInterval: 30s"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenRefreshTimeout: 12s"
+
   - it: "kubernautAgent.fleet.resilience.tokenRefreshTimeout overrides the global value, while initialInterval is inherited from global.fleet.resilience"
     set:
       global:

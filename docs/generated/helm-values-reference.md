@@ -84,6 +84,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `enabled` | boolean |  | `true` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"ghcr.io/jordigilh/kubernaut/apifrontend"` | No |
 | `image.tag` | string |  | `""` | No |
@@ -214,6 +220,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -247,6 +259,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `pdb.minAvailable` | object |  | `` | No |
 | `podSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `replicas` | integer |  | `1` | No |
+| `resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `resources.limits.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `resources.limits.memory` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `resources.requests.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
@@ -285,6 +303,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `enabled` | boolean | Issue #2162: whether the Gateway component (Deployment, Service, RBAC) is deployed. Independent of apifrontend.enabled -- either, both, or neither ingress point may be enabled. | `true` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
@@ -326,6 +350,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.oauth2.scopes` | array of string | Shared OAuth2 scopes for MCP Gateway authentication, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `[]` | No |
 | `fleet.oauth2.tlsCAFile` | string | Shared CA bundle path for verifying tokenURL's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
 | `fleet.oauth2.tokenURL` | string | Shared OAuth2 token URL for MCP Gateway authentication, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `fleet.tlsCAFile` | string | Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
 | `fleet.tokenSecretRef` | string | K8s Secret (key: token) with a bearer token for authenticating to the ACM Search GraphQL API (backend=acm). Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556). | `""` | No |
 | `image.digest` | string | Image digest (e.g. sha256:abc...); when set, overrides tag for immutable references | `""` | No |
@@ -364,6 +394,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `alignmentCheck.timeout` | string | Per-step evaluation timeout. | `"10s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `interactive.enabled` | boolean | Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise. | `false` | No |
 | `interactive.inactivityTimeout` | string | Session timeout after last activity. | `"10m"` | No |
 | `interactive.jwtProviders` | array of object | JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0). | `` | No |
@@ -529,6 +565,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.timeouts.verifying` | string | Effectiveness verification phase timeout | `"30m"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -553,6 +595,12 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch; empty watches all namespaces | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
+| `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
+| `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
+| `fleet.resilience.initialInterval` | string | Starting backoff interval for startup connect retries. | `"1s"` | No |
+| `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
+| `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
+| `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
