@@ -175,9 +175,6 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMC
 	if override.VertexLocation != "" {
 		staticOut.VertexLocation = override.VertexLocation
 	}
-	if override.BedrockRegion != "" {
-		staticOut.BedrockRegion = override.BedrockRegion
-	}
 	if override.Model != "" {
 		runtimeOut.Model = override.Model
 	}
@@ -499,7 +496,6 @@ type LLMOverrideConfig struct {
 	AzureAPIVersion string `yaml:"azureApiVersion"`
 	VertexProject   string `yaml:"vertexProject"`
 	VertexLocation  string `yaml:"vertexLocation"`
-	BedrockRegion   string `yaml:"bedrockRegion"`
 	// Reasoning tunes reasoning/thinking-token behavior independently of the
 	// base ai.llm.reasoning config (#1616, BR-AI-086). Nil means "inherit
 	// base reasoning unchanged". Not part of LLM identity (DD-LLM-008): a
@@ -537,9 +533,6 @@ func (c *AlignmentCheckConfig) EffectiveLLM(base types.LLMConfig, runtime LLMRun
 	}
 	if c.LLM.VertexLocation != "" {
 		staticOut.VertexLocation = c.LLM.VertexLocation
-	}
-	if c.LLM.BedrockRegion != "" {
-		staticOut.BedrockRegion = c.LLM.BedrockRegion
 	}
 	if c.LLM.Model != "" {
 		runtimeOut.Model = c.LLM.Model

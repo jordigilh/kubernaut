@@ -214,9 +214,10 @@ YAML path: `ai`
 | Provider strings | Endpoint required in runtime YAML? | Notes |
 |------------------|-----------------------------------|--------|
 | `anthropic`, `vertex_ai` | No | SDK resolves the endpoint implicitly (native API default / GCP project+location). Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
-| `openai` | Practically yes, though `LLMRuntimeConfig.Validate`'s `providersWithoutEndpointRequirement` map currently (incorrectly) allows an empty `endpoint` for this provider too — this is a known validation/runtime-behavior mismatch, not a documented feature; the underlying `openaicompat` client has no default base URL and will fail at request time, not at startup, if `endpoint` is empty. |
+| `openai` | Yes (#2258) | The underlying `openaicompat` client has no default base URL. `LLMRuntimeConfig.Validate` now fails closed at startup on an empty `endpoint`, matching the client's real requirement instead of only failing at request time. |
 | `openai_compatible` | Yes | Validation error if `endpoint` empty. |
-| `bedrock`, `huggingface`, `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entries from the pre-#1598 `langchaingo` dispatch; these provider strings are rejected downstream regardless of endpoint. |
+| `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entry from the pre-#1598 `langchaingo` dispatch, intentionally retained (#2258) — still documented/tested as endpoint-optional even though rejected downstream. |
+| `bedrock`, `huggingface` | Yes (no longer exempt, #2258) | Not supported providers; removed from `providersWithoutEndpointRequirement` since the exemption was dead code (both are rejected downstream regardless of endpoint). |
 
 `vertex_ai` selects the Anthropic-on-Vertex client path in code (`anthropicfamily`).
 
@@ -228,9 +229,9 @@ When `LLMRuntimeConfig.apiKey` is empty after parsing YAML, startup and hot relo
 |----------|------------------------------------------------|
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
-| `mistral` | `MISTRAL_API_KEY` |
-| `huggingface` | `HUGGINGFACEHUB_API_TOKEN` |
 | `vertex`, `vertex_ai` | `GOOGLE_APPLICATION_CREDENTIALS` (JSON or path indirection; see resolver) |
+
+`mistral` and `huggingface` entries were removed from `providerKeyFiles` (#2258) — neither is a supported provider, so they got no preferential file lookup in practice (any credentials file for them would only ever be found via the generic fallback below anyway).
 
 If the preferred file is missing, the first non-empty file in the directory may be used as fallback.
 
@@ -278,8 +279,9 @@ struct type used by `ai.alignmentCheck.llm` (§7.1), but here it lives in the
 | `azureApiVersion` | string | (empty) | Overrides static Azure API version for this phase when non-empty (#1600). Hot-reloadable. |
 | `vertexProject` | string | (empty) | Overrides static Vertex project for this phase when non-empty. Hot-reloadable. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location for this phase when non-empty. Hot-reloadable. |
-| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
 | `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for this phase when non-nil (#1616, BR-AI-086). **Tuning field, not identity** — the restart-required identity check below never inspects this field, so a reload that changes *only* `reasoning` (no `provider`/`model` change, for this phase or any other) is always accepted. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+
+`bedrockRegion` was removed from `LLMOverrideConfig` (#2258) — it was dead plumbing for a provider this override type can never select. The base `ai.llm.bedrockRegion` (§4.1, `types.LLMConfig`) remains, reserved for native Bedrock support (#1582), but per-phase/per-alignment-check overrides can no longer touch it.
 
 An override's *effective identity* is `provider` (falling back to base
 `ai.llm.provider` when empty) + `model` (falling back to base runtime `model`
@@ -344,8 +346,9 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 | `azureApiVersion` | string | (empty) | Overrides static Azure API version when non-empty (#1600). |
 | `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
-| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
 | `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for the shadow/alignment-checker LLM when non-nil (#1616, BR-AI-086). Since this whole section is static (no hot-reload), there is no identity-lock interaction to consider — a change here, like any other field in this table, simply requires a restart. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+
+`bedrockRegion` was removed from this override type (#2258) — same rationale as §6.1.
 
 Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for the LLM client's transport chain.
 
@@ -458,7 +461,7 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Prometheus tools missing | `integrations.tools.prometheus.url` empty. |
 | LLM TLS verify failures with private CA | Set **`ai.llm.tlsCaFile`**. Expecting **`TLS_CA_FILE`** alone **does not** fix LLM outbound trust. |
 | `vertex` provider configured | `vertex` (Gemini-focused, `langchaingo`-only) has no replacement post-#1598 and is rejected at startup. Use `vertex_ai` (Claude-on-Anthropic-Vertex, via `anthropicfamily`) instead if that's the backend you deployed. |
-| `bedrock` provider configured | Rejected at startup (`os.Exit`) post-#1598 — see #1582. Not yet supported; do not upgrade past this chart version until it lands. |
+| `bedrock` provider configured | Rejected at startup (`os.Exit`) post-#1598 — see #1582. Without an explicit `endpoint`, fails `LLMRuntimeConfig.Validate` directly (#2258); with one, still rejected at client construction. Not yet supported either way; do not upgrade past this chart version until it lands. |
 | `azure` provider configured (i.e. `provider: azure`) | Rejected at startup — there is no `azure` provider string, before or after #1598/#1600. Use `provider: openai`/`openai_compatible` with `azureApiVersion` set instead. |
 | Summarizer never runs | `ai.summarizer.threshold <= 0` disables it without validation error. |
 | Startup exit with alignment enabled | Process exits when `alignmentCheck` is enabled **and** a dedicated shadow LLM fails to construct when `alignmentCheck.llm` is configured; sharing primary client when `llm` nil does **not** exit. |
