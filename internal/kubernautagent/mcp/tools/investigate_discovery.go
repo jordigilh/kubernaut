@@ -55,7 +55,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	defer cancelInactivity()
 
 	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
-	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID)
+	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID, user)
 	if err != nil {
 		return InvestigateOutput{}, err
 	}
@@ -241,7 +241,11 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 //
 // Fallback: if no stored result exists (e.g. pure interactive session),
 // reconstruct conversation from audit traces and re-extract RCA.
-func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string) (*katypes.InvestigationResult, error) {
+//
+// Dead end (#2259): when neither a stored RCA nor any reconstructable
+// conversation exists, self-heal via triggerFreshInvestigationForDiscovery
+// instead of failing permanently -- see that function's doc comment for why.
+func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string, user mcpinternal.UserInfo) (*katypes.InvestigationResult, error) {
 	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
 		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
 			"rr_id", rrID,
@@ -266,9 +270,9 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 	}
 
 	if len(messages) == 0 {
-		t.logger.Info("discover_workflows: no conversation context available after reconstruction",
+		t.logger.Info("discover_workflows: no conversation context available after reconstruction, self-healing via a fresh investigation (#2259)",
 			"rr_id", rrID)
-		return nil, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
+		return t.triggerFreshInvestigationForDiscovery(ctx, rrID, user)
 	}
 
 	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, rrID)
@@ -284,6 +288,61 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 	// via SyncSignalFromRCA with the extraction's guess.
 	rcaResult.RemediationTarget = katypes.RemediationTarget{}
 	return rcaResult, nil
+}
+
+// triggerFreshInvestigationForDiscovery self-heals the #2259 dead end:
+// resolveRCAForDiscovery reaches here only when neither a stored RCA result
+// nor any reconstructable audit trail exists for rrID. The most likely
+// cause is a takeover (handleTakeover) that raced ahead of the autonomous
+// investigation's first LLM call -- TransitionToUserDriving cancels that
+// goroutine synchronously (session/manager_interactive.go), so it exits
+// before emitting a single aiagent.llm.request/response audit event,
+// leaving nothing for DSContextReconstructor to ever reconstruct. Retrying
+// discover_workflows against that state can never succeed on its own; it is
+// a permanent dead end unless something runs a real investigation.
+//
+// This reuses createFreshInteractiveSession (investigate_autonomous.go), the
+// same already-shipped, E2E-validated pipeline the action=start fallback
+// chain uses for a genuinely-fresh RR: a real RunFullInvestigation call
+// followed by UpgradeToInteractive. Reusing it means the fix requires zero
+// changes to any of TransitionToUserDriving's cancellation call sites, and
+// guarantees a fresh, correlation_id-keyed audit trail afterward (BR-AUDIT-005,
+// SOC2 CC7.2) -- exactly what the cancelled-before-anything path lacked.
+//
+// Idempotency: the per-rrID session mutex held by handleDiscoverWorkflows
+// (getSessionMutex) already serializes every discover_workflows/takeover
+// call for the same rrID, so no other caller can race in here. The
+// FindByRemediationID/FindPendingByRemediationID check below is a defensive
+// second guard against launching a duplicate self-heal investigation when
+// this function is entered more than once for the same rrID (e.g. a
+// client-side retry that lands after the mutex was briefly released between
+// calls): if one is already in flight, this call waits on it instead of
+// starting another.
+//
+// Returns a distinguishable, retriable error (never the old "no conversation
+// context available" wording, which implied a permanent dead end) when ctx
+// is cancelled/inactivity-times-out before the investigation completes, or
+// when the fresh investigation produced no result at all.
+func (t *InvestigateTool) triggerFreshInvestigationForDiscovery(ctx context.Context, rrID string, user mcpinternal.UserInfo) (*katypes.InvestigationResult, error) {
+	if _, running := t.autoMgr.FindByRemediationID(rrID); !running {
+		if _, pending := t.autoMgr.FindPendingByRemediationID(rrID); !pending {
+			t.createFreshInteractiveSession(ctx, rrID, user)
+		}
+	}
+
+	select {
+	case <-t.autoMgr.WaitForCompletionByRemediationID(rrID):
+	case <-ctx.Done():
+		return nil, fmt.Errorf("rca extraction failed: self-healing investigation still in progress, retry discover_workflows: %w", ctx.Err())
+	}
+
+	if result, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && result != nil {
+		t.logger.Info("discover_workflows: self-healed via a fresh investigation after a dead-context reconstruction (#2259)",
+			"rr_id", rrID)
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("rca extraction failed: self-healing investigation produced no result, retry discover_workflows")
 }
 
 // resolveDiscoverySignal resolves the signal context for Phase 3 workflow
