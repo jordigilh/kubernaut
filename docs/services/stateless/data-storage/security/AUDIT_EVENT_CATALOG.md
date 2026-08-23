@@ -33,10 +33,10 @@ DD-AUDIT-003's 11-event Data Storage baseline predates two design decisions that
 | `datastorage.actiontype.disabled` | `actiontype.admitted.delete` (Auth Webhook) — disable/reenable semantics were replaced by direct CRD CREATE/UPDATE/DELETE admission | [Auth Webhook catalog](../../../shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) |
 | `datastorage.actiontype.disable_denied` | `actiontype.denied.delete` (Auth Webhook) | [Auth Webhook catalog](../../../shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) |
 | `datastorage.actiontype.reenabled` | *(concept removed — no reenable path exists post-#1661)* | DD-ACTIONTYPE-001 |
-| `workflow.catalog.actions_listed` | KubernautAgent, same string value (DD-WORKFLOW-019) | [KA catalog](../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
-| `workflow.catalog.workflows_listed` | KubernautAgent, same string value | [KA catalog](../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
-| `workflow.catalog.workflow_retrieved` | KubernautAgent, same string value | [KA catalog](../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
-| `workflow.catalog.selection_validated` | KubernautAgent, same string value | [KA catalog](../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
+| `workflow.catalog.actions_listed` | KubernautAgent, same string value (DD-WORKFLOW-019) | [KA catalog](../../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
+| `workflow.catalog.workflows_listed` | KubernautAgent, same string value | [KA catalog](../../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
+| `workflow.catalog.workflow_retrieved` | KubernautAgent, same string value | [KA catalog](../../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
+| `workflow.catalog.selection_validated` | KubernautAgent, same string value | [KA catalog](../../../kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) |
 
 `internal/kubernautagent/audit/emitter.go` documents this relocation explicitly in its own comments ("Relocated from `pkg/datastorage/audit/workflow_discovery_event.go`: KA, not DS, now generates these 4 events").
 

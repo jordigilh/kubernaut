@@ -24,13 +24,14 @@ import (
 	"github.com/go-logr/logr"
 )
 
+// #2258: "mistral" and "huggingface" were removed -- neither is a supported
+// provider (rejected downstream regardless of credentials), dead entries
+// left over from the pre-#1598 langchaingo dispatch removal.
 var providerKeyFiles = map[string]string{
-	"openai":      "OPENAI_API_KEY",
-	"anthropic":   "ANTHROPIC_API_KEY",
-	"mistral":     "MISTRAL_API_KEY",
-	"huggingface": "HUGGINGFACEHUB_API_TOKEN",
-	"vertex":      "GOOGLE_APPLICATION_CREDENTIALS",
-	"vertex_ai":   "GOOGLE_APPLICATION_CREDENTIALS",
+	"openai":    "OPENAI_API_KEY",
+	"anthropic": "ANTHROPIC_API_KEY",
+	"vertex":    "GOOGLE_APPLICATION_CREDENTIALS",
+	"vertex_ai": "GOOGLE_APPLICATION_CREDENTIALS",
 }
 
 // ResolveCredentialsFile reads the LLM API key from a Helm-mounted credentials

@@ -100,13 +100,37 @@ model: "mistral-large"
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		})
 
-		It("should accept empty LLM endpoint for openai (LangChainGo uses default)", func() {
+		It("UT-KA-2258-001: rejects missing LLM endpoint for openai (#2258 -- the openaicompat client has no default base URL and previously only failed at request time, not startup)", func() {
 			rtYAML := []byte(`
 model: "gpt-4o"
 `)
 			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rt.Validate("openai")).NotTo(HaveOccurred())
+			err = rt.Validate("openai")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("endpoint"))
+		})
+
+		It("UT-KA-2258-002: rejects missing LLM endpoint for bedrock (#2258 dead-code cleanup -- bedrock is not a supported provider and must not be endpoint-exempt)", func() {
+			rtYAML := []byte(`
+model: "anthropic.claude-3-sonnet"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			err = rt.Validate("bedrock")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("endpoint"))
+		})
+
+		It("UT-KA-2258-003: rejects missing LLM endpoint for huggingface (#2258 dead-code cleanup -- huggingface is not a supported provider and must not be endpoint-exempt)", func() {
+			rtYAML := []byte(`
+model: "some-model"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			err = rt.Validate("huggingface")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		})
 
 		It("should reject invalid max-turns (zero)", func() {
@@ -581,7 +605,6 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 					AzureAPIVersion: "2025-01",
 					VertexProject:   "proj-shadow",
 					VertexLocation:  "europe-west1",
-					BedrockRegion:   "eu-west-1",
 				},
 			}
 			sOut, rOut := cfg.EffectiveLLM(base, runtime)
@@ -589,7 +612,11 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 			Expect(sOut.AzureAPIVersion).To(Equal("2025-01"))
 			Expect(sOut.VertexProject).To(Equal("proj-shadow"))
 			Expect(sOut.VertexLocation).To(Equal("europe-west1"))
-			Expect(sOut.BedrockRegion).To(Equal("eu-west-1"))
+			// BedrockRegion (#2258): LLMOverrideConfig no longer carries this field --
+			// it was dead plumbing for a provider LLMOverrideConfig can never select.
+			// base.BedrockRegion (types.LLMConfig, retained for #1582) must be left
+			// untouched by this override, matching the other base-only fields below.
+			Expect(sOut.BedrockRegion).To(Equal(base.BedrockRegion))
 			Expect(rOut.Model).To(Equal("claude-3-haiku"))
 			Expect(rOut.Endpoint).To(Equal("https://api.anthropic.com"))
 			Expect(rOut.APIKeyFile).To(Equal("/etc/credentials/shadow-key"))

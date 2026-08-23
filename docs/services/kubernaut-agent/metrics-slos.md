@@ -22,7 +22,7 @@ KA exposes two distinct Prometheus namespaces:
 | Namespace | Subsystem | Source | Purpose |
 |---|---|---|---|
 | `aiagent_*` | (none) | `internal/kubernautagent/metrics/metrics.go` | Core service metrics: sessions, HTTP, authz, audit, interactive MCP, LLM retries |
-| `aiagent_alignment_*` | `alignment` | `internal/kubernautagent/alignment/metrics.go` | Shadow Agent (prompt-injection guardrail) subsystem — see [ADR-KA-001](../../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md) |
+| `aiagent_alignment_*` | `alignment` | `internal/kubernautagent/alignment/metrics.go` | Shadow Agent (prompt-injection guardrail) subsystem — see [ADR-KA-001](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md) |
 
 Both namespaces were unified onto the `aiagent` prefix (superseding an earlier, inconsistent
 `kubernaut_alignment_*` naming for the alignment subsystem).
@@ -40,7 +40,7 @@ Both namespaces were unified onto the `aiagent` prefix (superseding an earlier, 
 | `aiagent_http_rate_limited_total` | Counter | Requests rejected by rate limiting |
 | `aiagent_http_request_duration_seconds` | Histogram | HTTP request latency (excludes `/stream` — SSE connections are long-lived and would skew P99 to minutes) |
 | `aiagent_http_requests_in_flight` | Gauge | Concurrent HTTP requests |
-| `aiagent_authz_denied_total` | Counter | SAR authorization denials ([DD-AUTH-014](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)) |
+| `aiagent_authz_denied_total` | Counter | SAR authorization denials ([DD-AUTH-014](../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)) |
 | `aiagent_audit_events_emitted_total` | Counter | Audit events successfully forwarded to Data Storage |
 | `aiagent_mcp_interactive_sessions_active` | Gauge | Active Interactive MCP Mode sessions |
 | `aiagent_mcp_interactive_command_duration_seconds` | Histogram | Interactive command latency |

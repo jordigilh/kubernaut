@@ -10,7 +10,7 @@
 
 Maps each BR in [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) to the test files that carry
 its literal BR-ID citation, verified by repo-wide grep (not by feature inspection) as of this
-writing. Per [AGENTS.md](../../../../AGENTS.md)'s Business Requirements Mandate, tests should
+writing. Per [AGENTS.md](../../../AGENTS.md)'s Business Requirements Mandate, tests should
 reference their BR — this document surfaces where that citation is present, absent, or only
 present in another service's test suite (a real, cross-service dependency, not a doc gap).
 
@@ -40,7 +40,7 @@ present in another service's test suite (a real, cross-service dependency, not a
 
 BR-KA-264 (post-RCA label detection) and BR-KA-265 (labels in workflow discovery) are implemented as
 part of the same DetectedLabels feature governed by
-[DD-KA-018](../../../architecture/decisions/DD-KA-018-detected-labels-detection-specification.md),
+[DD-KA-018](../../architecture/decisions/DD-KA-018-detected-labels-detection-specification.md),
 which has substantial dedicated test coverage — just not tagged with the literal `BR-KA-264`/
 `BR-KA-265` strings:
 

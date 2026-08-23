@@ -5,6 +5,8 @@ Authoritative mapping of kubernaut-agent configuration to YAML, runtime behavior
 - `internal/kubernautagent/config/config.go` (structs, defaults, `Validate`)
 - `cmd/kubernautagent/main.go` (flags, wiring, transports)
 - `cmd/kubernautagent/llm_builder.go` (LLM HTTP client and hot reload)
+- `cmd/kubernautagent/agentsession_wiring.go` (AgentSession dispatcher construction and startup — see §3.5)
+- `internal/kubernautagent/agentsession/dispatcher.go` (dispatch Lease/resync constants — see §3.5)
 - `internal/kubernautagent/credentials/resolver.go` (credential file resolution)
 - `pkg/kubernautagent/config` (custom header validation)
 - `pkg/shared/tls` (TLS defaults and profiles)
@@ -21,7 +23,7 @@ Configuration is split into two files plus optional CLI overrides:
 
 > **LLM identity (`model`, and `phaseModels.<phase>.provider`/`.model`) requires a
 > process restart to change** — [#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-> [DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
+> [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
 > A hot-reload attempt that changes identity is rejected in full (the whole
 > candidate reload, including any otherwise-safe tuning changes in the same
 > payload) and the previous configuration keeps running. See §6 for the full
@@ -114,6 +116,28 @@ Buffered audit is implemented only when **both** `enabled` is true **and** `inte
 | `batchSize` | int | `10` | Positive when `enabled` | Batch size for writes. |
 | `verbosity` | string | `full` | Must be `full`, `standard`, `minimal`, or empty (treated as allowed) | **Parsed and validated only**; kubernaut-agent does not pass this field into investigation or `pkg/audit` stores in the current codebase. |
 
+### 3.5 AgentSession dispatch (DD-AA-KA-001) — not YAML-configurable
+
+The `AgentSession` CRD dispatch channel — how AIAnalysis hands investigations to KA, replacing
+the deleted HTTP submit/poll API ([DD-AA-KA-001](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) — is **not** exposed anywhere in `Config` /
+`config.yaml`. It is started unconditionally at boot by `startAgentSessionDispatcher`
+(`cmd/kubernautagent/agentsession_wiring.go`) with no functional options applied in production,
+so every value below is a fixed Go constant in `internal/kubernautagent/agentsession/dispatcher.go`,
+not a tunable:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `dispatchLeaseDuration` | `15m` | `coordination/v1.Lease` duration for the per-`AgentSession` dispatch Lease (`dispatch-<agentsession-name>`) that arbitrates exactly-once dispatch across KA replicas. |
+| `dispatchLeaseRenewInterval` | `dispatchLeaseDuration / 3` (5m) | Fixed period on which the owning replica refreshes `RenewTime` while investigating; a Lease not renewed within `dispatchLeaseDuration` is reclaimable by another replica. |
+| `defaultResyncInterval` | `30s` | `ctrl.Result{RequeueAfter: ...}` period for the Dispatcher `Reconciler`'s own delete-detection resync (replaces the retired ticker-driven blanket List — see DD-AA-KA-001 Amendment #2231). Overridable only via the unexported `WithResyncInterval` functional option, used exclusively by tests (e.g. integration tests set `20ms`–`200ms` for fast `Eventually` polling); no wiring path in `cmd/` applies it. |
+
+`runtime.session.maxConcurrentInvestigations` (§3.3) still governs the separate concern of how
+many investigations `session.Manager` runs concurrently once dispatched — it is unrelated to the
+Lease/resync mechanics above and remains the only investigation-volume knob exposed via YAML.
+
+There is currently no Helm value, ConfigMap key, or CLI flag for any of the three dispatch
+constants above; changing them requires a code change and rebuild, not a config edit.
+
 ## 4. AI configuration
 
 YAML path: `ai`
@@ -190,9 +214,10 @@ YAML path: `ai`
 | Provider strings | Endpoint required in runtime YAML? | Notes |
 |------------------|-----------------------------------|--------|
 | `anthropic`, `vertex_ai` | No | SDK resolves the endpoint implicitly (native API default / GCP project+location). Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
-| `openai` | Practically yes, though `LLMRuntimeConfig.Validate`'s `providersWithoutEndpointRequirement` map currently (incorrectly) allows an empty `endpoint` for this provider too — this is a known validation/runtime-behavior mismatch, not a documented feature; the underlying `openaicompat` client has no default base URL and will fail at request time, not at startup, if `endpoint` is empty. |
+| `openai` | Yes (#2258) | The underlying `openaicompat` client has no default base URL. `LLMRuntimeConfig.Validate` now fails closed at startup on an empty `endpoint`, matching the client's real requirement instead of only failing at request time. |
 | `openai_compatible` | Yes | Validation error if `endpoint` empty. |
-| `bedrock`, `huggingface`, `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entries from the pre-#1598 `langchaingo` dispatch; these provider strings are rejected downstream regardless of endpoint. |
+| `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entry from the pre-#1598 `langchaingo` dispatch, intentionally retained (#2258) — still documented/tested as endpoint-optional even though rejected downstream. |
+| `bedrock`, `huggingface` | Yes (no longer exempt, #2258) | Not supported providers; removed from `providersWithoutEndpointRequirement` since the exemption was dead code (both are rejected downstream regardless of endpoint). |
 
 `vertex_ai` selects the Anthropic-on-Vertex client path in code (`anthropicfamily`).
 
@@ -204,9 +229,9 @@ When `LLMRuntimeConfig.apiKey` is empty after parsing YAML, startup and hot relo
 |----------|------------------------------------------------|
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
-| `mistral` | `MISTRAL_API_KEY` |
-| `huggingface` | `HUGGINGFACEHUB_API_TOKEN` |
 | `vertex`, `vertex_ai` | `GOOGLE_APPLICATION_CREDENTIALS` (JSON or path indirection; see resolver) |
+
+`mistral` and `huggingface` entries were removed from `providerKeyFiles` (#2258) — neither is a supported provider, so they got no preferential file lookup in practice (any credentials file for them would only ever be found via the generic fallback below anyway).
 
 If the preferred file is missing, the first non-empty file in the directory may be used as fallback.
 
@@ -226,7 +251,7 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 | `phaseModels` | map of `LLMOverrideConfig`, keyed by phase name | `nil` | See §6.1 | Per-phase LLM overrides (#1470). Identity fields (`provider`, `model`) within an override are subject to the same restart-required rule as base `model` — see §6.1. |
 
 **`model` is immutable after process start** ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-[DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
+[DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
 `ai.llm.provider` (static config) combined with runtime `model` form the LLM's
 "identity". A hot-reload attempt where the new `model` differs from the model
 the process booted with is rejected in full — the reload callback returns an
@@ -254,8 +279,9 @@ struct type used by `ai.alignmentCheck.llm` (§7.1), but here it lives in the
 | `azureApiVersion` | string | (empty) | Overrides static Azure API version for this phase when non-empty (#1600). Hot-reloadable. |
 | `vertexProject` | string | (empty) | Overrides static Vertex project for this phase when non-empty. Hot-reloadable. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location for this phase when non-empty. Hot-reloadable. |
-| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
 | `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for this phase when non-nil (#1616, BR-AI-086). **Tuning field, not identity** — the restart-required identity check below never inspects this field, so a reload that changes *only* `reasoning` (no `provider`/`model` change, for this phase or any other) is always accepted. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+
+`bedrockRegion` was removed from `LLMOverrideConfig` (#2258) — it was dead plumbing for a provider this override type can never select. The base `ai.llm.bedrockRegion` (§4.1, `types.LLMConfig`) remains, reserved for native Bedrock support (#1582), but per-phase/per-alignment-check overrides can no longer touch it.
 
 An override's *effective identity* is `provider` (falling back to base
 `ai.llm.provider` when empty) + `model` (falling back to base runtime `model`
@@ -320,8 +346,9 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 | `azureApiVersion` | string | (empty) | Overrides static Azure API version when non-empty (#1600). |
 | `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
-| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
 | `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for the shadow/alignment-checker LLM when non-nil (#1616, BR-AI-086). Since this whole section is static (no hot-reload), there is no identity-lock interaction to consider — a change here, like any other field in this table, simply requires a restart. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+
+`bedrockRegion` was removed from this override type (#2258) — same rationale as §6.1.
 
 Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for the LLM client's transport chain.
 
@@ -434,7 +461,7 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Prometheus tools missing | `integrations.tools.prometheus.url` empty. |
 | LLM TLS verify failures with private CA | Set **`ai.llm.tlsCaFile`**. Expecting **`TLS_CA_FILE`** alone **does not** fix LLM outbound trust. |
 | `vertex` provider configured | `vertex` (Gemini-focused, `langchaingo`-only) has no replacement post-#1598 and is rejected at startup. Use `vertex_ai` (Claude-on-Anthropic-Vertex, via `anthropicfamily`) instead if that's the backend you deployed. |
-| `bedrock` provider configured | Rejected at startup (`os.Exit`) post-#1598 — see #1582. Not yet supported; do not upgrade past this chart version until it lands. |
+| `bedrock` provider configured | Rejected at startup (`os.Exit`) post-#1598 — see #1582. Without an explicit `endpoint`, fails `LLMRuntimeConfig.Validate` directly (#2258); with one, still rejected at client construction. Not yet supported either way; do not upgrade past this chart version until it lands. |
 | `azure` provider configured (i.e. `provider: azure`) | Rejected at startup — there is no `azure` provider string, before or after #1598/#1600. Use `provider: openai`/`openai_compatible` with `azureApiVersion` set instead. |
 | Summarizer never runs | `ai.summarizer.threshold <= 0` disables it without validation error. |
 | Startup exit with alignment enabled | Process exits when `alignmentCheck` is enabled **and** a dedicated shadow LLM fails to construct when `alignmentCheck.llm` is configured; sharing primary client when `llm` nil does **not** exit. |

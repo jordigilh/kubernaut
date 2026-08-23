@@ -40,7 +40,7 @@ import (
 //
 // KubernautAgent intentionally keeps broad read RBAC on Secrets for
 // investigation completeness (missing RBAC degrades RCA quality — see
-// docs/services/stateless/kubernaut-agent/security-configuration.md).
+// docs/services/kubernaut-agent/security-configuration.md).
 // SecretAccessObserver is the compensating detective control: every Get/List
 // that resolves to the core Secret resource must invoke the observer exactly
 // once, with the resolved verb/name/namespace/outcome — while accesses to

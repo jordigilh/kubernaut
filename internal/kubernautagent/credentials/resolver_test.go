@@ -125,3 +125,56 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 		Expect(result).To(BeEmpty())
 	})
 })
+
+var _ = Describe("ResolveCredentialsFile — #2258 stale provider key-file cleanup", func() {
+
+	var (
+		credDir string
+		logger  = logr.Discard()
+	)
+
+	BeforeEach(func() {
+		var err error
+		credDir, err = os.MkdirTemp("", "cred-resolver-keyfile-test-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { Expect(os.RemoveAll(credDir)).To(Succeed()) })
+	})
+
+	// These two providers are dead (rejected downstream regardless of endpoint,
+	// per #2258) and must no longer get a preferential, provider-named
+	// credential-file lookup. Proven here with two files in credDir where the
+	// old provider-specific filename does NOT sort first alphabetically: if any
+	// special-case fast path for "mistral"/"huggingface" still existed, it would
+	// find the provider-named file directly and ignore the alphabetically-first
+	// file; once removed, resolution falls through to the generic fallback loop
+	// (os.ReadDir, lexicographic order) and returns the first non-empty file.
+
+	It("UT-KA-2258-004: mistral gets no provider-specific credential file preference", func() {
+		Expect(os.WriteFile(filepath.Join(credDir, "AAA_FIRST"), []byte("first-content"), 0600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(credDir, "MISTRAL_API_KEY"), []byte("mistral-content"), 0600)).To(Succeed()) // pre-commit:allow-sensitive (test fixture)
+
+		result := credentials.ResolveCredentialsFile("mistral", credDir, logger)
+		Expect(result).To(Equal("first-content"),
+			"mistral is not a supported provider (#2258) -- it must fall through to the generic "+
+				"alphabetical-first-file fallback, not resolve MISTRAL_API_KEY preferentially")
+	})
+
+	It("UT-KA-2258-005: huggingface gets no provider-specific credential file preference", func() {
+		Expect(os.WriteFile(filepath.Join(credDir, "AAA_FIRST"), []byte("first-content"), 0600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(credDir, "HUGGINGFACEHUB_API_TOKEN"), []byte("hf-content"), 0600)).To(Succeed()) // pre-commit:allow-sensitive (test fixture)
+
+		result := credentials.ResolveCredentialsFile("huggingface", credDir, logger)
+		Expect(result).To(Equal("first-content"),
+			"huggingface is not a supported provider (#2258) -- it must fall through to the generic "+
+				"alphabetical-first-file fallback, not resolve HUGGINGFACEHUB_API_TOKEN preferentially")
+	})
+
+	It("UT-KA-2258-006: openai still gets its provider-specific credential file (regression guard -- real, supported provider unaffected)", func() {
+		Expect(os.WriteFile(filepath.Join(credDir, "AAA_FIRST"), []byte("first-content"), 0600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(credDir, "OPENAI_API_KEY"), []byte("openai-content"), 0600)).To(Succeed()) // pre-commit:allow-sensitive (test fixture)
+
+		result := credentials.ResolveCredentialsFile("openai", credDir, logger)
+		Expect(result).To(Equal("openai-content"),
+			"openai is a real, supported provider -- its provider-specific fast path must be unaffected by #2258")
+	})
+})

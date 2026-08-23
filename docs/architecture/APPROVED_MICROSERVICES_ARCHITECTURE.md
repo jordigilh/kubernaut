@@ -35,17 +35,19 @@
 > **New real services this document predated** (added in this revision): **Kubernaut Agent
 > (KA)**, **apifrontend**, **Auth Webhook**, **Fleet Metadata Cache**.
 
-**Document Version**: 3.0
+**Document Version**: 3.1
 **Date**: August 2026
 **Status**: **CURRENT PRODUCTION ARCHITECTURE** — full architectural-accuracy rewrite (Issue #1806)
-**Architecture Type**: **12 active production services** (6 CRD controllers + 3 pure stateless
+**Architecture Type**: **12 active production services** (6 CRD controllers + 2 pure stateless
 HTTP services + 1 admission-webhook/CRD hybrid + 1 stateless-HTTP/mini-CRD hybrid + 1 fleet
-stateless HTTP service), plus 1 V1.1-planned capability and a V2.0 backlog
+stateless HTTP service + 1 CRD-dispatch/MCP hybrid), plus 1 V1.1-planned capability and a V2.0
+backlog
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.1 | Aug 2026 | **Issue #2260**: reclassified Kubernaut Agent (KA) from "pure stateless HTTP service" to the 4th member of the "hybrid/platform services" group, reflecting [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)'s replacement of the AA↔KA HTTP submit/poll channel (`pkg/agentclient`, now deleted) with a Kubernetes-native `AgentSession` CRD watched by a per-object dispatch `Lease`-based `Reconciler`; rewrote the AA↔KA sequence diagrams, C4 diagram node, service section, and integration tables accordingly. | AI Assistant |
 | 3.0 | Aug 2026 | **Full architectural-accuracy rewrite** (Issue #1806): replaced all HolmesGPT API/HAPI references with Kubernaut Agent (KA); removed Context API and Dynamic Toolset from active service lists; corrected Multi-Model Orchestration to "never implemented, V2.0 backlog"; added the real services this document predated (Kubernaut Agent, apifrontend, Auth Webhook, Fleet Metadata Cache); rebuilt the Mermaid diagrams to show the real async KA submit/poll flow, RemediationApprovalRequest approval gate, and 3-engine WorkflowExecution dispatch (Tekton/Job/Ansible); fixed the Effectiveness Monitor doc link to `07-effectivenessmonitor/`; removed unverifiable claims (generic "8080 for all services", unattributed "oscillation detection" capability); fixed two dangling internal links (`05-central-controller.md`, `KUBERNAUT_IMPLEMENTATION_ROADMAP.md`). | AI Assistant |
 | 2.7 | Feb 2026 | DD-017 v2.0 Integration: Effectiveness Monitor Level 1 (automated assessment) reinstated to V1.0. Level 2 (AI-powered analysis) remains V1.1. | AI Assistant |
 | 2.6 | Dec 1, 2025 | DD-016 & DD-017 Integration: Dynamic Toolset deferred to V2.0. Effectiveness Monitor deferred to V1.1. | AI Assistant |
@@ -63,10 +65,15 @@ intelligent Kubernetes remediation agent. As of August 2026, the production syst
 
 - **6 CRD controllers**: SignalProcessing, AIAnalysis, WorkflowExecution,
   RemediationOrchestrator, Notification, EffectivenessMonitor
-- **3 pure stateless HTTP services**: Gateway, Data Storage, Kubernaut Agent (KA)
-- **3 hybrid/platform services**: apifrontend (stateless HTTP + an embedded mini CRD
+- **2 pure stateless HTTP services**: Gateway, Data Storage
+- **4 hybrid/platform services**: apifrontend (stateless HTTP + an embedded mini CRD
   controller for its own `InvestigationSession` CRD), Auth Webhook (K8s admission webhook +
-  CRD controller), and Fleet Metadata Cache (stateless HTTP, multi-cluster fleet feature)
+  CRD controller), Fleet Metadata Cache (stateless HTTP, multi-cluster fleet feature), and
+  Kubernaut Agent (KA) (CRD-dispatch via a per-object `AgentSession` watch+Lease `Reconciler` +
+  MCP service — note KA's reconciler is a standalone controller-runtime `Reconciler` racing a
+  per-object `coordination/v1.Lease` for dispatch ownership, not the shared `ctrl.Manager`/
+  leader-election pattern the other three use; see
+  [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md))
 
 A `RemediationRequest` CRD is the backbone of every remediation. **Gateway** creates it from
 inbound signals via a plain Kubernetes client (Gateway itself runs no `ctrl.Manager`).
@@ -75,14 +82,19 @@ kinds — `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApp
 `NotificationRequest`, and `EffectivenessAssessment` — carrying the request through
 enrichment, AI-assisted root-cause analysis, an optional approval gate, execution, and
 effectiveness scoring. **Kubernaut Agent (KA)** — a native Go AI engine, not a Python/HolmesGPT
-SDK wrapper — is invoked **asynchronously** by AIAnalysis (submit a session, then poll for its
-result), never as a single synchronous call. **Data Storage** is the single, unified audit sink
+SDK wrapper — is dispatched via a Kubernetes-native `AgentSession` CRD
+([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)): AIAnalysis creates
+one `AgentSession` per investigation, KA's dispatch `Reconciler` watches for it, races other KA
+replicas for a per-object dispatch `Lease`, and is the sole writer of the investigation's result
+to `AgentSession.Status` — the prior HTTP submit/poll channel (`pkg/agentclient`) is fully
+deleted. **Data Storage** is the single, unified audit sink
 for the entire lifecycle ([ADR-034](decisions/ADR-034-unified-audit-table-design.md)) and also
 computes the final weighted effectiveness score on demand. A separate external-facing entry
 point, **apifrontend**, accepts natural-language queries (A2A/MCP), creates `RemediationRequest`
-CRDs directly, and calls Kubernaut Agent independently through its own REST client for deep
+CRDs directly, and calls Kubernaut Agent independently through its own MCP channel for deep
 investigation — "AF owns triage, KA owns investigation"
-([DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md)).
+([DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md)); this AF↔KA channel is untouched
+by DD-AA-KA-001 and is out of scope for the AgentSession dispatch model described here.
 
 ### **Key Architecture Principles**
 - **Single Responsibility Principle**: Each service has exactly one responsibility
@@ -101,21 +113,21 @@ investigation — "AF owns triage, KA owns investigation"
 |---------|------|-----------------|------------------------|--------|
 | **🔗 Gateway** | Stateless HTTP (no `ctrl.Manager`) | HTTP webhook ingestion & security; creates `RemediationRequest` CRDs via plain client | BR-WH-001 to BR-WH-015 | ✅ Active |
 | **🔍 Signal Processing** | CRD controller | Signal enrichment + business/environment classification | BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050 | ✅ Active |
-| **🤖 AI Analysis** | CRD controller | Root-cause analysis & workflow selection via **async** Kubernaut Agent submit/poll (`pkg/agentclient`); Rego policy gating (`pkg/aianalysis/rego/evaluator.go`) | BR-AI-001 to BR-AI-050 | ✅ Active |
+| **🤖 AI Analysis** | CRD controller | Root-cause analysis & workflow selection via **`AgentSession` CRD dispatch** to Kubernaut Agent (DD-AA-KA-001); Rego policy gating (`pkg/aianalysis/rego/evaluator.go`) | BR-AI-001 to BR-AI-050 | ✅ Active |
 | **🎯 Workflow Execution** | CRD controller | Multi-engine execution — Tekton `PipelineRun` \| native `batchv1.Job` \| Ansible/AWX — dispatched by Strategy pattern on `spec.executionEngine` (`pkg/workflowexecution/executor/`) | BR-WF-001 to BR-WF-165, BR-WE-014 | ✅ Active |
 | **🎛️ Remediation Orchestrator** | CRD controller (reconciliation hub) | End-to-end remediation lifecycle; `.For(&RemediationRequest{})`, owns/watches 6 child CRD kinds | BR-ORCH-001 to BR-ORCH-050 | ✅ Active |
 | **📢 Notification** | CRD controller | Multi-channel notifications driven by `NotificationRequest` CRDs (migrated from stateless HTTP in Oct 2025 — the old stateless design is dead) | BR-NOTIF-001 to BR-NOTIF-120 | ✅ Active |
 | **📈 Effectiveness Monitor (Level 1)** | CRD controller, **no business API port** | Automated assessment via 4 deterministic scorers (hash, health, alert, metrics packages) — zero AI/LLM dependency in V1.0 | BR-INS-001, BR-INS-002, BR-INS-005 (partial) | ✅ Active (Level 1 only) |
 | **📊 Data Storage** | Stateless HTTP | Data persistence, vector search, and the **unified audit sink for every other service** (ADR-034); computes the final weighted effectiveness score on demand | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | ✅ Active |
-| **🔍 Kubernaut Agent (KA)** | Stateless HTTP + MCP (native Go) | AI investigation engine; async session-based API (submit, then poll); multi-provider LLM support | Historical `BR-HAPI-001` to `BR-HAPI-185` IDs (legacy naming, **not** describing a live Python service) + `BR-KA-*` catalog | ✅ Active |
-| **🚪 apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller (`InvestigationSession`) | External-facing A2A/MCP natural-language gateway; own "Severity Triager" LLM (Claude via Vertex AI); creates `RemediationRequest` CRDs directly; separate REST client to KA for deep investigation | apifrontend-scoped BRs (see `docs/services/apifrontend/`) | ✅ Active |
+| **🔍 Kubernaut Agent (KA)** | Hybrid: CRD-dispatch (`AgentSession` watch+Lease) + MCP (native Go) | AI investigation engine; dispatched via `AgentSession` CRD (AA creates, KA watches+Leases, KA exclusively writes Status — DD-AA-KA-001); multi-provider LLM support | Historical `BR-HAPI-001` to `BR-HAPI-185` IDs (legacy naming, **not** describing a live Python service) + `BR-KA-*` catalog | ✅ Active |
+| **🚪 apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller (`InvestigationSession`) | External-facing A2A/MCP natural-language gateway; own "Severity Triager" LLM (Claude via Vertex AI); creates `RemediationRequest` CRDs directly; separate MCP channel to KA for deep investigation | apifrontend-scoped BRs (see `docs/services/apifrontend/`) | ✅ Active |
 | **🔐 Auth Webhook** | K8s admission webhook (port 9443) + CRD controller | Validates admission for `RemediationWorkflow` and `ActionType` CRDs and `NotificationRequest` deletions (ADR-058, ADR-059); runs the `RemediationWorkflow` finalizer reconciler (versioned, semver-validated workflow catalog) | (see `docs/services/shared/authentication-webhook/`) | ✅ Active |
 | **🗺️ Fleet Metadata Cache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | Multi-cluster "fleet" metadata caching for cross-cluster workflow targeting | (see ADR-068, DD-FLEET-001 to DD-FLEET-007) | ✅ Active |
 
 **Service Breakdown**:
 - **CRD Controllers** (6): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator, Notification, Effectiveness Monitor
-- **Pure Stateless HTTP** (3): Gateway, Data Storage, Kubernaut Agent
-- **Hybrid Stateless/CRD or Webhook** (3): apifrontend, Auth Webhook, Fleet Metadata Cache
+- **Pure Stateless HTTP** (2): Gateway, Data Storage
+- **Hybrid/Platform Services** (4): apifrontend, Auth Webhook, Fleet Metadata Cache, Kubernaut Agent (CRD-dispatch + MCP — see DD-AA-KA-001)
 
 **Important Notes**:
 - **Environment Classification** (`BR-ENV-*`) is implemented as a sub-capability of Signal
@@ -178,8 +190,8 @@ flowchart TB
         WF[🎯 Workflow<br/>Execution]
     end
 
-    subgraph AIENGINE["🧠 AI Engine (Async)"]
-        KA[🔍 Kubernaut Agent<br/>native Go, submit/poll]
+    subgraph AIENGINE["🧠 AI Engine (CRD-Dispatch)"]
+        KA[🔍 Kubernaut Agent<br/>native Go, AgentSession<br/>watch + Lease dispatch]
     end
 
     subgraph EXEC["⚙️ Execution Engines (Strategy Pattern)"]
@@ -224,8 +236,10 @@ flowchart TB
     ORCH -->|creates| RAR[(RemediationApprovalRequest)]
     RAR -.->|watched via field index;<br/>Approved unblocks next phase| AI
 
-    %% AI Analysis <-> Kubernaut Agent (async, no Context API, no toolset-fetch call)
-    AI -.->|async submit + poll| KA
+    %% AI Analysis <-> Kubernaut Agent (AgentSession CRD dispatch, DD-AA-KA-001; no Context API, no toolset-fetch call)
+    AI -->|creates AgentSession CRD| K8SAPI2[(AgentSession)]
+    K8SAPI2 -.->|watch + Lease dispatch| KA
+    KA -.->|writes Status<br/>watched by AI| AI
     KA -.->|static built-in toolsets<br/>query cluster state| K8S
     KA <-.-> LLM
 
@@ -254,7 +268,7 @@ flowchart TB
     NOT --> CHAT
 
     %% External-facing entry point calls KA independently
-    AF -.->|separate REST client,<br/>deep investigation - DD-AF-004| KA
+    AF -.->|separate MCP channel,<br/>deep investigation - DD-AF-004| KA
     AF -.-> LLM
 
     %% Platform services (not part of the main remediation path)
@@ -285,6 +299,7 @@ flowchart TB
     style AUTHWH fill:#cfd8dc,stroke:#455a64,stroke-width:2px,color:#000
     style FMC fill:#cfd8dc,stroke:#455a64,stroke-width:2px,color:#000
     style RAR fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#000
+    style K8SAPI2 fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style SIG fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
     style NLQ fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
     style K8S fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
@@ -299,7 +314,8 @@ flowchart TB
 **Service Groups**:
 - 🎯 **Core Remediation Pipeline** (Blue subgraph): Gateway → RemediationOrchestrator →
   SignalProcessing → AIAnalysis → WorkflowExecution (5 CRD-based services)
-- 🧠 **AI Engine** (Purple subgraph): Kubernaut Agent, invoked asynchronously by AIAnalysis
+- 🧠 **AI Engine** (Purple subgraph): Kubernaut Agent, dispatched by AIAnalysis via the
+  `AgentSession` CRD (create + watch Status, DD-AA-KA-001) — not a direct HTTP call
 - ⚙️ **Execution Engines** (Orange subgraph): Tekton, native Job, Ansible/AWX — exactly one
   chosen per `WorkflowExecution.spec.executionEngine`
 - 🔧 **Support Services** (Green subgraph): Data Storage (unified audit sink), Effectiveness
@@ -312,7 +328,10 @@ flowchart TB
 
 **Port Standards** (real per-service ports — there is no generic "8080 for everything"):
 - **Gateway, Data Storage**: API `8080`, health `8081`, metrics `9090`
-- **Kubernaut Agent**: HTTPS `8443`, health `8081`, metrics `9090`
+- **Kubernaut Agent**: HTTPS `8443` (MCP endpoint `/api/v1/mcp` only — AF's deep-investigation
+  channel, DD-AF-004, unaffected by DD-AA-KA-001), health `8081`, metrics `9090`. AA's dispatch
+  channel is the `AgentSession` CRD, not HTTP — the old `/api/v1/incident/*` REST endpoints on
+  this port are deleted
 - **Pure CRD controllers** (Signal Processing, Workflow Execution, Remediation Orchestrator,
   Notification, Effectiveness Monitor): health `8081`, metrics `9090` — **no API port**
 - **AI Analysis**: API `8080`, health `8081`, metrics `9090` — the extra API port's purpose is
@@ -336,9 +355,11 @@ Signal Sources → Gateway → creates RemediationRequest → RemediationOrchest
 ```
 
 **AI Investigation Flow** (replaces the old, never-real "AI Analysis ↔ HolmesGPT API ↔
-Context API" loop):
+Context API" loop, and the retired AA↔KA HTTP submit/poll channel — DD-AA-KA-001):
 ```
-AIAnalysis --(async: submit session, then poll)--> Kubernaut Agent (KA)
+AIAnalysis --(creates)--> AgentSession CRD --(watch + Lease dispatch)--> Kubernaut Agent (KA)
+                                  ↑                                            ↕
+                                  └──────────(writes Status, watched)──────────┘
                                                         ↕
                                     Static, built-in toolsets (Kubernetes, Prometheus,
                                     Alertmanager) — no separate Dynamic Toolset service,
@@ -422,19 +443,16 @@ sequenceDiagram
     SP->>SP: Update status: Completed
     SP-->>ORCH: Status update triggers watch
 
-    Note over AI,KA: Phase 3: AI Analysis (async Kubernaut Agent investigation)
+    Note over AI,KA: Phase 3: AI Analysis (AgentSession CRD dispatch to Kubernaut Agent, DD-AA-KA-001)
     ORCH->>K8SAPI: Create AIAnalysis CRD
     K8SAPI-->>AI: Watch triggers reconcile
-    AI->>KA: Submit investigation session (async, pkg/agentclient)
-    activate KA
-    KA-->>AI: 202 Accepted { sessionId }
-    deactivate KA
-    loop Poll until terminal state
-        AI->>KA: GET session status
-        KA-->>AI: status: running
-    end
-    AI->>KA: GET session status
-    KA-->>AI: status: completed (root cause + recommendations)
+    AI->>K8SAPI: Create AgentSession CRD<br/>(ownerRef: AIAnalysis)
+    K8SAPI-->>KA: Watch triggers Dispatcher.Reconcile
+    KA->>K8SAPI: Acquire per-object dispatch Lease<br/>(coordination/v1, races other KA replicas)
+    KA->>K8SAPI: Update AgentSession.Status<br/>(Phase=Investigating, SessionID)
+    KA->>KA: Run investigation (see detailed sequence below)
+    KA->>K8SAPI: Update AgentSession.Status<br/>(Phase=Completed, Result: root cause + recommendations)
+    K8SAPI-->>AI: Watch triggers reconcile<br/>(observes terminal Status)
     AI->>AI: Evaluate Rego policy (pkg/aianalysis/rego/evaluator.go)
 
     alt Confidence 60-79% OR Rego mandates approval
@@ -479,8 +497,11 @@ sequenceDiagram
 
 **Key Characteristics**:
 - **CRD-Based Communication**: Services communicate via Kubernetes Custom Resources, mediated
-  by the Kubernetes API server (not direct service-to-service RPC, except AIAnalysis ↔
-  Kubernaut Agent and the Execution Engine ↔ external systems calls)
+  by the Kubernetes API server — including AIAnalysis ↔ Kubernaut Agent, dispatched via the
+  `AgentSession` CRD (DD-AA-KA-001), not a direct HTTP call. The remaining direct
+  service-to-service calls are apifrontend's separate MCP channel to Kubernaut Agent (DD-AF-004)
+  and the Execution Engine ↔ external systems calls (Tekton/Job via K8s API, Ansible/AWX via
+  REST)
 - **Event-Driven**: Each controller watches for CRD changes and reconciles
 - **Orchestrated**: RemediationOrchestrator owns/watches all 6 child CRD kinds and monitors the
   entire lifecycle
@@ -493,27 +514,35 @@ sequenceDiagram
 
 ### **AI Analysis ↔ Kubernaut Agent Investigation Sequence (Detailed)**
 
-This replaces the old (never-real) HolmesGPT/Context API/Dynamic-Toolset investigation
-diagram. Kubernaut Agent is invoked **asynchronously** — AIAnalysis submits a session and polls
-for its result; there is no single synchronous "investigate" call and no separate toolset
-discovery service.
+This replaces the old (never-real) HolmesGPT/Context API/Dynamic-Toolset investigation diagram
+**and** the since-retired AA↔KA HTTP submit/poll channel. Per
+[DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md), AIAnalysis creates a
+Kubernetes-native `AgentSession` CRD per investigation; Kubernaut Agent's `Dispatcher` — a
+controller-runtime `Reconciler` (as of Amendment #2231; originally a raw watch) — observes it,
+races other KA replicas for a per-object `coordination/v1.Lease` to guarantee exactly-once
+dispatch, and is the **sole writer** of `AgentSession.Status`. There is no HTTP request/response
+of any kind on this channel, and no separate toolset discovery service.
 
 ```mermaid
 sequenceDiagram
     participant AI as AI Analysis<br/>Controller
-    participant KA as Kubernaut Agent<br/>(native Go)
+    participant K8SAPI as Kubernetes API<br/>(AgentSession CRD)
+    participant KA as Kubernaut Agent<br/>Dispatcher (Reconciler)
     participant TOOL as Built-in Toolsets<br/>(Kubernetes, Prometheus,<br/>Alertmanager - static)
     participant K8S as Kubernetes<br/>Cluster
     participant LLM as LLM Provider<br/>(VertexAI/Anthropic/Gemini/OpenAI/<br/>Azure OpenAI/Ollama/vLLM/etc.)
     participant ST as Data Storage
 
-    Note over AI,ST: Async Investigation - submit then poll, never a single blocking call
-    AI->>KA: POST /v1/sessions (submit investigation)
-    activate KA
-    KA-->>AI: 202 Accepted { sessionId }
-    deactivate KA
+    Note over AI,ST: CRD dispatch, never an HTTP request/response (DD-AA-KA-001)
+    AI->>K8SAPI: Create AgentSession<br/>(ownerRef: AIAnalysis; Spec: incident payload, TimesOutAt)
+    K8SAPI-->>KA: Watch triggers Dispatcher.Reconcile
+    KA->>K8SAPI: Add dispatchCleanupFinalizer
+    KA->>K8SAPI: Create dispatch Lease<br/>("dispatch-&lt;name&gt;", races other KA replicas)
+    Note over KA: Lease won — this replica owns dispatch
+    KA->>K8SAPI: List InvestigationSession CRDs<br/>(dispatch-time interactive check, Amendment Gap 1)
+    KA->>K8SAPI: Update AgentSession.Status<br/>(Phase=Investigating, SessionID, DispatchedAt)
 
-    Note over KA,TOOL: Session runs asynchronously inside Kubernaut Agent
+    Note over KA,TOOL: Investigation runs asynchronously inside Kubernaut Agent
     activate KA
     KA->>KA: Sanitize signal input (DD-KA-005)
     KA->>ST: Query remediation history context (DD-KA-016)
@@ -531,26 +560,30 @@ sequenceDiagram
     LLM-->>KA: Root cause + ranked recommendations
     deactivate LLM
     KA->>KA: Confidence scoring (DD-KA-004)
-    KA->>KA: Session status: completed
     deactivate KA
 
-    Note over AI,KA: AIAnalysis controller polls (non-blocking reconcile loop)
-    loop Until terminal state
-        AI->>KA: GET /v1/sessions/{sessionId}
-        KA-->>AI: status: running
-    end
-    AI->>KA: GET /v1/sessions/{sessionId}
-    KA-->>AI: status: completed { rootCause, recommendations, confidence }
+    Note over KA,K8SAPI: session.Manager's TerminalHook fires Dispatcher.OnTerminal (Amendment Gap 2)
+    KA->>K8SAPI: Update AgentSession.Status<br/>(Phase=Completed, Result: rootCause + recommendations + confidence)
+    K8SAPI-->>AI: Watch triggers reconcile<br/>(observes terminal Status — no polling)
     AI->>AI: Rego policy evaluation (approval gating)
+
+    Note over AI,KA: Cancellation: AA deletes the AgentSession (cascade from RR/AIAnalysis);<br/>no Status write for cancel — Dispatcher.reconcileDelete stops the in-flight investigation
 ```
 
 **Investigation Capabilities**:
 - **Native Go, not a Python wrapper**: Kubernaut Agent is a ground-up Go rewrite
   ([DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)), not a
   wrapper around a HolmesGPT Python SDK
-- **Async session API**: `pkg/agentclient` is a mandatory OpenAPI-generated client
-  ([DD-KA-003](decisions/DD-KA-003-mandatory-openapi-client-usage.md)) used for submit/poll —
-  there is no synchronous `POST /api/v1/investigate` endpoint
+- **`AgentSession` CRD dispatch**: the retired `pkg/agentclient` OpenAPI submit/poll client is
+  fully deleted ([issue #2190](https://github.com/jordigilh/kubernaut/issues/2190)); AA↔KA is
+  exclusively the `AgentSession` CRD now (Spec is immutable after Create; Status is KA-only) —
+  see [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)
+- **Exactly-once dispatch via Lease**: a per-`AgentSession` `coordination/v1.Lease`
+  (`dispatch-<name>`) ensures only one KA replica investigates a given `AgentSession`, with
+  stale-Lease reclaim on replica crash
+- **Self-enforced timeout**: KA independently enforces `Spec.TimesOutAt` (propagated from
+  AIAnalysis) so a partitioned/crashed AA replica can never leave an investigation running
+  forever — there is no `CancelSession` RPC anymore
 - **Static, built-in toolsets**: Kubernetes, Prometheus, and Alertmanager tools are compiled
   into Kubernaut Agent; there is no runtime toolset-discovery call to a separate service
 - **Multi-provider LLM support**: VertexAI, Anthropic, Gemini, OpenAI, Azure OpenAI, Ollama,
@@ -709,21 +742,24 @@ alert detection. All downstream services receive only non-duplicate signals via
 **Single Responsibility**: AI Analysis & Decision Making Only
 
 **Capabilities**:
-- Root-cause analysis and recommendation selection via **asynchronous** Kubernaut Agent
-  investigation (BR-AI-001 to BR-AI-050)
+- Root-cause analysis and recommendation selection via Kubernaut Agent investigation, dispatched
+  through the `AgentSession` CRD (BR-AI-001 to BR-AI-050, DD-AA-KA-001)
 - Rego policy evaluation for approval gating (`pkg/aianalysis/rego/evaluator.go`)
 - Confidence-threshold-based approval routing (60-79% confidence, or Rego-mandated approval)
 - Watches `RemediationApprovalRequest` CRDs via a field index on `spec.aiAnalysisRef.name`
   ([ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md))
 
 **External Integrations**:
-- **Kubernaut Agent (KA)** — async submit/poll via `pkg/agentclient` (mandatory
-  OpenAPI-generated client, DD-KA-003). This is the **only** AI investigation dependency; there
-  is no separate "HolmesGPT API" service and no "Context API" round-trip.
+- **Kubernaut Agent (KA)** — creates an `AgentSession` CRD and watches its `Status`
+  ([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)); the retired
+  `pkg/agentclient` OpenAPI submit/poll client is fully deleted. This is the **only** AI
+  investigation dependency; there is no separate "HolmesGPT API" service and no "Context API"
+  round-trip.
 
 **Internal Dependencies**:
 - Watches `AIAnalysis` CRDs created by RemediationOrchestrator
-- Submits investigation sessions to Kubernaut Agent and polls for results
+- Creates `AgentSession` CRDs for Kubernaut Agent and watches their `Status` for the terminal
+  result (no polling — a K8s watch triggers the next reconcile)
 - Emits audit events to Data Storage (ADR-034)
 - Status updates (including `phase=Approving`) trigger RemediationOrchestrator's next reconcile
 
@@ -916,8 +952,11 @@ design is dead/superseded**
 
 ### **🔍 Kubernaut Agent (KA) Service**
 **Image**: `quay.io/jordigilh/kubernaut-agent-server`
-**Type**: Stateless HTTP + MCP (native Go)
-**Port**: HTTPS 8443 (API), 8081 (health/admin), 9090 (metrics)
+**Type**: Hybrid — `AgentSession` CRD-dispatch (watch + Lease `Reconciler`, DD-AA-KA-001) + MCP
+(native Go). Unlike apifrontend/Auth Webhook's shared `ctrl.Manager` reconcilers, KA's
+`Dispatcher` is a standalone controller-runtime `Reconciler` with no leader election of its own.
+**Port**: HTTPS 8443 (MCP endpoint `/api/v1/mcp` only — AF's channel, DD-AF-004), 8081
+(health/admin), 9090 (metrics)
 **Single Responsibility**: AI Investigation Engine Only
 
 > **Note on `BR-HAPI-*` IDs**: earlier revisions of this document described this capability as
@@ -926,13 +965,16 @@ design is dead/superseded**
 > preservation rule, the `BR-HAPI-*` IDs are **not renumbered**, but they must be read as
 > historical/legacy naming — they do not describe a currently active standalone Python service.
 > The current, active requirement catalog for this capability is `BR-KA-*`
-> (`docs/services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md`).
+> (`docs/services/kubernaut-agent/BUSINESS_REQUIREMENTS.md`).
 
 **Capabilities**:
 - **Native Go rewrite**, not a Python/HolmesGPT-SDK wrapper
   ([DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md))
-- **Async, session-based API**: submit an investigation, then poll for status/result — no
-  synchronous "investigate" endpoint
+- **`AgentSession` CRD dispatch** ([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)):
+  KA's `Dispatcher` watches for `AgentSession` Create/Update, races other replicas for a
+  per-object `coordination/v1.Lease`, and is the sole writer of `Status` — the retired HTTP
+  submit/poll endpoints (`POST /v1/sessions`, `GET /v1/sessions/{id}`) are fully deleted (issue
+  #2190). No synchronous "investigate" endpoint ever existed or exists now.
 - **Multi-provider LLM support**: VertexAI, Anthropic, Gemini, OpenAI, Azure OpenAI, Ollama,
   vLLM, LlamaStack, Mistral, HuggingFace TGI, DeepSeek
 - **Static, built-in toolsets** (Kubernetes, Prometheus, Alertmanager) — no runtime discovery
@@ -941,20 +983,22 @@ design is dead/superseded**
 - V1 confidence scoring ([DD-KA-004](decisions/DD-KA-004-v1-confidence-scoring.md))
 - Remediation target included in RCA ([DD-KA-006](decisions/DD-KA-006-remediation-target-in-rca.md))
 - Remediation-history context enrichment ([DD-KA-016](decisions/DD-KA-016-remediation-history-context.md))
-- Mandatory OpenAPI-generated client contract for all callers
-  ([DD-KA-003](decisions/DD-KA-003-mandatory-openapi-client-usage.md), consumed via
-  `pkg/agentclient`)
+- Self-enforced `Spec.TimesOutAt` deadline: KA independently fails an `AgentSession` whose
+  investigation outlives its propagated timeout, since there is no `CancelSession` RPC for a
+  partitioned/crashed AA replica to call anymore
 
 **External Integrations**:
 - Multi-provider LLM APIs (listed above)
-- Kubernetes API for built-in toolset queries
+- Kubernetes API for built-in toolset queries, and for the `AgentSession`/dispatch-`Lease`
+  watch+write itself
 - Data Storage for remediation history context
 
 **Internal Dependencies**:
-- Receives async investigation submissions from **AI Analysis** via `pkg/agentclient`
-- Receives **separate, independent** investigation submissions from **apifrontend**'s own REST
-  client ("AF owns triage, KA owns investigation",
-  [DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md))
+- Dispatched by **AI Analysis** via the `AgentSession` CRD it creates and watches
+  ([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) — no HTTP client
+- Receives **separate, independent** investigation requests from **apifrontend**'s own MCP
+  channel ("AF owns triage, KA owns investigation",
+  [DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md)) — untouched by DD-AA-KA-001
 
 ---
 
@@ -973,7 +1017,7 @@ design is dead/superseded**
 - Session management via Google ADK
 - **Creates `RemediationRequest` CRDs directly** — a second, independent entry point alongside
   Gateway; does not require an inbound webhook signal
-- Calls **Kubernaut Agent via its own separate REST client** for deep investigation once
+- Calls **Kubernaut Agent via its own separate MCP channel** for deep investigation once
   triage determines it is warranted — "AF owns triage, KA owns investigation"
   ([DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md))
 
@@ -1076,9 +1120,10 @@ a `cmd/` entrypoint. They remain V2.0-or-later speculative concepts with no impl
 | RemediationOrchestrator | NotificationRequest | K8s API (owns CRD) | Approval/escalation notification | BR-ORCH-021, ADR-018 |
 | RemediationOrchestrator | EffectivenessAssessment | K8s API (owns CRD) | Post-remediation scoring | ADR-EM-001 |
 | **AI Investigation Flow** |
-| AIAnalysis | Kubernaut Agent | HTTPS/REST, async submit + poll | AI-assisted RCA & recommendations | BR-AI-011, DD-KA-003 |
+| AIAnalysis | Kubernaut Agent | K8s API — creates/watches `AgentSession` CRD | AI-assisted RCA & recommendations | BR-AI-011, DD-AA-KA-001 |
+| Kubernaut Agent | AIAnalysis | K8s API — writes `AgentSession.Status` (watched, no polling) | Investigation result delivery | BR-AA-KA-065.9, DD-AA-KA-001 |
 | AIAnalysis | RemediationApprovalRequest | K8s API (field-indexed watch) | Approval decision lookup | ADR-040 |
-| apifrontend | Kubernaut Agent | HTTPS/REST, separate client, async | Deep investigation ("AF owns triage, KA owns investigation") | DD-AF-004 |
+| apifrontend | Kubernaut Agent | MCP, separate channel from AA's | Deep investigation ("AF owns triage, KA owns investigation") | DD-AF-004 |
 | Kubernaut Agent | Data Storage | HTTP/REST | Remediation history context | DD-KA-016 |
 | **Execution Flow** |
 | WorkflowExecution | Tekton PipelineRun | K8s API (watch) | Execute via Tekton | BR-WF-010 |
@@ -1170,13 +1215,13 @@ and `OWNER_REFERENCE_ARCHITECTURE.md` paths no longer exist).
 ### **Delivered — 12 Active Production Services**
 1. Gateway — HTTP ingestion, security, `RemediationRequest` creation
 2. Signal Processing — signal enrichment and environment classification
-3. AI Analysis — RCA & workflow selection via async Kubernaut Agent investigation
+3. AI Analysis — RCA & workflow selection via `AgentSession`-CRD-dispatched Kubernaut Agent investigation
 4. Workflow Execution — 3-engine execution (Tekton / native Job / Ansible-AWX)
 5. Remediation Orchestrator — end-to-end lifecycle hub (owns 6 child CRD kinds)
 6. Notification — CRD-driven multi-channel notifications
 7. Data Storage — persistence, vector search, unified audit sink, weighted score computation
 8. Effectiveness Monitor (Level 1) — 4 deterministic scorers
-9. Kubernaut Agent (KA) — native Go async AI investigation engine
+9. Kubernaut Agent (KA) — native Go AI investigation engine, dispatched via `AgentSession` CRD
 10. apifrontend — external-facing NL-query entry point
 11. Auth Webhook — workflow-catalog admission control
 12. Fleet Metadata Cache — multi-cluster fleet metadata

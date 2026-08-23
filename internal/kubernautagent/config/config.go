@@ -49,9 +49,20 @@ func LoadLLMRuntime(data []byte) (*LLMRuntimeConfig, error) {
 // providersWithoutEndpointRequirement lists providers that resolve their
 // endpoint implicitly (via SDK defaults or region config), so an explicit
 // runtime.endpoint is not required for them.
+//
+// #2258: "bedrock", "huggingface", and "openai" were removed from this map.
+// bedrock/huggingface are not supported providers at all (rejected
+// downstream regardless of endpoint -- dead entries left over from the
+// pre-#1598 langchaingo dispatch removal). openai IS a supported provider,
+// but the openaicompat client has no default base URL -- an empty endpoint
+// previously passed validation here and only failed at request time, not
+// startup; this now fails closed at startup like every other non-exempt
+// provider. "vertex" is intentionally retained: though rejected downstream
+// like bedrock/huggingface, it is still documented and tested as an
+// endpoint-optional legacy provider string (configuration-reference.md
+// §5.1, UT-KA-684-103b).
 var providersWithoutEndpointRequirement = map[string]bool{
-	"bedrock": true, "huggingface": true, "anthropic": true,
-	"openai": true, "vertex": true, "vertex_ai": true,
+	"anthropic": true, "vertex": true, "vertex_ai": true,
 }
 
 func (r *LLMRuntimeConfig) Validate(provider string) error {
@@ -95,7 +106,7 @@ func isEmptyPhaseOverride(override *LLMOverrideConfig) bool {
 	return override == nil || (override.Provider == "" && override.Endpoint == "" &&
 		override.Model == "" && override.APIKeyFile == "" &&
 		override.AzureAPIVersion == "" && override.VertexProject == "" &&
-		override.VertexLocation == "" && override.BedrockRegion == "" &&
+		override.VertexLocation == "" &&
 		override.Reasoning == nil && override.Temperature == nil)
 }
 
