@@ -15,7 +15,7 @@
 
 ### Problem Statement
 
-KubernautAgent's autonomous investigator holds broad `get`/`list`/`watch` RBAC on `secrets` (core group), granted deliberately alongside pods/configmaps/events/etc. so that a missing permission never silently degrades root-cause-analysis quality (see [`docs/services/stateless/kubernaut-agent/security-configuration.md`](../services/stateless/kubernaut-agent/security-configuration.md)). Every K8s tool call — including a Secret read via `kubectl_get_by_name`, `kubectl_describe`, `kubectl_get_yaml`, `kubectl_get_by_kind_in_namespace`, etc. — already produced a generic `aiagent.llm.tool_call` audit event, but that event does not distinguish "this tool call touched a Secret" from any other resource read; identifying Secret accesses required parsing the raw `tool_arguments` JSON of every tool-call event after the fact.
+KubernautAgent's autonomous investigator holds broad `get`/`list`/`watch` RBAC on `secrets` (core group), granted deliberately alongside pods/configmaps/events/etc. so that a missing permission never silently degrades root-cause-analysis quality (see [`docs/services/kubernaut-agent/security-configuration.md`](../services/kubernaut-agent/security-configuration.md)). Every K8s tool call — including a Secret read via `kubectl_get_by_name`, `kubectl_describe`, `kubectl_get_yaml`, `kubectl_get_by_kind_in_namespace`, etc. — already produced a generic `aiagent.llm.tool_call` audit event, but that event does not distinguish "this tool call touched a Secret" from any other resource read; identifying Secret accesses required parsing the raw `tool_arguments` JSON of every tool-call event after the fact.
 
 This was identified as **GAP-13 (MEDIUM severity)** in the GA Readiness Audit (issue #1505): KubernautAgent's Secret access lacked a dedicated, independently queryable audit trail.
 
@@ -50,7 +50,7 @@ Narrowing RBAC was rejected: KubernautAgent frequently needs to inspect Secrets 
 
 ## Related Documents
 
-- [KubernautAgent Security Configuration](../services/stateless/kubernaut-agent/security-configuration.md) — RBAC rationale (broad-by-resource, narrow-by-verb)
+- [KubernautAgent Security Configuration](../services/kubernaut-agent/security-configuration.md) — RBAC rationale (broad-by-resource, narrow-by-verb)
 - [DD-AUDIT-003: Service Audit Trace Requirements](../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md)
 
 ---

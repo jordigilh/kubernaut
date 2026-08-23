@@ -5,6 +5,8 @@ Authoritative mapping of kubernaut-agent configuration to YAML, runtime behavior
 - `internal/kubernautagent/config/config.go` (structs, defaults, `Validate`)
 - `cmd/kubernautagent/main.go` (flags, wiring, transports)
 - `cmd/kubernautagent/llm_builder.go` (LLM HTTP client and hot reload)
+- `cmd/kubernautagent/agentsession_wiring.go` (AgentSession dispatcher construction and startup — see §3.5)
+- `internal/kubernautagent/agentsession/dispatcher.go` (dispatch Lease/resync constants — see §3.5)
 - `internal/kubernautagent/credentials/resolver.go` (credential file resolution)
 - `pkg/kubernautagent/config` (custom header validation)
 - `pkg/shared/tls` (TLS defaults and profiles)
@@ -21,7 +23,7 @@ Configuration is split into two files plus optional CLI overrides:
 
 > **LLM identity (`model`, and `phaseModels.<phase>.provider`/`.model`) requires a
 > process restart to change** — [#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-> [DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
+> [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
 > A hot-reload attempt that changes identity is rejected in full (the whole
 > candidate reload, including any otherwise-safe tuning changes in the same
 > payload) and the previous configuration keeps running. See §6 for the full
@@ -113,6 +115,28 @@ Buffered audit is implemented only when **both** `enabled` is true **and** `inte
 | `bufferSize` | int | `100` | Positive when `enabled` | Async buffer capacity. |
 | `batchSize` | int | `10` | Positive when `enabled` | Batch size for writes. |
 | `verbosity` | string | `full` | Must be `full`, `standard`, `minimal`, or empty (treated as allowed) | **Parsed and validated only**; kubernaut-agent does not pass this field into investigation or `pkg/audit` stores in the current codebase. |
+
+### 3.5 AgentSession dispatch (DD-AA-KA-001) — not YAML-configurable
+
+The `AgentSession` CRD dispatch channel — how AIAnalysis hands investigations to KA, replacing
+the deleted HTTP submit/poll API ([DD-AA-KA-001](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) — is **not** exposed anywhere in `Config` /
+`config.yaml`. It is started unconditionally at boot by `startAgentSessionDispatcher`
+(`cmd/kubernautagent/agentsession_wiring.go`) with no functional options applied in production,
+so every value below is a fixed Go constant in `internal/kubernautagent/agentsession/dispatcher.go`,
+not a tunable:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `dispatchLeaseDuration` | `15m` | `coordination/v1.Lease` duration for the per-`AgentSession` dispatch Lease (`dispatch-<agentsession-name>`) that arbitrates exactly-once dispatch across KA replicas. |
+| `dispatchLeaseRenewInterval` | `dispatchLeaseDuration / 3` (5m) | Fixed period on which the owning replica refreshes `RenewTime` while investigating; a Lease not renewed within `dispatchLeaseDuration` is reclaimable by another replica. |
+| `defaultResyncInterval` | `30s` | `ctrl.Result{RequeueAfter: ...}` period for the Dispatcher `Reconciler`'s own delete-detection resync (replaces the retired ticker-driven blanket List — see DD-AA-KA-001 Amendment #2231). Overridable only via the unexported `WithResyncInterval` functional option, used exclusively by tests (e.g. integration tests set `20ms`–`200ms` for fast `Eventually` polling); no wiring path in `cmd/` applies it. |
+
+`runtime.session.maxConcurrentInvestigations` (§3.3) still governs the separate concern of how
+many investigations `session.Manager` runs concurrently once dispatched — it is unrelated to the
+Lease/resync mechanics above and remains the only investigation-volume knob exposed via YAML.
+
+There is currently no Helm value, ConfigMap key, or CLI flag for any of the three dispatch
+constants above; changing them requires a code change and rebuild, not a config edit.
 
 ## 4. AI configuration
 
@@ -227,7 +251,7 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 | `phaseModels` | map of `LLMOverrideConfig`, keyed by phase name | `nil` | See §6.1 | Per-phase LLM overrides (#1470). Identity fields (`provider`, `model`) within an override are subject to the same restart-required rule as base `model` — see §6.1. |
 
 **`model` is immutable after process start** ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-[DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
+[DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
 `ai.llm.provider` (static config) combined with runtime `model` form the LLM's
 "identity". A hot-reload attempt where the new `model` differs from the model
 the process booted with is rejected in full — the reload callback returns an

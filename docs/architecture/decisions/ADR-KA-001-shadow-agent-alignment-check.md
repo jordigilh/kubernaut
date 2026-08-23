@@ -257,4 +257,4 @@ When `ai.alignmentCheck.groundingReview.enabled=true` (Layer 2, independent of t
 - [BR-AI-601](../../requirements/) — Prompt injection guardrails business requirement
 - [TP-601-v2.0](../../tests/601/TEST_PLAN_v2.md) — Shadow agent test plan (Layer 1: per-step evaluation)
 - [TP-1096](../../tests/1096/TEST_PLAN.md) — Full-context grounding review test plan (Layer 2; distributed/"boiling frog" injection defense, #1096)
-- [Shadow Agent Configuration Guide](../../services/stateless/kubernaut-agent/shadow-agent-configuration.md) — operator-facing config reference for both layers
+- [Shadow Agent Configuration Guide](../../services/kubernaut-agent/shadow-agent-configuration.md) — operator-facing config reference for both layers

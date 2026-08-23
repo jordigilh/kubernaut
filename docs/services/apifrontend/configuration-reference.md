@@ -6,7 +6,7 @@ LLM identity rule ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
 [DD-LLM-008](../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md))
 for this service. AF did not previously have a configuration-reference doc; this
 is not (yet) an exhaustive field-by-field reference the way
-[kubernaut-agent/configuration-reference.md](../stateless/kubernaut-agent/configuration-reference.md)
+[kubernaut-agent/configuration-reference.md](../kubernaut-agent/configuration-reference.md)
 is — it covers the config file, the config-drift-detection watcher, and the
 LLM-identity-relevant fields specifically.
 
@@ -63,7 +63,7 @@ Both are `types.LLMConfig` (`pkg/shared/types/llm.go`) — the same struct type 
 |----------|-------------|
 | `provider` | `openai`, `anthropic`, `vertex_ai`, `openai_compatible`, etc. Empty `provider` on `agent.llm` means "LLM not configured" (`LLMConfig.Validate` returns nil early) — not every AF deployment configures an LLM at all. |
 | `model` | Model id for the provider. |
-| `endpoint`, `apiKeyFile`, `azureApiVersion`, `vertexProject`, `vertexLocation`, `bedrockRegion`, `oauth2.*` | Same semantics as KA's `ai.llm` — see [kubernaut-agent/configuration-reference.md §4.1](../stateless/kubernaut-agent/configuration-reference.md#41-aillm-static) for the shared struct's field reference. |
+| `endpoint`, `apiKeyFile`, `azureApiVersion`, `vertexProject`, `vertexLocation`, `bedrockRegion`, `oauth2.*` | Same semantics as KA's `ai.llm` — see [kubernaut-agent/configuration-reference.md §4.1](../kubernaut-agent/configuration-reference.md#41-aillm-static) for the shared struct's field reference. |
 
 Since **nothing** in AF hot-reloads (§2), there is no separate "identity vs.
 tuning" distinction to make here the way there is for KA's `phaseModels` (KA
@@ -90,7 +90,7 @@ Since every AF config field (LLM identity included) requires a restart to take
 effect, the question "will my ConfigMap edit actually reach the running pod"
 depends entirely on deployment topology — identical concern and identical
 guidance to KA's (see
-[kubernaut-agent/configuration-reference.md §13](../stateless/kubernaut-agent/configuration-reference.md#13-deployment-topology-and-restart-triggers-for-llm-identity-changes)):
+[kubernaut-agent/configuration-reference.md §13](../kubernaut-agent/configuration-reference.md#13-deployment-topology-and-restart-triggers-for-llm-identity-changes)):
 
 | Deployment path | Restarts on `config.yaml` ConfigMap change? |
 |------------------|:---:|

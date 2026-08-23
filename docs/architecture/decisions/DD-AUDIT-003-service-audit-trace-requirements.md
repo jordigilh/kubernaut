@@ -13,7 +13,7 @@
 - **Authority**: QE readiness audit follow-up (#1799 cycle), user decision to keep the two-tier model and migrate all remaining services now
 
 **Recent Changes** (v2.5 - July 31, 2026):
-- **KA Event Catalog Handoff**: The [`v1.3 Update: Kubernaut Agent Audit Traces`](#v13-update-kubernaut-agent-audit-traces) section below is now **historical/frozen** at the 15 events it documented as of Issue #823 (v1.9, April 2026). KA has since grown to 37 `aiagent.*`/`workflow.*` event types (alignment, shadow-mode, fleet-federation, secret-access, interactive-mode incl. `aiagent.session.resumed`/`aiagent.interactive.k8s_call`, and workflow-catalog-discovery events) — see [`AUDIT_EVENT_CATALOG.md`](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the current, complete, and actively-maintained list. This DD remains authoritative for the system-wide "which services MUST/SHOULD/NO audit" decision and per-service summary table; it is no longer the source of truth for KA's individual event names.
+- **KA Event Catalog Handoff**: The [`v1.3 Update: Kubernaut Agent Audit Traces`](#v13-update-kubernaut-agent-audit-traces) section below is now **historical/frozen** at the 15 events it documented as of Issue #823 (v1.9, April 2026). KA has since grown to 37 `aiagent.*`/`workflow.*` event types (alignment, shadow-mode, fleet-federation, secret-access, interactive-mode incl. `aiagent.session.resumed`/`aiagent.interactive.k8s_call`, and workflow-catalog-discovery events) — see [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the current, complete, and actively-maintained list. This DD remains authoritative for the system-wide "which services MUST/SHOULD/NO audit" decision and per-service summary table; it is no longer the source of truth for KA's individual event names.
 - **Authority**: QE readiness audit follow-up (#1799 cycle); AGENTS.md ("New services must declare audit requirements before implementation")
 
 **Recent Changes** (v2.4 - July 8, 2026):
@@ -142,7 +142,7 @@ This DD and the per-service `AUDIT_EVENT_CATALOG.md` files form a **two-tier mod
 
 **Rule of thumb**: if you're asking "should this service audit at all, and at what priority" → read this DD. If you're asking "what does event X actually contain, and where is it emitted" → read that service's catalog. Per-service sections below intentionally keep only a short summary and rationale; they link to the catalog for the current, code-verified event list rather than duplicating it inline. When the two disagree, **the catalog wins** — it is the one regenerated against source code, not narrative prose.
 
-**Current catalogs**: [Gateway](../../services/stateless/gateway-service/security/AUDIT_EVENT_CATALOG.md) · [Data Storage](../../services/stateless/data-storage/security/AUDIT_EVENT_CATALOG.md) · [Auth Webhook](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) · [Effectiveness Monitor](../../services/crd-controllers/07-effectivenessmonitor/security/AUDIT_EVENT_CATALOG.md) · [Signal Processing](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) · [Remediation Orchestrator](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) · [Notification](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) · [Kubernaut Agent](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) · [API Frontend](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md)
+**Current catalogs**: [Gateway](../../services/stateless/gateway-service/security/AUDIT_EVENT_CATALOG.md) · [Data Storage](../../services/stateless/data-storage/security/AUDIT_EVENT_CATALOG.md) · [Auth Webhook](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) · [Effectiveness Monitor](../../services/crd-controllers/07-effectivenessmonitor/security/AUDIT_EVENT_CATALOG.md) · [Signal Processing](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) · [Remediation Orchestrator](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) · [Notification](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) · [Kubernaut Agent](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) · [API Frontend](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md)
 
 ---
 
@@ -707,7 +707,7 @@ context_api:
 - ✅ **Direct Emitter**: KA generates its own `aiagent.*` audit events for every LLM interaction, tool call, and workflow-selection validation attempt (`internal/kubernautagent/audit/emitter.go`)
 - ✅ **Compliance-Critical**: LLM investigation outcomes and workflow-selection decisions are exactly the kind of AI-driven decision audit trail SOC2 CC7.2 and BR-AUDIT-005 require
 - ✅ **Async, Non-Blocking**: Uses `BufferedDSAuditStore` (`internal/kubernautagent/audit/ds_buffered_store.go`) to ship events to Data Storage without blocking the investigation critical path
-- See the [`AUDIT_EVENT_CATALOG.md`](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the complete, current, actively-maintained event catalog (37 event types as of v2.5)
+- See the [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the complete, current, actively-maintained event catalog (37 event types as of v2.5)
 
 **Historical Rationale (pre-v1.3, HolmesGPT API era — no longer accurate, kept for context only)**:
 - ~~Wrapper Service: Thin wrapper around HolmesGPT SDK~~
@@ -955,7 +955,7 @@ context_api:
 - **Signal Processing**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) - 6 `signalprocessing.*` events
 - **Remediation Orchestrator**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) - 15 `orchestrator.*`/`remediation.*` events
 - **Notification**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) - 4 `notification.*` events
-- **KA**: [AUDIT_EVENT_CATALOG.md](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) - all 37 `aiagent.*`/`workflow.*` events
+- **KA**: [AUDIT_EVENT_CATALOG.md](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) - all 37 `aiagent.*`/`workflow.*` events
 - **API Frontend**: [AUDIT_EVENT_CATALOG.md](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md) - all `apifrontend.*`/`a2a.*` events
 
 ---
@@ -1089,7 +1089,7 @@ Fleet cluster provenance: events emitted during RR creation (`rr.created`, `rr.d
 > secret-access, interactive-mode, `aiagent.session.resumed`,
 > `aiagent.interactive.k8s_call`, auth/rate-limit, and workflow-catalog-
 > discovery events), see the authoritative, actively-maintained
-> [`AUDIT_EVENT_CATALOG.md`](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md).
+> [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md).
 > This DD remains authoritative for the system-wide MUST/SHOULD/NO audit
 > decision (see Summary Table above), not for KA's individual event names.
 

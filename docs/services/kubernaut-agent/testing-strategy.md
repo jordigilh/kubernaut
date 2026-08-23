@@ -9,7 +9,7 @@
 ## Purpose
 
 Describes KA's test pyramid, grounded in actual file counts as of this writing (not the original
-Python/HolmesGPT-era test plan). Per [AGENTS.md](../../../../AGENTS.md#the-pyramid-invariant): unit
+Python/HolmesGPT-era test plan). Per [AGENTS.md](../../../AGENTS.md#the-pyramid-invariant): unit
 tests prove logic, integration tests prove wiring, E2E tests prove the journey.
 
 ---
@@ -34,7 +34,7 @@ also covered by a RemediationOrchestrator integration test).
 ## Framework
 
 **Ginkgo/Gomega BDD** is the standard for all business-logic tests, per
-[AGENTS.md](../../../../AGENTS.md#testing-requirements). Of KA's unit test files, 5 in
+[AGENTS.md](../../../AGENTS.md#testing-requirements). Of KA's unit test files, 5 in
 `internal/kubernautagent` do not import Ginkgo:
 
 - `tools/custom/export_test.go`, `mcp/tools/export_test.go`, `audit/helpers_test.go`,
@@ -44,13 +44,13 @@ also covered by a RemediationOrchestrator integration test).
   verifying the third-party `modelcontextprotocol/go-sdk` API surface compiles as expected. This is
   a dependency/toolchain compile-check, not a business-behavior spec, and is in the same spirit as
   (though not formally covered by) the native-Go-fuzz-test exception in
-  [AGENTS.md](../../../../AGENTS.md#exception-go-native-fuzz-tests).
+  [AGENTS.md](../../../AGENTS.md#exception-go-native-fuzz-tests).
 
 ---
 
 ## Mock-LLM Strategy
 
-Per [AGENTS.md](../../../../AGENTS.md#mock-strategy), external dependencies are mocked — the LLM
+Per [AGENTS.md](../../../AGENTS.md#mock-strategy), external dependencies are mocked — the LLM
 provider is KA's primary external dependency. `test/services/mock-llm/` provides a standalone mock
 LLM HTTP service used by integration and E2E tests, supporting:
 
@@ -59,7 +59,7 @@ LLM HTTP service used by integration and E2E tests, supporting:
 - Its own metrics and auth-header verification (so tests can assert KA called it correctly)
 
 Business requirements for this shared test infrastructure are tracked separately in
-[`docs/services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md`](../../test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md).
+[`docs/services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md`](../test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md).
 
 Unit tests below the HTTP boundary mock the LLM client interface directly rather than going through
 `test/services/mock-llm/`.
@@ -68,7 +68,7 @@ Unit tests below the HTTP boundary mock the LLM client interface directly rather
 
 ## Integration Test Infrastructure
 
-Per [AGENTS.md](../../../../AGENTS.md#ci-parallel-safety): integration tests use `envtest` for the
+Per [AGENTS.md](../../../AGENTS.md#ci-parallel-safety): integration tests use `envtest` for the
 Kubernetes API server and `httptest.NewServer` (`:0` port) for HTTP dependencies, avoiding port
 conflicts under parallel CI execution. Each test constructs its own store/manager/handler — no
 shared state across tests.
@@ -76,8 +76,9 @@ shared state across tests.
 ## E2E Test Infrastructure
 
 E2E tests run against a `Kind` cluster and exercise the real KA binary as a subprocess (or
-in-cluster Deployment, depending on suite), covering the full submit-poll-result session lifecycle
-described in [api-specification.md](./api-specification.md).
+in-cluster Deployment, depending on suite), covering the full `AgentSession` create-dispatch-status
+lifecycle (`AgentSession` CRD watch + Lease dispatch, [DD-AA-KA-001](../../architecture/decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) described in
+[api-specification.md](./api-specification.md).
 
 ---
 

@@ -1,6 +1,6 @@
 # Kubernaut CRD Architecture
 
-**Version**: 2.0.0
+**Version**: 2.0.1
 **Date**: August 2026
 **Status**: ✅ Authoritative Reference
 **Scope**: 6 CRD controllers + 6 stateless/hybrid services + 1 optional UI component (see [Complete Service Inventory](#complete-service-inventory))
@@ -62,13 +62,13 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 |---|---------|------|------------|-------------------------|-------|
 | 1 | **Gateway** | Stateless HTTP (no `ctrl.Manager`) | `cmd/gateway/main.go` | Creates `RemediationRequest` via plain client | Single entry point for Prometheus/Alertmanager + K8s Events |
 | 2 | **SignalProcessing** | CRD controller | `cmd/signalprocessing/main.go` | `SignalProcessing` | Signal enrichment + environment/priority/severity classification |
-| 3 | **AIAnalysis** | CRD controller | `cmd/aianalysis/main.go` | `AIAnalysis` | Calls Kubernaut Agent async (submit/poll session via `pkg/agentclient`); Rego approval gating (`pkg/aianalysis/rego`) |
+| 3 | **AIAnalysis** | CRD controller | `cmd/aianalysis/main.go` | `AIAnalysis` | Dispatches Kubernaut Agent by creating an `AgentSession` CRD, watched by KA's dispatch `Reconciler` (DD-AA-KA-001); Rego approval gating (`pkg/aianalysis/rego`) |
 | 4 | **WorkflowExecution** | CRD controller | `cmd/workflowexecution/main.go` | `WorkflowExecution` | 3 execution engines via Strategy pattern (`pkg/workflowexecution/executor/`): Tekton, native Job, Ansible/AWX |
 | 5 | **RemediationOrchestrator** | CRD controller (hub) | `cmd/remediationorchestrator/main.go` | `RemediationRequest` (owns SignalProcessing, AIAnalysis, WorkflowExecution, RemediationApprovalRequest, NotificationRequest, EffectivenessAssessment); also runs a second, independent `RemediationApprovalRequest` reconciler in the same binary | Central lifecycle hub — see [reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go) |
 | 6 | **Notification** | CRD controller | `cmd/notification/main.go` | `NotificationRequest` | Migrated from stateless HTTP to CRD (Oct 2025) |
 | 7 | **EffectivenessMonitor** | CRD controller, no business API port | `cmd/effectivenessmonitor/main.go` | Watches `EffectivenessAssessment` (created by RO) | 4 deterministic scorers (health/alert/metrics/hash), zero AI/LLM dependency; DataStorage computes the final weighted score |
 | 8 | **DataStorage** | Stateless HTTP | `cmd/datastorage/main.go` | — | Unified audit sink (ADR-034); computes EffectivenessMonitor's final weighted score on demand |
-| 9 | **Kubernaut Agent (KA)** | Stateless HTTP/MCP | `cmd/kubernautagent/main.go` | — | Native Go AI investigation engine (see [DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)); async session API |
+| 9 | **Kubernaut Agent (KA)** | Hybrid: `AgentSession` CRD-dispatch + MCP | `cmd/kubernautagent/main.go` | Watches `AgentSession` (dispatch, not owned/reconciled to a terminal spec) | Native Go AI investigation engine (see [DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)); dispatched via `AgentSession` CRD watch + Lease, not HTTP ([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) |
 | 10 | **apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller for its own CRD | `cmd/apifrontend/main.go` | `InvestigationSession` (own CRD) | External-facing A2A/MCP gateway; own LLM "Severity Triager"; creates `RemediationRequest`s from NL queries; separate direct MCP + REST integration to KA |
 | 11 | **authwebhook** | K8s admission webhook + CRD controller | `cmd/authwebhook/main.go` | `RemediationWorkflow` (catalog CRD), plus `ActionType` admission handling | No dedicated `docs/services/` directory exists for this service — a real documentation gap, flagged but not fixed here |
 | 12 | **fleetmetadatacache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | `cmd/fleetmetadatacache/main.go` | — | Multi-cluster "fleet" feature; polls remote clusters via MCP Gateway, writes Valkey, serves scope-check HTTP API |
@@ -127,7 +127,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 **CRD**: `AIAnalysis` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
-- Submit an investigation to Kubernaut Agent **asynchronously** — `SubmitInvestigation()` returns a `session_id`; the controller then polls via `PollSession()` until a terminal state, then calls `GetSessionResult()` (`pkg/agentclient`, [BR-AA-KA-064](../requirements/)) — KA has **no** synchronous "analyze and return" endpoint
+- Dispatch an investigation to Kubernaut Agent by creating an `AgentSession` CRD (immutable `Spec`, [BR-AA-KA-065](../requirements/)); KA's dispatch `Reconciler` watches for it, races other replicas for a per-object dispatch `Lease`, and is the sole writer of terminal `Status` ([DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)) — the controller observes completion via a Kubernetes watch, not a poll. KA has **no** HTTP endpoint of any kind for this path (the former `pkg/agentclient` submit/poll API is fully deleted, [issue #2190](https://github.com/jordigilh/kubernaut/issues/2190))
 - Evaluate the investigation result against a Rego policy (`pkg/aianalysis/rego/evaluator.go`, [BR-AI-011](../requirements/), [BR-AI-014](../requirements/) graceful degradation) to produce a `PolicyDecision`: `Approved`, `ManualReviewRequired`, `Denied`, or `DegradedMode`
 - Detect and reject hallucinated or invalid AI responses
 
@@ -139,7 +139,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 
 **Business Requirements**: BR-AI-001 to BR-AI-060 (as of v1.3.0 numbering; not re-verified line-by-line)
 
-**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [pkg/agentclient/client.go](../../pkg/agentclient/client.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go)
+**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [internal/kubernautagent/agentsession/dispatcher.go](../../internal/kubernautagent/agentsession/dispatcher.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go), [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)
 
 ---
 
@@ -288,7 +288,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 
 **Purpose**: Native-Go AI root-cause-analysis and remediation-workflow-selection engine
 
-**Type**: Stateless HTTP/MCP service
+**Type**: Hybrid — `AgentSession` CRD-dispatch (watch + Lease `Reconciler`) + MCP service. No longer a pure stateless HTTP service (corrected from v1.3.0/v1.4.0 — see [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md), [issue #2260](https://github.com/jordigilh/kubernaut/issues/2260))
 
 **Responsibilities**:
 - Root cause analysis using live cluster state (Kubernetes/Prometheus/Alertmanager tools)
@@ -299,25 +299,17 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 
 **Is a native Go rewrite** ([DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)) of an earlier Python/HolmesGPT-SDK-based design — **not** a wrapper around the HolmesGPT SDK, contra the v1.3.0 "HolmesGPT-API" description
 
-**API pattern**: async, session-based — **no synchronous "analyze and return" endpoint exists**:
-```
-POST /api/v1/incident/analyze              -> 202 Accepted, { "session_id": "<uuid>" }
-GET  /api/v1/incident/session/{id}                -> session status
-GET  /api/v1/incident/session/{id}/result          -> final result (once complete)
-GET  /api/v1/incident/session/{id}/snapshot        -> in-progress snapshot
-GET  /api/v1/incident/session/{id}/stream          -> streaming updates
-POST /api/v1/incident/session/{id}/cancel          -> cancel an in-flight investigation
-```
+**API pattern**: `AgentSession` CRD dispatch, **not HTTP** — the former async session-based HTTP API (`POST /api/v1/incident/analyze` → `{ "session_id": ... }`, `GET .../session/{id}`, `.../result`, `.../snapshot`, `.../stream`, `POST .../cancel`, all via `pkg/agentclient`) is **fully deleted** ([issue #2190](https://github.com/jordigilh/kubernaut/issues/2190)). AIAnalysis now creates an `AgentSession` CRD (`Spec` immutable after Create); KA's dispatch `Reconciler` (`internal/kubernautagent/agentsession/dispatcher.go`) watches for it, races other KA replicas for a per-object `coordination/v1.Lease`, and is the **sole writer** of `Status` (`Phase`, `Result`/`Error`) — AIAnalysis observes completion via a Kubernetes watch, with no polling and no HTTP request of any kind for this path.
 
-**Callers**: The AIAnalysis controller is the sole caller of this async REST session API (autonomous, alert-driven investigations). **apifrontend** has a *separate*, direct integration with KA — both a pooled/dedicated **MCP** client for interactive human-in-the-loop investigation streaming, and a plain **REST** client for non-MCP calls (`cmd/apifrontend/backend_deps.go`) — a different API surface (KA's MCP server / interactive mode) than the one AIAnalysis uses. Both statements ("AIAnalysis is the sole caller of the async incident-analyze session flow" and "apifrontend calls KA directly") are simultaneously true; they refer to different KA API surfaces.
+**Callers**: The AIAnalysis controller is the sole caller of the `AgentSession` dispatch channel (autonomous, alert-driven investigations), via the Kubernetes API rather than a direct client. **apifrontend** has a *separate*, independent integration with KA over **MCP** ([DD-AF-004](decisions/DD-AF-004-investigation-tool-split.md)) for interactive human-in-the-loop investigation streaming — untouched by DD-AA-KA-001 and out of scope for this dispatch-mechanism description.
 
-**Port**: 8080 (API), 8081 (health/OpenAPI/admin), 9090 (metrics) — a documented 3-port deviation from the stateless-services 2-port standard, with no on-file design decision justifying it
+**Port**: `8443` HTTPS for the MCP endpoint only (apifrontend's channel); `8081` health/OpenAPI/admin; `9090` metrics. AA's dispatch channel is the `AgentSession` CRD via the Kubernetes API, not an HTTP port on KA at all — see [docs/services/kubernaut-agent/README.md](../services/kubernaut-agent/README.md) for the full port table
 
-**Auth**: Middleware-based TokenReview+SAR complete ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md) Phase 3)
+**Auth**: MCP endpoint retains middleware-based TokenReview+SAR ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md)); the `AgentSession` dispatch channel is authorized purely via Kubernetes RBAC on the CRD (see [docs/services/kubernaut-agent/security-configuration.md](../services/kubernaut-agent/security-configuration.md)), not TokenReview+SAR — there is no HTTP request to authenticate on that path
 
 **Business Requirements**: BR-KA-\* (e.g. BR-KA-191 workflow parameter validation, BR-KA-212 RCA target resource, BR-KA-200 outcome semantics)
 
-**Source**: [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
+**Source**: [docs/services/kubernaut-agent/overview.md](../services/kubernaut-agent/overview.md)
 
 ---
 
@@ -784,14 +776,13 @@ sequenceDiagram
     SP->>SP: Phase: Completed
     SP->>ORCH: Status update triggers watch
 
-    Note over ORCH,KA: Phase 3: AI Investigation
+    Note over ORCH,KA: Phase 3: AI Investigation (DD-AA-KA-001: AgentSession CRD dispatch)
     ORCH->>AI: Create AIAnalysis CRD
-    AI->>KA: SubmitInvestigation() -> session_id (202 Accepted)
-    loop Poll until terminal
-        AI->>KA: PollSession(session_id)
-    end
-    AI->>KA: GetSessionResult(session_id)
-    AI->>AI: Evaluate Rego policy -> PolicyDecision
+    AI->>AI: Create AgentSession CRD (immutable Spec)
+    KA->>KA: Dispatcher Reconciler watches Create, acquires dispatch Lease
+    KA->>KA: Run investigation
+    KA->>AI: Write AgentSession.Status (Phase=Completed/Failed, Result/Error) -- sole writer
+    AI->>AI: Watch fires on terminal Status; evaluate Rego policy -> PolicyDecision
     AI->>AI: Phase: Completed
     AI->>ORCH: Status update triggers watch
 
@@ -993,18 +984,18 @@ Only the `tekton` and `job` engines require a Kubernetes watch on their executio
 
 ### 2. AI Investigation & Approval Gating (AIAnalysis → Kubernaut Agent → Rego → RemediationOrchestrator)
 
-**Flow**: AIAnalysis controller → Kubernaut Agent (async) → Rego policy evaluation → RemediationOrchestrator approval decision
+**Flow**: AIAnalysis controller → `AgentSession` CRD dispatch (watch + Lease) → Kubernaut Agent → Rego policy evaluation → RemediationOrchestrator approval decision
 
 **Steps**:
-1. AIAnalysis controller calls `SubmitInvestigation()` (`pkg/agentclient`) — 202 Accepted with a `session_id`
-2. AIAnalysis polls `PollSession()` until a terminal state (`completed`/`failed`)
-3. AIAnalysis calls `GetSessionResult()` for the final investigation payload
-4. AIAnalysis evaluates the result against a Rego policy (`pkg/aianalysis/rego`) → `PolicyDecision`
+1. AIAnalysis controller creates an `AgentSession` CRD (`Spec` carries the incident payload and `TimesOutAt`; immutable after Create)
+2. KA's dispatch `Reconciler` (`internal/kubernautagent/agentsession/dispatcher.go`) watches for the Create, races other KA replicas for a per-object dispatch `Lease`, and runs the investigation on the winning replica
+3. KA is the **sole writer** of `AgentSession.Status` — it writes `Phase=Completed|Failed` plus `Result`/`Error` on completion; there is no synchronous submit/poll/result round-trip and no `session_id`
+4. AIAnalysis's watch fires on the terminal `Status` write and evaluates the result against a Rego policy (`pkg/aianalysis/rego`) → `PolicyDecision`
 5. RemediationOrchestrator's `AnalyzingHandler` watches `AIAnalysis.Status` and either creates `WorkflowExecution` directly (`Approved`) or creates `RemediationApprovalRequest` (`ManualReviewRequired`)
 
-**Corrected from v1.3.0**: this flow was previously described as a single synchronous `POST /api/v1/investigate` call to a "HolmesGPT-API" service with no policy-gating step. The real flow is async (submit/poll/result) and always includes a Rego evaluation step, regardless of whether it results in an approval gate.
+**Corrected from v1.3.0**: this flow was previously described as a single synchronous `POST /api/v1/investigate` call to a "HolmesGPT-API" service with no policy-gating step; a later revision corrected this to an async HTTP submit/poll/result flow via `pkg/agentclient`. Per [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md) (see also [issue #2260](https://github.com/jordigilh/kubernaut/issues/2260)), that HTTP channel and `pkg/agentclient` itself are now **fully deleted** ([issue #2190](https://github.com/jordigilh/kubernaut/issues/2190)) and replaced by the `AgentSession` CRD watch+Lease dispatch model described above. The Rego policy-gating step is unaffected by this change and still always runs.
 
-**Source**: [pkg/agentclient/client.go](../../pkg/agentclient/client.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go), [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
+**Source**: [internal/kubernautagent/agentsession/dispatcher.go](../../internal/kubernautagent/agentsession/dispatcher.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go), [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [docs/services/kubernaut-agent/overview.md](../services/kubernaut-agent/overview.md), [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)
 
 ---
 
@@ -1292,12 +1283,26 @@ This section preserves a historical record of services/components this document 
 - [Stateless Services](../services/stateless/)
   - [gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
   - [data-storage/overview.md](../services/stateless/data-storage/overview.md)
-  - [kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
+- [kubernaut-agent/](../services/kubernaut-agent/) — moved out of `stateless/` (hybrid: `AgentSession` CRD-dispatch + MCP, [DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md)); see [overview.md](../services/kubernaut-agent/overview.md)
 - [apifrontend/](../services/apifrontend/) — extensive dedicated documentation tree (design, ADRs, security, test plans, runbooks)
 
 ---
 
 ## Changelog
+
+### Version 2.0.1 (2026-08-23, Issue #2260)
+
+**Kubernaut Agent (KA) reclassified from stateless HTTP to hybrid CRD-dispatch**, correcting the
+staleness introduced by [PR #2189](https://github.com/jordigilh/kubernaut/pull/2189)/
+[DD-AA-KA-001](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md): AIAnalysis's async HTTP
+submit/poll/result API to KA (`pkg/agentclient`, `POST /api/v1/incident/analyze`, etc.) is fully
+deleted ([issue #2190](https://github.com/jordigilh/kubernaut/issues/2190)) and replaced by an
+`AgentSession` CRD watch + Lease dispatch model. Updated: the Complete Service Inventory table
+(row 9), KA's dedicated subsection (#9, type/API-pattern/callers/port/auth), the AIAnalysis
+subsection's responsibilities and Source links, the Phase 3 narrative and Mermaid sequence diagram
+in the end-to-end flow, and cross-references into `docs/services/kubernaut-agent/` (moved out of
+`docs/services/stateless/`, no longer listed under Stateless Services). apifrontend's separate MCP
+channel into KA is untouched and out of scope for this correction.
 
 ### Version 2.0.0 (2026-08, Issue #1806)
 

@@ -18,7 +18,7 @@ duplicate that catalog.
 ## Structured Logging
 
 KA uses `go.uber.org/zap` for structured logging, consistent with the rest of the stateless
-services (see [stateless/README.md](../README.md)). Logs are JSON-structured in production.
+services (see [stateless/README.md](../stateless/README.md)). Logs are JSON-structured in production.
 
 ---
 
@@ -28,7 +28,7 @@ Every investigation carries a **correlation ID** — the `RemediationID` (the ow
 `RemediationRequest`'s identity) — from submission through to every emitted audit event. This is
 the key that enables SOC2 CC8.1 full-lifecycle reconstruction (signal → analysis → workflow
 selection → execution → verification → notification) across all services, per
-[BR-AUDIT-005](../../../../AGENTS.md#soc2-and-fedramp-compliance).
+[BR-AUDIT-005](../../../AGENTS.md#soc2-and-fedramp-compliance).
 
 **Propagation path**:
 
