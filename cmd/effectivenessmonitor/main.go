@@ -106,6 +106,14 @@ func run() int {
 		return 1
 	}
 
+	// Issue #2276: inject ambient CA trust before initCoreDependencies'
+	// DataStorage-backed audit store client -- the first outbound TLS call
+	// this process makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	// Manager, audit store, and metrics (DD-AUDIT-003, DD-API-001, DD-METRICS-001).
 	// Issue #331: Prometheus/AlertManager readiness is best-effort checked after
 	// client init below; failures are logged as warnings, not fatal.
@@ -239,6 +247,20 @@ func loadConfigAndNamespace(configPath string, atomicLevel zaplog.AtomicLevel, l
 		return nil, "", fmt.Errorf("unable to determine controller namespace: %w", err)
 	}
 	return cfg, controllerNS, nil
+}
+
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadConfigAndNamespace, initCoreDependencies).
+//
+// Callers MUST invoke this immediately after config load, before
+// initCoreDependencies' DataStorage-backed audit store client (the first
+// outbound TLS call this process makes) -- x509.SystemCertPool() is
+// sync.Once-cached process-wide, so injecting after the first handshake has
+// no effect (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
 }
 
 // initCoreDependencies builds the controller-runtime manager (ADR-057
