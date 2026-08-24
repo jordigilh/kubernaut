@@ -133,6 +133,21 @@ func loadRemediationOrchestratorConfig(configPath string, atomicLevel zaplog.Ato
 	return cfg, mgr
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadRemediationOrchestratorConfig).
+//
+// Callers MUST invoke this immediately after config load, before
+// setupRemediationOrchestratorControllers' DataStorage-backed audit store
+// client (the first outbound TLS call this process makes) --
+// x509.SystemCertPool() is sync.Once-cached process-wide, so injecting
+// after the first handshake has no effect (spike-verified, Issue #2276
+// preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // setupRemediationOrchestratorControllers initializes the audit store
 // (DD-AUDIT-003, DD-API-001), metrics (DD-METRICS-001), the EA creator
 // (ADR-EM-001), the routing engine (DD-RO-002), the RemediationOrchestrator
@@ -270,6 +285,14 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, mgr := loadRemediationOrchestratorConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before
+	// setupRemediationOrchestratorControllers' DataStorage-backed audit
+	// store client -- the first outbound TLS call this process makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
 
 	// Issue #615/BR-FLEET-054: Signal context created early (mirrors EM's
 	// pattern, cmd/effectivenessmonitor/main.go) so buildReconciler's fleet

@@ -84,6 +84,11 @@ type Config struct {
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 
+	// TLSCAFile is the ambient inter-service CA trust bundle path, injected
+	// in-process via sharedtls.InjectAmbientCACerts (Issue #2276) instead of
+	// a deployer-declared static Pod-spec env: TLS_CA_FILE entry.
+	TLSCAFile string `yaml:"tlsCaFile,omitempty"`
+
 	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
 	// When enabled, RO uses FederatedScopeChecker via the configured backend adapter.
 	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
