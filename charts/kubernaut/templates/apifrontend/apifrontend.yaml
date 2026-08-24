@@ -208,12 +208,16 @@ auth:
     tls:
       enabled: true
       caFile: {{ .Values.apifrontend.config.auth.replayCache.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- with .Values.apifrontend.config.auth.replayCache.tls.certFile }}
-      certFile: {{ . | quote }}
-      {{- end }}
-      {{- with .Values.apifrontend.config.auth.replayCache.tls.keyFile }}
-      keyFile: {{ . | quote }}
-      {{- end }}
+      # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): Valkey now
+      # requires client certs (--tls-auth-clients yes). certFile/keyFile
+      # default to APIFrontend's own already-mounted apifrontend-tls Secret
+      # (the same cert it serves its own inbound TLS with, at the tls-certs
+      # volume mount below -- "/etc/apifrontend/tls" is this file's own
+      # hardcoded certDir, not the shared kubernaut.interServiceTLS.certDir
+      # helper other services use) so this "just works" without any extra
+      # configuration -- override only to present a different client identity.
+      certFile: {{ .Values.apifrontend.config.auth.replayCache.tls.certFile | default "/etc/apifrontend/tls/tls.crt" | quote }}
+      keyFile: {{ .Values.apifrontend.config.auth.replayCache.tls.keyFile | default "/etc/apifrontend/tls/tls.key" | quote }}
     {{- end }}
     {{- with .Values.apifrontend.config.auth.replayCache.trustedProxyCIDRs }}
     # DD-PLATFORM-006 DA18 (#1999): trusted-proxy CIDRs for jti replay-cache

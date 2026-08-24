@@ -4,12 +4,27 @@
 # tls.certManager.issuerRef. ECDSA P-256 and DNS SANs mirror hook mode's
 # per-service certs exactly (tls-cert-job.yaml Section 2), so consumers
 # behave identically regardless of tls.mode.
+#
+# DD-PLATFORM-006 DA19/DA20 (kubernaut#2269/#2270): every leaf cert below
+# carries both "server auth" and "client auth" usages -- cert-manager's own
+# CertificateSpec.usages defaults to server-auth-only when unset, which
+# would silently defeat DA19's Valkey mTLS in cert-manager mode alone (the
+# three Go clients would authenticate to Valkey fine in tls.mode=hook, where
+# tls-cert-job.yaml's plain `kubectl create secret tls` imposes no usage
+# restriction, but fail the TLS handshake in tls.mode=cert-manager -- an
+# empirically-confirmed spike finding this session, not a hypothetical).
+# Every service below either dials Valkey directly (datastorage/
+# fleetmetadatacache/apifrontend) or could in principle need to present a
+# client identity to another inter-service peer, so all entries get both
+# usages uniformly rather than special-casing a subset.
 {{- range $i, $cert := list
     (dict "name" "gateway-tls" "dnsNameBase" "gateway-service")
     (dict "name" "datastorage-tls" "dnsNameBase" "data-storage-service")
     (dict "name" "kubernautagent-tls" "dnsNameBase" "kubernaut-agent")
     (dict "name" "fleetmetadatacache-tls" "dnsNameBase" "fleetmetadatacache-service")
     (dict "name" "valkey-tls" "dnsNameBase" "valkey")
+    (dict "name" "apifrontend-tls" "dnsNameBase" "apifrontend")
+    (dict "name" "postgresql-tls" "dnsNameBase" "postgresql")
   }}
 {{- if $i }}
 ---
@@ -45,6 +60,9 @@ spec:
     name: kubernaut-interservice-ca-issuer
     kind: Issuer
     group: cert-manager.io
+  usages:
+    - server auth
+    - client auth
   dnsNames:
     - {{ $cert.dnsNameBase }}
     - {{ $cert.dnsNameBase }}.{{ $.Release.Namespace }}

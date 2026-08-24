@@ -5,6 +5,7 @@ templates:
   - templates/hooks/tls-cert-job.yaml
   - templates/datastorage/networkpolicy.yaml
   - templates/apifrontend/networkpolicy.yaml
+  - templates/apifrontend/apifrontend.yaml
   - templates/fleetmetadatacache/fleetmetadatacache.yaml
   - templates/datastorage/datastorage.yaml
 set:
@@ -57,7 +58,28 @@ tests:
             - "--tls-ca-cert-file"
             - "/etc/tls-ca/ca.crt"
             - "--tls-auth-clients"
-            - "no"
+            - "yes"
+
+  # ── DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): Valkey mTLS ───
+  # Acceptance criterion: Valkey's own server configuration demands a client
+  # certificate on every connection -- this is the single line whose absence
+  # made #2269 a live gap. This helm-unittest proves the chart *renders* that
+  # demand; it does not itself open a socket -- the actual "cert-less client
+  # gets rejected" behavior was proven empirically this session against a
+  # real valkey-server container (see the plan's Part 1 spike), and is
+  # proven end-to-end by the existing E2E fullpipeline/fleet suites.
+  - it: "Valkey Deployment requires client certificates (--tls-auth-clients yes), closing kubernaut#2269"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args[11]
+          value: "yes"
+      - notEqual:
+          path: spec.template.spec.containers[0].args[11]
+          value: "no"
 
   - it: "Valkey container no longer exposes a plaintext containerPort"
     template: templates/infrastructure/valkey.yaml
@@ -117,7 +139,12 @@ tests:
               name: inter-service-ca
               optional: true
 
-  - it: "Valkey readinessProbe/livenessProbe use TLS-aware valkey-cli against port 6380 with the shared CA"
+  # DD-PLATFORM-006 DA19: since Valkey now requires client certs from every
+  # connection (including its own healthcheck), the probes must present
+  # valkey-tls's cert/key too or Valkey would fail its own liveness/
+  # readiness checks -- acceptance criterion: "Valkey's own healthcheck
+  # continues to function once it must authenticate to itself".
+  - it: "Valkey readinessProbe/livenessProbe present a client cert (DA19) against port 6380 with the shared CA"
     template: templates/infrastructure/valkey.yaml
     documentSelector:
       path: kind
@@ -125,10 +152,10 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.exec.command
-          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
+          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.exec.command
-          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
+          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
 
   - it: "Valkey Service exposes port 6380, not 6379"
     template: templates/infrastructure/valkey.yaml
@@ -379,3 +406,137 @@ tests:
             configMap:
               name: inter-service-ca
               optional: true
+
+  # ── DD-PLATFORM-006 DA19: client certFile/keyFile default to each ────────
+  # service's own already-mounted cert -- acceptance criterion: "each
+  # service presents a cert by default, with no operator action required"
+  # (BR-NET-002, matching BR-PLATFORM-007's minimal-configuration mandate).
+  - it: "DataStorage redis.tls.certFile/keyFile default to DataStorage's own mounted datastorage-tls cert"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/tls/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/tls/tls\.key"'
+
+  - it: "DataStorage redis.tls.certFile/keyFile explicit override still wins over the default"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          redis:
+            tls:
+              certFile: "/etc/custom-cert/tls.crt"
+              keyFile: "/etc/custom-cert/tls.key"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/custom-cert/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/custom-cert/tls\.key"'
+
+  - it: "FMC valkey.certFile/keyFile default to FMC's own mounted fleetmetadatacache-tls cert"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/tls/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/tls/tls\.key"'
+
+  - it: "FMC valkeyTLS.certFile/keyFile explicit override still wins over the default"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+        valkeyTLS:
+          certFile: "/etc/custom-cert/tls.crt"
+          keyFile: "/etc/custom-cert/tls.key"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/custom-cert/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/custom-cert/tls\.key"'
+
+  - it: "APIFrontend replayCache.tls.certFile/keyFile default to APIFrontend's own mounted apifrontend-tls cert when replayCache is enabled"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/apifrontend/tls/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/apifrontend/tls/tls\.key"'
+
+  - it: "APIFrontend replayCache.tls.certFile/keyFile explicit override still wins over the default"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+                certFile: "/etc/custom-cert/tls.crt"
+                keyFile: "/etc/custom-cert/tls.key"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/custom-cert/tls\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/custom-cert/tls\.key"'

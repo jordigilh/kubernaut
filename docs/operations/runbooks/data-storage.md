@@ -255,10 +255,13 @@ When Redis TLS is enabled (`redis.tls.enabled: true`), the Data Storage service 
    kubectl exec -n kubernaut-system deploy/datastorage -- ls -la /etc/redis/
    ```
 
-3. Test TLS connectivity directly:
+3. Test TLS connectivity directly. DD-PLATFORM-006 DA19 (kubernaut#2269) made Valkey mTLS
+   (client-certificate authentication) mandatory, so `-cert`/`-key` must be supplied or the
+   handshake fails with `Server closed the connection` even with a correct CA:
    ```bash
    kubectl exec -n kubernaut-system deploy/datastorage -- \
-     openssl s_client -connect valkey:6379 -CAfile /etc/redis/ca.crt
+     openssl s_client -connect valkey:6380 -CAfile /etc/tls-ca/ca.crt \
+       -cert /etc/tls/tls.crt -key /etc/tls/tls.key
    ```
 
 ### Resolution

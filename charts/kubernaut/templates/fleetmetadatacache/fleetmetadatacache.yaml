@@ -59,8 +59,14 @@ valkey:
   any extra configuration. */}}
   tls:
     enabled: true
-    certFile: {{ .Values.fleetmetadatacache.valkeyTLS.certFile | default "" | quote }}
-    keyFile: {{ .Values.fleetmetadatacache.valkeyTLS.keyFile | default "" | quote }}
+    # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): Valkey now
+    # requires client certs (--tls-auth-clients yes). certFile/keyFile
+    # default to FMC's own already-mounted fleetmetadatacache-tls Secret
+    # (the same cert it presents for its own inbound server TLS, at the
+    # tls-certs volume mount below) so this "just works" without any extra
+    # configuration -- override only to present a different client identity.
+    certFile: {{ .Values.fleetmetadatacache.valkeyTLS.certFile | default (printf "%s/tls.crt" (include "kubernaut.interServiceTLS.certDir" .)) | quote }}
+    keyFile: {{ .Values.fleetmetadatacache.valkeyTLS.keyFile | default (printf "%s/tls.key" (include "kubernaut.interServiceTLS.certDir" .)) | quote }}
     caFile: {{ .Values.fleetmetadatacache.valkeyTLS.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 sync:
   interval: {{ $v.syncInterval | quote }}

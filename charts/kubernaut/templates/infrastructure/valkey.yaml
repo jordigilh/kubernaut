@@ -71,13 +71,14 @@ spec:
           imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "runAsNonRoot" true "runAsUser" 999)) | nindent 12 }}
-          # DD-PLATFORM-006 DA8: Valkey is TLS-only -- the plaintext port is
-          # disabled (--port 0). tls.crt/tls.key come from the valkey-tls
-          # Secret, but the CA cert comes from the shared tls-ca volume (the
-          # inter-service-ca ConfigMap) like every other service
-          # (datastorage/gateway/apifrontend/kubernaut-agent via
-          # kubernaut.tlsCaVolumeMount) -- NOT from a "ca.crt" key inside
-          # valkey-tls itself.
+          # DD-PLATFORM-006 DA8/DA19: Valkey is TLS-only -- the plaintext port
+          # is disabled (--port 0). tls.crt/tls.key come from the valkey-tls
+          # Secret (also reused below as Valkey's own client identity when it
+          # authenticates to itself for probes), but the CA cert comes from
+          # the shared tls-ca volume (the inter-service-ca ConfigMap) like
+          # every other service (datastorage/gateway/apifrontend/
+          # kubernaut-agent via kubernaut.tlsCaVolumeMount) -- NOT from a
+          # "ca.crt" key inside valkey-tls itself.
           #
           # PR #1790 round-9 RCA: valkey-tls previously carried the CA under
           # /certs/ca.crt sourced from its own Secret, which happened to work
@@ -96,9 +97,18 @@ spec:
           # E2E "PHASE 6 TLS re-sign" rollout timeouts, both downstream of
           # datastorage/etc never being able to reach a healthy Valkey) --
           # the recovery loop's force-delete-and-rewait could never actually
-          # fix it because the bug was deterministic, not transient. One-way
-          # TLS only (--tls-auth-clients no): clients verify Valkey's server
-          # cert, Valkey does not require client certs.
+          # fix it because the bug was deterministic, not transient.
+          #
+          # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): mutual TLS
+          # is now mandatory (--tls-auth-clients yes) -- Valkey used to be
+          # one-way TLS only (clients verified Valkey's server cert, but any
+          # in-namespace pod could connect without presenting one of its
+          # own). DataStorage/FMC/APIFrontend already had all the client-side
+          # certFile/keyFile plumbing in place (unused until now), so closing
+          # this gap needed zero Go code changes -- only this flag flip plus
+          # pointing each client's already-live certFile/keyFile at its own
+          # already-issued, already-mounted per-service secret (see
+          # datastorage.yaml/fleetmetadatacache.yaml/apifrontend.yaml).
           args:
             - "--port"
             - "0"
@@ -111,7 +121,7 @@ spec:
             - "--tls-ca-cert-file"
             - "/etc/tls-ca/ca.crt"
             - "--tls-auth-clients"
-            - "no"
+            - "yes"
           ports:
             - name: valkey
               containerPort: 6380
@@ -126,14 +136,17 @@ spec:
             {{- toYaml .Values.valkey.resources | nindent 12 }}
           readinessProbe:
             exec:
-              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
+              # DA19: Valkey now requires client certs even from itself --
+              # the probe must present the same valkey-tls cert/key it serves
+              # with, or it fails its own liveness/readiness checks.
+              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
             exec:
-              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
+              command: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "--cert", "/certs/tls.crt", "--key", "/certs/tls.key", "-p", "6380", "ping"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
