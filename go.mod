@@ -3,21 +3,21 @@ module github.com/jordigilh/kubernaut
 go 1.26.6
 
 require (
-	cloud.google.com/go/auth v0.23.1
+	cloud.google.com/go/auth v0.23.2
 	github.com/Alcova-AI/adk-anthropic-go v1.0.0
 	github.com/Alcova-AI/adk-anthropic-go/v2 v2.0.7
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/a2aproject/a2a-go v0.3.15
 	github.com/a2aproject/a2a-go/v2 v2.5.0
 	github.com/alicebob/miniredis/v2 v2.38.0
-	github.com/anthropics/anthropic-sdk-go v1.64.0
+	github.com/anthropics/anthropic-sdk-go v1.66.0
 	github.com/cloudwego/eino v0.9.15
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.2
 	github.com/containers/kubernetes-mcp-server v0.0.66
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.147.0
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2
 	github.com/go-faster/errors v0.8.0
 	github.com/go-faster/jx v1.2.0
@@ -62,14 +62,14 @@ require (
 	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 	google.golang.org/adk/v2 v2.0.0
-	google.golang.org/genai v1.68.0
+	google.golang.org/genai v1.69.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.36.3
-	k8s.io/apiextensions-apiserver v0.36.3
-	k8s.io/apimachinery v0.36.3
-	k8s.io/client-go v0.36.3
-	k8s.io/metrics v0.36.3
+	k8s.io/api v0.36.4
+	k8s.io/apiextensions-apiserver v0.36.4
+	k8s.io/apimachinery v0.36.4
+	k8s.io/client-go v0.36.4
+	k8s.io/metrics v0.36.4
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 	knative.dev/pkg v0.0.0-20260622140654-39ebae2ee2dc
 	sigs.k8s.io/controller-runtime v0.24.1
