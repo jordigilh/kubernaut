@@ -52,6 +52,21 @@ func run() int {
 	defer func() { _ = zapLogger.Sync() }()
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
+	// Issue #2276: defense-in-depth ambient CA trust injection, before any
+	// outbound TLS call in this process (buildSARClient below onward). AF
+	// does NOT get a new canonical TLSCAFile config field -- it already
+	// sources inter-service CA trust via explicit, purpose-scoped fields
+	// (kaTlsCaFile, dsTlsCaFile, prometheusTlsCaFile, etc.), each wired into
+	// its own explicit http.Client/transport. This call only backstops any
+	// code path NOT covered by one of those explicit fields; it reuses
+	// dsTlsCaFile's already-resolved value (both kaTlsCaFile and dsTlsCaFile
+	// default to the same kubernaut.interServiceTLS.caFile chart value) and
+	// does not change any existing explicit wiring.
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled)
 	if err != nil {
 		return 1
@@ -347,6 +362,20 @@ func buildRateLimitMiddlewares(metricsReg *metrics.Registry, auditor audit.Emitt
 // logged with a best-effort logger (the real one may not exist yet); the
 // returned *zap.Logger is non-nil as soon as it has been constructed, so
 // callers can still flush it (Sync) even on a later failure (e.g. Validate).
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// as defense-in-depth, sourced from the already-resolved DSTLSCaFile value
+// (dsTlsCaFile config field). Extracted from run() so it is independently
+// unit-testable, matching this package's existing pattern for other
+// startup-wiring steps.
+//
+// Callers MUST invoke this immediately after config load, before any client
+// construction in run() -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.Agent.DSTLSCaFile)
+}
+
 func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
 	cfg, err := loadConfig()
 	if err != nil {
