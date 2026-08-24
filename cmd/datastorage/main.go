@@ -606,7 +606,7 @@ func startObservabilityServers(cfg *config.Config, srv *server.Server, logger lo
 		fmt.Sprintf(":%d", cfg.Server.HealthPort),
 		srv.LivenessHandler(),
 		srv.ReadinessHandler(),
-		!cfg.Server.DisableProfiling,
+		cfg.Debug.PprofEnabled,
 	)
 
 	healthErrors := make(chan error, 1)

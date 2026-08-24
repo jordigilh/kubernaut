@@ -51,6 +51,10 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // WebhookConfig holds settings for the admission webhook server.
@@ -78,6 +82,7 @@ func DefaultConfig() *Config {
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Logging:     sharedconfig.DefaultLoggingConfig(),
+		Debug:       sharedconfig.DefaultDebugConfig(),
 	}
 }
 

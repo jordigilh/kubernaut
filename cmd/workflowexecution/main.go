@@ -359,6 +359,7 @@ func buildManager(cfg *weconfig.Config, controllerNS string) (ctrl.Manager, erro
 			BindAddress: cfg.Controller.MetricsAddr,
 		},
 		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		PprofBindAddress:       internalconfig.PprofBindAddress(cfg.Debug.PprofEnabled),
 		LeaderElection:         cfg.Controller.LeaderElection,
 		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})

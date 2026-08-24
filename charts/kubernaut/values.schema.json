@@ -536,6 +536,18 @@
         }
       }
     },
+    "debug": {
+      "description": "Diagnostic toggles shared by every service (BR-PLATFORM-012, Issue #2275). Secure-by-default (AC-6): profiling is off unless explicitly enabled.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pprofEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in."
+        }
+      }
+    },
     "telemetryConfig": {
       "description": "OTel distributed tracing (GAP-14 / Issue #1519). Opt-in, BYO-collector. Both fields off/empty by default -- zero overhead until set.",
       "type": "object",
@@ -1015,6 +1027,9 @@
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -1219,6 +1234,9 @@
       "description": "DataStorage service (audit trail, workflow catalog)",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -1468,6 +1486,9 @@
       "description": "AIAnalysis controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -1570,6 +1591,9 @@
       "description": "SignalProcessing controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -1712,6 +1736,9 @@
       "description": "RemediationOrchestrator controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -1947,6 +1974,9 @@
       "description": "WorkflowExecution controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -2108,6 +2138,9 @@
       "description": "Notification controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -2208,6 +2241,9 @@
       "description": "EffectivenessMonitor controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -2303,6 +2339,9 @@
       "description": "Kubernaut Agent (Go LLM investigation service)",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -2558,6 +2597,9 @@
       "description": "AuthWebhook admission controller",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
@@ -2745,6 +2787,9 @@
       "description": "FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "enabled": {
           "type": "boolean",
           "default": false,
@@ -2856,6 +2901,9 @@
       "description": "API Frontend (MCP bridge between users and Kubernaut Agent)",
       "additionalProperties": false,
       "properties": {
+        "debug": {
+          "$ref": "#/definitions/debug"
+        },
         "enabled": {
           "type": "boolean",
           "default": true

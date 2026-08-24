@@ -73,6 +73,9 @@ fleet:
     {{- $effectivenessmonitorFleetPreamble.resilience | toYaml | nindent 4 }}
   {{- end }}
 {{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap (it
      previously relied on an OCP-only service-ca auto-injection annotation, which never
@@ -252,6 +255,13 @@ spec:
               name: metrics
             - containerPort: 8081
               name: health
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - containerPort: 6060
+              name: pprof
+            {{- end }}
           {{- /* DD-PLATFORM-008: EM builds a registry.ClusterRegistry against
           the fleet MCP Gateway at boot, same shape as apifrontend -- can
           legitimately stall well past the liveness probe's budget under

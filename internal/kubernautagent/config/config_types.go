@@ -48,6 +48,11 @@ type RuntimeConfig struct {
 	// opt-in, BYO-collector. KA's outbound deps (LLM provider, DataStorage,
 	// Prometheus) are all HTTP, so both inbound and outbound spans are wired.
 	Telemetry internalconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6) -- was previously
+	// Server.DisableProfiling defaulting to true (same secure posture).
+	Debug internalconfig.DebugConfig `yaml:"debug"`
 }
 
 // ShutdownConfig holds graceful shutdown parameters.
@@ -217,7 +222,6 @@ type ServerConfig struct {
 	Port                  int                 `yaml:"port"`
 	HealthAddr            string              `yaml:"healthAddr"`
 	MetricsAddr           string              `yaml:"metricsAddr"`
-	DisableProfiling      bool                `yaml:"disableProfiling"`
 	DisableAdminEndpoints bool                `yaml:"disableAdminEndpoints"`
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`
 	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`

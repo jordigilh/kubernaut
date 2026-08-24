@@ -121,6 +121,9 @@ runtime:
     flushIntervalSeconds: 1.0
     bufferSize: 10000
     batchSize: 50
+  # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+  debug:
+    pprofEnabled: {{ $v.debug.pprofEnabled }}
 ai:
   llm:
     provider: {{ $kaProfile.provider | quote }}

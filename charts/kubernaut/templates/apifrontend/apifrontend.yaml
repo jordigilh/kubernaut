@@ -303,6 +303,9 @@ fleet:
     {{- $apifrontendFleetPreamble.resilience | toYaml | nindent 4 }}
   {{- end }}
 {{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 {{- /*
 DD-PLATFORM-006 Decision Area 14 (PR9): recomputed here (not shared with

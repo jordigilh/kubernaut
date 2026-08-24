@@ -85,6 +85,9 @@ audit:
   hashKeyKey: {{ $v.config.auditHashKey.secretKey | quote }}
 logging:
   level: {{ $v.logging.level | upper | quote }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 ---
 # DD-PLATFORM-003: DataStorage (ConfigMap + Deployment + Service) renders in

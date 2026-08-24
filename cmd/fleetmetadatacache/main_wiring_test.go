@@ -392,6 +392,34 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 			"/healthz must remain reachable on the dedicated health port (kubelet liveness probe)")
 	})
 
+	It("IT-FMC-2275-001 [AC-6, BR-PLATFORM-012]: pprof is 404 on the health port by default (secure-by-default), and reachable once Debug.PprofEnabled is set", func() {
+		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+
+		healthLn, healthAddr := listenOn()
+		go func() { _ = servers.health.Serve(healthLn) }()
+		defer func() { _ = servers.health.Close() }()
+
+		resp, err := http.Get("http://" + healthAddr + "/debug/pprof/") //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
+			"AC-6/BR-PLATFORM-012: pprof must be off by default -- FMC's cfg.Debug.PprofEnabled zero value is false, "+
+				"unlike buildFMCServers' pre-#2275 hardcoded enableProfiling=true")
+
+		cfg.Debug.PprofEnabled = true
+		enabledServers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+
+		enabledLn, enabledAddr := listenOn()
+		go func() { _ = enabledServers.health.Serve(enabledLn) }()
+		defer func() { _ = enabledServers.health.Close() }()
+
+		enabledResp, err := http.Get("http://" + enabledAddr + "/debug/pprof/") //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = enabledResp.Body.Close() }()
+		Expect(enabledResp.StatusCode).To(Equal(http.StatusOK),
+			"an operator who explicitly opts in via debug.pprofEnabled: true must still get a working pprof endpoint")
+	})
+
 	It("IT-FMC-1683-E-001 [SC-13]: an Intermediate TLS security profile rejects a downgraded handshake and accepts a compliant one", func() {
 		Expect(sharedtls.SetDefaultSecurityProfileFromConfig("Intermediate")).To(Succeed())
 
