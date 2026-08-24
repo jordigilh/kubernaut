@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -413,6 +414,98 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(ok).To(BeTrue(), "non-TLS path must return *http.Transport")
 			Expect(plainTransport.IdleConnTimeout).To(Equal(15*time.Second),
 				"Issue #853: IdleConnTimeout must be 15s to prevent stale connection reuse after pod rescheduling")
+		})
+	})
+
+	Describe("InjectAmbientCACerts (#2276)", func() {
+
+		AfterEach(func() {
+			Expect(os.Unsetenv("SSL_CERT_FILE")).To(Succeed())
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
+			sharedtls.ResetSystemCertFileCandidatesForTesting()
+		})
+
+		// UT-TLS-2276-001: empty caFile is a no-op (fail-open, matching
+		// BuildClientTLSConfig's empty-caFile precedent) -- must not touch
+		// either env var.
+		It("UT-TLS-2276-001: should no-op when caFile is empty", func() {
+			Expect(os.Unsetenv("SSL_CERT_FILE")).To(Succeed())
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
+
+			err := sharedtls.InjectAmbientCACerts(logr.Discard(), "")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
+		})
+
+		// UT-TLS-2276-002: valid caFile with no system bundle found (test
+		// override points at nonexistent paths) -- SSL_CERT_FILE is set to
+		// a combined-bundle temp file containing at least the custom CA,
+		// and TLS_CA_FILE is set to caFile unchanged (existing sharedtls
+		// call sites keep working, sourced in-process instead of from a
+		// static Pod-spec env: entry).
+		It("UT-TLS-2276-002: should set SSL_CERT_FILE and TLS_CA_FILE from caFile when no system bundle is found", func() {
+			generateSelfSignedCert(certPath, keyPath)
+			sharedtls.SetSystemCertFileCandidatesForTesting([]string{"/nonexistent/bundle.pem"})
+
+			err := sharedtls.InjectAmbientCACerts(logr.Discard(), certPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(os.Getenv("TLS_CA_FILE")).To(Equal(certPath))
+
+			sslCertFile := os.Getenv("SSL_CERT_FILE")
+			Expect(sslCertFile).ToNot(BeEmpty())
+			combined, readErr := os.ReadFile(sslCertFile)
+			Expect(readErr).ToNot(HaveOccurred())
+			customPEM, err := os.ReadFile(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(combined).To(ContainSubstring(string(customPEM)))
+		})
+
+		// UT-TLS-2276-003: when a system bundle IS found (test override
+		// points at a real file), the combined SSL_CERT_FILE contains BOTH
+		// the custom CA and the "system" bundle content -- proving this is
+		// additive (defense-in-depth), not a replacement of public root
+		// trust, which is exactly the class of bug the reporter hit
+		// manually combining bundles by hand.
+		It("UT-TLS-2276-003: should combine caFile with the system bundle when found", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			fakeSystemBundle := filepath.Join(certDir, "fake-system-bundle.pem")
+			Expect(os.WriteFile(fakeSystemBundle, []byte("-----BEGIN FAKE SYSTEM MARKER-----\nFAKESYSTEMCONTENT\n-----END FAKE SYSTEM MARKER-----\n"), 0644)).To(Succeed())
+			sharedtls.SetSystemCertFileCandidatesForTesting([]string{fakeSystemBundle})
+
+			err := sharedtls.InjectAmbientCACerts(logr.Discard(), certPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			combined, readErr := os.ReadFile(os.Getenv("SSL_CERT_FILE"))
+			Expect(readErr).ToNot(HaveOccurred())
+			customPEM, err := os.ReadFile(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(combined).To(ContainSubstring(string(customPEM)), "combined bundle must retain the custom CA")
+			Expect(combined).To(ContainSubstring("FAKESYSTEMCONTENT"), "combined bundle must retain the system bundle content (additive, not a replacement)")
+		})
+
+		// UT-TLS-2276-004: unreadable caFile surfaces a clear error naming
+		// the file, and must not partially set either env var.
+		It("UT-TLS-2276-004: should return an error naming an unreadable caFile", func() {
+			err := sharedtls.InjectAmbientCACerts(logr.Discard(), "/nonexistent/ca.pem")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("/nonexistent/ca.pem"))
+			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
+		})
+
+		// UT-TLS-2276-005: invalid PEM content in caFile is rejected before
+		// any env var is touched, same fail-fast contract as LoadCACert.
+		It("UT-TLS-2276-005: should return an error for invalid PEM content", func() {
+			invalidPath := filepath.Join(certDir, "invalid.pem")
+			Expect(os.WriteFile(invalidPath, []byte("not-a-cert"), 0644)).To(Succeed())
+
+			err := sharedtls.InjectAmbientCACerts(logr.Discard(), invalidPath)
+			Expect(err).To(HaveOccurred())
+			Expect(os.Getenv("SSL_CERT_FILE")).To(BeEmpty())
+			Expect(os.Getenv("TLS_CA_FILE")).To(BeEmpty())
 		})
 	})
 
