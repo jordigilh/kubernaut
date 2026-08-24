@@ -1,0 +1,188 @@
+suite: "DD-PLATFORM-006 Decision Area 20 (kubernaut#2270): PostgreSQL server-side TLS"
+templates:
+  - templates/infrastructure/postgresql.yaml
+  - templates/hooks/tls-cert-job.yaml
+  - templates/datastorage/datastorage.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  tls:
+    mode: hook
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+tests:
+  # ── PostgreSQL Deployment: server-side TLS enabled ──────────────────────
+  # Acceptance criterion (BR-NET-001/SC-8, AU-9): the audit-of-record
+  # database encrypts its transport by default, with no operator action
+  # required -- matching the level of assurance already mandatory for
+  # Redis/Valkey (DA6). This helm-unittest proves the chart *renders* that
+  # wiring; the actual TLS handshake was proven empirically this session
+  # against a real postgres:16-alpine container (see the plan's Part 2
+  # spike), and is proven end-to-end by the existing E2E fullpipeline suite.
+  - it: "PostgreSQL Deployment enables SSL via ssl_cert_file/ssl_key_file/hba_file args"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - "-c"
+            - "ssl=on"
+            - "-c"
+            - "ssl_cert_file=/certs/tls.crt"
+            - "-c"
+            - "ssl_key_file=/certs/tls.key"
+            - "-c"
+            - "hba_file=/etc/postgresql-hba/pg_hba.conf"
+
+  # Acceptance criterion: the default install boots successfully with the
+  # new control active -- this exact defaultMode/fsGroup combination was
+  # empirically confirmed this session to satisfy Postgres's own strict
+  # check_ssl_key_file_permissions() with zero permission errors and no
+  # initContainer needed. This assertion exists to catch a future edit that
+  # loosens or drops defaultMode: 0640, which would otherwise crash-loop the
+  # audit store on Postgres's own key-permission check.
+  - it: "PostgreSQL Deployment mounts the postgresql-tls secret with defaultMode 0640"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: postgresql-tls
+            mountPath: /certs
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: postgresql-tls
+            secret:
+              secretName: postgresql-tls
+              defaultMode: 0640
+
+  - it: "PostgreSQL Deployment mounts the postgresql-hba ConfigMap"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: postgresql-hba
+            mountPath: /etc/postgresql-hba
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: postgresql-hba
+            configMap:
+              name: postgresql-hba
+
+  # Explicit regression guard, encoding this session's probe-compatibility
+  # spike finding (pg_isready connects via the local Unix socket, whose auth
+  # is governed by pg_hba.conf's `local` rule, entirely separate from the
+  # `hostssl` rule enforced on TCP connections) -- so a future contributor
+  # doesn't "fix" the probe based on the Valkey/DA8 precedent (which DID
+  # need --cert/--key added to its probes) and break it.
+  - it: "PostgreSQL readinessProbe/livenessProbe are unchanged (plain pg_isready, no TLS flags needed)"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+
+  # Acceptance criterion (SC-8/AU-9): a network client without TLS cannot
+  # reach the audit database -- backed by this session's live
+  # rejection/acceptance spike against a real postgres:16-alpine container
+  # (sslmode=disable rejected with "no pg_hba.conf entry ... no
+  # encryption", sslmode=require accepted).
+  - it: "pg_hba ConfigMap enforces hostssl for TCP connections and leaves local (socket) connections untouched"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['pg_hba.conf']
+          pattern: 'local\s+all\s+all\s+trust'
+      - matchRegex:
+          path: data['pg_hba.conf']
+          pattern: 'hostssl\s+all\s+all\s+all\s+scram-sha-256'
+      - notMatchRegex:
+          path: data['pg_hba.conf']
+          pattern: '\nhost\s+all\s+all\s+all'
+
+  # ── tls-cert-job.yaml: PostgreSQL added to the per-service cert loop ────
+  # Mirrors the existing "valkey" case in valkey_tls_test.yaml.
+  - it: "tls-cert-gen Job's inter-service cert loop includes postgresql (postgresql-tls secret, CA-signed like every other service)"
+    template: templates/hooks/tls-cert-job.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "for SVC_NAME in [^\\n]*\\bpostgresql\\b"
+
+  # ── values.schema.json: database.sslMode default flip (kubernaut#2270) ─
+  # Acceptance criterion (BR-NET-001): DataStorage's own client refuses to
+  # silently downgrade to plaintext. Safe to default to "require" now
+  # (unlike before this session's DA20 work) because the bundled Postgres
+  # genuinely supports TLS and its pg_hba.conf rejects unencrypted TCP
+  # connections outright -- flipping this default without the DA20 wiring
+  # above would have broken every default install.
+  - it: "database.sslMode defaults to require (not disable) when unset"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'sslMode: require'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'sslMode: disable'
+
+  - it: "database.sslMode explicit override still wins over the default"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          database:
+            sslMode: "verify-full"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'sslMode: verify-full'
