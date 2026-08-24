@@ -99,7 +99,15 @@ func (s *afFleetAlertsScenario) ConfigForContext(ctx *DetectionContext) MockScen
 	}
 	// The injected marker annotation text only appears in ctx.AllText once
 	// the tool results (turn 2) have been appended to the conversation.
-	if ctx != nil && strings.Contains(ctx.AllText, "MARKER-") {
+	// ctx.AllText is already lowercased by the mock-llm request handler
+	// (test/services/mock-llm/handlers/{gemini,openai}.go build
+	// DetectionContext.AllText via strings.ToLower), so the marker constant
+	// checked here -- and injected by the E2E test as an alert annotation --
+	// must itself be lowercase, or this Contains check silently never
+	// matches (CI RCA, PR #2286: an uppercase "MARKER-" check against an
+	// always-lowercased AllText fell through to the default fallback
+	// analysis text on every run).
+	if ctx != nil && strings.Contains(ctx.AllText, "marker-") {
 		cfg.ExactAnalysisText = ctx.AllText
 	}
 	return cfg

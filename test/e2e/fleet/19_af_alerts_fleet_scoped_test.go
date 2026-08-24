@@ -63,10 +63,16 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 	const (
 		alertManagerURL = "http://localhost:9193"
 
-		fleetAlertsNamespace  = "fleet-alerts-e2e-ns" // must match scenario_af_fleet_alerts.go's afFleetAlertsE2ENamespace
-		fleetAlertsName       = "FleetAlertsE2ETestAlert"
-		matchingMarker        = "MARKER-REMOTE-CLUSTER-VISIBLE"
-		collisionMarker       = "MARKER-COLLISION-CLUSTER-HIDDEN"
+		fleetAlertsNamespace = "fleet-alerts-e2e-ns" // must match scenario_af_fleet_alerts.go's afFleetAlertsE2ENamespace
+		fleetAlertsName      = "FleetAlertsE2ETestAlert"
+		// Markers are lowercase: the mock-LLM's ConfigForContext echoes back
+		// ctx.AllText, which the mock-llm request handler always lowercases
+		// before scenario matching (test/services/mock-llm/handlers/
+		// {gemini,openai}.go). An uppercase marker here would never survive
+		// that echo intact, so both the injected annotation and this
+		// assertion must use the same lowercase form (CI RCA, PR #2286).
+		matchingMarker        = "marker-remote-cluster-visible"
+		collisionMarker       = "marker-collision-cluster-hidden"
 		matchingAlertsCluster = "remote-cluster"
 		collisionCluster      = "collision-cluster"
 	)
