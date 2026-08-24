@@ -99,6 +99,20 @@ func loadGatewayConfig(configPath string, bootstrapLogger logr.Logger) (*config.
 	return serverCfg, logger, atomicLevel
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadGatewayConfig).
+//
+// Callers MUST invoke this immediately after config load, before
+// telemetry.Bootstrap's OTel exporter (the first outbound TLS call this
+// process makes) -- x509.SystemCertPool() is sync.Once-cached process-wide,
+// so injecting after the first handshake has no effect (spike-verified,
+// Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.ServerConfig) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // startBootstrapHealthServer answers kubelet's startupProbe/livenessProbe
 // truthfully (/healthz=200, /readyz=503) while registerAdapters' blocking
 // wireFleetOwnerResolution -> mcpclient.NewResilient MCP Gateway connection
@@ -157,6 +171,13 @@ func run() int {
 	ctrl.SetLogger(bootstrapLogger)
 
 	serverCfg, logger, atomicLevel := loadGatewayConfig(configPath, bootstrapLogger)
+
+	// Issue #2276: inject ambient CA trust before telemetry.Bootstrap's OTel
+	// exporter just below -- the first outbound TLS call this process makes.
+	if err := bootstrapAmbientCATrust(logger, serverCfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
 
 	// GAP-14 / Issue #1519: OTel tracing bootstrap. Gateway is the trace root
 	// for the whole system -- it's the entry point that receives the signal
