@@ -133,6 +133,21 @@ func loadSignalProcessingConfig(configFile string, atomicLevel zaplog.AtomicLeve
 	return cfg, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadSignalProcessingConfig,
+// buildSignalProcessingManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireSignalProcessingAudit's DataStorage HTTP client (the first outbound
+// TLS call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildSignalProcessingManager creates the controller manager with the
 // namespace-restricted SignalProcessing cache and metrics/health-probe/
 // leader election settings from cfg (ADR-030). Exits the process on any
@@ -616,6 +631,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, controllerNS := loadSignalProcessingConfig(configFile, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireSignalProcessingAudit's
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	mgr := buildSignalProcessingManager(cfg, controllerNS)
 
 	// ADR-032: Audit is MANDATORY - controller will crash if not configured
