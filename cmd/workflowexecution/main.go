@@ -139,6 +139,20 @@ func setupWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLe
 	return cfg, mgr, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (setupWorkflowExecutionConfig).
+//
+// Callers MUST invoke this immediately after config load, before
+// initWorkflowExecutionServices' DataStorage-backed audit store client (the
+// first outbound TLS call this process makes) -- x509.SystemCertPool() is
+// sync.Once-cached process-wide, so injecting after the first handshake has
+// no effect (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *weconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // initWorkflowExecutionServices initializes the mandatory audit store
 // (DD-AUDIT-003, DD-AUDIT-002, ADR-038; audit is P0/business-critical per
 // ADR-032 §2/§3 — the controller MUST crash if audit is unavailable rather
@@ -205,6 +219,14 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, mgr, controllerNS := setupWorkflowExecutionConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before
+	// initWorkflowExecutionServices' DataStorage-backed audit store client
+	// -- the first outbound TLS call this process makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
 
 	auditStore, weMetrics, statusManager, phaseManager, auditManager := initWorkflowExecutionServices(cfg, mgr)
 

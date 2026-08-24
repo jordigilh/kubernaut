@@ -63,6 +63,11 @@ type Config struct {
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 
+	// TLSCAFile is the ambient inter-service CA trust bundle path, injected
+	// in-process via sharedtls.InjectAmbientCACerts (Issue #2276) instead of
+	// a deployer-declared static Pod-spec env: TLS_CA_FILE entry.
+	TLSCAFile string `yaml:"tlsCaFile,omitempty"`
+
 	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
 	// Issue #2275). Defaults to profiling OFF (AC-6).
 	Debug sharedconfig.DebugConfig `yaml:"debug"`
