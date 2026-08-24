@@ -741,7 +741,7 @@ func buildHTTPServers(p routerBuildParams, router http.Handler) (addr string, ht
 		IdleTimeout:       120 * time.Second,
 	}
 
-	healthMux := buildHealthMux(handler.AllReady(p.DepsReady, p.AuthReady, sessInfra.Healthy.Load), p.Draining, cfg.Server.DisableProfiling)
+	healthMux := buildHealthMux(handler.AllReady(p.DepsReady, p.AuthReady, sessInfra.Healthy.Load), p.Draining, cfg.Debug.PprofEnabled)
 	healthServer = &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HealthPort),
 		Handler:           healthMux,
@@ -907,12 +907,13 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 
 // buildHealthMux constructs the health server mux with dependency-aware readyz.
 // WIRE-01: /readyz must check depsReady, not just draining.
-// #1995: pprof handlers are gated on disableProfiling and registered only on
-// this internal health mux (never the externally-reachable API router),
-// mirroring kubernautagent's cmd/kubernautagent/health.go pattern -- this
-// adds zero new network exposure since the health port already carries
-// /healthz and /readyz behind the same NetworkPolicy boundary.
-func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool, disableProfiling bool) *http.ServeMux {
+// #2275 (supersedes #1995): pprof handlers are gated on pprofEnabled and
+// registered only on this internal health mux (never the
+// externally-reachable API router), mirroring kubernautagent's
+// cmd/kubernautagent/health.go pattern -- this adds zero new network
+// exposure since the health port already carries /healthz and /readyz
+// behind the same NetworkPolicy boundary.
+func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool, pprofEnabled bool) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -923,7 +924,7 @@ func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool, disab
 		checker = func() bool { return true }
 	}
 	mux.Handle("/readyz", handler.ReadyzHandlerFunc(checker, draining))
-	if !disableProfiling {
+	if pprofEnabled {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

@@ -60,6 +60,10 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // FleetConfig holds MCP Gateway connectivity settings for multi-cluster support.
@@ -151,6 +155,7 @@ func DefaultConfig() *Config {
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Controller:  *DefaultControllerConfig(),
 		Logging:     sharedconfig.DefaultLoggingConfig(),
+		Debug:       sharedconfig.DefaultDebugConfig(),
 	}
 }
 

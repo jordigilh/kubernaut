@@ -105,21 +105,21 @@ func TestHealthMuxHealthz_AlwaysOK(t *testing.T) {
 // must be entirely absent from the main API router.
 // ---------------------------------------------------------------------------
 
-func TestHealthMuxPprof_EnabledWhenProfilingNotDisabled(t *testing.T) {
-	mux := buildHealthMux(nil, &atomic.Bool{}, false)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody))
-	if rec.Code != http.StatusOK {
-		t.Errorf("UT-AF-1995-004: expected 200 from /debug/pprof/ when profiling enabled, got %d", rec.Code)
-	}
-}
-
-func TestHealthMuxPprof_AbsentWhenProfilingDisabled(t *testing.T) {
+func TestHealthMuxPprof_EnabledWhenPprofEnabled(t *testing.T) {
 	mux := buildHealthMux(nil, &atomic.Bool{}, true)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody))
+	if rec.Code != http.StatusOK {
+		t.Errorf("UT-AF-2275-004: expected 200 from /debug/pprof/ when pprofEnabled=true, got %d", rec.Code)
+	}
+}
+
+func TestHealthMuxPprof_AbsentWhenPprofDisabled(t *testing.T) {
+	mux := buildHealthMux(nil, &atomic.Bool{}, false)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody))
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("UT-AF-1995-005: expected 404 from /debug/pprof/ when DisableProfiling=true, got %d", rec.Code)
+		t.Errorf("UT-AF-2275-005: expected 404 from /debug/pprof/ when pprofEnabled=false, got %d", rec.Code)
 	}
 }
 

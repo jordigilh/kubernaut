@@ -69,6 +69,11 @@ type Config struct {
 	// opt-in, BYO-collector. Data Storage's outbound deps (Postgres, Redis)
 	// are non-HTTP, so only an inbound root span per request is wired here.
 	Telemetry sharedconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6) -- was previously
+	// Server.DisableProfiling defaulting to profiling ON (Go zero value).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // IsProduction returns true when the environment is set to "production".
@@ -78,16 +83,15 @@ func (c *Config) IsProduction() bool {
 
 // ServerConfig contains HTTP server configuration
 type ServerConfig struct {
-	Port             int                 `yaml:"port"`
-	Host             string              `yaml:"host"`
-	MetricsPort      int                 `yaml:"metricsPort"`      // Dedicated Prometheus metrics port (default: 9090, Issue #283)
-	HealthPort       int                 `yaml:"healthPort"`       // Dedicated health probe port (default: 8081, Issue #753)
-	DisableProfiling bool                `yaml:"disableProfiling"` // Set true to suppress /debug/pprof/* on health port
-	MaxBatchSize     int                 `yaml:"maxBatchSize"`     // Issue #667: Max events per batch API request (default: 500)
-	ReadTimeout      string              `yaml:"readTimeout"`      // e.g., "30s"
-	WriteTimeout     string              `yaml:"writeTimeout"`     // e.g., "30s"
-	ShutdownTimeout  string              `yaml:"shutdownTimeout"`  // DD-007: graceful shutdown budget, e.g. "60s" (default: 60s, range: 30s–120s)
-	TLS              sharedtls.TLSConfig `yaml:"tls,omitempty"`    // Issue #678: Optional inter-service TLS
+	Port            int                 `yaml:"port"`
+	Host            string              `yaml:"host"`
+	MetricsPort     int                 `yaml:"metricsPort"`     // Dedicated Prometheus metrics port (default: 9090, Issue #283)
+	HealthPort      int                 `yaml:"healthPort"`      // Dedicated health probe port (default: 8081, Issue #753)
+	MaxBatchSize    int                 `yaml:"maxBatchSize"`    // Issue #667: Max events per batch API request (default: 500)
+	ReadTimeout     string              `yaml:"readTimeout"`     // e.g., "30s"
+	WriteTimeout    string              `yaml:"writeTimeout"`    // e.g., "30s"
+	ShutdownTimeout string              `yaml:"shutdownTimeout"` // DD-007: graceful shutdown budget, e.g. "60s" (default: 60s, range: 30s–120s)
+	TLS             sharedtls.TLSConfig `yaml:"tls,omitempty"`   // Issue #678: Optional inter-service TLS
 
 	// #1048 Phase 4 / SC-5: Maximum request body size in bytes, e.g. "5242880" for 5 MiB
 	// (default: 5242880 = 5 MiB, range: 1048576–52428800 = 1–50 MiB)

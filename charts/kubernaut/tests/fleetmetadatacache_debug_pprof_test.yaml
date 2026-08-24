@@ -1,0 +1,56 @@
+suite: "BR-PLATFORM-012, Issue #2275: FleetMetadataCache debug.pprofEnabled secure default (was hardcoded enableProfiling=true)"
+# FMC's buildFMCServers hardcoded sharedhealth.NewHealthServer's enableProfiling
+# argument to true (profiling always ON), unlike every other service which
+# defaulted OFF. This chart-level test proves the fix renders through: FMC now
+# shares the same #/definitions/debug schema ref (secure-by-default) as the
+# other 11 services.
+templates:
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  fleetmetadatacache:
+    enabled: true
+    oauth2:
+      credentialsSecretRef: fmc-creds
+  global:
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      mcpGatewayType: "kuadrant"
+      oauth2:
+        enabled: true
+        tokenURL: "https://idp.example.com/token"
+        credentialsSecretRef: fmc-creds
+  # Issue #1984 Phase D: WE's own fleet.oauth2.credentialsSecretRef is
+  # schema-required whenever global.fleet.mcpGatewayEndpoint is set, even
+  # though this suite never renders WE's own template.
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-creds
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "fleetmetadatacache.debug.pprofEnabled defaults to false (secure-by-default, was hardcoded-on pre-#2275)"
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: false'
+
+  - it: "fleetmetadatacache.debug.pprofEnabled: true renders through instead of being silently discarded"
+    set:
+      fleetmetadatacache:
+        debug:
+          pprofEnabled: true
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'pprofEnabled: true'

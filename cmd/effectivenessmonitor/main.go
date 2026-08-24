@@ -297,6 +297,7 @@ func buildManager(cfg *config.Config, controllerNS string) (ctrl.Manager, error)
 			BindAddress: cfg.Controller.MetricsAddr,
 		},
 		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		PprofBindAddress:       internalconfig.PprofBindAddress(cfg.Debug.PprofEnabled),
 		LeaderElection:         cfg.Controller.LeaderElection,
 		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})

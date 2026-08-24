@@ -87,6 +87,10 @@ type Config struct {
 	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
 	// When enabled, RO uses FederatedScopeChecker via the configured backend adapter.
 	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // RetentionConfig controls how long terminal RemediationRequest CRDs persist
@@ -298,6 +302,7 @@ func DefaultConfig() *Config {
 		},
 		Logging:          sharedconfig.DefaultLoggingConfig(),
 		DryRunHoldPeriod: 1 * time.Hour, // #712, #736: Default GW suppression after dry-run completion
+		Debug:            sharedconfig.DefaultDebugConfig(),
 	}
 }
 

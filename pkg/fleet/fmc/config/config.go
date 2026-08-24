@@ -25,6 +25,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -41,6 +42,13 @@ type ServiceConfig struct {
 	Valkey     ValkeyConfig           `yaml:"valkey"`
 	Sync       SyncConfig             `yaml:"sync"`
 	OAuth2     OAuth2Config           `yaml:"oauth2"`
+
+	// Debug gates diagnostic surfaces (currently: /debug/pprof/* on the
+	// dedicated health port). BR-PLATFORM-012, Issue #2275: replaces the
+	// pre-#2275 hardcoded enableProfiling=true in buildFMCServers --
+	// FMC now defaults to secure (profiling OFF), consistent with the
+	// other 12 services, rather than being permanently profiling-on.
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
@@ -134,6 +142,7 @@ func DefaultServiceConfig() *ServiceConfig {
 			Scopes:         []string{"openid", "groups"},
 			TokenTimeout:   10 * time.Second,
 		},
+		Debug: sharedconfig.DefaultDebugConfig(),
 	}
 }
 

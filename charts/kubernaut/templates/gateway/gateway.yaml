@@ -35,6 +35,9 @@ server:
   writeTimeout: {{ $v.config.server.writeTimeout }}
   idleTimeout: {{ $v.config.server.idleTimeout }}
   k8sRequestTimeout: {{ $v.config.server.k8sRequestTimeout }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 cors:
   allowedOrigins:
   {{- range $v.config.cors.allowedOrigins }}
