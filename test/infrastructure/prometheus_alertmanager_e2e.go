@@ -70,6 +70,17 @@ const (
 	PrometheusImage = "prom/prometheus:latest"
 	// AlertManagerImage is the official AlertManager container image
 	AlertManagerImage = "prom/alertmanager:latest"
+
+	// ClusterLabelKey is the label key Thanos/AlertManager federation uses to
+	// identify a fleet alert/metric's source cluster (mirrors
+	// pkg/gateway/types.ClusterLabelKey; duplicated here rather than
+	// imported to keep this test-infra package dependency-free of
+	// production gateway code). Fleet E2E tests simulating a cluster-ID
+	// collision against this package's shared Prometheus/AlertManager
+	// instance (TESTING_GUIDELINES.md Section 4b, Issue #2274) should use
+	// this constant as the TestMetric/TestAlert label key rather than a
+	// raw "cluster" string literal.
+	ClusterLabelKey = "cluster"
 )
 
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
