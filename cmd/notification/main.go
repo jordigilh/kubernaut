@@ -176,6 +176,21 @@ func loadNotificationConfig(configPath string, bootstrapLogger logr.Logger) (*no
 	return cfg, controllerNS, logger, atomicLevel
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadNotificationConfig, buildManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// buildDeliveryServices' delivery-channel HTTP clients (e.g. Slack/webhook,
+// the first outbound TLS calls this process makes) --
+// x509.SystemCertPool() is sync.Once-cached process-wide, so injecting
+// after the first handshake has no effect (spike-verified, Issue #2276
+// preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *notificationconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // reconcilerSetupParams groups setupNotificationReconciler's dependencies
 // (Go anti-pattern checklist: 8+ parameters -> config struct instead of a
 // long positional argument list).
@@ -290,6 +305,14 @@ func run() int {
 	defer kubelog.Sync(bootstrapLogger)
 
 	cfg, controllerNS, logger, atomicLevel := loadNotificationConfig(configPath, bootstrapLogger)
+
+	// Issue #2276: inject ambient CA trust before buildDeliveryServices'
+	// delivery-channel HTTP clients -- the first outbound TLS calls this
+	// process makes.
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
 
 	// ADR-030: Use configuration values for controller manager
 	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
