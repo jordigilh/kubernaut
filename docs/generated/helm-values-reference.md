@@ -8,6 +8,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -81,6 +82,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.severityTriage.maxQueriesPerCall` | integer |  | `10` | No |
 | `config.severityTriage.maxRulesEvaluated` | integer |  | `100` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `enabled` | boolean |  | `true` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
@@ -121,6 +123,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -193,6 +196,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.server.writeTimeout` | string | Issue #2219: exact peer of readTimeout, previously missing entirely. Server write timeout | `"30s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `dbExistingSecret` | string | DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret. | `""` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -218,6 +222,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.assessment.stabilizationWindow` | string | Time to wait after remediation before assessing effectiveness | `"30s"` | No |
 | `config.assessment.validityWindow` | string | Time window for assessment validity | `"120s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
@@ -246,6 +251,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `enabled` | boolean | DD-PLATFORM-006 Decision Area 10: when unset, the effective value is derived from global.fleet.enabled + global.fleet.backend (true whenever the fleet backend resolves to "fleetmetadatacache"); set explicitly to override. An explicit false that contradicts a derived-true fails the render. | `false` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/fleetmetadatacache"` | No |
@@ -301,6 +307,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.server.readTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |
 | `config.server.writeTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `enabled` | boolean | Issue #2162: whether the Gateway component (Deployment, Service, RBAC) is deployed. Independent of apifrontend.enabled -- either, both, or neither ingress point may be enabled. | `true` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
@@ -393,6 +400,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `alignmentCheck.maxStepTokens` | integer | Max evaluator response tokens per step. | `500` | No |
 | `alignmentCheck.timeout` | string | Per-step evaluation timeout. | `"10s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
 | `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
@@ -499,6 +507,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `credentials` | array of object | Per-receiver credentials projected into /etc/notification/credentials/ | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
@@ -564,6 +573,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.timeouts.processing` | string | Signal processing phase timeout | `"5m"` | No |
 | `config.timeouts.verifying` | string | Effectiveness verification phase timeout | `"30m"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
 | `fleet.resilience.discoverProbeTimeout` | string | Bounds the SEP-2575 server/discover probe independently of connectTimeout, so a gateway that hangs (rather than erroring) on that probe cannot consume connectTimeout's entire budget before the legacy initialize handshake fallback gets a chance to run (issue #2262). | `"5s"` | No |
@@ -593,6 +603,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.classifier.hotReloadInterval` | string | Rego classification policy hot-reload poll interval (ClassifierConfig.HotReloadInterval) | `"30s"` | No |
 | `config.enrichment.cacheTtl` | string | Enrichment cache lifetime (EnrichmentConfig.CacheTTL) | `"5m"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `fleet.namespace` | string | Restricts the ClusterRegistry CRD watch; empty watches all namespaces | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `fleet.resilience.connectTimeout` | string | Bounds each individual MCP connect attempt, independent of whether the caller's context carries a deadline (issue #1934). | `"30s"` | No |
@@ -677,6 +688,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.execution.cooldownPeriod` | string | Cooldown between workflow executions | `"1m"` | No |
 | `config.tekton.enabled` | boolean | true or omit = auto-discover CRDs; false = disable Tekton engine | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | REQUIRED (no fallback to global.fleet.oauth2.credentialsSecretRef) when global.fleet.oauth2.enabled=true. K8s Secret (keys: client-id, client-secret) for a write-scoped OAuth2 client, distinct from the read-only credential shared by gateway/remediationorchestrator/apifrontend/effectivenessmonitor/signalprocessing/fleetmetadatacache. | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |

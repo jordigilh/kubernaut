@@ -107,6 +107,9 @@ fleet:
     {{- $signalprocessingFleetPreamble.resilience | toYaml | nindent 4 }}
   {{- end }}
 {{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 ---
 apiVersion: v1
@@ -249,6 +252,14 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - name: pprof
+              containerPort: 6060
+              protocol: TCP
+            {{- end }}
           {{- /* DD-PLATFORM-008: SP builds a registry.ClusterRegistry against
           the fleet MCP Gateway at boot, same shape as apifrontend/
           effectivenessmonitor/workflowexecution -- can legitimately stall

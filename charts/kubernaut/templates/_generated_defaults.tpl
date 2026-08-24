@@ -12,6 +12,8 @@ winning (including explicit false/0/"").
 */}}
 {{- define "kubernaut.defaults" -}}
 aianalysis:
+    debug:
+        pprofEnabled: false
     logging:
         level: INFO
     pdb:
@@ -82,6 +84,8 @@ apifrontend:
             llmProfileRef: ""
             maxQueriesPerCall: 10
             maxRulesEvaluated: 100
+    debug:
+        pprofEnabled: false
     enabled: true
     fleet:
         namespace: ""
@@ -115,6 +119,8 @@ apifrontend:
         nodePort: 0
         type: ClusterIP
 authwebhook:
+    debug:
+        pprofEnabled: false
     logging:
         level: INFO
     pdb:
@@ -174,6 +180,8 @@ datastorage:
             signerCertDir: /etc/certs
             writeTimeout: 30s
     dbExistingSecret: ""
+    debug:
+        pprofEnabled: false
     logging:
         level: INFO
     pdb:
@@ -188,6 +196,8 @@ effectivenessmonitor:
         assessment:
             stabilizationWindow: 30s
             validityWindow: 120s
+    debug:
+        pprofEnabled: false
     fleet:
         namespace: ""
         oauth2:
@@ -205,6 +215,8 @@ effectivenessmonitor:
         enabled: true
     replicas: 1
 fleetmetadatacache:
+    debug:
+        pprofEnabled: false
     enabled: false
     image:
         pullPolicy: IfNotPresent
@@ -248,6 +260,8 @@ gateway:
             maxConcurrentRequests: 100
             readTimeout: 30s
             writeTimeout: 30s
+    debug:
+        pprofEnabled: false
     enabled: true
     fleet:
         oauth2:
@@ -326,6 +340,8 @@ kubernautAgent:
         llmProfileRef: ""
         maxStepTokens: 500
         timeout: 10s
+    debug:
+        pprofEnabled: false
     fleet:
         oauth2:
             credentialsSecretRef: ""
@@ -425,6 +441,8 @@ networkPolicies:
         cidr: 0.0.0.0/0
         port: 9090
 notification:
+    debug:
+        pprofEnabled: false
     logging:
         level: INFO
     pdb:
@@ -475,6 +493,8 @@ remediationorchestrator:
             global: 1h
             processing: 5m
             verifying: 30m
+    debug:
+        pprofEnabled: false
     fleet:
         oauth2:
             credentialsSecretRef: ""
@@ -496,6 +516,8 @@ signalprocessing:
             hotReloadInterval: 30s
         enrichment:
             cacheTtl: 5m
+    debug:
+        pprofEnabled: false
     fleet:
         namespace: ""
         oauth2:
@@ -557,6 +579,8 @@ workflowexecution:
                 namespace: ""
         execution:
             cooldownPeriod: 1m
+    debug:
+        pprofEnabled: false
     fleet:
         oauth2:
             credentialsSecretRef: ""

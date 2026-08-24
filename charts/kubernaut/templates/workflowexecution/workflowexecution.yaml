@@ -258,6 +258,9 @@ fleet:
     {{- .Values.global.fleet.resilience | toYaml | nindent 4 }}
   {{- end }}
 {{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 ---
 apiVersion: apps/v1
@@ -335,6 +338,14 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - name: pprof
+              containerPort: 6060
+              protocol: TCP
+            {{- end }}
           {{- /* DD-PLATFORM-008: WE connects to the fleet MCP Gateway (OAuth2
           token fetch + registry.ClusterRegistry) at boot, same shape as
           apifrontend/effectivenessmonitor -- can legitimately stall well

@@ -38,6 +38,9 @@ rego:
   {{- if .Values.aianalysis.rego.lowConfidenceFloor }}
   lowConfidenceFloor: {{ .Values.aianalysis.rego.lowConfidenceFloor }}
   {{- end }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 ---
 apiVersion: v1
@@ -201,6 +204,13 @@ spec:
             - containerPort: 8080
             - containerPort: 9090
             - containerPort: 8081
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - name: pprof
+              containerPort: 6060
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

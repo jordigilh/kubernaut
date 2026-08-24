@@ -124,6 +124,13 @@
 - kubernautAgent.alignmentCheck.llmProfileRef
 - kubernautAgent.alignmentCheck.maxStepTokens
 - kubernautAgent.alignmentCheck.timeout
+# BR-PLATFORM-012, Issue #2275: real coverage exists in
+# charts/kubernaut/tests/debug_pprof_toggle_test.yaml -- allowlisted only
+# because check-helm-coverage's service-name heuristic can't match this
+# leaf's schema key "kubernautAgent" to the template directory
+# "kubernaut-agent" (same pre-existing mismatch affecting every other
+# kubernautAgent.* entry in this file).
+- kubernautAgent.debug.pprofEnabled
 - kubernautAgent.fleet.oauth2.credentialsSecretRef
 - kubernautAgent.fleet.resilience.connectTimeout
 - kubernautAgent.fleet.resilience.discoverProbeTimeout
