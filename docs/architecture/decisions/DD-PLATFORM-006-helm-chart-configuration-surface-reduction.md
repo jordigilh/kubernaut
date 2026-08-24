@@ -3,7 +3,12 @@
 **Status**: ✅ **IMPLEMENTED** (merged via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790))
 **Decision Date**: 2026-07-31 (merge date; Decision Area 14's materialized-defaults generator
 remains deferred to its own follow-up PR — see Status section below)
-**Version**: 5.12 (Decision Area 18 added: source-bound `jti` replay detection, implementing
+**Version**: 5.13 (Decision Area 19 added: Valkey client authentication via mTLS, triaging issue
+#2269 — two pre-implementation spikes found the requested `requirepass` fix would not actually
+close the gap (DataStorage's existing "mandatory" password is confirmed empirically inert against
+the chart's own Valkey — `go-redis` silently tolerates the AUTH failure), and that mTLS is both
+safer and cheaper since all three Valkey consumers already have live, unactivated `WithClientCert`
+wiring. Previously 5.12, Decision Area 18 added: source-bound `jti` replay detection, implementing
 Decision Area 16's deferred Option 3 — issue #1999, confirmed as a live production incident.
 Previously 5.11, Decision Area 13 addendum, round-16 RCA: FMC was a third Go Valkey client missed
 by this Decision Area's original DataStorage/APIFrontend-only census — fixed with the identical
@@ -1076,6 +1081,142 @@ low-probability exposure for this product's actual client population (browser co
 server-to-server agents/CLI — not mobile), and strictly smaller in both likelihood and blast
 radius than the "every 2nd request, unconditionally" failure mode this DD confirms already broke
 a live cluster.
+
+### Decision Area 19 — Valkey Client Authentication via mTLS (closes the DA6/DA8 gap between mandatory transport encryption and actual client authentication)
+
+**Finding, triaging [kubernaut#2269](https://github.com/jordigilh/kubernaut/issues/2269)**: Decision
+Area 8 made the chart's own Valkey deployment TLS-only and Decision Area 6 mandated
+`datastorage.config.redis.tls.enabled` as a security-relevant, non-optional toggle — but neither
+Decision Area evaluated Valkey **client authentication** as its own control. `--tls-auth-clients
+no` (Decision Area 8's own choice, re-confirmed by its spike: *"a client presenting no certificate
+still succeeds"*) means TLS here only proves the *server's* identity to the client, never the
+reverse. FMC's client (`pkg/fleet/fmc/valkey_writer.go`, `pkg/fleet/scopecache/valkey_reader.go`)
+has no authentication support at all — no password, no client cert. Issue #2269 (filed from
+`kubernaut-operator`, discovered while wiring `spec.valkey.tls` through to FMC — see
+`kubernaut-operator#398`/`kubernaut-operator#397`) asks for password/secret-ref support to be
+added to close this.
+
+**Two pre-implementation spikes, run against this repo's real `go-redis/v9` dependency and a real
+`valkey/valkey:8-alpine` container (not simulated), found the obvious fix — adding a password —
+would not actually be a fix**, and surfaced a materially cheaper, safer alternative already
+half-built in this codebase:
+
+- **Spike 1 (does DataStorage's existing "mandatory" Valkey password do anything today?)**:
+  `pkg/datastorage/config.RedisConfig`'s `SecretsFile`/`PasswordKey` are already unconditionally
+  required by `LoadSecrets()` (`pkg/datastorage/config/config_secrets.go`) — no toggle, and the
+  chart pre-validates the backing `valkey-secret` exists before install
+  (`templates/infrastructure/secrets.yaml`). But `templates/infrastructure/valkey.yaml`'s container
+  `args` set only `--tls-port`/`--tls-cert-file`/`--tls-key-file`/`--tls-ca-cert-file`/
+  `--tls-auth-clients no` — **no `--requirepass` or ACL of any kind**. Confirmed live:
+  `valkey-cli -a somepassword ping` against an unmodified `valkey/valkey:8-alpine` with no
+  `requirepass` configured returns `AUTH failed: ERR AUTH <password> called without any password
+  configured...` **and then still returns `PONG`**. A minimal Go program using this repo's exact
+  `github.com/redis/go-redis/v9` dependency, `Password: "somepassword"` against the same
+  unconfigured server, got `Ping()` → `err=<nil>` and `Set()` → `err=<nil>`. **`go-redis` silently
+  swallows the AUTH failure and proceeds.** Conclusion: DataStorage's existing "mandatory" password
+  requirement is enforced only at config-load time (ADR-030 Section 6's "don't embed secrets in
+  ConfigMap YAML" hygiene rule) and provides **zero actual protection** against the chart's own
+  Valkey — the server has never been told to require it. Simply adding the same pattern to FMC (the
+  issue's literal ask) would reproduce this same non-functional theater, not close the gap.
+- **Spike 2 (is mTLS a smaller lift than fixing `requirepass` properly?)**: `requirepass` has no
+  file-based injection mechanism in vanilla Valkey/Redis (no `--requirepass-file`), so a real fix
+  would require the password to flow through a `sh -c`-wrapped command with an env var sourced from
+  `secretKeyRef` — but the existing `valkey-secret` stores the password *inside* a YAML blob
+  (`valkey-secrets.yaml: "password: <value>"`, for the Go client's `secretsFile` pattern), not a
+  flat key `secretKeyRef` can mount directly, so this would also require changing the documented
+  Secret contract (`templates/infrastructure/secrets.yaml`) to a dual-key format. It would also need
+  a net-new rotation story (no rotation job exists for a Valkey password today) and reproduces the
+  exact class of risk `templates/infrastructure/secrets.yaml`'s own header comment says this chart
+  deliberately avoids (*"Password leaks via rendered Helm templates"*) — this time via process
+  args/env instead of Helm state, but the same underlying concern. By contrast, **every Valkey
+  client in this codebase already has live, wired mTLS support that has simply never been
+  activated**:
+  - `pkg/datastorage/config.RedisTLSConfig.BuildTLSConfig()` already builds
+    `tls.Certificates` from `CertFile`/`KeyFile` when both are set
+    (`pkg/datastorage/config/config.go`), and `pkg/datastorage/server/server_construction.go`
+    already calls it unconditionally and assigns the result to `redisOpts.TLSConfig`.
+  - `cmd/fleetmetadatacache/main.go`'s `buildValkeyTLSConfig` already calls
+    `sharedtls.BuildTLSConfig(tlsCfg.CAFile, sharedtls.WithClientCert(tlsCfg.CertFile,
+    tlsCfg.KeyFile))` unconditionally whenever TLS is enabled.
+  - `cmd/apifrontend/auth_wiring.go`'s `newValkeyReplayCache` does the identical
+    `sharedtls.BuildTLSConfig(..., WithClientCert(cfg.TLS.CertFile, cfg.TLS.KeyFile))` call.
+
+  All three `CertFile`/`KeyFile` fields are explicitly documented as *"kept for optional BYO
+  Valkey/Redis requiring mTLS"* (Decision Area 8) — anticipated from day one, never activated
+  because the server never required it. Reusing them costs a server-side flag flip
+  (`--tls-auth-clients yes`) plus chart config wiring, with **zero Go code changes** to any of the
+  three consumers.
+- **Spike 3 (are the existing per-service certs even eligible for client-auth reuse?)**: checked
+  how this chart's inter-service leaf certs are minted in both `tls.mode` variants.
+  `templates/hooks/tls-cert-job.yaml`'s raw `openssl req`/`openssl x509` commands set no
+  `extendedKeyUsage` at all — per RFC 5280 §4.2.1.12, an absent EKU extension means the certificate
+  is valid for any purpose, so hook-mode's existing `gateway-tls`/`datastorage-tls`/
+  `fleetmetadatacache-tls`/`kubernautagent-tls` certs are safe to reuse unmodified as Valkey mTLS
+  client certs. **`tls.mode=cert-manager` is different**: `templates/interservice/leaf-certs.yaml`'s
+  `Certificate` specs set no `usages` field, and cert-manager's own documentation states *"unless
+  any number of usages has been set, cert-manager will set the default requested usages of `digital
+  signature`, `key encipherment`, and **`server auth`**"* — `client auth` is never implied by
+  default (confirmed via cert-manager/cert-manager#2407, the exact upstream issue this ambiguity
+  caused for other projects). Left as-is, cert-manager-mode certs would carry a `server
+  auth`-restricted EKU and fail as Valkey mTLS client certs. Additionally, `leaf-certs.yaml`'s
+  static cert list has no `apifrontend-tls` entry at all, unlike the hook-mode loop (which already
+  includes `apifrontend`, added independently by #1755 — see Decision Area 12) — a pre-existing
+  hook/cert-manager parity gap that this Decision Area's scope now depends on closing, since
+  APIFrontend's replay cache is a third Valkey mTLS consumer.
+
+**Decision**: Alternative 1 — Valkey mTLS, not a password/ACL.
+
+1. `templates/infrastructure/valkey.yaml`: flip `--tls-auth-clients no` → `yes`; readiness/liveness
+   probes gain the cert/key flags Valkey's own `valkey-tls` secret already provides (Valkey
+   authenticating as itself for its own healthcheck).
+2. `templates/interservice/leaf-certs.yaml`: add `usages: [server auth, client auth]` to every
+   entry (hook mode is unaffected — already unrestricted, but explicit usages are added there too
+   for defense-in-depth clarity, not because they're required), and add the missing
+   `apifrontend-tls` entry for hook/cert-manager parity.
+3. `templates/datastorage/datastorage.yaml`, `templates/fleetmetadatacache/fleetmetadatacache.yaml`,
+   `templates/apifrontend/apifrontend.yaml`: set each service's `certFile`/`keyFile` to its own
+   already-issued, already-mounted per-service TLS secret (no new cert, no new volume mount for
+   DataStorage/APIFrontend which already mount their own cert for their own server-side TLS; FMC
+   needs its `ValkeyTLSConfig` rendering wired to do the same, since only `caFile` is populated
+   today).
+4. `pkg/fleet/fmc/config.ValkeyConfig`/chart rendering: complete the issue #2269 ask by wiring
+   `CertFile`/`KeyFile` through (the Go-side `WithClientCert` call already exists — this is a
+   config-population gap only, mirroring the DataStorage/APIFrontend pattern above).
+
+**Options considered**:
+1. **Valkey mTLS, reusing each service's existing per-service TLS cert (selected)** — closes the
+   authentication gap for all three current Valkey consumers (DataStorage, FMC, APIFrontend) with a
+   single server-side flag flip and config-only client changes; reuses already-solved cert
+   issuance, rotation (`tls-cert-job.yaml`'s existing 30-day-checkend renewal), and mounting
+   infrastructure; avoids any new secret format, injection mechanism, or rotation story.
+2. `requirepass` (shared password), as issue #2269 literally requested — rejected per Spike 2/3
+   above: requires inventing a new file-safe injection mechanism Valkey doesn't natively support,
+   a breaking change to the documented `valkey-secret` contract, and a net-new rotation story,
+   while providing weaker security (one shared secret vs. per-workload cryptographic identity) for
+   strictly more implementation cost than option 1.
+3. Valkey ACL (per-user, mapped to AC-6 least privilege) — a strictly stronger future upgrade once
+   mTLS identity exists (map client cert CN to a scoped ACL user), but is new capability, not
+   gap-closure; deferred as its own follow-up rather than blocking this fix.
+4. Do nothing beyond documenting the gap — rejected: issue #2269 identifies a real, live
+   unauthenticated read/write path into fleet-wide cluster metadata reachable by any in-namespace
+   pod, not a hypothetical.
+
+**Confidence**: 85% — the core finding (go-redis silently tolerates AUTH-without-requirepass; all
+three consumers already have live, dead `WithClientCert` wiring; hook-mode certs are EKU-unrestricted)
+is empirically verified against real code and a real container, not inferred. The residual 15% is
+implementation risk not yet spiked: (a) confirming `valkey-cli`'s own TLS client-cert flags work
+identically inside the actual probe `command:` syntax used in this chart, and (b) confirming no
+current legitimate consumer (operator debug tooling, `kubectl exec` + `valkey-cli` troubleshooting)
+depends on certificate-less access, which would need a documented break-glass procedure once
+`--tls-auth-clients yes` lands.
+
+**Related**: Postgres has an analogous, separate gap — `values.schema.json`'s
+`datastorage.config.database.sslMode` defaults to `"disable"` and is only forced non-disable by
+`Config.Validate()`'s `validateProductionConstraints()` when `Environment=="production"`, unlike
+Redis TLS which this chart hardcodes unconditionally (Decision Area 6). Raised during this
+Decision Area's triage but intentionally **out of scope here** — different mechanism (schema
+default + template change, no mTLS/cert questions), tracked as its own follow-up rather than
+expanding this Decision Area's blast radius.
 
 ---
 
