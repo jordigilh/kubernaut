@@ -3,7 +3,13 @@
 **Status**: ✅ **IMPLEMENTED** (merged via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790))
 **Decision Date**: 2026-07-31 (merge date; Decision Area 14's materialized-defaults generator
 remains deferred to its own follow-up PR — see Status section below)
-**Version**: 5.13 (Decision Area 19 added: Valkey client authentication via mTLS, triaging issue
+**Version**: 5.14 (Decision Area 20 added: PostgreSQL server-side TLS, closing issue #2270 as a
+genuine chart-wiring fix rather than a client-side schema-default flip — the bundled Postgres had
+zero TLS wiring, structurally the same gap Decision Area 8 originally closed for Valkey. Decision
+Area 19's confidence raised 85% → 95% after a follow-up session's spikes closed both previously-
+residual risks (valkey-cli client-cert probe syntax; the break-glass runbook). Both implemented
+together in [PR #2272](https://github.com/jordigilh/kubernaut/pull/2272). Previously 5.13, Decision
+Area 19 added: Valkey client authentication via mTLS, triaging issue
 #2269 — two pre-implementation spikes found the requested `requirepass` fix would not actually
 close the gap (DataStorage's existing "mandatory" password is confirmed empirically inert against
 the chart's own Valkey — `go-redis` silently tolerates the AUTH failure), and that mTLS is both
@@ -1201,22 +1207,118 @@ half-built in this codebase:
    unauthenticated read/write path into fleet-wide cluster metadata reachable by any in-namespace
    pod, not a hypothetical.
 
-**Confidence**: 85% — the core finding (go-redis silently tolerates AUTH-without-requirepass; all
-three consumers already have live, dead `WithClientCert` wiring; hook-mode certs are EKU-unrestricted)
-is empirically verified against real code and a real container, not inferred. The residual 15% is
-implementation risk not yet spiked: (a) confirming `valkey-cli`'s own TLS client-cert flags work
-identically inside the actual probe `command:` syntax used in this chart, and (b) confirming no
-current legitimate consumer (operator debug tooling, `kubectl exec` + `valkey-cli` troubleshooting)
-depends on certificate-less access, which would need a documented break-glass procedure once
-`--tls-auth-clients yes` lands.
+**Confidence**: 95% (raised from 85% after a follow-up session's spikes closed both risks named
+below, prior to implementation) — the core finding (go-redis silently tolerates
+AUTH-without-requirepass; all three consumers already have live, dead `WithClientCert` wiring;
+hook-mode certs are EKU-unrestricted) is empirically verified against real code and a real
+container, not inferred. The originally-residual 15% named two specific implementation risks, both
+now closed:
+- **`valkey-cli` probe-syntax risk**: started a real `valkey/valkey:8-alpine` container with
+  `--tls-auth-clients yes` and CA-signed, EKU-unrestricted certs (mirroring `tls-cert-job.yaml`'s
+  actual output), and drove it with the exact `command:` array shape used in `valkey.yaml`'s
+  probes — no client cert rejects the connection (`Error: Server closed the connection`), a valid
+  client cert returns `PONG`, an unsigned/wrong client cert is rejected. A `go-redis` client built
+  with this repo's exact `TLSConfig` shape (mirroring `pkg/shared/tls.BuildTLSConfig`/
+  `WithClientCert`) got a hard TLS-handshake-level `tls: certificate required` with no cert —
+  unlike the `requirepass`/AUTH case above, where `go-redis` silently swallows the failure instead
+  of erroring.
+- **Break-glass/debug-access risk**: `docs/operations/runbooks/data-storage.md`'s existing
+  `kubectl exec ... -- openssl s_client` debug procedure was the only identified legitimate
+  certificate-less consumer (`test/infrastructure/datastorage.go`'s test-harness Redis is a wholly
+  separate, ad-hoc container, unaffected by this change). Updated the runbook to add the
+  now-required `-cert`/`-key` flags rather than leaving it broken — no separate break-glass
+  exception path was needed.
 
-**Related**: Postgres has an analogous, separate gap — `values.schema.json`'s
-`datastorage.config.database.sslMode` defaults to `"disable"` and is only forced non-disable by
-`Config.Validate()`'s `validateProductionConstraints()` when `Environment=="production"`, unlike
-Redis TLS which this chart hardcodes unconditionally (Decision Area 6). Raised during this
-Decision Area's triage but intentionally **out of scope here** — different mechanism (schema
-default + template change, no mTLS/cert questions), tracked as its own follow-up rather than
-expanding this Decision Area's blast radius.
+Implemented (together with Decision Area 20 below) in
+[PR #2272](https://github.com/jordigilh/kubernaut/pull/2272); `helm-unittest`/`helm lint`/
+`helm template` all validated across both `tls.mode` variants. The remaining, unclaimed proof tier
+is this repo's existing Kind-based E2E fullpipeline/fleet suites actually exercising the mTLS
+handshake end-to-end once that PR's CI runs.
+
+**Related**: Postgres had an analogous, separate gap, raised during this Decision Area's triage but
+intentionally scoped out of DA19 itself — see **Decision Area 20** below, which closes it.
+
+### Decision Area 20 — PostgreSQL Server-Side TLS (parity with Decision Area 8 for Valkey)
+
+**Finding, triaging [kubernaut#2270](https://github.com/jordigilh/kubernaut/issues/2270)**:
+`values.schema.json`'s `datastorage.config.database.sslMode` defaults to `"disable"`, and is only
+forced non-`disable` by `Config.Validate()`'s `validateProductionConstraints()` when
+`Environment=="production"` — unlike Redis TLS, which this chart hardcodes unconditionally
+regardless of environment (Decision Area 6). Issue #2270 initially framed this as a small fix: flip
+the schema default to `"require"`. That framing turned out to be wrong — `templates/infrastructure/
+postgresql.yaml` has **zero TLS wiring today**, and the bundled `postgres:16-alpine` genuinely
+cannot speak TLS as currently configured, so flipping the default alone would have broken every
+default install outright. Unlike the Valkey ACL case (#2271), this is **not** a product-capability
+gap: PostgreSQL has supported TLS natively for decades and `postgres:16-alpine` ships with it built
+in. It is an unconfigured-chart gap, structurally identical to the one Decision Area 8 closed for
+Valkey.
+
+**Validated by an end-to-end pre-implementation spike** against a real, unmodified
+`postgres:16-alpine` container (mirroring Decision Area 8's own spike structure):
+- **Key-file permission model** (the risk unique to Postgres, with no Valkey/Redis equivalent):
+  Postgres's `check_ssl_key_file_permissions()` (`src/backend/libpq/be-secure-common.c`) requires
+  the key file to be owned by either the running uid (mode `0600` or less) or by root/uid-0 (mode
+  `0640` or less, with the process's uid a member of the file's group). Staged a cert/key with
+  ownership `root:70`, mode `0640` — exactly what a Kubernetes Secret volume with `fsGroup: 70` +
+  `defaultMode: 0640` produces, reusing the `podSecurityContext` override this Decision Area
+  already documents for both `postgresql`/`valkey` (line 116 above). Postgres started cleanly with
+  **zero permission errors and no `initContainer` needed**.
+- **`hostssl`-only enforcement**: a custom `pg_hba.conf` with `local all all trust` + `hostssl all
+  all all trust` (no plain `host` rule) rejected a TCP client with `sslmode=disable`
+  (`no pg_hba.conf entry for host ..., no encryption`) and accepted one with `sslmode=require`;
+  `SHOW ssl;` confirmed `on`.
+- **Probe compatibility** (mirrors Decision Area 8's own probe-breakage precedent for Valkey, with
+  the opposite result): `pg_isready -U ... -d ...` run via local exec succeeded unmodified —
+  Postgres's `local` (Unix-socket) auth records are entirely separate from `host`/`hostssl` (TCP)
+  records, so **no probe changes were needed at all**, unlike Valkey, where the probes themselves
+  needed `--cert`/`--key` added once `--tls-auth-clients yes` landed.
+- **Client-side compatibility**: `pkg/datastorage/config`'s `Database.SSLMode` already flows
+  straight into the DSN (`config_accessors.go:153`) with no CA-path field, so `sslmode=require`
+  (encrypt, don't verify server identity) works with **zero Go changes**. `verify-ca`/`verify-full`
+  would need a new CA-path config field and were left out of scope — `require` matches the level of
+  assurance DataStorage's own Redis TLS client already accepts by default elsewhere in this chart.
+
+**Decision**: give the bundled PostgreSQL Deployment real, mandatory-on server-side TLS, mirroring
+Decision Area 8's treatment of Valkey:
+1. Issue a `postgresql-tls` cert via the same per-service cert infrastructure Decision Area 19
+   extended (both `tls.mode` variants) — `templates/hooks/tls-cert-job.yaml`'s hook-mode
+   `SVC_NAME` loop and `templates/interservice/leaf-certs.yaml`'s cert-manager-mode list.
+2. Mount it with `defaultMode: 0640` (root-owned, group-readable by the existing `fsGroup: 70`) —
+   no `initContainer`.
+3. Enable SSL via `-c ssl=on -c ssl_cert_file=... -c ssl_key_file=...` container args — the same
+   args-based pattern Valkey already uses.
+4. Enforce `hostssl`-only via a new `postgresql-hba` ConfigMap (`-c hba_file=...`), leaving `local`
+   (socket) auth untouched so `pg_isready` probes and the image's own bootstrap are unaffected.
+5. Flip `values.schema.json`'s `datastorage.config.database.sslMode` default from `"disable"` to
+   `"require"` — now safe to do unconditionally, since the bundled Postgres genuinely supports it;
+   a BYO PostgreSQL without TLS support becomes an explicitly unsupported configuration.
+
+**Options considered**:
+1. **Real server-side TLS, mirroring Decision Area 8 (selected)** — closes the gap PostgreSQL
+   actually has (an unconfigured chart, not a missing capability) with the identical
+   cert-issuance/rotation/mounting infrastructure Decision Area 19 already extended for Valkey;
+   `require` mode needs zero Go changes.
+2. Flip only the schema default, leave the chart's Postgres unconfigured for TLS — rejected: would
+   break every default install (`sslmode=require` against a server with no TLS listener fails to
+   connect at all), the exact problem this Decision Area's triage caught before it shipped.
+3. `verify-ca`/`verify-full` instead of `require` — rejected as this fix's target: needs a new
+   CA-path Go config field, out of scope for a transport-encryption gap-closure; deferred as a
+   stronger future upgrade once that field exists.
+4. Do nothing, document the gap only — rejected: DataStorage's Postgres is the audit-of-record
+   store (BR-AUDIT-005/ADR-034); shipping it with plaintext-by-default TCP auth is inconsistent
+   with Decision Area 6's unconditional Redis TLS mandate for the same threat model.
+
+**Confidence**: 92% — the full design (key permissions, `hostssl` enforcement, probe compatibility,
+client compatibility) was empirically validated end-to-end against a real container, not just
+reasoned about. The residual 8% is ordinary chart-wiring implementation risk (getting the exact
+volume/ConfigMap YAML right), not design-level risk. Implemented alongside Decision Area 19 in
+[PR #2272](https://github.com/jordigilh/kubernaut/pull/2272); `helm-unittest`/`helm lint`/
+`helm template` all validated across `postgresql.enabled` true/false and both `tls.mode` variants —
+the remaining, unclaimed proof tier is this repo's existing Kind-based E2E fullpipeline suite
+actually exercising the Postgres TLS handshake end-to-end once that PR's CI runs.
+
+**Related**: this closes the gap Decision Area 19 explicitly deferred (see its own "Related" note
+above) rather than expanding that Decision Area's blast radius after the fact.
 
 ---
 
