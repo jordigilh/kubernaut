@@ -116,6 +116,28 @@ func loadRunConfig(bootstrapLogger logr.Logger) (cfg *config.Config, cfgPath str
 	return cfg, cfgPath, atomicLevel, logger, true
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// as defense-in-depth, sourced from the already-resolved Redis/Valkey TLS
+// CAFile value (redis.tls.caFile config field). Extracted from run() so it
+// is independently unit-testable, matching this package's existing pattern
+// for other startup-wiring steps (loadRunConfig).
+//
+// DataStorage does NOT get a new canonical TLSCAFile config field and no
+// chart change: its Redis/Valkey TLS wiring already sources CA trust via
+// this explicit, purpose-scoped field, defaulting to the same
+// kubernaut.interServiceTLS.caFile chart value used elsewhere. This call
+// only backstops any code path not covered by that explicit wiring (e.g.
+// telemetry.Bootstrap's OTel exporter).
+//
+// Callers MUST invoke this immediately after config load, before
+// telemetry.Bootstrap's OTel exporter (the first outbound TLS call this
+// process makes) -- x509.SystemCertPool() is sync.Once-cached process-wide,
+// so injecting after the first handshake has no effect (spike-verified,
+// Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.Redis.TLS.CAFile)
+}
+
 func run() int {
 	// Bootstrap logger at INFO for config loading
 	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
@@ -135,6 +157,14 @@ func run() int {
 		return 1
 	}
 	logger = configuredLogger
+
+	// Issue #2276: defense-in-depth ambient CA trust injection, before
+	// telemetry.Bootstrap's OTel exporter just below -- the first outbound
+	// TLS call this process makes.
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
 
 	// Context management for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
