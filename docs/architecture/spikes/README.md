@@ -30,9 +30,14 @@ This directory contains both spike summary documents and spike source code.
 
 ### v1.5 — Agent Runtime Evaluation
 
+> **Note**: `oas-runtime/`'s code lives under [`docs/spikes/oas-runtime/`](../../spikes/oas-runtime/) rather than
+> alongside this document. It has its own `Dockerfile`, and `docs/architecture/spikes/**` is a Dependabot Docker
+> scan path (see `.github/dependabot.yml`), so completed spike code with a Dockerfile is kept under
+> `docs/spikes/` to avoid recurring version-bump PRs against an archived proof-of-concept.
+
 | Spike | Status | Confidence | Proposal | Code |
 |---|---|---|---|---|
-| [SPIKE-OAS-RUNTIME](SPIKE-OAS-RUNTIME.md) | COMPLETED | — | [EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) | [oas-runtime/](./oas-runtime/) |
+| [SPIKE-OAS-RUNTIME](SPIKE-OAS-RUNTIME.md) | COMPLETED | — | [EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) | [oas-runtime/](../../spikes/oas-runtime/) |
 | [SPIKE-OPENSHELL-OAS-RUNTIME](SPIKE-OPENSHELL-OAS-RUNTIME.md) | COMPLETED | — | [EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) | [openshell-oas-runtime/](./openshell-oas-runtime/) |
 | [SPIKE-SHADOW-ACP](SPIKE-SHADOW-ACP.md) | COMPLETED | — | [EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) | [shadow-acp/](./shadow-acp/) |
 | [SPIKE-RUN-STATE-PERSISTENCE](SPIKE-RUN-STATE-PERSISTENCE.md) | COMPLETED | — | [EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) | [run-state-persistence/](./run-state-persistence/) |
