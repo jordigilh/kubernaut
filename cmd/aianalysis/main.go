@@ -42,8 +42,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
@@ -150,6 +150,7 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 			BindAddress: cfg.Controller.MetricsAddr,
 		},
 		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		PprofBindAddress:       internalconfig.PprofBindAddress(cfg.Debug.PprofEnabled),
 		LeaderElection:         cfg.Controller.LeaderElection,
 		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})

@@ -46,11 +46,11 @@ const DefaultConfigPath = "/etc/workflowexecution/config.yaml"
 // Config holds the complete configuration for the WorkflowExecution controller.
 // Issue #99: BackoffConfig removed (DD-RO-002 Phase 3 -- RO handles all routing/backoff)
 type Config struct {
-	Execution   ExecutionConfig              `yaml:"execution" validate:"required"`
-	Tekton      *TektonConfig                `yaml:"tekton,omitempty"`
-	Ansible     *AnsibleConfig               `yaml:"ansible,omitempty"`
+	Execution   ExecutionConfig                `yaml:"execution" validate:"required"`
+	Tekton      *TektonConfig                  `yaml:"tekton,omitempty"`
+	Ansible     *AnsibleConfig                 `yaml:"ansible,omitempty"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
-	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
+	Controller  ControllerConfig               `yaml:"controller" validate:"required"`
 
 	// Fleet holds MCP Gateway connectivity settings for remote cluster execution.
 	// BR-FLEET-054: Optional -- when Endpoint is empty, WE operates in local-only mode.
@@ -62,6 +62,10 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // FleetConfig holds MCP Gateway connectivity settings for multi-cluster
@@ -178,6 +182,7 @@ func DefaultConfig() *Config {
 			LeaderElection:   false,
 			LeaderElectionID: "workflowexecution.kubernaut.ai",
 		},
+		Debug: sharedconfig.DefaultDebugConfig(),
 	}
 }
 

@@ -105,6 +105,7 @@ func buildAuthWebhookManager(cfg *awconfig.Config) ctrl.Manager {
 			BindAddress: "0", // Disable metrics endpoint
 		},
 		HealthProbeBindAddress: cfg.Webhook.HealthProbeAddr,
+		PprofBindAddress:       internalconfig.PprofBindAddress(cfg.Debug.PprofEnabled),
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    cfg.Webhook.Port,
 			CertDir: cfg.Webhook.CertDir,

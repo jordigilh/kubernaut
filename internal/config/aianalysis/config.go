@@ -62,6 +62,10 @@ type Config struct {
 	// Mirrors effectivenessmonitor's AssessmentConfig.MaxConcurrentReconciles
 	// (ADR-EM-001 §10) precedent. Default: 10. Range: [1, ∞).
 	MaxConcurrentReconciles int `yaml:"maxConcurrentReconciles"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // #2204 (2026-08-20): AgentConfig (agent.url / agent.timeout /
@@ -118,6 +122,7 @@ func DefaultConfig() *Config {
 		},
 		Logging:                 sharedconfig.DefaultLoggingConfig(),
 		MaxConcurrentReconciles: 10,
+		Debug:                   sharedconfig.DefaultDebugConfig(),
 	}
 }
 
