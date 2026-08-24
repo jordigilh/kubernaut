@@ -1939,6 +1939,24 @@ components:
             - $ref: '#/components/schemas/DatastorageRatelimitDeniedPayload'
             - $ref: '#/components/schemas/GatewayConfigReloadedPayload'
             - $ref: '#/components/schemas/GatewayConfigRejectedPayload'
+            - $ref: '#/components/schemas/AIAnalysisConfigReloadedPayload'
+            - $ref: '#/components/schemas/AIAnalysisConfigRejectedPayload'
+            - $ref: '#/components/schemas/EffectivenessConfigReloadedPayload'
+            - $ref: '#/components/schemas/EffectivenessConfigRejectedPayload'
+            - $ref: '#/components/schemas/NotificationConfigReloadedPayload'
+            - $ref: '#/components/schemas/NotificationConfigRejectedPayload'
+            - $ref: '#/components/schemas/RemediationOrchestratorConfigReloadedPayload'
+            - $ref: '#/components/schemas/RemediationOrchestratorConfigRejectedPayload'
+            - $ref: '#/components/schemas/SignalProcessingConfigReloadedPayload'
+            - $ref: '#/components/schemas/SignalProcessingConfigRejectedPayload'
+            - $ref: '#/components/schemas/WorkflowExecutionConfigReloadedPayload'
+            - $ref: '#/components/schemas/WorkflowExecutionConfigRejectedPayload'
+            - $ref: '#/components/schemas/AuthwebhookConfigReloadedPayload'
+            - $ref: '#/components/schemas/AuthwebhookConfigRejectedPayload'
+            - $ref: '#/components/schemas/AIAgentConfigReloadedPayload'
+            - $ref: '#/components/schemas/AIAgentConfigRejectedPayload'
+            - $ref: '#/components/schemas/DatastorageConfigReloadedPayload'
+            - $ref: '#/components/schemas/DatastorageConfigRejectedPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2087,6 +2105,28 @@ components:
               'apifrontend.severity_triage.failed': '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
               'apifrontend.config.reloaded': '#/components/schemas/ApifrontendConfigReloadedPayload'
               'apifrontend.config.rejected': '#/components/schemas/ApifrontendConfigRejectedPayload'
+              # Issue #2285: CA hot-reload audit-trail parity (GAP-11 onReload
+              # callback wired into the 8 remaining StartCAFileWatcher callers;
+              # gateway.config.{reloaded,rejected} and
+              # apifrontend.config.{reloaded,rejected} above already existed).
+              'aianalysis.config.reloaded': '#/components/schemas/AIAnalysisConfigReloadedPayload'
+              'aianalysis.config.rejected': '#/components/schemas/AIAnalysisConfigRejectedPayload'
+              'effectiveness.config.reloaded': '#/components/schemas/EffectivenessConfigReloadedPayload'
+              'effectiveness.config.rejected': '#/components/schemas/EffectivenessConfigRejectedPayload'
+              'notification.config.reloaded': '#/components/schemas/NotificationConfigReloadedPayload'
+              'notification.config.rejected': '#/components/schemas/NotificationConfigRejectedPayload'
+              'orchestrator.config.reloaded': '#/components/schemas/RemediationOrchestratorConfigReloadedPayload'
+              'orchestrator.config.rejected': '#/components/schemas/RemediationOrchestratorConfigRejectedPayload'
+              'signalprocessing.config.reloaded': '#/components/schemas/SignalProcessingConfigReloadedPayload'
+              'signalprocessing.config.rejected': '#/components/schemas/SignalProcessingConfigRejectedPayload'
+              'workflowexecution.config.reloaded': '#/components/schemas/WorkflowExecutionConfigReloadedPayload'
+              'workflowexecution.config.rejected': '#/components/schemas/WorkflowExecutionConfigRejectedPayload'
+              'authwebhook.config.reloaded': '#/components/schemas/AuthwebhookConfigReloadedPayload'
+              'authwebhook.config.rejected': '#/components/schemas/AuthwebhookConfigRejectedPayload'
+              'aiagent.config.reloaded': '#/components/schemas/AIAgentConfigReloadedPayload'
+              'aiagent.config.rejected': '#/components/schemas/AIAgentConfigRejectedPayload'
+              'datastorage.config.reloaded': '#/components/schemas/DatastorageConfigReloadedPayload'
+              'datastorage.config.rejected': '#/components/schemas/DatastorageConfigRejectedPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -6662,6 +6702,298 @@ components:
         component:
           type: string
           description: Hot-reloadable component whose reload was rejected (e.g. log_level, ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    # Issue #2285: CA hot-reload audit-trail parity. Same component-based
+    # shape as GatewayConfigReloadedPayload/GatewayConfigRejectedPayload
+    # above (component defaults to "ca_cert" for the TLS_CA_FILE hot-reload
+    # watcher; extensible to other hot-reloadable components later).
+    AIAnalysisConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: AIAnalysis config reloaded event payload (aianalysis.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['aianalysis.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    AIAnalysisConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: AIAnalysis config rejected event payload (aianalysis.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['aianalysis.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    EffectivenessConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: EffectivenessMonitor config reloaded event payload (effectiveness.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['effectiveness.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    EffectivenessConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: EffectivenessMonitor config rejected event payload (effectiveness.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['effectiveness.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    NotificationConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: Notification config reloaded event payload (notification.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['notification.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    NotificationConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: Notification config rejected event payload (notification.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['notification.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    RemediationOrchestratorConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: RemediationOrchestrator config reloaded event payload (orchestrator.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['orchestrator.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    RemediationOrchestratorConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: RemediationOrchestrator config rejected event payload (orchestrator.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['orchestrator.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    SignalProcessingConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: SignalProcessing config reloaded event payload (signalprocessing.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['signalprocessing.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    SignalProcessingConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: SignalProcessing config rejected event payload (signalprocessing.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['signalprocessing.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    WorkflowExecutionConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: WorkflowExecution config reloaded event payload (workflowexecution.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['workflowexecution.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    WorkflowExecutionConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: WorkflowExecution config rejected event payload (workflowexecution.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['workflowexecution.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    AuthwebhookConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: AuthWebhook config reloaded event payload (authwebhook.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['authwebhook.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    AuthwebhookConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: AuthWebhook config rejected event payload (authwebhook.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['authwebhook.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    AIAgentConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: KubernautAgent config reloaded event payload (aiagent.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    AIAgentConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: KubernautAgent config rejected event payload (aiagent.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    DatastorageConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: Data Storage config reloaded event payload (datastorage.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    DatastorageConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: Data Storage config rejected event payload (datastorage.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #2285)
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. ca_cert)
         rejection_reason:
           type: string
           description: Reason configuration was rejected

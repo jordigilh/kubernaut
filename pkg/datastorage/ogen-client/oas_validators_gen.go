@@ -284,6 +284,70 @@ func (s AIAgentAuthFailurePayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentEnrichmentCompletedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1311,6 +1375,70 @@ func (s AIAnalysisAuditPayloadPhase) Validate() error {
 	case "Completed":
 		return nil
 	case "Failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAnalysisConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAnalysisConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "aianalysis.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAnalysisConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAnalysisConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "aianalysis.config.reloaded":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3618,6 +3746,96 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAnalysisConfigReloadedPayloadAuditEventEventData:
+		if err := s.AIAnalysisConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAnalysisConfigRejectedPayloadAuditEventEventData:
+		if err := s.AIAnalysisConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case EffectivenessConfigReloadedPayloadAuditEventEventData:
+		if err := s.EffectivenessConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case EffectivenessConfigRejectedPayloadAuditEventEventData:
+		if err := s.EffectivenessConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case NotificationConfigReloadedPayloadAuditEventEventData:
+		if err := s.NotificationConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case NotificationConfigRejectedPayloadAuditEventEventData:
+		if err := s.NotificationConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventEventData:
+		if err := s.RemediationOrchestratorConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventEventData:
+		if err := s.RemediationOrchestratorConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case SignalProcessingConfigReloadedPayloadAuditEventEventData:
+		if err := s.SignalProcessingConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case SignalProcessingConfigRejectedPayloadAuditEventEventData:
+		if err := s.SignalProcessingConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowExecutionConfigReloadedPayloadAuditEventEventData:
+		if err := s.WorkflowExecutionConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowExecutionConfigRejectedPayloadAuditEventEventData:
+		if err := s.WorkflowExecutionConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuthwebhookConfigReloadedPayloadAuditEventEventData:
+		if err := s.AuthwebhookConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuthwebhookConfigRejectedPayloadAuditEventEventData:
+		if err := s.AuthwebhookConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentConfigReloadedPayloadAuditEventEventData:
+		if err := s.AIAgentConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentConfigRejectedPayloadAuditEventEventData:
+		if err := s.AIAgentConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case DatastorageConfigReloadedPayloadAuditEventEventData:
+		if err := s.DatastorageConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case DatastorageConfigRejectedPayloadAuditEventEventData:
+		if err := s.DatastorageConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	default:
 		return errors.Errorf("invalid type %q", s.Type)
 	}
@@ -4283,6 +4501,96 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAnalysisConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AIAnalysisConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAnalysisConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AIAnalysisConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case EffectivenessConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.EffectivenessConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case EffectivenessConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.EffectivenessConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case NotificationConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.NotificationConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case NotificationConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.NotificationConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.RemediationOrchestratorConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.RemediationOrchestratorConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case SignalProcessingConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.SignalProcessingConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case SignalProcessingConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.SignalProcessingConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.WorkflowExecutionConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.WorkflowExecutionConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuthwebhookConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AuthwebhookConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuthwebhookConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AuthwebhookConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case DatastorageConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.DatastorageConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case DatastorageConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.DatastorageConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	default:
 		return errors.Errorf("invalid type %q", s.Type)
 	}
@@ -4455,6 +4763,70 @@ func (s *AuditExportResponseHashChainVerification) Validate() error {
 	return nil
 }
 
+func (s *AuthwebhookConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AuthwebhookConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "authwebhook.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AuthwebhookConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AuthwebhookConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "authwebhook.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AuthwebhookWorkflowRegistrationFailedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -4563,6 +4935,70 @@ func (s CustomLabels) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *DatastorageConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s DatastorageConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *DatastorageConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s DatastorageConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *DatastorageRatelimitDeniedPayload) Validate() error {
@@ -5412,6 +5848,70 @@ func (s *EffectivenessComponents) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *EffectivenessConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s EffectivenessConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "effectiveness.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *EffectivenessConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s EffectivenessConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "effectiveness.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *EffectivenessScoreResponse) Validate() error {
@@ -6910,6 +7410,70 @@ func (s NotificationAuditStatus) Validate() error {
 	}
 }
 
+func (s *NotificationConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s NotificationConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "notification.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *NotificationConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s NotificationConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "notification.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s QueryAuditEventsEventOutcome) Validate() error {
 	switch s {
 	case "success":
@@ -8020,6 +8584,70 @@ func (s RemediationOrchestratorAuditPayloadOutcome) Validate() error {
 	}
 }
 
+func (s *RemediationOrchestratorConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationOrchestratorConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "orchestrator.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationOrchestratorConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationOrchestratorConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "orchestrator.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *RemediationRequestWebhookAuditPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -9018,6 +9646,70 @@ func (s SignalProcessingAuditPayloadSignalMode) Validate() error {
 	}
 }
 
+func (s *SignalProcessingConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SignalProcessingConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "signalprocessing.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *SignalProcessingConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SignalProcessingConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "signalprocessing.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ValidationResult) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -9292,6 +9984,70 @@ func (s WorkflowExecutionAuditPayloadPhase) Validate() error {
 	case "Completed":
 		return nil
 	case "Failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowExecutionConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowExecutionConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "workflowexecution.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowExecutionConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowExecutionConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "workflowexecution.config.reloaded":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

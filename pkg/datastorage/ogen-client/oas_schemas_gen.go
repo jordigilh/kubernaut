@@ -508,6 +508,160 @@ func (s *AIAgentAuthFailurePayloadEventType) UnmarshalText(data []byte) error {
 	}
 }
 
+// KubernautAgent config rejected event payload (aiagent.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AIAgentConfigRejectedPayload
+type AIAgentConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentConfigRejectedPayload) GetEventType() AIAgentConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AIAgentConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *AIAgentConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentConfigRejectedPayload) SetEventType(val AIAgentConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AIAgentConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *AIAgentConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentConfigRejectedPayloadEventType string
+
+const (
+	AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected AIAgentConfigRejectedPayloadEventType = "aiagent.config.rejected"
+)
+
+// AllValues returns all AIAgentConfigRejectedPayloadEventType values.
+func (AIAgentConfigRejectedPayloadEventType) AllValues() []AIAgentConfigRejectedPayloadEventType {
+	return []AIAgentConfigRejectedPayloadEventType{
+		AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentConfigRejectedPayloadEventType(data) {
+	case AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected:
+		*s = AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// KubernautAgent config reloaded event payload (aiagent.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AIAgentConfigReloadedPayload
+type AIAgentConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentConfigReloadedPayload) GetEventType() AIAgentConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AIAgentConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *AIAgentConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentConfigReloadedPayload) SetEventType(val AIAgentConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AIAgentConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *AIAgentConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentConfigReloadedPayloadEventType string
+
+const (
+	AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded AIAgentConfigReloadedPayloadEventType = "aiagent.config.reloaded"
+)
+
+// AllValues returns all AIAgentConfigReloadedPayloadEventType values.
+func (AIAgentConfigReloadedPayloadEventType) AllValues() []AIAgentConfigReloadedPayloadEventType {
+	return []AIAgentConfigReloadedPayloadEventType{
+		AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentConfigReloadedPayloadEventType(data) {
+	case AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded:
+		*s = AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent Phase 2 enrichment completed event payload (aiagent.enrichment.completed) - SOC2 CC8.1,
 // Issue.
 // Ref: #/components/schemas/AIAgentEnrichmentCompletedPayload
@@ -3042,6 +3196,160 @@ func (s *AIAnalysisAuditPayloadPhase) UnmarshalText(data []byte) error {
 		return nil
 	case AIAnalysisAuditPayloadPhaseFailed:
 		*s = AIAnalysisAuditPayloadPhaseFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AIAnalysis config rejected event payload (aianalysis.config.rejected) — hot-reload configuration
+// rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AIAnalysisConfigRejectedPayload
+type AIAnalysisConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAnalysisConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAnalysisConfigRejectedPayload) GetEventType() AIAnalysisConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AIAnalysisConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *AIAnalysisConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAnalysisConfigRejectedPayload) SetEventType(val AIAnalysisConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AIAnalysisConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *AIAnalysisConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAnalysisConfigRejectedPayloadEventType string
+
+const (
+	AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected AIAnalysisConfigRejectedPayloadEventType = "aianalysis.config.rejected"
+)
+
+// AllValues returns all AIAnalysisConfigRejectedPayloadEventType values.
+func (AIAnalysisConfigRejectedPayloadEventType) AllValues() []AIAnalysisConfigRejectedPayloadEventType {
+	return []AIAnalysisConfigRejectedPayloadEventType{
+		AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAnalysisConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAnalysisConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAnalysisConfigRejectedPayloadEventType(data) {
+	case AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected:
+		*s = AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AIAnalysis config reloaded event payload (aianalysis.config.reloaded) — hot-reload configuration
+// accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AIAnalysisConfigReloadedPayload
+type AIAnalysisConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAnalysisConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAnalysisConfigReloadedPayload) GetEventType() AIAnalysisConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AIAnalysisConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *AIAnalysisConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAnalysisConfigReloadedPayload) SetEventType(val AIAnalysisConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AIAnalysisConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *AIAnalysisConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAnalysisConfigReloadedPayloadEventType string
+
+const (
+	AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded AIAnalysisConfigReloadedPayloadEventType = "aianalysis.config.reloaded"
+)
+
+// AllValues returns all AIAnalysisConfigReloadedPayloadEventType values.
+func (AIAnalysisConfigReloadedPayloadEventType) AllValues() []AIAnalysisConfigReloadedPayloadEventType {
+	return []AIAnalysisConfigReloadedPayloadEventType{
+		AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAnalysisConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAnalysisConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAnalysisConfigReloadedPayloadEventType(data) {
+	case AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded:
+		*s = AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -8493,6 +8801,24 @@ type AuditEventEventData struct {
 	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
 	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
 	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
+	AIAnalysisConfigReloadedPayload              AIAnalysisConfigReloadedPayload
+	AIAnalysisConfigRejectedPayload              AIAnalysisConfigRejectedPayload
+	EffectivenessConfigReloadedPayload           EffectivenessConfigReloadedPayload
+	EffectivenessConfigRejectedPayload           EffectivenessConfigRejectedPayload
+	NotificationConfigReloadedPayload            NotificationConfigReloadedPayload
+	NotificationConfigRejectedPayload            NotificationConfigRejectedPayload
+	RemediationOrchestratorConfigReloadedPayload RemediationOrchestratorConfigReloadedPayload
+	RemediationOrchestratorConfigRejectedPayload RemediationOrchestratorConfigRejectedPayload
+	SignalProcessingConfigReloadedPayload        SignalProcessingConfigReloadedPayload
+	SignalProcessingConfigRejectedPayload        SignalProcessingConfigRejectedPayload
+	WorkflowExecutionConfigReloadedPayload       WorkflowExecutionConfigReloadedPayload
+	WorkflowExecutionConfigRejectedPayload       WorkflowExecutionConfigRejectedPayload
+	AuthwebhookConfigReloadedPayload             AuthwebhookConfigReloadedPayload
+	AuthwebhookConfigRejectedPayload             AuthwebhookConfigRejectedPayload
+	AIAgentConfigReloadedPayload                 AIAgentConfigReloadedPayload
+	AIAgentConfigRejectedPayload                 AIAgentConfigRejectedPayload
+	DatastorageConfigReloadedPayload             DatastorageConfigReloadedPayload
+	DatastorageConfigRejectedPayload             DatastorageConfigRejectedPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -8642,6 +8968,24 @@ const (
 	DatastorageRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.rejected"
+	AIAnalysisConfigReloadedPayloadAuditEventEventData                               AuditEventEventDataType = "aianalysis.config.reloaded"
+	AIAnalysisConfigRejectedPayloadAuditEventEventData                               AuditEventEventDataType = "aianalysis.config.rejected"
+	EffectivenessConfigReloadedPayloadAuditEventEventData                            AuditEventEventDataType = "effectiveness.config.reloaded"
+	EffectivenessConfigRejectedPayloadAuditEventEventData                            AuditEventEventDataType = "effectiveness.config.rejected"
+	NotificationConfigReloadedPayloadAuditEventEventData                             AuditEventEventDataType = "notification.config.reloaded"
+	NotificationConfigRejectedPayloadAuditEventEventData                             AuditEventEventDataType = "notification.config.rejected"
+	RemediationOrchestratorConfigReloadedPayloadAuditEventEventData                  AuditEventEventDataType = "orchestrator.config.reloaded"
+	RemediationOrchestratorConfigRejectedPayloadAuditEventEventData                  AuditEventEventDataType = "orchestrator.config.rejected"
+	SignalProcessingConfigReloadedPayloadAuditEventEventData                         AuditEventEventDataType = "signalprocessing.config.reloaded"
+	SignalProcessingConfigRejectedPayloadAuditEventEventData                         AuditEventEventDataType = "signalprocessing.config.rejected"
+	WorkflowExecutionConfigReloadedPayloadAuditEventEventData                        AuditEventEventDataType = "workflowexecution.config.reloaded"
+	WorkflowExecutionConfigRejectedPayloadAuditEventEventData                        AuditEventEventDataType = "workflowexecution.config.rejected"
+	AuthwebhookConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "authwebhook.config.reloaded"
+	AuthwebhookConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "authwebhook.config.rejected"
+	AIAgentConfigReloadedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.config.reloaded"
+	AIAgentConfigRejectedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.config.rejected"
+	DatastorageConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "datastorage.config.reloaded"
+	DatastorageConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "datastorage.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -9172,6 +9516,96 @@ func (s AuditEventEventData) IsGatewayConfigReloadedPayload() bool {
 // IsGatewayConfigRejectedPayload reports whether AuditEventEventData is GatewayConfigRejectedPayload.
 func (s AuditEventEventData) IsGatewayConfigRejectedPayload() bool {
 	return s.Type == GatewayConfigRejectedPayloadAuditEventEventData
+}
+
+// IsAIAnalysisConfigReloadedPayload reports whether AuditEventEventData is AIAnalysisConfigReloadedPayload.
+func (s AuditEventEventData) IsAIAnalysisConfigReloadedPayload() bool {
+	return s.Type == AIAnalysisConfigReloadedPayloadAuditEventEventData
+}
+
+// IsAIAnalysisConfigRejectedPayload reports whether AuditEventEventData is AIAnalysisConfigRejectedPayload.
+func (s AuditEventEventData) IsAIAnalysisConfigRejectedPayload() bool {
+	return s.Type == AIAnalysisConfigRejectedPayloadAuditEventEventData
+}
+
+// IsEffectivenessConfigReloadedPayload reports whether AuditEventEventData is EffectivenessConfigReloadedPayload.
+func (s AuditEventEventData) IsEffectivenessConfigReloadedPayload() bool {
+	return s.Type == EffectivenessConfigReloadedPayloadAuditEventEventData
+}
+
+// IsEffectivenessConfigRejectedPayload reports whether AuditEventEventData is EffectivenessConfigRejectedPayload.
+func (s AuditEventEventData) IsEffectivenessConfigRejectedPayload() bool {
+	return s.Type == EffectivenessConfigRejectedPayloadAuditEventEventData
+}
+
+// IsNotificationConfigReloadedPayload reports whether AuditEventEventData is NotificationConfigReloadedPayload.
+func (s AuditEventEventData) IsNotificationConfigReloadedPayload() bool {
+	return s.Type == NotificationConfigReloadedPayloadAuditEventEventData
+}
+
+// IsNotificationConfigRejectedPayload reports whether AuditEventEventData is NotificationConfigRejectedPayload.
+func (s AuditEventEventData) IsNotificationConfigRejectedPayload() bool {
+	return s.Type == NotificationConfigRejectedPayloadAuditEventEventData
+}
+
+// IsRemediationOrchestratorConfigReloadedPayload reports whether AuditEventEventData is RemediationOrchestratorConfigReloadedPayload.
+func (s AuditEventEventData) IsRemediationOrchestratorConfigReloadedPayload() bool {
+	return s.Type == RemediationOrchestratorConfigReloadedPayloadAuditEventEventData
+}
+
+// IsRemediationOrchestratorConfigRejectedPayload reports whether AuditEventEventData is RemediationOrchestratorConfigRejectedPayload.
+func (s AuditEventEventData) IsRemediationOrchestratorConfigRejectedPayload() bool {
+	return s.Type == RemediationOrchestratorConfigRejectedPayloadAuditEventEventData
+}
+
+// IsSignalProcessingConfigReloadedPayload reports whether AuditEventEventData is SignalProcessingConfigReloadedPayload.
+func (s AuditEventEventData) IsSignalProcessingConfigReloadedPayload() bool {
+	return s.Type == SignalProcessingConfigReloadedPayloadAuditEventEventData
+}
+
+// IsSignalProcessingConfigRejectedPayload reports whether AuditEventEventData is SignalProcessingConfigRejectedPayload.
+func (s AuditEventEventData) IsSignalProcessingConfigRejectedPayload() bool {
+	return s.Type == SignalProcessingConfigRejectedPayloadAuditEventEventData
+}
+
+// IsWorkflowExecutionConfigReloadedPayload reports whether AuditEventEventData is WorkflowExecutionConfigReloadedPayload.
+func (s AuditEventEventData) IsWorkflowExecutionConfigReloadedPayload() bool {
+	return s.Type == WorkflowExecutionConfigReloadedPayloadAuditEventEventData
+}
+
+// IsWorkflowExecutionConfigRejectedPayload reports whether AuditEventEventData is WorkflowExecutionConfigRejectedPayload.
+func (s AuditEventEventData) IsWorkflowExecutionConfigRejectedPayload() bool {
+	return s.Type == WorkflowExecutionConfigRejectedPayloadAuditEventEventData
+}
+
+// IsAuthwebhookConfigReloadedPayload reports whether AuditEventEventData is AuthwebhookConfigReloadedPayload.
+func (s AuditEventEventData) IsAuthwebhookConfigReloadedPayload() bool {
+	return s.Type == AuthwebhookConfigReloadedPayloadAuditEventEventData
+}
+
+// IsAuthwebhookConfigRejectedPayload reports whether AuditEventEventData is AuthwebhookConfigRejectedPayload.
+func (s AuditEventEventData) IsAuthwebhookConfigRejectedPayload() bool {
+	return s.Type == AuthwebhookConfigRejectedPayloadAuditEventEventData
+}
+
+// IsAIAgentConfigReloadedPayload reports whether AuditEventEventData is AIAgentConfigReloadedPayload.
+func (s AuditEventEventData) IsAIAgentConfigReloadedPayload() bool {
+	return s.Type == AIAgentConfigReloadedPayloadAuditEventEventData
+}
+
+// IsAIAgentConfigRejectedPayload reports whether AuditEventEventData is AIAgentConfigRejectedPayload.
+func (s AuditEventEventData) IsAIAgentConfigRejectedPayload() bool {
+	return s.Type == AIAgentConfigRejectedPayloadAuditEventEventData
+}
+
+// IsDatastorageConfigReloadedPayload reports whether AuditEventEventData is DatastorageConfigReloadedPayload.
+func (s AuditEventEventData) IsDatastorageConfigReloadedPayload() bool {
+	return s.Type == DatastorageConfigReloadedPayloadAuditEventEventData
+}
+
+// IsDatastorageConfigRejectedPayload reports whether AuditEventEventData is DatastorageConfigRejectedPayload.
+func (s AuditEventEventData) IsDatastorageConfigRejectedPayload() bool {
+	return s.Type == DatastorageConfigRejectedPayloadAuditEventEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventEventData to GatewayAuditPayload.
@@ -11532,6 +11966,384 @@ func NewGatewayConfigRejectedPayloadAuditEventEventData(v GatewayConfigRejectedP
 	return s
 }
 
+// SetAIAnalysisConfigReloadedPayload sets AuditEventEventData to AIAnalysisConfigReloadedPayload.
+func (s *AuditEventEventData) SetAIAnalysisConfigReloadedPayload(v AIAnalysisConfigReloadedPayload) {
+	s.Type = AIAnalysisConfigReloadedPayloadAuditEventEventData
+	s.AIAnalysisConfigReloadedPayload = v
+}
+
+// GetAIAnalysisConfigReloadedPayload returns AIAnalysisConfigReloadedPayload and true boolean if AuditEventEventData is AIAnalysisConfigReloadedPayload.
+func (s AuditEventEventData) GetAIAnalysisConfigReloadedPayload() (v AIAnalysisConfigReloadedPayload, ok bool) {
+	if !s.IsAIAnalysisConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AIAnalysisConfigReloadedPayload, true
+}
+
+// NewAIAnalysisConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from AIAnalysisConfigReloadedPayload.
+func NewAIAnalysisConfigReloadedPayloadAuditEventEventData(v AIAnalysisConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisConfigReloadedPayload(v)
+	return s
+}
+
+// SetAIAnalysisConfigRejectedPayload sets AuditEventEventData to AIAnalysisConfigRejectedPayload.
+func (s *AuditEventEventData) SetAIAnalysisConfigRejectedPayload(v AIAnalysisConfigRejectedPayload) {
+	s.Type = AIAnalysisConfigRejectedPayloadAuditEventEventData
+	s.AIAnalysisConfigRejectedPayload = v
+}
+
+// GetAIAnalysisConfigRejectedPayload returns AIAnalysisConfigRejectedPayload and true boolean if AuditEventEventData is AIAnalysisConfigRejectedPayload.
+func (s AuditEventEventData) GetAIAnalysisConfigRejectedPayload() (v AIAnalysisConfigRejectedPayload, ok bool) {
+	if !s.IsAIAnalysisConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AIAnalysisConfigRejectedPayload, true
+}
+
+// NewAIAnalysisConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from AIAnalysisConfigRejectedPayload.
+func NewAIAnalysisConfigRejectedPayloadAuditEventEventData(v AIAnalysisConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisConfigRejectedPayload(v)
+	return s
+}
+
+// SetEffectivenessConfigReloadedPayload sets AuditEventEventData to EffectivenessConfigReloadedPayload.
+func (s *AuditEventEventData) SetEffectivenessConfigReloadedPayload(v EffectivenessConfigReloadedPayload) {
+	s.Type = EffectivenessConfigReloadedPayloadAuditEventEventData
+	s.EffectivenessConfigReloadedPayload = v
+}
+
+// GetEffectivenessConfigReloadedPayload returns EffectivenessConfigReloadedPayload and true boolean if AuditEventEventData is EffectivenessConfigReloadedPayload.
+func (s AuditEventEventData) GetEffectivenessConfigReloadedPayload() (v EffectivenessConfigReloadedPayload, ok bool) {
+	if !s.IsEffectivenessConfigReloadedPayload() {
+		return v, false
+	}
+	return s.EffectivenessConfigReloadedPayload, true
+}
+
+// NewEffectivenessConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from EffectivenessConfigReloadedPayload.
+func NewEffectivenessConfigReloadedPayloadAuditEventEventData(v EffectivenessConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessConfigReloadedPayload(v)
+	return s
+}
+
+// SetEffectivenessConfigRejectedPayload sets AuditEventEventData to EffectivenessConfigRejectedPayload.
+func (s *AuditEventEventData) SetEffectivenessConfigRejectedPayload(v EffectivenessConfigRejectedPayload) {
+	s.Type = EffectivenessConfigRejectedPayloadAuditEventEventData
+	s.EffectivenessConfigRejectedPayload = v
+}
+
+// GetEffectivenessConfigRejectedPayload returns EffectivenessConfigRejectedPayload and true boolean if AuditEventEventData is EffectivenessConfigRejectedPayload.
+func (s AuditEventEventData) GetEffectivenessConfigRejectedPayload() (v EffectivenessConfigRejectedPayload, ok bool) {
+	if !s.IsEffectivenessConfigRejectedPayload() {
+		return v, false
+	}
+	return s.EffectivenessConfigRejectedPayload, true
+}
+
+// NewEffectivenessConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from EffectivenessConfigRejectedPayload.
+func NewEffectivenessConfigRejectedPayloadAuditEventEventData(v EffectivenessConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessConfigRejectedPayload(v)
+	return s
+}
+
+// SetNotificationConfigReloadedPayload sets AuditEventEventData to NotificationConfigReloadedPayload.
+func (s *AuditEventEventData) SetNotificationConfigReloadedPayload(v NotificationConfigReloadedPayload) {
+	s.Type = NotificationConfigReloadedPayloadAuditEventEventData
+	s.NotificationConfigReloadedPayload = v
+}
+
+// GetNotificationConfigReloadedPayload returns NotificationConfigReloadedPayload and true boolean if AuditEventEventData is NotificationConfigReloadedPayload.
+func (s AuditEventEventData) GetNotificationConfigReloadedPayload() (v NotificationConfigReloadedPayload, ok bool) {
+	if !s.IsNotificationConfigReloadedPayload() {
+		return v, false
+	}
+	return s.NotificationConfigReloadedPayload, true
+}
+
+// NewNotificationConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from NotificationConfigReloadedPayload.
+func NewNotificationConfigReloadedPayloadAuditEventEventData(v NotificationConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetNotificationConfigReloadedPayload(v)
+	return s
+}
+
+// SetNotificationConfigRejectedPayload sets AuditEventEventData to NotificationConfigRejectedPayload.
+func (s *AuditEventEventData) SetNotificationConfigRejectedPayload(v NotificationConfigRejectedPayload) {
+	s.Type = NotificationConfigRejectedPayloadAuditEventEventData
+	s.NotificationConfigRejectedPayload = v
+}
+
+// GetNotificationConfigRejectedPayload returns NotificationConfigRejectedPayload and true boolean if AuditEventEventData is NotificationConfigRejectedPayload.
+func (s AuditEventEventData) GetNotificationConfigRejectedPayload() (v NotificationConfigRejectedPayload, ok bool) {
+	if !s.IsNotificationConfigRejectedPayload() {
+		return v, false
+	}
+	return s.NotificationConfigRejectedPayload, true
+}
+
+// NewNotificationConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from NotificationConfigRejectedPayload.
+func NewNotificationConfigRejectedPayloadAuditEventEventData(v NotificationConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetNotificationConfigRejectedPayload(v)
+	return s
+}
+
+// SetRemediationOrchestratorConfigReloadedPayload sets AuditEventEventData to RemediationOrchestratorConfigReloadedPayload.
+func (s *AuditEventEventData) SetRemediationOrchestratorConfigReloadedPayload(v RemediationOrchestratorConfigReloadedPayload) {
+	s.Type = RemediationOrchestratorConfigReloadedPayloadAuditEventEventData
+	s.RemediationOrchestratorConfigReloadedPayload = v
+}
+
+// GetRemediationOrchestratorConfigReloadedPayload returns RemediationOrchestratorConfigReloadedPayload and true boolean if AuditEventEventData is RemediationOrchestratorConfigReloadedPayload.
+func (s AuditEventEventData) GetRemediationOrchestratorConfigReloadedPayload() (v RemediationOrchestratorConfigReloadedPayload, ok bool) {
+	if !s.IsRemediationOrchestratorConfigReloadedPayload() {
+		return v, false
+	}
+	return s.RemediationOrchestratorConfigReloadedPayload, true
+}
+
+// NewRemediationOrchestratorConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorConfigReloadedPayload.
+func NewRemediationOrchestratorConfigReloadedPayloadAuditEventEventData(v RemediationOrchestratorConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorConfigReloadedPayload(v)
+	return s
+}
+
+// SetRemediationOrchestratorConfigRejectedPayload sets AuditEventEventData to RemediationOrchestratorConfigRejectedPayload.
+func (s *AuditEventEventData) SetRemediationOrchestratorConfigRejectedPayload(v RemediationOrchestratorConfigRejectedPayload) {
+	s.Type = RemediationOrchestratorConfigRejectedPayloadAuditEventEventData
+	s.RemediationOrchestratorConfigRejectedPayload = v
+}
+
+// GetRemediationOrchestratorConfigRejectedPayload returns RemediationOrchestratorConfigRejectedPayload and true boolean if AuditEventEventData is RemediationOrchestratorConfigRejectedPayload.
+func (s AuditEventEventData) GetRemediationOrchestratorConfigRejectedPayload() (v RemediationOrchestratorConfigRejectedPayload, ok bool) {
+	if !s.IsRemediationOrchestratorConfigRejectedPayload() {
+		return v, false
+	}
+	return s.RemediationOrchestratorConfigRejectedPayload, true
+}
+
+// NewRemediationOrchestratorConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorConfigRejectedPayload.
+func NewRemediationOrchestratorConfigRejectedPayloadAuditEventEventData(v RemediationOrchestratorConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorConfigRejectedPayload(v)
+	return s
+}
+
+// SetSignalProcessingConfigReloadedPayload sets AuditEventEventData to SignalProcessingConfigReloadedPayload.
+func (s *AuditEventEventData) SetSignalProcessingConfigReloadedPayload(v SignalProcessingConfigReloadedPayload) {
+	s.Type = SignalProcessingConfigReloadedPayloadAuditEventEventData
+	s.SignalProcessingConfigReloadedPayload = v
+}
+
+// GetSignalProcessingConfigReloadedPayload returns SignalProcessingConfigReloadedPayload and true boolean if AuditEventEventData is SignalProcessingConfigReloadedPayload.
+func (s AuditEventEventData) GetSignalProcessingConfigReloadedPayload() (v SignalProcessingConfigReloadedPayload, ok bool) {
+	if !s.IsSignalProcessingConfigReloadedPayload() {
+		return v, false
+	}
+	return s.SignalProcessingConfigReloadedPayload, true
+}
+
+// NewSignalProcessingConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from SignalProcessingConfigReloadedPayload.
+func NewSignalProcessingConfigReloadedPayloadAuditEventEventData(v SignalProcessingConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetSignalProcessingConfigReloadedPayload(v)
+	return s
+}
+
+// SetSignalProcessingConfigRejectedPayload sets AuditEventEventData to SignalProcessingConfigRejectedPayload.
+func (s *AuditEventEventData) SetSignalProcessingConfigRejectedPayload(v SignalProcessingConfigRejectedPayload) {
+	s.Type = SignalProcessingConfigRejectedPayloadAuditEventEventData
+	s.SignalProcessingConfigRejectedPayload = v
+}
+
+// GetSignalProcessingConfigRejectedPayload returns SignalProcessingConfigRejectedPayload and true boolean if AuditEventEventData is SignalProcessingConfigRejectedPayload.
+func (s AuditEventEventData) GetSignalProcessingConfigRejectedPayload() (v SignalProcessingConfigRejectedPayload, ok bool) {
+	if !s.IsSignalProcessingConfigRejectedPayload() {
+		return v, false
+	}
+	return s.SignalProcessingConfigRejectedPayload, true
+}
+
+// NewSignalProcessingConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from SignalProcessingConfigRejectedPayload.
+func NewSignalProcessingConfigRejectedPayloadAuditEventEventData(v SignalProcessingConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetSignalProcessingConfigRejectedPayload(v)
+	return s
+}
+
+// SetWorkflowExecutionConfigReloadedPayload sets AuditEventEventData to WorkflowExecutionConfigReloadedPayload.
+func (s *AuditEventEventData) SetWorkflowExecutionConfigReloadedPayload(v WorkflowExecutionConfigReloadedPayload) {
+	s.Type = WorkflowExecutionConfigReloadedPayloadAuditEventEventData
+	s.WorkflowExecutionConfigReloadedPayload = v
+}
+
+// GetWorkflowExecutionConfigReloadedPayload returns WorkflowExecutionConfigReloadedPayload and true boolean if AuditEventEventData is WorkflowExecutionConfigReloadedPayload.
+func (s AuditEventEventData) GetWorkflowExecutionConfigReloadedPayload() (v WorkflowExecutionConfigReloadedPayload, ok bool) {
+	if !s.IsWorkflowExecutionConfigReloadedPayload() {
+		return v, false
+	}
+	return s.WorkflowExecutionConfigReloadedPayload, true
+}
+
+// NewWorkflowExecutionConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from WorkflowExecutionConfigReloadedPayload.
+func NewWorkflowExecutionConfigReloadedPayloadAuditEventEventData(v WorkflowExecutionConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowExecutionConfigReloadedPayload(v)
+	return s
+}
+
+// SetWorkflowExecutionConfigRejectedPayload sets AuditEventEventData to WorkflowExecutionConfigRejectedPayload.
+func (s *AuditEventEventData) SetWorkflowExecutionConfigRejectedPayload(v WorkflowExecutionConfigRejectedPayload) {
+	s.Type = WorkflowExecutionConfigRejectedPayloadAuditEventEventData
+	s.WorkflowExecutionConfigRejectedPayload = v
+}
+
+// GetWorkflowExecutionConfigRejectedPayload returns WorkflowExecutionConfigRejectedPayload and true boolean if AuditEventEventData is WorkflowExecutionConfigRejectedPayload.
+func (s AuditEventEventData) GetWorkflowExecutionConfigRejectedPayload() (v WorkflowExecutionConfigRejectedPayload, ok bool) {
+	if !s.IsWorkflowExecutionConfigRejectedPayload() {
+		return v, false
+	}
+	return s.WorkflowExecutionConfigRejectedPayload, true
+}
+
+// NewWorkflowExecutionConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from WorkflowExecutionConfigRejectedPayload.
+func NewWorkflowExecutionConfigRejectedPayloadAuditEventEventData(v WorkflowExecutionConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowExecutionConfigRejectedPayload(v)
+	return s
+}
+
+// SetAuthwebhookConfigReloadedPayload sets AuditEventEventData to AuthwebhookConfigReloadedPayload.
+func (s *AuditEventEventData) SetAuthwebhookConfigReloadedPayload(v AuthwebhookConfigReloadedPayload) {
+	s.Type = AuthwebhookConfigReloadedPayloadAuditEventEventData
+	s.AuthwebhookConfigReloadedPayload = v
+}
+
+// GetAuthwebhookConfigReloadedPayload returns AuthwebhookConfigReloadedPayload and true boolean if AuditEventEventData is AuthwebhookConfigReloadedPayload.
+func (s AuditEventEventData) GetAuthwebhookConfigReloadedPayload() (v AuthwebhookConfigReloadedPayload, ok bool) {
+	if !s.IsAuthwebhookConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookConfigReloadedPayload, true
+}
+
+// NewAuthwebhookConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from AuthwebhookConfigReloadedPayload.
+func NewAuthwebhookConfigReloadedPayloadAuditEventEventData(v AuthwebhookConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAuthwebhookConfigReloadedPayload(v)
+	return s
+}
+
+// SetAuthwebhookConfigRejectedPayload sets AuditEventEventData to AuthwebhookConfigRejectedPayload.
+func (s *AuditEventEventData) SetAuthwebhookConfigRejectedPayload(v AuthwebhookConfigRejectedPayload) {
+	s.Type = AuthwebhookConfigRejectedPayloadAuditEventEventData
+	s.AuthwebhookConfigRejectedPayload = v
+}
+
+// GetAuthwebhookConfigRejectedPayload returns AuthwebhookConfigRejectedPayload and true boolean if AuditEventEventData is AuthwebhookConfigRejectedPayload.
+func (s AuditEventEventData) GetAuthwebhookConfigRejectedPayload() (v AuthwebhookConfigRejectedPayload, ok bool) {
+	if !s.IsAuthwebhookConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookConfigRejectedPayload, true
+}
+
+// NewAuthwebhookConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from AuthwebhookConfigRejectedPayload.
+func NewAuthwebhookConfigRejectedPayloadAuditEventEventData(v AuthwebhookConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAuthwebhookConfigRejectedPayload(v)
+	return s
+}
+
+// SetAIAgentConfigReloadedPayload sets AuditEventEventData to AIAgentConfigReloadedPayload.
+func (s *AuditEventEventData) SetAIAgentConfigReloadedPayload(v AIAgentConfigReloadedPayload) {
+	s.Type = AIAgentConfigReloadedPayloadAuditEventEventData
+	s.AIAgentConfigReloadedPayload = v
+}
+
+// GetAIAgentConfigReloadedPayload returns AIAgentConfigReloadedPayload and true boolean if AuditEventEventData is AIAgentConfigReloadedPayload.
+func (s AuditEventEventData) GetAIAgentConfigReloadedPayload() (v AIAgentConfigReloadedPayload, ok bool) {
+	if !s.IsAIAgentConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AIAgentConfigReloadedPayload, true
+}
+
+// NewAIAgentConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentConfigReloadedPayload.
+func NewAIAgentConfigReloadedPayloadAuditEventEventData(v AIAgentConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentConfigReloadedPayload(v)
+	return s
+}
+
+// SetAIAgentConfigRejectedPayload sets AuditEventEventData to AIAgentConfigRejectedPayload.
+func (s *AuditEventEventData) SetAIAgentConfigRejectedPayload(v AIAgentConfigRejectedPayload) {
+	s.Type = AIAgentConfigRejectedPayloadAuditEventEventData
+	s.AIAgentConfigRejectedPayload = v
+}
+
+// GetAIAgentConfigRejectedPayload returns AIAgentConfigRejectedPayload and true boolean if AuditEventEventData is AIAgentConfigRejectedPayload.
+func (s AuditEventEventData) GetAIAgentConfigRejectedPayload() (v AIAgentConfigRejectedPayload, ok bool) {
+	if !s.IsAIAgentConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AIAgentConfigRejectedPayload, true
+}
+
+// NewAIAgentConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentConfigRejectedPayload.
+func NewAIAgentConfigRejectedPayloadAuditEventEventData(v AIAgentConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentConfigRejectedPayload(v)
+	return s
+}
+
+// SetDatastorageConfigReloadedPayload sets AuditEventEventData to DatastorageConfigReloadedPayload.
+func (s *AuditEventEventData) SetDatastorageConfigReloadedPayload(v DatastorageConfigReloadedPayload) {
+	s.Type = DatastorageConfigReloadedPayloadAuditEventEventData
+	s.DatastorageConfigReloadedPayload = v
+}
+
+// GetDatastorageConfigReloadedPayload returns DatastorageConfigReloadedPayload and true boolean if AuditEventEventData is DatastorageConfigReloadedPayload.
+func (s AuditEventEventData) GetDatastorageConfigReloadedPayload() (v DatastorageConfigReloadedPayload, ok bool) {
+	if !s.IsDatastorageConfigReloadedPayload() {
+		return v, false
+	}
+	return s.DatastorageConfigReloadedPayload, true
+}
+
+// NewDatastorageConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from DatastorageConfigReloadedPayload.
+func NewDatastorageConfigReloadedPayloadAuditEventEventData(v DatastorageConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetDatastorageConfigReloadedPayload(v)
+	return s
+}
+
+// SetDatastorageConfigRejectedPayload sets AuditEventEventData to DatastorageConfigRejectedPayload.
+func (s *AuditEventEventData) SetDatastorageConfigRejectedPayload(v DatastorageConfigRejectedPayload) {
+	s.Type = DatastorageConfigRejectedPayloadAuditEventEventData
+	s.DatastorageConfigRejectedPayload = v
+}
+
+// GetDatastorageConfigRejectedPayload returns DatastorageConfigRejectedPayload and true boolean if AuditEventEventData is DatastorageConfigRejectedPayload.
+func (s AuditEventEventData) GetDatastorageConfigRejectedPayload() (v DatastorageConfigRejectedPayload, ok bool) {
+	if !s.IsDatastorageConfigRejectedPayload() {
+		return v, false
+	}
+	return s.DatastorageConfigRejectedPayload, true
+}
+
+// NewDatastorageConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from DatastorageConfigRejectedPayload.
+func NewDatastorageConfigRejectedPayloadAuditEventEventData(v DatastorageConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetDatastorageConfigRejectedPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -12121,6 +12933,24 @@ type AuditEventRequestEventData struct {
 	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
 	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
 	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
+	AIAnalysisConfigReloadedPayload              AIAnalysisConfigReloadedPayload
+	AIAnalysisConfigRejectedPayload              AIAnalysisConfigRejectedPayload
+	EffectivenessConfigReloadedPayload           EffectivenessConfigReloadedPayload
+	EffectivenessConfigRejectedPayload           EffectivenessConfigRejectedPayload
+	NotificationConfigReloadedPayload            NotificationConfigReloadedPayload
+	NotificationConfigRejectedPayload            NotificationConfigRejectedPayload
+	RemediationOrchestratorConfigReloadedPayload RemediationOrchestratorConfigReloadedPayload
+	RemediationOrchestratorConfigRejectedPayload RemediationOrchestratorConfigRejectedPayload
+	SignalProcessingConfigReloadedPayload        SignalProcessingConfigReloadedPayload
+	SignalProcessingConfigRejectedPayload        SignalProcessingConfigRejectedPayload
+	WorkflowExecutionConfigReloadedPayload       WorkflowExecutionConfigReloadedPayload
+	WorkflowExecutionConfigRejectedPayload       WorkflowExecutionConfigRejectedPayload
+	AuthwebhookConfigReloadedPayload             AuthwebhookConfigReloadedPayload
+	AuthwebhookConfigRejectedPayload             AuthwebhookConfigRejectedPayload
+	AIAgentConfigReloadedPayload                 AIAgentConfigReloadedPayload
+	AIAgentConfigRejectedPayload                 AIAgentConfigRejectedPayload
+	DatastorageConfigReloadedPayload             DatastorageConfigReloadedPayload
+	DatastorageConfigRejectedPayload             DatastorageConfigRejectedPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -12270,6 +13100,24 @@ const (
 	DatastorageRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.rejected"
+	AIAnalysisConfigReloadedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "aianalysis.config.reloaded"
+	AIAnalysisConfigRejectedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "aianalysis.config.rejected"
+	EffectivenessConfigReloadedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "effectiveness.config.reloaded"
+	EffectivenessConfigRejectedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "effectiveness.config.rejected"
+	NotificationConfigReloadedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "notification.config.reloaded"
+	NotificationConfigRejectedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "notification.config.rejected"
+	RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData                         AuditEventRequestEventDataType = "orchestrator.config.reloaded"
+	RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData                         AuditEventRequestEventDataType = "orchestrator.config.rejected"
+	SignalProcessingConfigReloadedPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "signalprocessing.config.reloaded"
+	SignalProcessingConfigRejectedPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "signalprocessing.config.rejected"
+	WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "workflowexecution.config.reloaded"
+	WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "workflowexecution.config.rejected"
+	AuthwebhookConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "authwebhook.config.reloaded"
+	AuthwebhookConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "authwebhook.config.rejected"
+	AIAgentConfigReloadedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.config.reloaded"
+	AIAgentConfigRejectedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.config.rejected"
+	DatastorageConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "datastorage.config.reloaded"
+	DatastorageConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "datastorage.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -12800,6 +13648,96 @@ func (s AuditEventRequestEventData) IsGatewayConfigReloadedPayload() bool {
 // IsGatewayConfigRejectedPayload reports whether AuditEventRequestEventData is GatewayConfigRejectedPayload.
 func (s AuditEventRequestEventData) IsGatewayConfigRejectedPayload() bool {
 	return s.Type == GatewayConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsAIAnalysisConfigReloadedPayload reports whether AuditEventRequestEventData is AIAnalysisConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsAIAnalysisConfigReloadedPayload() bool {
+	return s.Type == AIAnalysisConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsAIAnalysisConfigRejectedPayload reports whether AuditEventRequestEventData is AIAnalysisConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsAIAnalysisConfigRejectedPayload() bool {
+	return s.Type == AIAnalysisConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsEffectivenessConfigReloadedPayload reports whether AuditEventRequestEventData is EffectivenessConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsEffectivenessConfigReloadedPayload() bool {
+	return s.Type == EffectivenessConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsEffectivenessConfigRejectedPayload reports whether AuditEventRequestEventData is EffectivenessConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsEffectivenessConfigRejectedPayload() bool {
+	return s.Type == EffectivenessConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsNotificationConfigReloadedPayload reports whether AuditEventRequestEventData is NotificationConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsNotificationConfigReloadedPayload() bool {
+	return s.Type == NotificationConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsNotificationConfigRejectedPayload reports whether AuditEventRequestEventData is NotificationConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsNotificationConfigRejectedPayload() bool {
+	return s.Type == NotificationConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsRemediationOrchestratorConfigReloadedPayload reports whether AuditEventRequestEventData is RemediationOrchestratorConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsRemediationOrchestratorConfigReloadedPayload() bool {
+	return s.Type == RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsRemediationOrchestratorConfigRejectedPayload reports whether AuditEventRequestEventData is RemediationOrchestratorConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsRemediationOrchestratorConfigRejectedPayload() bool {
+	return s.Type == RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsSignalProcessingConfigReloadedPayload reports whether AuditEventRequestEventData is SignalProcessingConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsSignalProcessingConfigReloadedPayload() bool {
+	return s.Type == SignalProcessingConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsSignalProcessingConfigRejectedPayload reports whether AuditEventRequestEventData is SignalProcessingConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsSignalProcessingConfigRejectedPayload() bool {
+	return s.Type == SignalProcessingConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsWorkflowExecutionConfigReloadedPayload reports whether AuditEventRequestEventData is WorkflowExecutionConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsWorkflowExecutionConfigReloadedPayload() bool {
+	return s.Type == WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsWorkflowExecutionConfigRejectedPayload reports whether AuditEventRequestEventData is WorkflowExecutionConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsWorkflowExecutionConfigRejectedPayload() bool {
+	return s.Type == WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsAuthwebhookConfigReloadedPayload reports whether AuditEventRequestEventData is AuthwebhookConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsAuthwebhookConfigReloadedPayload() bool {
+	return s.Type == AuthwebhookConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsAuthwebhookConfigRejectedPayload reports whether AuditEventRequestEventData is AuthwebhookConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsAuthwebhookConfigRejectedPayload() bool {
+	return s.Type == AuthwebhookConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentConfigReloadedPayload reports whether AuditEventRequestEventData is AIAgentConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsAIAgentConfigReloadedPayload() bool {
+	return s.Type == AIAgentConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentConfigRejectedPayload reports whether AuditEventRequestEventData is AIAgentConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsAIAgentConfigRejectedPayload() bool {
+	return s.Type == AIAgentConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsDatastorageConfigReloadedPayload reports whether AuditEventRequestEventData is DatastorageConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsDatastorageConfigReloadedPayload() bool {
+	return s.Type == DatastorageConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsDatastorageConfigRejectedPayload reports whether AuditEventRequestEventData is DatastorageConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsDatastorageConfigRejectedPayload() bool {
+	return s.Type == DatastorageConfigRejectedPayloadAuditEventRequestEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventRequestEventData to GatewayAuditPayload.
@@ -15160,6 +16098,384 @@ func NewGatewayConfigRejectedPayloadAuditEventRequestEventData(v GatewayConfigRe
 	return s
 }
 
+// SetAIAnalysisConfigReloadedPayload sets AuditEventRequestEventData to AIAnalysisConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetAIAnalysisConfigReloadedPayload(v AIAnalysisConfigReloadedPayload) {
+	s.Type = AIAnalysisConfigReloadedPayloadAuditEventRequestEventData
+	s.AIAnalysisConfigReloadedPayload = v
+}
+
+// GetAIAnalysisConfigReloadedPayload returns AIAnalysisConfigReloadedPayload and true boolean if AuditEventRequestEventData is AIAnalysisConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetAIAnalysisConfigReloadedPayload() (v AIAnalysisConfigReloadedPayload, ok bool) {
+	if !s.IsAIAnalysisConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AIAnalysisConfigReloadedPayload, true
+}
+
+// NewAIAnalysisConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisConfigReloadedPayload.
+func NewAIAnalysisConfigReloadedPayloadAuditEventRequestEventData(v AIAnalysisConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisConfigReloadedPayload(v)
+	return s
+}
+
+// SetAIAnalysisConfigRejectedPayload sets AuditEventRequestEventData to AIAnalysisConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetAIAnalysisConfigRejectedPayload(v AIAnalysisConfigRejectedPayload) {
+	s.Type = AIAnalysisConfigRejectedPayloadAuditEventRequestEventData
+	s.AIAnalysisConfigRejectedPayload = v
+}
+
+// GetAIAnalysisConfigRejectedPayload returns AIAnalysisConfigRejectedPayload and true boolean if AuditEventRequestEventData is AIAnalysisConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetAIAnalysisConfigRejectedPayload() (v AIAnalysisConfigRejectedPayload, ok bool) {
+	if !s.IsAIAnalysisConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AIAnalysisConfigRejectedPayload, true
+}
+
+// NewAIAnalysisConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisConfigRejectedPayload.
+func NewAIAnalysisConfigRejectedPayloadAuditEventRequestEventData(v AIAnalysisConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisConfigRejectedPayload(v)
+	return s
+}
+
+// SetEffectivenessConfigReloadedPayload sets AuditEventRequestEventData to EffectivenessConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetEffectivenessConfigReloadedPayload(v EffectivenessConfigReloadedPayload) {
+	s.Type = EffectivenessConfigReloadedPayloadAuditEventRequestEventData
+	s.EffectivenessConfigReloadedPayload = v
+}
+
+// GetEffectivenessConfigReloadedPayload returns EffectivenessConfigReloadedPayload and true boolean if AuditEventRequestEventData is EffectivenessConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetEffectivenessConfigReloadedPayload() (v EffectivenessConfigReloadedPayload, ok bool) {
+	if !s.IsEffectivenessConfigReloadedPayload() {
+		return v, false
+	}
+	return s.EffectivenessConfigReloadedPayload, true
+}
+
+// NewEffectivenessConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessConfigReloadedPayload.
+func NewEffectivenessConfigReloadedPayloadAuditEventRequestEventData(v EffectivenessConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessConfigReloadedPayload(v)
+	return s
+}
+
+// SetEffectivenessConfigRejectedPayload sets AuditEventRequestEventData to EffectivenessConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetEffectivenessConfigRejectedPayload(v EffectivenessConfigRejectedPayload) {
+	s.Type = EffectivenessConfigRejectedPayloadAuditEventRequestEventData
+	s.EffectivenessConfigRejectedPayload = v
+}
+
+// GetEffectivenessConfigRejectedPayload returns EffectivenessConfigRejectedPayload and true boolean if AuditEventRequestEventData is EffectivenessConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetEffectivenessConfigRejectedPayload() (v EffectivenessConfigRejectedPayload, ok bool) {
+	if !s.IsEffectivenessConfigRejectedPayload() {
+		return v, false
+	}
+	return s.EffectivenessConfigRejectedPayload, true
+}
+
+// NewEffectivenessConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessConfigRejectedPayload.
+func NewEffectivenessConfigRejectedPayloadAuditEventRequestEventData(v EffectivenessConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessConfigRejectedPayload(v)
+	return s
+}
+
+// SetNotificationConfigReloadedPayload sets AuditEventRequestEventData to NotificationConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetNotificationConfigReloadedPayload(v NotificationConfigReloadedPayload) {
+	s.Type = NotificationConfigReloadedPayloadAuditEventRequestEventData
+	s.NotificationConfigReloadedPayload = v
+}
+
+// GetNotificationConfigReloadedPayload returns NotificationConfigReloadedPayload and true boolean if AuditEventRequestEventData is NotificationConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetNotificationConfigReloadedPayload() (v NotificationConfigReloadedPayload, ok bool) {
+	if !s.IsNotificationConfigReloadedPayload() {
+		return v, false
+	}
+	return s.NotificationConfigReloadedPayload, true
+}
+
+// NewNotificationConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from NotificationConfigReloadedPayload.
+func NewNotificationConfigReloadedPayloadAuditEventRequestEventData(v NotificationConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetNotificationConfigReloadedPayload(v)
+	return s
+}
+
+// SetNotificationConfigRejectedPayload sets AuditEventRequestEventData to NotificationConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetNotificationConfigRejectedPayload(v NotificationConfigRejectedPayload) {
+	s.Type = NotificationConfigRejectedPayloadAuditEventRequestEventData
+	s.NotificationConfigRejectedPayload = v
+}
+
+// GetNotificationConfigRejectedPayload returns NotificationConfigRejectedPayload and true boolean if AuditEventRequestEventData is NotificationConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetNotificationConfigRejectedPayload() (v NotificationConfigRejectedPayload, ok bool) {
+	if !s.IsNotificationConfigRejectedPayload() {
+		return v, false
+	}
+	return s.NotificationConfigRejectedPayload, true
+}
+
+// NewNotificationConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from NotificationConfigRejectedPayload.
+func NewNotificationConfigRejectedPayloadAuditEventRequestEventData(v NotificationConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetNotificationConfigRejectedPayload(v)
+	return s
+}
+
+// SetRemediationOrchestratorConfigReloadedPayload sets AuditEventRequestEventData to RemediationOrchestratorConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetRemediationOrchestratorConfigReloadedPayload(v RemediationOrchestratorConfigReloadedPayload) {
+	s.Type = RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData
+	s.RemediationOrchestratorConfigReloadedPayload = v
+}
+
+// GetRemediationOrchestratorConfigReloadedPayload returns RemediationOrchestratorConfigReloadedPayload and true boolean if AuditEventRequestEventData is RemediationOrchestratorConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetRemediationOrchestratorConfigReloadedPayload() (v RemediationOrchestratorConfigReloadedPayload, ok bool) {
+	if !s.IsRemediationOrchestratorConfigReloadedPayload() {
+		return v, false
+	}
+	return s.RemediationOrchestratorConfigReloadedPayload, true
+}
+
+// NewRemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorConfigReloadedPayload.
+func NewRemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData(v RemediationOrchestratorConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorConfigReloadedPayload(v)
+	return s
+}
+
+// SetRemediationOrchestratorConfigRejectedPayload sets AuditEventRequestEventData to RemediationOrchestratorConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetRemediationOrchestratorConfigRejectedPayload(v RemediationOrchestratorConfigRejectedPayload) {
+	s.Type = RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData
+	s.RemediationOrchestratorConfigRejectedPayload = v
+}
+
+// GetRemediationOrchestratorConfigRejectedPayload returns RemediationOrchestratorConfigRejectedPayload and true boolean if AuditEventRequestEventData is RemediationOrchestratorConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetRemediationOrchestratorConfigRejectedPayload() (v RemediationOrchestratorConfigRejectedPayload, ok bool) {
+	if !s.IsRemediationOrchestratorConfigRejectedPayload() {
+		return v, false
+	}
+	return s.RemediationOrchestratorConfigRejectedPayload, true
+}
+
+// NewRemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorConfigRejectedPayload.
+func NewRemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData(v RemediationOrchestratorConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorConfigRejectedPayload(v)
+	return s
+}
+
+// SetSignalProcessingConfigReloadedPayload sets AuditEventRequestEventData to SignalProcessingConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetSignalProcessingConfigReloadedPayload(v SignalProcessingConfigReloadedPayload) {
+	s.Type = SignalProcessingConfigReloadedPayloadAuditEventRequestEventData
+	s.SignalProcessingConfigReloadedPayload = v
+}
+
+// GetSignalProcessingConfigReloadedPayload returns SignalProcessingConfigReloadedPayload and true boolean if AuditEventRequestEventData is SignalProcessingConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetSignalProcessingConfigReloadedPayload() (v SignalProcessingConfigReloadedPayload, ok bool) {
+	if !s.IsSignalProcessingConfigReloadedPayload() {
+		return v, false
+	}
+	return s.SignalProcessingConfigReloadedPayload, true
+}
+
+// NewSignalProcessingConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingConfigReloadedPayload.
+func NewSignalProcessingConfigReloadedPayloadAuditEventRequestEventData(v SignalProcessingConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetSignalProcessingConfigReloadedPayload(v)
+	return s
+}
+
+// SetSignalProcessingConfigRejectedPayload sets AuditEventRequestEventData to SignalProcessingConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetSignalProcessingConfigRejectedPayload(v SignalProcessingConfigRejectedPayload) {
+	s.Type = SignalProcessingConfigRejectedPayloadAuditEventRequestEventData
+	s.SignalProcessingConfigRejectedPayload = v
+}
+
+// GetSignalProcessingConfigRejectedPayload returns SignalProcessingConfigRejectedPayload and true boolean if AuditEventRequestEventData is SignalProcessingConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetSignalProcessingConfigRejectedPayload() (v SignalProcessingConfigRejectedPayload, ok bool) {
+	if !s.IsSignalProcessingConfigRejectedPayload() {
+		return v, false
+	}
+	return s.SignalProcessingConfigRejectedPayload, true
+}
+
+// NewSignalProcessingConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingConfigRejectedPayload.
+func NewSignalProcessingConfigRejectedPayloadAuditEventRequestEventData(v SignalProcessingConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetSignalProcessingConfigRejectedPayload(v)
+	return s
+}
+
+// SetWorkflowExecutionConfigReloadedPayload sets AuditEventRequestEventData to WorkflowExecutionConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetWorkflowExecutionConfigReloadedPayload(v WorkflowExecutionConfigReloadedPayload) {
+	s.Type = WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData
+	s.WorkflowExecutionConfigReloadedPayload = v
+}
+
+// GetWorkflowExecutionConfigReloadedPayload returns WorkflowExecutionConfigReloadedPayload and true boolean if AuditEventRequestEventData is WorkflowExecutionConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetWorkflowExecutionConfigReloadedPayload() (v WorkflowExecutionConfigReloadedPayload, ok bool) {
+	if !s.IsWorkflowExecutionConfigReloadedPayload() {
+		return v, false
+	}
+	return s.WorkflowExecutionConfigReloadedPayload, true
+}
+
+// NewWorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionConfigReloadedPayload.
+func NewWorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData(v WorkflowExecutionConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowExecutionConfigReloadedPayload(v)
+	return s
+}
+
+// SetWorkflowExecutionConfigRejectedPayload sets AuditEventRequestEventData to WorkflowExecutionConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetWorkflowExecutionConfigRejectedPayload(v WorkflowExecutionConfigRejectedPayload) {
+	s.Type = WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData
+	s.WorkflowExecutionConfigRejectedPayload = v
+}
+
+// GetWorkflowExecutionConfigRejectedPayload returns WorkflowExecutionConfigRejectedPayload and true boolean if AuditEventRequestEventData is WorkflowExecutionConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetWorkflowExecutionConfigRejectedPayload() (v WorkflowExecutionConfigRejectedPayload, ok bool) {
+	if !s.IsWorkflowExecutionConfigRejectedPayload() {
+		return v, false
+	}
+	return s.WorkflowExecutionConfigRejectedPayload, true
+}
+
+// NewWorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionConfigRejectedPayload.
+func NewWorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData(v WorkflowExecutionConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowExecutionConfigRejectedPayload(v)
+	return s
+}
+
+// SetAuthwebhookConfigReloadedPayload sets AuditEventRequestEventData to AuthwebhookConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetAuthwebhookConfigReloadedPayload(v AuthwebhookConfigReloadedPayload) {
+	s.Type = AuthwebhookConfigReloadedPayloadAuditEventRequestEventData
+	s.AuthwebhookConfigReloadedPayload = v
+}
+
+// GetAuthwebhookConfigReloadedPayload returns AuthwebhookConfigReloadedPayload and true boolean if AuditEventRequestEventData is AuthwebhookConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetAuthwebhookConfigReloadedPayload() (v AuthwebhookConfigReloadedPayload, ok bool) {
+	if !s.IsAuthwebhookConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookConfigReloadedPayload, true
+}
+
+// NewAuthwebhookConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AuthwebhookConfigReloadedPayload.
+func NewAuthwebhookConfigReloadedPayloadAuditEventRequestEventData(v AuthwebhookConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAuthwebhookConfigReloadedPayload(v)
+	return s
+}
+
+// SetAuthwebhookConfigRejectedPayload sets AuditEventRequestEventData to AuthwebhookConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetAuthwebhookConfigRejectedPayload(v AuthwebhookConfigRejectedPayload) {
+	s.Type = AuthwebhookConfigRejectedPayloadAuditEventRequestEventData
+	s.AuthwebhookConfigRejectedPayload = v
+}
+
+// GetAuthwebhookConfigRejectedPayload returns AuthwebhookConfigRejectedPayload and true boolean if AuditEventRequestEventData is AuthwebhookConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetAuthwebhookConfigRejectedPayload() (v AuthwebhookConfigRejectedPayload, ok bool) {
+	if !s.IsAuthwebhookConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookConfigRejectedPayload, true
+}
+
+// NewAuthwebhookConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AuthwebhookConfigRejectedPayload.
+func NewAuthwebhookConfigRejectedPayloadAuditEventRequestEventData(v AuthwebhookConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAuthwebhookConfigRejectedPayload(v)
+	return s
+}
+
+// SetAIAgentConfigReloadedPayload sets AuditEventRequestEventData to AIAgentConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentConfigReloadedPayload(v AIAgentConfigReloadedPayload) {
+	s.Type = AIAgentConfigReloadedPayloadAuditEventRequestEventData
+	s.AIAgentConfigReloadedPayload = v
+}
+
+// GetAIAgentConfigReloadedPayload returns AIAgentConfigReloadedPayload and true boolean if AuditEventRequestEventData is AIAgentConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetAIAgentConfigReloadedPayload() (v AIAgentConfigReloadedPayload, ok bool) {
+	if !s.IsAIAgentConfigReloadedPayload() {
+		return v, false
+	}
+	return s.AIAgentConfigReloadedPayload, true
+}
+
+// NewAIAgentConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentConfigReloadedPayload.
+func NewAIAgentConfigReloadedPayloadAuditEventRequestEventData(v AIAgentConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentConfigReloadedPayload(v)
+	return s
+}
+
+// SetAIAgentConfigRejectedPayload sets AuditEventRequestEventData to AIAgentConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentConfigRejectedPayload(v AIAgentConfigRejectedPayload) {
+	s.Type = AIAgentConfigRejectedPayloadAuditEventRequestEventData
+	s.AIAgentConfigRejectedPayload = v
+}
+
+// GetAIAgentConfigRejectedPayload returns AIAgentConfigRejectedPayload and true boolean if AuditEventRequestEventData is AIAgentConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetAIAgentConfigRejectedPayload() (v AIAgentConfigRejectedPayload, ok bool) {
+	if !s.IsAIAgentConfigRejectedPayload() {
+		return v, false
+	}
+	return s.AIAgentConfigRejectedPayload, true
+}
+
+// NewAIAgentConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentConfigRejectedPayload.
+func NewAIAgentConfigRejectedPayloadAuditEventRequestEventData(v AIAgentConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentConfigRejectedPayload(v)
+	return s
+}
+
+// SetDatastorageConfigReloadedPayload sets AuditEventRequestEventData to DatastorageConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetDatastorageConfigReloadedPayload(v DatastorageConfigReloadedPayload) {
+	s.Type = DatastorageConfigReloadedPayloadAuditEventRequestEventData
+	s.DatastorageConfigReloadedPayload = v
+}
+
+// GetDatastorageConfigReloadedPayload returns DatastorageConfigReloadedPayload and true boolean if AuditEventRequestEventData is DatastorageConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetDatastorageConfigReloadedPayload() (v DatastorageConfigReloadedPayload, ok bool) {
+	if !s.IsDatastorageConfigReloadedPayload() {
+		return v, false
+	}
+	return s.DatastorageConfigReloadedPayload, true
+}
+
+// NewDatastorageConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from DatastorageConfigReloadedPayload.
+func NewDatastorageConfigReloadedPayloadAuditEventRequestEventData(v DatastorageConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetDatastorageConfigReloadedPayload(v)
+	return s
+}
+
+// SetDatastorageConfigRejectedPayload sets AuditEventRequestEventData to DatastorageConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetDatastorageConfigRejectedPayload(v DatastorageConfigRejectedPayload) {
+	s.Type = DatastorageConfigRejectedPayloadAuditEventRequestEventData
+	s.DatastorageConfigRejectedPayload = v
+}
+
+// GetDatastorageConfigRejectedPayload returns DatastorageConfigRejectedPayload and true boolean if AuditEventRequestEventData is DatastorageConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetDatastorageConfigRejectedPayload() (v DatastorageConfigRejectedPayload, ok bool) {
+	if !s.IsDatastorageConfigRejectedPayload() {
+		return v, false
+	}
+	return s.DatastorageConfigRejectedPayload, true
+}
+
+// NewDatastorageConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from DatastorageConfigRejectedPayload.
+func NewDatastorageConfigRejectedPayloadAuditEventRequestEventData(v DatastorageConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetDatastorageConfigRejectedPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventRequestEventOutcome string
 
@@ -15819,6 +17135,160 @@ func (s *AuditExportResponseHashChainVerification) SetTamperedEventIds(val []str
 	s.TamperedEventIds = val
 }
 
+// AuthWebhook config rejected event payload (authwebhook.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AuthwebhookConfigRejectedPayload
+type AuthwebhookConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AuthwebhookConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AuthwebhookConfigRejectedPayload) GetEventType() AuthwebhookConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AuthwebhookConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *AuthwebhookConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AuthwebhookConfigRejectedPayload) SetEventType(val AuthwebhookConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AuthwebhookConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *AuthwebhookConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AuthwebhookConfigRejectedPayloadEventType string
+
+const (
+	AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected AuthwebhookConfigRejectedPayloadEventType = "authwebhook.config.rejected"
+)
+
+// AllValues returns all AuthwebhookConfigRejectedPayloadEventType values.
+func (AuthwebhookConfigRejectedPayloadEventType) AllValues() []AuthwebhookConfigRejectedPayloadEventType {
+	return []AuthwebhookConfigRejectedPayloadEventType{
+		AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AuthwebhookConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AuthwebhookConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AuthwebhookConfigRejectedPayloadEventType(data) {
+	case AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected:
+		*s = AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AuthWebhook config reloaded event payload (authwebhook.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/AuthwebhookConfigReloadedPayload
+type AuthwebhookConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AuthwebhookConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AuthwebhookConfigReloadedPayload) GetEventType() AuthwebhookConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *AuthwebhookConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *AuthwebhookConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *AuthwebhookConfigReloadedPayload) SetEventType(val AuthwebhookConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *AuthwebhookConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *AuthwebhookConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AuthwebhookConfigReloadedPayloadEventType string
+
+const (
+	AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded AuthwebhookConfigReloadedPayloadEventType = "authwebhook.config.reloaded"
+)
+
+// AllValues returns all AuthwebhookConfigReloadedPayloadEventType values.
+func (AuthwebhookConfigReloadedPayloadEventType) AllValues() []AuthwebhookConfigReloadedPayloadEventType {
+	return []AuthwebhookConfigReloadedPayloadEventType{
+		AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AuthwebhookConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AuthwebhookConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AuthwebhookConfigReloadedPayloadEventType(data) {
+	case AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded:
+		*s = AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Audit payload emitted by AuthWebhook's StartupReconciler when a RemediationWorkflow
 // CRD fails to re-register with DataStorage during startup (Issue #1246).
 // Enables operators to identify which workflows are degraded and why.
@@ -16102,6 +17572,160 @@ func (s *CustomLabels) init() CustomLabels {
 		*s = m
 	}
 	return m
+}
+
+// Data Storage config rejected event payload (datastorage.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/DatastorageConfigRejectedPayload
+type DatastorageConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType DatastorageConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *DatastorageConfigRejectedPayload) GetEventType() DatastorageConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *DatastorageConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *DatastorageConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *DatastorageConfigRejectedPayload) SetEventType(val DatastorageConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *DatastorageConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *DatastorageConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type DatastorageConfigRejectedPayloadEventType string
+
+const (
+	DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected DatastorageConfigRejectedPayloadEventType = "datastorage.config.rejected"
+)
+
+// AllValues returns all DatastorageConfigRejectedPayloadEventType values.
+func (DatastorageConfigRejectedPayloadEventType) AllValues() []DatastorageConfigRejectedPayloadEventType {
+	return []DatastorageConfigRejectedPayloadEventType{
+		DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s DatastorageConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *DatastorageConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch DatastorageConfigRejectedPayloadEventType(data) {
+	case DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected:
+		*s = DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Data Storage config reloaded event payload (datastorage.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/DatastorageConfigReloadedPayload
+type DatastorageConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType DatastorageConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *DatastorageConfigReloadedPayload) GetEventType() DatastorageConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *DatastorageConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *DatastorageConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *DatastorageConfigReloadedPayload) SetEventType(val DatastorageConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *DatastorageConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *DatastorageConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type DatastorageConfigReloadedPayloadEventType string
+
+const (
+	DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded DatastorageConfigReloadedPayloadEventType = "datastorage.config.reloaded"
+)
+
+// AllValues returns all DatastorageConfigReloadedPayloadEventType values.
+func (DatastorageConfigReloadedPayloadEventType) AllValues() []DatastorageConfigReloadedPayloadEventType {
+	return []DatastorageConfigReloadedPayloadEventType{
+		DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s DatastorageConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *DatastorageConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch DatastorageConfigReloadedPayloadEventType(data) {
+	case DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded:
+		*s = DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Data Storage rate limit denied event payload (datastorage.ratelimit.denied) — request rejected
@@ -17757,6 +19381,160 @@ func (s *EffectivenessComponents) SetMetricsScore(val OptNilFloat64) {
 // SetMetricsDetails sets the value of MetricsDetails.
 func (s *EffectivenessComponents) SetMetricsDetails(val OptString) {
 	s.MetricsDetails = val
+}
+
+// EffectivenessMonitor config rejected event payload (effectiveness.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/EffectivenessConfigRejectedPayload
+type EffectivenessConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType EffectivenessConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *EffectivenessConfigRejectedPayload) GetEventType() EffectivenessConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *EffectivenessConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *EffectivenessConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *EffectivenessConfigRejectedPayload) SetEventType(val EffectivenessConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *EffectivenessConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *EffectivenessConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type EffectivenessConfigRejectedPayloadEventType string
+
+const (
+	EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected EffectivenessConfigRejectedPayloadEventType = "effectiveness.config.rejected"
+)
+
+// AllValues returns all EffectivenessConfigRejectedPayloadEventType values.
+func (EffectivenessConfigRejectedPayloadEventType) AllValues() []EffectivenessConfigRejectedPayloadEventType {
+	return []EffectivenessConfigRejectedPayloadEventType{
+		EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EffectivenessConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EffectivenessConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch EffectivenessConfigRejectedPayloadEventType(data) {
+	case EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected:
+		*s = EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// EffectivenessMonitor config reloaded event payload (effectiveness.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/EffectivenessConfigReloadedPayload
+type EffectivenessConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType EffectivenessConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *EffectivenessConfigReloadedPayload) GetEventType() EffectivenessConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *EffectivenessConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *EffectivenessConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *EffectivenessConfigReloadedPayload) SetEventType(val EffectivenessConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *EffectivenessConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *EffectivenessConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type EffectivenessConfigReloadedPayloadEventType string
+
+const (
+	EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded EffectivenessConfigReloadedPayloadEventType = "effectiveness.config.reloaded"
+)
+
+// AllValues returns all EffectivenessConfigReloadedPayloadEventType values.
+func (EffectivenessConfigReloadedPayloadEventType) AllValues() []EffectivenessConfigReloadedPayloadEventType {
+	return []EffectivenessConfigReloadedPayloadEventType{
+		EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EffectivenessConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EffectivenessConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch EffectivenessConfigReloadedPayloadEventType(data) {
+	case EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded:
+		*s = EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // On-demand effectiveness score response. DS computes the weighted score
@@ -20991,6 +22769,160 @@ func (s *NotificationAuditStatus) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditStatusPending:
 		*s = NotificationAuditStatusPending
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Notification config rejected event payload (notification.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/NotificationConfigRejectedPayload
+type NotificationConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType NotificationConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *NotificationConfigRejectedPayload) GetEventType() NotificationConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *NotificationConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *NotificationConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *NotificationConfigRejectedPayload) SetEventType(val NotificationConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *NotificationConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *NotificationConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type NotificationConfigRejectedPayloadEventType string
+
+const (
+	NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected NotificationConfigRejectedPayloadEventType = "notification.config.rejected"
+)
+
+// AllValues returns all NotificationConfigRejectedPayloadEventType values.
+func (NotificationConfigRejectedPayloadEventType) AllValues() []NotificationConfigRejectedPayloadEventType {
+	return []NotificationConfigRejectedPayloadEventType{
+		NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s NotificationConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *NotificationConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch NotificationConfigRejectedPayloadEventType(data) {
+	case NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected:
+		*s = NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Notification config reloaded event payload (notification.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/NotificationConfigReloadedPayload
+type NotificationConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType NotificationConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *NotificationConfigReloadedPayload) GetEventType() NotificationConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *NotificationConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *NotificationConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *NotificationConfigReloadedPayload) SetEventType(val NotificationConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *NotificationConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *NotificationConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type NotificationConfigReloadedPayloadEventType string
+
+const (
+	NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded NotificationConfigReloadedPayloadEventType = "notification.config.reloaded"
+)
+
+// AllValues returns all NotificationConfigReloadedPayloadEventType values.
+func (NotificationConfigReloadedPayloadEventType) AllValues() []NotificationConfigReloadedPayloadEventType {
+	return []NotificationConfigReloadedPayloadEventType{
+		NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s NotificationConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *NotificationConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch NotificationConfigReloadedPayloadEventType(data) {
+	case NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded:
+		*s = NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -28063,6 +29995,160 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalText(data []byte) 
 	}
 }
 
+// RemediationOrchestrator config rejected event payload (orchestrator.config.rejected) —
+// hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/RemediationOrchestratorConfigRejectedPayload
+type RemediationOrchestratorConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationOrchestratorConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationOrchestratorConfigRejectedPayload) GetEventType() RemediationOrchestratorConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *RemediationOrchestratorConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *RemediationOrchestratorConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationOrchestratorConfigRejectedPayload) SetEventType(val RemediationOrchestratorConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *RemediationOrchestratorConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *RemediationOrchestratorConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationOrchestratorConfigRejectedPayloadEventType string
+
+const (
+	RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected RemediationOrchestratorConfigRejectedPayloadEventType = "orchestrator.config.rejected"
+)
+
+// AllValues returns all RemediationOrchestratorConfigRejectedPayloadEventType values.
+func (RemediationOrchestratorConfigRejectedPayloadEventType) AllValues() []RemediationOrchestratorConfigRejectedPayloadEventType {
+	return []RemediationOrchestratorConfigRejectedPayloadEventType{
+		RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationOrchestratorConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationOrchestratorConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationOrchestratorConfigRejectedPayloadEventType(data) {
+	case RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected:
+		*s = RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// RemediationOrchestrator config reloaded event payload (orchestrator.config.reloaded) —
+// hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/RemediationOrchestratorConfigReloadedPayload
+type RemediationOrchestratorConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationOrchestratorConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationOrchestratorConfigReloadedPayload) GetEventType() RemediationOrchestratorConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *RemediationOrchestratorConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *RemediationOrchestratorConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationOrchestratorConfigReloadedPayload) SetEventType(val RemediationOrchestratorConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *RemediationOrchestratorConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *RemediationOrchestratorConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationOrchestratorConfigReloadedPayloadEventType string
+
+const (
+	RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded RemediationOrchestratorConfigReloadedPayloadEventType = "orchestrator.config.reloaded"
+)
+
+// AllValues returns all RemediationOrchestratorConfigReloadedPayloadEventType values.
+func (RemediationOrchestratorConfigReloadedPayloadEventType) AllValues() []RemediationOrchestratorConfigReloadedPayloadEventType {
+	return []RemediationOrchestratorConfigReloadedPayloadEventType{
+		RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationOrchestratorConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationOrchestratorConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationOrchestratorConfigReloadedPayloadEventType(data) {
+	case RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded:
+		*s = RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Type-safe audit event payload for RemediationRequest webhooks (timeout_modified).
 // Ref: #/components/schemas/RemediationRequestWebhookAuditPayload
 type RemediationRequestWebhookAuditPayload struct {
@@ -30238,6 +32324,160 @@ func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalText(data []byte) erro
 	}
 }
 
+// SignalProcessing config rejected event payload (signalprocessing.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/SignalProcessingConfigRejectedPayload
+type SignalProcessingConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType SignalProcessingConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *SignalProcessingConfigRejectedPayload) GetEventType() SignalProcessingConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *SignalProcessingConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *SignalProcessingConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *SignalProcessingConfigRejectedPayload) SetEventType(val SignalProcessingConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *SignalProcessingConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *SignalProcessingConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type SignalProcessingConfigRejectedPayloadEventType string
+
+const (
+	SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected SignalProcessingConfigRejectedPayloadEventType = "signalprocessing.config.rejected"
+)
+
+// AllValues returns all SignalProcessingConfigRejectedPayloadEventType values.
+func (SignalProcessingConfigRejectedPayloadEventType) AllValues() []SignalProcessingConfigRejectedPayloadEventType {
+	return []SignalProcessingConfigRejectedPayloadEventType{
+		SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch SignalProcessingConfigRejectedPayloadEventType(data) {
+	case SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected:
+		*s = SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// SignalProcessing config reloaded event payload (signalprocessing.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/SignalProcessingConfigReloadedPayload
+type SignalProcessingConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType SignalProcessingConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *SignalProcessingConfigReloadedPayload) GetEventType() SignalProcessingConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *SignalProcessingConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *SignalProcessingConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *SignalProcessingConfigReloadedPayload) SetEventType(val SignalProcessingConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *SignalProcessingConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *SignalProcessingConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type SignalProcessingConfigReloadedPayloadEventType string
+
+const (
+	SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded SignalProcessingConfigReloadedPayloadEventType = "signalprocessing.config.reloaded"
+)
+
+// AllValues returns all SignalProcessingConfigReloadedPayloadEventType values.
+func (SignalProcessingConfigReloadedPayloadEventType) AllValues() []SignalProcessingConfigReloadedPayloadEventType {
+	return []SignalProcessingConfigReloadedPayloadEventType{
+		SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch SignalProcessingConfigReloadedPayloadEventType(data) {
+	case SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded:
+		*s = SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Structured workflow description for LLM comparison and operator guidance (BR-WORKFLOW-004).
 // Ref: #/components/schemas/StructuredDescription
 type StructuredDescription struct {
@@ -31444,6 +33684,160 @@ func (s *WorkflowExecutionAuditPayloadPhase) UnmarshalText(data []byte) error {
 		return nil
 	case WorkflowExecutionAuditPayloadPhaseFailed:
 		*s = WorkflowExecutionAuditPayloadPhaseFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// WorkflowExecution config rejected event payload (workflowexecution.config.rejected) — hot-reload
+// configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/WorkflowExecutionConfigRejectedPayload
+type WorkflowExecutionConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType WorkflowExecutionConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *WorkflowExecutionConfigRejectedPayload) GetEventType() WorkflowExecutionConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *WorkflowExecutionConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *WorkflowExecutionConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *WorkflowExecutionConfigRejectedPayload) SetEventType(val WorkflowExecutionConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *WorkflowExecutionConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *WorkflowExecutionConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type WorkflowExecutionConfigRejectedPayloadEventType string
+
+const (
+	WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected WorkflowExecutionConfigRejectedPayloadEventType = "workflowexecution.config.rejected"
+)
+
+// AllValues returns all WorkflowExecutionConfigRejectedPayloadEventType values.
+func (WorkflowExecutionConfigRejectedPayloadEventType) AllValues() []WorkflowExecutionConfigRejectedPayloadEventType {
+	return []WorkflowExecutionConfigRejectedPayloadEventType{
+		WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowExecutionConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowExecutionConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowExecutionConfigRejectedPayloadEventType(data) {
+	case WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected:
+		*s = WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// WorkflowExecution config reloaded event payload (workflowexecution.config.reloaded) — hot-reload
+// configuration accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/WorkflowExecutionConfigReloadedPayload
+type WorkflowExecutionConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType WorkflowExecutionConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *WorkflowExecutionConfigReloadedPayload) GetEventType() WorkflowExecutionConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *WorkflowExecutionConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *WorkflowExecutionConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *WorkflowExecutionConfigReloadedPayload) SetEventType(val WorkflowExecutionConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *WorkflowExecutionConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *WorkflowExecutionConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type WorkflowExecutionConfigReloadedPayloadEventType string
+
+const (
+	WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded WorkflowExecutionConfigReloadedPayloadEventType = "workflowexecution.config.reloaded"
+)
+
+// AllValues returns all WorkflowExecutionConfigReloadedPayloadEventType values.
+func (WorkflowExecutionConfigReloadedPayloadEventType) AllValues() []WorkflowExecutionConfigReloadedPayloadEventType {
+	return []WorkflowExecutionConfigReloadedPayloadEventType{
+		WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowExecutionConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowExecutionConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowExecutionConfigReloadedPayloadEventType(data) {
+	case WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded:
+		*s = WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
