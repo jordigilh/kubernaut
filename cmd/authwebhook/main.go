@@ -92,6 +92,20 @@ func loadAuthWebhookConfig(configPath string, atomicLevel zap2.AtomicLevel) *awc
 	return cfg
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadAuthWebhookConfig, buildAuthWebhookManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireAuthWebhookAuditStore's DataStorage HTTP client (the first outbound
+// TLS call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *awconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildAuthWebhookManager creates the controller-runtime manager with the
 // webhook server and health-probe bind address from cfg (metrics disabled
 // per WEBHOOK_METRICS_TRIAGE.md), then registers the BR-WORKFLOW-007 field
@@ -415,6 +429,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg := loadAuthWebhookConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireAuthWebhookAuditStore's
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		os.Exit(1)
+	}
+
 	mgr := buildAuthWebhookManager(cfg)
 
 	// Graceful shutdown: Flush audit store before exit

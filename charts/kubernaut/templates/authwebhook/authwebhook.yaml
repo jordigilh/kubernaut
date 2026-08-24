@@ -88,6 +88,12 @@ datastorage:
 # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
 debug:
   pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
 {{- end }}
 ---
 apiVersion: v1
@@ -260,8 +266,6 @@ spec:
           env:
             - name: LOG_LEVEL
               value: "debug"
-            - name: TLS_CA_FILE
-              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           volumeMounts:
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
