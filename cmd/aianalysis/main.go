@@ -123,6 +123,20 @@ func loadAIAnalysisConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*c
 	return cfg, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadAIAnalysisConfig, buildAIAnalysisManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireAIAnalysisClients' DataStorage HTTP client (the first outbound TLS
+// call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildAIAnalysisManager constructs the controller manager with the
 // namespace-restricted AIAnalysis/AgentSession caches and
 // metrics/health-probe/leader election settings from cfg, then registers
@@ -433,6 +447,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, controllerNS := loadAIAnalysisConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireAIAnalysisClients'
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		os.Exit(1)
+	}
+
 	mgr := buildAIAnalysisManager(cfg, controllerNS)
 
 	// ADR-050: Startup validation happens inside wireAIAnalysisClients and fails fast.
