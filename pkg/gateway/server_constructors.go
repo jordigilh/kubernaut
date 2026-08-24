@@ -753,7 +753,7 @@ func (server *Server) attachHealthAndMetricsServers(cfg *config.ServerConfig, me
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
 		server.ReadinessHandler(),
-		!cfg.Server.DisableProfiling,
+		cfg.Debug.PprofEnabled,
 	)
 
 	metricsMux := http.NewServeMux()

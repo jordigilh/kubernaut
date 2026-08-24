@@ -366,9 +366,9 @@ func (c *Config) validateInteractive() error {
 func defaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
 		Logging: internalconfig.DefaultLoggingConfig(),
+		Debug:   internalconfig.DefaultDebugConfig(),
 		Server: ServerConfig{
 			Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
-			DisableProfiling:      true,
 			DisableAdminEndpoints: true,
 			MaxConcurrentRequests: 100,
 			RateLimit: RateLimitConfig{

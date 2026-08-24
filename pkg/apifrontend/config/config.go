@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -40,6 +41,9 @@ type Config struct {
 	// list_clusters tools route to remote managed clusters via the MCP
 	// Gateway. Mirrors GW/RO/SP/WE/KA's fleet.FleetConfig embedding.
 	Fleet fleet.FleetConfig `yaml:"fleet"`
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // InteractiveConfig controls whether session-dependent MCP tools are registered.
@@ -208,12 +212,6 @@ type ServerConfig struct {
 	HealthPort        int             `yaml:"healthPort"`
 	TLS               ServerTLSConfig `yaml:"tls"`
 	MaxSSEConnections int             `yaml:"maxSSEConnections,omitempty"`
-	// DisableProfiling gates the /debug/pprof/* endpoints on the health
-	// mux (#1995). Defaults to true (profiling OFF), mirroring
-	// kubernautagent's ServerConfig.DisableProfiling secure-by-default
-	// posture -- an operator must explicitly set this to false to expose
-	// pprof for live diagnostics.
-	DisableProfiling bool `yaml:"disableProfiling"`
 }
 
 // ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.
@@ -277,11 +275,11 @@ type RBACConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:             8443,
-			MetricsPort:      9090,
-			HealthPort:       8081,
-			DisableProfiling: true,
+			Port:        8443,
+			MetricsPort: 9090,
+			HealthPort:  8081,
 		},
+		Debug: sharedconfig.DefaultDebugConfig(),
 		Agent: AgentConfig{
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
