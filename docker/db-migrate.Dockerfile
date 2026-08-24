@@ -54,7 +54,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
       -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:04140c8d78c6c6915b5c1fdad2f16d10eac3630c3339999ccdf659d8c903be50 AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:07ab7c0a596785afa1de1963c1cac07f2b9df2e762b9d20d3433cff18ac1af18 AS production
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
