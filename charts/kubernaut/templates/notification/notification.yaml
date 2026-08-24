@@ -108,6 +108,9 @@ datastorage:
     batchSize: 100
     flushInterval: 1s
     maxRetries: 3
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 {{- define "kubernaut.notification.routingYAML" -}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "notification") | fromYaml -}}
@@ -196,6 +199,14 @@ spec:
             - containerPort: 8081
               name: health
               protocol: TCP
+            {{- /* BR-PLATFORM-012, Issue #2275: ctrl.Options.PprofBindAddress
+            (internal/config.PprofBindAddress) only starts a listener when
+            debug.pprofEnabled is true -- declare the container port to match. */}}
+            {{- if $v.debug.pprofEnabled }}
+            - containerPort: 6060
+              name: pprof
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

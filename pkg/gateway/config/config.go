@@ -70,6 +70,11 @@ type ServerConfig struct {
 	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
 	// When enabled, GW uses FederatedScopeChecker via the configured backend adapter.
 	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6) -- was previously
+	// Server.DisableProfiling defaulting to profiling ON.
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // CORSConfig contains CORS settings for the Gateway HTTP API.
@@ -90,7 +95,6 @@ type ServerSettings struct {
 	ListenAddr            string              `yaml:"listenAddr"`            // Default: ":8080"
 	HealthAddr            string              `yaml:"healthAddr"`            // Default: ":8081" (Issue #753: dedicated health probe port)
 	MetricsAddr           string              `yaml:"metricsAddr"`           // Default: ":9090" (Issue #753: dedicated metrics port)
-	DisableProfiling      bool                `yaml:"disableProfiling"`      // Set true to suppress /debug/pprof/* on health port
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"` // Default: 100 (0 = unlimited)
 	ReadTimeout           time.Duration       `yaml:"readTimeout"`           // Default: 30s
 	WriteTimeout          time.Duration       `yaml:"writeTimeout"`          // Default: 30s
@@ -417,6 +421,7 @@ func DefaultServerConfig() *ServerConfig {
 		},
 		Logging:   sharedconfig.DefaultLoggingConfig(),
 		Telemetry: sharedconfig.DefaultTelemetryConfig(),
+		Debug:     sharedconfig.DefaultDebugConfig(),
 	}
 }
 

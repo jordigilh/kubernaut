@@ -405,6 +405,7 @@ func buildManager(cfg *notificationconfig.Config, controllerNS string) (ctrl.Man
 			BindAddress: cfg.Controller.MetricsAddr,
 		},
 		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		PprofBindAddress:       internalconfig.PprofBindAddress(cfg.Debug.PprofEnabled),
 		LeaderElection:         cfg.Controller.LeaderElection,
 		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})

@@ -109,6 +109,10 @@ oauth2:
      verification) using FMC's real credentials, while FMC's pod sits
      stuck retrying with TLS verification enabled and no CA configured. */}}
   tlsCaFile: {{ $fmcFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+# BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle -- was
+# hardcoded enableProfiling=true in buildFMCServers before this issue.
+debug:
+  pprofEnabled: {{ $v.debug.pprofEnabled }}
 {{- end }}
 {{- /* DD-PLATFORM-006 Decision Area 10: fleetmetadatacache.enabled's effective value is derived
 from global.fleet.enabled + global.fleet.backend when not explicitly set -- see

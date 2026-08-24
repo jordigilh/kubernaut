@@ -249,7 +249,7 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)
 	}
-	if !cfg.Runtime.Server.DisableProfiling {
+	if cfg.Runtime.Debug.PprofEnabled {
 		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
 		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)

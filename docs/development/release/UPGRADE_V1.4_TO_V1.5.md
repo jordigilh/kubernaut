@@ -81,24 +81,40 @@ This provisions:
 
 ### Runtime Profiling (pprof)
 
-v1.5 adds `/debug/pprof/*` endpoints to the health server (port 8081) for
-DataStorage, Kubernaut Agent, and Gateway. Profiling is **enabled by default**
-(following the `kube-apiserver --profiling` pattern) and has zero overhead
-when not actively queried.
+v1.5 adds `/debug/pprof/*` profiling support across all 12 Go services (DataStorage,
+Kubernaut Agent, Gateway, API Frontend, and the 8 services added in a later v1.5
+fast-follow — see [BR-PLATFORM-012](../../requirements/BR-PLATFORM-012-debug-pprof-secure-by-default.md),
+[Issue #2275](https://github.com/jordigilh/kubernaut/issues/2275)). Profiling is
+**disabled by default** (AC-6, least privilege) and has zero overhead when disabled.
 
-To disable profiling in hardened environments, set in the service config YAML:
+**Note:** an earlier v1.5 iteration of this feature (4 services only) shipped with
+profiling *enabled* by default under a `server.disableProfiling` field. Issue #2275
+inverted that polarity and renamed the field before v1.5 GA — if you configured the
+old field, update it now.
+
+To enable profiling, set in the service config YAML:
 
 ```yaml
-server:
-  disableProfiling: true
+debug:
+  pprofEnabled: true
 ```
 
-Or via Helm values (when supported):
+Or via Helm values:
 ```yaml
 kubernautAgent:
-  server:
-    disableProfiling: true
+  runtime:
+    debug:
+      pprofEnabled: true
+gateway:
+  config:
+    debug:
+      pprofEnabled: true
 ```
+
+For the 7 `controller-runtime`-managed services (AIAnalysis, AuthWebhook,
+EffectivenessMonitor, Notification, RemediationOrchestrator, SignalProcessing,
+WorkflowExecution), enabling this opens a dedicated `:6060` pprof listener instead of
+adding to the health server.
 
 ---
 

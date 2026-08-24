@@ -323,11 +323,13 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	// ALSO registered on the API port above (topMux, unauthenticated) for
 	// GW/RO's cross-service Ping(); this health-port registration remains
 	// for kubelet's own probe, which never crosses pod boundaries.
+	// BR-PLATFORM-012, Issue #2275: pprof gating now follows cfg.Debug.PprofEnabled
+	// (secure-by-default) instead of the pre-#2275 hardcoded enableProfiling=true.
 	healthServer := sharedhealth.NewHealthServer(
 		cfg.Server.HealthAddr,
 		livenessHandler,
 		fmc.ReadyzHandler(ready.Load, deps.cacheReader),
-		true,
+		cfg.Debug.PprofEnabled,
 	)
 
 	metricsMux := http.NewServeMux()

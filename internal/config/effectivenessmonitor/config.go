@@ -59,6 +59,10 @@ type Config struct {
 	// remediation's target cluster via the MCP Gateway instead of silently
 	// falling back to the local hub cluster.
 	Fleet fleet.FleetConfig `yaml:"fleet"`
+
+	// Debug holds developer/operator diagnostic toggles (BR-PLATFORM-012,
+	// Issue #2275). Defaults to profiling OFF (AC-6).
+	Debug sharedconfig.DebugConfig `yaml:"debug"`
 }
 
 // AssessmentConfig defines assessment behavior.
@@ -135,6 +139,7 @@ func DefaultConfig() *Config {
 			ScrapeInterval:      60 * time.Second,
 		},
 		Logging: sharedconfig.DefaultLoggingConfig(),
+		Debug:   sharedconfig.DefaultDebugConfig(),
 	}
 }
 
