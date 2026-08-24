@@ -1304,8 +1304,8 @@
               "properties": {
                 "sslMode": {
                   "type": "string",
-                  "default": "disable",
-                  "description": "PostgreSQL SSL mode"
+                  "default": "require",
+                  "description": "PostgreSQL SSL mode. DD-PLATFORM-006 DA20 (kubernaut#2270, BR-NET-001/SC-8): defaults to 'require' (encrypt, don't verify server identity) since the bundled PostgreSQL now has genuine server-side TLS wired (see templates/infrastructure/postgresql.yaml) and its pg_hba.conf rejects unencrypted TCP connections outright. A BYO PostgreSQL without TLS support is not a supported configuration -- enable TLS on it or set this to 'disable' explicitly at your own risk."
                 },
                 "maxOpenConns": {
                   "type": "integer",

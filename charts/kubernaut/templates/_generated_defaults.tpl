@@ -152,7 +152,7 @@ datastorage:
             connMaxLifetime: 1h
             maxIdleConns: 20
             maxOpenConns: 100
-            sslMode: disable
+            sslMode: require
         redis:
             dlqMaxLen: 10000
             tls:

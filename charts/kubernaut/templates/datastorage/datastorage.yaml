@@ -54,8 +54,14 @@ redis:
   passwordKey: "password"
   tls:
     enabled: true
-    certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
-    keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
+    # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): Valkey now
+    # requires client certs (--tls-auth-clients yes). certFile/keyFile
+    # default to DataStorage's own already-mounted datastorage-tls Secret
+    # (the same cert it presents for its own inbound server TLS, at the
+    # tls-certs volume mount below) so this "just works" without any extra
+    # configuration -- override only to present a different client identity.
+    certFile: {{ .Values.datastorage.config.redis.tls.certFile | default (printf "%s/tls.crt" (include "kubernaut.interServiceTLS.certDir" .)) | quote }}
+    keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default (printf "%s/tls.key" (include "kubernaut.interServiceTLS.certDir" .)) | quote }}
     # DD-PLATFORM-006 DA8: the chart's own Valkey is TLS-only -- caFile defaults
     # to the already-mounted inter-service CA (see the tls-ca volume/mount
     # below) so this works without extra configuration; override only for a

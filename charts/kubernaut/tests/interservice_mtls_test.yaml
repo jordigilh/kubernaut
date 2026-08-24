@@ -119,6 +119,18 @@ tests:
       - equal:
           path: spec.issuerRef.kind
           value: Issuer
+      # DD-PLATFORM-006 DA19 (kubernaut#2269, BR-NET-002/AC-4): acceptance
+      # criterion -- a cert-manager-mode install produces certificates that
+      # are actually eligible to authenticate as a client, not just to serve
+      # TLS. cert-manager's own CertificateSpec.usages defaults to
+      # server-auth-only when unset, which would silently defeat DA19's
+      # Valkey mTLS in cert-manager mode alone (empirically confirmed this
+      # session, not a hypothetical).
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
       - contains:
           path: spec.dnsNames
           content: gateway-service
@@ -143,6 +155,11 @@ tests:
       - equal:
           path: spec.issuerRef.name
           value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
       - contains:
           path: spec.dnsNames
           content: data-storage-service
@@ -167,6 +184,11 @@ tests:
       - equal:
           path: spec.issuerRef.name
           value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
       - contains:
           path: spec.dnsNames
           content: kubernaut-agent
@@ -193,6 +215,11 @@ tests:
       - equal:
           path: spec.issuerRef.name
           value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
       - contains:
           path: spec.dnsNames
           content: fleetmetadatacache-service
@@ -222,6 +249,11 @@ tests:
       - equal:
           path: spec.issuerRef.name
           value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
       - contains:
           path: spec.dnsNames
           content: valkey
@@ -229,14 +261,82 @@ tests:
           path: spec.dnsNames
           content: valkey.NAMESPACE.svc.cluster.local
 
-  - it: "cert-manager mode: exactly 5 leaf Certificates rendered"
+  # DD-PLATFORM-006 DA19 spike finding: apifrontend-tls was already
+  # referenced by apifrontend.yaml's `tls-certs` volume (`optional: true`,
+  # secretName: apifrontend-tls) but had no corresponding entry here, so a
+  # cert-manager-mode install silently ran APIFrontend with no TLS certs at
+  # all (the volume mounted empty rather than failing) -- acceptance
+  # criterion: "every mTLS-participating service has a certificate in both
+  # tls.mode variants".
+  - it: "cert-manager mode: apifrontend-tls leaf Certificate uses the apifrontend-service DNS names"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: apifrontend-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
+      - contains:
+          path: spec.dnsNames
+          content: apifrontend
+      - contains:
+          path: spec.dnsNames
+          content: apifrontend.NAMESPACE.svc.cluster.local
+
+  # DD-PLATFORM-006 DA20 (kubernaut#2270): postgresql-tls closes the same
+  # hook/cert-manager parity gap DA19's spike found for apifrontend-tls --
+  # the bundled Postgres now genuinely requires this cert to start.
+  - it: "cert-manager mode: postgresql-tls leaf Certificate uses the postgresql DNS names"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: postgresql-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: postgresql-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.usages
+          value:
+            - server auth
+            - client auth
+      - contains:
+          path: spec.dnsNames
+          content: postgresql
+      - contains:
+          path: spec.dnsNames
+          content: postgresql.NAMESPACE.svc.cluster.local
+
+  - it: "cert-manager mode: exactly 7 leaf Certificates rendered"
     set:
       tls:
         mode: cert-manager
     template: templates/interservice/leaf-certs.yaml
     asserts:
       - hasDocuments:
-          count: 5
+          count: 7
 
   # ── cert-manager mode: CA sync hook Job ─────────────────────────────────
   - it: "cert-manager mode: renders the CA-to-ConfigMap sync hook Job"

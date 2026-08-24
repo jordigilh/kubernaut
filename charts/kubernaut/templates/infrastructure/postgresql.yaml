@@ -37,6 +37,42 @@ spec:
   selector:
     app: postgresql
 ---
+# DD-PLATFORM-006 DA20 (kubernaut#2270, BR-NET-001/SC-8, AU-9): custom
+# pg_hba.conf enforcing TLS on every TCP connection while leaving local
+# (Unix-socket) auth untouched -- empirically spiked this session against a
+# real postgres:16-alpine container. `local` stays trust-based because it
+# covers only two callers, neither of which supplies a password: this
+# Deployment's own readinessProbe/livenessProbe (`pg_isready`, socket-only,
+# unaffected by the hostssl rule below) and the postgres image's own
+# entrypoint bootstrap on first start. `hostssl` (not plain `host`) is the
+# only rule for network connections, so a client without TLS is rejected
+# with "no pg_hba.conf entry ... no encryption" rather than silently
+# allowed -- this is the assertion that actually encodes AU-9/SC-8's
+# "audit-of-record database rejects plaintext" acceptance criterion.
+# scram-sha-256 matches postgres:16-alpine's own default password_encryption
+# (the same hashing already used for the existing POSTGRES_PASSWORD-based
+# auth), not the spike's `trust` shortcut.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-hba
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: postgresql
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+data:
+  pg_hba.conf: |
+    # Managed by the kubernaut Helm chart (DD-PLATFORM-006 Decision Area 20).
+    # Local (Unix-socket) connections stay trust-based -- covers this
+    # Deployment's own pg_isready probes and the image's own entrypoint
+    # bootstrap, neither of which supplies a password.
+    local   all             all                                     trust
+    # All TCP connections MUST use TLS (SC-8/AU-9) -- DataStorage's client
+    # connects with sslmode=require, closing kubernaut#2270.
+    hostssl all             all             all                     scram-sha-256
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -69,6 +105,26 @@ spec:
           imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "runAsNonRoot" true "runAsUser" 70)) | nindent 12 }}
+          # DD-PLATFORM-006 DA20 (kubernaut#2270): server-side TLS, mirroring
+          # DA8's treatment of Valkey. postgres:16-alpine's own entrypoint
+          # forwards leading "-c"-style args straight to the postgres server
+          # (same args-based pattern Valkey already uses above), so no
+          # command override is needed. ssl_cert_file/ssl_key_file read from
+          # the postgresql-tls Secret mounted below at 0640 (root:70,
+          # matching this Deployment's own fsGroup: 70) -- empirically
+          # confirmed this session to satisfy Postgres's own strict
+          # check_ssl_key_file_permissions() with zero initContainer needed.
+          # hba_file points at the ConfigMap above, which is hostssl-only
+          # for every TCP connection.
+          args:
+            - "-c"
+            - "ssl=on"
+            - "-c"
+            - "ssl_cert_file=/certs/tls.crt"
+            - "-c"
+            - "ssl_key_file=/certs/tls.key"
+            - "-c"
+            - "hba_file=/etc/postgresql-hba/pg_hba.conf"
           ports:
             - name: postgresql
               containerPort: 5432
@@ -93,8 +149,19 @@ spec:
           volumeMounts:
             - name: postgresql-data
               mountPath: {{ include "kubernaut.postgresql.dataDir" . }}
+            - name: postgresql-tls
+              mountPath: /certs
+              readOnly: true
+            - name: postgresql-hba
+              mountPath: /etc/postgresql-hba
+              readOnly: true
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          # DA20 spike: pg_isready connects via the local Unix socket, whose
+          # auth is governed by pg_hba.conf's `local` rule (trust, above) --
+          # entirely separate from the `hostssl` rule enforced on TCP
+          # connections. Confirmed empirically that hostssl enforcement does
+          # not affect these probes, so no flags were added here.
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", {{ $v.auth.username | quote }}, "-d", {{ $v.auth.database | quote }}]
@@ -113,6 +180,17 @@ spec:
         - name: postgresql-data
           persistentVolumeClaim:
             claimName: postgresql-data
+        - name: postgresql-tls
+          secret:
+            secretName: postgresql-tls
+            # DA20 spike: 0640 (root:70, this Deployment's own fsGroup)
+            # satisfies Postgres's check_ssl_key_file_permissions() --
+            # confirmed empirically with zero permission errors and no
+            # initContainer workaround needed.
+            defaultMode: 0640
+        - name: postgresql-hba
+          configMap:
+            name: postgresql-hba
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

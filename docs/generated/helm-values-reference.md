@@ -174,7 +174,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.database.connMaxLifetime` | string | Maximum connection lifetime | `"1h"` | No |
 | `config.database.maxIdleConns` | integer | Maximum idle database connections | `20` | No |
 | `config.database.maxOpenConns` | integer | Maximum open database connections | `100` | No |
-| `config.database.sslMode` | string | PostgreSQL SSL mode | `"disable"` | No |
+| `config.database.sslMode` | string | PostgreSQL SSL mode. DD-PLATFORM-006 DA20 (kubernaut#2270, BR-NET-001/SC-8): defaults to 'require' (encrypt, don't verify server identity) since the bundled PostgreSQL now has genuine server-side TLS wired (see templates/infrastructure/postgresql.yaml) and its pg_hba.conf rejects unencrypted TCP connections outright. A BYO PostgreSQL without TLS support is not a supported configuration -- enable TLS on it or set this to 'disable' explicitly at your own risk. | `"require"` | No |
 | `config.redis.dlqMaxLen` | integer | #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound | `10000` | No |
 | `config.redis.tls.caFile` | string | CA bundle to verify Redis server | `""` | No |
 | `config.redis.tls.certFile` | string | Client certificate file path (mTLS) | `""` | No |

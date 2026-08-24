@@ -1,3 +1,4 @@
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "datastorage") | fromYaml -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -109,13 +110,24 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: PGDATABASE
               value: {{ include "kubernaut.postgresql.database" . }}
+            # DD-PLATFORM-006 DA20 (kubernaut#2270, BR-NET-001/SC-8): same
+            # sslMode DataStorage's own runtime connection uses (both target
+            # the identical kubernaut.postgresql.host) -- PGSSLMODE is
+            # libpq's standard env var, so this also covers the `psql`
+            # heredoc below, not just goose's explicit connection string.
+            # Previously hardcoded to "disable", which this Decision Area's
+            # own hostssl-only pg_hba.conf now rejects outright (was missed
+            # when Postgres TLS was first wired -- caught by this session's
+            # CI must-gather RCA, not by design).
+            - name: PGSSLMODE
+              value: {{ $v.config.database.sslMode | quote }}
           command:
             - /bin/sh
             - -c
             - |
               set -e
 
-              GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=disable"
+              GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=$PGSSLMODE"
 
               # Issue #581: Fresh-vs-upgrade detection for future major-version baselines.
               # For minor releases, `goose up` handles both paths (fresh applies all;

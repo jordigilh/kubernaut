@@ -167,7 +167,11 @@ spec:
                   kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}' | base64 -d > "$TMPDIR/ca.crt"
                 fi
 
-                for SVC_NAME in gateway-service data-storage-service kubernaut-agent fleetmetadatacache-service apifrontend valkey; do
+                # DD-PLATFORM-006 DA20 (kubernaut#2270): postgresql added
+                # alongside valkey -- SECRET_NAME derives to "postgresql-tls"
+                # automatically (no -service suffix to strip, same as
+                # apifrontend/valkey above).
+                for SVC_NAME in gateway-service data-storage-service kubernaut-agent fleetmetadatacache-service apifrontend valkey postgresql; do
                   SECRET_NAME="${SVC_NAME%-service}-tls"
                   [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
                   [ "$SVC_NAME" = "kubernaut-agent" ] && SECRET_NAME="kubernautagent-tls"
