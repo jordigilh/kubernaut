@@ -140,4 +140,50 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 			return k8sClient.Update(ctx, identical)
 		})).To(Succeed())
 	})
+
+	// ========================================
+	// IT-WFE-2284-001 (Issue #2284)
+	// ========================================
+	// Authority: Issue #2284. IT-WFE-340-001 above only exercises a
+	// *populated* DeclaredParameterNames map, so it never caught this bug.
+	// On K8s v1.31.x, ADR-001's unconditional "self == oldSelf" spuriously
+	// returns false when comparing two structurally-identical
+	// WorkflowExecutionSpec objects whose nullable:true
+	// WorkflowRef.DeclaredParameterNames field is nil on both sides. Unlike
+	// AIAnalysis's SelectedWorkflow rule (guarded by
+	// "!has(oldSelf.selectedAt) ||"), ADR-001 applies to every Update()
+	// unconditionally -- so the very first post-create write (finalizer
+	// registration) can be rejected, preventing the WorkflowExecution from
+	// ever progressing past creation.
+	It("IT-WFE-2284-001: tolerates a finalizer-add update when DeclaredParameterNames is nil, while still rejecting real tampering", func() {
+		name := fmt.Sprintf("wfref-2284-%d", time.Now().UnixNano())
+		wfe := newWFE(name)
+		wfe.Spec.WorkflowRef.DeclaredParameterNames = nil
+
+		By("creating a WorkflowExecution with nil DeclaredParameterNames")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, wfe) }()
+
+		By("the first post-create update (finalizer registration, no spec change) must succeed (Issue #2284)")
+		fetched := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, fetched); err != nil {
+				return err
+			}
+			fetched.Finalizers = append(fetched.Finalizers, "kubernaut.ai/test-finalizer-2284")
+			return k8sClient.Update(ctx, fetched)
+		})).To(Succeed(), "a finalizer-add update must not be rejected by ADR-001 just because DeclaredParameterNames is nil on both sides")
+
+		By("tampering DeclaredParameterNames from nil to a populated map must still be rejected")
+		tampered := &workflowexecutionv1alpha1.WorkflowExecution{}
+		err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, tampered); getErr != nil {
+				return getErr
+			}
+			tampered.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"INJECTED": true}
+			return k8sClient.Update(ctx, tampered)
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "real tampering (nil -> populated) must still be rejected, expected an Invalid admission error, got: %v", err)
+	})
 })
