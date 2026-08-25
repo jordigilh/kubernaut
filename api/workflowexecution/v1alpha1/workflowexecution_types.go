@@ -140,7 +140,18 @@ import (
 //
 // To change execution parameters, delete and recreate the WorkflowExecution.
 //
-// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
+// Field-by-field per Issue #2284: on K8s v1.31.x, whole-object "self ==
+// oldSelf" spuriously evaluates false when workflowRef.declaredParameterNames
+// (nullable:true) holds nil on both sides. Unlike AIAnalysis's
+// SelectedWorkflow rule, this one is unconditional (no selectedAt-style
+// guard), so the bug hit here on the very first post-create Update() call
+// (finalizer registration), preventing the WorkflowExecution from ever
+// progressing past creation. engineConfig is excluded from the comparison
+// entirely: x-kubernetes-preserve-unknown-fields makes it CEL-inaccessible
+// ("undefined field 'engineConfig'" at compile time) -- a documented,
+// narrow trade-off, mirrored from the same exclusion in
+// AIAnalysis.SelectedWorkflow's rule above.
+// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef == oldSelf.remediationRequestRef && self.workflowRef.workflowId == oldSelf.workflowRef.workflowId && self.workflowRef.workflowName == oldSelf.workflowRef.workflowName && self.workflowRef.actionType == oldSelf.workflowRef.actionType && self.workflowRef.version == oldSelf.workflowRef.version && self.workflowRef.executionBundle == oldSelf.workflowRef.executionBundle && (has(self.workflowRef.executionBundleDigest) == has(oldSelf.workflowRef.executionBundleDigest)) && (!has(self.workflowRef.executionBundleDigest) || self.workflowRef.executionBundleDigest == oldSelf.workflowRef.executionBundleDigest) && (has(self.workflowRef.executionEngine) == has(oldSelf.workflowRef.executionEngine)) && (!has(self.workflowRef.executionEngine) || self.workflowRef.executionEngine == oldSelf.workflowRef.executionEngine) && (has(self.workflowRef.serviceAccountName) == has(oldSelf.workflowRef.serviceAccountName)) && (!has(self.workflowRef.serviceAccountName) || self.workflowRef.serviceAccountName == oldSelf.workflowRef.serviceAccountName) && (has(self.workflowRef.dependencies) == has(oldSelf.workflowRef.dependencies)) && (!has(self.workflowRef.dependencies) || self.workflowRef.dependencies == oldSelf.workflowRef.dependencies) && (has(self.workflowRef.resources) == has(oldSelf.workflowRef.resources)) && (!has(self.workflowRef.resources) || self.workflowRef.resources == oldSelf.workflowRef.resources) && (has(self.workflowRef.declaredParameterNames) == has(oldSelf.workflowRef.declaredParameterNames)) && (!has(self.workflowRef.declaredParameterNames) || self.workflowRef.declaredParameterNames == oldSelf.workflowRef.declaredParameterNames) && self.targetResource == oldSelf.targetResource && (has(self.clusterID) == has(oldSelf.clusterID)) && (!has(self.clusterID) || self.clusterID == oldSelf.clusterID) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.confidence) == has(oldSelf.confidence)) && (!has(self.confidence) || self.confidence == oldSelf.confidence) && (has(self.rationale) == has(oldSelf.rationale)) && (!has(self.rationale) || self.rationale == oldSelf.rationale) && (has(self.timesOutAt) == has(oldSelf.timesOutAt)) && (!has(self.timesOutAt) || self.timesOutAt == oldSelf.timesOutAt)",message="spec is immutable after creation (ADR-001)"
 type WorkflowExecutionSpec struct {
 	// RemediationRequestRef references the parent RemediationRequest CRD
 	RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
@@ -206,9 +217,17 @@ type WorkflowExecutionSpec struct {
 // than two independently hand-copied field lists) makes it structurally
 // impossible for the two to drift again -- see git history: ActionType was
 // originally left off this list once, and WorkflowName was never wired at
-// all until Change 12 closed that gap. No per-field CEL rule is needed:
-// WorkflowExecutionSpec's existing "self == oldSelf" XValidation (ADR-001)
-// already covers WorkflowRef as a whole, including these fields.
+// all until Change 12 closed that gap.
+//
+// Correction (Issue #2284): the claim that WorkflowExecutionSpec's ADR-001
+// "self == oldSelf" rule covers WorkflowRef "as a whole" with no per-field
+// rule needed was true structurally but incomplete operationally -- a
+// whole-object CEL comparison is exactly what caused Issue #2284's infinite
+// reconcile loop (the K8s v1.31.x CEL nullable-field false-negative bug), so
+// ADR-001's rule was rewritten to the same has()-guarded field-by-field form
+// as AIAnalysis.SelectedWorkflow's rule above. WorkflowRef's own type
+// definition here is unchanged; only the enclosing spec's XValidation rule
+// changed.
 type WorkflowRef struct {
 	sharedtypes.WorkflowSnapshot `json:",inline"`
 }

@@ -783,7 +783,15 @@ type RemediationTarget struct {
 
 // SelectedWorkflow contains the AI-selected workflow for execution
 // DD-CONTRACT-002: Output format for RO to create WorkflowExecution
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || self == oldSelf",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
+// Field-by-field per Issue #2284: on K8s v1.31.x, whole-object "self ==
+// oldSelf" spuriously evaluates false when a nullable:true field
+// (declaredParameterNames) holds nil on both sides, rejecting identical
+// idempotent resubmits and causing an infinite reconcile loop. engineConfig
+// is excluded from the comparison entirely: x-kubernetes-preserve-unknown-fields
+// makes it CEL-inaccessible ("undefined field 'engineConfig'" at compile
+// time) -- a documented, narrow trade-off (see EngineConfig's own doc
+// comment for the precedent of pushing that validation to the Go/RO layer).
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId && self.workflowName == oldSelf.workflowName && self.actionType == oldSelf.actionType && self.version == oldSelf.version && self.executionBundle == oldSelf.executionBundle && self.confidence == oldSelf.confidence && self.rationale == oldSelf.rationale && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest)) && (!has(self.executionBundleDigest) || self.executionBundleDigest == oldSelf.executionBundleDigest) && (has(self.executionEngine) == has(oldSelf.executionEngine)) && (!has(self.executionEngine) || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName) == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName) || self.serviceAccountName == oldSelf.serviceAccountName) && (has(self.dependencies) == has(oldSelf.dependencies)) && (!has(self.dependencies) || self.dependencies == oldSelf.dependencies) && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources) || self.resources == oldSelf.resources) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt) && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames)) && (!has(self.declaredParameterNames) || self.declaredParameterNames == oldSelf.declaredParameterNames))",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 type SelectedWorkflow struct {
 	// WorkflowSnapshot is the catalog-resolved execution snapshot
 	// (WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle/
