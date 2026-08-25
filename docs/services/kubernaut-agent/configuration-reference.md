@@ -205,7 +205,7 @@ YAML path: `ai`
 
 ### 5.1 Provider-specific notes
 
-**Supported today**: `openai`, `anthropic`, `vertex_ai`, `openai_compatible`.
+**Supported today**: `openai`, `anthropic`, `gemini`, `vertex_ai`, `openai_compatible`.
 
 **Not currently supported** (accepted by `LLMRuntimeConfig.Validate` below but rejected at client construction, causing `os.Exit` at startup — do not configure): `bedrock` (tracked in #1582). `vertex` (Google-native Gemini/PaLM via Vertex, distinct from the Anthropic-on-Vertex `vertex_ai` path below) was a `langchaingo`-only provider with no current replacement.
 
@@ -213,7 +213,9 @@ YAML path: `ai`
 
 | Provider strings | Endpoint required in runtime YAML? | Notes |
 |------------------|-----------------------------------|--------|
-| `anthropic`, `vertex_ai` | No | SDK resolves the endpoint implicitly (native API default / GCP project+location). Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
+| `anthropic` | No | If set, **honored** (#2255, BR-AI-089): `buildAnthropicNativeClient` passes it through to the Anthropic SDK via `anthropicfamily.WithBaseURL`, so native-auth traffic can be routed through an AI gateway/private proxy instead of `https://api.anthropic.com`. If unset, SDK default applies (unchanged). Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
+| `gemini` | **Yes** — pre-existing asymmetry, not changed by #2255/BR-AI-089 | `gemini` is not in `providersWithoutEndpointRequirement`, so `LLMRuntimeConfig.Validate` requires a non-empty `endpoint` even though `types.LLMConfig.Validate` (static config layer) treats it as optional. Whatever value is set **is now honored** (#2255, BR-AI-089) via `geminifamily.WithHTTPOptions(genai.HTTPOptions{BaseURL: ...})` — previously it passed validation but was silently ignored at client construction. **Upgrade note**: if your existing `endpoint` value was a placeholder (harmless while inert), confirm it's the intended target — or the real `https://generativelanguage.googleapis.com` — before/while upgrading, since requests will now actually go there. |
+| `vertex_ai` | No | SDK resolves the endpoint implicitly (GCP project+location via Vertex middleware). Explicitly **not** wired to an endpoint override — see BR-AI-089 AC5. Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
 | `openai` | Yes (#2258) | The underlying `openaicompat` client has no default base URL. `LLMRuntimeConfig.Validate` now fails closed at startup on an empty `endpoint`, matching the client's real requirement instead of only failing at request time. |
 | `openai_compatible` | Yes | Validation error if `endpoint` empty. |
 | `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entry from the pre-#1598 `langchaingo` dispatch, intentionally retained (#2258) — still documented/tested as endpoint-optional even though rejected downstream. |
