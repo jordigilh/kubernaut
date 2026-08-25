@@ -33,7 +33,7 @@ var _ = Describe("cluster-scoped metric/alert-label builders (BR-EM-003, BR-EM-0
 	// UT-EM-193-001
 	Describe("buildNodeMetricQuerySpecs", func() {
 		It("produces Ready/MemoryPressure/DiskPressure PromQL specs keyed by node name, all LowerIsBetter", func() {
-			specs := buildNodeMetricQuerySpecs("worker-1")
+			specs := buildNodeMetricQuerySpecs("worker-1", "")
 
 			Expect(specs).To(HaveLen(3))
 			for _, s := range specs {
@@ -58,7 +58,7 @@ var _ = Describe("cluster-scoped metric/alert-label builders (BR-EM-003, BR-EM-0
 	// UT-EM-193-002
 	Describe("buildPVMetricQuerySpecs", func() {
 		It("produces Failed/Pending phase specs and a usage-join ratio spec keyed by PV name", func() {
-			specs := buildPVMetricQuerySpecs("pvc-abc123")
+			specs := buildPVMetricQuerySpecs("pvc-abc123", "")
 
 			Expect(specs).To(HaveLen(3))
 

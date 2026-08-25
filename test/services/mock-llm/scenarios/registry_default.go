@@ -260,6 +260,11 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// list_clusters + kubectl_get(cluster_id) via a real A2A request.
 	r.Register(afFleetKubectlE2EScenario())
 
+	// E2E-FLEET-020 (Issue #2274): real AF binary calls
+	// list_alerts(cluster_id) via a real A2A request against a real
+	// AlertManager, proving cluster-scoped alert filtering.
+	r.Register(afFleetAlertsE2EScenario())
+
 	// E2E-FLEET-017 (issue #1729): real KA investigation loop calls the
 	// correct (local or fleet) real K8s read tool -- strictly based on
 	// which tool names are actually advertised in the request -- and
