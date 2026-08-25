@@ -1,20 +1,21 @@
 # DD-INTERACTIVE-002: Dynamic Takeover Model
 
-**Status**: ✅ Accepted
+**Status**: ⚠️ Accepted, Partially Amended (see [Post-Decision Amendment](#post-decision-amendment-2026-08-24) below)
 **Decision Date**: 2026-04-29
-**Version**: 1.1
-**Confidence**: 95%
+**Version**: 1.2
+**Confidence**: 95% (original decision); see amendment for current-state confidence
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-agent, aianalysis-controller, remediation-orchestrator
 
 **Related Business Requirements**:
 - BR-INTERACTIVE-001: Interactive investigation sessions
-- BR-INTERACTIVE-004: Dynamic takeover of autonomous investigations
+- BR-INTERACTIVE-004: Dynamic takeover of autonomous investigations (success criteria amended 2026-08-24 — see below)
 - BR-INTERACTIVE-005: Session lifecycle and timeout management
 - BR-INTERACTIVE-006: Cross-session visibility via audit trail
 
 **Related Design Decisions**:
 - DD-INTERACTIVE-001: Interactive mode CRD placement and timeouts (**SUPERSEDED by this document**)
+- DD-AA-KA-001 (2026-08-17): AgentSession CRD replacing AA↔KA HTTP polling — **supersedes the IS-CRD/HTTP mechanics described in this document's Architecture section**; the takeover *concept* below remains current, the CRD/transport details do not
 - DD-AUTH-MCP-001: MCP endpoint security and user impersonation
 - DD-AUDIT-003: Service audit trace requirements
 - ADR-038: Async buffered audit ingestion
@@ -27,6 +28,42 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-04-29 | AI-assisted | Initial design. Supersedes DD-INTERACTIVE-001. |
 | 1.1 | 2026-05-15 | AI-assisted | Clarified v1.5 takeover-abandon semantics: no autonomous resume on disconnect. Added SEC-TAKEOVER-001 security rationale. Updated connection flow diagram. |
+| 1.2 | 2026-08-24 | AI-assisted | **Post-decision amendment** (see dedicated section below): (1) documents that Alternative C's chosen "cancel+reconstruct" mechanism was replaced in production by "upgrade-in-place" per issue #1390 (2026-06-09) to eliminate wasteful cancel-and-resubmit LLM token cycles — this doc was never updated at the time; (2) corrects the `action: takeover` API example, which predates `kubernaut_takeover`'s consolidation into `kubernaut_investigate` (#1332) and the current auto-detected `joinMode`; (3) cross-references DD-AA-KA-001, which has since replaced the IS-CRD/AA↔KA-HTTP mechanics described here; (4) documents the previously-undocumented "same-turn autonomous-then-attach" pattern (issue #2265 investigation). |
+
+---
+
+## Post-Decision Amendment (2026-08-24)
+
+> **Why this section exists instead of a silent rewrite**: the sections below (Context, Alternatives, Decision, Architecture) are preserved as the historical record of the reasoning that was actually applied on 2026-04-29/05-15. Three material facts changed after that reasoning was accepted, without this document being updated. This section states the current ground truth and points at the evidence; it does not retroactively edit the narrative below.
+
+### 1. Cancel+Reconstruct → Upgrade-in-Place (issue #1390, 2026-06-09)
+
+The chosen mechanism in [Decision](#decision) below — cancel the autonomous goroutine, then reconstruct a **new** session from DS audit events — was replaced in production about six weeks after this DD's v1.1 update:
+
+> `feat(aa): simplify takeover to upgrade-in-place (#1390)` — "Change AA's `checkISMismatchAndCancel` to set `Interactive=true` and call `SetActivePhase` **instead of cancelling** the KA session when an IS CRD appears for an autonomous session. This preserves the running session and **avoids wasteful cancel-and-resubmit cycles**."
+
+Root cause: issue #1390 documented a production incident where a duplicate investigation submission spawned a "ghost" investigation racing the original, burning an entire re-run of RCA's LLM tokens and leaving the remediation stuck in `Analyzing`. Cancel+reconstruct's per-transition token cost (documented as an accepted "Negative Consequence" below) turned out to be worse in practice than the original alternatives analysis assumed, once a second concrete failure mode (duplicate-submission races) was observed on top of the expected human-takeover case.
+
+**Current mechanism** (KA side, `internal/kubernautagent/session/manager_interactive.go`'s `UpgradeToInteractive` → `interactiveUpgrade` atomic flag → `InteractiveHold` checked at `checkRCAEarlyReturn`, tagged `BR-INTERACTIVE-004, #1390` in `internal/kubernautagent/session/event_sink.go`): the **same** running KA session is flagged interactive in place. No cancellation, no new session ID, no DS-reconstruction query. If the flag lands before the next `checkRCAEarlyReturn` checkpoint, the autonomous workflow short-circuits and the caller drives from there; if the investigation has already progressed past all checkpoints, the flag has no effect (see item 4 below).
+
+This means the "Identity Transitions in Audit Trail" example, the `sess-KA-03` NEW-session illustration, and Positive/Negative Consequences #3–#4 (cancel+reconstruct simplicity / token cost) in the sections below describe a mechanism that is **no longer how takeover works**. They remain useful as historical rationale for why cancel+reconstruct was *originally* chosen over Alternative B (suspend/resume), but do not describe current behavior.
+
+### 2. `action: takeover` is not a caller-supplied parameter
+
+The [Explicit Takeover Requirement](#explicit-takeover-requirement) section's JSON example (`"action": "takeover"`) predates two changes:
+
+- Issue #1332 consolidated the standalone `kubernaut_takeover` tool into `kubernaut_investigate` (commit `1b33cbc5e`). There is no separate takeover tool or explicit `action` enum value in the current AF-facing contract.
+- The current implementation (`pkg/apifrontend/tools/ka_investigate_mcp.go`) auto-detects takeover: `isAutonomousInvestigation(ctx, client, namespace, rrID)` checks whether an active `AIAnalysis` already has a session ID assigned, and derives `joinMode := "takeover"` internally — the caller only ever supplies `kubernaut_investigate(rr_id=...)`, identical to a fresh `start` call. This is deliberate LLM-ergonomics: two explicit tools/params for what should be one intent (see DD-AF-004's rationale for the same pattern applied elsewhere) were rejected in favor of backend detection.
+
+### 3. IS-CRD / AA↔KA-HTTP mechanics superseded by DD-AA-KA-001
+
+This document's Architecture section (Observer/Driver Model, CRD Impact, Identity Transitions) was written against an architecture where AA polls KA over HTTP and infers `Interactive` from `InvestigationSession` (IS) CRD existence. **DD-AA-KA-001** (accepted 2026-08-17) replaced AA↔KA HTTP polling with a K8s-native `AgentSession` CRD (watch+lease), and explicitly plans to delete `checkISMismatchAndCancel` — the very function item 1 above described. AA has since stopped reading/writing `InvestigationSession` entirely. Read DD-AA-KA-001 as the current source of truth for AA↔KA transport and CRD mechanics; this document's takeover *concept* (dynamic, no creation-time prediction, single-driver Lease, one-way door per SEC-TAKEOVER-001) remains valid, but its CRD/transport implementation detail does not.
+
+### 4. Previously-undocumented pattern: same-turn autonomous-then-attach (issue #2265)
+
+None of Alternative C's narrative, BR-INTERACTIVE-004, or `docs/services/apifrontend/design/ARCHITECTURE.md`'s three flows document a fourth real, intentional use of the same `joinMode=takeover` code path: a **single chat turn/session** calling `kubernaut_remediate` (fully autonomous, no observability) immediately followed by `kubernaut_investigate(rr_id=<same RR>)` to attach a chat-visible session to the RR it *just* created, typically ending in the same turn with `kubernaut_complete`.
+
+This does not match this document's SRE-joins-mid-flight framing (a *separate* actor arriving later to actively redirect an in-flight investigation) nor `ARCHITECTURE.md`'s "Flow 3: Remediation Approver Takeover" (a human reviewing an *already-paused*, `AwaitingApproval` RR after autonomous investigation has finished). It is a best-effort **observability attach to an already-committed autonomous decision**, not a consent veto: `kubernaut_remediate` has already committed the RR to autonomous execution before `kubernaut_investigate(rr_id)` is ever called, so there is an inherent, accepted race between the attach call and the autonomous investigation completing (see `E2E-FP-1912-001`/`E2E-FP-1918-001` for the test-side handling of this race, and the corrected RCA on issue #2265 for the full mechanism trace). See `docs/services/apifrontend/design/ARCHITECTURE.md` §"Flow 4" for the sequence diagram.
 
 ---
 
@@ -132,6 +169,8 @@ Real-world operations don't work this way. An SRE sees an ongoing autonomous inv
 
 ### Chosen: Alternative C -- Dynamic Takeover with Cancel+Reconstruct
 
+> ⚠️ **Superseded by issue #1390 (2026-06-09) — see [Post-Decision Amendment §1](#1-cancelreconstruct--upgrade-in-place-issue-1390-2026-06-09)**. Production replaced cancel+reconstruct with in-place session upgrade shortly after this section was written. The narrative below is preserved as the historical rationale for choosing Alternative C over Alternative B; it does not describe current behavior.
+
 All remediations start autonomous (KA SA drives). A human user can take over at any time by connecting via MCP and sending explicit `action: takeover`. The autonomous investigation is cancelled (after completing its current LLM turn) and the user drives. On disconnect, a NEW autonomous session reconstructs the full conversation from DS audit events.
 
 ### Architecture
@@ -191,6 +230,8 @@ Time →
 Multiple observers can connect simultaneously. Only one driver at a time (Lease enforces).
 
 #### Explicit Takeover Requirement
+
+> ⚠️ **Superseded — see [Post-Decision Amendment §2](#2-action-takeover-is-not-a-caller-supplied-parameter)**. There is no separate `action` field or `kubernaut_takeover` tool in the current contract; `joinMode` is auto-detected server-side from `kubernaut_investigate(rr_id=...)` alone.
 
 A user's first regular message does **NOT** trigger takeover. The `action: takeover` parameter is required:
 
@@ -343,5 +384,5 @@ No spec changes. No annotation changes. Every RR is takeover-capable by default.
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-05-15
+**Document Version**: 1.2
+**Last Updated**: 2026-08-24

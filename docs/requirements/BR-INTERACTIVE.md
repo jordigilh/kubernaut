@@ -4,7 +4,7 @@
 **Priority**: P1 (HIGH) - Core v1.5 Feature
 **Target Version**: v1.5
 **Status**: Proposed
-**Date**: April 29, 2026 (Updated: May 15, 2026 — SEC-TAKEOVER-001 clarification on BR-INTERACTIVE-004 #5)
+**Date**: April 29, 2026 (Updated: May 15, 2026 — SEC-TAKEOVER-001 clarification on BR-INTERACTIVE-004 #5; Updated: August 24, 2026 — BR-INTERACTIVE-004 #2/#3 corrected to match production's in-place upgrade mechanism, see DD-INTERACTIVE-002 v1.2 amendment)
 **Related ADRs**: ADR-038 (Async Buffered Audit Ingestion)
 **Related DDs**: DD-AUTH-MCP-001 (MCP Endpoint Security), DD-INTERACTIVE-002 (Dynamic Takeover Model)
 **GitHub Issue**: [#703](https://github.com/jordigilh/kubernaut/issues/703)
@@ -84,12 +84,13 @@ SREs must be able to take over an ongoing autonomous investigation at any point 
 ### Success Criteria
 
 1. Every RemediationRequest is takeover-capable by default (no spec field, no annotation)
-2. Takeover requires explicit `action: takeover` (not implicit on first message)
-3. Autonomous investigation completes current LLM turn before being cancelled (no lost work)
-4. User's LLM context is auto-injected with autonomous findings from DS audit events
-5. **v1.5**: Takeover is a **one-way door** — autonomous investigation is cancelled permanently and does NOT resume on disconnect. If the user abandons the session, the inactivity timeout releases the Lease, the AA phase times out on the RO side, and the Gateway creates a fresh RemediationRequest. See SEC-TAKEOVER-001 in DD-INTERACTIVE-002 for security rationale.
+2. **[Corrected 2026-08-24]** Takeover is auto-detected server-side (`isAutonomousInvestigation` checks for an active `AIAnalysis` with a session already assigned) from a plain `kubernaut_investigate(rr_id=...)` call — not an explicit `action: takeover` parameter. There is no separate `kubernaut_takeover` tool (consolidated into `kubernaut_investigate` per #1332); the caller cannot distinguish a fresh start from a takeover at the API layer, by design (LLM-ergonomics, mirrors the two-explicit-tools rationale in DD-AF-004).
+3. **[Corrected 2026-08-24]** The autonomous investigation is **upgraded in place**, not cancelled — the same running KA session is flagged interactive (`UpgradeToInteractive` → `InteractiveHold`, checked at the next `checkRCAEarlyReturn` checkpoint) and the user continues driving it. No new session is created, no work is lost, and no DS-reconstruction query is needed for this path. (Original v1.0/v1.1 design specified cancel + reconstruct-from-audit-trail into a *new* session; issue #1390 (2026-06-09) replaced this in production after a duplicate-submission race showed cancel+reconstruct wasting an entire re-run of RCA's LLM tokens. See DD-INTERACTIVE-002 v1.2's Post-Decision Amendment for the full trace.)
+4. If the `InteractiveHold` flag arrives after all `checkRCAEarlyReturn` checkpoints have already passed (investigation already complete / workflow already selected), takeover has no effect on that investigation — this is an accepted best-effort race, not a consent veto (see item 8 below)
+5. **v1.5**: Once upgraded, takeover is a **one-way door** — the session does NOT revert to autonomous on disconnect. If the user abandons the session, the inactivity timeout releases the Lease, the AA phase times out on the RO side, and the Gateway creates a fresh RemediationRequest. See SEC-TAKEOVER-001 in DD-INTERACTIVE-002 for security rationale.
 6. **v1.6+ (deferred)**: Resume-on-disconnect may be revisited once alignment grounding review can verify the user's interactive turns did not introduce unsafe directives
 7. Single-driver guarantee via K8s Lease (concurrent drivers rejected)
+8. **[Added 2026-08-24]** A single chat turn/session MAY call `kubernaut_remediate` then immediately `kubernaut_investigate(rr_id=<same RR>)` to attach observability to the RR it just autonomously committed. This is a best-effort observability attach to an already-committed decision, not a consent veto — `kubernaut_remediate` has already committed the RR to autonomous execution before the attach call happens. See DD-INTERACTIVE-002 v1.2 §4 and `docs/services/apifrontend/design/ARCHITECTURE.md` Flow 4.
 
 ---
 
