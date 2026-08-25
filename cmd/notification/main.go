@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
@@ -696,7 +697,7 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 	if stop, ok := startNotificationLogLevelWatcher(ctx, p.configPath, p.atomicLevel, logger); ok {
 		stopFns = append(stopFns, stop)
 	}
-	if stop, ok := startNotificationCAWatcher(ctx, p.cfg, logger); ok {
+	if stop, ok := startNotificationCAWatcher(ctx, p.cfg, p.reconciler, logger); ok {
 		stopFns = append(stopFns, stop)
 	}
 
@@ -790,7 +791,7 @@ func startNotificationLogLevelWatcher(ctx context.Context, configPath string, at
 // and starts the Issue #756 CA-cert hot-reload watcher for client-side TLS.
 // Exits the process if the CA watcher fails to start, matching main()'s
 // original fail-fast behavior. ok is false when no watcher was started.
-func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Config, logger logr.Logger) (stop func(), ok bool) {
+func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Config, reconciler *notification.NotificationRequestReconciler, logger logr.Logger) (stop func(), ok bool) {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
@@ -798,8 +799,11 @@ func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Con
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload.
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordNotificationConfigReload(ctx, reconciler, reloadErr, logger)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -808,4 +812,24 @@ func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Con
 		return nil, false
 	}
 	return caWatcher.Stop, true
+}
+
+// recordNotificationConfigReload records a CA-cert hot-reload outcome (GAP-11,
+// Issue #2285) via the reconciler's existing AuditManager/AuditStore, mirroring
+// Gateway's shipped EmitConfigReloadAudit reference implementation. Extracted
+// so the onReload closure passed to StartCAFileWatcher stays a one-liner and
+// this logic is independently unit-testable.
+func recordNotificationConfigReload(ctx context.Context, reconciler *notification.NotificationRequestReconciler, reloadErr error, logger logr.Logger) {
+	if reconciler == nil || reconciler.AuditManager == nil || reconciler.AuditStore == nil {
+		return
+	}
+	var event *ogenclient.AuditEventRequest
+	if reloadErr != nil {
+		event = reconciler.AuditManager.CreateConfigRejectedEvent("ca_cert", reloadErr)
+	} else {
+		event = reconciler.AuditManager.CreateConfigReloadedEvent("ca_cert")
+	}
+	if err := reconciler.AuditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store config reload audit event", "component", "ca_cert")
+	}
 }

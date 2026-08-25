@@ -45,6 +45,7 @@ package audit
 
 import (
 	"fmt"
+	"time"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -57,6 +58,11 @@ const (
 	EventTypeMessageFailed       = "notification.message.failed"
 	EventTypeMessageAcknowledged = "notification.message.acknowledged"
 	EventTypeMessageEscalated    = "notification.message.escalated"
+
+	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
+	// gateway.config.{reloaded,rejected}'s component-based shape.
+	EventTypeConfigReloaded = "notification.config.reloaded"
+	EventTypeConfigRejected = "notification.config.rejected"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -69,6 +75,8 @@ const (
 	ActionSent         = "sent"
 	ActionAcknowledged = "acknowledged"
 	ActionEscalated    = "escalated"
+	ActionReloaded     = "reloaded"
+	ActionRejected     = "rejected"
 )
 
 func flattenSpecMetadata(notification *notificationv1alpha1.NotificationRequest) map[string]string {
@@ -375,4 +383,51 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	event.EventData = ogenclient.NewNotificationMessageEscalatedPayloadAuditEventRequestEventData(payload)
 
 	return event, nil
+}
+
+// CreateConfigReloadedEvent creates an audit event for a successful
+// hot-reloadable component reload (GAP-11, Issue #2285: CA hot-reload
+// audit-trail parity). component identifies which hot-reloadable component
+// fired (e.g. "ca_cert" for the TLS_CA_FILE watcher).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair. Unlike the
+// other Create*Event methods, this event is not tied to a specific
+// NotificationRequest resource (process-level config change), so resource
+// fields reference "Config" instead.
+func (m *Manager) CreateConfigReloadedEvent(component string) *ogenclient.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeConfigReloaded)
+	audit.SetEventCategory(event, EventCategoryNotification)
+	audit.SetEventAction(event, ActionReloaded)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+	event.EventData = ogenclient.NewNotificationConfigReloadedPayloadAuditEventRequestEventData(ogenclient.NotificationConfigReloadedPayload{
+		EventType: ogenclient.NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded,
+		Component: component,
+	})
+	return event
+}
+
+// CreateConfigRejectedEvent creates an audit event for a rejected
+// hot-reloadable component reload (GAP-11, Issue #2285), where the previous
+// configuration is kept in place. See CreateConfigReloadedEvent for the
+// success counterpart.
+func (m *Manager) CreateConfigRejectedEvent(component string, reloadErr error) *ogenclient.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeConfigRejected)
+	audit.SetEventCategory(event, EventCategoryNotification)
+	audit.SetEventAction(event, ActionRejected)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+	event.EventData = ogenclient.NewNotificationConfigRejectedPayloadAuditEventRequestEventData(ogenclient.NotificationConfigRejectedPayload{
+		EventType:       ogenclient.NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected,
+		Component:       component,
+		RejectionReason: reloadErr.Error(),
+	})
+	return event
 }
