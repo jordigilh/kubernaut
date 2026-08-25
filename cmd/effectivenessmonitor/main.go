@@ -180,7 +180,7 @@ func run() int {
 
 	// Issue #748/#756/#875: TLS security profile, CA file hot-reload, and
 	// log-level hot-reload.
-	stopHotReload := wireHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
+	stopHotReload := wireHotReload(ctx, cfg, configPath, atomicLevel, setupLog, auditStore)
 	defer stopHotReload()
 
 	if err := runManagerUntilShutdown(ctx, mgr, auditStore, setupLog); err != nil {
@@ -708,7 +708,7 @@ func registerHealthChecks(mgr ctrl.Manager, fleetGate *readiness.Gate, dsGate *r
 // #748), starts the shared CA file watcher (Issue #756), and starts the
 // config-driven log-level watcher (Issue #875). Callers must invoke the
 // returned stop function on shutdown.
-func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) func() {
+func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger, auditStore audit.AuditStore) func() {
 	stopFns := make([]func(), 0, 2)
 
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
@@ -717,7 +717,11 @@ func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, a
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	hotReloadAuditManager := emaudit.NewManager(auditStore, logger.WithName("em-audit"))
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		hotReloadAuditManager.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
