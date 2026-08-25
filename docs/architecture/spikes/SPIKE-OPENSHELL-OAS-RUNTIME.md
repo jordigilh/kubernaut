@@ -119,7 +119,7 @@ This confirms the full ACP lifecycle works end-to-end inside the sandbox: run cr
 
 **Result: PARTIAL — policy loaded, enforcement not validated**
 
-An OPA egress policy was authored (`oas-runtime/policies/spike-egress.yaml`) that declares allowed endpoints:
+An OPA egress policy was authored (`docs/spikes/oas-runtime/policies/spike-egress.yaml`) that declares allowed endpoints:
 
 ```yaml
 network_policies:
@@ -277,7 +277,7 @@ The supervisor sideloads via init container (for K8s < 1.33; newer clusters use 
 ## File Inventory
 
 ```
-oas-runtime/
+docs/spikes/oas-runtime/
   Dockerfile                           -- Updated BYOC image with sandbox group fix
   policies/
     spike-egress.yaml                  -- Example OPA egress policy for Kubernaut

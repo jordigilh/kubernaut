@@ -21,7 +21,7 @@ declarative agent definitions into executable LangGraph `CompiledStateGraph`
 instances.
 
 This supersedes the `open-agent-sdk-go` (Go-based) approach documented in
-PROPOSAL-EXT-003's addendum. That spike (`docs/architecture/spikes/oas-runtime/`) validated
+PROPOSAL-EXT-003's addendum. That spike (`docs/spikes/oas-runtime/`) validated
 the Go SDK but required maintaining a custom OAS-to-Go adapter. The
 PyAgentSpec + LangGraph path uses upstream native tooling with zero
 custom format conversion.
