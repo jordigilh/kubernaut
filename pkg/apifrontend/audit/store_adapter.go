@@ -426,6 +426,10 @@ func buildConfigReloadedPayload(e *Event) ogenclient.AuditEventRequestEventData 
 	return ogenclient.NewApifrontendConfigReloadedPayloadAuditEventRequestEventData(ogenclient.ApifrontendConfigReloadedPayload{
 		EventType:     ogenclient.ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded,
 		ConfigVersion: detailStr(d, "config_version"),
+		// changed_keys identifies which hot-reloadable component was
+		// reloaded (e.g. "ca_cert", GAP-11 Issue #2285) in addition to the
+		// #1450 policy-config watcher's own reloads.
+		ChangedKeys: detailStrSlice(d, "changed_keys"),
 	})
 }
 
