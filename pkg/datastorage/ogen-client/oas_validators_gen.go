@@ -2168,6 +2168,38 @@ func (s ApifrontendImpersonationCreatedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ApifrontendInteractiveSignalFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendInteractiveSignalFailedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.interactive_signal.failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendJWTDelegationPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3731,6 +3763,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventEventData:
+		if err := s.ApifrontendInteractiveSignalFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
 		if err := s.DatastorageRatelimitDeniedPayload.Validate(); err != nil {
 			return err
@@ -4483,6 +4520,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendConfigRejectedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendInteractiveSignalFailedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

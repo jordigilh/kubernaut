@@ -10678,6 +10678,172 @@ func (s *ApifrontendImpersonationCreatedPayloadEventType) UnmarshalJSON(data []b
 }
 
 // Encode implements json.Marshaler.
+func (s *ApifrontendInteractiveSignalFailedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendInteractiveSignalFailedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("rr_id")
+		e.Str(s.RrID)
+	}
+	{
+		e.FieldStart("error")
+		e.Str(s.Error)
+	}
+}
+
+var jsonFieldsNameOfApifrontendInteractiveSignalFailedPayload = [3]string{
+	0: "event_type",
+	1: "rr_id",
+	2: "error",
+}
+
+// Decode decodes ApifrontendInteractiveSignalFailedPayload from json.
+func (s *ApifrontendInteractiveSignalFailedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendInteractiveSignalFailedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "rr_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.RrID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_id\"")
+			}
+		case "error":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Error = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendInteractiveSignalFailedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendInteractiveSignalFailedPayload) {
+					name = jsonFieldsNameOfApifrontendInteractiveSignalFailedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendInteractiveSignalFailedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendInteractiveSignalFailedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendInteractiveSignalFailedPayloadEventType as json.
+func (s ApifrontendInteractiveSignalFailedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendInteractiveSignalFailedPayloadEventType from json.
+func (s *ApifrontendInteractiveSignalFailedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendInteractiveSignalFailedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendInteractiveSignalFailedPayloadEventType(v) {
+	case ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed:
+		*s = ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed
+	default:
+		*s = ApifrontendInteractiveSignalFailedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendInteractiveSignalFailedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendInteractiveSignalFailedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ApifrontendJWTDelegationPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -19653,6 +19819,20 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.interactive_signal.failed")
+		{
+			s := s.ApifrontendInteractiveSignalFailedPayload
+			{
+				e.FieldStart("rr_id")
+				e.Str(s.RrID)
+			}
+			{
+				e.FieldStart("error")
+				e.Str(s.Error)
+			}
+		}
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("datastorage.ratelimit.denied")
@@ -20424,6 +20604,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.config.rejected":
 					s.Type = ApifrontendConfigRejectedPayloadAuditEventEventData
 					found = true
+				case "apifrontend.interactive_signal.failed":
+					s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventEventData
+					found = true
 				case "datastorage.ratelimit.denied":
 					s.Type = DatastorageRatelimitDeniedPayloadAuditEventEventData
 					found = true
@@ -20863,6 +21046,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendConfigRejectedPayloadAuditEventEventData:
 		if err := s.ApifrontendConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventEventData:
+		if err := s.ApifrontendInteractiveSignalFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
@@ -25093,6 +25280,20 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.interactive_signal.failed")
+		{
+			s := s.ApifrontendInteractiveSignalFailedPayload
+			{
+				e.FieldStart("rr_id")
+				e.Str(s.RrID)
+			}
+			{
+				e.FieldStart("error")
+				e.Str(s.Error)
+			}
+		}
 	case DatastorageRatelimitDeniedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("datastorage.ratelimit.denied")
@@ -25864,6 +26065,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.config.rejected":
 					s.Type = ApifrontendConfigRejectedPayloadAuditEventRequestEventData
 					found = true
+				case "apifrontend.interactive_signal.failed":
+					s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData
+					found = true
 				case "datastorage.ratelimit.denied":
 					s.Type = DatastorageRatelimitDeniedPayloadAuditEventRequestEventData
 					found = true
@@ -26303,6 +26507,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendConfigRejectedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendInteractiveSignalFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case DatastorageRatelimitDeniedPayloadAuditEventRequestEventData:
