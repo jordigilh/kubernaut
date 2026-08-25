@@ -62,7 +62,7 @@ decision/business-requirement backing:
 | **Admission Control** | Goroutine-per-investigation with an active-investigation-count check (no fixed worker pool). | `internal/kubernautagent/config` (`maxConcurrent`) |
 | **Shadow Agent (Alignment Check)** | Parallel security auditor monitoring LLM responses, tool outputs, and signal context for prompt injection. `enforce`/`monitor` modes, canary integrity checks, circuit breaker. | [ADR-KA-001](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md), [shadow-agent-configuration.md](./shadow-agent-configuration.md) |
 | **Interactive MCP Mode** | Stateful, human-in-the-loop conversational investigation mode backed by Kubernetes Leases for session ownership; supports operator takeover mid-investigation. | `internal/kubernautagent/mcp` |
-| **Fleet / Multi-Cluster Tool Discovery** | Direct KA-to-OCP MCP Server contact for remote-cluster tool access (superseding an earlier MCP-Gateway-hop design). | [ADR-064](../../architecture/decisions/ADR-064-multi-cluster-mcp-gateway.md) |
+| **Fleet / Multi-Cluster Tool Discovery** | MCP Gateway (Kuadrant or Envoy AI Gateway) fronts per-cluster K8s MCP Server backends; KA calls a `fleetclient.GatewayDiscoverer` server-side to pre-scope tools to the investigation's one target cluster before the LLM runs. No direct-connect path. | [ADR-068](../../architecture/decisions/ADR-068-fleet-federation-architecture.md), [DD-FLEET-005](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md) |
 | **Remediation Target Validation** | Validates/overrides the LLM-proposed remediation target against the Kubernetes-verified owner-reference chain. | [DD-KA-006](../../architecture/decisions/DD-KA-006-remediation-target-in-rca.md), [BR-KA-212](../../requirements/BR-KA-212-rca-target-resource.md) |
 | **Infrastructure Label Detection** | Detects 12 infrastructure characteristics of the root-owner resource (including CNV/KubeVirt-aware detections) for workflow-catalog filtering. | [DD-KA-018](../../architecture/decisions/DD-KA-018-detected-labels-detection-specification.md) |
 | **Workflow Discovery** | Three-step catalog protocol: `list_available_actions` → `list_workflows` → `get_workflow`, followed by LLM selection. | [DD-KA-017](../../architecture/decisions/DD-KA-017-three-step-workflow-discovery-integration.md) |
@@ -117,7 +117,8 @@ flowchart LR
     KA -->|"metrics queries"| PROM["Prometheus (configurable toolset)"]
     KA -->|"alert queries"| AM["Alertmanager (configurable toolset)"]
     KA -->|"chat completions"| LLM["LLM Provider (VertexAI/Anthropic/OpenAI/...)"]
-    KA -->|"remote-cluster tools"| MCP["OCP MCP Server (fleet mode only)"]
+    KA -->|"remote-cluster tools"| GW["MCP Gateway (fleet mode only)"]
+    GW -->|"per-cluster tool calls"| MCP["K8s MCP Server (per managed cluster)"]
     KA -->|"audit events"| DS
 ```
 

@@ -7,7 +7,7 @@
 
 | # | Question | Threshold | Result | Evidence |
 |---|----------|-----------|--------|----------|
-| 1 | **Tool coverage**: Does OCP MCP server cover >= 80% of KA's investigation tools? | >= 80% | **GO (82%)** | Spike 1: 12 FULL + 6 PARTIAL = 18/22 K8s tools. 4 gap tools are non-critical (JQ, count, grep). |
+| 1 | **Tool coverage**: Does OCP MCP server cover >= 80% of KA's investigation tools? | >= 80% | **GO (82%; retired -- see note)** | Spike 1: 12 FULL + 6 PARTIAL = 18/22 K8s tools. 4 gap tools are non-critical (JQ, count, grep). **Retired ([#2254](https://github.com/jordigilh/kubernaut/issues/2254))**: this was a paper analysis; [Spike S13](spike-s13-tool-coverage-validation/README.md) empirically found 100% coverage for KA's actual investigation-tool set. |
 | 2 | **Gateway viability**: Can MCP Gateway reliably route tool calls? | Working deployment | **GO** | Spike 2: Manifests produced for OLM, Helm, and Kind quickstart. Registration flow validated via docs. |
 | 3 | **Latency acceptable**: Is gateway roundtrip < 2x direct client-go? | < 2x overhead | **GO (estimated)** | Spike 2: Expected 10-50ms overhead (Envoy <1ms + MCP broker). Investigation tools are sequential. Actual measurement deferred to lab. |
 | 4 | **KA MCP client works**: Can KA discover and call tools through gateway? | Working prototype | **GO** | Spike 3: StreamableProvider + BridgeTool implemented. 14 tests passing. Uses same SDK as AF->KA. |

@@ -1,10 +1,21 @@
 # ADR-064: Multi-Cluster Investigation via OCP MCP Server
 
-**Status**: Deferred to v1.6+ (v1.5 MVP uses Thanos -- see DD-INT-020 v1.5 Part E)
+**Status**: Superseded by [ADR-068](ADR-068-fleet-federation-architecture.md) (Fleet Federation Architecture)
 **Date**: 2026-06-04
 **Updated**: 2026-06-13
 **Deciders**: Architecture Team
 **Context**: ServiceNow signal investigation requires multi-cluster K8s access
+
+> **Superseded (Issue [#2254](https://github.com/jordigilh/kubernaut/issues/2254))**: The
+> direct KA-to-per-cluster-OCP-MCP-Server design described below (no MCP Gateway) was never
+> what shipped for fleet/multi-cluster tool discovery. The actual v1.6 architecture is the
+> Gateway-fronted design in [ADR-068](ADR-068-fleet-federation-architecture.md) (Status:
+> Implemented (MVP)): an MCP Gateway (Kuadrant or Envoy AI Gateway) fronts per-cluster K8s
+> MCP Server backends, and KA calls a `fleetclient.GatewayDiscoverer` server-side to pre-scope
+> tools per investigation (current mechanism: [DD-FLEET-005](DD-FLEET-005-cluster-transparent-tool-exposure.md);
+> code: `internal/kubernautagent/investigator/fleet_overlay.go`,
+> `pkg/fleet/mcpclient/discovery.go`). There is no direct-connect code path in the shipped
+> implementation. Kept below as a historical record of the originally-deferred design.
 
 ## v1.5 Decision
 
