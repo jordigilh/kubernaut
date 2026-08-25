@@ -379,7 +379,7 @@ func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logge
 // matching main()'s original fail-fast behavior. Returns a cleanup function
 // that stops any watchers that were successfully started; callers should
 // defer the returned function.
-func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel) func() {
+func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, auditClient *audit.AuditClient) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -388,7 +388,10 @@ func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config,
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -474,7 +477,7 @@ func run() int {
 
 	setupAIAnalysisReconciler(mgr, cfg, clients, dsGate)
 
-	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel, clients.auditClient)
 	defer cleanupHotReload()
 
 	setupLog.Info("starting manager")
