@@ -732,11 +732,16 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 	})
 })
 
-func newTypedClientForInvestigateWithUIDAssignment(objects ...crclient.Object) crclient.Client {
+// newTypedClientForInvestigateWithUIDAssignment builds a fake client whose
+// Create interceptor assigns a UID (mirrors real apiserver behavior) for
+// tests that need to observe a persisted RR's UID (e.g. backfill
+// assertions). Unlike its sibling newTypedClientForInvestigate, this
+// variant never receives seed objects at any call site -- the UID
+// interceptor and pre-seeded objects are never needed together -- so it
+// intentionally takes no objects parameter (unparam, #2291).
+func newTypedClientForInvestigateWithUIDAssignment() crclient.Client {
 	return fake.NewClientBuilder().
 		WithScheme(investigateTestScheme()).
-		WithObjects(objects...).
-		WithStatusSubresource(objects...).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
 				if obj.GetUID() == "" {
