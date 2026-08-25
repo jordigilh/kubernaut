@@ -1,0 +1,300 @@
+suite: "Issue #2276 must-gather-e2e CI regression (PR #2288): writable /tmp for ambient CA injection"
+# Root cause: sharedtls.InjectAmbientCACerts (pkg/shared/tls/tls.go) combines
+# the system CA bundle with the service's configured CA into a temp file via
+# os.CreateTemp("", ...) -- Go's os.TempDir() resolves to /tmp on Linux and
+# is NOT configurable. Every one of these 11 services runs with
+# securityContext.readOnlyRootFilesystem: true by default (see
+# kubernaut.containerSecurityContext), so without an explicit writable /tmp
+# mount, the container crash-loops the moment its resolved
+# TLSCAFile/interService.caFile is non-empty:
+#   "failed to create ambient CA bundle temp file: open
+#   /tmp/kubernaut-ambient-ca-*.pem: read-only file system"
+# This was caught by must-gather-e2e (Live Cluster) on PR #2288 -- all 9
+# services below crash-looped (datastorage was unaffected only because its
+# Redis TLS CA happened to be unset in that scenario, and kubernautagent's
+# pre-existing "tmp" mount was gated behind an unrelated monitoring-TLS
+# flag). kubernaut.tmpVolumeMount/kubernaut.tmpVolume (_helpers.tpl) mount an
+# emptyDir at /tmp unconditionally so InjectAmbientCACerts always has
+# somewhere to write, regardless of which CA-consuming feature is enabled.
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/authwebhook/authwebhook.yaml
+  - templates/aianalysis/aianalysis.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/notification/notification.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/workflowexecution/workflowexecution.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/datastorage/datastorage.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    config:
+      ansible:
+        apiURL: https://awx.example.com
+        caCertSecretRef:
+          name: aap-ca-secret
+          key: ca.crt
+tests:
+  - it: "gateway mounts a writable emptyDir at /tmp"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "apifrontend mounts a writable emptyDir at /tmp"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "authwebhook mounts a writable emptyDir at /tmp (alongside the more specific webhook-certs subpath mount)"
+    template: templates/authwebhook/authwebhook.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "aianalysis mounts a writable emptyDir at /tmp"
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "effectivenessmonitor mounts a writable emptyDir at /tmp"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "notification mounts a writable emptyDir at /tmp (alongside its notification-output subpath mount)"
+    template: templates/notification/notification.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "remediationorchestrator mounts a writable emptyDir at /tmp"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "signalprocessing mounts a writable emptyDir at /tmp"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "workflowexecution mounts a writable emptyDir at /tmp"
+    template: templates/workflowexecution/workflowexecution.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "kubernaut-agent mounts a writable emptyDir at /tmp unconditionally (decoupled from monitoring.tlsEnabled)"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 8Mi
+
+  - it: "kubernaut-agent mounts /tmp even when monitoring TLS is disabled (the exact must-gather-e2e failure scenario)"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    set:
+      monitoring:
+        prometheus:
+          tlsCaFile: ""
+        alertManager:
+          tlsCaFile: ""
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: "datastorage already had a writable /tmp (regression guard, not part of this fix)"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp

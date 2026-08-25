@@ -339,6 +339,7 @@ spec:
               mountPath: /etc/config
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -356,6 +357,7 @@ spec:
           configMap:
             name: remediationorchestrator-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:

@@ -391,6 +391,7 @@ spec:
               mountPath: /etc/config
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
             - name: combined-ca
               mountPath: /etc/combined-ca
@@ -408,6 +409,7 @@ spec:
           configMap:
             name: workflowexecution-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
         - name: aap-ca
           secret:

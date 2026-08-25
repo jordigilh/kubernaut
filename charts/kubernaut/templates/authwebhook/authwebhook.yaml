@@ -274,6 +274,7 @@ spec:
               mountPath: /etc/authwebhook
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.authwebhook.resources | nindent 12 }}
           livenessProbe:
@@ -302,3 +303,4 @@ spec:
           configMap:
             name: authwebhook-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}

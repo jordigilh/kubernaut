@@ -296,6 +296,7 @@ spec:
               readOnly: true
             {{- end }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -313,6 +314,7 @@ spec:
             name: effectivenessmonitor-service-ca
         {{- end }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:

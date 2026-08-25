@@ -246,6 +246,7 @@ spec:
               mountPath: /etc/aianalysis/policies
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.aianalysis.resources | nindent 12 }}
       volumes:
@@ -256,6 +257,7 @@ spec:
           configMap:
             name: {{ .Values.aianalysis.policies.existingConfigMap | default "aianalysis-policies" }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service

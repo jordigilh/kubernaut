@@ -329,6 +329,7 @@ spec:
               mountPath: /etc/gateway
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $gatewayFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/gateway/{{ $gatewayFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -374,6 +375,7 @@ spec:
           configMap:
             name: gateway-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $gatewayFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:

@@ -305,6 +305,7 @@ spec:
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
               subPath: proactive-signal-mappings.yaml
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/signalprocessing/{{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -323,6 +324,7 @@ spec:
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
