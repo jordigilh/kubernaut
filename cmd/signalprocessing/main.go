@@ -561,7 +561,7 @@ func setupSignalProcessingReconciler(
 // fails to start, matching main()'s original fail-fast behavior. Returns a
 // cleanup function that stops any watchers that were successfully started;
 // callers should defer the returned function.
-func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.Config, configFile string, atomicLevel zaplog.AtomicLevel) func() {
+func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.Config, configFile string, atomicLevel zaplog.AtomicLevel, auditClient *spaudit.AuditClient) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -570,7 +570,10 @@ func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.C
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -668,7 +671,7 @@ func run() int {
 
 	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment, fleetGate, dsGate)
 
-	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel)
+	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel, auditClient)
 	defer cleanupHotReload()
 
 	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
