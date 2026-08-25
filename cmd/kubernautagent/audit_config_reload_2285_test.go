@@ -53,6 +53,12 @@ var _ = Describe("cmd/kubernautagent recordConfigReload — CA hot-reload audit 
 			Expect(ev.EventAction).To(Equal(kaaudit.ActionConfigReloaded))
 			Expect(ev.EventOutcome).To(Equal(kaaudit.OutcomeSuccess))
 			Expect(ev.Data["component"]).To(Equal("ca_cert"))
+			// Regression (live must-gather-e2e repro against PR #2288): DataStorage's
+			// OpenAPI schema requires correlation_id minLength=1. A blank ID was
+			// silently dropping this event server-side (best-effort store swallowed
+			// the validation error), invisible to this spy-store unit test until
+			// asserted explicitly.
+			Expect(ev.CorrelationID).NotTo(BeEmpty())
 		})
 	})
 
@@ -70,6 +76,7 @@ var _ = Describe("cmd/kubernautagent recordConfigReload — CA hot-reload audit 
 			Expect(ev.EventOutcome).To(Equal(kaaudit.OutcomeFailure))
 			Expect(ev.Data["component"]).To(Equal("ca_cert"))
 			Expect(ev.Data["rejection_reason"]).To(Equal("invalid PEM content"))
+			Expect(ev.CorrelationID).NotTo(BeEmpty())
 		})
 	})
 
