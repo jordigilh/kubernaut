@@ -49,6 +49,12 @@ type AlertContext struct {
 	// any active pod are filtered out (stale alert correlation, #269).
 	// Nil means no pod-level filtering is applied.
 	ActivePodNames []string
+	// ClusterID scopes the AlertManager query to a single fleet cluster
+	// (Issue #2274, BR-FLEET-054). Without it, a remote-cluster remediation's
+	// alert-resolution check can match an alert firing for a same-named
+	// resource on a different fleet cluster. Empty for hub/local
+	// remediations (backward compatible: no cluster matcher is added).
+	ClusterID string
 }
 
 // Scorer evaluates whether the original alert has resolved after remediation.
@@ -124,15 +130,19 @@ func (s *scorer) Score(ctx context.Context, amClient client.AlertManagerClient, 
 
 // buildMatchers constructs AlertManager filter matchers from an AlertContext.
 // #269: namespace is included when non-empty to scope queries to the signal target's namespace.
+// Issue #2274: cluster is included when non-empty to scope queries to a single fleet cluster.
 func buildMatchers(alertCtx AlertContext) []string {
 	// Issue #1684: sizeutil.SafeCap makes the overflow check on this capacity
 	// hint explicit (see its doc comment for why CodeQL flags raw "a+b").
-	matchers := make([]string, 0, sizeutil.SafeCap(len(alertCtx.AlertLabels), 2))
+	matchers := make([]string, 0, sizeutil.SafeCap(len(alertCtx.AlertLabels), 3))
 	if alertCtx.AlertName != "" {
 		matchers = append(matchers, fmt.Sprintf("alertname=%q", alertCtx.AlertName))
 	}
 	if alertCtx.Namespace != "" {
 		matchers = append(matchers, fmt.Sprintf("namespace=%q", alertCtx.Namespace))
+	}
+	if alertCtx.ClusterID != "" {
+		matchers = append(matchers, fmt.Sprintf("cluster=%q", alertCtx.ClusterID))
 	}
 	for k, v := range alertCtx.AlertLabels {
 		matchers = append(matchers, fmt.Sprintf("%s=%q", k, v))

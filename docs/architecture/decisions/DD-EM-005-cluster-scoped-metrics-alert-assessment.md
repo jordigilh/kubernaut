@@ -1,7 +1,7 @@
 # DD-EM-005: Cluster-Scoped Metrics and Alert Assessment (Node, PersistentVolume)
 
-**Version**: 1.2
-**Date**: 2026-07-07
+**Version**: 1.3
+**Date**: 2026-08-24
 **Status**: ✅ APPROVED
 **Author**: EffectivenessMonitor Team
 
@@ -234,6 +234,79 @@ named-pair pattern already proven twice in this codebase (Phase A->B, and now th
 
 ---
 
+## v1.3 Addendum: Fleet Cluster-Scoping (Issue #2274, BR-FLEET-054)
+
+### Gap found
+
+v1.0-1.2 made EM's cluster-scoped-**Kind** (Node/PersistentVolume) queries deterministic and
+audit-complete, but neither those queries nor the namespace-scoped path (`buildMetricQuerySpecs`)
+nor the AlertManager query (`buildMatchers`) ever filtered on the **fleet cluster** a remediation
+actually ran against. In a fleet (multi-cluster) deployment, Thanos/Prometheus federates metrics
+from every managed cluster into one queryable view, distinguished only by an external `cluster`
+label; AlertManager similarly aggregates alerts fleet-wide. Without a `cluster=` matcher:
+
+- **Metrics**: `sum(container_memory_working_set_bytes{namespace="prod"})` (and all 4 sibling
+  namespace-scoped queries, plus the Node/PV cluster-scoped queries from v1.0) silently blend
+  series from every fleet cluster that happens to report a same-named `namespace`/`node`/
+  `persistentvolume` — a remote-cluster remediation's before/after comparison could be corrupted
+  by an unrelated cluster's concurrent metric movement for a same-named resource.
+- **Alerts**: `buildMatchers` filtered on `alertname`(+`namespace`/`AlertLabels`) only. A
+  same-correlation-ID alert definition firing on a *different* fleet cluster could mask (or
+  falsely confirm) resolution of the alert that actually triggered this remediation.
+
+This is a gap against:
+
+- **BR-FLEET-054** (fleet cluster routing/scoping — the same business requirement `ReaderFor`
+  satisfies for K8s API reads; EM's Prometheus/AlertManager reads had no equivalent).
+- **SOC2 CC7.2** (monitoring/reconstruction assurance): a remediation's effectiveness score could
+  not be trusted to reflect only that remediation's cluster.
+- **FedRAMP AU-3** (structured content of audit records): `metric_deltas`/alert audit fields could
+  silently carry cross-cluster-contaminated values with no indication in the record itself.
+
+Root cause of why this escaped the fleet E2E lane for as long as it did, and the hardening applied
+to close that gap, are documented in the [Issue #2274](https://github.com/jordigilh/kubernaut/issues/2274)
+investigation and `test/e2e/fleet/07_em_fleet_metrics_test.go` (E2E-FLEET-019a/b).
+
+### Fix: `ea.Spec.ClusterID` is the Thanos `cluster` external label
+
+No new lookup or CRD field was needed: `ea.Spec.ClusterID` (already populated end-to-end from the
+originating Prometheus/AlertManager webhook's `cluster` label, see
+`pkg/gateway/types/fingerprint.go` `ClusterLabelKey = "cluster"` and
+`pkg/gateway/adapters/prometheus_adapter.go`) **is** the exact Thanos external label value to
+match on — spike-confirmed, eliminating the need for a `ClusterInfo`/`ReaderFor`-style registry
+lookup that the issue's initial framing assumed.
+
+- Every PromQL query builder (`buildMetricQuerySpecs`, `buildNodeMetricQuerySpecs`,
+  `buildPVMetricQuerySpecs`, `buildKSMFlagQuerySpec`) now takes a `clusterID string` parameter,
+  appending a `cluster="<id>"` matcher via the new `clusterMatcherSuffix` helper when non-empty.
+- `buildPVMetricQuerySpecs`'s usage-ratio query joins 3 metrics via
+  `on(namespace, persistentvolumeclaim)`/`on(persistentvolume)` — vector-matching operators that
+  only restrict matching on the *listed* labels, so `cluster=` must be applied to **all three**
+  raw selectors independently, not just the outer expression (spike finding).
+- `alert.AlertContext` gained a `ClusterID` field; `buildMatchers` appends a `cluster=` matcher
+  when non-empty, mirroring the existing `Namespace`/`AlertLabels` pattern.
+- Empty `ClusterID` (hub/local, non-fleet remediations) produces byte-identical queries to
+  pre-#2274 behavior in every builder — proven by `UT-EM-2274-BC-001..004` / `IT-EM-2274-BC-005`.
+
+### Control mapping
+
+| Control | Requirement | How this change satisfies it |
+|---|---|---|
+| BR-FLEET-054 | Fleet remediations are scoped to their originating cluster | PromQL/AlertManager queries built by EM now carry the same `cluster=`/`ClusterID` scoping already used by `pkg/fleet.ReaderFor` for K8s API reads |
+| SOC2 CC7.2 | Monitoring provides reasonable assurance of remediation reconstruction | A remote-cluster remediation's effectiveness score can no longer be corrupted by a same-named resource's metrics/alerts on a different fleet cluster |
+| FedRAMP AU-3 | Structured content of audit records | No new audit schema needed — `metric_deltas`/alert fields already recorded; this fix ensures the *source query* that produced them is cluster-isolated |
+
+### Wiring manifest (v1.3 addendum)
+
+| Component | Production Entry Point | Test ID |
+|---|---|---|
+| `buildMetricQuerySpecsForTarget`/`buildMetricQuerySpecs`/`buildNodeMetricQuerySpecs`/`buildPVMetricQuerySpecs`/`buildKSMFlagQuerySpec` (+`clusterID` param) | `assess_components.go` `assessMetrics` (passes `ea.Spec.ClusterID`) | UT-EM-2274-001..005, UT-EM-2274-BC-001..003 |
+| `AlertContext.ClusterID` + `buildMatchers` (+cluster matcher) | `assess_components.go` `assessAlert` (passes `ea.Spec.ClusterID`) | UT-EM-2274-006/007 |
+| Full reconcile wiring (real envtest + mock Prometheus/AlertManager) | `internal/controller/effectivenessmonitor/reconciler.go` `Reconcile` | IT-EM-2274-001..003, IT-EM-2274-BC-005 |
+| Real Prometheus/AlertManager, real EM controller, fleet Kind cluster | `test/e2e/fleet/07_em_fleet_metrics_test.go` | E2E-FLEET-019a (metrics collision), E2E-FLEET-019b (alert-resolution collision) |
+
+---
+
 ## Related Decisions
 
 - **DD-EM-003**: Dual-target assessment — noted cluster-scoped resources as a "neutral
@@ -255,3 +328,4 @@ named-pair pattern already proven twice in this codebase (Phase A->B, and now th
 | 2026-07-07 | 1.0 | Initial decision: Kind-dispatch metric query builders + `AlertLabels` population for cluster-scoped (Node, PersistentVolume) targets. No new config/CRD surface. |
 | 2026-07-07 | 1.1 | Audit `metric_deltas` extension: 6 new field pairs for cluster-scoped Node/PersistentVolume metrics, wired full-pipeline (EM -> DataStorage -> Kubernaut Agent), closing a SOC2 CC8.1 / FedRAMP AU-3 audit-completeness gap. Opportunistic backfill of a pre-existing `throughput_before_rps`/`after_rps` propagation gap in the same files. |
 | 2026-07-07 | 1.2 | Pyramid invariant closure: v1.1's DataStorage/Kubernaut-Agent wiring points had only isolated per-layer UT coverage (`UT-RH-LOGIC-025/026`, `UT-KA-433W-014`), no IT proving the real EM->DS->KA wire. Extended the pre-existing real-DS `IT-KA-433-ENR-008` (already the authoritative wiring proof for Phase A `metric_deltas` fields) to also seed/assert the v1.1 fields, closing the gap without adding a new test suite. |
+| 2026-08-24 | 1.3 | Fleet cluster-scoping (Issue #2274, BR-FLEET-054): every PromQL/AlertManager query builder now accepts `clusterID` (= `ea.Spec.ClusterID`, the Thanos `cluster` external label) and appends a `cluster=` matcher, preventing a remote-cluster remediation's metrics/alert assessment from being corrupted by a same-named resource on a different fleet cluster. Empty `ClusterID` (hub/local) is byte-identical to pre-#2274 behavior. Also rebuilt the fleet E2E lane's `07_em_fleet_metrics_test.go` from pure infra-reachability smoke checks into genuine behavioral cluster-collision tests (E2E-FLEET-019a/b), closing the gap that let this bug ship undetected. |
