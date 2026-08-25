@@ -39,7 +39,10 @@ import (
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/audit"
+	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -223,7 +226,7 @@ func run() int {
 	obs := startObservabilityServers(cfg, srv, logger)
 
 	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
-	stopHotReload := wireHotReload(ctx, cfg, cfgPath, atomicLevel, logger)
+	stopHotReload := wireHotReload(ctx, cfg, cfgPath, atomicLevel, logger, srv.AuditStore())
 	defer stopHotReload()
 
 	runAndWaitForShutdown(ctx, cfg, srv, obs, shutdownTimeout, logger)
@@ -666,6 +669,7 @@ func wireHotReload(
 	cfgPath string,
 	atomicLevel zaplog.AtomicLevel,
 	logger logr.Logger,
+	auditStore audit.AuditStore,
 ) func() {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
@@ -676,8 +680,11 @@ func wireHotReload(
 
 	stopFns := make([]func(), 0, 2)
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload.
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordConfigReload(ctx, auditStore, reloadErr, logger)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -694,6 +701,25 @@ func wireHotReload(
 		for _, stop := range stopFns {
 			stop()
 		}
+	}
+}
+
+// recordConfigReload emits datastorage.config.reloaded/datastorage.config.rejected
+// self-audit events for a CA-cert hot-reload attempt (GAP-11, Issue #2285).
+// Best effort: never blocks or fails the reload itself. No-op when
+// auditStore is nil (e.g. unit tests that don't wire one).
+func recordConfigReload(ctx context.Context, auditStore audit.AuditStore, reloadErr error, logger logr.Logger) {
+	if auditStore == nil {
+		return
+	}
+	var event *ogenclient.AuditEventRequest
+	if reloadErr != nil {
+		event = dsaudit.NewConfigRejectedAuditEvent("ca_cert", reloadErr)
+	} else {
+		event = dsaudit.NewConfigReloadedAuditEvent("ca_cert")
+	}
+	if err := auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store config reload audit event", "component", "ca_cert")
 	}
 }
 
