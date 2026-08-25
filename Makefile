@@ -416,6 +416,28 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 	fi
 
 
+# Issue #2284 CEL nullable-field regression guard (K8s v1.31.x pinned).
+#
+# ENVTEST_K8S_VERSION above floats with this repo's k8s.io/api go.mod pin
+# (currently derived as v1.36.x), which does NOT reproduce the K8s v1.31.x
+# CEL evaluator bug where whole-object "self == oldSelf" XValidation rules
+# spuriously reject identical objects when a nullable:true field
+# (WorkflowSnapshot.DeclaredParameterNames) holds nil on both sides. That
+# gap is exactly why CI never caught Issue #2284's infinite reconcile loop
+# before it reached production (OCP 4.18.44 / K8s v1.31.14). This target
+# pins envtest to v1.31.0 (the confirmed-affected production version) and
+# runs only the two dedicated regression specs (IT-AA-2284-001,
+# IT-WFE-2284-001) rather than the full IT suites, so CI catches any future
+# regression of the has()-guarded CEL rewrite without paying the cost of
+# running both full suites twice per version.
+.PHONY: test-integration-cel-immutability-regression
+test-integration-cel-immutability-regression: generate ginkgo setup-envtest ensure-coverage-dirs ## Issue #2284: K8s v1.31.0-pinned CEL nullable-field regression guard
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Issue #2284 CEL nullable-field regression guard (pinned K8s v1.31.0)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-AA-2284-001' ./test/integration/aianalysis/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-WFE-2284-001' ./test/integration/workflowexecution/...
+
 # Kubernaut Agent integration tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
 .PHONY: test-integration-kubernautagent
 test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-dirs ## Run kubernaut agent integration tests (coverpkg: pkg + internal/kubernautagent)
