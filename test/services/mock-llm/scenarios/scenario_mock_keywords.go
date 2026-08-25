@@ -161,6 +161,36 @@ func notActionableGroundedConfig() MockScenarioConfig {
 	}
 }
 
+// notActionableGrounded1912Config backs E2E-FP-1912-001 (issue #1912: no
+// reinvocation after a session-terminal tool; #2265 tracks a CI flake where
+// this test's "no WorkflowExecution is ever created" assertion had no
+// deterministic backstop). Mirrors notActionableGroundedConfig's pattern
+// exactly (same grounding mechanism, same signalScenario-only matching, same
+// leak-avoidance rationale -- see that config's doc comment) with a distinct
+// SignalName/ScenarioName so the two tests can't collide. Without this, the
+// RR created by E2E-FP-1912-001's kubernaut_remediate call (no synthetic
+// signal, "unknown" derived SignalName) falls through to the generic
+// "af_unknown" -> oomkilledConfig() actionable scenario shared with genuinely
+// OOM-flavored tests elsewhere in the suite, racing the test's own
+// interactive-takeover attach against RO/AA/KA's independent, already-
+// committed autonomous reconciliation of that RR (#2265's actual root cause:
+// a test-design gap, not a takeover-path defect -- see issue discussion).
+// Grounding the signal here makes KA's RCA deterministically resolve
+// is_actionable=false regardless of that race's outcome, exactly as 1918
+// already does for its own scenario.
+func notActionableGrounded1912Config() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: "not_actionable_grounded_1912", SignalName: "E2EFP1912NotActionable", Severity: "info",
+		Confidence:   0.0,
+		Rationale:    "E2E-FP-1912-001: synthetic not-actionable signal, zero-replica Deployment never scheduled a Pod",
+		RootCause:    "Synthetic E2E test signal on a zero-replica Deployment -- no real workload or fault exists",
+		ResourceKind: "Deployment", ResourceNS: "not-actionable-1912", ResourceName: "memory-eater",
+		APIVersion:           "apps/v1",
+		InvestigationOutcome: "predictive_no_action",
+		IsActionable:         BoolPtr(false),
+	}
+}
+
 func parallelToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
