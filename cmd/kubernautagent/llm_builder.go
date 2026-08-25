@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"google.golang.org/genai"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
@@ -140,6 +141,17 @@ func buildGeminiNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 	opts = append(opts, geminifamily.WithHTTPTimeout(timeout))
 	opts = append(opts, geminiReasoningOptions(cfg)...)
 
+	// #2255 / BR-AI-089: symmetric with buildAnthropicNativeClient below —
+	// honor an operator-configured endpoint override (e.g. an AI gateway or
+	// NetworkPolicy-allowlisted proxy, see #1819) instead of always hitting
+	// generativelanguage.googleapis.com. Empty cfg.Endpoint (the default
+	// for existing deployments) is a no-op — zero regression. Mirrors the
+	// pattern already production-wired in API Frontend's Gemini triager
+	// (cmd/apifrontend/backend_deps.go).
+	if cfg.Endpoint != "" {
+		opts = append(opts, geminifamily.WithHTTPOptions(genai.HTTPOptions{BaseURL: cfg.Endpoint}))
+	}
+
 	chain, err := buildTransportChain(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("gemini transport chain: %w", err)
@@ -178,6 +190,14 @@ func buildAnthropicNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 	}
 	opts = append(opts, anthropicfamily.WithHTTPTimeout(timeout))
 	opts = append(opts, anthropicReasoningOptions(cfg)...)
+
+	// #2255 / BR-AI-089: honor an operator-configured endpoint override
+	// (e.g. an AI gateway or NetworkPolicy-allowlisted proxy, see #1819)
+	// instead of always hitting api.anthropic.com. Empty cfg.Endpoint (the
+	// default for existing deployments) is a no-op — zero regression.
+	if cfg.Endpoint != "" {
+		opts = append(opts, anthropicfamily.WithBaseURL(cfg.Endpoint))
+	}
 
 	chain, err := buildTransportChain(cfg)
 	if err != nil {

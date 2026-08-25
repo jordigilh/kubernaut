@@ -98,8 +98,12 @@ func WithBaseTransport(rt http.RoundTripper) Option {
 }
 
 // WithHTTPOptions overrides the genai SDK's HTTP options (e.g. BaseURL).
-// Test-only: production code has no operator-facing "endpoint override"
-// concept for Gemini's own API surface (unlike openai_compatible).
+// Production-wired for native API-key auth: buildGeminiNativeClient
+// (cmd/kubernautagent/llm_builder.go) passes genai.HTTPOptions{BaseURL:
+// cfg.Endpoint} through this option when an operator configures
+// ai.llm.endpoint, letting native Gemini traffic route through an AI
+// gateway or private proxy (#2255, BR-AI-089, FedRAMP AC-4). Tests also use
+// it directly to redirect Chat()/StreamChat() calls to an httptest server.
 func WithHTTPOptions(opts genai.HTTPOptions) Option {
 	return func(o *clientOpts) { o.httpOptions = &opts }
 }
