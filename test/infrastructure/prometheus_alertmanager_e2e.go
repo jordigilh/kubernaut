@@ -70,6 +70,17 @@ const (
 	PrometheusImage = "prom/prometheus:latest"
 	// AlertManagerImage is the official AlertManager container image
 	AlertManagerImage = "prom/alertmanager:latest"
+
+	// ClusterLabelKey is the label key Thanos/AlertManager federation uses to
+	// identify a fleet alert/metric's source cluster (mirrors
+	// pkg/gateway/types.ClusterLabelKey; duplicated here rather than
+	// imported to keep this test-infra package dependency-free of
+	// production gateway code). Fleet E2E tests simulating a cluster-ID
+	// collision against this package's shared Prometheus/AlertManager
+	// instance (TESTING_GUIDELINES.md Section 4b, Issue #2274) should use
+	// this constant as the TestMetric/TestAlert label key rather than a
+	// raw "cluster" string literal.
+	ClusterLabelKey = "cluster"
 )
 
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
@@ -246,6 +257,50 @@ data:
           name: ka-interactive-fleet-target
         annotations:
           summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"
+  fleet-alerts-cluster-scoped-2274.yml: |
+    # CI RCA (PR #2286, E2E-FLEET-020): AF's kubernaut_list_alerts/
+    # get_alert_details tools call pkg/apifrontend/prometheus.Client.GetAlerts,
+    # which queries THIS Prometheus's own /api/v1/alerts (alerting-rule-derived
+    # active alerts) -- see that client's baseURL, wired from
+    # severityTriage.prometheusURL (monitoring.prometheus.url), a config value
+    # entirely separate from monitoring.alertManager.url. AF's alert tools
+    # never read AlertManager's /api/v2/alerts store at all (confirmed:
+    # cmd/apifrontend/backend_deps.go only wires deps.PromClient from
+    # prometheusURL). The original E2E-FLEET-020 attempt injected alerts
+    # directly into AlertManager (infrastructure.InjectAlerts) and could
+    # therefore never be observed by AF, regardless of timing/polling fixes --
+    # confirmed against the pre-existing, passing precedent
+    # test/e2e/apifrontend/alert_prioritization_e2e_test.go, which grounds
+    # AF's list_alerts via a real Prometheus alerting rule instead.
+    #
+    # Mirrors KAInteractiveFleetBridgeGrounding immediately above: two
+    # synthetic vector(1) > 0 alerts (never stale, deterministic, firing from
+    # Prometheus startup) sharing every label EXCEPT "cluster", so
+    # test/e2e/fleet/19_af_alerts_fleet_scoped_test.go (E2E-FLEET-020) can
+    # prove af_alerts.go's cluster_id filter surfaces only the matching
+    # cluster's alert via a real AF binary + real Prometheus round-trip.
+    groups:
+    - name: fleet-alerts-cluster-scoped-2274.rules
+      interval: 10s
+      rules:
+      - alert: Fleet2274MatchingClusterAlert
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          namespace: fleet-alerts-e2e-ns
+          cluster: remote-cluster
+        annotations:
+          summary: "marker-remote-cluster-visible"
+      - alert: Fleet2274CollisionClusterAlert
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          namespace: fleet-alerts-e2e-ns
+          cluster: collision-cluster
+        annotations:
+          summary: "marker-collision-cluster-hidden"
 ---
 apiVersion: apps/v1
 kind: Deployment
