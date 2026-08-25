@@ -129,6 +129,8 @@ var eventDataBuilders = map[string]eventDataBuilder{
 	EventTypeWorkflowsListed:        buildWorkflowsListedPayload,
 	EventTypeWorkflowRetrieved:      buildWorkflowRetrievedPayload,
 	EventTypeSelectionValidated:     buildSelectionValidatedPayload,
+	EventTypeConfigReloaded:         buildConfigReloadedPayload,
+	EventTypeConfigRejected:         buildConfigRejectedPayload,
 }
 
 func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, bool) {

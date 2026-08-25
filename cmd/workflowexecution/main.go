@@ -139,6 +139,20 @@ func setupWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLe
 	return cfg, mgr, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (setupWorkflowExecutionConfig).
+//
+// Callers MUST invoke this immediately after config load, before
+// initWorkflowExecutionServices' DataStorage-backed audit store client (the
+// first outbound TLS call this process makes) -- x509.SystemCertPool() is
+// sync.Once-cached process-wide, so injecting after the first handshake has
+// no effect (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *weconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // initWorkflowExecutionServices initializes the mandatory audit store
 // (DD-AUDIT-003, DD-AUDIT-002, ADR-038; audit is P0/business-critical per
 // ADR-032 §2/§3 — the controller MUST crash if audit is unavailable rather
@@ -206,6 +220,14 @@ func run() int {
 
 	cfg, mgr, controllerNS := setupWorkflowExecutionConfig(configPath, atomicLevel)
 
+	// Issue #2276: inject ambient CA trust before
+	// initWorkflowExecutionServices' DataStorage-backed audit store client
+	// -- the first outbound TLS call this process makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	auditStore, weMetrics, statusManager, phaseManager, auditManager := initWorkflowExecutionServices(cfg, mgr)
 
 	// Issue #902: Initialize signal context and TLS before executor registry,
@@ -213,7 +235,7 @@ func run() int {
 	// is constructed.
 	ctx := ctrl.SetupSignalHandler()
 
-	stopTLSWatcher := wireTLS(ctx, cfg, setupLog)
+	stopTLSWatcher := wireTLS(ctx, cfg, setupLog, auditManager)
 	defer stopTLSWatcher()
 
 	// BR-FLEET-054: ClientFactory for local/remote cluster routing. If fleet
@@ -400,14 +422,17 @@ func buildAuditStore(cfg *weconfig.Config) (audit.AuditStore, error) {
 // wireTLS applies the config-driven TLS security profile and starts the
 // shared CA file watcher (Issue #902). Callers must invoke the returned stop
 // function on shutdown.
-func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger) func() {
+func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger, auditManager *weaudit.Manager) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		auditManager.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)

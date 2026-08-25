@@ -123,6 +123,7 @@ func (r *Reconciler) assessAlert(ctx context.Context, reader client.Reader, ea *
 	alertCtx := alert.AlertContext{
 		AlertName: alertName,
 		Namespace: ea.Spec.SignalTarget.Namespace,
+		ClusterID: ea.Spec.ClusterID,
 	}
 
 	// Issue #193, DD-EM-005: for cluster-scoped targets (empty Namespace), populate
@@ -253,7 +254,7 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	end := time.Now()
 	step := 1 * time.Second
 
-	queries := buildMetricQuerySpecsForTarget(target)
+	queries := buildMetricQuerySpecsForTarget(target, ea.Spec.ClusterID)
 
 	queryResults := make([]metricQueryResult, len(queries))
 	for i, spec := range queries {
@@ -300,49 +301,65 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 // or a Kind-specific cluster-scoped builder when it is empty (Issue #193,
 // DD-EM-005). An unrecognized cluster-scoped Kind returns an empty slice,
 // which assessMetrics reports via its "no metric data available" fallback.
-func buildMetricQuerySpecsForTarget(target eav1.TargetResource) []metricQuerySpec {
+// clusterID scopes every query to a single fleet cluster (Issue #2274);
+// empty clusterID (hub/local remediations) leaves queries unchanged.
+func buildMetricQuerySpecsForTarget(target eav1.TargetResource, clusterID string) []metricQuerySpec {
 	if target.Namespace != "" {
-		return buildMetricQuerySpecs(target.Namespace)
+		return buildMetricQuerySpecs(target.Namespace, clusterID)
 	}
 	switch target.Kind {
 	case "Node":
-		return buildNodeMetricQuerySpecs(target.Name)
+		return buildNodeMetricQuerySpecs(target.Name, clusterID)
 	case "PersistentVolume":
-		return buildPVMetricQuerySpecs(target.Name)
+		return buildPVMetricQuerySpecs(target.Name, clusterID)
 	default:
 		return nil
 	}
+}
+
+// clusterMatcherSuffix returns a PromQL label-matcher suffix ("" or
+// `,cluster="<id>"`) to append inside a metric selector's braces, scoping
+// the query to a single fleet cluster (Issue #2274). ea.Spec.ClusterID is
+// exactly the Thanos "cluster" external label (DD-EM-005 v1.3 addendum).
+// Empty clusterID (hub/local remediations) returns "" for full backward
+// compatibility with pre-fleet PromQL query strings.
+func clusterMatcherSuffix(clusterID string) string {
+	if clusterID == "" {
+		return ""
+	}
+	return fmt.Sprintf(`,cluster=%q`, clusterID)
 }
 
 // buildMetricQuerySpecs returns the 5 independent PromQL queries (CPU,
 // memory, latency p95, error rate, throughput) for namespace ns. Extracted
 // from assessMetrics (Wave 6 6a GREEN: funlen remediation) — pure code
 // motion, no behavior change.
-func buildMetricQuerySpecs(ns string) []metricQuerySpec {
+func buildMetricQuerySpecs(ns, clusterID string) []metricQuerySpec {
+	cm := clusterMatcherSuffix(clusterID)
 	return []metricQuerySpec{
 		{
 			Name:          "container_cpu_usage_seconds_total",
-			Query:         fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s"}[5m]))`, ns),
+			Query:         fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s"%s}[5m]))`, ns, cm),
 			LowerIsBetter: true,
 		},
 		{
 			Name:          "container_memory_working_set_bytes",
-			Query:         fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace="%s"})`, ns),
+			Query:         fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace="%s"%s})`, ns, cm),
 			LowerIsBetter: true,
 		},
 		{
 			Name:          "http_request_duration_p95_ms",
-			Query:         fmt.Sprintf(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace="%s"}[5m])) * 1000`, ns),
+			Query:         fmt.Sprintf(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace="%s"%s}[5m])) * 1000`, ns, cm),
 			LowerIsBetter: true,
 		},
 		{
 			Name:          "http_error_rate",
-			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s",code=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns, ns),
+			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"%s,code=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="%s"%s}[5m]))`, ns, cm, ns, cm),
 			LowerIsBetter: true,
 		},
 		{
 			Name:          "http_throughput_rps",
-			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns),
+			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"%s}[5m]))`, ns, cm),
 			LowerIsBetter: false,
 		},
 	}
@@ -355,9 +372,13 @@ func buildMetricQuerySpecs(ns string) []metricQuerySpec {
 // spec built this way is LowerIsBetter. Shared by buildNodeMetricQuerySpecs
 // (Node conditions) and buildPVMetricQuerySpecs (PV phases) to eliminate the
 // duplicated Sprintf/struct-literal boilerplate between them (Issue #193
-// REFACTOR).
-func buildKSMFlagQuerySpec(specName, metric, resourceLabel, resourceName string, extraMatchers ...string) metricQuerySpec {
+// REFACTOR). clusterID appends a trailing cluster= matcher when non-empty
+// (Issue #2274); empty clusterID leaves the query unchanged.
+func buildKSMFlagQuerySpec(specName, metric, resourceLabel, resourceName, clusterID string, extraMatchers ...string) metricQuerySpec {
 	matchers := append([]string{fmt.Sprintf(`%s="%s"`, resourceLabel, resourceName)}, extraMatchers...)
+	if clusterID != "" {
+		matchers = append(matchers, fmt.Sprintf(`cluster=%q`, clusterID))
+	}
 	return metricQuerySpec{
 		Name:          specName,
 		Query:         fmt.Sprintf(`%s{%s}`, metric, strings.Join(matchers, ",")),
@@ -369,15 +390,16 @@ func buildKSMFlagQuerySpec(specName, metric, resourceLabel, resourceName string,
 // PromQL query specs for a cluster-scoped Node target (Issue #193, DD-EM-005).
 // Each query tracks a "badness" condition (1 = bad, 0 = good), so all three
 // are LowerIsBetter: a firing NotReady/MemoryPressure/DiskPressure condition
-// resolving after remediation is an improvement.
-func buildNodeMetricQuerySpecs(name string) []metricQuerySpec {
+// resolving after remediation is an improvement. clusterID scopes every
+// query to a single fleet cluster (Issue #2274).
+func buildNodeMetricQuerySpecs(name, clusterID string) []metricQuerySpec {
 	const metric = "kube_node_status_condition"
 	return []metricQuerySpec{
-		buildKSMFlagQuerySpec("kube_node_status_condition_ready", metric, "node", name,
+		buildKSMFlagQuerySpec("kube_node_status_condition_ready", metric, "node", name, clusterID,
 			`condition="Ready"`, `status="false"`),
-		buildKSMFlagQuerySpec("kube_node_status_condition_memorypressure", metric, "node", name,
+		buildKSMFlagQuerySpec("kube_node_status_condition_memorypressure", metric, "node", name, clusterID,
 			`condition="MemoryPressure"`, `status="true"`),
-		buildKSMFlagQuerySpec("kube_node_status_condition_diskpressure", metric, "node", name,
+		buildKSMFlagQuerySpec("kube_node_status_condition_diskpressure", metric, "node", name, clusterID,
 			`condition="DiskPressure"`, `status="true"`),
 	}
 }
@@ -392,22 +414,35 @@ func buildNodeMetricQuerySpecs(name string) []metricQuerySpec {
 // claim_namespace, name) are STABLE per the upstream kube-state-metrics docs.
 // The usage ratio doesn't fit the single-metric "flag" shape above (it's a
 // two-metric join), so it remains a standalone literal.
-func buildPVMetricQuerySpecs(name string) []metricQuerySpec {
+//
+// clusterID (Issue #2274) must be applied to ALL THREE joined metrics
+// (kubelet_volume_stats_used_bytes, kube_persistentvolume_claim_ref,
+// kube_persistentvolume_capacity_bytes), not just one: on(namespace,
+// persistentvolumeclaim)/on(persistentvolume) restrict vector-matching to
+// only the listed labels, so an unfiltered cluster label on any side would
+// let PromQL join across clusters that happen to share a namespace/PVC name
+// or PV name (spike finding, DD-EM-005 v1.3 addendum).
+func buildPVMetricQuerySpecs(name, clusterID string) []metricQuerySpec {
+	cm := clusterMatcherSuffix(clusterID)
+	usedBytesSelector := "kubelet_volume_stats_used_bytes"
+	if clusterID != "" {
+		usedBytesSelector = fmt.Sprintf(`kubelet_volume_stats_used_bytes{cluster=%q}`, clusterID)
+	}
 	return []metricQuerySpec{
-		buildKSMFlagQuerySpec("kube_persistentvolume_status_phase_failed", "kube_persistentvolume_status_phase", "persistentvolume", name,
+		buildKSMFlagQuerySpec("kube_persistentvolume_status_phase_failed", "kube_persistentvolume_status_phase", "persistentvolume", name, clusterID,
 			`phase="Failed"`),
-		buildKSMFlagQuerySpec("kube_persistentvolume_status_phase_pending", "kube_persistentvolume_status_phase", "persistentvolume", name,
+		buildKSMFlagQuerySpec("kube_persistentvolume_status_phase_pending", "kube_persistentvolume_status_phase", "persistentvolume", name, clusterID,
 			`phase="Pending"`),
 		{
 			Name: "kubelet_volume_stats_used_bytes_ratio",
 			Query: fmt.Sprintf(
-				`(kubelet_volume_stats_used_bytes `+
+				`(%s `+
 					`* on(namespace, persistentvolumeclaim) group_left(persistentvolume) `+
-					`label_replace(label_replace(kube_persistentvolume_claim_ref{persistentvolume="%s"}, `+
+					`label_replace(label_replace(kube_persistentvolume_claim_ref{persistentvolume="%s"%s}, `+
 					`"namespace", "$1", "claim_namespace", "(.*)"), `+
 					`"persistentvolumeclaim", "$1", "name", "(.*)")) `+
-					`/ on(persistentvolume) group_left() kube_persistentvolume_capacity_bytes{persistentvolume="%s"}`,
-				name, name),
+					`/ on(persistentvolume) group_left() kube_persistentvolume_capacity_bytes{persistentvolume="%s"%s}`,
+				usedBytesSelector, name, cm, name, cm),
 			LowerIsBetter: true,
 		},
 	}

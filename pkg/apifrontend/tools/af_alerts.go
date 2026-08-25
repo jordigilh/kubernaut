@@ -32,6 +32,14 @@ var (
 // ErrPromUnavailable is returned when the Prometheus client is nil.
 var ErrPromUnavailable = errors.New("alert service unavailable — Prometheus not configured")
 
+// fleetClusterLabelKey is the label key Thanos/AlertManager federation uses
+// to identify a fleet alert's source cluster (BR-FLEET-054, Issue #2274).
+// Mirrors pkg/gateway/types.ClusterLabelKey; kept as a local literal here
+// (rather than importing pkg/gateway/types) to avoid a cross-service
+// dependency for a single well-known label name, consistent with how
+// pkg/effectivenessmonitor/alert already scopes its own AlertManager query.
+const fleetClusterLabelKey = "cluster"
+
 var validStates = map[string]bool{
 	"firing":  true,
 	"pending": true,
@@ -61,6 +69,14 @@ type ListAlertsArgs struct {
 	Namespace string `json:"namespace,omitempty"`
 	Severity  string `json:"severity,omitempty"`
 	State     string `json:"state,omitempty"`
+	// ClusterID scopes results to a single fleet cluster (BR-FLEET-054,
+	// Issue #2274). GetAlerts() returns alerts fleet-wide (Thanos/
+	// AlertManager federation), so without this filter a same-named
+	// resource's alert on a different fleet cluster would be
+	// indistinguishable from the one the caller actually cares about.
+	// Empty (default) preserves pre-#2274 behavior: alerts from every
+	// cluster are returned, matching hub/local (non-fleet) deployments.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // AlertSummary is a redacted view of a Prometheus alert safe for LLM consumption.
@@ -127,6 +143,9 @@ func PrioritizeAlerts(alerts []AlertSummary) PrioritizedAlerts {
 type GetAlertDetailsArgs struct {
 	AlertName string `json:"alert_name"`
 	Namespace string `json:"namespace,omitempty"`
+	// ClusterID scopes results to a single fleet cluster (BR-FLEET-054,
+	// Issue #2274). See ListAlertsArgs.ClusterID for rationale.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // GetAlertDetailsResult is the output of get_alert_details.
@@ -170,8 +189,8 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 	return out, nil
 }
 
-// validateListAlertsArgs validates the optional namespace/severity/state
-// filters for kubernaut_list_alerts.
+// validateListAlertsArgs validates the optional namespace/severity/state/
+// cluster_id filters for kubernaut_list_alerts.
 func validateListAlertsArgs(args ListAlertsArgs) error {
 	if args.Namespace != "" {
 		if err := validate.Namespace(args.Namespace); err != nil {
@@ -184,11 +203,15 @@ func validateListAlertsArgs(args ListAlertsArgs) error {
 	if args.State != "" && !validStates[strings.ToLower(args.State)] {
 		return fmt.Errorf("%w: state must be firing or pending", ErrInvalidInput)
 	}
+	if err := validate.ClusterID(args.ClusterID); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	return nil
 }
 
-// filterAndRedactAlerts applies the namespace/severity/state filters and
-// redacts each matching alert's labels/annotations before returning it.
+// filterAndRedactAlerts applies the namespace/severity/state/cluster_id
+// filters and redacts each matching alert's labels/annotations before
+// returning it.
 func filterAndRedactAlerts(alerts []prom.Alert, args ListAlertsArgs) []AlertSummary {
 	result := make([]AlertSummary, 0, len(alerts))
 	for i := range alerts {
@@ -200,6 +223,9 @@ func filterAndRedactAlerts(alerts []prom.Alert, args ListAlertsArgs) []AlertSumm
 			continue
 		}
 		if args.State != "" && !strings.EqualFold(a.State, args.State) {
+			continue
+		}
+		if args.ClusterID != "" && a.Labels[fleetClusterLabelKey] != args.ClusterID {
 			continue
 		}
 		result = append(result, AlertSummary{
@@ -274,6 +300,9 @@ func HandleGetAlertDetails(ctx context.Context, client prom.Client, args GetAler
 			return GetAlertDetailsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
+	if err := validate.ClusterID(args.ClusterID); err != nil {
+		return GetAlertDetailsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 
 	alerts, err := client.GetAlerts(ctx)
 	if err != nil {
@@ -287,6 +316,9 @@ func HandleGetAlertDetails(ctx context.Context, client prom.Client, args GetAler
 			continue
 		}
 		if args.Namespace != "" && a.Labels["namespace"] != args.Namespace {
+			continue
+		}
+		if args.ClusterID != "" && a.Labels[fleetClusterLabelKey] != args.ClusterID {
 			continue
 		}
 		result = append(result, AlertSummary{
@@ -340,8 +372,9 @@ func redactAnnotations(annotations map[string]string) map[string]string {
 // NewListAlertsTool creates the list_alerts ADK tool.
 func NewListAlertsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "list_alerts",
-		Description: "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
+		Name: "list_alerts",
+		Description: "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state. " +
+			"For fleet (multi-cluster) deployments, also provide cluster_id to scope results to a single fleet cluster.",
 	}, func(ctx agent.Context, args ListAlertsArgs) (ListAlertsResult, error) {
 		return HandleListAlerts(ctx, client, args)
 	})
@@ -350,8 +383,9 @@ func NewListAlertsTool(client prom.Client) (tool.Tool, error) {
 // NewGetAlertDetailsTool creates the get_alert_details ADK tool.
 func NewGetAlertDetailsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "get_alert_details",
-		Description: "Get details of a specific Prometheus/Thanos alert by name, optionally filtered by namespace",
+		Name: "get_alert_details",
+		Description: "Get details of a specific Prometheus/Thanos alert by name, optionally filtered by namespace. " +
+			"For fleet (multi-cluster) deployments, also provide cluster_id to scope results to a single fleet cluster.",
 	}, func(ctx agent.Context, args GetAlertDetailsArgs) (GetAlertDetailsResult, error) {
 		return HandleGetAlertDetails(ctx, client, args)
 	})

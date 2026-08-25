@@ -116,6 +116,13 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		// assertion that always carries both diagnostics (candidateCount and
 		// errs) in its failure message, whether zero candidates existed yet
 		// or some existed and all failed.
+		// Timeout margin (CI RCA, PR #2286, 2026-08-24): a candidate fleet RR
+		// reached EffectivenessAssessed only 12s after the prior 2-minute
+		// window expired, once E2E-FLEET-019a/b (07_em_fleet_metrics_test.go)
+		// started adding two more concurrent EA assessments to this suite's
+		// shared EM reconciler queue. 3 minutes restores headroom without
+		// masking a genuine regression (a real cluster_id-mapping bug would
+		// still fail every candidate, not just run out of time).
 		By("Finding a completed fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
@@ -156,7 +163,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			g.Expect(resp).ToNot(BeNil(),
 				"no completed fleet RemediationRequest reconstructed with cluster_id set yet (%d candidate(s) tried): %v",
 				candidateCount, errors.Join(errs...))
-		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("Verifying cluster_id is present in reconstruction response")
 		Expect(resp.ClusterID.Set).To(BeTrue(),

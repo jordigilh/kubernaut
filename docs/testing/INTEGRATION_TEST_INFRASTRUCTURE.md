@@ -1,6 +1,6 @@
 # Integration Test Infrastructure
 
-**Per ADR-016**: Service-Specific Integration Test Infrastructure
+**Per ADR-070**: Service-Specific Integration Test Infrastructure
 **Last Updated**: October 12, 2025
 
 ---
@@ -409,7 +409,7 @@ make test-integration-ai
 
 ## 📖 Related Documentation
 
-- [ADR-016: Service-Specific Integration Test Infrastructure](../architecture/decisions/ADR-016-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md) - Primary decision document
+- [ADR-070: Service-Specific Integration Test Infrastructure](../architecture/decisions/ADR-070-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md) - Primary decision document
 - [ADR-003: Kind Cluster as Primary Integration Environment](../architecture/decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md) - Original Kind decision (partially superseded)
 - [Data Storage Implementation Plan](../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V4.1.md) - Data Storage service details
 - [Dynamic Toolset Testing Strategy](../services/stateless/dynamic-toolset/testing-strategy.md) - Dynamic Toolset service details
@@ -549,6 +549,6 @@ If you need to run the same service tests in parallel, use different port offset
 
 **Last Updated**: December 10, 2025
 **Maintained By**: Kubernaut Team
-**Decision Document**: ADR-016
+**Decision Document**: ADR-070
 
 

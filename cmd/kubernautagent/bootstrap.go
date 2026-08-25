@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -589,6 +590,10 @@ type hotReloadParams struct {
 	// used to enforce the #1599 restart-required identity lock.
 	BootRuntime *kaconfig.LLMRuntimeConfig
 	Logger      logr.Logger
+	// AuditStore records every CA-cert hot-reload attempt (GAP-11, Issue
+	// #2285) so hot-reload has the same audit-trail parity as every other
+	// hot-reloadable component. May be nil in tests.
+	AuditStore audit.AuditStore
 }
 
 // wireHotReload configures conditional server TLS (with hot-reload), the
@@ -621,8 +626,11 @@ func wireHotReload(ctx context.Context, p hotReloadParams) func() {
 		logger.Info("TLS security profile active", "profile", cfg.Runtime.Server.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload.
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordConfigReload(ctx, p.AuditStore, reloadErr, logger)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -636,4 +644,39 @@ func wireHotReload(ctx context.Context, p hotReloadParams) func() {
 			stop()
 		}
 	}
+}
+
+// recordConfigReload emits the aiagent.config.reloaded/aiagent.config.rejected
+// audit event for a CA-cert hot-reload attempt (GAP-11, Issue #2285). Best
+// effort: never blocks or fails the reload itself. No-op when store is nil
+// (e.g. audit disabled or unit tests that don't wire one).
+//
+// This is a background, request-less event (unlike toolregistry.go/routes.go's
+// NewEvent calls, which correlate to an in-flight HTTP request), so there is
+// no natural correlation_id to reuse -- mint a fresh UUID, mirroring every
+// other service's own self-audit config-reload event (e.g.
+// pkg/datastorage/audit.NewConfigReloadedAuditEvent). The OpenAPI schema
+// requires correlation_id minLength=1; passing "" was silently rejected by
+// DataStorage's server-side validation, dropping the audit event with only a
+// best-effort log line (confirmed via a live must-gather-e2e run against
+// PR #2288, not caught by unit tests since they stub the store).
+func recordConfigReload(ctx context.Context, store audit.AuditStore, reloadErr error, logger logr.Logger) {
+	if store == nil {
+		return
+	}
+	correlationID := uuid.New().String()
+	var event *audit.AuditEvent
+	if reloadErr != nil {
+		event = audit.NewEvent(audit.EventTypeConfigRejected, correlationID)
+		event.EventAction = audit.ActionConfigRejected
+		event.EventOutcome = audit.OutcomeFailure
+		event.Data["component"] = "ca_cert"
+		event.Data["rejection_reason"] = reloadErr.Error()
+	} else {
+		event = audit.NewEvent(audit.EventTypeConfigReloaded, correlationID)
+		event.EventAction = audit.ActionConfigReloaded
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["component"] = "ca_cert"
+	}
+	audit.StoreBestEffort(ctx, store, event, logger)
 }

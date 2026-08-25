@@ -98,13 +98,23 @@ var _ = Describe("buildLLMClientFromConfig — provider dispatch wiring (#1578 #
 		// option composition (anthropicReasoningOptions(cfg), the same
 		// unexported helper the production dispatch path calls) against a
 		// live httptest server, and asserts the real outgoing HTTP body
-		// contains "thinking". buildAnthropicNativeClient itself cannot be
-		// redirected to a test server in production code (Anthropic's native
-		// API has no operator-facing "endpoint override" concept — unlike
-		// openai_compatible, see buildOpenAICompatClient — so adding one
-		// purely for testability would be speculative code with no real
-		// deployment use case). anthropicfamily.WithSDKOptions is already
-		// documented as test-only for exactly this purpose.
+		// contains "thinking".
+		//
+		// Correction (#2255, BR-AI-089): this comment previously claimed
+		// Anthropic's native API has no operator-facing "endpoint override"
+		// concept and that adding one would be "speculative code with no
+		// real deployment use case" — that claim did not hold up against a
+		// concrete deployment need (routing through an AI gateway / private
+		// proxy, FedRAMP AC-4) and was reversed: cfg.Endpoint is now wired
+		// into buildAnthropicNativeClient via anthropicfamily.WithBaseURL
+		// (see llm_builder_endpoint_2255_test.go's IT-KA-2255-101, which
+		// exercises that path directly through buildLLMClientFromConfig).
+		// This test is left using the lower-level
+		// anthropicfamily.WithSDKOptions(option.WithBaseURL(...)) escape
+		// hatch rather than switching to cfg.Endpoint, since its purpose is
+		// narrowly to isolate the reasoning-param wiring (IT-KA-1578-003),
+		// not to re-prove the endpoint-override wiring already covered by
+		// IT-KA-2255-101.
 		var (
 			server       *httptest.Server
 			receivedBody map[string]interface{}

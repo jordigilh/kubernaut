@@ -12,3 +12,16 @@ var MapReasonToPhase = mapReasonToPhase
 // await/signal machinery (which requires a real MCP/HTTP transport to test
 // meaningfully — that wiring is proven separately at the IT tier).
 var ResolveInvestigationRR = resolveInvestigationRR
+
+// SignalInteractiveWithRetry exposes signalInteractiveWithRetry for external
+// test packages (#2289's bounded-retry unit tests), decoupled from the full
+// HandleInvestigationMCPWithRegistry/HandleCreateRRWithHooks machinery.
+var SignalInteractiveWithRetry = signalInteractiveWithRetry
+
+// SignalInteractiveRequest exposes signalInteractiveRequest for external
+// test packages calling SignalInteractiveWithRetry (#2289).
+type SignalInteractiveRequest = signalInteractiveRequest
+
+// SignalInteractiveMaxAttempts exposes signalInteractiveMaxAttempts for
+// external test packages asserting exact retry-exhaustion counts (#2289).
+const SignalInteractiveMaxAttempts = signalInteractiveMaxAttempts

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -442,6 +443,75 @@ var _ = Describe("Alert Tools (#1367)", func() {
 			Expect(len(resultJSON)).To(BeNumerically("<=", 16384),
 				"trimmed result must fit in 16384 bytes, got %d", len(resultJSON))
 			Expect(result.Count).To(BeNumerically(">=", 3), "should retain at least 3 alerts after trimming")
+		})
+	})
+
+	// Issue #2274: list_alerts/get_alert_details are the only two AF tools
+	// that read Prometheus/AlertManager data without a cluster_id filter
+	// (kubernaut_investigate_alert already has one, af_investigate_alert.go).
+	// In a fleet deployment, GetAlerts() returns alerts fleet-wide (Thanos/
+	// AlertManager federation), so an LLM investigating a remote-cluster
+	// remediation could be shown -- or asked to correlate against -- an
+	// alert firing for a same-named resource on a different fleet cluster.
+	Describe("Fleet cluster_id filtering (BR-FLEET-054, Issue #2274)", func() {
+		var fleetAlerts []prom.Alert
+
+		BeforeEach(func() {
+			fleetAlerts = []prom.Alert{
+				{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical", "cluster": "remote-cluster"}, State: "firing", ActiveAt: time.Now()},
+				{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical", "cluster": "prod-east"}, State: "firing", ActiveAt: time.Now()},
+				{Labels: map[string]string{"alertname": "LowDisk", "namespace": "prod", "severity": "warning"}, State: "firing", ActiveAt: time.Now()}, // no cluster label (hub/local)
+			}
+		})
+
+		It("UT-AF-2274-001: HandleListAlerts filters by cluster_id when provided", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{ClusterID: "remote-cluster"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(1))
+			Expect(result.Alerts[0].Labels["cluster"]).To(Equal("remote-cluster"))
+		})
+
+		It("UT-AF-2274-002: HandleListAlerts returns alerts from every cluster when cluster_id is empty (backward compat)", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(3), "empty cluster_id must not filter any alert (hub/local backward compat)")
+		})
+
+		It("UT-AF-2274-003: HandleListAlerts rejects an oversized cluster_id with ErrInvalidInput", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			_, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{
+				ClusterID: strings.Repeat("a", 254),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrInvalidInput)).To(BeTrue())
+		})
+
+		It("UT-AF-2274-004: HandleGetAlertDetails filters by cluster_id when provided", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			result, err := tools.HandleGetAlertDetails(context.Background(), client, tools.GetAlertDetailsArgs{
+				AlertName: "HighCPU", ClusterID: "prod-east",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(1))
+			Expect(result.Alerts[0].Labels["cluster"]).To(Equal("prod-east"))
+		})
+
+		It("UT-AF-2274-005: HandleGetAlertDetails returns alerts from every cluster when cluster_id is empty (backward compat)", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			result, err := tools.HandleGetAlertDetails(context.Background(), client, tools.GetAlertDetailsArgs{AlertName: "HighCPU"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(2), "empty cluster_id must not filter by cluster (hub/local backward compat)")
+		})
+
+		It("UT-AF-2274-006: HandleGetAlertDetails rejects an oversized cluster_id with ErrInvalidInput", func() {
+			client := &mockAlertPromClient{alerts: fleetAlerts}
+			_, err := tools.HandleGetAlertDetails(context.Background(), client, tools.GetAlertDetailsArgs{
+				AlertName: "HighCPU", ClusterID: strings.Repeat("a", 254),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrInvalidInput)).To(BeTrue())
 		})
 	})
 })

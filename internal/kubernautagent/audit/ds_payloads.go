@@ -21,6 +21,29 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// buildConfigReloadedPayload builds the aiagent.config.reloaded payload
+// (GAP-11, Issue #2285). event.Data["component"] identifies the
+// hot-reloadable component (e.g. "ca_cert").
+func buildConfigReloadedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
+	payload := ogenclient.AIAgentConfigReloadedPayload{
+		EventType: ogenclient.AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded,
+		Component: dataString(event.Data, "component"),
+	}
+	return ogenclient.NewAIAgentConfigReloadedPayloadAuditEventRequestEventData(payload)
+}
+
+// buildConfigRejectedPayload builds the aiagent.config.rejected payload
+// (GAP-11, Issue #2285). event.Data["component"]/["rejection_reason"]
+// identify the component and why the reload was rejected.
+func buildConfigRejectedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
+	payload := ogenclient.AIAgentConfigRejectedPayload{
+		EventType:       ogenclient.AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected,
+		Component:       dataString(event.Data, "component"),
+		RejectionReason: dataString(event.Data, "rejection_reason"),
+	}
+	return ogenclient.NewAIAgentConfigRejectedPayloadAuditEventRequestEventData(payload)
+}
+
 func buildEnrichmentCompletedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
 	payload := ogenclient.AIAgentEnrichmentCompletedPayload{
 		EventType:                 ogenclient.AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted,

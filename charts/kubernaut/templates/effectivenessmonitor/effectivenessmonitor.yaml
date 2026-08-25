@@ -76,6 +76,12 @@ fleet:
 # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
 debug:
   pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
 {{- end }}
 {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap (it
      previously relied on an OCP-only service-ca auto-injection annotation, which never
@@ -247,9 +253,6 @@ spec:
             {{- include "kubernaut.containerSecurityContext" .Values.effectivenessmonitor | nindent 12 }}
           args:
             - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
-          env:
-            - name: TLS_CA_FILE
-              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           ports:
             - containerPort: 9090
               name: metrics
@@ -293,6 +296,7 @@ spec:
               readOnly: true
             {{- end }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -310,6 +314,7 @@ spec:
             name: effectivenessmonitor-service-ca
         {{- end }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:

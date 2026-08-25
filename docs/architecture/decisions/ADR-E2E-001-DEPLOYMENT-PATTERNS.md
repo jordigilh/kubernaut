@@ -313,7 +313,7 @@ Before submitting E2E test infrastructure code:
 - [ ] Follows naming convention: `{service}-{resource-type}.yaml`
 - [ ] No hardcoded namespaces (use `-n namespace` in kubectl apply)
 - [ ] No hardcoded image pull policies (use `Never` for E2E, `IfNotPresent` for production)
-- [ ] ConfigMap follows ADR-030 (YAML configuration standard)
+- [ ] ConfigMap follows ADR-071 (YAML configuration standard)
 
 ### Test Suite Integration
 - [ ] Test suite calls `infrastructure.Deploy{Service}Controller()`, NOT kubectl
@@ -431,7 +431,7 @@ make test-e2e-notification
 ---
 
 ## Related Documents
-- [ADR-030: Configuration Management](ADR-030-CONFIGURATION-MANAGEMENT.md) - ConfigMap YAML format
+- [ADR-071: Configuration Management](ADR-071-CONFIGURATION-MANAGEMENT.md) - ConfigMap YAML format
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md) - E2E test strategy
 - [.cursor/rules/03-testing-strategy.mdc](.cursor/rules/03-testing-strategy.mdc) - Defense-in-depth testing
 

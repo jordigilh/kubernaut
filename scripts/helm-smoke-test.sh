@@ -2670,8 +2670,13 @@ for d in docs:
     --set workflowexecution.config.ansible.caCertSecretRef.name=aap-ca-secret \
     --set workflowexecution.config.ansible.caCertSecretRef.key=custom-ca.pem \
     -s templates/workflowexecution/workflowexecution.yaml 2>&1)
+  # Issue #2276: TLS_CA_FILE is no longer a static Pod-spec env var -- it's
+  # sourced from the service's own config.yaml (tlsCaFile field, read by
+  # bootstrapAmbientCATrust) so two chart-rendered components can no longer
+  # collide on the same literal env var name. Assert against that field
+  # instead of the old `env: - name: TLS_CA_FILE value: ...` shape.
   if grep -q "name: build-ca-bundle" <<< "$ansible_ca_on" && \
-     grep -q 'value: "/etc/combined-ca/ca-bundle.crt"' <<< "$ansible_ca_on" && \
+     grep -q 'tlsCaFile: "/etc/combined-ca/ca-bundle.crt"' <<< "$ansible_ca_on" && \
      grep -q "secretName: aap-ca-secret" <<< "$ansible_ca_on"; then
     tap_ok "ST-CHART-ANSIBLE-CA-001a: ansible.caCertSecretRef wires build-ca-bundle init container + combined TLS_CA_FILE"
   else

@@ -426,6 +426,55 @@ sequenceDiagram
     AF->>Approver: SSE: approval_request_resolved event
 ```
 
+### Flow 4: Autonomous-Then-Attach (Same-Turn Takeover)
+
+A single chat turn/session chains `kubernaut_remediate` (autonomous mode) immediately
+followed by `kubernaut_investigate(rr_id=<same RR>)` to attach a chat-visible session to
+the RR it *just* committed to autonomous execution — typically ending in the same turn
+with `kubernaut_complete`. This is a distinct pattern from Flow 3 (a *separate* approver
+reviewing an *already-paused* `AwaitingApproval` RR) and from DD-INTERACTIVE-002's SRE
+mid-flight framing (a separate actor arriving later to actively redirect an in-flight
+investigation). See DD-INTERACTIVE-002 v1.2 §4 for the full writeup (added 2026-08-24,
+issue #2265 investigation).
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AF as API Frontend
+    participant K8s as K8s API
+    participant KA as Kubernaut Agent
+
+    User->>AF: tasks/send "fix payment-api, and let me watch"
+    AF->>AF: LLM: kubernaut_remediate only (autonomous mode, no IS/observability)
+    AF->>K8s: Create RemediationRequest (autonomous)
+    Note over K8s,KA: AA/RO/WFE pipeline begins investigating immediately
+
+    AF->>AF: LLM: kubernaut_investigate(rr_id) — same turn, same RR
+    AF->>K8s: isAutonomousInvestigation(rr_id) → true (active AIA with session already assigned)
+    AF->>AF: signalInteractiveSession: joinMode = "takeover" (auto-detected, no explicit action param)
+    AF->>K8s: Create InvestigationSession CRD (best-effort; failure does NOT block the RR)
+    AF->>KA: UpgradeToInteractive(sessionID) — flags the SAME running KA session interactive in place (no cancel, #1390)
+
+    alt InteractiveHold lands before next checkRCAEarlyReturn checkpoint
+        KA->>KA: Short-circuits autonomous flow, yields findings to attached session
+        AF->>User: SSE: RCA/progress relayed from the now-attached session
+    else Autonomous investigation already past all checkpoints (already complete / workflow already selected)
+        Note over KA: Attach has no effect on this investigation — accepted race, not a consent veto
+        AF->>User: SSE: best-effort attach; may observe only the tail end or nothing before terminal state
+    end
+
+    AF->>AF: LLM: kubernaut_complete — ends the driver/chat session
+```
+
+**Key distinctions from Flow 3**:
+
+| Aspect | Flow 3 (Approver Takeover) | Flow 4 (Autonomous-Then-Attach) |
+|--------|----------------------------|----------------------------------|
+| Trigger | Separate actor, later, on an `AwaitingApproval` RR | Same turn/session, immediately after creating the RR |
+| RR state at attach | Investigation already finished, paused for approval | Investigation actively in-flight, racing to complete |
+| Purpose | Human decision gate (approve/reject) | Best-effort observability attach, no veto power |
+| Failure mode if attach loses the race | N/A (RR is already paused, can't "finish" further) | Session observes nothing new; RR completes autonomously regardless — this is intended, not a bug |
+
 > **Note (#1415)**: The LLM agent does NOT have access to `kubernaut_approve`.
 > Approval is performed exclusively via the Console UI → MCP endpoint path.
 > See [DD-AF-006](../../architecture/decisions/DD-AF-006-approval-consent-guard.md).

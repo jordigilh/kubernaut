@@ -22,7 +22,9 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -42,6 +44,13 @@ const (
 	EventTypeApprovalDecision  = "aianalysis.approval.decision"
 	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
 	EventTypeError             = "aianalysis.error.occurred"
+
+	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
+	// gateway.config.{reloaded,rejected}'s component-based shape. component
+	// is "ca_cert" for the TLS_CA_FILE hot-reload watcher today; extensible
+	// to other hot-reloadable components later.
+	EventTypeConfigReloaded = "aianalysis.config.reloaded"
+	EventTypeConfigRejected = "aianalysis.config.rejected"
 
 	// Session audit event types (BR-AA-KA-065.1/.2; repurposed from the
 	// retired HTTP submit/poll design's BR-AA-KA-064 naming -- see
@@ -69,6 +78,8 @@ const (
 	EventActionAIAgentCall      = "aiagent_call"
 	EventActionApprovalDecision = "approval_decision"
 	EventActionPolicyEvaluation = "policy_evaluation"
+	EventActionConfigReloaded   = "reloaded"
+	EventActionConfigRejected   = "rejected"
 )
 
 // Actor constants (per DD-AUDIT-003)
@@ -400,6 +411,46 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write Rego evaluation audit")
+	}
+}
+
+// RecordConfigReloaded records a hot-reloadable component's reload outcome
+// (GAP-11, Issue #2285: CA hot-reload audit-trail parity). component
+// identifies which hot-reloadable component fired (e.g. "ca_cert" for the
+// TLS_CA_FILE watcher); reloadErr is nil on success (emits
+// aianalysis.config.reloaded) or non-nil on rejection, in which case the
+// previous configuration is kept in place (emits aianalysis.config.rejected).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair.
+func (c *AuditClient) RecordConfigReloaded(ctx context.Context, component string, reloadErr error) {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+
+	if reloadErr != nil {
+		audit.SetEventType(event, EventTypeConfigRejected)
+		audit.SetEventAction(event, EventActionConfigRejected)
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+		event.EventData = ogenclient.NewAIAnalysisConfigRejectedPayloadAuditEventRequestEventData(ogenclient.AIAnalysisConfigRejectedPayload{
+			EventType:       ogenclient.AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected,
+			Component:       component,
+			RejectionReason: reloadErr.Error(),
+		})
+	} else {
+		audit.SetEventType(event, EventTypeConfigReloaded)
+		audit.SetEventAction(event, EventActionConfigReloaded)
+		audit.SetEventOutcome(event, audit.OutcomeSuccess)
+		event.EventData = ogenclient.NewAIAnalysisConfigReloadedPayloadAuditEventRequestEventData(ogenclient.AIAnalysisConfigReloadedPayload{
+			EventType: ogenclient.AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded,
+			Component: component,
+		})
+	}
+
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write config reload audit", "component", component)
 	}
 }
 

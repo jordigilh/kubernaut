@@ -6,7 +6,7 @@
 
 ## Context
 
-The Signal Processing service enriches incoming signals with Kubernetes context to enable customer-defined Rego policies to make informed classification decisions. Per [ADR-041](ADR-041-rego-policy-data-fetching-separation.md), the K8s Enricher (Go code) fetches Kubernetes objects, and Rego policies evaluate classification rules on the fetched data.
+The Signal Processing service enriches incoming signals with Kubernetes context to enable customer-defined Rego policies to make informed classification decisions. Per [ADR-074](ADR-074-rego-policy-data-fetching-separation.md), the K8s Enricher (Go code) fetches Kubernetes objects, and Rego policies evaluate classification rules on the fetched data.
 
 A key design question is: **What objects should we fetch for each signal type, and how deep should we traverse the Kubernetes object graph?**
 
@@ -213,7 +213,7 @@ If customers request configurable depth in the future:
 
 ## Related Decisions
 
-- [ADR-041: Rego Policy Data Fetching Separation](ADR-041-rego-policy-data-fetching-separation.md) - Architecture for K8s Enricher + Rego
+- [ADR-074: Rego Policy Data Fetching Separation](ADR-074-rego-policy-data-fetching-separation.md) - Architecture for K8s Enricher + Rego
 - [DD-CATEGORIZATION-001: Gateway/Signal Processing Split](DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) - Signal Processing categorization ownership
 
 ## References

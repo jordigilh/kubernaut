@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -79,6 +80,99 @@ func extractRRIDFromContext(ctx context.Context) string {
 // takeoverISPhaseTimeout is used for the takeover path where AA must cancel
 // the autonomous session and re-submit before setting IS phase=Active.
 const takeoverISPhaseTimeout = 15 * time.Second
+
+// signalInteractiveMaxAttempts bounds the retry budget for transient
+// SignalInteractive (IS CRD creation) failures (#2289) before falling back
+// to fail-open with a surfaced warning. Short/bounded (max ~2.1s across 3
+// attempts with signalInteractiveRetryBackoff below) because this runs
+// synchronously inside a single kubernaut_investigate MCP tool call, well
+// within the takeoverISPhaseTimeout/isPhaseActivePollTimeout budgets
+// downstream.
+const signalInteractiveMaxAttempts = 3
+
+// signalInteractiveRetryBackoff configures the exponential backoff between
+// SignalInteractive retry attempts (pkg/shared/backoff, DD-SHARED-001).
+// Tuning mirrors pkg/shared/transport.DefaultRetryConfig(), the existing
+// in-repo precedent for short, bounded, synchronous in-request retries.
+var signalInteractiveRetryBackoff = backoff.Config{
+	BasePeriod:    100 * time.Millisecond,
+	MaxPeriod:     1 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 20,
+}
+
+// signalInteractiveRequest groups the arguments threaded through
+// signalInteractiveWithRetry. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type signalInteractiveRequest struct {
+	RRNamespace string
+	RRName      string
+	TaskID      string
+	Username    string
+	Groups      []string
+	JoinMode    string
+}
+
+// signalInteractiveWithRetry wraps signaler.SignalInteractive with a bounded
+// exponential-backoff retry (#2289, fixing the fail-open-on-first-error bug
+// reported against #2265) for transient failures. A "session_active"
+// conflict is a legitimate single-driver rejection from KA, never a
+// transient failure, so it is returned immediately without retrying.
+func signalInteractiveWithRetry(ctx context.Context, signaler ISSignaler, req signalInteractiveRequest) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= signalInteractiveMaxAttempts; attempt++ {
+		isCRDName, err := signaler.SignalInteractive(ctx, req.RRNamespace, req.RRName, req.TaskID, req.Username, req.Groups, req.JoinMode)
+		if err == nil {
+			return isCRDName, nil
+		}
+		if strings.Contains(err.Error(), "session_active") {
+			return "", err
+		}
+		lastErr = err
+		if attempt < signalInteractiveMaxAttempts {
+			delay := signalInteractiveRetryBackoff.Calculate(int32(attempt))
+			if sleepErr := sleepInterruptible(ctx, delay); sleepErr != nil {
+				break
+			}
+		}
+	}
+	return "", lastErr
+}
+
+// sleepInterruptible sleeps for d, returning early with ctx.Err() if ctx is
+// cancelled first.
+func sleepInterruptible(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// emitInteractiveSignalFailedAudit records a SOC2/FedRAMP-auditable trace
+// (AU-2/AU-3) when SignalInteractive still fails after exhausting retries
+// (#2289) and the caller fails closed -- the consent-gating guarantee IS
+// CRD creation is meant to provide (DD-INTERACTIVE-002, BR-INTERACTIVE-010)
+// could not be established for this RR, so neither the RR (new-RR path) nor
+// the interactive attach (existing-RR/takeover path) is allowed to proceed.
+func emitInteractiveSignalFailedAudit(ctx context.Context, auditor audit.Emitter, rrID string, sigErr error) {
+	if auditor == nil {
+		return
+	}
+	auditor.Emit(ctx, &audit.Event{
+		Type: audit.EventInteractiveSignalFailed,
+		Detail: map[string]string{
+			"rr_id": rrID,
+			"error": sigErr.Error(),
+		},
+	})
+}
 
 // ISSignaler abstracts IS CRD creation for the investigate tool.
 // Implemented by session.CRDSessionService via an adapter in the handler layer.
@@ -486,8 +580,15 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 // AF's own, separately-issued InvestigationSession Create call lands. The
 // returned *string is populated with the created IS CRD's name once
 // BeforeCreate succeeds (read by the caller after HandleCreateRRWithHooks
-// returns); it stays empty when no signaler is configured, the dedup branch
-// is hit (BeforeCreate never fires), or the signal itself fails open.
+// returns); it stays empty when no signaler is configured or the dedup
+// branch is hit (BeforeCreate never fires).
+//
+// SignalInteractive is retried with bounded exponential backoff on
+// transient failures (#2289, signalInteractiveWithRetry); if it still fails
+// after exhausting retries, BeforeCreate returns the error and
+// HandleCreateRRWithHooks aborts before the RR is ever created (fail
+// closed) -- an interactively-requested investigation must never silently
+// downgrade to an unconsented autonomous RR.
 func buildPreCreateISHooks(cfg *InvestigateConfig, identity *auth.UserIdentity) (CreateRRHooks, *string) {
 	signaledISCRDName := new(string)
 	if cfg.Signaler == nil || cfg.Client == nil || cfg.Namespace == "" {
@@ -509,15 +610,19 @@ func buildPreCreateISHooks(cfg *InvestigateConfig, identity *auth.UserIdentity) 
 			// first) -- joinMode is unconditionally "start", unlike the
 			// pre-existing-RR takeover path in signalInteractiveSession.
 			taskID := fmt.Sprintf("a2a-%s", rrName)
-			isCRDName, sigErr := cfg.Signaler.SignalInteractive(hctx, cfg.Namespace, rrName, taskID, signalUsername, groups, "start")
+			isCRDName, sigErr := signalInteractiveWithRetry(hctx, cfg.Signaler, signalInteractiveRequest{
+				RRNamespace: cfg.Namespace, RRName: rrName, TaskID: taskID,
+				Username: signalUsername, Groups: groups, JoinMode: "start",
+			})
 			if sigErr != nil {
 				logger := logr.FromContextOrDiscard(hctx)
 				if strings.Contains(sigErr.Error(), "session_active") {
 					logger.Info("IS CRD single-driver enforcement: rejecting duplicate session", "rr_id", rrName, "error", sigErr)
 					return sigErr
 				}
-				logger.Error(sigErr, "failed to create IS CRD before RR (proceeding without IS signal)", "rr_id", rrName)
-				return nil
+				logger.Error(sigErr, "failed to create IS CRD before RR after retries, failing closed (#2289)", "rr_id", rrName, "attempts", signalInteractiveMaxAttempts)
+				emitInteractiveSignalFailedAudit(hctx, cfg.Auditor, rrName, sigErr)
+				return fmt.Errorf("failed to establish interactive session after %d attempts: %w", signalInteractiveMaxAttempts, sigErr)
 			}
 			*signaledISCRDName = isCRDName
 			return nil
@@ -559,9 +664,18 @@ func resolveClusterScoped(ctx context.Context, args *InvestigateMCPArgs) bool {
 // signalInteractiveSession creates the IS CRD before the await loop when a
 // signaler is configured (DD-INTERACTIVE-002, BR-INTERACTIVE-010), detecting
 // and announcing a takeover if an autonomous investigation is already
-// running. Returns the created IS CRD name (used later for
-// UpdateCorrelation), or an error only when KA's single-driver enforcement
-// rejects a duplicate session.
+// running. SignalInteractive is retried with bounded exponential backoff on
+// transient failures (#2289, signalInteractiveWithRetry).
+//
+// Returns the created IS CRD name (used later for UpdateCorrelation), or an
+// error -- either KA's single-driver enforcement rejecting a duplicate
+// session, or (#2289) SignalInteractive still failing after exhausting
+// retries. Both fail closed: the caller aborts the interactive attach
+// entirely rather than silently starting an investigation with no
+// consent-gating established. This does not stop an already-running
+// autonomous RR on the takeover path (that decision was already committed
+// by the prior kubernaut_remediate call) -- it only refuses to accept the
+// interactive attach on top of it.
 func signalInteractiveSession(ctx context.Context, cfg *InvestigateConfig, rrID string, identity *auth.UserIdentity) (string, error) {
 	if cfg.Signaler == nil || cfg.Client == nil || cfg.Namespace == "" {
 		return "", nil
@@ -580,15 +694,19 @@ func signalInteractiveSession(ctx context.Context, cfg *InvestigateConfig, rrID 
 	}
 
 	taskID := fmt.Sprintf("a2a-%s", rrID)
-	isCRDName, sigErr := cfg.Signaler.SignalInteractive(ctx, cfg.Namespace, rrID, taskID, signalUsername, groups, joinMode)
+	isCRDName, sigErr := signalInteractiveWithRetry(ctx, cfg.Signaler, signalInteractiveRequest{
+		RRNamespace: cfg.Namespace, RRName: rrID, TaskID: taskID,
+		Username: signalUsername, Groups: groups, JoinMode: joinMode,
+	})
 	if sigErr != nil {
 		logger := logr.FromContextOrDiscard(ctx)
 		if strings.Contains(sigErr.Error(), "session_active") {
 			logger.Info("IS CRD single-driver enforcement: rejecting duplicate session", "rr_id", rrID, "error", sigErr)
 			return "", sigErr
 		}
-		logger.Error(sigErr, "failed to create IS CRD (proceeding without IS signal)", "rr_id", rrID)
-		return "", nil
+		logger.Error(sigErr, "failed to create IS CRD after retries, failing closed (#2289)", "rr_id", rrID, "attempts", signalInteractiveMaxAttempts)
+		emitInteractiveSignalFailedAudit(ctx, cfg.Auditor, rrID, sigErr)
+		return "", fmt.Errorf("failed to establish interactive session after %d attempts: %w", signalInteractiveMaxAttempts, sigErr)
 	}
 	return isCRDName, nil
 }

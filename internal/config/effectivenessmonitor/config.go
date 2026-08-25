@@ -54,6 +54,11 @@ type Config struct {
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 
+	// TLSCAFile is the ambient inter-service CA trust bundle path, injected
+	// in-process via sharedtls.InjectAmbientCACerts (Issue #2276) instead of
+	// a deployer-declared static Pod-spec env: TLS_CA_FILE entry.
+	TLSCAFile string `yaml:"tlsCaFile,omitempty"`
+
 	// Fleet holds multi-cluster federation settings (BR-FLEET-054). When
 	// Enabled and MCPGatewayEndpoint is set, EA reconciliation reads the
 	// remediation's target cluster via the MCP Gateway instead of silently

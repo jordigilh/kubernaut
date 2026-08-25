@@ -1,7 +1,7 @@
 # Testing Guidelines: Business Requirements vs Unit Tests
 
-**Version**: 2.7.0
-**Last Updated**: 2026-02-09
+**Version**: 2.9.0
+**Last Updated**: 2026-08-24
 **Status**: Active
 
 This document provides clear guidance on **when** and **how** to use each type of test in the kubernaut system.
@@ -9,6 +9,14 @@ This document provides clear guidance on **when** and **how** to use each type o
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.9.0 (2026-08-24)
+- **ADDED**: Section 4b "Fleet Cluster-Collision Testing Pattern" (Issue #2274) -- policy and reference
+  implementation for simulating a fleet cluster-ID collision against the existing shared Prometheus/
+  AlertManager E2E instance, without requiring real multi-cluster Thanos federation infrastructure
+- **RATIONALE**: Issue #2274 shipped a real production bug (EM's Prometheus/AlertManager queries were
+  not cluster-scoped) that the fleet E2E lane's existing reachability-only smoke tests never caught
+- **REFERENCE**: `test/e2e/fleet/07_em_fleet_metrics_test.go` (E2E-FLEET-019a/b), `test/e2e/fleet/19_af_alerts_fleet_scoped_test.go` (E2E-FLEET-020), [DD-EM-005 v1.3 addendum](../../architecture/decisions/DD-EM-005-cluster-scoped-metrics-alert-assessment.md)
 
 ### Version 2.8.0 (2026-05-15)
 - **CRITICAL**: Unit tests migrated from `test/unit/` to colocated layout alongside production code in `pkg/` and `internal/` (Issue #50)
@@ -613,6 +621,54 @@ InjectAlerts(amURL, []Alert{
 ```
 
 **This exception does NOT apply to other services.** Only EM interacts with Prometheus/AlertManager.
+
+### 4b. **Fleet Cluster-Collision Testing Pattern (Issue #2274)**
+
+**Applies to**: any fleet-aware service E2E test that reads Prometheus/AlertManager/Thanos data
+scoped by `cluster_id` (currently: Effectiveness Monitor, API Frontend's `list_alerts`/
+`get_alert_details` tools).
+
+**Lesson learned**: Issue #2274 shipped a real production bug (EM's PromQL/AlertManager queries
+were not cluster-scoped in fleet deployments) that the fleet E2E lane's existing tests never
+caught, because they only asserted Prometheus/AlertManager were *reachable*
+(`GET /api/v1/targets`, `GET /api/v2/status`) — never that a query result was correctly isolated
+to one fleet cluster. This went undetected for as long as it did partly because the fleet E2E
+lane's Kind-based infrastructure runs a **single shared Prometheus/AlertManager instance**
+(`test/infrastructure/prometheus_alertmanager_e2e.go`) with no real Thanos federation or distinct
+per-cluster external labels between the primary and remote Kind clusters — so a genuine
+multi-cluster collision was never organically exercised by anything in this lane.
+
+**Policy**: any new fleet-aware Prometheus/AlertManager consumer MUST have an E2E test that
+**simulates** a cluster collision against the existing shared instance, rather than requiring real
+multi-cluster Thanos federation infrastructure (out of scope/cost for this lane — see 4a's Tier 2/3
+mock policy for the analogous cost-vs-fidelity tradeoff reasoning).
+
+**Pattern**: inject two synthetic series/alerts that share **every label the production query
+selects on except `cluster`**, with deliberately contradictory values/states, then assert the real
+controller/tool — reconciling/executing end-to-end, no mocks — reflects **only** the
+matching-cluster data.
+
+- **Metrics** (`InjectMetrics`, OTLP HTTP JSON endpoint): inject a genuine improvement for the
+  matching `cluster_id` and a genuine regression for a colliding `cluster_id`, both under the same
+  `namespace`/resource-name labels. If cluster scoping is broken, PromQL's `sum()` blends both
+  series and the net direction (improvement vs. regression) flips — a deterministic, hard-to-miss
+  assertion (see `test/e2e/fleet/07_em_fleet_metrics_test.go`, E2E-FLEET-019a).
+- **Alerts** (`InjectAlerts`, AlertManager `/api/v2/alerts`): inject a **resolved** alert for the
+  matching cluster and a still-**firing** alert with the same `alertname`/correlation-ID for a
+  colliding cluster. If cluster scoping is broken, AlertManager returns both, and the still-firing
+  collision alert masks the real resolution (E2E-FLEET-019b; also used for AF's `list_alerts` via a
+  marker-annotation substring check, E2E-FLEET-020).
+- Prefer **deterministic value/state contradictions** (net regression vs. net improvement; firing
+  vs. resolved) over subtle numeric deltas — the test should fail loudly and unambiguously if the
+  `cluster=` matcher is ever dropped in a future refactor, not require statistical judgment calls.
+- Cluster identifiers used for the "matching" side don't need to be real MCP-registered fleet
+  identities (e.g. `remote-cluster` is registered; `collision-cluster` is a made-up label value) —
+  this pattern tests Prometheus/AlertManager query scoping, a plain Thanos external-label
+  concern, independent of MCP cluster registration.
+
+**Reference implementations**: `test/e2e/fleet/07_em_fleet_metrics_test.go` (E2E-FLEET-019a/b),
+`test/e2e/fleet/19_af_alerts_fleet_scoped_test.go` (E2E-FLEET-020),
+[DD-EM-005 v1.3 addendum](../../architecture/decisions/DD-EM-005-cluster-scoped-metrics-alert-assessment.md).
 
 ### 5. **Metrics Testing Strategy by Tier**
 

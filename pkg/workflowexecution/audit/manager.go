@@ -40,6 +40,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -60,9 +61,11 @@ const (
 
 // Event actions for WorkflowExecution audit events (per DD-AUDIT-003)
 const (
-	ActionStarted   = "started"
-	ActionCompleted = "completed"
-	ActionFailed    = "failed"
+	ActionStarted        = "started"
+	ActionCompleted      = "completed"
+	ActionFailed         = "failed"
+	ActionConfigReloaded = "reloaded"
+	ActionConfigRejected = "rejected"
 )
 
 // errCodePipelineFailed is the default/generic error code used in audit
@@ -79,6 +82,11 @@ const (
 	EventTypeCompleted          = "workflowexecution.workflow.completed"  // Per OpenAPI spec discriminator
 	EventTypeFailed             = "workflowexecution.workflow.failed"     // Per OpenAPI spec discriminator
 	EventTypeSelectionCompleted = "workflowexecution.selection.completed" // Gap #5 (BR-AUDIT-005) - Per ADR-034 v1.5
+
+	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
+	// gateway.config.{reloaded,rejected}'s component-based shape.
+	EventTypeConfigReloaded = "workflowexecution.config.reloaded"
+	EventTypeConfigRejected = "workflowexecution.config.rejected"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -613,4 +621,53 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		"error_code", errorDetails.Code,
 	)
 	return nil
+}
+
+// RecordConfigReloaded records a hot-reloadable component's reload outcome
+// (GAP-11, Issue #2285: CA hot-reload audit-trail parity). component
+// identifies which hot-reloadable component fired (e.g. "ca_cert" for the
+// TLS_CA_FILE watcher); reloadErr is nil on success (emits
+// workflowexecution.config.reloaded) or non-nil on rejection, in which case
+// the previous configuration is kept in place (emits
+// workflowexecution.config.rejected).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair. Unlike the
+// other Record* methods on Manager, this event is not tied to a specific
+// WorkflowExecution resource (process-level config change), so resource
+// fields reference "Config" instead.
+func (m *Manager) RecordConfigReloaded(ctx context.Context, component string, reloadErr error) {
+	if m.store == nil {
+		m.logger.V(1).Info("AuditStore is nil, skipping config reload audit event", "component", component)
+		return
+	}
+
+	event := audit.NewAuditEventRequest()
+	audit.SetEventCategory(event, CategoryWorkflowExecution)
+	audit.SetActor(event, "service", ServiceName)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+
+	if reloadErr != nil {
+		audit.SetEventType(event, EventTypeConfigRejected)
+		audit.SetEventAction(event, ActionConfigRejected)
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+		event.EventData = api.NewWorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData(api.WorkflowExecutionConfigRejectedPayload{
+			EventType:       api.WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected,
+			Component:       component,
+			RejectionReason: reloadErr.Error(),
+		})
+	} else {
+		audit.SetEventType(event, EventTypeConfigReloaded)
+		audit.SetEventAction(event, ActionConfigReloaded)
+		audit.SetEventOutcome(event, audit.OutcomeSuccess)
+		event.EventData = api.NewWorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData(api.WorkflowExecutionConfigReloadedPayload{
+			EventType: api.WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded,
+			Component: component,
+		})
+	}
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "Failed to store config reload audit event", "component", component)
+	}
 }

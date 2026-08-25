@@ -98,6 +98,13 @@ const (
 	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
 	EventTypeShadowLLMResponse = "aiagent.shadow.llm.response"
 
+	// EventTypeConfigReloaded/EventTypeConfigRejected are emitted for every
+	// CA-cert hot-reload attempt (GAP-11, Issue #2285) so that hot-reload
+	// state changes have the same audit-trail parity as every other
+	// hot-reloadable component (SOC2 CC7.2 / FedRAMP CM-3, AU-2, AU-12).
+	EventTypeConfigReloaded = "aiagent.config.reloaded"
+	EventTypeConfigRejected = "aiagent.config.rejected"
+
 	EventTypeAuthFailure     = "aiagent.auth.failure"
 	EventTypeAuthDenied      = "aiagent.auth.denied"
 	EventTypeRateLimitDenied = "aiagent.ratelimit.denied"
@@ -206,6 +213,11 @@ const (
 	ActionDiscovery = "discovery"
 	ActionRetrieve  = "retrieve"
 	ActionValidate  = "validate"
+
+	// ActionConfigReloaded/ActionConfigRejected are used with
+	// EventTypeConfigReloaded/EventTypeConfigRejected (GAP-11, Issue #2285).
+	ActionConfigReloaded = "reloaded"
+	ActionConfigRejected = "rejected"
 )
 
 const (
@@ -253,6 +265,8 @@ var AllEventTypes = []string{
 	EventTypeWorkflowsListed,
 	EventTypeWorkflowRetrieved,
 	EventTypeSelectionValidated,
+	EventTypeConfigReloaded,
+	EventTypeConfigRejected,
 }
 
 // AuditEvent represents an audit event to be stored.

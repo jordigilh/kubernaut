@@ -663,6 +663,7 @@ spec:
             falling back to Go's http.DefaultTransport/system trust store (unable to
             validate the chart's own CA) for every AF->KA and AF->DS HTTPS call. */}}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/apifrontend/{{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -718,6 +719,7 @@ spec:
         {{- end }}
         {{- /* Issue #1737: unconditional, see volumeMounts comment above. */}}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
