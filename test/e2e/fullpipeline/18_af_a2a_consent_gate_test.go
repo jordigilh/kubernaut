@@ -140,7 +140,14 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		// turn1CtxID's ADK session. fpA2ATasksSendWithTask would land here
 		// in a brand-new empty session and get wrongly hard-rejected with
 		// "no_active_driver" (confirmed via must-gather RCA).
-		body = fpA2ATasksSendWithContext("fp-cg2-2", turn1CtxID, taskID, "discover available workflows")
+		// #1899/#2265: "confirm discovery of workflows" (af_discover_workflows_1899),
+		// not the shared "discover available workflows" phrase -- Turn 1
+		// here calls kubernaut_investigate directly (no kubernaut_remediate
+		// hop, see consentGatePhase2AttemptScenarioYAML's doc comment), so
+		// the shared af_discover_workflows scenario's
+		// $from_tool:kubernaut_remediate:rr_id reference would never
+		// resolve.
+		body = fpA2ATasksSendWithContext("fp-cg2-2", turn1CtxID, taskID, "confirm discovery of workflows")
 		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
@@ -169,7 +176,10 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 3 — select workflow OK\n")
 
 		By("Turn 4 (genuine): watch remediation progress to completion")
-		body = fpA2ATasksSendWithContext("fp-cg2-4", turn1CtxID, taskID, "watch remediation progress")
+		// #1899/#2265: "watch this remediation now" (af_watch_1899), not the
+		// shared "watch remediation progress" phrase -- same
+		// kubernaut_investigate-only rr_id resolution reason as Turn 2 above.
+		body = fpA2ATasksSendWithContext("fp-cg2-4", turn1CtxID, taskID, "watch this remediation now")
 		resp4, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
@@ -304,7 +314,13 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 2 — select workflow OK (gate lifted on genuine user turn)\n")
 
 		By("Turn 3 (genuine): watch remediation progress to completion")
-		body = fpA2ATasksSendWithContext("fp-cg3-3", turn1CtxID, taskID, "watch remediation progress")
+		// #1899/#2265: "watch this remediation now" (af_watch_1899), not the
+		// shared "watch remediation progress" phrase -- Turn 1 here calls
+		// kubernaut_investigate directly (no kubernaut_remediate hop, see
+		// consentGatePhase3AttemptScenarioYAML's doc comment), so the shared
+		// af_watch scenario's $from_tool:kubernaut_remediate:rr_id reference
+		// would never resolve.
+		body = fpA2ATasksSendWithContext("fp-cg3-3", turn1CtxID, taskID, "watch this remediation now")
 		resp3, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()

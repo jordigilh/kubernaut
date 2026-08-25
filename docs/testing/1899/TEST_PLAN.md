@@ -243,10 +243,10 @@ None — this feature has full UT/IT/E2E coverage per the pyramid invariant; no 
 **File**: `test/e2e/fullpipeline/18_af_a2a_consent_gate_test.go`
 
 **Test Steps**:
-1. **Given**: an isolated namespace with a zero-replica `memory-eater` `Deployment`, and a mock-LLM keyword scenario (`af_consent_gate_phase2_1899`) scripted to chain `kubernaut_remediate` → `kubernaut_investigate` (declaring `interaction_mode: "interactive"`) → a same-turn fire-and-forget `kubernaut_discover_workflows` attempt.
+1. **Given**: an isolated namespace with a zero-replica `memory-eater` `Deployment`, and a mock-LLM keyword scenario (`af_consent_gate_phase2_1899`) scripted to call `kubernaut_investigate` directly on resource args (declaring `interaction_mode: "interactive"`, creating a fresh RR via the IS-before-RR-ordered path, #2265) → a same-turn fire-and-forget `kubernaut_discover_workflows` attempt. **Correction (2026-08-25, #2265 recurrence)**: this scenario previously chained `kubernaut_remediate` → `kubernaut_investigate` first; that was itself a test-design gap, since `kubernaut_remediate`'s RR carries no interactivity signal and is immediately visible to the autonomous backend (RO/AA/KA), which can select and execute a workflow before `kubernaut_investigate`'s later `interaction_mode` declaration ever takes effect — confirmed via must-gather RCA on CI run 32847902064. Only `kubernaut_investigate`'s own fresh-RR path guarantees the IS CRD exists before the RR is visible to any other component.
 2. **When**: a single A2A message ("create and investigate then sneak workflow discovery...") is sent.
 3. **Then**: the turn completes gracefully (HTTP 200, no JSON-RPC error); a `RemediationRequest` is created (investigate ran); polling confirms **no `WorkflowExecution` exists** for that RR (the fire-and-forget attempt never reached KA).
-4. **When**: three genuine follow-up turns are sent on the same task — "discover available workflows", "select workflow \<uuid\>", "watch remediation progress".
+4. **When**: three genuine follow-up turns are sent on the same task — "confirm discovery of workflows" (`af_discover_workflows_1899`), "select the discovered workflow" (`af_select_discovered_workflow_1899`), "watch this remediation now" (`af_watch_1899`) — each resolving `rr_id` from `kubernaut_investigate`, not `kubernaut_remediate`.
 5. **Then**: each genuine turn succeeds with no JSON-RPC error, and the `WorkflowExecution` for the RR reaches completion.
 
 **Acceptance Criteria**: the gate blocks the fire-and-forget attempt but is not a permanent stall — it lifts correctly on each subsequent genuine user turn.
@@ -259,10 +259,10 @@ None — this feature has full UT/IT/E2E coverage per the pyramid invariant; no 
 **File**: `test/e2e/fullpipeline/18_af_a2a_consent_gate_test.go`
 
 **Test Steps**:
-1. **Given**: the same isolated-namespace setup, with a scenario (`af_consent_gate_phase3_1899`) scripted to chain `kubernaut_remediate` → `kubernaut_investigate` (declaring `interaction_mode: "full_remediation"`, legitimately authorizing discovery) → `kubernaut_discover_workflows` (succeeds) → a same-turn fire-and-forget `kubernaut_select_workflow` attempt with a real (but unconfirmed) workflow UUID.
+1. **Given**: the same isolated-namespace setup, with a scenario (`af_consent_gate_phase3_1899`) scripted to call `kubernaut_investigate` directly on resource args (declaring `interaction_mode: "full_remediation"`, legitimately authorizing discovery, and creating a fresh RR via the IS-before-RR-ordered path, #2265) → `kubernaut_discover_workflows` (succeeds) → a same-turn fire-and-forget `kubernaut_select_workflow` attempt with a real (but unconfirmed) workflow UUID. **Correction (2026-08-25, #2265 recurrence)**: see E2E-FP-1899-001's step 1 correction above — the same `kubernaut_remediate`-first test-design gap applied here.
 2. **When**: a single A2A message ("create and investigate then sneak workflow selection...") is sent.
 3. **Then**: the turn completes gracefully; the RR exists and `discover_workflows` succeeded (mode-authorized), but polling confirms **no `WorkflowExecution` exists** for the RR.
-4. **When**: two genuine follow-up turns are sent — "select workflow \<uuid\>", "watch remediation progress".
+4. **When**: two genuine follow-up turns are sent — "select the discovered workflow" (`af_select_discovered_workflow_1899`), "watch this remediation now" (`af_watch_1899`) — each resolving `rr_id` from `kubernaut_investigate`.
 5. **Then**: both succeed with no JSON-RPC error, and the `WorkflowExecution` reaches completion.
 
 **Acceptance Criteria**: the harness lets the model auto-proceed exactly as far as the declared mode authorizes (through discovery) and no further — the more consequential action (workflow execution) always requires genuine confirmation.
