@@ -235,7 +235,7 @@ func run() int {
 	// is constructed.
 	ctx := ctrl.SetupSignalHandler()
 
-	stopTLSWatcher := wireTLS(ctx, cfg, setupLog)
+	stopTLSWatcher := wireTLS(ctx, cfg, setupLog, auditManager)
 	defer stopTLSWatcher()
 
 	// BR-FLEET-054: ClientFactory for local/remote cluster routing. If fleet
@@ -422,14 +422,17 @@ func buildAuditStore(cfg *weconfig.Config) (audit.AuditStore, error) {
 // wireTLS applies the config-driven TLS security profile and starts the
 // shared CA file watcher (Issue #902). Callers must invoke the returned stop
 // function on shutdown.
-func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger) func() {
+func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger, auditManager *weaudit.Manager) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		auditManager.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
