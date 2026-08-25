@@ -365,7 +365,7 @@ func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config,
 // matching main()'s original fail-fast behavior. Returns a cleanup function
 // that stops any watchers that were successfully started; callers should
 // defer the returned function.
-func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Config, configPath string, atomicLevel zap2.AtomicLevel) func() {
+func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Config, configPath string, atomicLevel zap2.AtomicLevel, auditStore audit.AuditStore) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -374,7 +374,10 @@ func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Conf
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		authwebhook.RecordConfigReloaded(ctx, auditStore, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -451,7 +454,7 @@ func run() int {
 
 	registerAuthWebhookHandlers(mgr, cfg, auditStore, dsGate)
 
-	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel, auditStore)
 	defer cleanupHotReload()
 
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
