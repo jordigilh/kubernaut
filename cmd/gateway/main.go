@@ -113,6 +113,37 @@ func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.ServerConfig) error
 	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
 }
 
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+// parseFlagsAndBootstrapLogger parses the --config flag (ADR-030) and
+// bootstraps the logger at INFO for config loading, registering it with
+// controller-runtime. Extracted from run() to keep it under the funlen
+// budget after Issue #2276/#2285 wiring -- pure code motion, no behavior
+// change.
+func parseFlagsAndBootstrapLogger() (string, logr.Logger) {
+	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.Parse()
+
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "gateway",
+	}, bootstrapLevel)
+	ctrl.SetLogger(bootstrapLogger)
+	return configPath, bootstrapLogger
+}
+
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *config.ServerConfig) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
+}
+
 // startBootstrapHealthServer answers kubelet's startupProbe/livenessProbe
 // truthfully (/healthz=200, /readyz=503) while registerAdapters' blocking
 // wireFleetOwnerResolution -> mcpclient.NewResilient MCP Gateway connection
@@ -157,25 +188,12 @@ func main() {
 }
 
 func run() int {
-	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
-	var configPath string
-	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
-	flag.Parse()
-
-	// Bootstrap logger at INFO for config loading
-	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "gateway",
-	}, bootstrapLevel)
+	configPath, bootstrapLogger := parseFlagsAndBootstrapLogger()
 	defer kubelog.Sync(bootstrapLogger)
-	ctrl.SetLogger(bootstrapLogger)
 
 	serverCfg, logger, atomicLevel := loadGatewayConfig(configPath, bootstrapLogger)
 
-	// Issue #2276: inject ambient CA trust before telemetry.Bootstrap's OTel
-	// exporter just below -- the first outbound TLS call this process makes.
-	if err := bootstrapAmbientCATrust(logger, serverCfg); err != nil {
-		logger.Error(err, "Failed to inject ambient CA trust")
+	if !bootstrapAmbientCATrustStep(logger, serverCfg) {
 		return 1
 	}
 

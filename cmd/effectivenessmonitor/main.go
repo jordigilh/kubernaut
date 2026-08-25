@@ -80,7 +80,11 @@ func main() {
 	os.Exit(run())
 }
 
-func run() int {
+// parseFlagsAndInitLogger parses the --config flag (ADR-030), bootstraps the
+// logger at INFO for config loading (Issue #875), and logs the startup
+// banner. Extracted from run() to keep it under the funlen budget after
+// Issue #2276/#2285 wiring -- pure code motion, no behavior change.
+func parseFlagsAndInitLogger() (string, zaplog.AtomicLevel) {
 	// ADR-030: Configuration via YAML file. Single --config flag; all
 	// functional config lives in the YAML ConfigMap.
 	var configPath string
@@ -97,6 +101,11 @@ func run() int {
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 	)
+	return configPath, atomicLevel
+}
+
+func run() int {
+	configPath, atomicLevel := parseFlagsAndInitLogger()
 
 	// CONFIGURATION LOADING (ADR-030) + ADR-057 namespace discovery
 	cfg, controllerNS, err := loadConfigAndNamespace(configPath, atomicLevel, setupLog)
@@ -106,11 +115,7 @@ func run() int {
 		return 1
 	}
 
-	// Issue #2276: inject ambient CA trust before initCoreDependencies'
-	// DataStorage-backed audit store client -- the first outbound TLS call
-	// this process makes.
-	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
-		setupLog.Error(err, "Failed to inject ambient CA trust")
+	if !bootstrapAmbientCATrustStep(setupLog, cfg) {
 		return 1
 	}
 
@@ -261,6 +266,17 @@ func loadConfigAndNamespace(configPath string, atomicLevel zaplog.AtomicLevel, l
 // no effect (spike-verified, Issue #2276 preflight).
 func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
 	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *config.Config) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
 }
 
 // initCoreDependencies builds the controller-runtime manager (ADR-057

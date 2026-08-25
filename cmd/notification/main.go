@@ -192,6 +192,40 @@ func bootstrapAmbientCATrust(logger logr.Logger, cfg *notificationconfig.Config)
 	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
 }
 
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+// parseFlagsAndBootstrapLogger parses the -config flag (ADR-030) and
+// bootstraps the logger at INFO for config loading. Extracted from run() to
+// keep it under the funlen budget after Issue #2276/#2285 wiring -- pure
+// code motion, no behavior change.
+func parseFlagsAndBootstrapLogger() (string, logr.Logger) {
+	// ========================================
+	// ADR-030: Configuration Management
+	// MANDATORY: Use -config flag with K8s env substitution
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config",
+		"/etc/notification/config.yaml",
+		"Path to configuration file (ADR-030)")
+	flag.Parse()
+
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "notification",
+	}, bootstrapLevel)
+	return configPath, bootstrapLogger
+}
+
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *notificationconfig.Config) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
+}
+
 // reconcilerSetupParams groups setupNotificationReconciler's dependencies
 // (Go anti-pattern checklist: 8+ parameters -> config struct instead of a
 // long positional argument list).
@@ -288,30 +322,12 @@ func main() {
 }
 
 func run() int {
-	// ========================================
-	// ADR-030: Configuration Management
-	// MANDATORY: Use -config flag with K8s env substitution
-	// ========================================
-	var configPath string
-	flag.StringVar(&configPath, "config",
-		"/etc/notification/config.yaml",
-		"Path to configuration file (ADR-030)")
-	flag.Parse()
-
-	// Bootstrap logger at INFO for config loading
-	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "notification",
-	}, bootstrapLevel)
+	configPath, bootstrapLogger := parseFlagsAndBootstrapLogger()
 	defer kubelog.Sync(bootstrapLogger)
 
 	cfg, controllerNS, logger, atomicLevel := loadNotificationConfig(configPath, bootstrapLogger)
 
-	// Issue #2276: inject ambient CA trust before buildDeliveryServices'
-	// delivery-channel HTTP clients -- the first outbound TLS calls this
-	// process makes.
-	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
-		logger.Error(err, "Failed to inject ambient CA trust")
+	if !bootstrapAmbientCATrustStep(logger, cfg) {
 		return 1
 	}
 
