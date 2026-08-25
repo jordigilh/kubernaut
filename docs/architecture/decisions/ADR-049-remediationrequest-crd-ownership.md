@@ -204,7 +204,7 @@ The shared status pattern works regardless of who owns the schema definition. Ga
 | [DD-GATEWAY-011](DD-GATEWAY-011-shared-status-deduplication.md) | Shared status ownership (compatible) |
 | [005-owner-reference-architecture.md](005-owner-reference-architecture.md) | CRD hierarchy (RR is root) |
 | [CRD_SCHEMAS.md](../CRD_SCHEMAS.md) | Needs update per this ADR |
-| [ADR-001](ADR-001-gateway-ro-deduplication-communication.md) | Deduplication communication |
+| [ADR-069](ADR-069-gateway-ro-deduplication-communication.md) | Deduplication communication |
 
 ---
 

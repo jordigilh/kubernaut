@@ -6,14 +6,14 @@
 **Version**: 1.1
 **Date**: 2025-12-10
 **Status**: 🚧 In Progress
-**Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](../architecture/decisions/ADR-001-gateway-ro-deduplication-communication.md)
+**Related ADR**: [ADR-069: Gateway ↔ RO Deduplication Communication](../architecture/decisions/ADR-069-gateway-ro-deduplication-communication.md)
 **Related DD**: [DD-GATEWAY-011: Shared Status Deduplication](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
 
 ---
 
 ## Overview
 
-These business requirements implement the shared status ownership pattern from ADR-001, where Gateway owns `RemediationRequest.Status.Deduplication` and updates it on duplicate signal detection.
+These business requirements implement the shared status ownership pattern from ADR-069, where Gateway owns `RemediationRequest.Status.Deduplication` and updates it on duplicate signal detection.
 
 **Key Change**: Deduplication data moves from `Spec` (immutable) to `Status` (Gateway-owned section).
 
@@ -351,7 +351,7 @@ gateway_deduplication_check_duration_seconds{
 
 | Document | Purpose |
 |----------|---------|
-| [ADR-001](../architecture/decisions/ADR-001-gateway-ro-deduplication-communication.md) | Architecture decision record |
+| [ADR-069](../architecture/decisions/ADR-069-gateway-ro-deduplication-communication.md) | Architecture decision record |
 | [DD-GATEWAY-011](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Design decision details |
 | [DD-GATEWAY-009](../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md) | Previous deduplication design (updated) |
 | [NOTICE_SHARED_STATUS_OWNERSHIP](../handoff/NOTICE_SHARED_STATUS_OWNERSHIP_DD_SI_001.md) | Team notification |
@@ -362,7 +362,7 @@ gateway_deduplication_check_duration_seconds{
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-12-07 | Initial BRs created based on ADR-001 |
+| 1.0 | 2025-12-07 | Initial BRs created based on ADR-069 |
 
 ---
 

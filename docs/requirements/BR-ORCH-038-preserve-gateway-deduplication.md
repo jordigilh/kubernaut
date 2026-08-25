@@ -6,7 +6,7 @@
 **Version**: 1.0
 **Date**: 2025-12-07
 **Status**: 🚧 Planned
-**Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](../architecture/decisions/ADR-001-gateway-ro-deduplication-communication.md)
+**Related ADR**: [ADR-069: Gateway ↔ RO Deduplication Communication](../architecture/decisions/ADR-069-gateway-ro-deduplication-communication.md)
 **Related DD**: [DD-GATEWAY-011: Shared Status Deduplication](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
 **Related Gateway BRs**: BR-GATEWAY-181 to BR-GATEWAY-185
 
@@ -14,7 +14,7 @@
 
 ## Overview
 
-This business requirement ensures that Remediation Orchestrator preserves Gateway-owned `Status.Deduplication` data when updating its own status fields. This is critical for the shared status ownership pattern defined in ADR-001.
+This business requirement ensures that Remediation Orchestrator preserves Gateway-owned `Status.Deduplication` data when updating its own status fields. This is critical for the shared status ownership pattern defined in ADR-069.
 
 ---
 
@@ -30,7 +30,7 @@ RemediationOrchestrator MUST preserve `RemediationRequest.Status.Deduplication` 
 
 ### Rationale
 
-The shared status ownership pattern (ADR-001) divides `RemediationRequest.Status` between two controllers:
+The shared status ownership pattern (ADR-069) divides `RemediationRequest.Status` between two controllers:
 
 | Status Section | Owner |
 |----------------|-------|
@@ -181,7 +181,7 @@ ro_status_update_conflicts_total{
 
 | Document | Purpose |
 |----------|---------|
-| [ADR-001](../architecture/decisions/ADR-001-gateway-ro-deduplication-communication.md) | Architecture decision |
+| [ADR-069](../architecture/decisions/ADR-069-gateway-ro-deduplication-communication.md) | Architecture decision |
 | [DD-GATEWAY-011](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Design details |
 | [BR-GATEWAY-181-185](./BR-GATEWAY-181-185-shared-status-deduplication.md) | Gateway's side of the pattern |
 | [BR-ORCH-036](./BR-ORCH-036-manual-review-notification.md) | Manual review on failures |
@@ -192,7 +192,7 @@ ro_status_update_conflicts_total{
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-12-07 | Initial BR created based on ADR-001 |
+| 1.0 | 2025-12-07 | Initial BR created based on ADR-069 |
 
 ---
 

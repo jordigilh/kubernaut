@@ -58,7 +58,7 @@ This document defines all business requirements for the SignalProcessing CRD Con
 
 **References**:
 - [DD-017: K8s Enrichment Depth Strategy](../../../architecture/decisions/DD-017-k8s-enrichment-depth-strategy.md)
-- [ADR-041: Rego Policy Data Fetching Separation](../../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md)
+- [ADR-074: Rego Policy Data Fetching Separation](../../../architecture/decisions/ADR-074-rego-policy-data-fetching-separation.md)
 
 ---
 

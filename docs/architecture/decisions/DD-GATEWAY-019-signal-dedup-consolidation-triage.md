@@ -5,7 +5,7 @@
 **Status**: 🔄 **PROPOSED** (triage complete, alternative approved by @jordigilh, implementation not yet started)
 **Confidence**: 90% (triage conclusion) / 70% (specific recommended alternative)
 **Related DD**: [DD-GATEWAY-011: Shared Status Ownership for Deduplication & Storm Aggregation](DD-GATEWAY-011-shared-status-deduplication.md)
-**Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](ADR-001-gateway-ro-deduplication-communication.md)
+**Related ADR**: [ADR-069: Gateway ↔ RO Deduplication Communication](ADR-069-gateway-ro-deduplication-communication.md)
 **Tracking Issue**: (see `docs/architecture/decisions/README.md` entry / linked GitHub issue)
 
 ---
@@ -135,7 +135,7 @@ when an active duplicate exists.
   established Gateway as the exclusive writer of `status.deduplication`
   specifically to keep dedup state visible/auditable on the RR, following
   the K8s "shared status ownership" pattern (Node/Pod/Ingress precedent).
-  `ADR-001-gateway-ro-deduplication-communication.md` evaluated 6 alternatives
+  `ADR-069-gateway-ro-deduplication-communication.md` evaluated 6 alternatives
   for *where dedup state should live* (SignalIngestion CRD, RawSignal
   pipeline, Redis, K8s Events, Kafka/NATS) — an admission-webhook-as-orchestrator
   was never one of them, so this is a new departure from settled architecture,
@@ -217,7 +217,7 @@ CHECKPOINT DD requirement for architectural changes.
 ## Related Decisions
 
 - **Builds On**: [DD-GATEWAY-011](DD-GATEWAY-011-shared-status-deduplication.md) — preserves its status-ownership model
-- **Related**: [ADR-001](ADR-001-gateway-ro-deduplication-communication.md) — prior alternatives analysis for dedup state location (did not consider admission-webhook orchestration)
+- **Related**: [ADR-069](ADR-069-gateway-ro-deduplication-communication.md) — prior alternatives analysis for dedup state location (did not consider admission-webhook orchestration)
 - **Related**: [DD-AUTH-001](DD-AUTH-001-shared-authentication-webhook.md) — AuthWebhook's existing scope and design rationale
 
 ### Review & Evolution

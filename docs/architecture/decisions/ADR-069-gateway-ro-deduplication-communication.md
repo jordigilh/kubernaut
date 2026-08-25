@@ -1,4 +1,4 @@
-# ADR-001: Gateway ↔ RO Deduplication Communication Pattern
+# ADR-069: Gateway ↔ RO Deduplication Communication Pattern
 
 **Date**: 2025-12-07
 **Status**: ✅ **ACCEPTED**

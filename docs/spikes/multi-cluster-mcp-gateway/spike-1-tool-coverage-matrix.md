@@ -145,6 +145,12 @@ These tools are available in OCP MCP server but KA does NOT currently have:
 
 **For K8s investigation tools: 82% coverage (FULL + PARTIAL) is sufficient for POC.**
 
+> **Retired (Issue [#2254](https://github.com/jordigilh/kubernaut/issues/2254))**: this 82%
+> figure was a paper analysis. [Spike S13](spike-s13-tool-coverage-validation/README.md)
+> later empirically validated actual tool coverage and found **100%** for KA's real
+> investigation-tool set (and 100% for execution) — see S13's README for the corrected
+> figure and methodology.
+
 The 4 K8s gap tools (`jq_query`, `count`, `logs_grep`, `logs_all_containers_grep`) are convenience tools that the LLM can work around. The OCP MCP server's `nodes_log`, `nodes_stats_summary`, and `alertmanager_alerts` bonus tools actually ADD investigation capability that KA currently lacks.
 
 **For Prometheus: 25% FULL coverage is low but acceptable for POC.** The 2 core PromQL query tools are covered. Metadata discovery tools help the LLM explore unfamiliar Prometheus instances but are not required when the LLM is prompted with known metric names.

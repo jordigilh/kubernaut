@@ -1,4 +1,4 @@
-# ADR-030: Configuration Management Standard
+# ADR-071: Configuration Management Standard
 
 **Date**: December 22, 2025
 **Status**: ✅ **AUTHORITATIVE STANDARD - MANDATORY**
@@ -396,7 +396,7 @@ import (
 const DefaultConfigPath = "/etc/{service}/config.yaml"
 
 // ========================================
-// {SERVICE} SERVICE CONFIGURATION (ADR-030)
+// {SERVICE} SERVICE CONFIGURATION (ADR-071)
 // Authority: ConfigMap {service}-config
 // ========================================
 
@@ -851,7 +851,7 @@ Before merging configuration changes, verify ALL items:
 | DataStorage | `pkg/datastorage/config/` | `/etc/datastorage/config.yaml` | Yes | N/A | Compliant |
 | Notification | `pkg/notification/config/` | `/etc/notification/config.yaml` | Yes | Yes | Compliant |
 
-**Migration Status**: All services now comply with ADR-030 standardized configuration pattern.
+**Migration Status**: All services now comply with ADR-071 standardized configuration pattern.
 
 ---
 

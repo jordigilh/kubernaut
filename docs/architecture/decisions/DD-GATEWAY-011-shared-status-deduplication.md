@@ -4,7 +4,7 @@
 **Created**: 2025-12-07
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
-**Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](ADR-001-gateway-ro-deduplication-communication.md)
+**Related ADR**: [ADR-069: Gateway ↔ RO Deduplication Communication](ADR-069-gateway-ro-deduplication-communication.md)
 **Related Proposal**: [PROPOSAL: Gateway Redis Deprecation](../../handoff/PROPOSAL_GATEWAY_REDIS_DEPRECATION.md)
 **Related BR**: [BR-ORCH-042: Consecutive Failure Blocking](../../requirements/BR-ORCH-042-consecutive-failure-blocking.md)
 
@@ -328,7 +328,7 @@ func (r *Reconciler) UpdatePhase(ctx context.Context, rr *RemediationRequest, ph
 
 | Document | Purpose |
 |----------|---------|
-| [ADR-001](ADR-001-gateway-ro-deduplication-communication.md) | Full decision record with all options |
+| [ADR-069](ADR-069-gateway-ro-deduplication-communication.md) | Full decision record with all options |
 | [BR-GATEWAY-181-185](../../requirements/BR-GATEWAY-181-185-shared-status-deduplication.md) | Gateway business requirements |
 | [BR-ORCH-038](../../requirements/BR-ORCH-038-preserve-gateway-deduplication.md) | RO business requirement |
 | [BR-ORCH-042](../../requirements/BR-ORCH-042-consecutive-failure-blocking.md) | **NEW (v1.3)**: Consecutive failure blocking with cooldown |
