@@ -158,6 +158,7 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 	stopHotReload := wireHotReload(ctx, hotReloadParams{
 		Cfg: p.cfg, HTTPServer: httpServer, LLMRuntimePath: p.llmRuntimePath,
 		Swappable: p.swappable, PhaseResolver: p.phaseResolver, BootRuntime: p.bootRuntime, Logger: p.logger,
+		AuditStore: p.instrumentedAudit,
 	})
 
 	p.store.StartCleanupLoop(ctx, p.cfg.Runtime.Session.TTL/2)

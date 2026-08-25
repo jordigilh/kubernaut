@@ -66,8 +66,8 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.shadow.llm.response", audit.EventTypeShadowLLMResponse),
 		)
 
-		It("should define exactly 37 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(37))
+		It("should define exactly 39 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(39))
 		})
 
 		It("should include aiagent.rca.complete in AllEventTypes", func() {
