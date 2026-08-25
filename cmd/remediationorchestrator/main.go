@@ -49,9 +49,11 @@ import (
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -316,7 +318,7 @@ func run() int {
 	setupLog.Info("starting manager")
 
 	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
-	stopHotReload := wireTLSHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
+	stopHotReload := wireTLSHotReload(ctx, cfg, configPath, atomicLevel, setupLog, auditStore)
 	defer stopHotReload()
 
 	if err := mgr.Start(ctx); err != nil {
@@ -824,6 +826,7 @@ func wireTLSHotReload(
 	configPath string,
 	atomicLevel zaplog.AtomicLevel,
 	logger logr.Logger,
+	auditStore audit.AuditStore,
 ) func() {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
@@ -834,8 +837,12 @@ func wireTLSHotReload(
 
 	stopFns := make([]func(), 0, 2)
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload.
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	roAuditManager := roaudit.NewManager(roaudit.ServiceName)
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordRemediationOrchestratorConfigReload(ctx, roAuditManager, auditStore, reloadErr, logger)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -873,5 +880,25 @@ func wireTLSHotReload(
 		for _, stop := range stopFns {
 			stop()
 		}
+	}
+}
+
+// recordRemediationOrchestratorConfigReload records a CA-cert hot-reload
+// outcome (GAP-11, Issue #2285) via a dedicated Manager instance, mirroring
+// Gateway's shipped EmitConfigReloadAudit reference implementation.
+// Extracted so the onReload closure passed to StartCAFileWatcher stays a
+// one-liner and this logic is independently unit-testable.
+func recordRemediationOrchestratorConfigReload(ctx context.Context, mgr *roaudit.Manager, auditStore audit.AuditStore, reloadErr error, logger logr.Logger) {
+	if auditStore == nil {
+		return
+	}
+	var event *api.AuditEventRequest
+	if reloadErr != nil {
+		event = mgr.BuildConfigRejectedEvent("ca_cert", reloadErr)
+	} else {
+		event = mgr.BuildConfigReloadedEvent("ca_cert")
+	}
+	if err := auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store config reload audit event", "component", "ca_cert")
 	}
 }

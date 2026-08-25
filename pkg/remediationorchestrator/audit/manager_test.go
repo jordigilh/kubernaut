@@ -1148,3 +1148,40 @@ var _ = Describe("Audit Manager", func() {
 		})
 	})
 })
+
+// ========================================
+// BuildConfigReloadedEvent / BuildConfigRejectedEvent (GAP-11, Issue #2285)
+// ========================================
+// BR-AUDIT-002 / DD-AUDIT-003: CA-cert hot-reload audit-trail parity with
+// Gateway's shipped gateway.config.{reloaded,rejected} events.
+var _ = Describe("Audit Manager — Config reload events (GAP-11, Issue #2285)", func() {
+	var manager *prodaudit.Manager
+
+	BeforeEach(func() {
+		manager = prodaudit.NewManager(prodaudit.ServiceName)
+	})
+
+	It("UT-RO-2285-001: builds orchestrator.config.reloaded on successful reload", func() {
+		event := manager.BuildConfigReloadedEvent("ca_cert")
+
+		Expect(event.EventType).To(Equal(prodaudit.EventTypeConfigReloaded))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
+
+		payload, ok := event.EventData.GetRemediationOrchestratorConfigReloadedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+	})
+
+	It("UT-RO-2285-002: builds orchestrator.config.rejected with reason on failed reload", func() {
+		reloadErr := fmt.Errorf("invalid PEM content")
+		event := manager.BuildConfigRejectedEvent("ca_cert", reloadErr)
+
+		Expect(event.EventType).To(Equal(prodaudit.EventTypeConfigRejected))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+
+		payload, ok := event.EventData.GetRemediationOrchestratorConfigRejectedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+		Expect(payload.RejectionReason).To(Equal("invalid PEM content"))
+	})
+})
