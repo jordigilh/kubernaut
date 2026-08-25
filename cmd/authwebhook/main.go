@@ -92,6 +92,20 @@ func loadAuthWebhookConfig(configPath string, atomicLevel zap2.AtomicLevel) *awc
 	return cfg
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadAuthWebhookConfig, buildAuthWebhookManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireAuthWebhookAuditStore's DataStorage HTTP client (the first outbound
+// TLS call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *awconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildAuthWebhookManager creates the controller-runtime manager with the
 // webhook server and health-probe bind address from cfg (metrics disabled
 // per WEBHOOK_METRICS_TRIAGE.md), then registers the BR-WORKFLOW-007 field
@@ -351,7 +365,7 @@ func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config,
 // matching main()'s original fail-fast behavior. Returns a cleanup function
 // that stops any watchers that were successfully started; callers should
 // defer the returned function.
-func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Config, configPath string, atomicLevel zap2.AtomicLevel) func() {
+func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Config, configPath string, atomicLevel zap2.AtomicLevel, auditStore audit.AuditStore) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -360,7 +374,10 @@ func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Conf
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		authwebhook.RecordConfigReloaded(ctx, auditStore, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -415,6 +432,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg := loadAuthWebhookConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireAuthWebhookAuditStore's
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		os.Exit(1)
+	}
+
 	mgr := buildAuthWebhookManager(cfg)
 
 	// Graceful shutdown: Flush audit store before exit
@@ -428,7 +454,7 @@ func run() int {
 
 	registerAuthWebhookHandlers(mgr, cfg, auditStore, dsGate)
 
-	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel, auditStore)
 	defer cleanupHotReload()
 
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)

@@ -25,6 +25,8 @@ package audit
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -52,6 +54,11 @@ const (
 	CategorySignalProcessing = "signalprocessing"
 	// EventCategorySignalProcessing is an alias for consistency with other services
 	EventCategorySignalProcessing = CategorySignalProcessing
+
+	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
+	// gateway.config.{reloaded,rejected}'s component-based shape.
+	EventTypeConfigReloaded = "signalprocessing.config.reloaded"
+	EventTypeConfigRejected = "signalprocessing.config.rejected"
 )
 
 // Event action constants (L-3 SOC2 Fix: compile-time safety for event action strings)
@@ -61,6 +68,8 @@ const (
 	ActionClassification  = "classification"
 	ActionEnrichment      = "enrichment"
 	ActionError           = "error"
+	ActionConfigReloaded  = "reloaded"
+	ActionConfigRejected  = "rejected"
 )
 
 // AuditClient handles audit event storage using pkg/audit shared library.
@@ -527,5 +536,46 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 
 	if storeErr := c.store.StoreAudit(ctx, event); storeErr != nil {
 		c.log.Error(storeErr, "Failed to write error audit")
+	}
+}
+
+// RecordConfigReloaded records a hot-reloadable component's reload outcome
+// (GAP-11, Issue #2285: CA hot-reload audit-trail parity). component
+// identifies which hot-reloadable component fired (e.g. "ca_cert" for the
+// TLS_CA_FILE watcher); reloadErr is nil on success (emits
+// signalprocessing.config.reloaded) or non-nil on rejection, in which case
+// the previous configuration is kept in place (emits
+// signalprocessing.config.rejected).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair.
+func (c *AuditClient) RecordConfigReloaded(ctx context.Context, component string, reloadErr error) {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventCategory(event, CategorySignalProcessing)
+	audit.SetActor(event, "service", "signalprocessing-controller")
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+
+	if reloadErr != nil {
+		audit.SetEventType(event, EventTypeConfigRejected)
+		audit.SetEventAction(event, ActionConfigRejected)
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+		event.EventData = api.NewSignalProcessingConfigRejectedPayloadAuditEventRequestEventData(api.SignalProcessingConfigRejectedPayload{
+			EventType:       api.SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected,
+			Component:       component,
+			RejectionReason: reloadErr.Error(),
+		})
+	} else {
+		audit.SetEventType(event, EventTypeConfigReloaded)
+		audit.SetEventAction(event, ActionConfigReloaded)
+		audit.SetEventOutcome(event, audit.OutcomeSuccess)
+		event.EventData = api.NewSignalProcessingConfigReloadedPayloadAuditEventRequestEventData(api.SignalProcessingConfigReloadedPayload{
+			EventType: api.SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded,
+			Component: component,
+		})
+	}
+
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write config reload audit", "component", component)
 	}
 }

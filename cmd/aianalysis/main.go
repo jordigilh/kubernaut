@@ -123,6 +123,20 @@ func loadAIAnalysisConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*c
 	return cfg, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadAIAnalysisConfig, buildAIAnalysisManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireAIAnalysisClients' DataStorage HTTP client (the first outbound TLS
+// call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildAIAnalysisManager constructs the controller manager with the
 // namespace-restricted AIAnalysis/AgentSession caches and
 // metrics/health-probe/leader election settings from cfg, then registers
@@ -365,7 +379,7 @@ func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logge
 // matching main()'s original fail-fast behavior. Returns a cleanup function
 // that stops any watchers that were successfully started; callers should
 // defer the returned function.
-func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel) func() {
+func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, auditClient *audit.AuditClient) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -374,7 +388,10 @@ func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config,
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -433,6 +450,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, controllerNS := loadAIAnalysisConfig(configPath, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireAIAnalysisClients'
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		os.Exit(1)
+	}
+
 	mgr := buildAIAnalysisManager(cfg, controllerNS)
 
 	// ADR-050: Startup validation happens inside wireAIAnalysisClients and fails fast.
@@ -451,7 +477,7 @@ func run() int {
 
 	setupAIAnalysisReconciler(mgr, cfg, clients, dsGate)
 
-	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel, clients.auditClient)
 	defer cleanupHotReload()
 
 	setupLog.Info("starting manager")

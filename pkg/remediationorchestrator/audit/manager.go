@@ -62,6 +62,11 @@ const (
 	EventTypeLifecycleVerifyingStarted      = "orchestrator.lifecycle.verifying_started"
 	EventTypeLifecycleVerificationCompleted = "orchestrator.lifecycle.verification_completed"
 	EventTypeLifecycleVerificationTimedOut  = "orchestrator.lifecycle.verification_timed_out"
+
+	// Config hot-reload audit-trail parity (GAP-11, Issue #2285): mirrors
+	// gateway.config.{reloaded,rejected}'s component-based shape.
+	EventTypeConfigReloaded = "orchestrator.config.reloaded"
+	EventTypeConfigRejected = "orchestrator.config.rejected"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -83,6 +88,8 @@ const (
 	ActionManualReview      = "manual_review_required"
 	ActionBlocked           = "blocked"   // Routing blocked (DD-RO-002)
 	ActionUnblocked         = "unblocked" // Routing unblocked (future)
+	ActionConfigReloaded    = "reloaded"
+	ActionConfigRejected    = "rejected"
 )
 
 // TimeoutConfig mirrors remediationv1alpha1.TimeoutConfig for audit purposes.
@@ -933,4 +940,51 @@ func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) api.OptErrorDetai
 	// Use shared helper for type-safe conversion
 	// **Pattern**: Eliminates switch statement duplication across services
 	return sharedaudit.ToOgenOptErrorDetails(errorDetails)
+}
+
+// BuildConfigReloadedEvent builds an audit event for a successful
+// hot-reloadable component reload (GAP-11, Issue #2285: CA hot-reload
+// audit-trail parity). component identifies which hot-reloadable component
+// fired (e.g. "ca_cert" for the TLS_CA_FILE watcher).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair. Unlike the
+// other Build*Event methods, this event is not tied to a specific
+// RemediationRequest resource (process-level config change), so resource
+// fields reference "Config" instead.
+func (m *Manager) BuildConfigReloadedEvent(component string) *api.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeConfigReloaded)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionConfigReloaded)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+	event.EventData = api.NewRemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData(api.RemediationOrchestratorConfigReloadedPayload{
+		EventType: api.RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded,
+		Component: component,
+	})
+	return event
+}
+
+// BuildConfigRejectedEvent builds an audit event for a rejected
+// hot-reloadable component reload (GAP-11, Issue #2285), where the previous
+// configuration is kept in place. See BuildConfigReloadedEvent for the
+// success counterpart.
+func (m *Manager) BuildConfigRejectedEvent(component string, reloadErr error) *api.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeConfigRejected)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionConfigRejected)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+	event.EventData = api.NewRemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData(api.RemediationOrchestratorConfigRejectedPayload{
+		EventType:       api.RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected,
+		Component:       component,
+		RejectionReason: reloadErr.Error(),
+	})
+	return event
 }

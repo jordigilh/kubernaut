@@ -52,6 +52,21 @@ func run() int {
 	defer func() { _ = zapLogger.Sync() }()
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
+	// Issue #2276: defense-in-depth ambient CA trust injection, before any
+	// outbound TLS call in this process (buildSARClient below onward). AF
+	// does NOT get a new canonical TLSCAFile config field -- it already
+	// sources inter-service CA trust via explicit, purpose-scoped fields
+	// (kaTlsCaFile, dsTlsCaFile, prometheusTlsCaFile, etc.), each wired into
+	// its own explicit http.Client/transport. This call only backstops any
+	// code path NOT covered by one of those explicit fields; it reuses
+	// dsTlsCaFile's already-resolved value (both kaTlsCaFile and dsTlsCaFile
+	// default to the same kubernaut.interServiceTLS.caFile chart value) and
+	// does not change any existing explicit wiring.
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled)
 	if err != nil {
 		return 1
@@ -347,6 +362,20 @@ func buildRateLimitMiddlewares(metricsReg *metrics.Registry, auditor audit.Emitt
 // logged with a best-effort logger (the real one may not exist yet); the
 // returned *zap.Logger is non-nil as soon as it has been constructed, so
 // callers can still flush it (Sync) even on a later failure (e.g. Validate).
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// as defense-in-depth, sourced from the already-resolved DSTLSCaFile value
+// (dsTlsCaFile config field). Extracted from run() so it is independently
+// unit-testable, matching this package's existing pattern for other
+// startup-wiring steps.
+//
+// Callers MUST invoke this immediately after config load, before any client
+// construction in run() -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.Agent.DSTLSCaFile)
+}
+
 func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -663,7 +692,7 @@ func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAnd
 		return nil, nil, err
 	}
 
-	stopWatchers, err := startTLSWatchers(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	stopWatchers, err := startTLSWatchers(ctx, cfg.Server.TLS.CertDir, certReloader, p.HDeps.Auditor, logger)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -788,7 +817,7 @@ func configureServerTLS(httpServer *http.Server, cfg *config.Config, logger logr
 
 // startTLSWatchers starts the cert and CA file watchers (if configured) and
 // returns a single cleanup func that stops whichever ones were started.
-func startTLSWatchers(ctx context.Context, certDir string, certReloader *sharedtls.CertReloader, logger logr.Logger) (func(), error) {
+func startTLSWatchers(ctx context.Context, certDir string, certReloader *sharedtls.CertReloader, auditor audit.Emitter, logger logr.Logger) (func(), error) {
 	var stoppers []func()
 
 	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, certDir, certReloader, logger)
@@ -800,7 +829,10 @@ func startTLSWatchers(ctx context.Context, certDir string, certReloader *sharedt
 		stoppers = append(stoppers, certWatcher.Stop)
 	}
 
-	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordCAConfigReload(ctx, auditor, reloadErr)
+	})
 	if err != nil {
 		logger.Error(err, "failed to start CA file watcher")
 		return nil, err
@@ -814,6 +846,34 @@ func startTLSWatchers(ctx context.Context, certDir string, certReloader *sharedt
 			stop()
 		}
 	}, nil
+}
+
+// recordCAConfigReload emits apifrontend's existing config.reloaded/
+// config.rejected audit events for a CA-cert hot-reload attempt (GAP-11,
+// Issue #2285), reusing the #1450 policy-config watcher's event types and
+// ApifrontendConfigReloadedPayload/ApifrontendConfigRejectedPayload schemas
+// rather than adding new ones: ChangedKeys=["ca_cert"] on success, and a
+// component-prefixed RejectionReason on failure. Best effort; never blocks
+// or fails the reload itself. No-op when auditor is nil.
+func recordCAConfigReload(ctx context.Context, auditor audit.Emitter, reloadErr error) {
+	if auditor == nil {
+		return
+	}
+	if reloadErr != nil {
+		auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventConfigRejected,
+			Detail: map[string]string{
+				"rejection_reason": "ca_cert: " + reloadErr.Error(),
+			},
+		})
+		return
+	}
+	auditor.Emit(ctx, &audit.Event{
+		Type: audit.EventConfigReloaded,
+		Detail: map[string]string{
+			"changed_keys": "ca_cert",
+		},
+	})
 }
 
 func newZapLogger(level zapcore.Level) *zap.Logger {

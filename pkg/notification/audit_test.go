@@ -692,6 +692,43 @@ var _ = Describe("Audit Helpers", func() {
 	})
 })
 
+// ========================================
+// Unit Tests: CreateConfigReloadedEvent / CreateConfigRejectedEvent (GAP-11, Issue #2285)
+// ========================================
+// BR-AUDIT-002 / DD-AUDIT-003: CA-cert hot-reload audit-trail parity with
+// Gateway's shipped gateway.config.{reloaded,rejected} events.
+var _ = Describe("Audit Manager — Config reload events (GAP-11, Issue #2285)", func() {
+	var mgr *notificationaudit.Manager
+
+	BeforeEach(func() {
+		mgr = notificationaudit.NewManager("notification-controller")
+	})
+
+	It("UT-NOT-2285-001: creates notification.config.reloaded on successful reload", func() {
+		event := mgr.CreateConfigReloadedEvent("ca_cert")
+
+		Expect(event.EventType).To(Equal(notificationaudit.EventTypeConfigReloaded))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
+
+		payload, ok := event.EventData.GetNotificationConfigReloadedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+	})
+
+	It("UT-NOT-2285-002: creates notification.config.rejected with reason on failed reload", func() {
+		reloadErr := fmt.Errorf("invalid PEM content")
+		event := mgr.CreateConfigRejectedEvent("ca_cert", reloadErr)
+
+		Expect(event.EventType).To(Equal(notificationaudit.EventTypeConfigRejected))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+
+		payload, ok := event.EventData.GetNotificationConfigRejectedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+		Expect(payload.RejectionReason).To(Equal("invalid PEM content"))
+	})
+})
+
 // ===== TEST HELPERS =====
 
 // createTestNotification creates a standard test notification fixture

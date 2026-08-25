@@ -99,6 +99,51 @@ func loadGatewayConfig(configPath string, bootstrapLogger logr.Logger) (*config.
 	return serverCfg, logger, atomicLevel
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadGatewayConfig).
+//
+// Callers MUST invoke this immediately after config load, before
+// telemetry.Bootstrap's OTel exporter (the first outbound TLS call this
+// process makes) -- x509.SystemCertPool() is sync.Once-cached process-wide,
+// so injecting after the first handshake has no effect (spike-verified,
+// Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.ServerConfig) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+// parseFlagsAndBootstrapLogger parses the --config flag (ADR-030) and
+// bootstraps the logger at INFO for config loading, registering it with
+// controller-runtime. Extracted from run() to keep it under the funlen
+// budget after Issue #2276/#2285 wiring -- pure code motion, no behavior
+// change.
+func parseFlagsAndBootstrapLogger() (string, logr.Logger) {
+	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.Parse()
+
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "gateway",
+	}, bootstrapLevel)
+	ctrl.SetLogger(bootstrapLogger)
+	return configPath, bootstrapLogger
+}
+
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *config.ServerConfig) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
+}
+
 // startBootstrapHealthServer answers kubelet's startupProbe/livenessProbe
 // truthfully (/healthz=200, /readyz=503) while registerAdapters' blocking
 // wireFleetOwnerResolution -> mcpclient.NewResilient MCP Gateway connection
@@ -143,20 +188,14 @@ func main() {
 }
 
 func run() int {
-	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
-	var configPath string
-	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
-	flag.Parse()
-
-	// Bootstrap logger at INFO for config loading
-	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "gateway",
-	}, bootstrapLevel)
+	configPath, bootstrapLogger := parseFlagsAndBootstrapLogger()
 	defer kubelog.Sync(bootstrapLogger)
-	ctrl.SetLogger(bootstrapLogger)
 
 	serverCfg, logger, atomicLevel := loadGatewayConfig(configPath, bootstrapLogger)
+
+	if !bootstrapAmbientCATrustStep(logger, serverCfg) {
+		return 1
+	}
 
 	// GAP-14 / Issue #1519: OTel tracing bootstrap. Gateway is the trace root
 	// for the whole system -- it's the entry point that receives the signal

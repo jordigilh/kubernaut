@@ -39,6 +39,7 @@ import (
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -157,6 +158,7 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 	stopHotReload := wireHotReload(ctx, hotReloadParams{
 		Cfg: p.cfg, HTTPServer: httpServer, LLMRuntimePath: p.llmRuntimePath,
 		Swappable: p.swappable, PhaseResolver: p.phaseResolver, BootRuntime: p.bootRuntime, Logger: p.logger,
+		AuditStore: p.instrumentedAudit,
 	})
 
 	p.store.StartCleanupLoop(ctx, p.cfg.Runtime.Session.TTL/2)
@@ -284,6 +286,15 @@ func main() {
 	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
 
 	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
+
+	// Issue #2276: inject ambient CA trust before ANY outbound TLS call in
+	// this process (including telemetry.Bootstrap's OTel exporter just
+	// below) -- x509.SystemCertPool() is sync.Once-cached process-wide, so
+	// this MUST be the first thing done with a loaded config.
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		os.Exit(1)
+	}
 
 	if addr == "" {
 		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
@@ -491,6 +502,20 @@ func loadStartupConfig(configPath, llmRuntimePath string, bootstrapLogger logr.L
 	}
 
 	return cfg, llmRuntime, logger, atomicLevel
+}
+
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from main() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadStartupConfig, resolveLLMCredentials).
+//
+// Callers MUST invoke this immediately after config load, before any other
+// startup step that could perform an outbound TLS handshake (e.g.
+// telemetry.Bootstrap's OTel exporter) -- x509.SystemCertPool() is
+// sync.Once-cached process-wide, so injecting after the first handshake has
+// no effect (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *kaconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.Runtime.Server.TLSCAFile)
 }
 
 // resolveLLMCredentials resolves the LLM API key via static config

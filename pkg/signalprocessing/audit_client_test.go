@@ -304,6 +304,39 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 			Expect(mockStore.StoredEvents).To(HaveLen(2))
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// GAP-11 (Issue #2285): CA-cert hot-reload audit-trail parity
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	Describe("RecordConfigReloaded", func() {
+		It("UT-SP-2285-001: emits signalprocessing.config.reloaded on successful reload", func() {
+			auditClient.RecordConfigReloaded(ctx, "ca_cert", nil)
+
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+			Expect(event.EventType).To(Equal(audit.EventTypeConfigReloaded))
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
+
+			payload, ok := event.EventData.GetSignalProcessingConfigReloadedPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Component).To(Equal("ca_cert"))
+		})
+
+		It("UT-SP-2285-002: emits signalprocessing.config.rejected with reason on failed reload", func() {
+			reloadErr := errors.New("invalid PEM content")
+			auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+			Expect(event.EventType).To(Equal(audit.EventTypeConfigRejected))
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+
+			payload, ok := event.EventData.GetSignalProcessingConfigRejectedPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Component).To(Equal("ca_cert"))
+			Expect(payload.RejectionReason).To(Equal("invalid PEM content"))
+		})
+	})
 })
 
 // createTestSignalProcessing creates a minimal SignalProcessing for testing

@@ -110,6 +110,12 @@ fleet:
 # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
 debug:
   pprofEnabled: {{ $v.debug.pprofEnabled }}
+# Issue #2276: ambient CA trust is now sourced from resolved config
+# (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+# instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+# class of bug where two independently chart-rendered components declare
+# the same env var name and the Pod spec is rejected.
+tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
 {{- end }}
 ---
 apiVersion: v1
@@ -288,9 +294,6 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
-          env:
-            - name: TLS_CA_FILE
-              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           volumeMounts:
             - name: config
               mountPath: /etc/signalprocessing/config.yaml
@@ -302,6 +305,7 @@ spec:
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
               subPath: proactive-signal-mappings.yaml
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/signalprocessing/{{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}"
@@ -320,6 +324,7 @@ spec:
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:

@@ -233,6 +233,120 @@ func StartCAFileWatcher(ctx context.Context, logger logr.Logger, onReload ...fun
 	return watcher, nil
 }
 
+// defaultSystemCertFileCandidates mirrors the unexported certFiles list in
+// Go's crypto/x509/root_linux.go -- the stdlib has no exported API to read
+// the system trust store back out as PEM bytes (x509.CertPool cannot be
+// exported), so InjectAmbientCACerts locates the same well-known bundle
+// file directly in order to build a combined SSL_CERT_FILE. Order matches
+// upstream; the lookup stops at the first file that exists.
+var defaultSystemCertFileCandidates = []string{
+	"/etc/ssl/certs/ca-certificates.crt",                // Debian/Ubuntu/Gentoo
+	"/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora/RHEL (kubernaut's UBI base image)
+	"/etc/ssl/ca-bundle.pem",                            // OpenSUSE
+	"/etc/pki/tls/cacert.pem",                           // OpenELEC
+	"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7+ / UBI
+	"/etc/ssl/cert.pem",                                 // Alpine Linux
+}
+
+var systemCertFileCandidates = defaultSystemCertFileCandidates
+
+// SetSystemCertFileCandidatesForTesting overrides the well-known system CA
+// bundle paths InjectAmbientCACerts checks. Must only be called from test
+// code (mirrors ResetDefaultTransportForTesting's test-hook pattern).
+func SetSystemCertFileCandidatesForTesting(paths []string) {
+	systemCertFileCandidates = paths
+}
+
+// ResetSystemCertFileCandidatesForTesting restores the production list of
+// system CA bundle candidate paths. Must only be called from test code.
+func ResetSystemCertFileCandidatesForTesting() {
+	systemCertFileCandidates = defaultSystemCertFileCandidates
+}
+
+func readSystemCertBundle() ([]byte, string, error) {
+	for _, f := range systemCertFileCandidates {
+		if b, err := os.ReadFile(f); err == nil {
+			return b, f, nil
+		}
+	}
+	return nil, "", fmt.Errorf("no system CA bundle found in known locations")
+}
+
+// InjectAmbientCACerts derives the ambient SSL_CERT_FILE trust bundle
+// in-process from a service's own resolved config, so no deployer needs to
+// declare SSL_CERT_FILE as a static Pod-spec env: entry (Issue #2276) --
+// eliminating the class of bug where two independently chart-rendered
+// components declare the same env var name and the Pod spec is rejected.
+//
+// Combines the process's default system CA bundle (located via the same
+// well-known paths crypto/x509 itself checks, see
+// defaultSystemCertFileCandidates) with caFile's PEM content into one temp
+// file, then sets SSL_CERT_FILE to that combined path. This step is
+// necessary because setting SSL_CERT_FILE REPLACES -- not merges with --
+// the default system trust store (crypto/x509/root_unix.go), and
+// x509.CertPool has no API to export the system pool back to PEM for
+// combination; reading the well-known bundle file directly is the only way
+// to reproduce the "combined bundle" the reporter otherwise had to build by
+// hand.
+//
+// Also sets TLS_CA_FILE=caFile so every existing
+// DefaultBaseTransport/StartCAFileWatcher/NewTLSTransport call site (which
+// already reads TLS_CA_FILE via os.Getenv) keeps working unmodified -- only
+// the *source* of that env var moves from a static Pod-spec env: entry to
+// an in-process, config-derived os.Setenv.
+//
+// No-op (fail-open, matching BuildClientTLSConfig's empty-caFile precedent)
+// when caFile is empty. MUST be called before any TLS handshake in the
+// process: x509.SystemCertPool() is sync.Once-cached process-wide, so
+// calling this after the first outbound HTTPS call has no effect (spike-
+// verified, Issue #2276 preflight). Call as the first statement of run(),
+// immediately after config load and before any client/logger/OTel setup.
+func InjectAmbientCACerts(logger logr.Logger, caFile string) error {
+	if caFile == "" {
+		return nil
+	}
+
+	customPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("failed to read CA file %s: %w", caFile, err)
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(customPEM) {
+		return fmt.Errorf("failed to parse CA certificate from %s", caFile)
+	}
+
+	combined := make([]byte, 0, len(customPEM)+1)
+	combined = append(combined, customPEM...)
+	if systemPEM, systemFile, sysErr := readSystemCertBundle(); sysErr == nil {
+		combined = append(combined, '\n')
+		combined = append(combined, systemPEM...)
+		logger.V(1).Info("combined ambient CA bundle with system trust store", "systemBundle", systemFile)
+	} else {
+		logger.Info("no system CA bundle found in known locations; SSL_CERT_FILE will trust only the configured CA", "caFile", caFile)
+	}
+
+	tmpFile, err := os.CreateTemp("", "kubernaut-ambient-ca-*.pem")
+	if err != nil {
+		return fmt.Errorf("failed to create ambient CA bundle temp file: %w", err)
+	}
+	if _, err := tmpFile.Write(combined); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write ambient CA bundle: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close ambient CA bundle temp file: %w", err)
+	}
+
+	if err := os.Setenv("SSL_CERT_FILE", tmpFile.Name()); err != nil {
+		return fmt.Errorf("failed to set SSL_CERT_FILE: %w", err)
+	}
+	if err := os.Setenv("TLS_CA_FILE", caFile); err != nil {
+		return fmt.Errorf("failed to set TLS_CA_FILE: %w", err)
+	}
+
+	logger.Info("ambient CA trust injected", "caFile", caFile, "sslCertFile", tmpFile.Name())
+	return nil
+}
+
 // TLSTransportOption configures optional features on transports created by
 // NewTLSTransport. Use WithClientCert to enable mTLS.
 type TLSTransportOption func(*tlsTransportOpts)

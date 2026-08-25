@@ -421,3 +421,52 @@ var _ = Describe("AuditClient RecordRegoEvaluation outcome mapping", func() {
 		Expect(hasHash).To(BeFalse(), "no hash to attribute when no policy was loaded")
 	})
 })
+
+// ========================================
+// Unit Tests: RecordConfigReloaded (GAP-11, Issue #2285)
+// ========================================
+// BR-AUDIT-002 / DD-AUDIT-003: CA-cert hot-reload audit-trail parity with
+// Gateway's shipped gateway.config.{reloaded,rejected} events.
+var _ = Describe("AuditClient RecordConfigReloaded", func() {
+	var (
+		mockStore   *mockAuditStore
+		auditClient *audit.AuditClient
+		ctx         context.Context
+	)
+
+	BeforeEach(func() {
+		mockStore = newMockAuditStore()
+		auditClient = audit.NewAuditClient(mockStore, logr.Discard())
+		ctx = context.Background()
+	})
+
+	It("UT-AI-2285-001: should emit aianalysis.config.reloaded on successful reload", func() {
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", nil)
+
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		event := mockStore.StoredEvents[0]
+		Expect(event.EventType).To(Equal(audit.EventTypeConfigReloaded))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
+
+		Expect(event.EventData.IsAIAnalysisConfigReloadedPayload()).To(BeTrue())
+		payload, ok := event.EventData.GetAIAnalysisConfigReloadedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+	})
+
+	It("UT-AI-2285-002: should emit aianalysis.config.rejected with reason on failed reload", func() {
+		reloadErr := errors.New("invalid PEM content")
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		event := mockStore.StoredEvents[0]
+		Expect(event.EventType).To(Equal(audit.EventTypeConfigRejected))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+
+		Expect(event.EventData.IsAIAnalysisConfigRejectedPayload()).To(BeTrue())
+		payload, ok := event.EventData.GetAIAnalysisConfigRejectedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+		Expect(payload.RejectionReason).To(Equal("invalid PEM content"))
+	})
+})

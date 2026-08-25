@@ -763,6 +763,37 @@ Usage: {{ include "kubernaut.tlsCaVolume" . | nindent 8 }}
 {{- end }}
 
 {{/*
+Issue #2276: every service with readOnlyRootFilesystem: true (the default,
+see kubernaut.containerSecurityContext) needs a writable /tmp for
+sharedtls.InjectAmbientCACerts, which combines the system CA bundle with the
+service's configured CA into a temp file via os.CreateTemp("", ...) --
+Go's os.TempDir() resolves to /tmp on Linux and cannot be redirected via
+config. Without this mount the container crashes with "open
+/tmp/kubernaut-ambient-ca-*.pem: read-only file system" the moment its
+resolved TLSCAFile/interService.caFile is non-empty (spike-verified against
+the must-gather-e2e CI failure on PR #2288). Mount unconditionally --
+InjectAmbientCACerts itself no-ops when the CA file is empty, so this is a
+no-cost safety net for the common case where a CA file IS configured.
+Usage: {{ include "kubernaut.tmpVolumeMount" . | nindent 12 }}
+*/}}
+{{- define "kubernaut.tmpVolumeMount" -}}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+
+{{/*
+Companion emptyDir for kubernaut.tmpVolumeMount. sizeLimit is generous
+enough for the combined CA bundle (system bundle + custom CA, typically
+well under 1Mi) with headroom.
+Usage: {{ include "kubernaut.tmpVolume" . | nindent 8 }}
+*/}}
+{{- define "kubernaut.tmpVolume" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: 8Mi
+{{- end }}
+
+{{/*
 Common `metadata:` block for a NetworkPolicy manifest: name
 ({{ kubernaut.fullname }}-<nameSuffix>), namespace, and labels
 (app: <appLabel> plus kubernaut.labels). Identical across every

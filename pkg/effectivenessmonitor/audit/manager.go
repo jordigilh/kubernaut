@@ -44,6 +44,16 @@ const (
 	ActionDetected  = "detected"
 )
 
+// Config hot-reload audit-trail parity event types (GAP-11, Issue #2285):
+// mirrors gateway.config.{reloaded,rejected}'s component-based shape. Uses
+// the "effectiveness" prefix (not "effectivenessmonitor") to match this
+// service's existing event-type naming convention (e.g. effectiveness.health.assessed)
+// and the OpenAPI payload's own event_type enum value.
+const (
+	EventTypeConfigReloaded = "effectiveness.config.reloaded"
+	EventTypeConfigRejected = "effectiveness.config.rejected"
+)
+
 // componentEventTypeMapping maps EM component types to their audit event type
 // and the ogen constructor for AuditEventRequestEventData.
 type componentEventConfig struct {
@@ -742,6 +752,55 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 		"componentsAssessed", assessed,
 	)
 	return nil
+}
+
+// RecordConfigReloaded records a hot-reloadable component's reload outcome
+// (GAP-11, Issue #2285: CA hot-reload audit-trail parity). component
+// identifies which hot-reloadable component fired (e.g. "ca_cert" for the
+// TLS_CA_FILE watcher); reloadErr is nil on success (emits
+// effectivenessmonitor.config.reloaded) or non-nil on rejection, in which
+// case the previous configuration is kept in place (emits
+// effectivenessmonitor.config.rejected).
+//
+// Mirrors Gateway's EmitConfigReloadAudit shape (pkg/gateway/audit_emission.go),
+// the shipped reference implementation for this exact event pair. Unlike the
+// other Record* methods on Manager, this event is not tied to a specific
+// EffectivenessAssessment resource (process-level config change), so
+// resource fields reference "Config" instead.
+func (m *Manager) RecordConfigReloaded(ctx context.Context, component string, reloadErr error) {
+	if m.store == nil {
+		m.logger.V(1).Info("AuditStore is nil, skipping config reload audit event", "component", component)
+		return
+	}
+
+	event := pkgaudit.NewAuditEventRequest()
+	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
+	pkgaudit.SetActor(event, "service", ServiceName)
+	pkgaudit.SetResource(event, "Config", component)
+	pkgaudit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+
+	if reloadErr != nil {
+		pkgaudit.SetEventType(event, EventTypeConfigRejected)
+		pkgaudit.SetEventAction(event, "rejected")
+		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeFailure)
+		event.EventData = ogenclient.NewEffectivenessConfigRejectedPayloadAuditEventRequestEventData(ogenclient.EffectivenessConfigRejectedPayload{
+			EventType:       ogenclient.EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected,
+			Component:       component,
+			RejectionReason: reloadErr.Error(),
+		})
+	} else {
+		pkgaudit.SetEventType(event, EventTypeConfigReloaded)
+		pkgaudit.SetEventAction(event, "reloaded")
+		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+		event.EventData = ogenclient.NewEffectivenessConfigReloadedPayloadAuditEventRequestEventData(ogenclient.EffectivenessConfigReloadedPayload{
+			EventType: ogenclient.EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded,
+			Component: component,
+		})
+	}
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "Failed to store config reload audit event", "component", component)
+	}
 }
 
 // buildAssessmentCompletedPayload builds the EffectivenessAssessmentAuditPayload

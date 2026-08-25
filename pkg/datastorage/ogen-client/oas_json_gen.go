@@ -935,6 +935,338 @@ func (s *AIAgentAuthFailurePayloadEventType) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfAIAgentConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes AIAgentConfigRejectedPayload from json.
+func (s *AIAgentConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentConfigRejectedPayload) {
+					name = jsonFieldsNameOfAIAgentConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentConfigRejectedPayloadEventType as json.
+func (s AIAgentConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentConfigRejectedPayloadEventType from json.
+func (s *AIAgentConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentConfigRejectedPayloadEventType(v) {
+	case AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected:
+		*s = AIAgentConfigRejectedPayloadEventTypeAiagentConfigRejected
+	default:
+		*s = AIAgentConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes AIAgentConfigReloadedPayload from json.
+func (s *AIAgentConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentConfigReloadedPayload) {
+					name = jsonFieldsNameOfAIAgentConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentConfigReloadedPayloadEventType as json.
+func (s AIAgentConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentConfigReloadedPayloadEventType from json.
+func (s *AIAgentConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentConfigReloadedPayloadEventType(v) {
+	case AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded:
+		*s = AIAgentConfigReloadedPayloadEventTypeAiagentConfigReloaded
+	default:
+		*s = AIAgentConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentEnrichmentCompletedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -5777,6 +6109,338 @@ func (s AIAnalysisAuditPayloadPhase) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AIAnalysisAuditPayloadPhase) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAnalysisConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAnalysisConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfAIAnalysisConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes AIAnalysisConfigRejectedPayload from json.
+func (s *AIAnalysisConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAnalysisConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAnalysisConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAnalysisConfigRejectedPayload) {
+					name = jsonFieldsNameOfAIAnalysisConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAnalysisConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAnalysisConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAnalysisConfigRejectedPayloadEventType as json.
+func (s AIAnalysisConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAnalysisConfigRejectedPayloadEventType from json.
+func (s *AIAnalysisConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAnalysisConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAnalysisConfigRejectedPayloadEventType(v) {
+	case AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected:
+		*s = AIAnalysisConfigRejectedPayloadEventTypeAianalysisConfigRejected
+	default:
+		*s = AIAnalysisConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAnalysisConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAnalysisConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAnalysisConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAnalysisConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAnalysisConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes AIAnalysisConfigReloadedPayload from json.
+func (s *AIAnalysisConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAnalysisConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAnalysisConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAnalysisConfigReloadedPayload) {
+					name = jsonFieldsNameOfAIAnalysisConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAnalysisConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAnalysisConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAnalysisConfigReloadedPayloadEventType as json.
+func (s AIAnalysisConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAnalysisConfigReloadedPayloadEventType from json.
+func (s *AIAnalysisConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAnalysisConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAnalysisConfigReloadedPayloadEventType(v) {
+	case AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded:
+		*s = AIAnalysisConfigReloadedPayloadEventTypeAianalysisConfigReloaded
+	default:
+		*s = AIAnalysisConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAnalysisConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAnalysisConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -19047,6 +19711,276 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.RejectionReason)
 			}
 		}
+	case AIAnalysisConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aianalysis.config.reloaded")
+		{
+			s := s.AIAnalysisConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AIAnalysisConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aianalysis.config.rejected")
+		{
+			s := s.AIAnalysisConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case EffectivenessConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("effectiveness.config.reloaded")
+		{
+			s := s.EffectivenessConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case EffectivenessConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("effectiveness.config.rejected")
+		{
+			s := s.EffectivenessConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case NotificationConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("notification.config.reloaded")
+		{
+			s := s.NotificationConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case NotificationConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("notification.config.rejected")
+		{
+			s := s.NotificationConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("orchestrator.config.reloaded")
+		{
+			s := s.RemediationOrchestratorConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("orchestrator.config.rejected")
+		{
+			s := s.RemediationOrchestratorConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case SignalProcessingConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("signalprocessing.config.reloaded")
+		{
+			s := s.SignalProcessingConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case SignalProcessingConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("signalprocessing.config.rejected")
+		{
+			s := s.SignalProcessingConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case WorkflowExecutionConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("workflowexecution.config.reloaded")
+		{
+			s := s.WorkflowExecutionConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case WorkflowExecutionConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("workflowexecution.config.rejected")
+		{
+			s := s.WorkflowExecutionConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case AuthwebhookConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.config.reloaded")
+		{
+			s := s.AuthwebhookConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AuthwebhookConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.config.rejected")
+		{
+			s := s.AuthwebhookConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case AIAgentConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.config.reloaded")
+		{
+			s := s.AIAgentConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AIAgentConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.config.rejected")
+		{
+			s := s.AIAgentConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case DatastorageConfigReloadedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("datastorage.config.reloaded")
+		{
+			s := s.DatastorageConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case DatastorageConfigRejectedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("datastorage.config.rejected")
+		{
+			s := s.DatastorageConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
 	}
 }
 
@@ -19499,6 +20433,60 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "gateway.config.rejected":
 					s.Type = GatewayConfigRejectedPayloadAuditEventEventData
 					found = true
+				case "aianalysis.config.reloaded":
+					s.Type = AIAnalysisConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "aianalysis.config.rejected":
+					s.Type = AIAnalysisConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "effectiveness.config.reloaded":
+					s.Type = EffectivenessConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "effectiveness.config.rejected":
+					s.Type = EffectivenessConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "notification.config.reloaded":
+					s.Type = NotificationConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "notification.config.rejected":
+					s.Type = NotificationConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "orchestrator.config.reloaded":
+					s.Type = RemediationOrchestratorConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "orchestrator.config.rejected":
+					s.Type = RemediationOrchestratorConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "signalprocessing.config.reloaded":
+					s.Type = SignalProcessingConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "signalprocessing.config.rejected":
+					s.Type = SignalProcessingConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "workflowexecution.config.reloaded":
+					s.Type = WorkflowExecutionConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "workflowexecution.config.rejected":
+					s.Type = WorkflowExecutionConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "authwebhook.config.reloaded":
+					s.Type = AuthwebhookConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "authwebhook.config.rejected":
+					s.Type = AuthwebhookConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "aiagent.config.reloaded":
+					s.Type = AIAgentConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "aiagent.config.rejected":
+					s.Type = AIAgentConfigRejectedPayloadAuditEventEventData
+					found = true
+				case "datastorage.config.reloaded":
+					s.Type = DatastorageConfigReloadedPayloadAuditEventEventData
+					found = true
+				case "datastorage.config.rejected":
+					s.Type = DatastorageConfigRejectedPayloadAuditEventEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -19887,6 +20875,78 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case GatewayConfigRejectedPayloadAuditEventEventData:
 		if err := s.GatewayConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAnalysisConfigReloadedPayloadAuditEventEventData:
+		if err := s.AIAnalysisConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAnalysisConfigRejectedPayloadAuditEventEventData:
+		if err := s.AIAnalysisConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case EffectivenessConfigReloadedPayloadAuditEventEventData:
+		if err := s.EffectivenessConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case EffectivenessConfigRejectedPayloadAuditEventEventData:
+		if err := s.EffectivenessConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case NotificationConfigReloadedPayloadAuditEventEventData:
+		if err := s.NotificationConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case NotificationConfigRejectedPayloadAuditEventEventData:
+		if err := s.NotificationConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventEventData:
+		if err := s.RemediationOrchestratorConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventEventData:
+		if err := s.RemediationOrchestratorConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case SignalProcessingConfigReloadedPayloadAuditEventEventData:
+		if err := s.SignalProcessingConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case SignalProcessingConfigRejectedPayloadAuditEventEventData:
+		if err := s.SignalProcessingConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowExecutionConfigReloadedPayloadAuditEventEventData:
+		if err := s.WorkflowExecutionConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowExecutionConfigRejectedPayloadAuditEventEventData:
+		if err := s.WorkflowExecutionConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookConfigReloadedPayloadAuditEventEventData:
+		if err := s.AuthwebhookConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookConfigRejectedPayloadAuditEventEventData:
+		if err := s.AuthwebhookConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentConfigReloadedPayloadAuditEventEventData:
+		if err := s.AIAgentConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentConfigRejectedPayloadAuditEventEventData:
+		if err := s.AIAgentConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case DatastorageConfigReloadedPayloadAuditEventEventData:
+		if err := s.DatastorageConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case DatastorageConfigRejectedPayloadAuditEventEventData:
+		if err := s.DatastorageConfigRejectedPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -24091,6 +25151,276 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.RejectionReason)
 			}
 		}
+	case AIAnalysisConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aianalysis.config.reloaded")
+		{
+			s := s.AIAnalysisConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AIAnalysisConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aianalysis.config.rejected")
+		{
+			s := s.AIAnalysisConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case EffectivenessConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("effectiveness.config.reloaded")
+		{
+			s := s.EffectivenessConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case EffectivenessConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("effectiveness.config.rejected")
+		{
+			s := s.EffectivenessConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case NotificationConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("notification.config.reloaded")
+		{
+			s := s.NotificationConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case NotificationConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("notification.config.rejected")
+		{
+			s := s.NotificationConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("orchestrator.config.reloaded")
+		{
+			s := s.RemediationOrchestratorConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("orchestrator.config.rejected")
+		{
+			s := s.RemediationOrchestratorConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case SignalProcessingConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("signalprocessing.config.reloaded")
+		{
+			s := s.SignalProcessingConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case SignalProcessingConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("signalprocessing.config.rejected")
+		{
+			s := s.SignalProcessingConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("workflowexecution.config.reloaded")
+		{
+			s := s.WorkflowExecutionConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("workflowexecution.config.rejected")
+		{
+			s := s.WorkflowExecutionConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case AuthwebhookConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.config.reloaded")
+		{
+			s := s.AuthwebhookConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AuthwebhookConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.config.rejected")
+		{
+			s := s.AuthwebhookConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case AIAgentConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.config.reloaded")
+		{
+			s := s.AIAgentConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case AIAgentConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.config.rejected")
+		{
+			s := s.AIAgentConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
+	case DatastorageConfigReloadedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("datastorage.config.reloaded")
+		{
+			s := s.DatastorageConfigReloadedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				if s.ConfigVersion.Set {
+					e.FieldStart("config_version")
+					s.ConfigVersion.Encode(e)
+				}
+			}
+		}
+	case DatastorageConfigRejectedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("datastorage.config.rejected")
+		{
+			s := s.DatastorageConfigRejectedPayload
+			{
+				e.FieldStart("component")
+				e.Str(s.Component)
+			}
+			{
+				e.FieldStart("rejection_reason")
+				e.Str(s.RejectionReason)
+			}
+		}
 	}
 }
 
@@ -24543,6 +25873,60 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "gateway.config.rejected":
 					s.Type = GatewayConfigRejectedPayloadAuditEventRequestEventData
 					found = true
+				case "aianalysis.config.reloaded":
+					s.Type = AIAnalysisConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "aianalysis.config.rejected":
+					s.Type = AIAnalysisConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "effectiveness.config.reloaded":
+					s.Type = EffectivenessConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "effectiveness.config.rejected":
+					s.Type = EffectivenessConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "notification.config.reloaded":
+					s.Type = NotificationConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "notification.config.rejected":
+					s.Type = NotificationConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "orchestrator.config.reloaded":
+					s.Type = RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "orchestrator.config.rejected":
+					s.Type = RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "signalprocessing.config.reloaded":
+					s.Type = SignalProcessingConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "signalprocessing.config.rejected":
+					s.Type = SignalProcessingConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "workflowexecution.config.reloaded":
+					s.Type = WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "workflowexecution.config.rejected":
+					s.Type = WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "authwebhook.config.reloaded":
+					s.Type = AuthwebhookConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "authwebhook.config.rejected":
+					s.Type = AuthwebhookConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.config.reloaded":
+					s.Type = AIAgentConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.config.rejected":
+					s.Type = AIAgentConfigRejectedPayloadAuditEventRequestEventData
+					found = true
+				case "datastorage.config.reloaded":
+					s.Type = DatastorageConfigReloadedPayloadAuditEventRequestEventData
+					found = true
+				case "datastorage.config.rejected":
+					s.Type = DatastorageConfigRejectedPayloadAuditEventRequestEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -24931,6 +26315,78 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case GatewayConfigRejectedPayloadAuditEventRequestEventData:
 		if err := s.GatewayConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAnalysisConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AIAnalysisConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAnalysisConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AIAnalysisConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case EffectivenessConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.EffectivenessConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case EffectivenessConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.EffectivenessConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case NotificationConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.NotificationConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case NotificationConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.NotificationConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationOrchestratorConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.RemediationOrchestratorConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationOrchestratorConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.RemediationOrchestratorConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case SignalProcessingConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.SignalProcessingConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case SignalProcessingConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.SignalProcessingConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowExecutionConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.WorkflowExecutionConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowExecutionConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.WorkflowExecutionConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AuthwebhookConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AuthwebhookConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentConfigRejectedPayload.Decode(d); err != nil {
+			return err
+		}
+	case DatastorageConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.DatastorageConfigReloadedPayload.Decode(d); err != nil {
+			return err
+		}
+	case DatastorageConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.DatastorageConfigRejectedPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -26401,6 +27857,338 @@ func (s *AuditExportResponseHashChainVerification) UnmarshalJSON(data []byte) er
 }
 
 // Encode implements json.Marshaler.
+func (s *AuthwebhookConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AuthwebhookConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfAuthwebhookConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes AuthwebhookConfigRejectedPayload from json.
+func (s *AuthwebhookConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AuthwebhookConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAuthwebhookConfigRejectedPayload) {
+					name = jsonFieldsNameOfAuthwebhookConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AuthwebhookConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AuthwebhookConfigRejectedPayloadEventType as json.
+func (s AuthwebhookConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AuthwebhookConfigRejectedPayloadEventType from json.
+func (s *AuthwebhookConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AuthwebhookConfigRejectedPayloadEventType(v) {
+	case AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected:
+		*s = AuthwebhookConfigRejectedPayloadEventTypeAuthwebhookConfigRejected
+	default:
+		*s = AuthwebhookConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AuthwebhookConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AuthwebhookConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AuthwebhookConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAuthwebhookConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes AuthwebhookConfigReloadedPayload from json.
+func (s *AuthwebhookConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AuthwebhookConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAuthwebhookConfigReloadedPayload) {
+					name = jsonFieldsNameOfAuthwebhookConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AuthwebhookConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AuthwebhookConfigReloadedPayloadEventType as json.
+func (s AuthwebhookConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AuthwebhookConfigReloadedPayloadEventType from json.
+func (s *AuthwebhookConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AuthwebhookConfigReloadedPayloadEventType(v) {
+	case AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded:
+		*s = AuthwebhookConfigReloadedPayloadEventTypeAuthwebhookConfigReloaded
+	default:
+		*s = AuthwebhookConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AuthwebhookConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AuthwebhookWorkflowRegistrationFailedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -27212,6 +29000,338 @@ func (s CustomLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CustomLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *DatastorageConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *DatastorageConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfDatastorageConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes DatastorageConfigRejectedPayload from json.
+func (s *DatastorageConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DatastorageConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode DatastorageConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfDatastorageConfigRejectedPayload) {
+					name = jsonFieldsNameOfDatastorageConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DatastorageConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DatastorageConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DatastorageConfigRejectedPayloadEventType as json.
+func (s DatastorageConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes DatastorageConfigRejectedPayloadEventType from json.
+func (s *DatastorageConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DatastorageConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch DatastorageConfigRejectedPayloadEventType(v) {
+	case DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected:
+		*s = DatastorageConfigRejectedPayloadEventTypeDatastorageConfigRejected
+	default:
+		*s = DatastorageConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s DatastorageConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DatastorageConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *DatastorageConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *DatastorageConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfDatastorageConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes DatastorageConfigReloadedPayload from json.
+func (s *DatastorageConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DatastorageConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode DatastorageConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfDatastorageConfigReloadedPayload) {
+					name = jsonFieldsNameOfDatastorageConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DatastorageConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DatastorageConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DatastorageConfigReloadedPayloadEventType as json.
+func (s DatastorageConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes DatastorageConfigReloadedPayloadEventType from json.
+func (s *DatastorageConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DatastorageConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch DatastorageConfigReloadedPayloadEventType(v) {
+	case DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded:
+		*s = DatastorageConfigReloadedPayloadEventTypeDatastorageConfigReloaded
+	default:
+		*s = DatastorageConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s DatastorageConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DatastorageConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -29496,6 +31616,338 @@ func (s *EffectivenessComponents) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *EffectivenessComponents) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfEffectivenessConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes EffectivenessConfigRejectedPayload from json.
+func (s *EffectivenessConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfEffectivenessConfigRejectedPayload) {
+					name = jsonFieldsNameOfEffectivenessConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessConfigRejectedPayloadEventType as json.
+func (s EffectivenessConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EffectivenessConfigRejectedPayloadEventType from json.
+func (s *EffectivenessConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EffectivenessConfigRejectedPayloadEventType(v) {
+	case EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected:
+		*s = EffectivenessConfigRejectedPayloadEventTypeEffectivenessConfigRejected
+	default:
+		*s = EffectivenessConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EffectivenessConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes EffectivenessConfigReloadedPayload from json.
+func (s *EffectivenessConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfEffectivenessConfigReloadedPayload) {
+					name = jsonFieldsNameOfEffectivenessConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessConfigReloadedPayloadEventType as json.
+func (s EffectivenessConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EffectivenessConfigReloadedPayloadEventType from json.
+func (s *EffectivenessConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EffectivenessConfigReloadedPayloadEventType(v) {
+	case EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded:
+		*s = EffectivenessConfigReloadedPayloadEventTypeEffectivenessConfigReloaded
+	default:
+		*s = EffectivenessConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EffectivenessConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -34956,6 +37408,338 @@ func (s NotificationAuditStatus) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *NotificationAuditStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *NotificationConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *NotificationConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfNotificationConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes NotificationConfigRejectedPayload from json.
+func (s *NotificationConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode NotificationConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfNotificationConfigRejectedPayload) {
+					name = jsonFieldsNameOfNotificationConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *NotificationConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NotificationConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes NotificationConfigRejectedPayloadEventType as json.
+func (s NotificationConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes NotificationConfigRejectedPayloadEventType from json.
+func (s *NotificationConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch NotificationConfigRejectedPayloadEventType(v) {
+	case NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected:
+		*s = NotificationConfigRejectedPayloadEventTypeNotificationConfigRejected
+	default:
+		*s = NotificationConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s NotificationConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NotificationConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *NotificationConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *NotificationConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfNotificationConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes NotificationConfigReloadedPayload from json.
+func (s *NotificationConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode NotificationConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfNotificationConfigReloadedPayload) {
+					name = jsonFieldsNameOfNotificationConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *NotificationConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NotificationConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes NotificationConfigReloadedPayloadEventType as json.
+func (s NotificationConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes NotificationConfigReloadedPayloadEventType from json.
+func (s *NotificationConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch NotificationConfigReloadedPayloadEventType(v) {
+	case NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded:
+		*s = NotificationConfigReloadedPayloadEventTypeNotificationConfigReloaded
+	default:
+		*s = NotificationConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s NotificationConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *NotificationConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -43435,6 +46219,338 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalJSON(data []byte) 
 }
 
 // Encode implements json.Marshaler.
+func (s *RemediationOrchestratorConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationOrchestratorConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfRemediationOrchestratorConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes RemediationOrchestratorConfigRejectedPayload from json.
+func (s *RemediationOrchestratorConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationOrchestratorConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationOrchestratorConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationOrchestratorConfigRejectedPayload) {
+					name = jsonFieldsNameOfRemediationOrchestratorConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationOrchestratorConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationOrchestratorConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationOrchestratorConfigRejectedPayloadEventType as json.
+func (s RemediationOrchestratorConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationOrchestratorConfigRejectedPayloadEventType from json.
+func (s *RemediationOrchestratorConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationOrchestratorConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationOrchestratorConfigRejectedPayloadEventType(v) {
+	case RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected:
+		*s = RemediationOrchestratorConfigRejectedPayloadEventTypeOrchestratorConfigRejected
+	default:
+		*s = RemediationOrchestratorConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationOrchestratorConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationOrchestratorConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationOrchestratorConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationOrchestratorConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationOrchestratorConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes RemediationOrchestratorConfigReloadedPayload from json.
+func (s *RemediationOrchestratorConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationOrchestratorConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationOrchestratorConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationOrchestratorConfigReloadedPayload) {
+					name = jsonFieldsNameOfRemediationOrchestratorConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationOrchestratorConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationOrchestratorConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationOrchestratorConfigReloadedPayloadEventType as json.
+func (s RemediationOrchestratorConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationOrchestratorConfigReloadedPayloadEventType from json.
+func (s *RemediationOrchestratorConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationOrchestratorConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationOrchestratorConfigReloadedPayloadEventType(v) {
+	case RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded:
+		*s = RemediationOrchestratorConfigReloadedPayloadEventTypeOrchestratorConfigReloaded
+	default:
+		*s = RemediationOrchestratorConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationOrchestratorConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationOrchestratorConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *RemediationRequestWebhookAuditPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -47151,6 +50267,338 @@ func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalJSON(data []byte) erro
 }
 
 // Encode implements json.Marshaler.
+func (s *SignalProcessingConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SignalProcessingConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfSignalProcessingConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes SignalProcessingConfigRejectedPayload from json.
+func (s *SignalProcessingConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SignalProcessingConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSignalProcessingConfigRejectedPayload) {
+					name = jsonFieldsNameOfSignalProcessingConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SignalProcessingConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingConfigRejectedPayloadEventType as json.
+func (s SignalProcessingConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalProcessingConfigRejectedPayloadEventType from json.
+func (s *SignalProcessingConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalProcessingConfigRejectedPayloadEventType(v) {
+	case SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected:
+		*s = SignalProcessingConfigRejectedPayloadEventTypeSignalprocessingConfigRejected
+	default:
+		*s = SignalProcessingConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalProcessingConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SignalProcessingConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SignalProcessingConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSignalProcessingConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes SignalProcessingConfigReloadedPayload from json.
+func (s *SignalProcessingConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SignalProcessingConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSignalProcessingConfigReloadedPayload) {
+					name = jsonFieldsNameOfSignalProcessingConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SignalProcessingConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingConfigReloadedPayloadEventType as json.
+func (s SignalProcessingConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalProcessingConfigReloadedPayloadEventType from json.
+func (s *SignalProcessingConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalProcessingConfigReloadedPayloadEventType(v) {
+	case SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded:
+		*s = SignalProcessingConfigReloadedPayloadEventTypeSignalprocessingConfigReloaded
+	default:
+		*s = SignalProcessingConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalProcessingConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *StructuredDescription) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -49482,6 +52930,338 @@ func (s WorkflowExecutionAuditPayloadPhase) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowExecutionAuditPayloadPhase) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowExecutionConfigRejectedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowExecutionConfigRejectedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		e.FieldStart("rejection_reason")
+		e.Str(s.RejectionReason)
+	}
+}
+
+var jsonFieldsNameOfWorkflowExecutionConfigRejectedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "rejection_reason",
+}
+
+// Decode decodes WorkflowExecutionConfigRejectedPayload from json.
+func (s *WorkflowExecutionConfigRejectedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowExecutionConfigRejectedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "rejection_reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.RejectionReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rejection_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowExecutionConfigRejectedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowExecutionConfigRejectedPayload) {
+					name = jsonFieldsNameOfWorkflowExecutionConfigRejectedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowExecutionConfigRejectedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowExecutionConfigRejectedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowExecutionConfigRejectedPayloadEventType as json.
+func (s WorkflowExecutionConfigRejectedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowExecutionConfigRejectedPayloadEventType from json.
+func (s *WorkflowExecutionConfigRejectedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowExecutionConfigRejectedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowExecutionConfigRejectedPayloadEventType(v) {
+	case WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected:
+		*s = WorkflowExecutionConfigRejectedPayloadEventTypeWorkflowexecutionConfigRejected
+	default:
+		*s = WorkflowExecutionConfigRejectedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowExecutionConfigRejectedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowExecutionConfigRejectedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowExecutionConfigReloadedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowExecutionConfigReloadedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("component")
+		e.Str(s.Component)
+	}
+	{
+		if s.ConfigVersion.Set {
+			e.FieldStart("config_version")
+			s.ConfigVersion.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowExecutionConfigReloadedPayload = [3]string{
+	0: "event_type",
+	1: "component",
+	2: "config_version",
+}
+
+// Decode decodes WorkflowExecutionConfigReloadedPayload from json.
+func (s *WorkflowExecutionConfigReloadedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowExecutionConfigReloadedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Component = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "config_version":
+			if err := func() error {
+				s.ConfigVersion.Reset()
+				if err := s.ConfigVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"config_version\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowExecutionConfigReloadedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowExecutionConfigReloadedPayload) {
+					name = jsonFieldsNameOfWorkflowExecutionConfigReloadedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowExecutionConfigReloadedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowExecutionConfigReloadedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowExecutionConfigReloadedPayloadEventType as json.
+func (s WorkflowExecutionConfigReloadedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowExecutionConfigReloadedPayloadEventType from json.
+func (s *WorkflowExecutionConfigReloadedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowExecutionConfigReloadedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowExecutionConfigReloadedPayloadEventType(v) {
+	case WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded:
+		*s = WorkflowExecutionConfigReloadedPayloadEventTypeWorkflowexecutionConfigReloaded
+	default:
+		*s = WorkflowExecutionConfigReloadedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowExecutionConfigReloadedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowExecutionConfigReloadedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -133,6 +133,21 @@ func loadSignalProcessingConfig(configFile string, atomicLevel zaplog.AtomicLeve
 	return cfg, controllerNS
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadSignalProcessingConfig,
+// buildSignalProcessingManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// wireSignalProcessingAudit's DataStorage HTTP client (the first outbound
+// TLS call this process makes) -- x509.SystemCertPool() is sync.Once-cached
+// process-wide, so injecting after the first handshake has no effect
+// (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
 // buildSignalProcessingManager creates the controller manager with the
 // namespace-restricted SignalProcessing cache and metrics/health-probe/
 // leader election settings from cfg (ADR-030). Exits the process on any
@@ -546,7 +561,7 @@ func setupSignalProcessingReconciler(
 // fails to start, matching main()'s original fail-fast behavior. Returns a
 // cleanup function that stops any watchers that were successfully started;
 // callers should defer the returned function.
-func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.Config, configFile string, atomicLevel zaplog.AtomicLevel) func() {
+func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.Config, configFile string, atomicLevel zaplog.AtomicLevel, auditClient *spaudit.AuditClient) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
@@ -555,7 +570,10 @@ func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.C
 
 	var cleanups []func()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog, func(reloadErr error) {
+		auditClient.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -616,6 +634,15 @@ func run() int {
 	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	cfg, controllerNS := loadSignalProcessingConfig(configFile, atomicLevel)
+
+	// Issue #2276: inject ambient CA trust before wireSignalProcessingAudit's
+	// DataStorage HTTP client -- the first outbound TLS call this process
+	// makes.
+	if err := bootstrapAmbientCATrust(setupLog, cfg); err != nil {
+		setupLog.Error(err, "Failed to inject ambient CA trust")
+		return 1
+	}
+
 	mgr := buildSignalProcessingManager(cfg, controllerNS)
 
 	// ADR-032: Audit is MANDATORY - controller will crash if not configured
@@ -644,7 +671,7 @@ func run() int {
 
 	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment, fleetGate, dsGate)
 
-	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel)
+	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel, auditClient)
 	defer cleanupHotReload()
 
 	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
