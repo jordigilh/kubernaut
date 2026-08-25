@@ -415,26 +415,43 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string 
 
 // consentGatePhase2AttemptScenarioYAML returns a keyword scenario for
 // E2E-FP-1899-001 (DD-AF-011, issue #1899 Phase 1->2 consent gate): a single
-// message chains kubernaut_remediate -> kubernaut_investigate (declaring
-// interaction_mode=interactive explicitly) -> a same-turn fire-and-forget
+// message calls kubernaut_investigate directly on resource args (declaring
+// interaction_mode=interactive explicitly), then a same-turn fire-and-forget
 // attempt at kubernaut_discover_workflows with no intervening genuine user
 // message -- the literal #1899 repro. The real AF/A2A stack must
-// structurally block the 3rd hop (checkpointToolFilter removes the tool
+// structurally block the 2nd hop (checkpointToolFilter removes the tool
 // from the model's tool list; phaseGuardBefore hard-rejects it as a
 // defense-in-depth backstop even though this scripted mock-LLM "misbehaves"
 // and attempts the call anyway), so no WorkflowExecution is ever created
 // from this single turn.
 //
-// Starting from kubernaut_remediate (rather than kubernaut_investigate
-// directly, as fullInteractiveRemediationScenarioYAML above does) is
-// deliberate: it puts a kubernaut_remediate response in the conversation
-// history, which the existing af_discover_workflows/af_select_workflow/
-// af_watch keyword scenarios below require to resolve their own
-// $from_tool:kubernaut_remediate:rr_id argument -- letting the test's
-// genuine follow-up turns (proving the journey completes once the user
-// actually confirms) reuse those scenarios exactly as 08's multi-turn
-// interactive flow already does, with zero further new scenarios. Returns
-// "" if ns is empty.
+// Root-cause correction (2026-08-25, recurrence of #2265 tracked flake,
+// confirmed via must-gather RCA on CI run 32847902064): this scenario
+// previously started from kubernaut_remediate (rather than
+// kubernaut_investigate directly, as fullInteractiveRemediationScenarioYAML
+// above does) to seed a $from_tool:kubernaut_remediate:rr_id reference for
+// later turns. That was a genuine test-design gap, not a harness bug:
+// kubernaut_remediate's RR is visible to RO/AA/KA the instant it's created,
+// with NO interactivity signal attached, so the backend autonomously
+// investigates and (independently of anything AF's chat session does)
+// can select and execute a workflow before kubernaut_investigate's later
+// interaction_mode declaration ever reaches the harness -- confirmed via
+// must-gather timeline showing AIAnalysis+WorkflowExecution completing ~2s
+// after RR creation, long before AF's own consent-gate machinery engages.
+// kubernaut_investigate attaching to an *existing* RR is a best-effort
+// observability attach, not a consent veto over a decision the backend
+// already committed to autonomously. Only kubernaut_investigate's OWN
+// fresh-RR path (createRRForInvestigation's BeforeCreate hook,
+// buildPreCreateISHooks) guarantees the IS CRD exists *before* the RR
+// becomes visible to any other component (#2265's actual fix, DD-AA-KA-001
+// Gap 6) -- that ordering is what lets AA/KA correctly route this
+// investigation as interactive instead of autonomous, so no workflow is
+// ever autonomously selected in the first place. This scenario now calls
+// kubernaut_investigate on resource args directly (no kubernaut_remediate
+// hop at all), and af_discover_workflows_1899/af_select_discovered_workflow_1899/
+// af_watch_1899 below resolve their own $from_tool references from
+// kubernaut_investigate instead of kubernaut_remediate. Returns "" if ns is
+// empty.
 func consentGatePhase2AttemptScenarioYAML(ns string) string {
 	if ns == "" {
 		return ""
@@ -443,42 +460,38 @@ func consentGatePhase2AttemptScenarioYAML(ns string) string {
         keywords: ["create and investigate then sneak workflow discovery"]
         match_last_only: true
         tool_call:
-          name: "kubernaut_remediate"
+          name: "kubernaut_investigate"
           arguments:
             namespace: "%s"
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            description: "FP E2E consent-gate phase2 attempt request (#1899)"
-        next_tool_call:
-          name: "kubernaut_investigate"
-          arguments:
-            rr_id: "$from_tool:kubernaut_remediate:rr_id"
             interaction_mode: "interactive"
-          next_tool_call:
-            name: "kubernaut_discover_workflows"
-            arguments:
-              rr_id: "$from_tool:kubernaut_remediate:rr_id"
+        next_tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
 `, ns)
 }
 
 // consentGatePhase3AttemptScenarioYAML returns a keyword scenario for
 // E2E-FP-1899-002 (DD-AF-011, issue #1899 Phase 2->3 consent gate, the more
-// severe newly-discovered risk): a single message chains kubernaut_remediate
-// -> kubernaut_investigate (declaring interaction_mode=full_remediation,
+// severe newly-discovered risk): a single message calls kubernaut_investigate
+// directly on resource args (declaring interaction_mode=full_remediation,
 // legitimately authorizing the auto-chain into kubernaut_discover_workflows)
 // -> kubernaut_discover_workflows (succeeds) -> a same-turn fire-and-forget
 // attempt at kubernaut_select_workflow with a guessed workflow -- no user
-// confirmation. The gate must let the 3rd hop through (discover_workflows
-// succeeds, mode authorizes it) but block the 4th (select_workflow), so no
+// confirmation. The gate must let the 2nd hop through (discover_workflows
+// succeeds, mode authorizes it) but block the 3rd (select_workflow), so no
 // WorkflowExecution is ever created from this single turn. selectWorkflowID
 // must be the real seeded catalog UUID (see resolveWorkflowUUID) so that IF
 // the consent gate's defense-in-depth were to fail, the scripted call would
 // otherwise have succeeded -- an invalid placeholder ID would mask a gate
 // failure behind an unrelated invalid_workflow validation error, producing
-// a false-negative test. Starts from kubernaut_remediate for the same
-// $from_tool resolution reason as consentGatePhase2AttemptScenarioYAML
-// above. Returns "" if ns is empty.
+// a false-negative test. Calls kubernaut_investigate directly (no
+// kubernaut_remediate hop) for the same IS-before-RR ordering reason as
+// consentGatePhase2AttemptScenarioYAML's root-cause correction above.
+// Returns "" if ns is empty.
 func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
 	if ns == "" {
 		return ""
@@ -487,27 +500,22 @@ func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
         keywords: ["create and investigate then sneak workflow selection"]
         match_last_only: true
         tool_call:
-          name: "kubernaut_remediate"
+          name: "kubernaut_investigate"
           arguments:
             namespace: "%s"
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            description: "FP E2E consent-gate phase3 attempt request (#1899)"
-        next_tool_call:
-          name: "kubernaut_investigate"
-          arguments:
-            rr_id: "$from_tool:kubernaut_remediate:rr_id"
             interaction_mode: "full_remediation"
+        next_tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
           next_tool_call:
-            name: "kubernaut_discover_workflows"
+            name: "kubernaut_select_workflow"
             arguments:
-              rr_id: "$from_tool:kubernaut_remediate:rr_id"
-            next_tool_call:
-              name: "kubernaut_select_workflow"
-              arguments:
-                rr_id: "$from_tool:kubernaut_remediate:rr_id"
-                workflow_id: "%s"
+              rr_id: "$from_tool:kubernaut_investigate:rr_id"
+              workflow_id: "%s"
 `, ns, selectWorkflowID)
 }
 
@@ -801,6 +809,12 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       # issue #1834): an unresolved workflow_id fails kubernaut_select_workflow
       # with invalid_workflow, which would mask the consent gate's own PASS
       # behind an unrelated downstream error.
+      #
+      # Resolves rr_id from kubernaut_investigate (not kubernaut_remediate):
+      # consentGatePhase2/3AttemptScenarioYAML's Turn 1 no longer calls
+      # kubernaut_remediate at all (2026-08-25 root-cause correction, #2265
+      # recurrence) -- see those functions' doc comments for the full
+      # IS-before-RR ordering rationale.
       - name: "af_select_discovered_workflow_1899"
         keywords: ["select the discovered workflow"]
         match_last_only: true
@@ -808,8 +822,38 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
-            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
             workflow_id: "` + afSelectWorkflowID + `"
+      # af_discover_workflows_1899/af_watch_1899: dedicated to
+      # E2E-FP-1899-001/-002's genuine follow-up turns after Turn 1's fresh
+      # kubernaut_investigate call (2026-08-25 root-cause correction, #2265
+      # recurrence). Cannot reuse the shared af_discover_workflows/af_watch
+      # scenarios above, which resolve rr_id from
+      # $from_tool:kubernaut_remediate:rr_id -- these tests' Turn 1 never
+      # calls kubernaut_remediate (see consentGatePhase2/3AttemptScenarioYAML
+      # doc comments). Keyword phrasing is deliberately non-overlapping with
+      # "discover available workflows"/"discover workflows" and "watch
+      # remediation"/"watch pipeline"/"watch progress": mock-llm's registry
+      # breaks confidence ties (all keyword_scenarios score 1.0) by
+      # registration order, so a phrase that's a superset of an
+      # earlier-registered keyword would silently resolve to the wrong
+      # scenario instead of failing loudly.
+      - name: "af_discover_workflows_1899"
+        keywords: ["confirm discovery of workflows"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
+      - name: "af_watch_1899"
+        keywords: ["watch this remediation now"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            name: "$from_tool:kubernaut_investigate:rr_id"
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true
