@@ -200,4 +200,69 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 			return k8sClient.Status().Update(ctx, &latest)
 		}, timeout, interval).Should(Succeed(), "an update with an unchanged SelectedWorkflow value must not be rejected by the write-once CEL guard")
 	})
+
+	// ========================================
+	// IT-AA-2284-001 (Issue #2284)
+	// ========================================
+	// Authority: Issue #2284. Distinct from IT-AA-344-001 above: that test's
+	// "idempotent resubmit" step exercises a *populated* DeclaredParameterNames
+	// map (TARGET_NAMESPACE/REPLICAS). This test exercises DeclaredParameterNames
+	// == nil -- a legitimate, meaningful value (see WorkflowSnapshot's own doc
+	// comment: nil "no schema, no filtering" vs an empty map "strip
+	// everything" are distinct). On K8s v1.31.x, the CEL evaluator's
+	// "self == oldSelf" spuriously returns false when a nullable:true field
+	// holds nil on both sides, so identical-value resubmits of a
+	// nil-DeclaredParameterNames SelectedWorkflow were incorrectly rejected,
+	// causing AIAnalysisReconciler to retry forever (#2030 Part A's bounded
+	// retry-then-escalate never durably advances its counter either, since
+	// *that* write is rejected by the same bug -- see #2284/#2287 comments).
+	It("IT-AA-2284-001: tolerates idempotent resubmit when DeclaredParameterNames is nil, while still rejecting real tampering", func() {
+		defer func() {
+			_ = k8sClient.Delete(ctx, analysis)
+		}()
+
+		By("Creating the AIAnalysis CRD")
+		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+		By("First status write: setting SelectedWorkflow with nil DeclaredParameterNames must succeed")
+		now := metav1.Now()
+		firstSW := newSelectedWorkflow(&now, nil)
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+				return err
+			}
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = firstSW
+			return k8sClient.Status().Update(ctx, analysis)
+		}, timeout, interval).Should(Succeed(), "first write with nil DeclaredParameterNames must be accepted")
+
+		By("Re-reading the persisted SelectedWorkflow")
+		var persisted aianalysisv1.AIAnalysis
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &persisted)).To(Succeed())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil())
+		Expect(persisted.Status.GetRCAResult().SelectedWorkflow.DeclaredParameterNames).To(BeNil())
+
+		By("Resubmitting an identical value (nil DeclaredParameterNames) must succeed (Issue #2284 regression)")
+		// This is the exact incident-reproducing step: on the pre-fix CEL
+		// rule, this identical-value resubmit was rejected as Invalid,
+		// creating the infinite reconcile loop reported in #2284.
+		Eventually(func() error {
+			var latest aianalysisv1.AIAnalysis
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest); err != nil {
+				return err
+			}
+			return k8sClient.Status().Update(ctx, &latest)
+		}, timeout, interval).Should(Succeed(), "an update with an unchanged nil-DeclaredParameterNames SelectedWorkflow must not be rejected (Issue #2284)")
+
+		By("Tampering DeclaredParameterNames from nil to a populated map must still be rejected")
+		var lastErr error
+		Eventually(func() bool {
+			var latest aianalysisv1.AIAnalysis
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &latest)).To(Succeed())
+			latest.Status.RCAResult.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"INJECTED": true}
+			lastErr = k8sClient.Status().Update(ctx, &latest)
+			return lastErr == nil || !apierrors.IsConflict(lastErr)
+		}, timeout, interval).Should(BeTrue(), "gave up waiting for a definitive (non-conflict) write result")
+		Expect(lastErr).To(HaveOccurred(), "real tampering (nil -> populated) must still be rejected by the write-once guard")
+		Expect(apierrors.IsInvalid(lastErr)).To(BeTrue(), "expected an Invalid admission error, got: %v", lastErr)
+	})
 })
