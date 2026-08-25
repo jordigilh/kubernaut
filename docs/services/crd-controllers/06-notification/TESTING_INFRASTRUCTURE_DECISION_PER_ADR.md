@@ -1,4 +1,4 @@
-# Notification Service Testing Infrastructure Decision (Per ADR-004, ADR-016)
+# Notification Service Testing Infrastructure Decision (Per ADR-004, ADR-070)
 
 **Date**: October 13, 2025
 **Status**: ✅ **DECISION CLARIFIED**
@@ -16,8 +16,8 @@
 
 ## 📚 Relevant ADRs
 
-### ADR-016: Service-Specific Integration Test Infrastructure
-**Location**: `docs/architecture/decisions/ADR-016-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md`
+### ADR-070: Service-Specific Integration Test Infrastructure
+**Location**: `docs/architecture/decisions/ADR-070-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md`
 
 **Key Excerpt** (Line 76):
 ```
@@ -56,7 +56,7 @@
 ### ADR-003: Kind Cluster as Primary Integration Environment
 **Location**: `docs/architecture/decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md`
 
-**Status**: SUPERSEDED IN PART by ADR-016 (October 2025)
+**Status**: SUPERSEDED IN PART by ADR-070 (October 2025)
 
 **Current Scope**: Services requiring Kubernetes features (RBAC, TokenReview, Service Discovery)
 
@@ -179,7 +179,7 @@ k8sClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 - ✅ Fake client already used for unit tests
 - ✅ Kind unnecessary for CRD-only controllers
 
-#### 2. Aligns with ADR-016 Classification
+#### 2. Aligns with ADR-070 Classification
 - ✅ Notification Controller classified as "None" infrastructure
 - ✅ "CRD controller" - needs K8s API but not full cluster
 - ✅ ~5 sec startup target → envtest delivers 5-10s
@@ -253,7 +253,7 @@ k8sClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 - ✅ Integration tests should use **Envtest** (recommended, pending implementation)
 - ✅ E2E tests can use **Kind** (deferred per user preference)
 
-### ADR-016 Compliance
+### ADR-070 Compliance
 - ✅ Service classified correctly: "None" infrastructure (CRD controller)
 - ✅ No unnecessary Kubernetes features required
 - ✅ Target startup time: ~5 sec → Envtest delivers 5-10s ✅
@@ -304,7 +304,7 @@ go func() { err = k8sManager.Start(ctx) }()
 
 **Rationale**:
 1. ✅ Aligns with ADR-004 ("better suited for integration tests")
-2. ✅ Matches ADR-016 classification ("None" infrastructure, CRD controller)
+2. ✅ Matches ADR-070 classification ("None" infrastructure, CRD controller)
 3. ✅ Proven in existing codebase (remediation integration tests)
 4. ✅ 5-18x performance improvement over Kind
 5. ✅ Required for RemediationOrchestrator integration anyway
@@ -315,7 +315,7 @@ go func() { err = k8sManager.Start(ctx) }()
 
 ## 📝 ADR Update Recommendation
 
-**Suggestion**: Update ADR-016 to clarify "None" infrastructure for CRD controllers:
+**Suggestion**: Update ADR-070 to clarify "None" infrastructure for CRD controllers:
 
 ```diff
 | Service | Infrastructure | Dependencies | Startup Time | Rationale |

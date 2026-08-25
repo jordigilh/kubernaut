@@ -1,10 +1,22 @@
 # ADR-067: KA MCP Client with Dynamic Tool Discovery
 
-**Status**: Proposed
+**Status**: Superseded by [ADR-068](ADR-068-fleet-federation-architecture.md) (Fleet Federation Architecture)
 **Date**: 2026-06-15
 **Deciders**: Architecture Team
 **Context**: Fleet remediation (ACM) requires multi-cluster investigation via remote MCP servers
 **Related**: ADR-064 (Multi-Cluster MCP Gateway), ADR-065 (Fleet Cluster Identity on RR), Issue #54
+
+> **Superseded (Issue [#2254](https://github.com/jordigilh/kubernaut/issues/2254))**: The "Two
+> Deployment Topologies (User's Choice)" model below -- direct connections for small fleets,
+> MCP Gateway for large fleets -- is not what shipped. The actual v1.6 architecture
+> ([ADR-068](ADR-068-fleet-federation-architecture.md), Status: Implemented (MVP)) is
+> Gateway-only: `pkg/fleet/mcpclient.NewDiscoverer` supports only `GatewayKuadrant` /
+> `GatewayEAIGW`, with no direct-connect code path. Tool discovery/pre-scoping is also no
+> longer the LLM-facing `discover_tools`/`select_tools` meta-tool flow described in Section 6
+> below -- KA now calls a `fleetclient.GatewayDiscoverer` itself, server-side, per
+> [DD-FLEET-005](DD-FLEET-005-cluster-transparent-tool-exposure.md) (code:
+> `internal/kubernautagent/investigator/fleet_overlay.go`). Kept below as a historical record;
+> the "Supersedes ADR-064" section further down remains accurate as historical chain context.
 
 ---
 

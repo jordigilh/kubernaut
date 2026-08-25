@@ -1,4 +1,4 @@
-# ADR-016: Service-Specific Integration Test Infrastructure
+# ADR-070: Service-Specific Integration Test Infrastructure
 
 ## Status
 **ACCEPTED** - October 12, 2025
@@ -212,7 +212,7 @@ ci_cd_improvements:
 - Gateway Service (RBAC, TokenReview API)
 - Any service requiring Kubernetes-native features
 
-**This ADR (ADR-016) Extends ADR-003**:
+**This ADR (ADR-070) Extends ADR-003**:
 - Clarifies when Kind is necessary vs. when simpler infrastructure suffices
 - Optimizes TDD workflow for database-only services
 - Maintains Kind for Kubernetes-dependent services

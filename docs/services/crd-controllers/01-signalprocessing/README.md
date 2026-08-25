@@ -185,7 +185,7 @@
 | **Graceful Shutdown** | 4-step K8s-aware pattern | Zero request failures during rolling updates | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
 | **Retry Strategy** | K8s requeue (no circuit breaker) | Internal dependencies only, K8s handles backpressure | [ADR-019](../../../architecture/decisions/ADR-019-aianalysis-error-classification-retry-strategy.md) |
 | **K8s Enrichment** | Standard depth (hardcoded) | Avoids SRE configuration complexity | [DD-017](../../../architecture/decisions/DD-017-k8s-enrichment-depth-strategy.md) |
-| **Rego Data Fetching** | K8s Enricher + Rego Engine | Separation of concerns for security/performance | [ADR-041](../../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md) |
+| **Rego Data Fetching** | K8s Enricher + Rego Engine | Separation of concerns for security/performance | [ADR-074](../../../architecture/decisions/ADR-074-rego-policy-data-fetching-separation.md) |
 | **Label Detection** ⭐ | OwnerChain + DetectedLabels + CustomLabels | Workflow filtering via DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 | **CustomLabels Rego** ⭐ | Customer policies with security wrapper | 5 mandatory labels protected from override | [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 

@@ -381,7 +381,7 @@ orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consol
 - ✅ No switch statement additions in orchestrator
 - ✅ Interface implementation is complete
 - ✅ Tests follow registration pattern
-- ✅ Configuration is ADR-030 compliant
+- ✅ Configuration is ADR-071 compliant
 
 ---
 
@@ -695,7 +695,7 @@ func NewOrchestrator(...) *Orchestrator
 
 ### **Related Design Decisions**
 - **DD-NOT-006** - ChannelFile + ChannelLog features (would benefit from registration pattern)
-- **ADR-030** - Configuration management (registration could be config-driven)
+- **ADR-071** - Configuration management (registration could be config-driven)
 
 ---
 
@@ -813,7 +813,7 @@ echo "✅ DD-NOT-007 compliance verified"
 |---------|-------------|-----------|
 | **[00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)** | TDD workflow for implementation | Foundational |
 | **[02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc)** | Go interface patterns | Technical |
-| **[ADR-030](mdc:docs/architecture/decisions/ADR-030-CONFIGURATION-MANAGEMENT.md)** | Configuration-driven registration | Configuration |
+| **[ADR-071](mdc:docs/architecture/decisions/ADR-071-CONFIGURATION-MANAGEMENT.md)** | Configuration-driven registration | Configuration |
 | **[DD-NOT-002 V3.0](mdc:docs/services/crd-controllers/06-notification/DD-NOT-002-FILE-BASED-E2E-TESTS_IMPLEMENTATION_PLAN_V3.0.md)** | DeliveryService interface origin | Historical |
 | **[DD-NOT-006](mdc:docs/services/crd-controllers/06-notification/DD-NOT-006-CHANNEL-FILE-LOG-PRODUCTION-FEATURES.md)** | ChannelFile + ChannelLog implementation | Feature |
 
@@ -882,7 +882,7 @@ orchestrator.RegisterChannel("console", consoleService)  // Add alongside old pa
 
 ### **Potential Improvements** (Not required now)
 
-1. **Config-Driven Registration** (ADR-030 integration)
+1. **Config-Driven Registration** (ADR-071 integration)
    ```yaml
    channels:
      console:
@@ -990,5 +990,5 @@ orchestrator.RegisterChannel("console", consoleService)  // Add alongside old pa
 - **[Test Usage](mdc:test/integration/notification/suite_test.go)** - How channels are registered in tests
 - **[DD-NOT-002 V3.0](mdc:docs/services/crd-controllers/06-notification/DD-NOT-002-FILE-BASED-E2E-TESTS_IMPLEMENTATION_PLAN_V3.0.md)** - Interface-first design origin
 - **[DD-NOT-006](mdc:docs/services/crd-controllers/06-notification/DD-NOT-006-CHANNEL-FILE-LOG-PRODUCTION-FEATURES.md)** - Recent channel additions (File, Log)
-- **[ADR-030](mdc:docs/architecture/decisions/ADR-030-CONFIGURATION-MANAGEMENT.md)** - Configuration management (for future config-driven registration)
+- **[ADR-071](mdc:docs/architecture/decisions/ADR-071-CONFIGURATION-MANAGEMENT.md)** - Configuration management (for future config-driven registration)
 

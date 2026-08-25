@@ -59,11 +59,16 @@ Queries alerts/silences for RCA evidence when enabled. **Not** Grafana — Grafa
 not exist despite being mentioned in some older design-phase documents (see
 [overview.md](./overview.md) for the corrected toolset list).
 
-### OCP MCP Server (Fleet / Multi-Cluster mode only)
+### MCP Gateway (Fleet / Multi-Cluster mode only)
 
-For investigations spanning multiple clusters, KA contacts remote clusters' MCP servers directly
-(rather than through an intermediate MCP Gateway hop) — see
-[ADR-064](../../architecture/decisions/ADR-064-multi-cluster-mcp-gateway.md).
+For investigations spanning multiple clusters, an MCP Gateway (Kuadrant or Envoy AI Gateway)
+fronts per-cluster K8s MCP Server backends. KA calls a `fleetclient.GatewayDiscoverer`
+server-side, once per investigation, to pre-scope the LLM's tool context to the signal's one
+target cluster before the LLM ever runs — there is no direct-connect path to per-cluster MCP
+servers. See [ADR-068](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
+(Status: Implemented (MVP)) and
+[DD-FLEET-005](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md)
+for the current mechanism.
 
 ---
 
@@ -81,7 +86,8 @@ flowchart TB
     KA -->|get/list/describe, pod logs| K8S["Kubernetes API"]
     KA -->|metric queries| PROM["Prometheus (optional)"]
     KA -->|alert/silence queries| AM["Alertmanager (optional)"]
-    KA -->|remote-cluster tools| OCP["OCP MCP Server (fleet mode)"]
+    KA -->|remote-cluster tools| GW["MCP Gateway (fleet mode)"]
+    GW -->|per-cluster tool calls| OCP["K8s MCP Server (per managed cluster)"]
 ```
 
 ---
