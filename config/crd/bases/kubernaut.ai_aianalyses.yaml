@@ -1328,7 +1328,28 @@ spec:
                     x-kubernetes-validations:
                     - message: 'selectedWorkflow is immutable once selectedAt is populated
                         (Issue #1661, DD-WORKFLOW-018)'
-                      rule: '!has(oldSelf.selectedAt) || self == oldSelf'
+                      rule: '!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId
+                        && self.workflowName == oldSelf.workflowName && self.actionType
+                        == oldSelf.actionType && self.version == oldSelf.version &&
+                        self.executionBundle == oldSelf.executionBundle && self.confidence
+                        == oldSelf.confidence && self.rationale == oldSelf.rationale
+                        && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest))
+                        && (!has(self.executionBundleDigest) || self.executionBundleDigest
+                        == oldSelf.executionBundleDigest) && (has(self.executionEngine)
+                        == has(oldSelf.executionEngine)) && (!has(self.executionEngine)
+                        || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName)
+                        == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName)
+                        || self.serviceAccountName == oldSelf.serviceAccountName)
+                        && (has(self.dependencies) == has(oldSelf.dependencies)) &&
+                        (!has(self.dependencies) || self.dependencies == oldSelf.dependencies)
+                        && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources)
+                        || self.resources == oldSelf.resources) && (has(self.parameters)
+                        == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters
+                        == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt))
+                        && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt)
+                        && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames))
+                        && (!has(self.declaredParameterNames) || self.declaredParameterNames
+                        == oldSelf.declaredParameterNames))'
                 type: object
               reason:
                 description: Reason provides the umbrella failure or completion category.
