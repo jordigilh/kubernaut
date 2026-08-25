@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
@@ -176,6 +177,55 @@ func loadNotificationConfig(configPath string, bootstrapLogger logr.Logger) (*no
 	return cfg, controllerNS, logger, atomicLevel
 }
 
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadNotificationConfig, buildManager).
+//
+// Callers MUST invoke this immediately after config load, before
+// buildDeliveryServices' delivery-channel HTTP clients (e.g. Slack/webhook,
+// the first outbound TLS calls this process makes) --
+// x509.SystemCertPool() is sync.Once-cached process-wide, so injecting
+// after the first handshake has no effect (spike-verified, Issue #2276
+// preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *notificationconfig.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+// parseFlagsAndBootstrapLogger parses the -config flag (ADR-030) and
+// bootstraps the logger at INFO for config loading. Extracted from run() to
+// keep it under the funlen budget after Issue #2276/#2285 wiring -- pure
+// code motion, no behavior change.
+func parseFlagsAndBootstrapLogger() (string, logr.Logger) {
+	// ========================================
+	// ADR-030: Configuration Management
+	// MANDATORY: Use -config flag with K8s env substitution
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config",
+		"/etc/notification/config.yaml",
+		"Path to configuration file (ADR-030)")
+	flag.Parse()
+
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "notification",
+	}, bootstrapLevel)
+	return configPath, bootstrapLogger
+}
+
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *notificationconfig.Config) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
+}
+
 // reconcilerSetupParams groups setupNotificationReconciler's dependencies
 // (Go anti-pattern checklist: 8+ parameters -> config struct instead of a
 // long positional argument list).
@@ -272,24 +322,14 @@ func main() {
 }
 
 func run() int {
-	// ========================================
-	// ADR-030: Configuration Management
-	// MANDATORY: Use -config flag with K8s env substitution
-	// ========================================
-	var configPath string
-	flag.StringVar(&configPath, "config",
-		"/etc/notification/config.yaml",
-		"Path to configuration file (ADR-030)")
-	flag.Parse()
-
-	// Bootstrap logger at INFO for config loading
-	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "notification",
-	}, bootstrapLevel)
+	configPath, bootstrapLogger := parseFlagsAndBootstrapLogger()
 	defer kubelog.Sync(bootstrapLogger)
 
 	cfg, controllerNS, logger, atomicLevel := loadNotificationConfig(configPath, bootstrapLogger)
+
+	if !bootstrapAmbientCATrustStep(logger, cfg) {
+		return 1
+	}
 
 	// ADR-030: Use configuration values for controller manager
 	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
@@ -673,7 +713,7 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 	if stop, ok := startNotificationLogLevelWatcher(ctx, p.configPath, p.atomicLevel, logger); ok {
 		stopFns = append(stopFns, stop)
 	}
-	if stop, ok := startNotificationCAWatcher(ctx, p.cfg, logger); ok {
+	if stop, ok := startNotificationCAWatcher(ctx, p.cfg, p.reconciler, logger); ok {
 		stopFns = append(stopFns, stop)
 	}
 
@@ -767,7 +807,7 @@ func startNotificationLogLevelWatcher(ctx context.Context, configPath string, at
 // and starts the Issue #756 CA-cert hot-reload watcher for client-side TLS.
 // Exits the process if the CA watcher fails to start, matching main()'s
 // original fail-fast behavior. ok is false when no watcher was started.
-func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Config, logger logr.Logger) (stop func(), ok bool) {
+func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Config, reconciler *notification.NotificationRequestReconciler, logger logr.Logger) (stop func(), ok bool) {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
@@ -775,8 +815,11 @@ func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Con
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload.
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		recordNotificationConfigReload(ctx, reconciler, reloadErr, logger)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
@@ -785,4 +828,24 @@ func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Con
 		return nil, false
 	}
 	return caWatcher.Stop, true
+}
+
+// recordNotificationConfigReload records a CA-cert hot-reload outcome (GAP-11,
+// Issue #2285) via the reconciler's existing AuditManager/AuditStore, mirroring
+// Gateway's shipped EmitConfigReloadAudit reference implementation. Extracted
+// so the onReload closure passed to StartCAFileWatcher stays a one-liner and
+// this logic is independently unit-testable.
+func recordNotificationConfigReload(ctx context.Context, reconciler *notification.NotificationRequestReconciler, reloadErr error, logger logr.Logger) {
+	if reconciler == nil || reconciler.AuditManager == nil || reconciler.AuditStore == nil {
+		return
+	}
+	var event *ogenclient.AuditEventRequest
+	if reloadErr != nil {
+		event = reconciler.AuditManager.CreateConfigRejectedEvent("ca_cert", reloadErr)
+	} else {
+		event = reconciler.AuditManager.CreateConfigReloadedEvent("ca_cert")
+	}
+	if err := reconciler.AuditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store config reload audit event", "component", "ca_cert")
+	}
 }

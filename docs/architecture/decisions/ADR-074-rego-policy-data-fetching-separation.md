@@ -1,4 +1,4 @@
-# ADR-041: Rego Policy Engine Data Fetching Separation
+# ADR-074: Rego Policy Engine Data Fetching Separation
 
 ## Status
 

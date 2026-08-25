@@ -24,7 +24,7 @@
 || 035 | [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
 || 047 | [Policy Engine Selection](./ADR-047-policy-engine-selection.md) | 🔄 Proposed | 2025-12-05 | Rego vs CEL vs 6 alternatives for policy evaluation |
 || 048 | [Rate Limiting Proxy Delegation](./ADR-048-rate-limiting-proxy-delegation.md) | ✅ Approved | 2025-12-07 | Delegate rate limiting to Nginx Ingress/HAProxy Router |
-| 068 | [OpenTelemetry Distributed Tracing Adoption](./ADR-068-opentelemetry-distributed-tracing-adoption.md) | ✅ Accepted | 2026-08-11 | GAP-14/#1519: OTel for GW/DS/KA, BYO-collector + log-sink, no cross-service span-link annotations (correlation_id remains authoritative) |
+| 073 | [OpenTelemetry Distributed Tracing Adoption](./ADR-073-opentelemetry-distributed-tracing-adoption.md) | ✅ Accepted | 2026-08-11 | GAP-14/#1519: OTel for GW/DS/KA, BYO-collector + log-sink, no cross-service span-link annotations (correlation_id remains authoritative) |
 
 ### **Business Requirement (BR) Migration Decisions**
 

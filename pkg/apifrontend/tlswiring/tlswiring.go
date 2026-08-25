@@ -180,9 +180,11 @@ func StartCertFileWatcher(ctx context.Context, certDir string, reloader *sharedt
 
 // StartCAFileWatcher starts a file watcher for the outbound CA certificate.
 // Delegates to sharedtls.StartCAFileWatcher which reads $TLS_CA_FILE.
-// Returns nil watcher if TLS_CA_FILE is not set.
-func StartCAFileWatcher(ctx context.Context, logger logr.Logger) (*hotreload.FileWatcher, error) {
-	return sharedtls.StartCAFileWatcher(ctx, logger)
+// Returns nil watcher if TLS_CA_FILE is not set. onReload, if provided, is
+// invoked after every reload attempt (nil error on success) so callers can
+// wire audit-trail parity (GAP-11, Issue #2285).
+func StartCAFileWatcher(ctx context.Context, logger logr.Logger, onReload ...func(error)) (*hotreload.FileWatcher, error) {
+	return sharedtls.StartCAFileWatcher(ctx, logger, onReload...)
 }
 
 // ValidateCAFilePath checks that a CA file path, if non-empty, points to a

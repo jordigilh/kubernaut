@@ -80,7 +80,11 @@ func main() {
 	os.Exit(run())
 }
 
-func run() int {
+// parseFlagsAndInitLogger parses the --config flag (ADR-030), bootstraps the
+// logger at INFO for config loading (Issue #875), and logs the startup
+// banner. Extracted from run() to keep it under the funlen budget after
+// Issue #2276/#2285 wiring -- pure code motion, no behavior change.
+func parseFlagsAndInitLogger() (string, zaplog.AtomicLevel) {
 	// ADR-030: Configuration via YAML file. Single --config flag; all
 	// functional config lives in the YAML ConfigMap.
 	var configPath string
@@ -97,12 +101,21 @@ func run() int {
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 	)
+	return configPath, atomicLevel
+}
+
+func run() int {
+	configPath, atomicLevel := parseFlagsAndInitLogger()
 
 	// CONFIGURATION LOADING (ADR-030) + ADR-057 namespace discovery
 	cfg, controllerNS, err := loadConfigAndNamespace(configPath, atomicLevel, setupLog)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration -- aborting startup",
 			"configPath", configPath)
+		return 1
+	}
+
+	if !bootstrapAmbientCATrustStep(setupLog, cfg) {
 		return 1
 	}
 
@@ -172,7 +185,7 @@ func run() int {
 
 	// Issue #748/#756/#875: TLS security profile, CA file hot-reload, and
 	// log-level hot-reload.
-	stopHotReload := wireHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
+	stopHotReload := wireHotReload(ctx, cfg, configPath, atomicLevel, setupLog, auditStore)
 	defer stopHotReload()
 
 	if err := runManagerUntilShutdown(ctx, mgr, auditStore, setupLog); err != nil {
@@ -239,6 +252,31 @@ func loadConfigAndNamespace(configPath string, atomicLevel zaplog.AtomicLevel, l
 		return nil, "", fmt.Errorf("unable to determine controller namespace: %w", err)
 	}
 	return cfg, controllerNS, nil
+}
+
+// bootstrapAmbientCATrust injects the ambient CA trust bundle (Issue #2276)
+// from the resolved config's TLSCAFile field. Extracted from run() so it is
+// independently unit-testable, matching this package's existing pattern for
+// other startup-wiring steps (loadConfigAndNamespace, initCoreDependencies).
+//
+// Callers MUST invoke this immediately after config load, before
+// initCoreDependencies' DataStorage-backed audit store client (the first
+// outbound TLS call this process makes) -- x509.SystemCertPool() is
+// sync.Once-cached process-wide, so injecting after the first handshake has
+// no effect (spike-verified, Issue #2276 preflight).
+func bootstrapAmbientCATrust(logger logr.Logger, cfg *config.Config) error {
+	return sharedtls.InjectAmbientCACerts(logger, cfg.TLSCAFile)
+}
+
+// bootstrapAmbientCATrustStep runs bootstrapAmbientCATrust and logs on
+// failure, returning false so run() can abort with a single call.
+// Extracted to keep run() under the funlen budget (Issue #2276/#2285 wiring).
+func bootstrapAmbientCATrustStep(logger logr.Logger, cfg *config.Config) bool {
+	if err := bootstrapAmbientCATrust(logger, cfg); err != nil {
+		logger.Error(err, "Failed to inject ambient CA trust")
+		return false
+	}
+	return true
 }
 
 // initCoreDependencies builds the controller-runtime manager (ADR-057
@@ -686,7 +724,7 @@ func registerHealthChecks(mgr ctrl.Manager, fleetGate *readiness.Gate, dsGate *r
 // #748), starts the shared CA file watcher (Issue #756), and starts the
 // config-driven log-level watcher (Issue #875). Callers must invoke the
 // returned stop function on shutdown.
-func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) func() {
+func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger, auditStore audit.AuditStore) func() {
 	stopFns := make([]func(), 0, 2)
 
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
@@ -695,7 +733,11 @@ func wireHotReload(ctx context.Context, cfg *config.Config, configPath string, a
 		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	// GAP-11 (Issue #2285): audit every CA-cert hot-reload attempt.
+	hotReloadAuditManager := emaudit.NewManager(auditStore, logger.WithName("em-audit"))
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		hotReloadAuditManager.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)

@@ -1,4 +1,4 @@
-# ADR-060: Parallel Workflow Validation
+# ADR-072: Parallel Workflow Validation
 
 **Date**: May 9, 2026
 **Status**: Superseded — Pattern 1 (typed-result-slot parallelism) retired by Issue #1642; see [Update: Post-#1481/#1642](#update-post-1481-1642) below

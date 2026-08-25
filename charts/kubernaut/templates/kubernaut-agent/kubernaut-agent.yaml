@@ -117,6 +117,12 @@ runtime:
     metricsAddr: ":9090"
     tls:
       certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+    # Issue #2276: ambient CA trust is now sourced from resolved config
+    # (bootstrapAmbientCATrust, called before any outbound TLS handshake)
+    # instead of a static Pod-spec env: TLS_CA_FILE entry -- eliminating the
+    # class of bug where two independently chart-rendered components declare
+    # the same env var name and the Pod spec is rejected.
+    tlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
   audit:
     flushIntervalSeconds: 1.0
     bufferSize: 10000
@@ -625,9 +631,6 @@ spec:
               containerPort: 8081
             - name: metrics
               containerPort: 9090
-          env:
-            - name: TLS_CA_FILE
-              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           args:
             - "-config"
             - "/etc/kubernaut-agent/config.yaml"
@@ -667,13 +670,16 @@ spec:
             - name: service-ca
               mountPath: {{ include "kubernaut.agent.tlsCaDir" . }}
               readOnly: true
-            - name: tmp
-              mountPath: /tmp
             {{- end }}
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+            {{- /* Issue #2276: unconditional (decoupled from monitoring
+            tlsEnabled above) -- bootstrapAmbientCATrust always runs at
+            startup and needs a writable /tmp regardless of whether
+            Prometheus/AlertManager TLS is configured. */}}
+            {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             # BR-PLATFORM-005: short-TTL projected token, replacing the SA's
             # disabled default automount (see ServiceAccount above).
             - name: sa-token
@@ -736,15 +742,13 @@ spec:
         - name: service-ca
           configMap:
             name: {{ include "kubernaut.agent.tlsCaConfigMapName" . }}
-        - name: tmp
-          emptyDir:
-            sizeLimit: 1Mi
         {{- end }}
         - name: tls-certs
           secret:
             secretName: kubernautagent-tls
             optional: true
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
+        {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
         # (much longer-lived) automounted SA token for this high-risk component.
         #

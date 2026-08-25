@@ -123,6 +123,14 @@ type Server struct {
 	ipLimiter *dsmiddleware.IPLimiter
 }
 
+// AuditStore returns the server's self-audit store (BR-STORAGE-012,
+// DD-STORAGE-012), so cmd/datastorage/main.go's hot-reload wiring can emit
+// datastorage.config.reloaded/rejected events for CA-cert hot-reload
+// attempts (GAP-11, Issue #2285) without needing a second audit store.
+func (s *Server) AuditStore() audit.AuditStore {
+	return s.auditStore
+}
+
 func defaultMaxBatchSize(v int) int {
 	if v <= 0 {
 		return 500

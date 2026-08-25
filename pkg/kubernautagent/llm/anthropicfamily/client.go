@@ -74,12 +74,31 @@ type clientOpts struct {
 	httpTimeout      time.Duration
 	baseTransport    http.RoundTripper
 	defaultReasoning *llm.ReasoningRequest
+	baseURL          string
 }
 
-// WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
-// override for testing). Production code should not need this.
+// WithSDKOptions injects additional Anthropic SDK request options.
+// Production code should not need this for base-URL overrides — see
+// WithBaseURL for the first-class, cfg-driven equivalent (#2255,
+// BR-AI-089). Retained for options with no dedicated wrapper (e.g. test
+// middleware, header injection for edge-case test setups).
 func WithSDKOptions(opts ...option.RequestOption) Option {
 	return func(o *clientOpts) { o.extraSDKOpts = append(o.extraSDKOpts, opts...) }
+}
+
+// WithBaseURL overrides the native Anthropic API's default base URL
+// (https://api.anthropic.com), letting operators route native-auth-mode
+// (NewWithAPIKey) traffic through an enterprise AI gateway (e.g. Envoy AI
+// Gateway) or private network proxy instead of Anthropic's public SaaS
+// endpoint (#2255, BR-AI-089, FedRAMP AC-4 — information flow enforcement).
+// An empty url is a no-op, preserving the SDK default.
+//
+// Only meaningful for NewWithAPIKey (native auth). New (Vertex-hosted auth)
+// derives its endpoint from vertexProject/vertexLocation via the SDK's own
+// Vertex middleware and rejects this option outright rather than silently
+// ignoring it — see New's doc comment.
+func WithBaseURL(url string) Option {
+	return func(o *clientOpts) { o.baseURL = url }
 }
 
 // WithLogger injects a logr.Logger for diagnostic messages (e.g., malformed tool schemas).
@@ -146,6 +165,16 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	}
 
 	o := newClientOpts(opts...)
+	// #2255 / BR-AI-089: WithBaseURL is native-auth-only. Vertex's endpoint
+	// is derived from project/location via the SDK's own Vertex middleware
+	// (rawPredict URL rewriting, multi-region routing) — silently accepting
+	// but ignoring an explicit WithBaseURL here would reintroduce the exact
+	// silently-ignored-config anti-pattern this issue fixes, just scoped to
+	// Vertex instead of native auth. Fail fast instead.
+	if o.baseURL != "" {
+		return nil, fmt.Errorf("anthropicfamily: WithBaseURL is not supported for Vertex-hosted auth (New) — " +
+			"Vertex's endpoint is derived from vertexProject/vertexLocation; use NewWithAPIKey for a custom endpoint")
+	}
 
 	vertexOpt, tokenSource, err := resolveVertexAuth(ctx, credentialsJSON, project, location)
 	if err != nil {
@@ -168,6 +197,9 @@ func NewWithAPIKey(apiKey, model string, opts ...Option) (*Client, error) {
 
 	o := newClientOpts(opts...)
 	sdkOpts := applyHTTPOptions([]option.RequestOption{option.WithAPIKey(apiKey)}, o, nil)
+	if o.baseURL != "" {
+		sdkOpts = append(sdkOpts, option.WithBaseURL(o.baseURL))
+	}
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 
 	sdk := anthropic.NewClient(sdkOpts...)

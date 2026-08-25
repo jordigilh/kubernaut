@@ -226,7 +226,11 @@ type ServerConfig struct {
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`
 	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`
 	TLSProfile            string              `yaml:"tlsProfile,omitempty"`
-	RateLimit             RateLimitConfig     `yaml:"rateLimit"`
+	// TLSCAFile is the ambient inter-service CA trust bundle path, injected
+	// in-process via sharedtls.InjectAmbientCACerts (Issue #2276) instead of
+	// a deployer-declared static Pod-spec env: TLS_CA_FILE entry.
+	TLSCAFile string          `yaml:"tlsCaFile,omitempty"`
+	RateLimit RateLimitConfig `yaml:"rateLimit"`
 }
 
 // RateLimitConfig configures per-IP HTTP rate limiting for the agent API.

@@ -18,6 +18,7 @@ package effectivenessmonitor_test
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -851,3 +852,55 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 func extractPayload(event *ogenclient.AuditEventRequest) ogenclient.EffectivenessAssessmentAuditPayload {
 	return event.EventData.EffectivenessAssessmentAuditPayload
 }
+
+// ========================================
+// RecordConfigReloaded (GAP-11, Issue #2285)
+// ========================================
+// BR-AUDIT-002 / DD-AUDIT-003: CA-cert hot-reload audit-trail parity with
+// Gateway's shipped gateway.config.{reloaded,rejected} events.
+var _ = Describe("Audit Manager — RecordConfigReloaded (GAP-11, Issue #2285)", func() {
+	var (
+		spy *spyAuditStore
+		mgr *audit.Manager
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		spy = &spyAuditStore{}
+		mgr = audit.NewManager(spy, logr.Discard())
+		ctx = context.Background()
+	})
+
+	It("UT-EM-2285-001: emits effectiveness.config.reloaded on successful reload", func() {
+		mgr.RecordConfigReloaded(ctx, "ca_cert", nil)
+
+		Expect(spy.lastEvent).NotTo(BeNil())
+		Expect(spy.lastEvent.EventType).To(Equal(audit.EventTypeConfigReloaded))
+		Expect(spy.lastEvent.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
+
+		payload, ok := spy.lastEvent.EventData.GetEffectivenessConfigReloadedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+	})
+
+	It("UT-EM-2285-002: emits effectiveness.config.rejected with reason on failed reload", func() {
+		reloadErr := fmt.Errorf("invalid PEM content")
+		mgr.RecordConfigReloaded(ctx, "ca_cert", reloadErr)
+
+		Expect(spy.lastEvent).NotTo(BeNil())
+		Expect(spy.lastEvent.EventType).To(Equal(audit.EventTypeConfigRejected))
+		Expect(spy.lastEvent.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+
+		payload, ok := spy.lastEvent.EventData.GetEffectivenessConfigRejectedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Component).To(Equal("ca_cert"))
+		Expect(payload.RejectionReason).To(Equal("invalid PEM content"))
+	})
+
+	It("UT-EM-2285-003: does not panic and does not store when audit store is nil", func() {
+		nilStoreMgr := audit.NewManager(nil, logr.Discard())
+		Expect(func() {
+			nilStoreMgr.RecordConfigReloaded(ctx, "ca_cert", nil)
+		}).NotTo(Panic())
+	})
+})

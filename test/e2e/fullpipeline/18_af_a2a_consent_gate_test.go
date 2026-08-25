@@ -326,17 +326,28 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 })
 
 // E2E-FP-1912-001: No Reinvocation After Session-Terminal Tool (issue #1912).
-// A single combined message declares interaction_mode=full_remediation_autonomous
-// on kubernaut_investigate (so no DD-AF-011 checkpoint is left blocking --
-// driverActive alone is what must be cleared) then completes the driver
-// session with kubernaut_complete in the very same turn. Pre-#1912-fix,
-// phaseGuardAfter's isTerminal branch cleared the ActiveContextRegistry
-// entry but left driverActive stuck true, so NeedsReinvocationCtx could
-// misread a subsequent text-only model turn as "investigation still
-// active" and synthesize a "continue the investigation" nudge back into an
-// already-closed session. This proves the real AF/A2A stack never lets
-// that resurrect into a consequential action: the RR reaches a clean
-// terminal state and no WorkflowExecution is ever created for it.
+// A single combined message chains kubernaut_remediate -> kubernaut_investigate
+// (attaching a chat-visible driver session to the already-autonomous RR,
+// declaring interaction_mode=full_remediation_autonomous so no DD-AF-011
+// checkpoint is left blocking -- driverActive alone is what must be
+// cleared) -> kubernaut_complete, ending the driver session in the very
+// same turn. Pre-#1912-fix, phaseGuardAfter's isTerminal branch cleared the
+// ActiveContextRegistry entry but left driverActive stuck true, so
+// NeedsReinvocationCtx could misread a subsequent text-only model turn as
+// "investigation still active" and synthesize a "continue the
+// investigation" nudge back into an already-closed session.
+//
+// A synthetic not-actionable Warning K8s Event (reason
+// E2EFP1912NotActionable, mirroring E2E-FP-1918-001's identical technique
+// below) is seeded on the target Deployment before the chat turn so KA's
+// RCA deterministically concludes is_actionable=false, independent of
+// RO/AA/KA's autonomous reconciliation timing. This is required because
+// kubernaut_investigate's rr_id attach here is a best-effort chat-session
+// observability hook, not a consent veto over the RR that kubernaut_remediate
+// already committed to running autonomously (#2265 investigation) -- so
+// #1912's actual claim (driverActive hygiene / no errant reinvocation) must
+// not depend on winning that unrelated, intentionally-non-deterministic race
+// to prove "no WorkflowExecution is ever created for it".
 var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-1912-001]", Label("fp", "af", "a2a", "interactive", "issue-1912"), func() {
 
 	It("should complete the driver session cleanly and never reinvoke into a further workflow action", NodeTimeout(6*time.Minute), func(_ SpecContext) {
@@ -397,6 +408,31 @@ var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-191
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Seeding a synthetic not-actionable signal so KA's RCA is deterministic regardless of takeover timing (#2265)")
+		// See E2E-FP-1918-001's identical Event below for the full explanation
+		// of why this must be a dedicated Reason (not the built-in
+		// "MOCK_NOT_ACTIONABLE" keyword) and why deriveSignalName's Tier 3a
+		// (not a tool-call-argument keyword) is the safe way to ground this.
+		Expect(k8sClient.Create(ctx, &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "memory-eater-e2efp1912-not-actionable-",
+				Namespace:    targetNS,
+			},
+			InvolvedObject: corev1.ObjectReference{
+				Kind:       "Deployment",
+				Namespace:  targetNS,
+				Name:       "memory-eater",
+				APIVersion: "apps/v1",
+			},
+			Reason:         "E2EFP1912NotActionable",
+			Message:        "E2E-FP-1912-001: synthetic signal so KA's RCA concludes is_actionable=false",
+			Type:           corev1.EventTypeWarning,
+			FirstTimestamp: metav1.Now(),
+			LastTimestamp:  metav1.Now(),
+			Count:          1,
+			Source:         corev1.EventSource{Component: "e2e-fp-1912-test"},
+		})).To(Succeed())
 
 		By("Turn 1 (single message): declare full_remediation_autonomous mode, then complete the driver session in the same turn")
 		body := fpA2ATasksSend("fp-t1912-1",
