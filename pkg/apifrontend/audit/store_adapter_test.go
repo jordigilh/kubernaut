@@ -94,6 +94,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-029", audit.EventAuthAccessDenied, map[string]string{"tool_name": "kubectl_exec", "user_role": "viewer", "endpoint": "a2a"}, "apifrontend.auth.access_denied"},
 		{"UT-AF-1156-030", audit.EventToolExecuted, map[string]string{"session_id": "sess-1", "tool_name": "kubectl_get", "execution_duration_ms": "100", "tool_outcome": "success"}, "apifrontend.tool.executed"},
 		{"UT-AF-1923-001", audit.EventWorkflowDiscovery, map[string]string{"rr_id": "rr-1", "workflow_count": "2"}, "apifrontend.workflow.discovery"},
+		{"UT-AF-2289-030", audit.EventInteractiveSignalFailed, map[string]string{"rr_id": "rr-1", "error": "etcd unavailable"}, "apifrontend.interactive_signal.failed"},
 	}
 
 	Describe("Event type mapping", func() {
@@ -186,6 +187,7 @@ var _ = Describe("StoreAdapter", func() {
 			audit.EventAuthFailure, audit.EventA2ATaskFailed, audit.EventMCPToolFailed,
 			audit.EventSeverityTriageFailed, audit.EventConfigRejected,
 			audit.EventAuthAccessDenied, audit.EventRateLimitDenied, audit.EventCircuitBreakerTrip,
+			audit.EventInteractiveSignalFailed,
 		}
 		for _, et := range failureEvents {
 			et := et

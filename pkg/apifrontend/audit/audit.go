@@ -73,6 +73,15 @@ const (
 	EventKAResultReceived     EventType = "ka.result_received"
 	EventUserDecision         EventType = "user.decision"
 	EventInvestigationTimeout EventType = "investigation.timeout"
+
+	// EventInteractiveSignalFailed (#2289, AU-2/AU-3) fires when
+	// SignalInteractive (IS CRD creation) still fails after exhausting
+	// bounded retries and the caller fails closed -- neither the new RR
+	// (buildPreCreateISHooks) nor the interactive attach
+	// (signalInteractiveSession) is allowed to proceed without the
+	// consent-gating guarantee IS CRD creation is meant to provide
+	// (DD-INTERACTIVE-002, BR-INTERACTIVE-010).
+	EventInteractiveSignalFailed EventType = "interactive_signal.failed"
 )
 
 // Event represents a SOC2-compatible audit event.

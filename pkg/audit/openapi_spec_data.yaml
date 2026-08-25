@@ -1936,6 +1936,7 @@ components:
             - $ref: '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigReloadedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigRejectedPayload'
+            - $ref: '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
             - $ref: '#/components/schemas/DatastorageRatelimitDeniedPayload'
             - $ref: '#/components/schemas/GatewayConfigReloadedPayload'
             - $ref: '#/components/schemas/GatewayConfigRejectedPayload'
@@ -2105,6 +2106,7 @@ components:
               'apifrontend.severity_triage.failed': '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
               'apifrontend.config.reloaded': '#/components/schemas/ApifrontendConfigReloadedPayload'
               'apifrontend.config.rejected': '#/components/schemas/ApifrontendConfigRejectedPayload'
+              'apifrontend.interactive_signal.failed': '#/components/schemas/ApifrontendInteractiveSignalFailedPayload'
               # Issue #2285: CA hot-reload audit-trail parity (GAP-11 onReload
               # callback wired into the 8 remaining StartCAFileWatcher callers;
               # gateway.config.{reloaded,rejected} and
@@ -7356,4 +7358,20 @@ components:
         config_version:
           type: string
           description: Rejected configuration version or hash
+
+    ApifrontendInteractiveSignalFailedPayload:
+      type: object
+      required: [event_type, rr_id, error]
+      description: Interactive signal failed event payload (apifrontend.interactive_signal.failed) — SignalInteractive (IS CRD creation) failed after exhausting bounded retries and the caller failed closed; consent-gating (DD-INTERACTIVE-002, BR-INTERACTIVE-010) could not be established for this RR (SOC2 CC7.2, AU-2/AU-3, Issue #2289)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.interactive_signal.failed']
+          description: Event type for discriminator (matches parent event_type)
+        rr_id:
+          type: string
+          description: RemediationRequest name the interactive signal was attempted for
+        error:
+          type: string
+          description: Final error returned by SignalInteractive after exhausting retries
 
