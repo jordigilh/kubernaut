@@ -253,7 +253,7 @@ When `ai.alignmentCheck.groundingReview.enabled=true` (Layer 2, independent of t
 
 - [ADR-KA-002](ADR-KA-002-agent-security-defense-in-depth.md) — defense-in-depth model; this ADR implements Layer 4 for KA-side (non-opaque-agent) investigations
 - [#1681](https://github.com/jordigilh/kubernaut/issues/1681) — AuthBridge shadow-evaluator tee (extends Layer 4 coverage to opaque agents)
-- [ADR-039](ADR-039-llm-prompt-response-contract.md) — LLM prompt/response contract
+- [ADR-041](adr-041-llm-contract/ADR-041-llm-prompt-response-contract.md) — LLM prompt/response contract
 - [BR-AI-601](../../requirements/) — Prompt injection guardrails business requirement
 - [TP-601-v2.0](../../tests/601/TEST_PLAN_v2.md) — Shadow agent test plan (Layer 1: per-step evaluation)
 - [TP-1096](../../tests/1096/TEST_PLAN.md) — Full-context grounding review test plan (Layer 2; distributed/"boiling frog" injection defense, #1096)

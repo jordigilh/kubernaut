@@ -142,6 +142,7 @@ var typedPayloadEvents = map[EventType]bool{
 	EventAuthAccessDenied:        true,
 	EventToolExecuted:            true,
 	EventWorkflowDiscovery:       true,
+	EventInteractiveSignalFailed: true,
 }
 
 func hasTypedPayload(t EventType) bool {
@@ -159,6 +160,7 @@ var failureEvents = map[EventType]bool{
 	EventCircuitBreakerTrip:      true,
 	EventSessionAutoCancelled:    true,
 	EventSessionRetentionDeleted: true,
+	EventInteractiveSignalFailed: true,
 }
 
 func eventOutcome(t EventType) ogenclient.AuditEventRequestEventOutcome {
@@ -202,6 +204,7 @@ var actionMap = map[EventType]string{
 	EventUserDecision:            "decided",
 	EventAgentCardAccessed:       "accessed",
 	EventInvestigationTimeout:    "timed_out",
+	EventInteractiveSignalFailed: "failed",
 }
 
 func eventAction(t EventType) string {
@@ -248,6 +251,7 @@ var eventDataBuilders = map[EventType]eventDataBuilder{
 	EventAuthAccessDenied:        buildAuthAccessDeniedPayload,
 	EventToolExecuted:            buildToolExecutedPayload,
 	EventWorkflowDiscovery:       buildWorkflowDiscoveryPayload,
+	EventInteractiveSignalFailed: buildInteractiveSignalFailedPayload,
 }
 
 func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
@@ -438,6 +442,15 @@ func buildConfigRejectedPayload(e *Event) ogenclient.AuditEventRequestEventData 
 	return ogenclient.NewApifrontendConfigRejectedPayloadAuditEventRequestEventData(ogenclient.ApifrontendConfigRejectedPayload{
 		EventType:       ogenclient.ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected,
 		RejectionReason: detailStr(d, "rejection_reason"),
+	})
+}
+
+func buildInteractiveSignalFailedPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	d := e.Detail
+	return ogenclient.NewApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData(ogenclient.ApifrontendInteractiveSignalFailedPayload{
+		EventType: ogenclient.ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed,
+		RrID:      detailStr(d, "rr_id"),
+		Error:     detailStr(d, "error"),
 	})
 }
 

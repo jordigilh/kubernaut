@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-11
 **Status**: ✅ **APPROVED**
-**Builds On**: ADR-068 (OpenTelemetry Distributed Tracing Adoption)
+**Builds On**: ADR-073 (OpenTelemetry Distributed Tracing Adoption)
 **Confidence**: 90%
 **Decision Makers**: Architecture Team
 **Affected Services**: Gateway (GW), Data Storage (DS), Kubernaut Agent (KA)
@@ -22,7 +22,7 @@
 
 ### Non-Scope
 
-- CRD controllers (reconcile-loop instrumentation) — not a natural fit for the span-tree model; deferred (see ADR-068 Context)
+- CRD controllers (reconcile-loop instrumentation) — not a natural fit for the span-tree model; deferred (see ADR-073 Context)
 - Auth Webhook — `RemediationWorkflow` handler is validating-only by documented convention (`DD-WEBHOOK-001`), not a hard technical limitation (see §5, Alternative B); parked because the trace-link feature itself was dropped for ROI reasons, not because converting it was infeasible
 - Cross-service trace-link annotations (span `Links` via K8s object annotations) — implemented for Gateway, then **removed** after cost/value analysis (§5)
 - Non-HTTP outbound instrumentation (Postgres, Redis) — Data Storage's DB/cache calls are not wrapped; would require `otelsql` / redis-client hooks, out of scope unless requested
@@ -319,7 +319,7 @@ Each row is a control objective this implementation makes a specific, testable c
 
 | Document | Relationship |
 |---|---|
-| [ADR-068](./ADR-068-opentelemetry-distributed-tracing-adoption.md) | Architecture-level decision this DD implements |
+| [ADR-073](./ADR-073-opentelemetry-distributed-tracing-adoption.md) | Architecture-level decision this DD implements |
 | [DD-AUDIT-003](./DD-AUDIT-003-service-audit-trace-requirements.md) | Defines `correlation_id`-based cross-service causal reconstruction — the mechanism OTel is designed to complement, not duplicate |
 | [ADR-034](./ADR-034-unified-audit-table-design.md) | Unified audit table / event-sourcing design underlying `correlation_id` reconstruction |
 | [ADR-030](./ADR-030-service-configuration-management.md) | YAML config convention followed by `TelemetryConfig` |
@@ -347,4 +347,4 @@ Each row is a control objective this implementation makes a specific, testable c
 - **Design soundness**: 95% — pattern proven across three services with different outbound-dependency shapes (Gateway: one HTTP dep; Data Storage: zero, non-HTTP only; Kubernaut Agent: four HTTP deps), and validated by a real spike before committing to the final scope.
 - **Zero-overhead claim**: 90% — backed by OTel's documented no-op `TracerProvider` behavior and this design's explicit avoidance of any allocation/branching when both sinks are disabled; not independently benchmarked under production load.
 - **Scope-narrowing decision (dropping trace-link annotations)**: 90% — well-justified by the `correlation_id` precedent (ADR-034, DD-AUDIT-003) and explicit user cost/value sign-off; residual risk is that a future concrete use case (e.g. an APM vendor integration expecting a single unified trace) could reopen this, at which point the retained-but-unused `tracelink.go` mechanism is available to reactivate.
-- **Coverage gap (CRD controllers not instrumented)**: acknowledged, not a confidence deduction — explicitly out of scope by design (ADR-068), not a defect.
+- **Coverage gap (CRD controllers not instrumented)**: acknowledged, not a confidence deduction — explicitly out of scope by design (ADR-073), not a defect.

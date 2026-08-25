@@ -231,6 +231,11 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// notActionableGroundedConfig's doc comment for the full explanation).
 	r.Register(signalScenario("not_actionable_grounded_1918", []string{"e2efp1918notactionable"}, notActionableGroundedConfig()))
 
+	// Issue #1912/#2265: grounded not-actionable signal for E2E-FP-1912-001,
+	// same rationale and safety properties as not_actionable_grounded_1918
+	// above (see notActionableGrounded1912Config's doc comment).
+	r.Register(signalScenario("not_actionable_grounded_1912", []string{"e2efp1912notactionable"}, notActionableGrounded1912Config()))
+
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())

@@ -5485,6 +5485,85 @@ func (s *ApifrontendImpersonationCreatedPayloadEventType) UnmarshalText(data []b
 	}
 }
 
+// Interactive signal failed event payload (apifrontend.interactive_signal.failed) —
+// SignalInteractive (IS CRD creation) failed after exhausting bounded retries and the caller failed
+// closed; consent-gating (DD-INTERACTIVE-002, BR-INTERACTIVE-010) could not be established for this
+// RR (SOC2 CC7.2, AU-2/AU-3, Issue.
+// Ref: #/components/schemas/ApifrontendInteractiveSignalFailedPayload
+type ApifrontendInteractiveSignalFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendInteractiveSignalFailedPayloadEventType `json:"event_type"`
+	// RemediationRequest name the interactive signal was attempted for.
+	RrID string `json:"rr_id"`
+	// Final error returned by SignalInteractive after exhausting retries.
+	Error string `json:"error"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendInteractiveSignalFailedPayload) GetEventType() ApifrontendInteractiveSignalFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetRrID returns the value of RrID.
+func (s *ApifrontendInteractiveSignalFailedPayload) GetRrID() string {
+	return s.RrID
+}
+
+// GetError returns the value of Error.
+func (s *ApifrontendInteractiveSignalFailedPayload) GetError() string {
+	return s.Error
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendInteractiveSignalFailedPayload) SetEventType(val ApifrontendInteractiveSignalFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetRrID sets the value of RrID.
+func (s *ApifrontendInteractiveSignalFailedPayload) SetRrID(val string) {
+	s.RrID = val
+}
+
+// SetError sets the value of Error.
+func (s *ApifrontendInteractiveSignalFailedPayload) SetError(val string) {
+	s.Error = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendInteractiveSignalFailedPayloadEventType string
+
+const (
+	ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed ApifrontendInteractiveSignalFailedPayloadEventType = "apifrontend.interactive_signal.failed"
+)
+
+// AllValues returns all ApifrontendInteractiveSignalFailedPayloadEventType values.
+func (ApifrontendInteractiveSignalFailedPayloadEventType) AllValues() []ApifrontendInteractiveSignalFailedPayloadEventType {
+	return []ApifrontendInteractiveSignalFailedPayloadEventType{
+		ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendInteractiveSignalFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendInteractiveSignalFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendInteractiveSignalFailedPayloadEventType(data) {
+	case ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed:
+		*s = ApifrontendInteractiveSignalFailedPayloadEventTypeApifrontendInteractiveSignalFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // JWT delegation event payload (apifrontend.jwt.delegation) — original JWT forwarded to downstream
 // service (SOC2 CC6.1, Issue.
 // Ref: #/components/schemas/ApifrontendJWTDelegationPayload
@@ -8798,6 +8877,7 @@ type AuditEventEventData struct {
 	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
 	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
+	ApifrontendInteractiveSignalFailedPayload    ApifrontendInteractiveSignalFailedPayload
 	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
 	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
 	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
@@ -8965,6 +9045,7 @@ const (
 	ApifrontendSeverityTriageFailedPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.severity_triage.failed"
 	ApifrontendConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.rejected"
+	ApifrontendInteractiveSignalFailedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.interactive_signal.failed"
 	DatastorageRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.rejected"
@@ -9501,6 +9582,11 @@ func (s AuditEventEventData) IsApifrontendConfigReloadedPayload() bool {
 // IsApifrontendConfigRejectedPayload reports whether AuditEventEventData is ApifrontendConfigRejectedPayload.
 func (s AuditEventEventData) IsApifrontendConfigRejectedPayload() bool {
 	return s.Type == ApifrontendConfigRejectedPayloadAuditEventEventData
+}
+
+// IsApifrontendInteractiveSignalFailedPayload reports whether AuditEventEventData is ApifrontendInteractiveSignalFailedPayload.
+func (s AuditEventEventData) IsApifrontendInteractiveSignalFailedPayload() bool {
+	return s.Type == ApifrontendInteractiveSignalFailedPayloadAuditEventEventData
 }
 
 // IsDatastorageRatelimitDeniedPayload reports whether AuditEventEventData is DatastorageRatelimitDeniedPayload.
@@ -11903,6 +11989,27 @@ func NewApifrontendConfigRejectedPayloadAuditEventEventData(v ApifrontendConfigR
 	return s
 }
 
+// SetApifrontendInteractiveSignalFailedPayload sets AuditEventEventData to ApifrontendInteractiveSignalFailedPayload.
+func (s *AuditEventEventData) SetApifrontendInteractiveSignalFailedPayload(v ApifrontendInteractiveSignalFailedPayload) {
+	s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventEventData
+	s.ApifrontendInteractiveSignalFailedPayload = v
+}
+
+// GetApifrontendInteractiveSignalFailedPayload returns ApifrontendInteractiveSignalFailedPayload and true boolean if AuditEventEventData is ApifrontendInteractiveSignalFailedPayload.
+func (s AuditEventEventData) GetApifrontendInteractiveSignalFailedPayload() (v ApifrontendInteractiveSignalFailedPayload, ok bool) {
+	if !s.IsApifrontendInteractiveSignalFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendInteractiveSignalFailedPayload, true
+}
+
+// NewApifrontendInteractiveSignalFailedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendInteractiveSignalFailedPayload.
+func NewApifrontendInteractiveSignalFailedPayloadAuditEventEventData(v ApifrontendInteractiveSignalFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendInteractiveSignalFailedPayload(v)
+	return s
+}
+
 // SetDatastorageRatelimitDeniedPayload sets AuditEventEventData to DatastorageRatelimitDeniedPayload.
 func (s *AuditEventEventData) SetDatastorageRatelimitDeniedPayload(v DatastorageRatelimitDeniedPayload) {
 	s.Type = DatastorageRatelimitDeniedPayloadAuditEventEventData
@@ -12930,6 +13037,7 @@ type AuditEventRequestEventData struct {
 	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
 	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
+	ApifrontendInteractiveSignalFailedPayload    ApifrontendInteractiveSignalFailedPayload
 	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
 	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
 	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
@@ -13097,6 +13205,7 @@ const (
 	ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.severity_triage.failed"
 	ApifrontendConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.rejected"
+	ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.interactive_signal.failed"
 	DatastorageRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.ratelimit.denied"
 	GatewayConfigReloadedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.reloaded"
 	GatewayConfigRejectedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.rejected"
@@ -13633,6 +13742,11 @@ func (s AuditEventRequestEventData) IsApifrontendConfigReloadedPayload() bool {
 // IsApifrontendConfigRejectedPayload reports whether AuditEventRequestEventData is ApifrontendConfigRejectedPayload.
 func (s AuditEventRequestEventData) IsApifrontendConfigRejectedPayload() bool {
 	return s.Type == ApifrontendConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendInteractiveSignalFailedPayload reports whether AuditEventRequestEventData is ApifrontendInteractiveSignalFailedPayload.
+func (s AuditEventRequestEventData) IsApifrontendInteractiveSignalFailedPayload() bool {
+	return s.Type == ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData
 }
 
 // IsDatastorageRatelimitDeniedPayload reports whether AuditEventRequestEventData is DatastorageRatelimitDeniedPayload.
@@ -16032,6 +16146,27 @@ func (s AuditEventRequestEventData) GetApifrontendConfigRejectedPayload() (v Api
 func NewApifrontendConfigRejectedPayloadAuditEventRequestEventData(v ApifrontendConfigRejectedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetApifrontendConfigRejectedPayload(v)
+	return s
+}
+
+// SetApifrontendInteractiveSignalFailedPayload sets AuditEventRequestEventData to ApifrontendInteractiveSignalFailedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendInteractiveSignalFailedPayload(v ApifrontendInteractiveSignalFailedPayload) {
+	s.Type = ApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData
+	s.ApifrontendInteractiveSignalFailedPayload = v
+}
+
+// GetApifrontendInteractiveSignalFailedPayload returns ApifrontendInteractiveSignalFailedPayload and true boolean if AuditEventRequestEventData is ApifrontendInteractiveSignalFailedPayload.
+func (s AuditEventRequestEventData) GetApifrontendInteractiveSignalFailedPayload() (v ApifrontendInteractiveSignalFailedPayload, ok bool) {
+	if !s.IsApifrontendInteractiveSignalFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendInteractiveSignalFailedPayload, true
+}
+
+// NewApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendInteractiveSignalFailedPayload.
+func NewApifrontendInteractiveSignalFailedPayloadAuditEventRequestEventData(v ApifrontendInteractiveSignalFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendInteractiveSignalFailedPayload(v)
 	return s
 }
 

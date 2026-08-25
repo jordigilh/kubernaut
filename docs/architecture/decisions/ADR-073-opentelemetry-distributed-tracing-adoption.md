@@ -1,4 +1,4 @@
-# ADR-068: OpenTelemetry Distributed Tracing Adoption
+# ADR-073: OpenTelemetry Distributed Tracing Adoption
 
 **Status**: ✅ Accepted
 **Date**: 2026-08-11
