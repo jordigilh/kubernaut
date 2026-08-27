@@ -191,7 +191,7 @@ tests:
           path: metadata.namespace
           value: fmc-only-ns
 
-  - it: "IT-PLATFORM-1730-002d: FMC falls back to its own kubernaut-system default when neither fleetmetadatacache.namespace nor global.fleet.mcpGatewayNamespace is set (regression guard)"
+  - it: "IT-PLATFORM-1730-002d / #2298: FMC grants no CRD-watch RBAC at all (no ClusterRole, no Role) when neither fleetmetadatacache.namespace nor global.fleet.mcpGatewayNamespace is set -- there is no safe default (MCPServerRegistration/Backend CRs are managed by the MCP Gateway, not FMC, and a cluster can run more than one gateway), so cluster-wide read access is no longer granted as a fallback (least privilege, AC-6); pkg/fleet/fmc/config.Validate() refuses to start the pod on this same empty value instead"
     set:
       fleetmetadatacache:
         enabled: true
@@ -204,9 +204,10 @@ tests:
             tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
-      path: metadata.name
-      value: fleetmetadatacache-config
+      path: kind
+      value: ClusterRole
+      skipEmptyTemplates: true
     asserts:
-      - matchRegex:
-          path: data["config.yaml"]
-          pattern: "(?m)^\\s*namespace: \"kubernaut-system\""
+      - hasDocuments:
+          count: 0
+          filterAware: true

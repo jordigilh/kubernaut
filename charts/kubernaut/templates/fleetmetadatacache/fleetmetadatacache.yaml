@@ -18,9 +18,15 @@ mcpGateway:
   endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
   gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
   {{- /* Issue #1730: fleetmetadatacache.namespace falls back to
-  global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset;
-  $v.namespace's own schema default ("kubernaut-system") is the final
-  fallback when neither is set, preserving pre-#1730 behavior. */}}
+  global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset.
+  Issue #2298: there is no further fallback -- $v.namespace's own schema
+  default is now "" (empty). An unset value renders here as "" (this
+  ConfigMap still renders successfully -- see the RBAC section below for
+  why this isn't a template-level fail()); pkg/fleet/fmc/config.Validate()
+  refuses to start the pod on that empty value instead. MCPServerRegistration/
+  Backend CRs are managed by the MCP Gateway deployment, not FMC, and a
+  cluster can run more than one gateway, so neither FMC's own namespace
+  (the old default) nor cluster-wide is safe. */}}
   namespace: {{ $fmcFleetPreamble.config.namespace | default $v.namespace | quote }}
   {{- /* Issue #2262 Phase 2: fleet.MCPGatewayConfig.Resilience (pkg/fleet/config.go)
   nests under mcpGateway, unlike every other service's fleet.resilience --
@@ -122,9 +128,12 @@ override fail() case. */}}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "fleetmetadatacache") | fromYaml }}
 {{- /* Issue #1730: fleetmetadatacache.namespace falls back to
-global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset;
-$v.namespace's own schema default ("kubernaut-system") is the final
-fallback when neither is set, preserving pre-#1730 behavior. */}}
+global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset.
+Issue #2298: no further fallback -- see the ConfigMap namespace comment
+above. When both are unset this renders an empty-string namespace here,
+and the RBAC section below grants no CRD-watch access at all rather than
+defaulting to cluster-wide read (pkg/fleet/fmc/config.Validate() then
+refuses to start the pod). */}}
 {{- $fmcNamespace := $fmcFleetPreamble.config.namespace | default $v.namespace }}
 {{- /*
 Issue #1984 Phase B/D: FMC being effectively enabled requires
@@ -287,59 +296,27 @@ metadata:
     app.kubernetes.io/component: fleet-metadata-cache
     {{- include "kubernaut.labels" . | nindent 4 }}
 {{- /*
-#1686 (BR-RBAC-020): FMC's ClusterRole exists solely to grant its
-ClusterRegistry's CRD watch (there is no other rule in this ClusterRole),
-so when fleetmetadatacache.namespace scopes that watch to one namespace, the
-ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
-namespace-scoped Role/RoleBinding below (least privilege) instead of
-rendering a redundant empty ClusterRole.
+#1686 (BR-RBAC-020) / Issue #2298: FMC previously fell back to a cluster-wide
+ClusterRole/ClusterRoleBinding when no namespace was configured -- the same
+gap that made #2298 possible (a cluster can run more than one MCP Gateway,
+so "watch everywhere" isn't a safe substitute for the intended namespace and
+just papers over a missing config value). fleetmetadatacache.namespace (or
+its global.fleet.mcpGatewayNamespace fallback, Issue #1730) has no safe
+default; rather than grant cluster-wide read access as a fallback (least
+privilege, AC-6), no RBAC for the CRD watch is granted at all when it's
+unset -- FMC's own pkg/fleet/fmc/config.Validate() then refuses to start
+the pod, rather than running with unbounded permissions it was never
+scoped to need. Not a template-level fail(): a hard `helm template`/
+`helm install` failure here would additionally require every unrelated
+chart test that derive-enables FMC (Valkey TLS, startup probes, schema
+validation, etc., ~13 test files as of this change) to also set a
+namespace, for no benefit beyond what the Go-level guard already provides.
 */}}
-{{- if not $fmcNamespace }}
+{{- if $fmcNamespace }}
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: fleetmetadatacache
-  labels:
-    app.kubernetes.io/name: fleetmetadatacache
-    {{- include "kubernaut.labels" . | nindent 4 }}
-rules:
-{{- if eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant" }}
-  - apiGroups: ["mcp.kuadrant.io"]
-    resources: ["mcpserverregistrations"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["gateway.networking.k8s.io"]
-    resources: ["gateways", "httproutes"]
-    verbs: ["get", "list", "watch"]
-{{- else }}
-  - apiGroups: ["gateway.envoyproxy.io"]
-    resources: ["backends"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["aigateway.envoyproxy.io"]
-    resources: ["mcproutes"]
-    verbs: ["get", "list", "watch"]
-{{- end }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: fleetmetadatacache
-  labels:
-    app.kubernetes.io/name: fleetmetadatacache
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: fleetmetadatacache
-subjects:
-  - kind: ServiceAccount
-    name: fleetmetadatacache
-    namespace: {{ .Release.Namespace }}
-{{- else }}
----
-# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
-# above, granted instead of them when fleetmetadatacache.namespace (or its
-# global.fleet.mcpGatewayNamespace fallback, Issue #1730) is set.
+# #1686 (BR-RBAC-020): namespace-scoped RBAC for FMC's ClusterRegistry CRD
+# watch (mcpserverregistrations/backends etc.), granted only when a
+# namespace is configured -- see the comment above for the unset case.
 {{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $fmcNamespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---

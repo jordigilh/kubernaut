@@ -223,7 +223,7 @@ fleetmetadatacache:
         repository: quay.io/kubernaut-ai/fleetmetadatacache
         tag: v1.6.0
     keyTTL: 45s
-    namespace: kubernaut-system
+    namespace: ""
     oauth2:
         credentialsSecretRef: ""
     pdb:
