@@ -498,6 +498,11 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 			OAuth2Scopes:              fleetScopes,
 			WEOAuth2CredentialsSecret: fleetOAuth2SecretName,
 			SignalProcessingNamespace: namespace,
+			// Issue #2298: MCPServerRegistrations are created in `namespace`
+			// by deployKuadrantRegistrations above (via DeployFleetGatewayInfra
+			// -> deployKubeMCPServerAndRegister), so FMC's own watch must be
+			// scoped there too -- there's no safe default to fall back to.
+			FleetMetadataCacheNamespace: namespace,
 		}, nil
 	}
 

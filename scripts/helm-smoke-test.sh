@@ -1276,13 +1276,14 @@ run_mon_003() {
 # once global.fleet.mcpGatewayEndpoint is non-empty (confirmed via `helm
 # template` spike), not FMC-specific.
 #
-# Object list confirmed via `helm template` spike, not assumed: FMC's own
-# ClusterRole/ClusterRoleBinding (plain "fleetmetadatacache" name) only render
-# when fleetmetadatacache.namespace is explicitly cleared to "" (opts out of
-# the default namespace-scoped Role/RoleBinding) -- not exercised here, since
-# that's a second, independent toggle. The 5 objects below are the ones that
-# actually render under fleetmetadatacache.enabled=true with no other
-# overrides, which is what this test (and #2159) is about.
+# Object list confirmed via `helm template` spike, not assumed. Issue #2298:
+# FMC's own plain-named ClusterRole/ClusterRoleBinding no longer exist at
+# all -- fleetmetadatacache.namespace has no safe default, and an unset
+# value now renders no RBAC for the CRD watch rather than falling back to
+# cluster-wide (see fleetmetadatacache.yaml). Not exercised here either way,
+# since that's a second, independent toggle. The 5 objects below are the
+# ones that actually render under fleetmetadatacache.enabled=true with no
+# other overrides, which is what this test (and #2159) is about.
 run_rbac_prune_001() {
   local desc="ST-CHART-RBAC-PRUNE-001: BR-PLATFORM-005 FR-6 -- fleetmetadatacache cluster-scoped RBAC is pruned by helm upgrade when fleetmetadatacache.enabled transitions to false"
   local objs=(
