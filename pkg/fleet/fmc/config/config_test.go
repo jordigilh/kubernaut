@@ -29,8 +29,9 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	urlGateway8080 = "http://gateway:8080"
-	urlIdpToken    = "https://idp/token"
+	urlGateway8080   = "http://gateway:8080"
+	urlIdpToken      = "https://idp/token"
+	testMCPNamespace = "mcp-gateway-system"
 )
 
 func TestConfig(t *testing.T) {
@@ -53,7 +54,10 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			Expect(cfg.TLSProfile).To(BeEmpty(),
 				"Issue #748: TLSProfile is OCP-only, operator-managed; empty is a no-op on vanilla K8s")
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("eaigw"))
-			Expect(cfg.MCPGateway.Namespace).To(Equal("kubernaut-system"))
+			Expect(cfg.MCPGateway.Namespace).To(BeEmpty(),
+				"#2298: no safe default exists -- MCPServerRegistration/Backend CRs are "+
+					"managed by the MCP Gateway deployment, not FMC, and a cluster can run "+
+					"more than one gateway; Validate() requires this explicitly instead")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"))
 			Expect(cfg.Valkey.TLS.Enabled).To(BeFalse(),
 				"DD-PLATFORM-006 DA9 follow-up: TLS is opt-in at the Go-defaults level; the Helm chart renders it mandatory-on for chart-deployed installs")
@@ -182,6 +186,7 @@ oauth2:
 		It("UT-FMC-CFG-007: passes with all required fields set [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 
 			Expect(cfg.Validate()).To(Succeed())
@@ -189,6 +194,7 @@ oauth2:
 
 		It("UT-FMC-CFG-008: fails when mcpGateway.endpoint is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 
 			err := cfg.Validate()
@@ -199,6 +205,7 @@ oauth2:
 		It("UT-FMC-CFG-009: fails when valkey.addr is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.Valkey.Addr = ""
 
@@ -210,6 +217,7 @@ oauth2:
 		It("UT-FMC-CFG-010: fails when oauth2.tokenUrl is empty — OAuth2 is mandatory [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -225,12 +233,32 @@ oauth2:
 			// pkg/fleet.FleetConfig.Validate() pattern for MCPGatewayType.
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.MCPGateway.GatewayType = ""
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("mcpGateway.gatewayType is required"))
+		})
+
+		It("UT-FMC-CFG-016: fails when mcpGateway.namespace is empty [AC-6, SI-10]", func() {
+			// #2298 RCA: DefaultServiceConfig() previously defaulted this to
+			// "kubernaut-system" (FMC's own namespace), which silently
+			// scoped the ClusterRegistry's CRD watch away from wherever the
+			// MCP Gateway actually manages MCPServerRegistration/Backend
+			// CRs -- invisible on a live cluster where those CRs lived in a
+			// different namespace, since Start() logged 0 clusters with no
+			// error rather than failing. There is no safe default (a
+			// cluster can run more than one MCP Gateway), so this must be
+			// explicit or fail fast at startup.
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mcpGateway.namespace is required"))
 		})
 
 		It("UT-FMC-CFG-014: fails when valkey.tls.enabled is true but caFile is empty [SC-8]", func() {
@@ -240,6 +268,7 @@ oauth2:
 			// fast at startup, not silently fall back to plaintext or hang.
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.Valkey.TLS.Enabled = true
 
@@ -252,6 +281,7 @@ oauth2:
 		It("UT-FMC-CFG-015: passes when valkey.tls.enabled is true and caFile is set [SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.Valkey.TLS.Enabled = true
 			cfg.Valkey.TLS.CAFile = "/etc/fleetmetadatacache/tls/ca.crt"
@@ -262,6 +292,7 @@ oauth2:
 		It("UT-FMC-CFG-013: fails when mcpGateway.gatewayType is unsupported [SI-10]", func() {
 			cfg := config.DefaultServiceConfig()
 			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.MCPGateway.Namespace = testMCPNamespace
 			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.MCPGateway.GatewayType = "not-a-real-gateway"
 

@@ -126,7 +126,6 @@ func DefaultServiceConfig() *ServiceConfig {
 		},
 		MCPGateway: fleet.MCPGatewayConfig{
 			GatewayType: "eaigw",
-			Namespace:   "kubernaut-system",
 		},
 		Valkey: ValkeyConfig{
 			Addr: "valkey:6379",
@@ -182,6 +181,15 @@ func (c *ServiceConfig) Validate() error {
 	}
 	if !registry.SupportedGateways[registry.MCPGatewayType(c.MCPGateway.GatewayType)] {
 		return fmt.Errorf("unsupported mcpGateway.gatewayType %q; must be one of: eaigw, kuadrant", c.MCPGateway.GatewayType)
+	}
+	// #2298 RCA: MCPServerRegistration (kuadrant) / Backend (eaigw) CRs are
+	// managed by the MCP Gateway deployment, not FMC, and a cluster can run
+	// more than one gateway. Neither FMC's own namespace nor cluster-wide is
+	// a safe default -- both risk silently watching the wrong namespace with
+	// zero clusters discovered and no error (exactly what made #2298
+	// invisible on a live cluster). Require it explicitly.
+	if c.MCPGateway.Namespace == "" {
+		return fmt.Errorf("mcpGateway.namespace is required — specify the namespace where the MCP Gateway manages its MCPServerRegistration/Backend CRs")
 	}
 	if c.Valkey.Addr == "" {
 		return fmt.Errorf("valkey.addr is required")
