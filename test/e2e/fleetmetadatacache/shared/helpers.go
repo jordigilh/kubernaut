@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/gomega" //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
 
@@ -81,6 +82,61 @@ func ClusterIDs(g Gomega, h *Harness) []string {
 		ids = append(ids, c.ID)
 	}
 	return ids
+}
+
+// ClusterIDsAfterNetworkReady behaves like ClusterIDs, except it tolerates a
+// bounded number of transport-level connection failures (dial/EOF/reset)
+// before making the one real, content-asserting request.
+//
+// #2299/#2300 finding: kubelet's readiness probe and kube-proxy's Service
+// iptables/ipvs sync are independent control loops -- kubelet probes the Pod
+// IP directly, bypassing kube-proxy entirely, so Pod-Ready flipping true
+// gives no guarantee that the NodePort's DNAT rule has converged yet.
+// Observed directly in a real Kind run: the first request right after
+// Pod-Ready got `Get https://localhost:<nodePort>/api/v1/clusters: EOF`,
+// unrelated to FMC's own registry-population race -- this is exactly the
+// kube-proxy propagation gap, not a masked completeness bug.
+//
+// This function draws a hard line other zero-grace-period specs in this
+// package must keep: retries are only permitted on transport-level errors
+// (the network path isn't wired up yet), never on the response content
+// itself. The instant a request succeeds, its cluster list is returned
+// as-is with no further retry -- a stale/incomplete list from FMC's own
+// registry still fails the caller's assertion immediately, exactly as a
+// true single-shot check would.
+func ClusterIDsAfterNetworkReady(g Gomega, h *Harness) []string {
+	const (
+		maxAttempts = 20
+		retryDelay  = 250 * time.Millisecond
+	)
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ClustersPath, http.NoBody)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to build cluster list request")
+
+		resp, doErr := h.FMCHTTPClient.Do(req)
+		if doErr != nil {
+			lastErr = doErr
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		defer func() { _ = resp.Body.Close() }()
+		g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "cluster list should return 200")
+
+		var body fmc.ClusterListResponse
+		g.Expect(json.NewDecoder(resp.Body).Decode(&body)).To(Succeed())
+		ids := make([]string, 0, len(body.Clusters))
+		for _, c := range body.Clusters {
+			ids = append(ids, c.ID)
+		}
+		return ids
+	}
+
+	g.Expect(lastErr).ToNot(HaveOccurred(),
+		fmt.Sprintf("FMC API never became network-reachable (kube-proxy NodePort propagation) after %d attempts", maxAttempts))
+	return nil
 }
 
 // ReadyzStatus queries FMC's real /readyz endpoint on the dedicated health

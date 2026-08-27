@@ -58,6 +58,35 @@ func SyncJourney(h *Harness, v Variant) bool {
 			})
 		})
 
+		// #2299/#2300: single-shot, no-retry-on-content check -- deliberately
+		// does NOT use Eventually for the cluster-list assertion itself. By
+		// the time this spec runs, FMC's Pod has long since passed its
+		// /readyz probe (kubelet gates Pod-Ready on it), which itself only
+		// returns 200 once wireFMCDependencies -- including the blocking
+		// clusterRegistry.Start(ctx) call -- has completed
+		// (cmd/fleetmetadatacache/main.go). Cold-start discovery of
+		// loopback-cluster/prod-east/prod-west must therefore already be
+		// complete; this assertion proves that contract without letting a
+		// retry loop mask a completeness gap the way the Eventually-based
+		// spec below structurally cannot distinguish from ordinary sync lag.
+		//
+		// ClusterIDsAfterNetworkReady (not the plain ClusterIDs the spec
+		// below uses) tolerates a bounded number of transport-level
+		// connection failures before its one real request: a real Kind run
+		// surfaced that kubelet's Pod-Ready and kube-proxy's Service
+		// iptables/ipvs sync are independent control loops (kubelet probes
+		// the Pod IP directly, bypassing kube-proxy), so Pod-Ready gives no
+		// guarantee the NodePort's DNAT rule has converged yet -- an
+		// orthogonal infra propagation gap, not the registry race this spec
+		// exists to guard. Retries there are scoped to "is the network path
+		// wired up at all", never to the cluster-list content.
+		It(fmt.Sprintf("[no-retry, #2299] lists loopback-cluster, prod-east, and prod-west via real %s discovery with zero grace period", v.DynamicResourceKind()), func() {
+			ids := ClusterIDsAfterNetworkReady(Default, h)
+			Expect(ids).To(ContainElements("loopback-cluster", "prod-east", "prod-west"),
+				"cold-start discovery must be complete by the time FMC's Pod is Ready (and thus its API "+
+					"reachable) -- no retry window should be needed to observe the pre-existing clusters")
+		})
+
 		It(fmt.Sprintf("lists loopback-cluster, prod-east, and prod-west via real %s discovery", v.DynamicResourceKind()), func() {
 			Eventually(func(g Gomega) {
 				ids := ClusterIDs(g, h)
