@@ -96,6 +96,61 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 		})
 	})
 
+	Describe("onUpdate", func() {
+		It("UT-REG-KUA-007 [SI-4]: should update existing cluster's toolPrefix and emit Updated event", func() {
+			u1 := newMCPServerRegistrationUnstructured("staging", "staging_old_",
+				map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(u1)
+			Eventually(w.WatchClusters()).Should(Receive())
+
+			u2 := newMCPServerRegistrationUnstructured("staging", "staging_new_",
+				map[string]interface{}{ManagedLabel: "true"})
+			w.onUpdate(u1, u2)
+
+			info, found := w.Get("staging")
+			Expect(found).To(BeTrue())
+			Expect(info.ToolPrefix).To(Equal("staging_new_"))
+
+			Eventually(w.WatchClusters()).Should(Receive(Equal(ClusterEvent{
+				Type:    EventUpdated,
+				Cluster: info,
+			})))
+		})
+
+		It("UT-REG-KUA-008 [AC-3]: should remove cluster and emit Deleted event when update transitions to spec.state: Disabled", func() {
+			u1 := newMCPServerRegistrationUnstructured("dev-north", "dev_north_",
+				map[string]interface{}{ManagedLabel: "true"})
+			w.onAdd(u1)
+			Eventually(w.WatchClusters()).Should(Receive())
+
+			u2 := newMCPServerRegistrationUnstructured("dev-north", "dev_north_",
+				map[string]interface{}{ManagedLabel: "true"})
+			_ = unstructured.SetNestedField(u2.Object, "Disabled", "spec", "state")
+
+			w.onUpdate(u1, u2)
+
+			Expect(w.List()).To(BeEmpty(),
+				"cluster must be removed once its MCPServerRegistration transitions to spec.state: Disabled")
+			_, found := w.Get("dev-north")
+			Expect(found).To(BeFalse())
+
+			Eventually(w.WatchClusters()).Should(Receive(WithTransform(
+				func(e ClusterEvent) EventType { return e.Type },
+				Equal(EventDeleted),
+			)))
+		})
+
+		It("UT-REG-KUA-009 [AC-3]: should no-op when a disabled update targets a cluster the registry never tracked", func() {
+			u := newMCPServerRegistrationUnstructured("never-added", "never_added_",
+				map[string]interface{}{ManagedLabel: "true"})
+			_ = unstructured.SetNestedField(u.Object, "Disabled", "spec", "state")
+
+			w.onUpdate(u, u)
+
+			Expect(w.List()).To(BeEmpty())
+		})
+	})
+
 	Describe("onDelete", func() {
 		It("UT-REG-KUA-003 [SI-4]: Registry emits EventDeleted when labeled MCPServerRegistration is removed", func() {
 			u := newMCPServerRegistrationUnstructured("dev-west", "dev_west_",

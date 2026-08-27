@@ -22,11 +22,9 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -103,40 +101,23 @@ func (w *KuadrantRegistry) Ready() bool {
 
 // Start begins watching Kuadrant MCPServerRegistration CRDs.
 func (w *KuadrantRegistry) Start(ctx context.Context) error {
-	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		w.client,
-		w.config.ResyncPeriod,
-		w.config.Namespace,
-		func(opts *metav1.ListOptions) {
-			opts.LabelSelector = ManagedLabel + "=true"
-		},
-	)
-
-	informer := factory.ForResource(MCPServerRegistrationGVR).Informer()
-
-	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    w.onAdd,
-		UpdateFunc: w.onUpdate,
-		DeleteFunc: w.onDelete,
-	})
+	seeded, err := startInformerAndSeed(ctx, w.client, w.config, MCPServerRegistrationGVR,
+		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
+		w.stopCh, w.trackableClusterInfo)
 	if err != nil {
-		return fmt.Errorf("failed to add event handler: %w", err)
-	}
-
-	go func() {
-		informer.Run(w.stopCh)
-	}()
-
-	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
-		return fmt.Errorf("failed to sync informer cache")
+		return err
 	}
 
 	w.mu.Lock()
+	for id, info := range seeded {
+		w.clusters[id] = info
+	}
 	w.ready = true
+	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("KuadrantRegistry started and synced", "clusters", len(w.clusters))
+	w.logger.Info("KuadrantRegistry started and synced", "clusters", clusterCount)
 	return nil
 }
 
@@ -158,20 +139,8 @@ func (w *KuadrantRegistry) onAdd(obj interface{}) {
 		return
 	}
 
-	if isKuadrantDisabled(u) {
-		w.logger.V(1).Info("skipping disabled MCPServerRegistration", "name", u.GetName())
-		return
-	}
-
-	labels := u.GetLabels()
-	if labels[ManagedLabel] != "true" {
-		return
-	}
-
-	info, err := extractKuadrantClusterInfo(u)
-	if err != nil {
-		w.logger.Error(err, "failed to extract cluster info on add", "name", u.GetName())
-		w.metrics.NilSafeIncReconcileError()
+	info, trackable := w.trackableClusterInfo(u)
+	if !trackable {
 		return
 	}
 
@@ -183,6 +152,32 @@ func (w *KuadrantRegistry) onAdd(obj interface{}) {
 	w.metrics.NilSafeIncReconcile()
 	w.emit(ClusterEvent{Type: EventAdded, Cluster: info})
 	w.logger.Info("cluster added", "id", info.ID, "toolPrefix", info.ToolPrefix)
+}
+
+// trackableClusterInfo reports whether u should be tracked in the registry
+// (respecting the managed label and disabled state) and, if so, extracts
+// its ClusterInfo. Shared by onAdd's async dispatch path and Start()'s
+// synchronous seed-from-indexer path (#2299) so cold-start population
+// applies the identical inclusion/extraction rules as live events.
+func (w *KuadrantRegistry) trackableClusterInfo(u *unstructured.Unstructured) (ClusterInfo, bool) {
+	if isKuadrantDisabled(u) {
+		w.logger.V(1).Info("skipping disabled MCPServerRegistration", "name", u.GetName())
+		return ClusterInfo{}, false
+	}
+
+	labels := u.GetLabels()
+	if labels[ManagedLabel] != "true" {
+		return ClusterInfo{}, false
+	}
+
+	info, err := extractKuadrantClusterInfo(u)
+	if err != nil {
+		w.logger.Error(err, "failed to extract cluster info", "name", u.GetName())
+		w.metrics.NilSafeIncReconcileError()
+		return ClusterInfo{}, false
+	}
+
+	return info, true
 }
 
 func (w *KuadrantRegistry) onUpdate(oldObj, newObj interface{}) {
