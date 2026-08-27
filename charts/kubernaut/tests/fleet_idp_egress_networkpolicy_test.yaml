@@ -241,6 +241,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
       global:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
@@ -266,6 +267,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
       global:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"

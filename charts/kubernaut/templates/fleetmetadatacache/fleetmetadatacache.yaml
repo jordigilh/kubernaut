@@ -20,13 +20,14 @@ mcpGateway:
   {{- /* Issue #1730: fleetmetadatacache.namespace falls back to
   global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset.
   Issue #2298: there is no further fallback -- $v.namespace's own schema
-  default is now "" (empty). An unset value renders here as "" (this
-  ConfigMap still renders successfully -- see the RBAC section below for
-  why this isn't a template-level fail()); pkg/fleet/fmc/config.Validate()
-  refuses to start the pod on that empty value instead. MCPServerRegistration/
-  Backend CRs are managed by the MCP Gateway deployment, not FMC, and a
-  cluster can run more than one gateway, so neither FMC's own namespace
-  (the old default) nor cluster-wide is safe. */}}
+  default is now "" (empty). This configYAML define is also reused for the
+  checksum/config annotation above, outside the effectiveEnabled-gated fail()
+  guard further below, so an unset value still renders here as "" rather than
+  failing at this call site; the guard (and pkg/fleet/fmc/config.Validate() as
+  a second layer) catches it before the pod/Deployment actually render.
+  MCPServerRegistration/Backend CRs are managed by the MCP Gateway deployment,
+  not FMC, and a cluster can run more than one gateway, so neither FMC's own
+  namespace (the old default) nor cluster-wide is safe. */}}
   namespace: {{ $fmcFleetPreamble.config.namespace | default $v.namespace | quote }}
   {{- /* Issue #2262 Phase 2: fleet.MCPGatewayConfig.Resilience (pkg/fleet/config.go)
   nests under mcpGateway, unlike every other service's fleet.resilience --
@@ -142,6 +143,18 @@ requires global.fleet.oauth2.{enabled,tokenURL,credentialsSecretRef} complete
 (Phase D, values.schema.json) -- jointly subsuming this unconditional
 tokenURL/credentialsSecretRef fail() guard, which is now redundant (BR-PLATFORM-010).
 */}}
+{{- /*
+Issue #2298: fleetmetadatacache.namespace (or its global.fleet.mcpGatewayNamespace
+fallback, Issue #1730) has no safe default -- a cluster can run more than one MCP
+Gateway, so neither FMC's own namespace (the old default) nor cluster-wide is a
+safe substitute for the intended namespace. pkg/fleet/fmc/config.Validate() already
+refuses to start the pod on an empty value, but that only covers this chart's own
+Deployment -- fail the render too, so `helm install`/`helm template` catches the
+same misconfiguration before a pod ever crash-loops (defense in depth, SI-10/CM-6).
+*/}}
+{{- if not $fmcNamespace }}
+{{- fail "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two." }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -300,25 +313,14 @@ metadata:
 ClusterRole/ClusterRoleBinding when no namespace was configured -- the same
 gap that made #2298 possible (a cluster can run more than one MCP Gateway,
 so "watch everywhere" isn't a safe substitute for the intended namespace and
-just papers over a missing config value). fleetmetadatacache.namespace (or
-its global.fleet.mcpGatewayNamespace fallback, Issue #1730) has no safe
-default; rather than grant cluster-wide read access as a fallback (least
-privilege, AC-6), no RBAC for the CRD watch is granted at all when it's
-unset -- FMC's own pkg/fleet/fmc/config.Validate() then refuses to start
-the pod, rather than running with unbounded permissions it was never
-scoped to need. Not a template-level fail(): a hard `helm template`/
-`helm install` failure here would additionally require every unrelated
-chart test that derive-enables FMC (Valkey TLS, startup probes, schema
-validation, etc., ~13 test files as of this change) to also set a
-namespace, for no benefit beyond what the Go-level guard already provides.
+just papers over a missing config value). The fail() guard above already
+aborts the render when $fmcNamespace is unset, so by this point it's always
+set -- grant namespace-scoped RBAC only, never the old cluster-wide fallback.
 */}}
-{{- if $fmcNamespace }}
 ---
 # #1686 (BR-RBAC-020): namespace-scoped RBAC for FMC's ClusterRegistry CRD
-# watch (mcpserverregistrations/backends etc.), granted only when a
-# namespace is configured -- see the comment above for the unset case.
+# watch (mcpserverregistrations/backends etc.) -- see the fail() guard above.
 {{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $fmcNamespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
-{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

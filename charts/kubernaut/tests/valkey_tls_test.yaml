@@ -240,6 +240,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
       global:
@@ -315,6 +316,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
       global:
@@ -337,6 +339,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
       global:
@@ -359,6 +362,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
         valkeyTLS:
@@ -383,6 +387,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
       global:
@@ -452,6 +457,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
       global:
@@ -477,6 +483,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
         oauth2:
           credentialsSecretRef: "fmc-creds"
         valkeyTLS:

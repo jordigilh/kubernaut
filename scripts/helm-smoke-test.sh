@@ -1278,12 +1278,14 @@ run_mon_003() {
 #
 # Object list confirmed via `helm template` spike, not assumed. Issue #2298:
 # FMC's own plain-named ClusterRole/ClusterRoleBinding no longer exist at
-# all -- fleetmetadatacache.namespace has no safe default, and an unset
-# value now renders no RBAC for the CRD watch rather than falling back to
-# cluster-wide (see fleetmetadatacache.yaml). Not exercised here either way,
-# since that's a second, independent toggle. The 5 objects below are the
-# ones that actually render under fleetmetadatacache.enabled=true with no
-# other overrides, which is what this test (and #2159) is about.
+# all -- fleetmetadatacache.namespace has no safe default, and the chart's
+# own fail() guard now aborts the render (rather than falling back to
+# cluster-wide RBAC) when it's unset, so this flow's `helm upgrade` below
+# sets it explicitly. That guard is exercised independently by chart unit
+# tests (fleet_registry_rbac_test.yaml, fleet_mcp_gateway_namespace_test.yaml),
+# not here. The 5 objects below are the ones that actually render under
+# fleetmetadatacache.enabled=true with a namespace set, which is what this
+# test (and #2159) is about.
 run_rbac_prune_001() {
   local desc="ST-CHART-RBAC-PRUNE-001: BR-PLATFORM-005 FR-6 -- fleetmetadatacache cluster-scoped RBAC is pruned by helm upgrade when fleetmetadatacache.enabled transitions to false"
   local objs=(
@@ -1311,6 +1313,7 @@ run_rbac_prune_001() {
   if ! helm upgrade kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --reuse-values \
     --set fleetmetadatacache.enabled=true \
+    --set fleetmetadatacache.namespace="$NAMESPACE" \
     --set global.fleet.mcpGatewayEndpoint=https://mcp.smoke-test.local \
     --set global.fleet.oauth2.enabled=true \
     --set global.fleet.oauth2.tokenURL=https://oauth.smoke-test.local/token \

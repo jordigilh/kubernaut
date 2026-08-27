@@ -191,7 +191,7 @@ tests:
           path: metadata.namespace
           value: fmc-only-ns
 
-  - it: "IT-PLATFORM-1730-002d / #2298: FMC grants no CRD-watch RBAC at all (no ClusterRole, no Role) when neither fleetmetadatacache.namespace nor global.fleet.mcpGatewayNamespace is set -- there is no safe default (MCPServerRegistration/Backend CRs are managed by the MCP Gateway, not FMC, and a cluster can run more than one gateway), so cluster-wide read access is no longer granted as a fallback (least privilege, AC-6); pkg/fleet/fmc/config.Validate() refuses to start the pod on this same empty value instead"
+  - it: "IT-PLATFORM-1730-002d / #2298: fails the render (not a silent cluster-wide RBAC fallback) when neither fleetmetadatacache.namespace nor global.fleet.mcpGatewayNamespace is set -- there is no safe default (MCPServerRegistration/Backend CRs are managed by the MCP Gateway, not FMC, and a cluster can run more than one gateway); pkg/fleet/fmc/config.Validate() enforces the same rule at Go-level startup as a second layer"
     set:
       fleetmetadatacache:
         enabled: true
@@ -203,11 +203,6 @@ tests:
           oauth2:
             tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
-    documentSelector:
-      path: kind
-      value: ClusterRole
-      skipEmptyTemplates: true
     asserts:
-      - hasDocuments:
-          count: 0
-          filterAware: true
+      - failedTemplate:
+          errorMessage: "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two."

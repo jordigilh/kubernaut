@@ -87,6 +87,7 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
+        namespace: "mcp-gateway-system"
       global:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
@@ -113,6 +114,7 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayNamespace: "mcp-gateway-system"
           oauth2:
             enabled: true
             tokenURL: "http://oauth.example.com"
@@ -135,6 +137,7 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayNamespace: "mcp-gateway-system"
           oauth2:
             enabled: true
             tokenURL: "http://oauth.example.com"
@@ -157,6 +160,7 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayNamespace: "mcp-gateway-system"
           oauth2:
             enabled: true
             tokenURL: "http://oauth.example.com"

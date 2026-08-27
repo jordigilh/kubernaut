@@ -9,6 +9,7 @@ templates:
 set:
   fleetmetadatacache:
     enabled: true
+    namespace: "mcp-gateway-system"
     oauth2:
       credentialsSecretRef: fmc-creds
   global:

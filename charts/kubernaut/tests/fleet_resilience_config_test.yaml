@@ -36,6 +36,7 @@ set:
     fleet:
       enabled: true
       mcpGatewayEndpoint: "http://mcp.example.com"
+      mcpGatewayNamespace: "mcp-gateway-system"
       backend: "fleetmetadatacache"
       mcpGatewayType: "eaigw"
       oauth2:
