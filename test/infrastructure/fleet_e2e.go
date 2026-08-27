@@ -593,7 +593,7 @@ stringData:
 // kubeconfig-mode config).
 //
 // Total memory: ~1.7-2.5 GB (passthrough mode, Keycloak).
-func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
+func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, enableCoverage bool, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet Core E2E Infrastructure...")
 
 	mcpGatewayEndpoint, err := DeployFleetGatewayInfra(ctx, namespace, kubeconfigPath, authConfig, writer)
@@ -602,7 +602,7 @@ func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcIma
 	}
 
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
-	return deployValkeyAndFMC(ctx, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint, authConfig, fmcOAuth2Config, writer)
+	return deployValkeyAndFMC(ctx, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint, authConfig, fmcOAuth2Config, enableCoverage, writer)
 }
 
 // DeployFleetGatewayInfra deploys Phases 1-3 of DeployFleetCoreInfra --
@@ -1597,7 +1597,7 @@ spec:
 	return nil
 }
 
-func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
+func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, enableCoverage bool, writer io.Writer) error {
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
 
@@ -1663,6 +1663,31 @@ func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
   verbs: ["create"]`
+	}
+
+	// DD-TEST-007 coverage instrumentation (#2300 Gap 4b): FMC's Dockerfile
+	// already builds a GOFLAGS=-cover binary when requested
+	// (docker/fleetmetadatacache.Dockerfile), but until now this manifest
+	// never mounted a /coverdata volume or set GOCOVERDIR, so the
+	// instrumented binary had nowhere to flush counters -- E2E runs with
+	// E2E_COVERAGE=true silently produced zero FMC E2E coverage data.
+	// Mirrors notificationControllerManifest's injection pattern
+	// (notification_e2e.go) using the same shared fixtures.
+	coverageEnvYAML := ""
+	coverageVolumeMountYAML := ""
+	coverageVolumeYAML := ""
+	coverageSecurityContextYAML := ""
+	if enableCoverage {
+		coverageEnvYAML = "\n        env:" + coverageEnvYAMLFixture
+		coverageVolumeMountYAML = `
+        - name: coverdata
+          mountPath: /coverdata`
+		coverageVolumeYAML = `
+      - name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate`
+		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
 	}
 
 	fmcManifest := fmt.Sprintf(`---
@@ -1812,11 +1837,11 @@ spec:
         app: fleetmetadatacache
         component: fleet
     spec:
-      serviceAccountName: fleetmetadatacache
+      serviceAccountName: fleetmetadatacache%[10]s
       containers:
       - name: fleetmetadatacache
         image: %[2]s
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: IfNotPresent%[11]s
         volumeMounts:
         - name: config
           mountPath: /etc/fleetmetadatacache
@@ -1829,7 +1854,7 @@ spec:
           readOnly: true
         - name: tls-certs
           mountPath: /etc/tls
-          readOnly: true
+          readOnly: true%[12]s
         ports:
         - name: api
           containerPort: 8080
@@ -1883,7 +1908,7 @@ spec:
       - name: tls-certs
         secret:
           secretName: fleetmetadatacache-tls
-          optional: true
+          optional: true%[13]s
 ---
 apiVersion: v1
 kind: Service
@@ -1906,7 +1931,7 @@ spec:
     targetPort: metrics
   selector:
     app: fleetmetadatacache
-`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML, mcpGatewayEndpoint, string(authConfig.GatewayType), fmcGatewayRBACRules)
+`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML, mcpGatewayEndpoint, string(authConfig.GatewayType), fmcGatewayRBACRules, coverageSecurityContextYAML, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
 		return fmt.Errorf("fmc deployment failed: %w", err)

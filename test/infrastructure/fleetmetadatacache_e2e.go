@@ -262,7 +262,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 	}
 
-	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); coreErr != nil {
+	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, buildCfg.EnableCoverage, writer); coreErr != nil {
 		return "", "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
 	}
 

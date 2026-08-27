@@ -479,6 +479,27 @@ test-integration-datastorage: generate ginkgo setup-envtest ensure-coverage-dirs
 		go tool cover -func=coverage_integration_datastorage.out | grep total || echo "No coverage data"; \
 	fi
 
+# Fleet Metadata Cache integration tests: business code lives under
+# pkg/fleet/{fmc,registry,scopecache,mcpclient}/ (no pkg/fleetmetadatacache/
+# or internal/controller/fleetmetadatacache/ package exists), so the generic
+# test-integration-% pattern's coverpkg=pkg/fleetmetadatacache/...,internal/
+# controller/fleetmetadatacache/... matches zero packages and silently
+# reports "coverage: [no statements]" (#2300 pyramid-invariant gap: IT ran
+# and passed, but proved zero coverage). This dedicated target uses the
+# actual package layout.
+.PHONY: test-integration-fleetmetadatacache
+test-integration-fleetmetadatacache: generate ginkgo setup-envtest ensure-coverage-dirs ## Run Fleet Metadata Cache integration tests (coverpkg: pkg/fleet/{fmc,registry,scopecache,mcpclient})
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 fleetmetadatacache - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_fleetmetadatacache.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet,github.com/jordigilh/kubernaut/pkg/fleet/fmc/...,github.com/jordigilh/kubernaut/pkg/fleet/registry/...,github.com/jordigilh/kubernaut/pkg/fleet/scopecache/...,github.com/jordigilh/kubernaut/pkg/fleet/mcpclient/... ./test/integration/fleetmetadatacache/...
+	@if [ -f coverage_integration_fleetmetadatacache.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_fleetmetadatacache.out"; \
+		go tool cover -func=coverage_integration_fleetmetadatacache.out | grep total || echo "No coverage data"; \
+	fi
+
 # E2E Tests
 .PHONY: test-e2e-%
 test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
