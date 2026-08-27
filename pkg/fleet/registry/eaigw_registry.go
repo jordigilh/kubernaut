@@ -139,35 +139,17 @@ func (w *EAIGWRegistry) Ready() bool {
 
 // Start begins watching Envoy AI Gateway Backend CRDs.
 func (w *EAIGWRegistry) Start(ctx context.Context) error {
-	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		w.client,
-		w.config.ResyncPeriod,
-		w.config.Namespace,
-		func(opts *metav1.ListOptions) {
-			opts.LabelSelector = ManagedLabel + "=true"
-		},
-	)
-
-	informer := factory.ForResource(BackendGVR).Informer()
-
-	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    w.onAdd,
-		UpdateFunc: w.onUpdate,
-		DeleteFunc: w.onDelete,
-	})
+	seeded, err := startInformerAndSeed(ctx, w.client, w.config, BackendGVR,
+		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
+		w.stopCh, w.trackableClusterInfo)
 	if err != nil {
-		return fmt.Errorf("failed to add event handler: %w", err)
-	}
-
-	go func() {
-		informer.Run(w.stopCh)
-	}()
-
-	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
-		return fmt.Errorf("failed to sync informer cache")
+		return err
 	}
 
 	w.mu.Lock()
+	for id, info := range seeded {
+		w.clusters[id] = info
+	}
 	w.ready = true
 	clusterCount := len(w.clusters)
 	w.mu.Unlock()
@@ -175,6 +157,65 @@ func (w *EAIGWRegistry) Start(ctx context.Context) error {
 	w.metrics.NilSafeIncReconcile()
 	w.logger.Info("EAIGWRegistry started and synced", "clusters", clusterCount)
 	return nil
+}
+
+// startInformerAndSeed builds a filtered dynamic informer for gvr, registers
+// handlers, waits for the initial cache sync, then synchronously seeds
+// already-present objects via trackable before returning. Shared by
+// KuadrantRegistry.Start and EAIGWRegistry.Start (#2299/#2300 dupl fix):
+// their startup sequence is otherwise identical and previously duplicated
+// wholesale between the two files (golangci-lint dupl finding once the
+// #2299 seed-from-indexer fix landed in both).
+//
+// #2299: cache.WaitForCacheSync only guarantees the reflector's initial
+// List has populated informer.GetIndexer(); it does NOT guarantee the
+// sharedProcessor has finished dispatching AddFunc to registered handlers
+// for every pre-existing object, since that dispatch runs on an
+// independent processorListener goroutine with no ordering guarantee
+// relative to WaitForCacheSync returning. Seeding synchronously from the
+// indexer itself makes the caller's Start() returning success a
+// correctness guarantee, not a race against async dispatch.
+func startInformerAndSeed(
+	ctx context.Context,
+	client dynamic.Interface,
+	cfg EAIGWRegistryConfig,
+	gvr schema.GroupVersionResource,
+	handlers cache.ResourceEventHandlerFuncs,
+	stopCh chan struct{},
+	trackable func(*unstructured.Unstructured) (ClusterInfo, bool),
+) (map[string]ClusterInfo, error) {
+	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
+		client,
+		cfg.ResyncPeriod,
+		cfg.Namespace,
+		func(opts *metav1.ListOptions) {
+			opts.LabelSelector = ManagedLabel + "=true"
+		},
+	)
+
+	informer := factory.ForResource(gvr).Informer()
+
+	if _, err := informer.AddEventHandler(handlers); err != nil {
+		return nil, fmt.Errorf("failed to add event handler: %w", err)
+	}
+
+	go func() {
+		informer.Run(stopCh)
+	}()
+
+	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
+		return nil, fmt.Errorf("failed to sync informer cache")
+	}
+
+	seeded := make(map[string]ClusterInfo)
+	for _, obj := range informer.GetIndexer().List() {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			if info, ok := trackable(u); ok {
+				seeded[info.ID] = info
+			}
+		}
+	}
+	return seeded, nil
 }
 
 // Stop halts the watcher and closes the event channel.
@@ -195,10 +236,8 @@ func (w *EAIGWRegistry) onAdd(obj interface{}) {
 	if !ok {
 		return
 	}
-	info, err := ExtractClusterInfo(u)
-	if err != nil {
-		w.logger.Error(err, "failed to extract cluster info on add", "name", u.GetName())
-		w.metrics.NilSafeIncReconcileError()
+	info, trackable := w.trackableClusterInfo(u)
+	if !trackable {
 		return
 	}
 
@@ -210,6 +249,20 @@ func (w *EAIGWRegistry) onAdd(obj interface{}) {
 	w.metrics.NilSafeIncReconcile()
 	w.emit(ClusterEvent{Type: EventAdded, Cluster: info})
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
+}
+
+// trackableClusterInfo extracts ClusterInfo from u, reporting false if
+// extraction fails. Shared by onAdd's async dispatch path and Start()'s
+// synchronous seed-from-indexer path (#2299) so cold-start population
+// applies the identical extraction rules as live events.
+func (w *EAIGWRegistry) trackableClusterInfo(u *unstructured.Unstructured) (ClusterInfo, bool) {
+	info, err := ExtractClusterInfo(u)
+	if err != nil {
+		w.logger.Error(err, "failed to extract cluster info", "name", u.GetName())
+		w.metrics.NilSafeIncReconcileError()
+		return ClusterInfo{}, false
+	}
+	return info, true
 }
 
 func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {

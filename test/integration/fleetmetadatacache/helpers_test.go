@@ -57,6 +57,32 @@ func deleteBackend(ctx context.Context, name string) {
 	_ = dynClient.Resource(registry.BackendGVR).Namespace("default").Delete(ctx, name, metav1.DeleteOptions{})
 }
 
+func createMCPServerRegistration(ctx context.Context, name string) {
+	GinkgoHelper()
+	reg := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "mcp.kuadrant.io/v1alpha1",
+			"kind":       "MCPServerRegistration",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": "default",
+				"labels": map[string]interface{}{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+			"spec": map[string]interface{}{
+				"prefix": name + "_",
+			},
+		},
+	}
+	_, err := dynClient.Resource(registry.MCPServerRegistrationGVR).Namespace("default").Create(ctx, reg, metav1.CreateOptions{})
+	Expect(err).ToNot(HaveOccurred(), "MCPServerRegistration %s should be created in envtest", name)
+}
+
+func deleteMCPServerRegistration(ctx context.Context, name string) {
+	_ = dynClient.Resource(registry.MCPServerRegistrationGVR).Namespace("default").Delete(ctx, name, metav1.DeleteOptions{})
+}
+
 // localAlwaysFalse is a stub local scope checker that always returns false,
 // isolating the remote (Valkey/FMC) path under test.
 type localAlwaysFalse struct{}
