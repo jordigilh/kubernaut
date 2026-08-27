@@ -257,7 +257,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/fleetmetadatacache"` | No |
 | `image.tag` | string |  | `"v1.6.0"` | No |
 | `keyTTL` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"45s"` | No |
-| `namespace` | string |  | `"kubernaut-system"` | No |
+| `namespace` | string | Namespace where the MCP Gateway manages its MCPServerRegistration (kuadrant) or Backend (eaigw) CRs. #2298 RCA: previously defaulted to "kubernaut-system" (FMC's own namespace), which silently scoped the ClusterRegistry watch away from wherever the MCP Gateway actually runs -- there is no safe default (a cluster can run more than one MCP Gateway). This (or its global.fleet.mcpGatewayNamespace fallback) must be set, or the FMC pod fails fast at startup: pkg/fleet/fmc/config.Validate() enforces this at the Go level (covers every deployment path, including the kubernaut-operator, which renders this ConfigMap independently of this chart). | `""` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `pdb.enabled` | boolean |  | `true` | No |

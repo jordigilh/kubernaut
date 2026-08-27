@@ -19,6 +19,7 @@ set:
       existingConfigMap: test-cm
   fleetmetadatacache:
     enabled: true
+    namespace: "mcp-gateway-system"
     oauth2:
       credentialsSecretRef: "fmc-creds"
   global:

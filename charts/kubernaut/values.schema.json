@@ -2862,7 +2862,8 @@
         },
         "namespace": {
           "type": "string",
-          "default": "kubernaut-system"
+          "default": "",
+          "description": "Namespace where the MCP Gateway manages its MCPServerRegistration (kuadrant) or Backend (eaigw) CRs. #2298 RCA: previously defaulted to \"kubernaut-system\" (FMC's own namespace), which silently scoped the ClusterRegistry watch away from wherever the MCP Gateway actually runs -- there is no safe default (a cluster can run more than one MCP Gateway). This (or its global.fleet.mcpGatewayNamespace fallback) must be set, or the FMC pod fails fast at startup: pkg/fleet/fmc/config.Validate() enforces this at the Go level (covers every deployment path, including the kubernaut-operator, which renders this ConfigMap independently of this chart)."
         },
         "oauth2": {
           "$ref": "#/definitions/fleetOAuth2CredentialsOverride"

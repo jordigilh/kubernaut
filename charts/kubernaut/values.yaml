@@ -672,8 +672,10 @@ valkey:
 # when a user hasn't set it explicitly -- see kubernaut.fleetmetadatacache.effectiveEnabled in
 # _helpers.tpl. Set fleetmetadatacache.enabled explicitly (true or false) to override the
 # derived default.
-# DD-PLATFORM-006 DA14: replicas/image.*/syncInterval/keyTTL/namespace all have
+# DD-PLATFORM-006 DA14: replicas/image.*/syncInterval/keyTTL all have
 # non-zero schema defaults -- omitted here, override only what you need.
+# Issue #2298: namespace has no safe default (see values.schema.json) --
+# set fleetmetadatacache.namespace or global.fleet.mcpGatewayNamespace.
 fleetmetadatacache:
   oauth2: {}
   # DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA): mandatory Valkey

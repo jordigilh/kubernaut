@@ -315,6 +315,14 @@ type FleetHelmOptions struct {
 	// SignalProcessingNamespace restricts SP's ClusterRegistry CRD watch
 	// (signalprocessing.fleet.namespace) -- empty watches cluster-wide.
 	SignalProcessingNamespace string
+	// FleetMetadataCacheNamespace is the namespace where the MCP Gateway
+	// manages its MCPServerRegistration/Backend CRs
+	// (fleetmetadatacache.namespace). Issue #2298: unlike
+	// SignalProcessingNamespace above, this has no safe empty-string
+	// fallback -- pkg/fleet/fmc/config.Validate() refuses to start FMC
+	// without it, so callers MUST set this whenever FleetHelmOptions is
+	// non-nil (FMC is chart-managed and effectively enabled in that case).
+	FleetMetadataCacheNamespace string
 }
 
 // FleetProvisioner, when non-nil, is invoked by SetupFullPipelineInfrastructure
@@ -1164,6 +1172,11 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		if fleetOpts.SignalProcessingNamespace != "" {
 			args = append(args, "--set", "signalprocessing.fleet.namespace="+fleetOpts.SignalProcessingNamespace)
 		}
+		// Issue #2298: fleetmetadatacache.namespace has no safe default --
+		// FMC refuses to start without it (pkg/fleet/fmc/config.Validate()),
+		// so this is set unconditionally here, unlike SignalProcessingNamespace
+		// above (which may legitimately watch cluster-wide).
+		args = append(args, "--set", "fleetmetadatacache.namespace="+fleetOpts.FleetMetadataCacheNamespace)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  🚀 helm install kubernaut charts/kubernaut ...")

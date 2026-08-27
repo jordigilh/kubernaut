@@ -194,7 +194,7 @@ tests:
           count: 0
           filterAware: true
 
-  - it: "IT-HELM-020-004: FMC (kuadrant) retains the ClusterRole rules when namespace is unset (regression guard)"
+  - it: "IT-HELM-020-004: FMC (kuadrant) fails the render rather than granting cluster-wide ClusterRole/Role RBAC for the CRD watch when namespace is unset (#2298: cluster-wide fallback removed, least privilege -- see fleet_mcp_gateway_namespace_test.yaml IT-PLATFORM-1730-002d)"
     set:
       fleetmetadatacache:
         enabled: true
@@ -208,45 +208,9 @@ tests:
           oauth2:
             tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
-    documentSelector:
-      path: kind
-      value: ClusterRole
     asserts:
-      - contains:
-          path: rules
-          content:
-            apiGroups: ["mcp.kuadrant.io"]
-            resources: ["mcpserverregistrations"]
-            verbs: ["get", "list", "watch"]
-      - contains:
-          path: rules
-          content:
-            apiGroups: ["gateway.networking.k8s.io"]
-            resources: ["gateways", "httproutes"]
-            verbs: ["get", "list", "watch"]
-
-  - it: "IT-HELM-020-004b: FMC does not render a Role for the fleet registry when namespace is unset"
-    set:
-      fleetmetadatacache:
-        enabled: true
-        namespace: ""
-        oauth2:
-          credentialsSecretRef: "fmc-creds"
-      global:
-        fleet:
-          mcpGatewayEndpoint: "http://mcp.example.com"
-          mcpGatewayType: kuadrant
-          oauth2:
-            tokenURL: "http://oauth.example.com"
-    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
-    documentSelector:
-      path: metadata.name
-      value: fleetmetadatacache-fleet-registry
-      skipEmptyTemplates: true
-    asserts:
-      - hasDocuments:
-          count: 0
-          filterAware: true
+      - failedTemplate:
+          errorMessage: "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two."
 
   # ---------------------------------------------------------------------
   # FMC — eaigw branch (IT-HELM-020-005/006)
@@ -310,7 +274,7 @@ tests:
           count: 0
           filterAware: true
 
-  - it: "IT-HELM-020-006: FMC (eaigw) retains the ClusterRole rules when namespace is unset (regression guard)"
+  - it: "IT-HELM-020-006: FMC (eaigw) fails the render rather than granting cluster-wide ClusterRole/Role RBAC for the CRD watch when namespace is unset (#2298: cluster-wide fallback removed, least privilege -- see fleet_mcp_gateway_namespace_test.yaml IT-PLATFORM-1730-002d)"
     set:
       fleetmetadatacache:
         enabled: true
@@ -324,22 +288,9 @@ tests:
           oauth2:
             tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
-    documentSelector:
-      path: kind
-      value: ClusterRole
     asserts:
-      - contains:
-          path: rules
-          content:
-            apiGroups: ["gateway.envoyproxy.io"]
-            resources: ["backends"]
-            verbs: ["get", "list", "watch"]
-      - contains:
-          path: rules
-          content:
-            apiGroups: ["aigateway.envoyproxy.io"]
-            resources: ["mcproutes"]
-            verbs: ["get", "list", "watch"]
+      - failedTemplate:
+          errorMessage: "fleetmetadatacache.namespace (or global.fleet.mcpGatewayNamespace) is required when FleetMetadataCache is effectively enabled -- there is no safe default, since a cluster can run more than one MCP Gateway and cluster-wide read access is not granted by default (least privilege, AC-6). Set one of the two."
 
   # ---------------------------------------------------------------------
   # AF (IT-HELM-020-007/008)
