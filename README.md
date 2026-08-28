@@ -114,7 +114,7 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 
 Pick the guide for your platform — both are production-ready deployment paths.
 
-New to Kubernaut? Start with the Helm chart's [Quick Start](charts/kubernaut/README.md#quick-start) — namespace, three credential Secrets, two Rego policies, and one `helm install`.
+New to Kubernaut? Start with the Helm chart's [Quick Start](charts/kubernaut/README.md#quick-start) — namespace, three credential Secrets (PostgreSQL, Valkey, and an LLM provider API key), two Rego policies, and one `helm install`.
 
 | Platform | Method | Guide |
 |---|---|---|
