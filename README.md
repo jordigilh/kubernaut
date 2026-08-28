@@ -125,6 +125,18 @@ Each method's guide lives alongside its own code, so it stays current without a 
 
 ---
 
+## Try It Out
+
+Once Kubernaut is installed, see it in action. [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) provides 37 fault-injection scenarios you can run against your own cluster.
+
+New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app, lets it crash-loop, and watches Kubernaut detect the issue and roll back to the last working revision automatically:
+
+```bash
+./scenarios/crashloop/run.sh
+```
+
+---
+
 ## Signed & Verified
 
 Every container image published to `quay.io/kubernaut-ai` is keylessly signed with
