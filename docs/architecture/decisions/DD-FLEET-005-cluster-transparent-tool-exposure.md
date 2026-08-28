@@ -301,9 +301,12 @@ wrapping) before the local registry is ever consulted.
 for `overlayK8sClient` — `ownerchain.KindToGroup()`'s static table covers
 core/apps/batch kinds only. A resource of an unlisted kind reaching
 `GetSpecHash` with no explicit `apiVersion` gets a clear error rather than a
-guess. A follow-up issue should track full remote-discovery parity if a real
-investigation ever needs a CRD's spec hash through the overlay path; the
-common workload kinds an RCA investigation deals with are already covered.
+guess. Tracked in issue #2308: triage found no discovery tool (an
+equivalent of `kubectl api-resources`) exists anywhere in
+`containers/kubernetes-mcp-server`'s current toolset, so closing this
+requires either an upstream contribution or a bounded expansion of the
+static table -- not a one-line fix. The common workload kinds an RCA
+investigation deals with are already covered.
 
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
@@ -316,5 +319,5 @@ common workload kinds an RCA investigation deals with are already covered.
 
 ## Authority
 
-Issue #1729, Issue #1732, Issue #2306, ADR-068 (decision #11),
+Issue #1729, Issue #1732, Issue #2306, Issue #2308, ADR-068 (decision #11),
 BR-INTEGRATION-054, BR-INTEGRATION-1489.
