@@ -17,9 +17,12 @@ limitations under the License.
 package investigator_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 
@@ -31,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
@@ -228,6 +232,39 @@ func (fleetE2EKuadrantScenario) ConfigForContext(ctx *scenarios.DetectionContext
 			"kind": "Pod", "name": "api-server-abc", "namespace": "production",
 		},
 		ForceText: scenarios.BoolPtr(false),
+	}
+}
+
+// fleetSuppressionE2EScenario (Issue #2306, E2E-KA-FLEET-003) always answers
+// with a completed, actionable RCA on the very first turn -- no tool call
+// needed. Unlike fleetE2EScenario/fleetE2EKuadrantScenario above, this test's
+// job is to inspect the *schema* of that first request (which tool names the
+// real mock-LLM HTTP server actually received), not to prove a tool call
+// routes correctly, so there is nothing to short-circuit on a marker.
+type fleetSuppressionE2EScenario struct{}
+
+func (fleetSuppressionE2EScenario) Name() string { return "fleet_suppression_e2e_2306" }
+func (fleetSuppressionE2EScenario) Metadata() scenarios.ScenarioMetadata {
+	return scenarios.ScenarioMetadata{Name: "fleet_suppression_e2e_2306", Description: "E2E-KA-FLEET-003"}
+}
+func (fleetSuppressionE2EScenario) DAG() *conversation.DAG { return nil }
+func (fleetSuppressionE2EScenario) Match(ctx *scenarios.DetectionContext) (bool, float64) {
+	if strings.Contains(ctx.Content, "fleetsuppressionprobe") {
+		return true, 1.0
+	}
+	return false, 0
+}
+func (fleetSuppressionE2EScenario) ConfigForContext(_ *scenarios.DetectionContext) scenarios.MockScenarioConfig {
+	actionable := true
+	return scenarios.MockScenarioConfig{
+		ScenarioName:         "fleet_suppression_e2e_2306",
+		SignalName:           "FleetSuppressionProbe",
+		Severity:             "critical",
+		RootCause:            "pod api-server-abc confirmed OOMKilled",
+		InvestigationOutcome: "actionable",
+		IsActionable:         &actionable,
+		Confidence:           0.9,
+		ForceText:            scenarios.BoolPtr(true),
 	}
 }
 
@@ -434,6 +471,102 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 			Expect(result.RCASummary).NotTo(ContainSubstring("local-hub"),
 				"the hub-local fakeTool registered under the same generic name must never execute "+
 					"for a fleet-target investigation")
+		})
+	})
+
+	Describe("E2E-KA-FLEET-003 [AC-6, SC-7]: the mock-LLM's real HTTP request excludes suppressed local tool names for a fleet-target investigation", func() {
+		It("omits client-go-backed local tool names from the received tool schema, while resourceContextTools stays visible", func() {
+			// --- Hub-local side: a registry seeded with two representative
+			// client-go-backed tools (suppressed per fleetSuppressedToolNames)
+			// plus the 5 real custom tools (RegisterAll), whose
+			// get_namespaced_resource_context/get_cluster_resource_context are
+			// fleet-agnostic BY NAME and must stay visible (Issue #2306). ---
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: `{}`})
+			reg.Register(&fakeTool{name: "kubectl_top_pods", result: `{}`})
+			auditStore := newCapturingAuditStore(suiteAuditStore)
+			custom.RegisterAll(reg, nil, auditStore, suiteDSAdapter, &k8sFixtureClient{}, logr.Discard())
+
+			// --- Mock LLM side: a real HTTP server, fronted by a thin
+			// body-capturing proxy that records the "tools" field of the
+			// actual wire request before forwarding it unchanged to the real
+			// scenario router -- proving what the LLM itself would have
+			// received, not an internal Go struct. ---
+			var capturedToolNames []string
+			reg2 := scenarios.NewRegistry()
+			reg2.Register(fleetSuppressionE2EScenario{})
+			realRouter := handlers.NewRouter(reg2, false, "")
+			llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				bodyBytes, err := io.ReadAll(r.Body)
+				Expect(err).NotTo(HaveOccurred())
+
+				var parsed struct {
+					Tools []struct {
+						Function struct {
+							Name string `json:"name"`
+						} `json:"function"`
+					} `json:"tools"`
+				}
+				if jerr := json.Unmarshal(bodyBytes, &parsed); jerr == nil {
+					for _, t := range parsed.Tools {
+						capturedToolNames = append(capturedToolNames, t.Function.Name)
+					}
+				}
+
+				r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				realRouter.ServeHTTP(w, r)
+			}))
+			defer llmServer.Close()
+
+			llmClient := kaopenai.New("test-model", llmServer.URL, "test-key")
+			sw, err := llm.NewSwappableClient(llmClient, "test-model")
+			Expect(err).NotTo(HaveOccurred())
+
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			inv := investigator.New(investigator.Config{
+				PhaseResolver: investigator.NewDefaultPhaseResolver(sw, nil),
+				Builder:       builder,
+				ResultParser:  parser.NewResultParser(),
+				AuditStore:    auditStore,
+				Logger:        logr.Discard(),
+				MaxTurns:      5,
+				PhaseTools:    investigator.DefaultPhaseToolMap(),
+				Registry:      reg,
+				// Non-empty overlay resolution (no tools) is enough to
+				// exercise prescopeFleetOverlay's fleet-target path; this
+				// test proves schema exclusion, not overlay tool routing
+				// (already proven by E2E-KA-FLEET-001/002 above).
+				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}},
+			})
+
+			signal := katypes.SignalContext{
+				Name:          "FleetSuppressionProbe",
+				Namespace:     "production",
+				Severity:      "critical",
+				Message:       "OOMKilled",
+				ClusterID:     "remote-east",
+				ResourceKind:  "Pod",
+				ResourceName:  "api-server-abc",
+				RemediationID: "rem-e2e-fleet-2306",
+				Interactive:   true,
+			}
+
+			result, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred(),
+				"E2E-KA-FLEET-003: a fleet-target investigation through a real mock-LLM HTTP server must complete without error")
+			Expect(result).NotTo(BeNil())
+			Expect(capturedToolNames).NotTo(BeEmpty(),
+				"the capturing proxy must have parsed a non-empty 'tools' field from the real wire request")
+
+			Expect(capturedToolNames).NotTo(ContainElement("kubectl_get_by_name"),
+				"Issue #2306 (AC-6): a client-go-backed local tool must never be advertised to the LLM "+
+					"for a fleet-target investigation with no same-named overlay override")
+			Expect(capturedToolNames).NotTo(ContainElement("kubectl_top_pods"))
+			Expect(capturedToolNames).To(ContainElement("get_namespaced_resource_context"),
+				"resourceContextTools are fleet-agnostic BY NAME and must stay visible -- Issue #2306's fix "+
+					"is internal cluster-aware routing inside Execute(), not suppression from the schema")
 		})
 	})
 })

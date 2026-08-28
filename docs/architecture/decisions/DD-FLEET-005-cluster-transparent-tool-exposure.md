@@ -226,7 +226,84 @@ randomized map iteration order.
 |---|---|---|---|
 | Non-colliding overlay tool append | `toolDefinitionsForPhase()` -> `appendNonCollidingOverlayTools()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-024 |
 
+## Amendment (2026-08-28, issue #2306 close-out): subtractive suppression + resourceContextTools cluster-awareness
+
+Issue #2306 found the override-and-append halves above still left a third
+gap: a local tool whose *behavior* depends on which cluster it queries
+(the client-go/dynamic-client-backed RCA tools — `k8s.AllToolNames`,
+`k8s.MetricsToolNames`, `k8s.NodeProxyToolNames`) but has no same-named
+overlay override stayed advertised to the LLM even for a fleet-target
+investigation. `kube-mcp-server`'s real tool names (`resources_get`,
+`resources_list`, ...) never collide with these local names, so the
+override loop never protected them — the LLM could silently call, e.g.,
+`kubectl_get_by_name` during a fleet-target investigation and get an answer
+from the hub, not the target cluster (the AC-6 defect in #2306's evidence
+trace, RR `rr-9dc9711199fd-bd25bdf5`).
+
+A second, related gap: `resourceContextTools` (`get_namespaced_resource_context`/
+`get_cluster_resource_context`, `internal/kubernautagent/tools/custom/resource_context.go`)
+unconditionally resolved owner-chain/spec-hash against the hub-bound
+`enrichment.K8sClient` and queried `ds.GetRemediationHistory` with an
+unscoped `clusterID`, for the same reason — no fleet-awareness in either
+code path.
+
+**Fix, part 1 (subtractive suppression)**: during the RCA phase of a
+fleet-target investigation (non-empty overlay), `toolDefinitionsForPhase()`
+now skips a local tool name entirely — never appends it to the schema —
+when it's in `fleetSuppressedToolNames` (the three name sets above) and has
+no same-named overlay override. A hub-local investigation (no overlay in
+ctx) never triggers the skip, so its schema is unchanged. Prometheus/
+Alertmanager tools stay always-visible, per the existing Thanos MVP
+federation-transparency decision (PR #1364) — they are not host-bound.
+
+**Fix, part 2 (resourceContextTools cluster-awareness)**: both tools now
+resolve owner-chain/spec-hash against the correct cluster instead of
+unconditionally querying the hub, reusing Gateway's own already-tested
+owner-chain resolver rather than reimplementing a walk loop and static kind
+table from scratch. `pkg/gateway/adapters/owner_resolver.go`'s
+`K8sOwnerResolver` (used by Gateway for signal-fingerprinting owner-chain
+resolution, including its own already-proven remote-cluster resolution via
+`mcpclient.Client`) moved unchanged in behavior to a new shared package,
+`pkg/shared/k8s/ownerchain`, alongside the existing `pkg/shared/k8s/gvk.go`
+GVK helpers — the same `pkg/shared/*` pattern already used for `hash` and
+`scope` so services can share domain logic as peers, without cross-service
+imports. A minimal `KindResolver` interface (`KindToGVR`, `IsCoreBatchAppsKind`)
+replaces the resolver's direct binding to Gateway's concrete
+`APIResourceRegistry`; `*APIResourceRegistry` satisfies it automatically via
+structural typing, with zero code changes to `resource_registry.go`.
+
+On top of the moved package, `internal/kubernautagent/tools/custom/fleet_resource_context.go`
+adds `overlayClientReader` (a `client.Reader` adapter over the fleet
+overlay's `resources_get` tool, reusing the newly-exported
+`mcpclient.ParseUnstructuredResponse`/`mcpclient.PopulateObject` — mechanical
+renames of previously-private helpers, zero behavior change) and
+`overlayK8sClient` (wraps `ownerchain.NewK8sOwnerResolver` for
+`GetOwnerChain`, and `ownerchain.KindToGroup()` + `hash.CanonicalResourceFingerprint`
+for `GetSpecHash`). `resource_context.go`'s `resolveK8sClient()` picks
+the hub-bound client for a hub-local investigation, `overlayK8sClient` for a
+fleet-target investigation whose overlay publishes `resources_get`, or a
+no-op client (clear "not available" error, no silent hub fallback) if the
+overlay lacks it. `fetchRemediationHistory()` now threads
+`audit.ClusterIDFromContext(ctx)` (already set by `prescopeFleetOverlay`)
+into `ds.GetRemediationHistory` instead of an unscoped `""`.
+
+**Deliberately out of scope**: full RESTMapper-equivalent remote discovery
+for `overlayK8sClient` — `ownerchain.KindToGroup()`'s static table covers
+core/apps/batch kinds only. A resource of an unlisted kind reaching
+`GetSpecHash` with no explicit `apiVersion` gets a clear error rather than a
+guess. A follow-up issue should track full remote-discovery parity if a real
+investigation ever needs a CRD's spec hash through the overlay path; the
+common workload kinds an RCA investigation deals with are already covered.
+
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
+|---|---|---|---|
+| `fleetSuppressedToolNames` + subtractive filter | `toolDefinitionsForPhase()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-030/031 |
+| `pkg/shared/k8s/ownerchain` (moved `K8sOwnerResolver`, `KindResolver` interface) | `cmd/gateway/main.go` (existing), `fleet_resource_context.go` (new) | `pkg/shared/k8s/ownerchain` | Gateway's existing 6-file regression suite + UT-KA-FLEET-031/032 |
+| `overlayClientReader` / `overlayK8sClient` | Constructed per-`Execute()` call in `namespacedResourceContextTool`/`clusterResourceContextTool` | `internal/kubernautagent/tools/custom/fleet_resource_context.go` | UT-KA-FLEET-031/032 |
+| `mcpclient.ParseUnstructuredResponse` / `mcpclient.PopulateObject` (exported) | Called by `overlayClientReader.Get` | `pkg/fleet/mcpclient/parse.go`, `pkg/fleet/mcpclient/client.go` | UT-KA-FLEET-031 (indirect) |
+| K8sClient-selection guard (`resolveK8sClient`) + `remediationHistoryQuery.ClusterID` | `Execute()` on both `resourceContextTools` | `internal/kubernautagent/tools/custom/resource_context.go` | IT-KA-FLEET-032/033 |
+
 ## Authority
 
-Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054,
-BR-INTEGRATION-1489.
+Issue #1729, Issue #1732, Issue #2306, ADR-068 (decision #11),
+BR-INTEGRATION-054, BR-INTEGRATION-1489.
