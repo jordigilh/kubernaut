@@ -14,7 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package adapters
+// Package ownerchain resolves the top-level controller owner of a
+// Kubernetes resource by traversing ownerReferences. Moved from
+// pkg/gateway/adapters (issue #2306) to pkg/shared/k8s/ownerchain so both
+// Gateway (signal-fingerprinting dedup) and KubernautAgent (fleet-target
+// resourceContextTools resolution) can import the same proven, tested
+// algorithm as peers — mirroring the existing pkg/shared/hash and
+// pkg/shared/scope pattern for cross-service domain logic, instead of one
+// service cross-linking into the other's pkg/<service> tree.
+package ownerchain
 
 import (
 	"context"
@@ -52,10 +60,10 @@ const ownerLookupTimeout = 5 * time.Second
 // Same mapping as pkg/shared/scope/manager.go:kindToGroup.
 // Shared pattern across Gateway scope management and owner chain resolution.
 //
-// Deprecated: Superseded by APIResourceRegistry.KindToGVR() (#1029).
+// Deprecated: Superseded by a KindResolver's KindToGVR() (#1029).
 // Retained as a nil-registry fallback for tests and the exported KindToGroup()/
 // OwnerChainCacheObjects() helpers. Will be removed in a dedicated cleanup PR
-// once all consumers migrate to the registry.
+// once all consumers migrate to a KindResolver.
 var kindToGroup = map[string]string{
 	"Pod":              "",
 	"Node":             "",
@@ -72,11 +80,27 @@ var kindToGroup = map[string]string{
 	"CronJob":          "batch",
 }
 
+// KindResolver abstracts a caller-supplied dynamic GVR lookup and CRD
+// traversal-control source for K8sOwnerResolver, decoupling this shared
+// package from any single service's concrete registry implementation
+// (#2306). Gateway's *adapters.APIResourceRegistry already satisfies this
+// interface structurally (KindToGVR/IsCoreBatchAppsKind, unchanged) — no
+// code changes needed there.
+type KindResolver interface {
+	// KindToGVR resolves kind to its GroupVersionResource, or (zero, false)
+	// if the kind is unknown to this resolver.
+	KindToGVR(kind string) (schema.GroupVersionResource, bool)
+	// IsCoreBatchAppsKind reports whether kind belongs to the core/apps/batch
+	// API groups (predictable owner-chain traversal) as opposed to a CRD
+	// (unpredictable, cluster-specific owner chains).
+	IsCoreBatchAppsKind(kind string) bool
+}
+
 // KindToGroup returns a copy of the authoritative kind-to-API-group mapping
 // used for owner chain resolution. This is the single source of truth for which
-// Kubernetes resource kinds the Gateway must be able to look up.
+// Kubernetes resource kinds a consumer must be able to look up.
 //
-// Exported so the cache configuration and tests can reference it without
+// Exported so cache configuration and tests can reference it without
 // duplicating the list.
 func KindToGroup() map[string]string {
 	result := make(map[string]string, len(kindToGroup))
@@ -114,8 +138,9 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 // K8sOwnerResolver resolves the top-level controller owner of a Kubernetes
 // resource by traversing ownerReferences using the metadata-only informer cache.
 //
-// This implementation reuses the same controller-runtime cached client (ctrlClient)
-// that the scope management Manager (ADR-053) uses. When Get() is called with
+// This implementation reuses whatever cached controller-runtime client
+// (ctrlClient) the caller supplies — Gateway passes the same cache the scope
+// management Manager (ADR-053) uses. When Get() is called with
 // PartialObjectMetadata, controller-runtime uses metadata-only informers — so
 // owner chain resolution is a pure cache lookup with zero API server calls.
 //
@@ -130,6 +155,7 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 //
 // Business Requirements:
 //   - BR-GATEWAY-004: Signal Fingerprinting (owner-chain-based deduplication for K8s events)
+//   - BR-INTEGRATION-1489: fleet-target resourceContextTools resolution (#2306)
 //
 // Architecture:
 //   - ADR-053: Resource Scope Management (shared metadata-only informer cache)
@@ -137,7 +163,7 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 type K8sOwnerResolver struct {
 	client         client.Reader
 	fallbackReader client.Reader
-	registry       *APIResourceRegistry
+	registry       KindResolver
 	logger         logr.Logger
 }
 
@@ -170,9 +196,11 @@ func WithFallbackReader(reader client.Reader) OwnerResolverOption {
 	}
 }
 
-// WithRegistry sets the APIResourceRegistry for dynamic GVR lookup and
-// CRD traversal control, replacing the static kindToGroup map (#1029).
-func WithRegistry(reg *APIResourceRegistry) OwnerResolverOption {
+// WithRegistry sets the KindResolver for dynamic GVR lookup and CRD
+// traversal control, replacing the static kindToGroup map (#1029). Any
+// implementation satisfying KindResolver may be passed — e.g. Gateway's
+// *adapters.APIResourceRegistry, unchanged (#2306).
+func WithRegistry(reg KindResolver) OwnerResolverOption {
 	return func(r *K8sOwnerResolver) {
 		r.registry = reg
 	}

@@ -56,6 +56,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing" // BR-HTTP-015: Shared CORS library
 
 	// DD-005: Shared sanitization library
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope" // BR-SCOPE-002: Resource scope management
 )
 
@@ -274,7 +275,7 @@ func buildGatewayCache(
 ) (cache.Cache, context.CancelFunc, error) {
 	// #270: Build ByObject map with metadata-only informers for owner chain resolution
 	// OwnerResolver and ScopeManager need cached lookups for Pods, ReplicaSets, Deployments, etc.
-	byObject := adapters.OwnerChainCacheObjects()
+	byObject := ownerchain.OwnerChainCacheObjects()
 	byObject[&remediationv1alpha1.RemediationRequest{}] = cache.ByObject{
 		Namespaces: map[string]cache.Config{
 			controllerNS: {}, // ADR-057: restrict RR to controller namespace

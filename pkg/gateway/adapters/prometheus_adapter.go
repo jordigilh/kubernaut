@@ -33,6 +33,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 )
 
 // rfc1123LabelRegexp validates a K8s name/namespace against RFC 1123 label rules.
@@ -125,15 +126,15 @@ func (a *PrometheusAdapter) SetParseDroppedMetric(c *prometheus.CounterVec) {
 
 // SetReaderFactory injects a fleet.ReaderFactory for remote owner chain resolution.
 // When set and a signal carries a non-empty clusterID, Parse/ParseBatch construct
-// a remote K8sOwnerResolver backed by the reader for that cluster.
+// a remote ownerchain.K8sOwnerResolver backed by the reader for that cluster.
 func (a *PrometheusAdapter) SetReaderFactory(rf readerFactory) {
 	a.readerFactory = rf
 }
 
 // resolverForCluster returns the appropriate owner resolver for the given clusterID.
 // For local signals (empty clusterID) or when no readerFactory is configured,
-// it returns the local resolver. For remote signals, it constructs a
-// K8sOwnerResolver backed by a remote client.Reader from the factory.
+// it returns the local resolver. For remote signals, it constructs an
+// ownerchain.K8sOwnerResolver backed by a remote client.Reader from the factory.
 // On error, it falls back to the local resolver with a logged warning.
 func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) types.OwnerResolver {
 	if clusterID == "" || a.readerFactory == nil {
@@ -145,7 +146,7 @@ func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID st
 			"cluster", clusterID)
 		return a.ownerResolver
 	}
-	return NewK8sOwnerResolver(reader, a.logger)
+	return ownerchain.NewK8sOwnerResolver(reader, a.logger)
 }
 
 // Name returns the adapter identifier

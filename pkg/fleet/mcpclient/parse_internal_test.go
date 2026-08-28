@@ -28,14 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// UT-FLEET-MCP-PARSE: parseUnstructured / populateObject
+// UT-FLEET-MCP-PARSE: ParseUnstructuredResponse / PopulateObject
 // Authority: BR-FLEET-002 (MCP Gateway client), ADR-068
 // FedRAMP: SI-10 (Information Input Validation) -- response parsing correctness
 var _ = Describe("UT-FLEET-MCP-PARSE: MCP response parsing", func() {
 
-	Describe("parseUnstructured", func() {
+	Describe("ParseUnstructuredResponse", func() {
 		It("UT-FLEET-MCP-PARSE-001: parses valid JSON into Unstructured", func() {
-			obj, err := parseUnstructured(`{"kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}`)
+			obj, err := ParseUnstructuredResponse(`{"kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}`)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(obj.GetKind()).To(Equal("Pod"))
 			Expect(obj.GetName()).To(Equal("nginx"))
@@ -43,20 +43,20 @@ var _ = Describe("UT-FLEET-MCP-PARSE: MCP response parsing", func() {
 		})
 
 		It("UT-FLEET-MCP-PARSE-002: returns error for empty string", func() {
-			_, err := parseUnstructured("")
+			_, err := ParseUnstructuredResponse("")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("empty response"))
 		})
 
 		It("UT-FLEET-MCP-PARSE-003: returns error for unparseable content", func() {
-			_, err := parseUnstructured("\x00\x01binary-garbage\x02\x03")
+			_, err := ParseUnstructuredResponse("\x00\x01binary-garbage\x02\x03")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unmarshaling resource"))
 		})
 
 		It("UT-FLEET-MCP-PARSE-003b: parses YAML resource response", func() {
 			yamlText := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx\n  namespace: default\n"
-			obj, err := parseUnstructured(yamlText)
+			obj, err := ParseUnstructuredResponse(yamlText)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(obj).ToNot(BeNil())
 			Expect(obj.GetKind()).To(Equal("Deployment"))

@@ -25,11 +25,17 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
-// fakeK8s returns a configurable owner chain and spec hash.
+// fakeK8s returns a configurable owner chain and spec hash. ownerChainCalls/
+// specHashCalls (issue #2306, UT-KA-FLEET-033) let tests prove whether this
+// hub-bound double was invoked at all -- distinguishing "hub client selected"
+// from "overlay/no-op client selected" for a given investigation context.
 type fakeK8s struct {
 	chain       []enrichment.OwnerChainEntry
 	err         error
@@ -39,29 +45,37 @@ type fakeK8s struct {
 	capturedSpecHashKind      string
 	capturedSpecHashName      string
 	capturedSpecHashNamespace string
+
+	ownerChainCalls int
+	specHashCalls   int
 }
 
 func (f *fakeK8s) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+	f.ownerChainCalls++
 	return f.chain, f.err
 }
 
 func (f *fakeK8s) GetSpecHash(_ context.Context, kind, name, namespace, _ string) (string, error) {
+	f.specHashCalls++
 	f.capturedSpecHashKind = kind
 	f.capturedSpecHashName = name
 	f.capturedSpecHashNamespace = namespace
 	return f.specHash, f.specHashErr
 }
 
-// fakeDS returns configurable remediation history and captures the specHash argument.
+// fakeDS returns configurable remediation history and captures the specHash/
+// clusterID arguments (clusterID added for UT-KA-FLEET-034, issue #2306).
 type fakeDS struct {
 	history *enrichment.RemediationHistoryResult
 	err     error
 
-	capturedSpecHash string
+	capturedSpecHash  string
+	capturedClusterID string
 }
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, clusterID, specHash string) (*enrichment.RemediationHistoryResult, error) {
 	f.capturedSpecHash = specHash
+	f.capturedClusterID = clusterID
 	return f.history, f.err
 }
 
@@ -358,6 +372,96 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeEmpty())
 			Expect(ds.capturedSpecHash).To(Equal(""))
+		})
+	})
+
+	// --- Issue #2306: fleet-target K8sClient selection ---
+
+	Describe("UT-KA-FLEET-033: resourceContextTools select the correct K8sClient per investigation type — BR-INTEGRATION-1489", func() {
+		It("uses the hub-bound K8sClient for a hub-local investigation (no fleet overlay in ctx) — zero regression", func() {
+			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "api-server", Namespace: "prod"}}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
+			_, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"prod"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8s.ownerChainCalls).To(Equal(1), "hub-bound K8sClient must be used when ctx carries no fleet overlay")
+			Expect(k8s.specHashCalls).To(Equal(1))
+		})
+
+		It("uses the overlay K8sClient (not the hub-bound one) when ctx carries a fleet overlay publishing resources_get", func() {
+			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "hub-should-not-be-called"}}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+			getTool := &fakeGetTool{
+				responseJSON: `{"apiVersion":"v1","kind":"Pod","metadata":{"name":"standalone-pod","namespace":"prod"}}`,
+			}
+
+			ctx := investigator.WithFleetOverlay(context.Background(), map[string]tools.Tool{"resources_get": getTool})
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
+			result, err := tool.Execute(ctx,
+				json.RawMessage(`{"kind":"Pod","name":"standalone-pod","namespace":"prod"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8s.ownerChainCalls).To(Equal(0), "hub-bound K8sClient must NOT be used for a fleet-target investigation")
+			Expect(k8s.specHashCalls).To(Equal(0))
+			Expect(getTool.calls).To(BeNumerically(">=", 1), "the overlay's resources_get tool must be invoked instead")
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
+			rootOwner := resp["root_owner"].(map[string]interface{})
+			Expect(rootOwner["name"]).To(Equal("standalone-pod"))
+		})
+
+		It("degrades to a clear 'not available' error (not the hub) when the fleet overlay lacks resources_get", func() {
+			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "hub-should-not-be-called"}}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			// Overlay is non-empty (has some other tool) but does not publish resources_get.
+			ctx := investigator.WithFleetOverlay(context.Background(), map[string]tools.Tool{"kubectl_list": &fakeGetTool{}})
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
+			result, err := tool.Execute(ctx,
+				json.RawMessage(`{"kind":"Pod","name":"orphan-pod","namespace":"prod"}`))
+			Expect(err).NotTo(HaveOccurred(), "the tool call itself must not fail -- owner-chain/spec-hash degrade gracefully")
+
+			Expect(k8s.ownerChainCalls).To(Equal(0), "hub-bound K8sClient must NOT be used as a silent fallback for a fleet-target investigation")
+			Expect(k8s.specHashCalls).To(Equal(0))
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
+			rootOwner := resp["root_owner"].(map[string]interface{})
+			Expect(rootOwner["name"]).To(Equal("orphan-pod"), "falls back to the input resource, matching existing GetOwnerChain-error behavior")
+		})
+	})
+
+	Describe("UT-KA-FLEET-034: fetchRemediationHistory threads the target clusterID — BR-INTEGRATION-1489", func() {
+		It("passes audit.ClusterIDFromContext(ctx) to ds.GetRemediationHistory for a fleet-target investigation", func() {
+			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "api-server", Namespace: "prod"}}}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			ctx := audit.WithClusterID(context.Background(), "spoke-east-1")
+
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
+			_, err := tool.Execute(ctx,
+				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"prod"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(ds.capturedClusterID).To(Equal("spoke-east-1"))
+		})
+
+		It("passes an empty clusterID for a hub-local investigation — zero regression", func() {
+			k8s := &fakeK8s{chain: nil}
+			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
+
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
+			_, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(ds.capturedClusterID).To(Equal(""))
 		})
 	})
 })

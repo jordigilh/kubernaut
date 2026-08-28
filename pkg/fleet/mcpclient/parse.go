@@ -24,7 +24,11 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
-func parseUnstructured(text string) (*unstructured.Unstructured, error) {
+// ParseUnstructuredResponse parses a kube-mcp-server tool response (JSON or
+// YAML text) into an unstructured.Unstructured object. Exported (renamed from
+// parseUnstructured, issue #2306) so KA's overlayClientReader can reuse this
+// already-proven parsing path instead of reimplementing it.
+func ParseUnstructuredResponse(text string) (*unstructured.Unstructured, error) {
 	if text == "" {
 		return nil, fmt.Errorf("empty response")
 	}

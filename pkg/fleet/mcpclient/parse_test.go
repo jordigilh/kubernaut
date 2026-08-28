@@ -26,9 +26,9 @@ import (
 
 var _ = Describe("MCP Response Parsing (BR-INTEGRATION-054)", func() {
 	Describe("UT-FLEET-PARSE-001 [SI-10]: MCP response parser handles all K8s MCP Server response formats", func() {
-		Context("parseUnstructured", func() {
+		Context("ParseUnstructuredResponse", func() {
 			It("returns error for empty text", func() {
-				obj, err := parseUnstructured("")
+				obj, err := ParseUnstructuredResponse("")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("empty response"))
 				Expect(obj).To(BeNil())
@@ -36,7 +36,7 @@ var _ = Describe("MCP Response Parsing (BR-INTEGRATION-054)", func() {
 
 			It("parses valid JSON into Unstructured object", func() {
 				input := `{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}`
-				obj, err := parseUnstructured(input)
+				obj, err := ParseUnstructuredResponse(input)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(obj.GetKind()).To(Equal("Pod"))
 				Expect(obj.GetName()).To(Equal("nginx"))
@@ -44,7 +44,7 @@ var _ = Describe("MCP Response Parsing (BR-INTEGRATION-054)", func() {
 			})
 
 			It("returns error for invalid JSON", func() {
-				obj, err := parseUnstructured("not-json{{{")
+				obj, err := ParseUnstructuredResponse("not-json{{{")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unmarshaling resource"))
 				Expect(obj).To(BeNil())
