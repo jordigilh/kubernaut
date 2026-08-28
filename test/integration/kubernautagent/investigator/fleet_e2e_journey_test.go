@@ -534,11 +534,17 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 				MaxTurns:      5,
 				PhaseTools:    investigator.DefaultPhaseToolMap(),
 				Registry:      reg,
-				// Non-empty overlay resolution (no tools) is enough to
-				// exercise prescopeFleetOverlay's fleet-target path; this
-				// test proves schema exclusion, not overlay tool routing
-				// (already proven by E2E-KA-FLEET-001/002 above).
-				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}},
+				// FleetOverlayFromContext (fleet_overlay.go) treats an EMPTY
+				// resolved overlay as equivalent to "no overlay at all" (fail-open
+				// fallback to local tools, pre-dating issue #2306) -- so the spy
+				// must resolve at least one tool for hasOverlay to be true and
+				// this test's fleet-target path (and the suppression it's meant
+				// to exercise) to actually engage. A single unrelated dummy tool
+				// is enough; this test proves schema exclusion, not overlay tool
+				// routing (already proven by E2E-KA-FLEET-001/002 above).
+				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+					"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+				}},
 			})
 
 			signal := katypes.SignalContext{
