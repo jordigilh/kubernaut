@@ -123,6 +123,15 @@ New to Kubernaut? Start with the Helm chart's [Quick Start](charts/kubernaut/REA
 
 Each method's guide lives alongside its own code, so it stays current without a cross-repo docs update.
 
+Once installed, pick a setup guide for how you want to trigger remediation — the three are
+independent and can be combined on the same install:
+
+| Mode | Trigger | Guide |
+|---|---|---|
+| Autonomous | Alert-driven (Prometheus/AlertManager → Gateway) | [Autonomous Mode Setup Guide](docs/operations/deployment/AUTONOMOUS_MODE_SETUP_GUIDE.md) |
+| Interactive | Chat-driven (Console/APIFrontend, human-in-the-loop) | [Interactive Mode Setup Guide](docs/operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md) |
+| Fleet | Multi-cluster (hub + spoke, layers onto either mode above) | [Fleet Setup Guide](docs/operations/deployment/FLEET_SETUP_GUIDE.md) |
+
 ---
 
 ## Try It Out
