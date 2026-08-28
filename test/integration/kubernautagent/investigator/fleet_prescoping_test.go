@@ -656,6 +656,162 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
+	// Issue #2306: toolDefinitionsForPhase's override-and-append halves (proven
+	// by IT-KA-FLEET-015/024 above) left a subtractive gap — a local, hub-bound
+	// k8s tool with NO same-named overlay override stayed advertised to the LLM
+	// even for a fleet-target investigation, so the LLM could silently call it
+	// and query the wrong (hub) cluster (AC-6 violation, RR rr-9dc9711199fd-bd25bdf5).
+	// UT-KA-FLEET-029/030 (investigator_tools_fleet_suppression_test.go) prove the
+	// pure decision logic; these specs prove it end-to-end through the real
+	// Investigate()/RunInteractiveTurn entry points, at the level the LLM itself
+	// observes (its own received tool schema).
+	Describe("IT-KA-FLEET-030 [AC-6]: Investigate() excludes hub-bound local k8s tools with no overlay override from the RCA schema", func() {
+		It("never advertises kubectl_get_by_name or kubectl_logs for a fleet-target investigation", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: "{}"})
+			reg.Register(&fakeTool{name: "kubectl_logs", result: "{}"})
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+			}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			names := toolNamesFromCall(mockClient.calls[0])
+			Expect(names).NotTo(ContainElement("kubectl_get_by_name"),
+				"IT-KA-FLEET-030: a fleet-target investigation must never advertise a hub-bound local "+
+					"k8s tool to the LLM unless the overlay provides a same-named override -- otherwise "+
+					"the LLM can silently call it and query the wrong (hub) cluster (AC-6, issue #2306)")
+			Expect(names).NotTo(ContainElement("kubectl_logs"))
+		})
+
+		It("still advertises every local k8s tool for a hub-local investigation (zero regression)", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: "{}"})
+			reg.Register(&fakeTool{name: "kubectl_logs", result: "{}"})
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			names := toolNamesFromCall(mockClient.calls[0])
+			Expect(names).To(ContainElement("kubectl_get_by_name"),
+				"IT-KA-FLEET-030: a hub-local investigation (no target cluster) must see the full "+
+					"local k8s tool set, unchanged from before this fix")
+			Expect(names).To(ContainElement("kubectl_logs"))
+		})
+	})
+
+	Describe("IT-KA-FLEET-031 [AC-6]: RunInteractiveTurn excludes hub-bound local k8s tools with no overlay override from the RCA schema", func() {
+		It("never advertises kubectl_get_by_name for a fleet-target interactive turn", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: "{}"})
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+			}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+				ClusterID: "remote-east", RemediationID: "rem-interactive-suppression-001",
+			})
+			_, err := inv.RunInteractiveTurn(ctx, []llm.Message{
+				{Role: "user", Content: "what is wrong with the deployment?"},
+			}, "rem-interactive-suppression-001")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			Expect(toolNamesFromCall(mockClient.calls[0])).NotTo(ContainElement("kubectl_get_by_name"),
+				"IT-KA-FLEET-031: a fleet-target interactive turn must never advertise a hub-bound "+
+					"local k8s tool with no overlay override, mirroring IT-KA-FLEET-030's Investigate() proof")
+		})
+
+		It("still advertises the local k8s tool for a hub-local interactive turn (zero regression)", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: "{}"})
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.RunInteractiveTurn(context.Background(), []llm.Message{
+				{Role: "user", Content: "what is wrong with the deployment?"},
+			}, "rem-interactive-hub-suppression-001")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(toolNamesFromCall(mockClient.calls[0])).To(ContainElement("kubectl_get_by_name"),
+				"IT-KA-FLEET-031: a hub-local interactive turn must see the local k8s tool unchanged")
+		})
+	})
+
 	// QE readiness audit follow-up (PR #1799 Finding #2, tracked as #1834): UT-KA-FLEET-028
 	// (fleet_overlay_internal_test.go) proves prescopeFleetOverlay's own
 	// nil-resolver decision in isolation, calling it directly on a

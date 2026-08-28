@@ -30,10 +30,45 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
+
+// fleetSuppressedToolNames is the set of local, client-go/dynamic-client-
+// backed RCA tools whose behavior depends on which cluster they query.
+// toolDefinitionsForPhase excludes any name in this set from the LLM's
+// tool schema during a fleet-target investigation, unless the fleet
+// overlay supplies a same-named override — closing the AC-6 gap where the
+// LLM could otherwise silently call one of these and query the wrong
+// (hub) cluster (issue #2306). Tools that are inherently fleet-agnostic
+// (DataStorage-backed audit/history, workflow catalog, TodoWrite,
+// Prometheus/Alertmanager federation) are deliberately NOT in this set —
+// see toolDefinitionsForPhase's doc comment.
+var fleetSuppressedToolNames = buildFleetSuppressedToolNames()
+
+func buildFleetSuppressedToolNames() map[string]struct{} {
+	names := make(map[string]struct{}, len(k8s.AllToolNames)+len(k8s.MetricsToolNames)+len(k8s.NodeProxyToolNames))
+	for _, n := range k8s.AllToolNames {
+		names[n] = struct{}{}
+	}
+	for _, n := range k8s.MetricsToolNames {
+		names[n] = struct{}{}
+	}
+	for _, n := range k8s.NodeProxyToolNames {
+		names[n] = struct{}{}
+	}
+	return names
+}
+
+// isFleetSuppressed reports whether name is a hub-bound local tool that must
+// be excluded from the LLM's RCA-phase schema during a fleet-target
+// investigation (see fleetSuppressedToolNames).
+func isFleetSuppressed(name string) bool {
+	_, suppressed := fleetSuppressedToolNames[name]
+	return suppressed
+}
 
 func escalateMaxTokens(completionTokens int) int {
 	if completionTokens > 0 {
@@ -174,17 +209,33 @@ func toolNames(defs []llm.ToolDefinition) []string {
 // WorkflowDiscovery/Validation schemas are intentionally left untouched, to
 // avoid widening the LLM's action surface for phases that have never exposed
 // read tools of any kind (least privilege, AC-6).
+//
+// Issue #2306: the override-and-append halves above still left a third,
+// subtractive gap open — a local tool whose behavior depends on which
+// cluster it queries (fleetSuppressedToolNames: client-go/dynamic-client-
+// backed RCA tools) but has NO same-named overlay override stayed
+// advertised to the LLM even for a fleet-target investigation, so the LLM
+// could silently call it and query the wrong (hub) cluster. During the RCA
+// phase of a fleet-target investigation (non-empty overlay), such a name is
+// now skipped entirely — never appended to defs — rather than offered and
+// left to silently resolve against the wrong cluster. A hub-local
+// investigation (no overlay in ctx) never triggers the skip, so its schema
+// stays byte-identical to before this fix.
 func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katypes.Phase) []llm.ToolDefinition {
 	var defs []llm.ToolDefinition
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-		overlay, _ := FleetOverlayFromContext(ctx)
+		overlay, hasOverlay := FleetOverlayFromContext(ctx)
 		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+len(overlay)+2)
 		seen := make(map[string]struct{}, len(phaseTools))
 		for _, t := range phaseTools {
 			eff := t
-			if ov, found := resolveTool(overlay, t.Name()); found {
+			ov, overridden := resolveTool(overlay, t.Name())
+			if overridden {
 				eff = ov
+			} else if phase == katypes.PhaseRCA && hasOverlay && isFleetSuppressed(t.Name()) {
+				seen[t.Name()] = struct{}{}
+				continue
 			}
 			defs = append(defs, llm.ToolDefinition{
 				Name:        eff.Name(),
