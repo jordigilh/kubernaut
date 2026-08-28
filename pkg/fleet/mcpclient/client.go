@@ -185,7 +185,7 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, obj client.Objec
 		return err
 	}
 
-	return populateObject(fetched, obj)
+	return PopulateObject(fetched, obj)
 }
 
 // List implements client.Reader. It retrieves Kubernetes resources of a given
@@ -350,7 +350,7 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 	}
 
 	text := ExtractText(result)
-	obj, err := parseUnstructured(text)
+	obj, err := ParseUnstructuredResponse(text)
 	if err != nil {
 		return nil, fmt.Errorf("parse Get response for %s/%s: %w", kind, name, err)
 	}
@@ -393,11 +393,12 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 	return normalizeTableItems(sc, kind, apiVersion), nil
 }
 
-// populateObject copies data from a fetched unstructured object into the target
+// PopulateObject copies data from a fetched unstructured object into the target
 // client.Object. Handles *unstructured.Unstructured directly, all other types
 // (including *metav1.PartialObjectMetadata and typed objects like *corev1.Pod)
-// via JSON round-trip.
-func populateObject(fetched *unstructured.Unstructured, target client.Object) error {
+// via JSON round-trip. Exported (renamed from populateObject, issue #2306) so
+// KA's overlayClientReader can reuse this already-proven population path.
+func PopulateObject(fetched *unstructured.Unstructured, target client.Object) error {
 	if t, ok := target.(*unstructured.Unstructured); ok {
 		t.Object = fetched.Object
 		return nil
