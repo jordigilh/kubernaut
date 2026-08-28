@@ -20,7 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -30,8 +30,8 @@ var _ = Describe("Gateway cache configuration (#270)", func() {
 
 	Describe("OwnerChainCacheObjects includes all kindToGroup GVKs (BR-GATEWAY-004)", func() {
 		It("should return PartialObjectMetadata entries for every kind in KindToGroup", func() {
-			entries := adapters.OwnerChainCacheObjects()
-			kindToGroup := adapters.KindToGroup()
+			entries := ownerchain.OwnerChainCacheObjects()
+			kindToGroup := ownerchain.KindToGroup()
 
 			Expect(entries).ToNot(BeEmpty(), "OwnerChainCacheObjects must return entries")
 			Expect(entries).To(HaveLen(len(kindToGroup)),
@@ -60,7 +60,7 @@ var _ = Describe("Gateway cache configuration (#270)", func() {
 
 	Describe("KindToGroup is the single source of truth", func() {
 		It("should include all core, apps, and batch kinds needed for owner resolution", func() {
-			kindToGroup := adapters.KindToGroup()
+			kindToGroup := ownerchain.KindToGroup()
 
 			expectedKinds := []string{
 				"Pod", "Node", "Service", "ConfigMap", "Secret", "Namespace", "PersistentVolume",

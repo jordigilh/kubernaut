@@ -42,6 +42,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"k8s.io/client-go/dynamic"
@@ -357,11 +358,11 @@ func registerAdapters(
 	serverCfg *config.ServerConfig,
 	logger logr.Logger,
 ) (*fleetclient.ResilientClient, error) {
-	ownerResolver := adapters.NewK8sOwnerResolver(
+	ownerResolver := ownerchain.NewK8sOwnerResolver(
 		srv.GetCachedClient(),
 		logger.WithName("owner-resolver"),
-		adapters.WithFallbackReader(srv.GetAPIReader()),
-		adapters.WithRegistry(apiRegistry),
+		ownerchain.WithFallbackReader(srv.GetAPIReader()),
+		ownerchain.WithRegistry(apiRegistry),
 	)
 
 	// Prometheus AlertManager webhook adapter

@@ -54,6 +54,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	gwTypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -201,7 +202,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 
 			By("2. Creating OwnerResolver and PrometheusAdapter wired to envtest client")
 
-			ownerResolver := adapters.NewK8sOwnerResolver(k8sClient, testLogger)
+			ownerResolver := ownerchain.NewK8sOwnerResolver(k8sClient, testLogger)
 			adapter := adapters.NewPrometheusAdapter(ownerResolver, adapters.NewTestAPIResourceRegistry())
 
 			By("3. Parsing alert for Pod A (triggers owner chain resolution)")
@@ -299,7 +300,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 
 			By("2. Parsing alert with OwnerResolver (should resolve to Pod itself)")
 
-			ownerResolver := adapters.NewK8sOwnerResolver(k8sClient, testLogger)
+			ownerResolver := ownerchain.NewK8sOwnerResolver(k8sClient, testLogger)
 			adapter := adapters.NewPrometheusAdapter(ownerResolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := createPrometheusAlertForPod(testNamespace, "HighCPU", "warning", "", "standalone-worker")

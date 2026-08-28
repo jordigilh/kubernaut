@@ -29,6 +29,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -65,7 +66,7 @@ var _ = Describe("GW Fleet Remote Owner Chain Resolution (BR-INTEGRATION-065)", 
 		readerFactory := mcpclient.NewMCPReaderFactory(localClient, mcpClient.Session())
 
 		logger := zap.New(zap.UseDevMode(true))
-		localResolver := adapters.NewK8sOwnerResolver(localClient, logger)
+		localResolver := ownerchain.NewK8sOwnerResolver(localClient, logger)
 		adapter := adapters.NewPrometheusAdapter(localResolver, nil, logger)
 		adapter.SetReaderFactory(readerFactory)
 
@@ -83,7 +84,7 @@ var _ = Describe("GW Fleet Remote Owner Chain Resolution (BR-INTEGRATION-065)", 
 		localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 		logger := zap.New(zap.UseDevMode(true))
-		localResolver := adapters.NewK8sOwnerResolver(localClient, logger)
+		localResolver := ownerchain.NewK8sOwnerResolver(localClient, logger)
 		adapter := adapters.NewPrometheusAdapter(localResolver, nil, logger)
 
 		payload := buildWebhookPayload("prod-east-1", "prod", "Pod", "api-server-abc")

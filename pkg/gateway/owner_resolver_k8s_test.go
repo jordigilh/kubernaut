@@ -23,8 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -45,7 +45,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 		ctx        context.Context
 		scheme     *runtime.Scheme
 		fakeClient client.Client
-		resolver   *adapters.K8sOwnerResolver
+		resolver   *ownerchain.K8sOwnerResolver
 	)
 
 	BeforeEach(func() {
@@ -61,7 +61,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 			WithScheme(scheme).
 			WithObjects(objs...).
 			Build()
-		resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard())
+		resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard())
 	}
 
 	Describe("Pod -> ReplicaSet -> Deployment (BR-GATEWAY-004)", func() {
@@ -291,8 +291,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithObjects(deploy, rs, freshPod).
 				Build()
 
-			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
-				adapters.WithFallbackReader(apiClient))
+			resolver = ownerchain.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				ownerchain.WithFallbackReader(apiClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "leaky-app-544b75986-hndrn")
 			Expect(err).ToNot(HaveOccurred())
@@ -315,8 +315,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithObjects(standalonePod.DeepCopy()).
 				Build()
 
-			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
-				adapters.WithFallbackReader(apiClient))
+			resolver = ownerchain.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				ownerchain.WithFallbackReader(apiClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "debug-pod")
 			Expect(err).ToNot(HaveOccurred())
@@ -340,8 +340,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				Build()
 
-			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
-				adapters.WithFallbackReader(apiClient))
+			resolver = ownerchain.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				ownerchain.WithFallbackReader(apiClient))
 
 			_, _, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "deleted-pod")
 			Expect(err).To(HaveOccurred())
@@ -380,8 +380,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc, sts, pod).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "etcd-client")
 			Expect(err).ToNot(HaveOccurred())
@@ -429,8 +429,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc, deploy, rs, pod).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "api-svc")
 			Expect(err).ToNot(HaveOccurred())
@@ -452,8 +452,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "orphan-svc")
 			Expect(err).ToNot(HaveOccurred())
@@ -476,8 +476,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "external-svc")
 			Expect(err).ToNot(HaveOccurred())
@@ -505,8 +505,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc, pod).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "debug-svc")
 			Expect(err).ToNot(HaveOccurred())
@@ -529,7 +529,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithObjects(svc).
 				Build()
 			// No fallbackReader — metadata-only cache can't read Service spec
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard())
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard())
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "some-svc")
 			Expect(err).ToNot(HaveOccurred())
@@ -577,8 +577,8 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				WithScheme(scheme).
 				WithObjects(svc, sts, pod0, pod1).
 				Build()
-			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithFallbackReader(fakeClient))
+			resolver = ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithFallbackReader(fakeClient))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "etcd-client")
 			Expect(err).ToNot(HaveOccurred())

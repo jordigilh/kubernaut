@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8s/ownerchain"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -94,8 +95,8 @@ var _ = Describe("Owner Resolver with Registry (#1029)", func() {
 				WithObjects(deployment, rs, pod).
 				Build()
 
-			resolver := adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithRegistry(registry))
+			resolver := ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithRegistry(registry))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "api-server-abc-xyz")
 			Expect(err).ToNot(HaveOccurred())
@@ -117,8 +118,8 @@ var _ = Describe("Owner Resolver with Registry (#1029)", func() {
 				WithObjects(pod).
 				Build()
 
-			resolver := adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithRegistry(registry))
+			resolver := ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithRegistry(registry))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "standalone-pod")
 			Expect(err).ToNot(HaveOccurred())
@@ -135,10 +136,10 @@ var _ = Describe("Owner Resolver with Registry (#1029)", func() {
 			// When the resolver encounters a CRD kind (e.g., BuildConfig),
 			// it should stop traversal because owner chains for CRDs are
 			// unpredictable and cluster-specific.
-			resolver := adapters.NewK8sOwnerResolver(
+			resolver := ownerchain.NewK8sOwnerResolver(
 				fake.NewClientBuilder().WithScheme(scheme).Build(),
 				logr.Discard(),
-				adapters.WithRegistry(registry),
+				ownerchain.WithRegistry(registry),
 			)
 
 			// BuildConfig is an OpenShift CRD — not in core/apps/batch
@@ -172,8 +173,8 @@ var _ = Describe("Owner Resolver with Registry (#1029)", func() {
 				WithObjects(deployment, rs).
 				Build()
 
-			resolver := adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
-				adapters.WithRegistry(registry))
+			resolver := ownerchain.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				ownerchain.WithRegistry(registry))
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "ReplicaSet", "web-app-rs")
 			Expect(err).ToNot(HaveOccurred())
