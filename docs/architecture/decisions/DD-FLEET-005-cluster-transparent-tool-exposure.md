@@ -287,6 +287,16 @@ overlay lacks it. `fetchRemediationHistory()` now threads
 `audit.ClusterIDFromContext(ctx)` (already set by `prescopeFleetOverlay`)
 into `ds.GetRemediationHistory` instead of an unscoped `""`.
 
+**Fix, part 3 (execution-time backstop)**: part 1 only ever controlled what
+`toolDefinitionsForPhase()` *advertises* in the LLM's schema. Nothing stopped
+a call for a suppressed name from still reaching `inv.registry.Execute()`
+and running against the hub if it arrived anyway — schema drift across
+turns, a hallucinated call, or an adversarial prompt. `executeResolved()`
+now runs the same `isFleetSuppressed` check: for a fleet-target
+investigation, a suppressed name with no overlay override is rejected
+(wrapped with the target cluster ID, mirroring the existing not-found
+wrapping) before the local registry is ever consulted.
+
 **Deliberately out of scope**: full RESTMapper-equivalent remote discovery
 for `overlayK8sClient` — `ownerchain.KindToGroup()`'s static table covers
 core/apps/batch kinds only. A resource of an unlisted kind reaching
@@ -298,6 +308,7 @@ common workload kinds an RCA investigation deals with are already covered.
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
 | `fleetSuppressedToolNames` + subtractive filter | `toolDefinitionsForPhase()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-030/031 |
+| `isFleetSuppressed` execution-time check | `executeResolved()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-035 |
 | `pkg/shared/k8s/ownerchain` (moved `K8sOwnerResolver`, `KindResolver` interface) | `cmd/gateway/main.go` (existing), `fleet_resource_context.go` (new) | `pkg/shared/k8s/ownerchain` | Gateway's existing 6-file regression suite + UT-KA-FLEET-031/032 |
 | `overlayClientReader` / `overlayK8sClient` | Constructed per-`Execute()` call in `namespacedResourceContextTool`/`clusterResourceContextTool` | `internal/kubernautagent/tools/custom/fleet_resource_context.go` | UT-KA-FLEET-031/032 |
 | `mcpclient.ParseUnstructuredResponse` / `mcpclient.PopulateObject` (exported) | Called by `overlayClientReader.Get` | `pkg/fleet/mcpclient/parse.go`, `pkg/fleet/mcpclient/client.go` | UT-KA-FLEET-031 (indirect) |
