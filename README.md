@@ -93,6 +93,7 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 | **Notification** | `cmd/notification` | Slack, webhook, and console notification delivery |
 | **Effectiveness Monitor** | `cmd/effectivenessmonitor` | Post-remediation health checks and effectiveness scoring |
 | **Auth Webhook** | `cmd/authwebhook` | Kubernetes authentication webhook for service identity |
+| **Fleet Metadata Cache** | `cmd/fleetmetadatacache` | Multi-cluster metadata cache for cross-cluster workflow targeting |
 
 </details>
 
@@ -100,10 +101,10 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 
 ## Roadmap
 
-### v1.6 — Fleet Remediation & ITSM (in progress)
+### v1.6 — Fleet Operations (release candidate)
 
 - **Fleet operations** — Multi-cluster remediation orchestration through a pluggable scope-checking adapter: Red Hat ACM/OCM for ACM shops, or a control-plane-free mode backed by the built-in Fleet Metadata Cache (FMC) for GitOps and standalone clusters — with Rancher and Clusterpedia adapters architected for other vendor fleet platforms ([#54](https://github.com/jordigilh/kubernaut/issues/54))
-- **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
+- **ServiceNow incident triage** (v1.6.1) — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
 **[Full roadmap](docs/roadmap/ROADMAP.md)** — for released features, see the [CHANGELOG](CHANGELOG.md).
 
@@ -111,7 +112,37 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 
 ## Installation
 
-See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/getting-started/installation/) for prerequisites, configuration, and deployment instructions.
+Pick the guide for your platform — both are production-ready deployment paths.
+
+New to Kubernaut? Start with the Helm chart's [Quick Start](charts/kubernaut/README.md#quick-start) — namespace, three credential Secrets (PostgreSQL, Valkey, and an LLM provider API key), two Rego policies, and one `helm install`.
+
+| Platform | Method | Guide |
+|---|---|---|
+| Vanilla Kubernetes (non-OpenShift) | Helm chart | [charts/kubernaut/README.md](charts/kubernaut/README.md) |
+| OpenShift | Operator (OLM) | [kubernaut-operator installation guide](https://github.com/jordigilh/kubernaut-operator/blob/main/docs/installation/00-quickstart.md) |
+
+Each method's guide lives alongside its own code, so it stays current without a cross-repo docs update.
+
+Once installed, pick a setup guide for how you want to trigger remediation — the three are
+independent and can be combined on the same install:
+
+| Mode | Trigger | Guide |
+|---|---|---|
+| Autonomous | Alert-driven (Prometheus/AlertManager → Gateway) | [Autonomous Mode Setup Guide](docs/operations/deployment/AUTONOMOUS_MODE_SETUP_GUIDE.md) |
+| Interactive | Chat-driven (Console/APIFrontend, human-in-the-loop) | [Interactive Mode Setup Guide](docs/operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md) |
+| Fleet | Multi-cluster (hub + spoke, layers onto either mode above) | [Fleet Setup Guide](docs/operations/deployment/FLEET_SETUP_GUIDE.md) |
+
+---
+
+## Try It Out
+
+Once Kubernaut is installed, see it in action. [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) provides 37 fault-injection scenarios you can run against your own cluster.
+
+New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app, lets it crash-loop, and watches Kubernaut detect the issue and roll back to the last working revision automatically:
+
+```bash
+./scenarios/crashloop/run.sh
+```
 
 ---
 
@@ -196,6 +227,6 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-**Issues**: [GitHub Issues](https://github.com/jordigilh/kubernaut/issues) · **Discussions**: [GitHub Discussions](https://github.com/jordigilh/kubernaut/discussions)
+**Website**: [kubernaut.ai](https://kubernaut.ai) · **Issues**: [GitHub Issues](https://github.com/jordigilh/kubernaut/issues) · **Discussions**: [GitHub Discussions](https://github.com/jordigilh/kubernaut/discussions)
 
 **Kubernaut** — From alert to remediation, intelligently.
