@@ -322,11 +322,30 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 // whether X was never a valid tool name or whether the fleet overlay simply
 // didn't expose it for this cluster (AC-6 — the two failure modes look
 // identical without this context).
+//
+// For a fleet-target investigation, a name in fleetSuppressedToolNames with
+// no overlay override is rejected before ever reaching the local registry
+// (AC-6). toolDefinitionsForPhase already omits these names from the LLM's
+// schema, but that's advertisement only — this is the execution-time
+// backstop, so a suppressed name called anyway (schema drift, hallucination,
+// adversarial input) can't still run against the hub.
 func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage) (string, error) {
 	overlay, hasOverlay := FleetOverlayFromContext(ctx)
 	if hasOverlay {
 		if t, found := resolveTool(overlay, name); found {
 			return t.Execute(ctx, args)
+		}
+		// AC-6: toolDefinitionsForPhase already omits this name from the
+		// schema for this exact reason, but a call can still arrive here —
+		// schema drift across turns, a hallucinated call, or an adversarial
+		// prompt. Without this check the call falls through to
+		// inv.registry.Execute() below and runs against the hub, silently
+		// defeating the schema-level suppression. Block it here too so
+		// suppression is enforced at execution time, not just advertisement.
+		if isFleetSuppressed(name) {
+			clusterID, _ := audit.ClusterIDFromContext(ctx)
+			return "", fmt.Errorf("tool %q is suppressed for fleet-target investigations and the overlay for cluster %q provides no override: %w",
+				name, clusterID, &registry.ErrToolNotFound{Name: name})
 		}
 	}
 

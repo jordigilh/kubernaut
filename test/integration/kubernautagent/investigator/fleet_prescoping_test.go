@@ -385,6 +385,72 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
+	// Issue #2306 follow-up: toolDefinitionsForPhase (proven by IT-KA-FLEET-029/030)
+	// only ever controlled what the LLM's schema *advertises*. Nothing
+	// previously stopped a call for a suppressed name from still reaching
+	// inv.registry.Execute() and running against the hub if it arrived
+	// anyway -- schema drift across turns, a hallucinated call, or an
+	// adversarial prompt. This proves the same suppression decision is now
+	// also enforced at execution time, wired through the real
+	// Investigate() path.
+	Describe("IT-KA-FLEET-035 [AC-6]: a suppressed local tool call is rejected end-to-end, not routed to the hub-local tool", func() {
+		It("rejects kubectl_get_by_name for a fleet-target investigation when the overlay provides no override, and the hub-local tool never executes", func() {
+			localTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub","warning":"must never be reached for a fleet-target investigation"}`}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: `{"source":"remote-cluster-east"}`},
+			}}
+
+			reg := registry.New()
+			reg.Register(localTool)
+
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_get", Name: "kubectl_get_by_name", Arguments: `{}`}},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
+			})
+			Expect(err).NotTo(HaveOccurred(),
+				"IT-KA-FLEET-035: the rejection is returned to the LLM as a tool error message, "+
+					"not surfaced as an Investigate() error")
+
+			toolErrorContent := allMessageContent(mockClient.calls[1].Messages)
+			Expect(toolErrorContent).To(ContainSubstring("kubectl_get_by_name"))
+			Expect(toolErrorContent).To(ContainSubstring("suppressed"))
+			Expect(toolErrorContent).To(ContainSubstring("remote-east"),
+				"IT-KA-FLEET-035: the rejection must name the target cluster, mirroring IT-KA-FLEET-021's "+
+					"not-found wrapping, so an operator can tell suppression from a genuinely unknown tool name")
+			Expect(toolErrorContent).NotTo(ContainSubstring("local-hub"),
+				"IT-KA-FLEET-035: the hub-local tool registered under the suppressed name must never "+
+					"execute for a fleet-target investigation (AC-6) -- rejection happens before "+
+					"inv.registry.Execute() is ever called")
+		})
+	})
+
 	// Issue #1729 (DD-FLEET-005 tool-transparency gap): toolDefinitionsForPhase
 	// previously only ever *overrode* an existing local-registry tool entry
 	// with the overlay's BridgeTool when both shared the exact same name (see

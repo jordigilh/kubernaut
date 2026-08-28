@@ -119,4 +119,51 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 			Expect(names).To(ContainElement("get_namespaced_resource_context"))
 		})
 	})
+
+	// Issue #2306 follow-up: toolDefinitionsForPhase only ever controlled
+	// what's *advertised* to the LLM. executeResolved -- the actual execution
+	// path a tool call goes through -- never consulted isFleetSuppressed at
+	// all, so a suppressed name called anyway (schema drift across turns,
+	// hallucination, adversarial input) fell straight through to
+	// inv.registry.Execute() and ran against the hub -- the exact AC-6
+	// violation the schema-level fix was supposed to close, one layer
+	// deeper. These specs prove execution itself is now blocked, not just
+	// advertisement. Wiring into Investigate()/RunInteractiveTurn is proven
+	// separately by IT-KA-FLEET-035 (fleet_prescoping_test.go).
+	Describe("UT-KA-FLEET-035 [AC-6]: executeResolved blocks a suppressed local tool even when called by name", func() {
+		It("rejects kubectl_get_by_name for a fleet-target investigation with no overlay override, never reaching the hub-bound tool", func() {
+			overlay := map[string]tools.Tool{
+				"resources_get": &fleetOverlayFakeTool{name: "resources_get"},
+			}
+			ctx := WithFleetOverlay(context.Background(), overlay)
+
+			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil)
+			Expect(err).To(HaveOccurred(),
+				"UT-KA-FLEET-035: a suppressed local tool called by name during a fleet-target "+
+					"investigation must be rejected, not silently executed against the hub (AC-6)")
+			Expect(err.Error()).To(ContainSubstring("kubectl_get_by_name"))
+			Expect(err.Error()).To(ContainSubstring("suppressed"))
+			Expect(result).To(BeEmpty())
+		})
+
+		It("still executes the overlay's override when the overlay provides one for a suppressed name", func() {
+			overlayTool := &fleetOverlayFakeTool{name: "kubectl_get_by_name"}
+			overlay := map[string]tools.Tool{"kubectl_get_by_name": overlayTool}
+			ctx := WithFleetOverlay(context.Background(), overlay)
+
+			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("fake-result:kubectl_get_by_name"),
+				"UT-KA-FLEET-035: an overlay-provided override must still execute -- blocking is scoped "+
+					"to names with NO override, not to every suppressed name unconditionally")
+		})
+
+		It("still executes kubectl_get_by_name for a hub-local investigation (zero regression)", func() {
+			result, err := inv.executeResolved(context.Background(), "kubectl_get_by_name", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal("fake-result:kubectl_get_by_name"),
+				"UT-KA-FLEET-035: a hub-local investigation (no overlay in ctx) must still execute local "+
+					"tools unchanged -- the execution-time block is scoped to fleet-target investigations only")
+		})
+	})
 })
