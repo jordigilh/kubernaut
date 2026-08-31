@@ -48,6 +48,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -445,16 +446,18 @@ func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger, audi
 
 // buildClientFactory constructs the BR-FLEET-054 ClientFactory used for
 // local/remote cluster routing. When cfg.Fleet.Endpoint is configured, it
-// attempts to connect to the Fleet MCP Gateway and returns an MCP-routed
-// factory; on connection failure (or when Fleet is unconfigured), it falls
-// back to a local factory. The returned *fleetclient.ResilientClient is nil
-// unless Fleet is configured; #1553: on a connection failure it is still
+// connects to the Fleet MCP Gateway and always returns an MCP-routed
+// factory built from a SessionProvider -- including when the initial
+// connect attempt fails, since that factory resolves the live session on
+// every ClientFor call and self-heals once fleetResilientClient reconnects
+// in the background, instead of falling back to local-only forever until a
+// pod restart (issue #2315). The returned *fleetclient.ResilientClient is
+// nil unless Fleet is configured; on a connection failure it is still
 // returned (not discarded) so wireFleetReadinessGate can attach an
 // MCPClientProber that keeps retrying via the periodic probe — this is
-// what allows /readyz to recover once Fleet comes back, instead of
-// requiring a pod restart (mirrors GW/RO/EM/SP's identical change).
-// Callers should Close() a non-nil client on shutdown. localClient is
-// pre-built by the caller (independently testable with a fake).
+// what allows /readyz to recover once Fleet comes back. Callers should
+// Close() a non-nil client on shutdown. localClient is pre-built by the
+// caller (independently testable with a fake).
 func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient client.Client, logger logr.Logger) (weexecutor.ClientFactory, *fleetclient.ResilientClient) {
 	if cfg.Fleet.Endpoint == "" {
 		return weexecutor.NewLocalClientFactory(localClient), nil
@@ -464,44 +467,39 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 		"endpoint", cfg.Fleet.Endpoint,
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
-	fleetLog := ctrl.Log.WithName("fleet-oauth2")
-	fleetOpts := []fleetclient.Option{}
+	connectCfg := fleetclient.ConnectConfig{
+		Endpoint:   cfg.Fleet.Endpoint,
+		Resilience: cfg.Fleet.Resilience,
+	}
 	if cfg.Fleet.OAuth2.Enabled {
 		basePath := "/etc/workflowexecution/fleet-oauth2"
 		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
 			basePath = "/etc/workflowexecution/" + cfg.Fleet.OAuth2.CredentialsSecretRef
 		}
-		reloadCfg := fleetclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-			ClientIDPath:     basePath + "/client-id",
-			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
-			TokenTimeout:     10 * time.Second,
-			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
+		connectCfg.OAuth2 = fleet.FleetOAuth2Config{
+			Enabled:   true,
+			TokenURL:  cfg.Fleet.OAuth2.TokenURL,
+			Scopes:    cfg.Fleet.OAuth2.Scopes,
+			TLSCAFile: cfg.Fleet.OAuth2.TLSCAFile,
 		}
-		fleetOpts = append(fleetOpts,
-			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-		)
+		connectCfg.CredentialsBasePath = basePath
 		logger.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Fleet.OAuth2.TokenURL,
 			"secretPath", basePath)
 	}
 
-	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
-	fleetResilientClient, fleetErr := fleetclient.NewResilient(
-		ctx, cfg.Fleet.Endpoint, resilienceCfg,
-		ctrl.Log.WithName("fleet-client"), fleetOpts...,
-	)
+	fleetResilientClient, fleetErr := fleetclient.Connect(ctx, connectCfg, ctrl.Log.WithName("fleet-client")) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
 	if fleetErr != nil {
 		logger.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
-			"NotReady and keep retrying in the background; remote execution disabled until reconnect",
+			"NotReady and keep retrying in the background; remote execution will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
 			"endpoint", cfg.Fleet.Endpoint)
-		return weexecutor.NewLocalClientFactory(localClient), fleetResilientClient
+	} else {
+		logger.Info("Fleet MCP Gateway connected, remote execution enabled",
+			"endpoint", cfg.Fleet.Endpoint)
 	}
 
-	logger.Info("Fleet MCP Gateway connected, remote execution enabled",
-		"endpoint", cfg.Fleet.Endpoint)
-	return weexecutor.NewMCPClientFactory(localClient, fleetResilientClient.Session()), fleetResilientClient
+	return weexecutor.NewMCPClientFactoryWithProvider(localClient, fleetResilientClient.SessionProvider()), fleetResilientClient
 }
 
 // buildExecutorRegistry wires up the BR-WE-014 executor registry (Strategy

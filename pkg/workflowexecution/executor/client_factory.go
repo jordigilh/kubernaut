@@ -70,14 +70,22 @@ func (f *localClientFactory) ClientFor(_ context.Context, clusterID string) (Exe
 // mcpClientFactory returns local clients for empty ClusterID and MCP-backed
 // composite clients for remote clusters.
 type mcpClientFactory struct {
-	localClient    client.Client
-	session        *mcp.ClientSession
-	prefixResolver registry.ToolPrefixResolver
+	localClient client.Client
+	session     *mcp.ClientSession
+	// sessionProvider resolves the live MCP session on every ClientFor call,
+	// following ResilientClient reconnects instead of binding to a
+	// one-time snapshot (issue #2315 self-healing fix). Takes precedence
+	// over session when set -- see mcpclient.ResolveSession.
+	sessionProvider mcpclient.SessionProvider
+	prefixResolver  registry.ToolPrefixResolver
 }
 
-// NewMCPClientFactory creates a ClientFactory that supports both local and remote execution.
-// An optional ToolPrefixResolver enables gateway-specific tool prefix lookup;
-// when nil, the EAIGW "{clusterID}__" convention is used.
+// NewMCPClientFactory creates a ClientFactory bound to a static session
+// snapshot. Prefer NewMCPClientFactoryWithProvider for any factory expected
+// to outlive a single connection (i.e. anywhere a *mcpclient.ResilientClient
+// is in play) -- a static session goes stale across reconnects. An optional
+// ToolPrefixResolver enables gateway-specific tool prefix lookup; when nil,
+// the EAIGW "{clusterID}__" convention is used.
 func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession, resolver ...registry.ToolPrefixResolver) ClientFactory {
 	var pr registry.ToolPrefixResolver
 	if len(resolver) > 0 {
@@ -90,12 +98,40 @@ func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession, 
 	}
 }
 
+// NewMCPClientFactoryWithProvider creates a ClientFactory that resolves the
+// live MCP session via provider on every ClientFor call instead of a fixed
+// snapshot, so it keeps working transparently across
+// *mcpclient.ResilientClient reconnects -- including recovering from an
+// initial connect failure once the gateway becomes reachable, with no
+// restart required (issue #2315). An optional ToolPrefixResolver enables
+// gateway-specific tool prefix lookup; when nil, the EAIGW "{clusterID}__"
+// convention is used.
+func NewMCPClientFactoryWithProvider(localClient client.Client, provider mcpclient.SessionProvider, resolver ...registry.ToolPrefixResolver) ClientFactory {
+	var pr registry.ToolPrefixResolver
+	if len(resolver) > 0 {
+		pr = resolver[0]
+	}
+	return &mcpClientFactory{
+		localClient:     localClient,
+		sessionProvider: provider,
+		prefixResolver:  pr,
+	}
+}
+
 func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (ExecutorClient, error) {
 	if clusterID == "" {
 		return f.localClient, nil
 	}
-	if f.session == nil {
-		panic("session must not be nil for remote cluster access — fleet MCP session was not configured")
+	// A transient disconnect (initial-connect failure, or a later
+	// reconnect in progress) is an expected runtime condition, not a
+	// programmer error -- return a typed error rather than panicking, for
+	// both the static and provider-based construction paths (issue #2315:
+	// panicking here would turn a recoverable, self-healing disconnect into
+	// a process crash once callers stop gating factory construction on the
+	// initial connect error).
+	session, err := mcpclient.ResolveSession(f.session, f.sessionProvider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session for cluster %q: %w", clusterID, err)
 	}
 	var opts []mcpclient.Option
 	if f.prefixResolver != nil {
@@ -103,14 +139,14 @@ func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (Exe
 			opts = append(opts, mcpclient.WithToolPrefix(prefix))
 		}
 	} else {
-		prefix, err := mcpclient.DiscoverToolPrefix(ctx, f.session, clusterID)
+		prefix, err := mcpclient.DiscoverToolPrefix(ctx, session, clusterID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
 		}
 		opts = append(opts, mcpclient.WithToolPrefix(prefix))
 	}
-	reader := mcpclient.NewFromSession(f.session, clusterID, opts...)
-	writer := mcpclient.NewWriterFromSession(f.session, clusterID, opts...)
+	reader := mcpclient.NewFromSession(session, clusterID, opts...)
+	writer := mcpclient.NewWriterFromSession(session, clusterID, opts...)
 	return &remoteClient{reader: reader, writer: writer}, nil
 }
 

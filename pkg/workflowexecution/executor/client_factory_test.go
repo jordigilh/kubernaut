@@ -19,6 +19,7 @@ package executor_test
 import (
 	"context"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -74,13 +75,41 @@ var _ = Describe("UT-WE-054-CF: ClientFactory", func() {
 			Expect(client).ToNot(BeNil())
 		})
 
-		It("UT-WE-054-CF-004: should panic when session is nil for remote clusterID (fail-fast contract)", func() {
+		It("UT-WE-054-CF-004: returns a clean error (not a panic) when session is nil for remote clusterID (issue #2315)", func() {
+			// Issue #2315: a nil session for a remote clusterID must be a
+			// clean, typed error, not a panic -- once callers build this
+			// factory unconditionally (even when the initial MCP Gateway
+			// connect attempt failed), a nil/not-yet-connected session is
+			// an expected, self-healing-pending runtime state, not a
+			// programmer error.
 			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := executor.NewMCPClientFactory(localClient, nil)
 
-			Expect(func() {
-				_, _ = factory.ClientFor(ctx, "prod-west")
-			}).To(PanicWith(ContainSubstring("session must not be nil")))
+			_, err := factory.ClientFor(ctx, "prod-west")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("prod-west"))
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+	})
+
+	Context("MCPClientFactoryWithProvider (issue #2315 self-healing fix)", func() {
+		It("UT-WE-054-CF-005: returns local client for empty clusterID", func() {
+			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := executor.NewMCPClientFactoryWithProvider(localClient, func() *mcp.ClientSession { return nil })
+
+			client, err := factory.ClientFor(ctx, "")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(client).ToNot(BeNil())
+		})
+
+		It("UT-WE-054-CF-006: returns a clean error for a remote clusterID while the provider reports disconnected", func() {
+			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := executor.NewMCPClientFactoryWithProvider(localClient, func() *mcp.ClientSession { return nil })
+
+			_, err := factory.ClientFor(ctx, "prod-west")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("prod-west"))
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
 		})
 	})
 })
