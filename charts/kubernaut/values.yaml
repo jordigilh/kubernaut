@@ -1067,6 +1067,13 @@ apifrontend:
 # while console.enabled=true.
 # DD-PLATFORM-006 DA14: replicas(1)/oauth2Proxy.image both have non-zero
 # schema defaults -- omitted here, override only what you need.
+# oauth2Proxy.skipDiscovery (default false): only needed when the OIDC
+# provider isn't reachable via the SAME hostname from both the browser and
+# in-cluster pods (e.g. IdP deployed in its own namespace/cluster, separate
+# from Console's). When true, also set loginURL (browser-facing), redeemURL
+# and jwksURL (in-cluster, dialed server-side by oauth2-proxy) -- all three
+# are required together; oauth2-proxy skips OIDC discovery entirely and uses
+# these directly instead.
 console:
   enabled: false
   auth: {}
@@ -1081,8 +1088,13 @@ console:
   # should expose externally without an explicit choice. This is a deviation
   # from the Kubernaut Operator's ConsoleRouteSpec (which defaults to
   # enabled=true, opt-out), made deliberately for this reason.
+  # port: leave unset (0) unless the Ingress controller fronting `host` is
+  # reachable on a non-standard HTTPS port (e.g. a NodePort-exposed
+  # controller in a local/CI Kind cluster where 443 isn't bindable) --
+  # oauth2-proxy's --redirect-url includes it only when non-zero.
   ingress:
     enabled: false
+    port: 0
     tls: {}
   resources:
     requests:

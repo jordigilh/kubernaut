@@ -99,6 +99,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
 | `ingress.host` | string | Hostname for external access. Leaving this empty renders a catch-all Ingress rule. | `""` | No |
+| `ingress.port` | integer | External (browser-facing) port `host` is actually reached on, when it isn't the scheme's standard port (443 for HTTPS). 0 (default) means "standard port, omit from any URL built from host". This does NOT change the Kubernetes Ingress resource itself (Ingress has no port field -- the real listener port is whatever the Ingress controller's own Service/LoadBalancer exposes), it only affects consumers that build an absolute URL from `host` and need to match the port a client will actually connect on -- e.g. console.ingress.port, consumed by the oauth2-proxy --redirect-url so its OIDC callback matches a non-standard-port Ingress controller (privileged host ports 80/443 are frequently unavailable to unprivileged CI runners). | `0` | No |
 | `ingress.tls.secretName` | string | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert | `""` | No |
 | `llmProfileRef` | string | DD-PLATFORM-007: name of an entry in global.llmProfiles for API Frontend's own agent-loop LLM connection. Empty (default) defaults to kubernautAgent.llmProfileRef's resolved profile, matching the Kubernaut Operator's AFLLMProfileRef fallback behavior. Newly exposed -- this Go capability (Config.Agent.LLM) existed but was previously unreachable via Helm. | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
@@ -148,9 +149,14 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
 | `ingress.host` | string | Hostname for external access. Leaving this empty renders a catch-all Ingress rule. | `""` | No |
+| `ingress.port` | integer | External (browser-facing) port `host` is actually reached on, when it isn't the scheme's standard port (443 for HTTPS). 0 (default) means "standard port, omit from any URL built from host". This does NOT change the Kubernetes Ingress resource itself (Ingress has no port field -- the real listener port is whatever the Ingress controller's own Service/LoadBalancer exposes), it only affects consumers that build an absolute URL from `host` and need to match the port a client will actually connect on -- e.g. console.ingress.port, consumed by the oauth2-proxy --redirect-url so its OIDC callback matches a non-standard-port Ingress controller (privileged host ports 80/443 are frequently unavailable to unprivileged CI runners). | `0` | No |
 | `ingress.tls.secretName` | string | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert | `""` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `oauth2Proxy.image` | string |  | `"quay.io/oauth2-proxy/oauth2-proxy:v7.15.3"` | No |
+| `oauth2Proxy.jwksURL` | string | Server-side (in-cluster) JWKS endpoint oauth2-proxy dials to verify ID tokens. Required when skipDiscovery=true; ignored otherwise. | `""` | No |
+| `oauth2Proxy.loginURL` | string | Browser-facing authorization endpoint. Required when skipDiscovery=true; ignored otherwise. | `""` | No |
+| `oauth2Proxy.redeemURL` | string | Server-side (in-cluster) token endpoint oauth2-proxy dials to redeem the authorization code. Required when skipDiscovery=true; ignored otherwise. | `""` | No |
+| `oauth2Proxy.skipDiscovery` | boolean | Split-horizon OIDC endpoints for when the IdP isn't reachable via the same hostname from both the browser and in-cluster pods (e.g. IdP deployed in a separate namespace/cluster from Console). false (default): oauth2-proxy performs normal OIDC discovery against apifrontend.config.auth issuerURL, unchanged from prior behavior. true: skips discovery entirely and requires loginURL/redeemURL/jwksURL below. | `false` | No |
 | `pdb.enabled` | boolean |  | `true` | No |
 | `pdb.maxUnavailable` | object |  | `` | No |
 | `pdb.minAvailable` | object |  | `` | No |
@@ -320,6 +326,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
 | `ingress.host` | string | Hostname for external access. Leaving this empty renders a catch-all Ingress rule. | `""` | No |
+| `ingress.port` | integer | External (browser-facing) port `host` is actually reached on, when it isn't the scheme's standard port (443 for HTTPS). 0 (default) means "standard port, omit from any URL built from host". This does NOT change the Kubernetes Ingress resource itself (Ingress has no port field -- the real listener port is whatever the Ingress controller's own Service/LoadBalancer exposes), it only affects consumers that build an absolute URL from `host` and need to match the port a client will actually connect on -- e.g. console.ingress.port, consumed by the oauth2-proxy --redirect-url so its OIDC callback matches a non-standard-port Ingress controller (privileged host ports 80/443 are frequently unavailable to unprivileged CI runners). | `0` | No |
 | `ingress.tls.secretName` | string | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |

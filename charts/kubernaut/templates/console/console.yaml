@@ -136,7 +136,36 @@ spec:
           args:
             - --provider=oidc
             - --oidc-issuer-url={{ include "kubernaut.console.issuerURL" . }}
-            - --redirect-url=https://{{ .Values.console.ingress.host }}/oauth2/callback
+            {{- /*
+            skipDiscovery: only needed when the IdP isn't reachable via the
+            SAME hostname from both the browser and in-cluster pods (e.g. IdP
+            in its own namespace/cluster, separate from Console's). Verified
+            against oauth2-proxy v7.15.3 source (provider_verifier.go):
+            SkipDiscovery builds the token verifier directly from
+            --oidc-issuer-url + --oidc-jwks-url with NO HTTP call to the
+            issuer's discovery document, so there's no risk of the returned
+            "issuer" field mismatching a different --login-url/--redeem-url
+            hostname -- --oidc-issuer-url stays whatever the IdP's tokens
+            actually carry as "iss", used for string comparison only.
+            */}}
+            {{- if $v.oauth2Proxy.skipDiscovery }}
+            - --skip-oidc-discovery=true
+            - --login-url={{ $v.oauth2Proxy.loginURL }}
+            - --redeem-url={{ $v.oauth2Proxy.redeemURL }}
+            - --oidc-jwks-url={{ $v.oauth2Proxy.jwksURL }}
+            {{- end }}
+            {{- /*
+            console.ingress.port: the Ingress resource itself has no port field
+            (the real listener port is whatever the controller's own Service/LB
+            exposes) -- this only lets the redirect URL match a non-standard
+            port when that's not 443, e.g. a NodePort-exposed controller in a
+            local/CI Kind cluster where binding the host to privileged port 443
+            isn't possible. Defaults to 0 (omit port, standard HTTPS); 443 is
+            also omitted since it's HTTPS's implicit default (same as a browser
+            omitting :443 from a URL bar).
+            */}}
+            {{- $consolePort := int .Values.console.ingress.port }}
+            - --redirect-url=https://{{ .Values.console.ingress.host }}{{ if and $consolePort (ne $consolePort 443) }}:{{ $consolePort }}{{ end }}/oauth2/callback
             - --http-address=0.0.0.0:4180
             - --upstream=http://localhost:8080
             - --pass-access-token=true

@@ -107,6 +107,7 @@ apifrontend:
         className: ""
         enabled: false
         host: ""
+        port: 0
         tls:
             secretName: ""
     llmProfileRef: ""
@@ -135,10 +136,15 @@ console:
         className: ""
         enabled: false
         host: ""
+        port: 0
         tls:
             secretName: ""
     oauth2Proxy:
         image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+        jwksURL: ""
+        loginURL: ""
+        redeemURL: ""
+        skipDiscovery: false
     pdb:
         enabled: true
     replicas: 1
@@ -278,6 +284,7 @@ gateway:
         className: ""
         enabled: false
         host: ""
+        port: 0
         tls:
             secretName: ""
     logging:
