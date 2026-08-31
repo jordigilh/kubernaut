@@ -247,11 +247,11 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 
 	Describe("BR-AUDIT-005 #998: Audit actor attribution from context", func() {
 		It("UT-KA-998-001: WithActor sets actor retrievable via ActorFromContext", func() {
-			ctx := audit.WithActor(context.Background(), "user@example.com", "User")
+			ctx := audit.WithActor(context.Background(), "user@example.com", "user")
 			actorID, actorType, ok := audit.ActorFromContext(ctx)
 			Expect(ok).To(BeTrue())
 			Expect(actorID).To(Equal("user@example.com"))
-			Expect(actorType).To(Equal("User"))
+			Expect(actorType).To(Equal("user"))
 		})
 
 		It("UT-KA-998-002: ActorFromContext returns false on bare context", func() {
@@ -261,26 +261,26 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 
 		It("UT-KA-998-003: StoreBestEffort auto-populates actor from context when event fields are empty", func() {
 			store := &mockAuditStore{}
-			ctx := audit.WithActor(context.Background(), "analyst@corp.io", "User")
+			ctx := audit.WithActor(context.Background(), "analyst@corp.io", "user")
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-998")
 
 			audit.StoreBestEffort(ctx, store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
 			Expect(store.events[0].ActorID).To(Equal("analyst@corp.io"))
-			Expect(store.events[0].ActorType).To(Equal("User"))
+			Expect(store.events[0].ActorType).To(Equal("user"))
 		})
 
 		It("UT-KA-998-004: StoreBestEffort preserves explicitly set actor fields", func() {
 			store := &mockAuditStore{}
-			ctx := audit.WithActor(context.Background(), "context-user", "User")
+			ctx := audit.WithActor(context.Background(), "context-user", "user")
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-998")
 			event.ActorID = "system-override"
-			event.ActorType = "Service"
+			event.ActorType = "service"
 
 			audit.StoreBestEffort(ctx, store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
 			Expect(store.events[0].ActorID).To(Equal("system-override"))
-			Expect(store.events[0].ActorType).To(Equal("Service"))
+			Expect(store.events[0].ActorType).To(Equal("service"))
 		})
 
 		It("UT-KA-998-005: StoreBestEffort leaves actor empty when no context actor and no event actor", func() {

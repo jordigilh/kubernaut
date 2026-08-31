@@ -50,10 +50,10 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 		CorrelationID:  event.CorrelationID,
 	}
 	if event.ActingUser != "" {
-		req.ActorType.SetTo("User")
+		req.ActorType.SetTo("user")
 		req.ActorID.SetTo(event.ActingUser)
 	} else {
-		actorType := "Service"
+		actorType := "service"
 		actorID := "kubernaut-agent"
 		if event.ActorID != "" {
 			actorID = event.ActorID

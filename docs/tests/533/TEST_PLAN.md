@@ -192,7 +192,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 **Acceptance Criteria**:
 - All 8 ADR-034 envelope fields are present and non-None
 - `event_category` matches the HAPI service constant ("aiagent")
-- `actor_type` == "Service" and `actor_id` == "kubernaut-agent"
+- `actor_type` == "service" and `actor_id` == "kubernaut-agent"
 
 ---
 
@@ -293,7 +293,7 @@ Format: `{TIER}-{SERVICE}-{ISSUE_NUMBER}-{SEQUENCE}`
 - `event_type` == "aiagent.enrichment.failed"
 - `event_action` == "enrichment_failed"
 - `event_outcome` == "failure"
-- `actor_type` == "Service"
+- `actor_type` == "service"
 - `actor_id` == "kubernaut-agent"
 
 **Acceptance Criteria**:
