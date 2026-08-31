@@ -497,36 +497,13 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 	}
 
 	fleetLog := logger.WithName("fleet-mcp")
-	var opts []mcpclient.Option
-	if cfg.Fleet.OAuth2.Enabled {
-		basePath := "/etc/effectivenessmonitor/fleet-oauth2"
-		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-			basePath = "/etc/effectivenessmonitor/" + cfg.Fleet.OAuth2.CredentialsSecretRef
-		}
-		reloadCfg := mcpclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-			ClientIDPath:     basePath + "/client-id",
-			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           cfg.Fleet.OAuth2.Scopes,
-			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
-		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	}
 
-	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
-	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
-	if err != nil {
-		// #1553: keep (don't discard) the disconnected client — the fleet
-		// readiness gate attaches an MCPClientProber to it so the periodic
-		// probe keeps retrying and the "fleet" readyz check correctly
-		// reports NotReady until reconnect, instead of the client being
-		// silently lost with no path back to healthy short of a restart.
-		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
-			"and keep retrying in the background; remote cluster routing disabled until reconnect",
-			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
-		return nil, mcpFleetClient, nil
-	}
-
+	// ClusterRegistry is K8s-watch-based (via dynClient), independent of
+	// the MCP session, so it is built and started before dialing the MCP
+	// Gateway below (#2315 triage): Connect's own backoff/retry can block
+	// for a while against an unreachable Gateway, and starting the
+	// informer-backed registry afterward would otherwise race against
+	// (or get starved by) whatever's left of ctx's deadline, if any.
 	clusterRegistry, err := registry.NewClusterRegistry(
 		cfg.Fleet.EffectiveMCPGatewayType(),
 		dynClient,
@@ -538,14 +515,40 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 		fleetLog,
 	)
 	if err != nil {
-		return nil, mcpFleetClient, fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
+		return nil, nil, fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
 	}
 	if err := clusterRegistry.Start(ctx); err != nil {
-		return nil, mcpFleetClient, fmt.Errorf("start fleet cluster registry: %w", err)
+		return nil, nil, fmt.Errorf("start fleet cluster registry: %w", err)
 	}
 
-	logger.Info("Fleet MCP Gateway connected, multi-cluster target reads enabled",
-		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	connectCfg := mcpclient.ConnectConfig{
+		Endpoint:   cfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:     cfg.Fleet.OAuth2,
+		Resilience: cfg.Fleet.Resilience,
+	}
+	if cfg.Fleet.OAuth2.Enabled {
+		connectCfg.CredentialsBasePath = "/etc/effectivenessmonitor/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			connectCfg.CredentialsBasePath = "/etc/effectivenessmonitor/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+	}
+
+	// #1553/#2315: keep (don't discard) the client even when the initial
+	// connect attempt fails — the fleet readiness gate attaches an
+	// MCPClientProber that keeps retrying in the background, and the
+	// reader factory below (built from its SessionProvider) self-heals
+	// automatically once it reconnects.
+	mcpFleetClient, connectErr := mcpclient.Connect(ctx, connectCfg, fleetLog) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
+	if connectErr != nil {
+		logger.Error(connectErr, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
+			"and keep retrying in the background; remote cluster routing will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+	} else {
+		logger.Info("Fleet MCP Gateway connected, multi-cluster target reads enabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	}
+
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
 		localClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
 	return readerFactory, mcpFleetClient, nil

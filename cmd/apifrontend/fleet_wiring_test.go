@@ -135,21 +135,23 @@ func TestBuildFleetReaderDeps_Enabled_WiresReaderFactoryAndClusterRegistry(t *te
 	}
 }
 
-// TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully pins
-// the fail-open contract for an unreachable Fleet MCP Gateway endpoint
-// (mirrors GW's TestRegisterAdapters_FleetEnabledUnreachable): a connectivity
-// failure must never error out of buildFleetReaderDeps or block AF startup
-// indefinitely — the tool-routing surface (FleetReaderFactory) degrades to
-// single-cluster mode instead.
+// TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_SelfHeals proves issue
+// #2315's fix: an unreachable Fleet MCP Gateway at startup must never error
+// out of buildFleetReaderDeps or block AF startup indefinitely, and —
+// unlike the pre-#2315 contract this test used to pin (FleetReaderFactory
+// == nil forever) — FleetReaderFactory must still be built (from the
+// resilient client's SessionProvider) and FleetClusterRegistry
+// (K8s-watch-based, independent of the MCP session) must still be wired,
+// so multi-cluster tool routing self-heals once the background reconnect
+// succeeds, instead of staying disabled until a pod restart.
 //
-// #1553 [readiness gate Wave 5]: unlike the pre-#1553 contract, the
-// resilient client is now kept (not discarded) on an initial connection
-// failure, and a readiness.Gate is still constructed around it, so
-// deps.FleetReady() correctly reports NotReady (and the periodic probe
-// keeps retrying) instead of the client being silently lost with no path
-// back to healthy short of a restart. Mirrors the identical change made to
-// GW/RO/EM/SP/WE in Waves 2-4.
-func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *testing.T) {
+// #1553 [readiness gate Wave 5]: the resilient client is kept (not
+// discarded) on an initial connection failure, and a readiness.Gate is
+// still constructed around it, so deps.FleetReady() correctly reports
+// NotReady (and the periodic probe keeps retrying) instead of the client
+// being silently lost with no path back to healthy short of a restart.
+// Mirrors the identical change made to GW/RO/EM/SP/WE.
+func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_SelfHeals(t *testing.T) {
 	t.Parallel()
 
 	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), backendGVRListKinds)
@@ -170,8 +172,13 @@ func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *t
 	if err != nil {
 		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
 	}
-	if deps.FleetReaderFactory != nil {
-		t.Error("IT-AF-054-005: FleetReaderFactory must remain nil when the Fleet MCP Gateway is unreachable")
+	if deps.FleetReaderFactory == nil {
+		t.Error("IT-AF-2315-001: FleetReaderFactory must still be built even when the Fleet MCP Gateway is " +
+			"initially unreachable, so it self-heals once the background reconnect succeeds")
+	}
+	if deps.FleetClusterRegistry == nil {
+		t.Error("IT-AF-2315-001: FleetClusterRegistry must still be wired (K8s-watch-based, independent of " +
+			"the MCP session) even when the Fleet MCP Gateway is initially unreachable")
 	}
 	if deps.FleetResilientClient() == nil {
 		t.Fatal("IT-AF-1553-001: *mcpclient.ResilientClient must be kept (not discarded) when the Fleet " +

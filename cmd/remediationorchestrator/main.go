@@ -779,38 +779,35 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg
 	}
 
 	fleetLog := logger.WithName("fleet-mcp")
-	var opts []mcpclient.Option
+	connectCfg := mcpclient.ConnectConfig{
+		Endpoint:   cfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:     cfg.Fleet.OAuth2,
+		Resilience: cfg.Fleet.Resilience,
+	}
 	if cfg.Fleet.OAuth2.Enabled {
-		basePath := "/etc/remediationorchestrator/fleet-oauth2"
+		connectCfg.CredentialsBasePath = "/etc/remediationorchestrator/fleet-oauth2"
 		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-			basePath = "/etc/remediationorchestrator/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+			connectCfg.CredentialsBasePath = "/etc/remediationorchestrator/" + cfg.Fleet.OAuth2.CredentialsSecretRef
 		}
-		reloadCfg := mcpclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-			ClientIDPath:     basePath + "/client-id",
-			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           cfg.Fleet.OAuth2.Scopes,
-			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
-		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
-	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
-	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	// #1553/#2315: keep (don't discard) the client and always build the
+	// reader factory from its SessionProvider, even when the initial
+	// connect attempt fails — the fleet readiness gate attaches an
+	// MCPClientProber that keeps retrying in the background, and once it
+	// reconnects, remote pre-remediation hash reads self-heal
+	// automatically instead of staying disabled until a pod restart.
+	mcpFleetClient, err := mcpclient.Connect(ctx, connectCfg, fleetLog) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
 	if err != nil {
-		// #1553: keep (don't discard) the disconnected client — the fleet
-		// readiness gate attaches an MCPClientProber to it so the periodic
-		// probe keeps retrying and the "fleet" readyz check correctly
-		// reports NotReady until reconnect, instead of the client being
-		// silently lost with no path back to healthy short of a restart.
 		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
-			"and keep retrying in the background; remote pre-remediation hash reads disabled until reconnect",
+			"and keep retrying in the background; remote pre-remediation hash reads will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
 			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
-		return nil, mcpFleetClient, nil
+	} else {
+		logger.Info("Fleet MCP Gateway connected, remote pre-remediation hash reads enabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
 	}
 
-	logger.Info("Fleet MCP Gateway connected, remote pre-remediation hash reads enabled",
-		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, mcpFleetClient.SessionProvider())
 	return readerFactory, mcpFleetClient, nil
 }
