@@ -344,6 +344,31 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("fullpipeline base setup (fleet-enabled) failed: %w", err)
 	}
 
+	// DD-FLEET-008 (BR-FLEET-004, Issue #2326): seed one dedicated,
+	// fully-isolated workflow fixture that declares
+	// execution.clusterId: prod-east, fold its real AuthWebhook-stamped
+	// UUID into Mock LLM's scenario overrides, and re-deploy (idempotent
+	// re-render, same as the initial DeployMockLLMInNamespace call above)
+	// plus a rollout restart so the running pod picks it up -- proving the
+	// real CRD-catalog -> KA -> AIAnalysis -> RO chain end to end
+	// (E2E-FLEET-2326-001), not just unit/integration-level plumbing.
+	// Doing this here (fleet-only, after the shared fullpipeline seed list)
+	// keeps the new fixture out of every other pipeline-based E2E suite.
+	fleetExecClusterUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, kubernautSystem,
+		[]WorkflowSeedSpec{{FixtureDir: "fleet-exec-cluster-override", Environment: "production"}}, writer)
+	if seedErr != nil {
+		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("DD-FLEET-008 fixture seeding failed: %w", seedErr)
+	}
+	for k, v := range fleetExecClusterUUIDs {
+		seededUUIDs[k] = v
+	}
+	if err := DeployMockLLMInNamespace(ctx, kubernautSystem, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, afRemediateNS, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("DD-FLEET-008 mock-llm re-deploy with merged UUIDs failed: %w", err)
+	}
+	if err := restartMockLLMDeployment(ctx, kubernautSystem, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("DD-FLEET-008 mock-llm restart failed: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote-cluster__ (EAIGW convention)")

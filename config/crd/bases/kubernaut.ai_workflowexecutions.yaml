@@ -246,6 +246,18 @@ spec:
                     description: ExecutionBundleDigest is retained for audit trail
                       and reproducibility.
                     type: string
+                  executionClusterId:
+                    description: |-
+                      ExecutionClusterID is the workflow-declared fleet cluster this
+                      workflow's execution resource (Job/PipelineRun/Ansible run) runs on,
+                      resolved from the DS workflow catalog at selection time (DD-FLEET-008,
+                      BR-FLEET-004, Issue #2326). Empty means unset: execution runs on the
+                      same cluster as the triggering signal, the pre-existing default
+                      behavior. When set, RemediationOrchestrator's WorkflowExecutionCreator
+                      uses this value in preference to RemediationRequest.Spec.ClusterID for
+                      WorkflowExecution.Spec.ClusterID -- e.g. a GitOps-hub cluster, or an
+                      aggregator cluster reaching a resource-constrained edge device.
+                    type: string
                   executionEngine:
                     description: |-
                       ExecutionEngine specifies the backend engine for workflow execution,

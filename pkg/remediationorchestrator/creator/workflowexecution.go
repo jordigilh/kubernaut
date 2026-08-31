@@ -124,7 +124,7 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			// over the RR's TargetResource (e.g., Pod) when available.
 			// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
-			ClusterID:      rr.Spec.ClusterID,
+			ClusterID:      resolveExecutionClusterID(rr, ai),
 			Parameters:     ai.Status.RCAResult.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.RCAResult.SelectedWorkflow.Confidence,
@@ -258,6 +258,27 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 		return fmt.Sprintf("%s/%s/%s", tr.Namespace, tr.Kind, tr.Name)
 	}
 	return fmt.Sprintf("%s/%s", tr.Kind, tr.Name)
+}
+
+// resolveExecutionClusterID determines the fleet cluster WorkflowExecution's
+// Job/PipelineRun/Ansible run actually executes on (DD-FLEET-008,
+// BR-FLEET-004, Issue #2326). The selected workflow may declare its own
+// execution cluster (catalog-authoritative, sourced from
+// RemediationWorkflow.Spec.Execution.ClusterID via
+// sharedtypes.WorkflowSnapshot.ExecutionClusterID) for cases where the
+// remediation host differs from the signal's origin cluster -- e.g. a
+// GitOps-hub cluster that holds repo push credentials, or an aggregator
+// cluster capable of reaching a resource-constrained edge device that
+// cannot run workflows itself. Empty (the common case): falls back to
+// rr.Spec.ClusterID, the pre-existing default behavior. No new enforcement
+// code path either way: both values land in the same
+// WorkflowExecution.Spec.ClusterID field that ClientFactory.ClientFor
+// already resolves via the fleet MCP Gateway (ASVS V4.1 / FedRAMP AC-4).
+func resolveExecutionClusterID(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
+	if sw := ai.Status.GetRCAResult().SelectedWorkflow; sw != nil && sw.ExecutionClusterID != "" {
+		return sw.ExecutionClusterID
+	}
+	return rr.Spec.ClusterID
 }
 
 // resolveTargetResource determines the target resource string for the WorkflowExecution.

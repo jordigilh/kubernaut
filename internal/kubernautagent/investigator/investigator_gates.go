@@ -689,6 +689,11 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	// workflowexecution.execution.started's audit payload (Change 11f).
 	result.ActionType = meta.ActionType
 	result.WorkflowName = meta.WorkflowName
+
+	// Issue #2326 (DD-FLEET-008, BR-FLEET-004): ExecutionClusterID is
+	// likewise catalog-authoritative -- always overwrite, same pattern as
+	// ActionType/WorkflowName above.
+	result.ExecutionClusterID = meta.ClusterID
 }
 
 // gvrToAPIVersion converts a GroupVersionResource to the apiVersion string

@@ -168,6 +168,22 @@ type RemediationWorkflowExecution struct {
 	// credentials (#500 fallback).
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// ClusterID declares the fleet cluster this workflow's execution resource
+	// (Job/PipelineRun/Ansible run) runs on, decoupled from the cluster the
+	// triggering signal originated from (DD-FLEET-008, BR-FLEET-004). Empty
+	// (default): execution runs on the same cluster as the signal, matching
+	// today's behavior. When set, it takes precedence over
+	// RemediationRequest.Spec.ClusterID for the resulting
+	// WorkflowExecution.Spec.ClusterID -- e.g. a GitOps-hub cluster that pushes
+	// a commit, or an aggregator cluster capable of reaching a resource-
+	// constrained edge device that cannot run workflows itself. Must resolve
+	// to a cluster already registered with the fleet MCP Gateway; an unknown
+	// or unreachable value fails at WorkflowExecution dispatch time, the same
+	// fail-closed behavior as an RR-supplied ClusterID typo today (no separate
+	// admission-time cluster-registry validation, DD-FLEET-008).
+	// +optional
+	ClusterID string `json:"clusterId,omitempty"`
 }
 
 // RemediationWorkflowDependencies declares infrastructure resources

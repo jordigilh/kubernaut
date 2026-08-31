@@ -120,6 +120,18 @@ type WorkflowSnapshot struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// ExecutionClusterID is the workflow-declared fleet cluster this
+	// workflow's execution resource (Job/PipelineRun/Ansible run) runs on,
+	// resolved from the DS workflow catalog at selection time (DD-FLEET-008,
+	// BR-FLEET-004, Issue #2326). Empty means unset: execution runs on the
+	// same cluster as the triggering signal, the pre-existing default
+	// behavior. When set, RemediationOrchestrator's WorkflowExecutionCreator
+	// uses this value in preference to RemediationRequest.Spec.ClusterID for
+	// WorkflowExecution.Spec.ClusterID -- e.g. a GitOps-hub cluster, or an
+	// aggregator cluster reaching a resource-constrained edge device.
+	// +optional
+	ExecutionClusterID string `json:"executionClusterId,omitempty"`
+
 	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
 	// requires in the execution namespace (DD-WE-006).
 	// +optional

@@ -270,6 +270,106 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		Expect(sw.ActionType).To(Equal("ScaleReplicas"))
 		Expect(sw.WorkflowName).To(Equal("partial-fix"))
 	})
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// UT-AA-2326: ExecutionClusterID propagates through all three
+	// SelectedWorkflow population call sites (DD-FLEET-008, BR-FLEET-004,
+	// Issue #2326), mirroring ActionType/WorkflowName above.
+	// ═══════════════════════════════════════════════════════════════════════
+
+	It("UT-AA-2326-001: storeSelectedWorkflow extracts ExecutionClusterID from the KA response", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID:       "test-wfsnap-2326a",
+			Analysis:         "Root cause: memory pressure",
+			NeedsHumanReview: false,
+			Confidence:       0.92,
+			Timestamp:        "2026-08-31T12:00:00Z",
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":          "increase-memory-v1",
+				"workflow_name":        "increase-memory",
+				"action_type":          "ScaleReplicas",
+				"execution_bundle":     "ghcr.io/kubernaut/increase-memory:v1.0",
+				"execution_cluster_id": "gitops-hub-cluster",
+				"confidence":           0.92,
+			}),
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
+		Expect(sw).ToNot(BeNil())
+		Expect(sw.ExecutionClusterID).To(Equal("gitops-hub-cluster"))
+	})
+
+	It("UT-AA-2326-002: leaves ExecutionClusterID empty when absent from the KA response (hub-local default, unchanged behavior)", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID:       "test-wfsnap-2326b",
+			Analysis:         "Root cause: crash loop",
+			NeedsHumanReview: false,
+			Confidence:       0.85,
+			Timestamp:        "2026-08-31T12:05:00Z",
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":      "restart-pod-v1",
+				"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+				"confidence":       0.85,
+			}),
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
+		Expect(sw).ToNot(BeNil())
+		Expect(sw.ExecutionClusterID).To(BeEmpty())
+	})
+
+	It("UT-AA-2326-003: preserveLowConfidenceWorkflow extracts ExecutionClusterID from the KA response", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID:       "test-wfsnap-2326c",
+			Analysis:         "Root cause: low confidence match",
+			NeedsHumanReview: true,
+			Confidence:       0.4,
+			Timestamp:        "2026-08-31T12:10:00Z",
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":          "low-confidence-v1",
+				"execution_bundle":     "ghcr.io/kubernaut/low-confidence:v1.0",
+				"execution_cluster_id": "edge-aggregator-cluster",
+				"confidence":           0.4,
+			}),
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
+		Expect(sw).ToNot(BeNil())
+		Expect(sw.ExecutionClusterID).To(Equal("edge-aggregator-cluster"))
+	})
+
+	It("UT-AA-2326-004: preservePartialSelectedWorkflow extracts ExecutionClusterID from the KA response (workflow-resolution-failure path)", func() {
+		kaResp := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "test-wfsnap-2326d",
+			Analysis:          "Workflow resolution failed",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "parameter_validation_failed",
+			Confidence:        0.8,
+			Timestamp:         "2026-08-31T12:15:00Z",
+			Warnings:          []string{"parameter validation failed"},
+			SelectedWorkflow: rawJSONWFSnap(map[string]interface{}{
+				"workflow_id":          "partial-v1",
+				"execution_bundle":     "ghcr.io/kubernaut/partial:v1.0",
+				"execution_cluster_id": "gitops-hub-cluster",
+			}),
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
+		Expect(sw).ToNot(BeNil(), "partial workflow must be preserved for operator visibility")
+		Expect(sw.ExecutionClusterID).To(Equal("gitops-hub-cluster"))
+	})
 })
 
 var _ = Describe("sharedtypes.WorkflowDependencies (Issue #1661 Change 11b)", func() {

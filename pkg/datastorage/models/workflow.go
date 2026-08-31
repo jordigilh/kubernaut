@@ -121,6 +121,15 @@ type RemediationWorkflow struct {
 	// DD-WE-005 v2.0: Operators create SAs in execution namespace. NULL when absent.
 	ServiceAccountName *string `json:"serviceAccountName,omitempty" db:"service_account_name"`
 
+	// ExecutionClusterID declares the fleet cluster this workflow's execution
+	// resource runs on, decoupled from the signal's origin cluster
+	// (DD-FLEET-008, BR-FLEET-004). NULL means unset (hub/signal-cluster
+	// default). Despite the `db:` tag, this type carries zero DB/SQL usage in
+	// production post-DD-WORKFLOW-019 -- it is populated purely in-memory by
+	// KubernautAgent's own CRD-backed cache (cache_convert.go), never
+	// persisted to PostgreSQL.
+	ExecutionClusterID *string `json:"executionClusterId,omitempty" db:"execution_cluster_id"`
+
 	// ========================================
 	// LABELS (V1.0: STRUCTURED TYPES FOR TYPE SAFETY)
 	// ========================================
