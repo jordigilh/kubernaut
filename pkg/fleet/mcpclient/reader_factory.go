@@ -31,6 +31,7 @@ type mcpReaderFactory struct {
 	localClient     client.Reader
 	session         *mcp.ClientSession
 	sessionProvider SessionProvider
+	reconnect       func(context.Context) error
 	prefixResolver  registry.ToolPrefixResolver
 }
 
@@ -53,7 +54,14 @@ func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession, 
 // NewMCPReaderFactoryWithProvider is like NewMCPReaderFactory but uses a
 // SessionProvider for lazy session resolution. Per-cluster readers created by
 // this factory automatically follow ResilientClient reconnections.
-func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider SessionProvider, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
+//
+// reconnect (typically the owning ResilientClient's Reconnect method) is
+// passed through to every per-cluster Client as WithReconnect, so a Get/List
+// call that hits a dead session (SSE stream failure mid-lifetime, not just an
+// initial connect failure -- issue #2317) triggers one reconnect-and-retry
+// instead of failing every call forever until the pod restarts. Pass nil to
+// opt out (matches pre-#2317 behavior).
+func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider SessionProvider, reconnect func(context.Context) error, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
 	var pr registry.ToolPrefixResolver
 	if len(resolver) > 0 {
 		pr = resolver[0]
@@ -61,8 +69,31 @@ func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider Session
 	return &mcpReaderFactory{
 		localClient:     localClient,
 		sessionProvider: provider,
+		reconnect:       reconnect,
 		prefixResolver:  pr,
 	}
+}
+
+// ResolveSession resolves the current MCP session, preferring provider
+// (live, self-healing resolution) over static (a one-time snapshot) when a
+// provider is set. Returns a clear, typed error when the result is nil --
+// i.e. the gateway is currently disconnected -- so callers surface a
+// transient error instead of a nil-pointer panic or a silently-stale
+// session.
+//
+// Extracted from mcpReaderFactory.ReaderFor's pre-existing inline logic
+// (dedup); also used by NewDiscovererWithProvider and workflowexecution's
+// client factory so every fleet-aware consumer resolves sessions
+// identically.
+func ResolveSession(static *mcp.ClientSession, provider SessionProvider) (*mcp.ClientSession, error) {
+	session := static
+	if provider != nil {
+		session = provider()
+	}
+	if session == nil {
+		return nil, fmt.Errorf("MCP session not available (gateway disconnected)")
+	}
+	return session, nil
 }
 
 func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (client.Reader, error) {
@@ -70,12 +101,9 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 		return f.localClient, nil
 	}
 
-	session := f.session
-	if f.sessionProvider != nil {
-		session = f.sessionProvider()
-	}
-	if session == nil {
-		return nil, fmt.Errorf("MCP session not available for remote cluster %q", clusterID)
+	session, err := ResolveSession(f.session, f.sessionProvider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session for remote cluster %q: %w", clusterID, err)
 	}
 
 	var opts []Option
@@ -92,6 +120,9 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 	}
 
 	if f.sessionProvider != nil {
+		if f.reconnect != nil {
+			opts = append(opts, WithReconnect(f.reconnect))
+		}
 		return NewFromSessionProvider(f.sessionProvider, clusterID, opts...), nil
 	}
 	return NewFromSession(session, clusterID, opts...), nil

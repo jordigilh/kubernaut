@@ -140,6 +140,77 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
+
+		// Issue #2311: fleet (remote-cluster) scope checks must honor the same
+		// 2-level hierarchy (resource label, then namespace label) that
+		// pkg/shared/scope.Manager already implements for the local/hub
+		// cluster (ADR-053). Before this fix, a namespace labeled
+		// kubernaut.ai/managed=true with unlabeled resources inside it never
+		// got those resources synced by pkg/fleet/fmc/syncer.go (a K8s label
+		// selector can't match "resources whose namespace has this label"),
+		// so every such resource was permanently rejected as unmanaged on
+		// fleet clusters despite working correctly on the hub.
+		It("UT-FLEET-SC-013 [Issue #2311]: IsManagedResource falls back to the namespace-level label when the resource-level key is not cached", func() {
+			nsKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "demo-checkout")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[nsKey] = true
+			// Deliberately do NOT set the resource-level key -- the pod itself
+			// carries no label, only its namespace does.
+
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "remote-cluster",
+				Kind:      "Pod",
+				Namespace: "demo-checkout",
+				Name:      "worker-5f74bb54f7-28jpv",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue(),
+				"a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources, same as local")
+		})
+
+		It("UT-FLEET-SC-014 [Issue #2311]: IsManagedResource prefers the resource-level label over the namespace fallback when both are cached", func() {
+			resKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Pod", "demo-checkout", "worker-1")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[resKey] = true
+			// No namespace-level key needed -- resource-level hit should short-circuit.
+
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "remote-cluster",
+				Kind:      "Pod",
+				Namespace: "demo-checkout",
+				Name:      "worker-1",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
+		})
+
+		It("UT-FLEET-SC-015 [Issue #2311]: IsManagedResource returns unmanaged when neither the resource nor its namespace is cached", func() {
+			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "remote-cluster",
+				Kind:      "Pod",
+				Namespace: "unmanaged-ns",
+				Name:      "orphan",
+			})
+			Expect(managed).To(BeFalse())
+		})
+
+		It("UT-FLEET-SC-016 [Issue #2311]: IsManagedResource does not fall back to a namespace for cluster-scoped kinds, mirroring scope.Manager", func() {
+			// A coincidentally-matching "namespace" key must never be
+			// consulted for a cluster-scoped resource (e.g. Node) -- it has
+			// no namespace to inherit from (ADR-053).
+			nsKey, err := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "worker-node-1")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[nsKey] = true
+
+			managed, _ := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "remote-cluster",
+				Kind:      "Node",
+				Namespace: "",
+				Name:      "worker-node-1",
+			})
+			Expect(managed).To(BeFalse(),
+				"Node is cluster-scoped and must only ever check its own resource-level label")
+		})
 	})
 
 	Describe("BuildKey", func() {

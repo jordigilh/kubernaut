@@ -63,9 +63,9 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 				toolNames[tool.Name] = true
 			}
 
-			g.Expect(toolNames).To(HaveKey("remote_cluster_resources_create_or_update"),
+			g.Expect(toolNames).To(HaveKey("remote-cluster__resources_create_or_update"),
 				"AC-3: resources_create_or_update tool must be available for remote Job dispatch")
-			g.Expect(toolNames).To(HaveKey("remote_cluster_resources_get"),
+			g.Expect(toolNames).To(HaveKey("remote-cluster__resources_get"),
 				"resources_get tool needed for WE status polling")
 		}, 90*time.Second, 5*time.Second).Should(Succeed())
 	})

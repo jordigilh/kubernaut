@@ -83,12 +83,12 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 
 		// Step 1: Install cert-manager
 		logger.Info("📦 Step 1/4: Installing cert-manager...")
-		err := infrastructure.InstallCertManager(kubeconfigPath, GinkgoWriter)
+		err := infrastructure.InstallCertManager(testCtx, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to install cert-manager")
 
 		// Step 2: Wait for cert-manager to be ready
 		logger.Info("⏳ Step 2/4: Waiting for cert-manager readiness...")
-		err = infrastructure.WaitForCertManagerReady(kubeconfigPath, GinkgoWriter)
+		err = infrastructure.WaitForCertManagerReady(testCtx, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "cert-manager did not become ready")
 
 		// Step 3: Create ClusterIssuer

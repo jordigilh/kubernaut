@@ -297,6 +297,19 @@ type RemediationTarget struct {
 	APIVersion string `json:"api_version,omitempty"`
 }
 
+// DefaultClusterNameSentinel is the display-only placeholder
+// pkg/aianalysis/handlers/request_builder.go's clusterNameFor emits for
+// SignalContext.ClusterName when a hub-local investigation (no real target
+// cluster) has no cluster_name custom label either. It is never a real
+// fleet cluster identifier. internal/kubernautagent/agentsession/mapping.go's
+// MapSpecToSignal must not promote this literal into SignalContext.ClusterID
+// -- prescopeFleetOverlay (fleet_overlay.go) treats any non-empty ClusterID
+// as a fleet-target investigation and fails closed without a
+// FleetOverlayResolver configured (Issue #2314): promoting the cosmetic
+// "default" placeholder there would make every hub-local investigation look
+// like a fleet target.
+const DefaultClusterNameSentinel = "default"
+
 // SignalContext holds the input signal data for an investigation.
 // Fields align with the OpenAPI IncidentRequest schema in api/openapi.json.
 //

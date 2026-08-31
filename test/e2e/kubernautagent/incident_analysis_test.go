@@ -81,7 +81,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -142,7 +141,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -199,7 +197,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -269,7 +266,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -326,7 +322,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -378,7 +373,6 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				Priority:         "P1",
 				RiskTolerance:    "medium",
 				BusinessCategory: "standard",
-				ClusterName:      "e2e-test",
 			}
 
 			// ========================================

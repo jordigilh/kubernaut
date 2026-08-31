@@ -64,6 +64,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/internal/version"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -273,46 +274,17 @@ func buildSignalModeClassifier() *classifier.SignalModeClassifier {
 	return signalModeClassifier
 }
 
-// buildFleetOAuth2Options constructs the hot-reloadable OAuth2 transport
-// option for the Fleet MCP client when cfg.Fleet.OAuth2.Enabled, deriving
-// the credentials mount path from CredentialsSecretRef when set.
-func buildFleetOAuth2Options(cfg *config.Config) []fleetclient.Option {
-	if !cfg.Fleet.OAuth2.Enabled {
-		return nil
-	}
-
-	basePath := "/etc/signalprocessing/fleet-oauth2"
-	if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-		basePath = "/etc/signalprocessing/" + cfg.Fleet.OAuth2.CredentialsSecretRef
-	}
-	reloadCfg := fleetclient.ReloadableOAuth2Config{
-		TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-		ClientIDPath:     basePath + "/client-id",
-		ClientSecretPath: basePath + "/client-secret",
-		Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
-		TokenTimeout:     10 * time.Second,
-		TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
-	}
-	setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
-		"tokenURL", cfg.Fleet.OAuth2.TokenURL,
-		"secretPath", basePath)
-
-	return []fleetclient.Option{
-		fleetclient.WithReloadableOAuth2Transport(reloadCfg, ctrl.Log.WithName("fleet-oauth2")),
-	}
-}
-
 // wireFleetMCPClient connects to the optional Fleet MCP Gateway
 // (BR-INTEGRATION-054) when cfg.Fleet.Endpoint is configured, and wires its
 // reader factory into k8sEnricher for remote cluster enrichment. Returns
-// nil when fleet is not configured. On a connection failure, enrichment
-// falls back to local-cluster-only mode (non-fatal), but #1553: the
-// (disconnected) client is still returned rather than discarded, so
-// wireFleetReadinessGate can attach an MCPClientProber that keeps
-// retrying via the periodic probe — this is what allows /readyz to
-// recover once Fleet comes back, instead of requiring a pod restart
-// (mirrors GW/RO/EM's identical Wave 2/3 change). localClient is
-// pre-built by the caller (independently testable with a fake).
+// nil when fleet is not configured. On a connection failure, the
+// (disconnected) client is still returned rather than discarded, and the
+// reader factory is still built from its SessionProvider (#1553/#2315):
+// wireFleetReadinessGate attaches an MCPClientProber that keeps retrying
+// via the periodic probe, and once the connection is established remote
+// enrichment self-heals automatically -- no pod restart required (mirrors
+// GW/RO/EM/KA/WE's identical fix). localClient is pre-built by the caller
+// (independently testable with a fake).
 func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient client.Client, k8sEnricher *enricher.K8sEnricher) *fleetclient.ResilientClient {
 	if cfg.Fleet.Endpoint == "" {
 		return nil
@@ -322,23 +294,45 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient cli
 		"endpoint", cfg.Fleet.Endpoint,
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
-	fleetOpts := buildFleetOAuth2Options(cfg) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
-	fleetResilientClient, fleetErr := fleetclient.NewResilient(
-		ctx, cfg.Fleet.Endpoint, resilienceCfg,
-		ctrl.Log.WithName("fleet-client"), fleetOpts...,
-	)
-	if fleetErr != nil {
-		setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
-			"NotReady and keep retrying in the background; remote enrichment disabled until reconnect",
-			"endpoint", cfg.Fleet.Endpoint)
-		return fleetResilientClient
+	connectCfg := fleetclient.ConnectConfig{
+		Endpoint:   cfg.Fleet.Endpoint,
+		Resilience: cfg.Fleet.Resilience,
+	}
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/signalprocessing/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/signalprocessing/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		connectCfg.OAuth2 = fleet.FleetOAuth2Config{
+			Enabled:   true,
+			TokenURL:  cfg.Fleet.OAuth2.TokenURL,
+			Scopes:    cfg.Fleet.OAuth2.Scopes,
+			TLSCAFile: cfg.Fleet.OAuth2.TLSCAFile,
+		}
+		connectCfg.CredentialsBasePath = basePath
+		setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+			"tokenURL", cfg.Fleet.OAuth2.TokenURL,
+			"secretPath", basePath)
 	}
 
-	readerFactory := fleetclient.NewMCPReaderFactory(localClient, fleetResilientClient.Session())
+	// #1553/#2315: keep the client even when the initial connect attempt
+	// fails -- the reader factory below is built from a SessionProvider,
+	// so remote enrichment self-heals automatically once
+	// fleetResilientClient reconnects in the background (via the periodic
+	// readiness probe), instead of staying disabled until a pod restart.
+	fleetResilientClient, fleetErr := fleetclient.Connect(ctx, connectCfg, ctrl.Log.WithName("fleet-client")) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
+	if fleetErr != nil {
+		setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
+			"NotReady and keep retrying in the background; remote enrichment will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
+			"endpoint", cfg.Fleet.Endpoint)
+	} else {
+		setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
+			"endpoint", cfg.Fleet.Endpoint)
+	}
+
+	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(localClient, fleetResilientClient.SessionProvider(), fleetResilientClient.Reconnect)
 	k8sEnricher.SetReaderFactory(readerFactory)
-	setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
-		"endpoint", cfg.Fleet.Endpoint)
 
 	return fleetResilientClient
 }

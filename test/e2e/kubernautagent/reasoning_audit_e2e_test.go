@@ -83,7 +83,6 @@ var _ = Describe("E2E-KA-AUDIT-001: Reasoning captured in audit trail, reconstru
 			Priority:              "P1",
 			RiskTolerance:         "medium",
 			BusinessCategory:      "standard",
-			ClusterName:           "e2e-test",
 		}
 
 		// #2190: AgentSession CRD flow replaces sessionClient.Investigate().

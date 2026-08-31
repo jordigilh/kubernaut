@@ -152,9 +152,21 @@ func (fleetOverlayEmptyResolver) Overlay(_ context.Context, _ string) (map[strin
 // silently ran against local/hub tools with zero trace) and for E2E
 // testability (no way to assert the pre-scoping call site was reached
 // without a real, wired FleetOverlayResolver).
+//
+// Amendment 2026-08-30 (Issue #2312, supersedes ADR-068 decision #11's
+// original fail-open language -- see DD-FLEET-005 "Amendment: fail-closed
+// tool-overlay resolution"): both the nil-resolver and resolver-error
+// branches below now return a non-nil error instead of silently falling
+// back to ctx unchanged. A real remote-cluster investigation fell back to
+// hub-only tools after an EAIGW tools/list failure, got clean "not found"
+// responses from the hub (which correctly had no such namespace), and the
+// LLM confidently concluded the incident was resolved/stale -- a fabricated
+// verdict with no signal anywhere that the investigation never reached its
+// actual target cluster. The audit events below are unchanged; only the
+// return value (ctx-only -> ctx+error) changed.
 var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOverlay observability for an unconfigured fleet", Label("fleet", "unit"), func() {
 
-	It("emits EventTypeFleetOverlayUnavailable when a fleet-target investigation hits a nil resolver", func() {
+	It("fails closed and emits EventTypeFleetOverlayUnavailable when a fleet-target investigation hits a nil resolver", func() {
 		store := &fleetOverlayRecordingAuditStore{}
 		inv := &Investigator{
 			logger:               logr.Discard(),
@@ -162,8 +174,13 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 			fleetOverlayResolver: nil,
 		}
 
-		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-unavailable-1")
+		got, err := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-unavailable-1")
 
+		Expect(err).To(HaveOccurred(),
+			"UT-KA-FLEET-028: a fleet-target investigation with no way to resolve the target cluster's "+
+				"tools must fail closed, not silently proceed against local/hub tools that cannot "+
+				"answer for that cluster (Issue #2312)")
+		Expect(err.Error()).To(ContainSubstring("remote-cluster"))
 		_, ok := FleetOverlayFromContext(got)
 		Expect(ok).To(BeFalse(), "UT-KA-FLEET-028: ctx must carry no overlay when fleet isn't configured")
 
@@ -187,14 +204,17 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 			fleetOverlayResolver: nil,
 		}
 
-		_ = inv.prescopeFleetOverlay(context.Background(), "", "corr-hub-1")
+		_, err := inv.prescopeFleetOverlay(context.Background(), "", "corr-hub-1")
 
+		Expect(err).ToNot(HaveOccurred(),
+			"UT-KA-FLEET-028: a hub-local investigation never needs a fleet overlay, so it must never "+
+				"fail closed over one being unavailable")
 		Expect(store.events).To(BeEmpty(),
 			"UT-KA-FLEET-028: a hub-local investigation (no target cluster) must stay silent -- "+
 				"this is the expected, unchanged zero-regression path, not a degraded one")
 	})
 
-	It("emits the pre-existing EventTypeFleetOverlayFailed (not Unavailable) when a real resolver errors", func() {
+	It("fails closed and emits the pre-existing EventTypeFleetOverlayFailed (not Unavailable) when a real resolver errors", func() {
 		store := &fleetOverlayRecordingAuditStore{}
 		inv := &Investigator{
 			logger:               logr.Discard(),
@@ -202,8 +222,12 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 			fleetOverlayResolver: fleetOverlayErrResolver{},
 		}
 
-		_ = inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-err-1")
+		_, err := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-err-1")
 
+		Expect(err).To(HaveOccurred(),
+			"UT-KA-FLEET-028: a resolver error (e.g. MCP gateway/kube-mcp-server unreachable) must fail "+
+				"closed -- local/hub tools are never a substitute for the actual target cluster's tools")
+		Expect(err.Error()).To(ContainSubstring("gateway unreachable"))
 		Expect(store.events).To(HaveLen(1))
 		Expect(store.events[0].EventType).To(Equal(audit.EventTypeFleetOverlayFailed),
 			"UT-KA-FLEET-028: a configured-but-erroring resolver is a distinct condition from "+
@@ -218,8 +242,9 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 			fleetOverlayResolver: fleetOverlaySuccessResolver{},
 		}
 
-		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-ok-1")
+		got, err := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-ok-1")
 
+		Expect(err).ToNot(HaveOccurred())
 		Expect(store.events).To(BeEmpty(), "UT-KA-FLEET-028: a successful resolution needs no degradation event")
 		_, ok := FleetOverlayFromContext(got)
 		Expect(ok).To(BeTrue(), "a successful resolver must still populate the overlay as before")
@@ -255,8 +280,10 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 			fleetOverlayResolver: fleetOverlayEmptyResolver{},
 		}
 
-		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-empty-1")
+		got, err := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-empty-1")
 
+		Expect(err).ToNot(HaveOccurred(),
+			"a successful-but-empty resolution is not a resolver failure and must not fail closed")
 		Expect(store.events).To(BeEmpty(),
 			"UT-KA-FLEET-028: current behavior -- a successful-but-empty resolution is indistinguishable "+
 				"from a hub-local investigation, same as EventTypeFleetOverlayUnavailable's nil-resolver "+

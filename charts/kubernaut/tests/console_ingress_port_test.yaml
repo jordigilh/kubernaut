@@ -1,0 +1,70 @@
+suite: "console.ingress.port: oauth2-proxy --redirect-url must match a non-standard Ingress port (privileged 80/443 binding isn't available in most CI runners)"
+templates:
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+  apifrontend:
+    config:
+      auth:
+        issuerURL: https://sso.example.com/realms/kubernaut
+tests:
+  - it: "IT-HELM-PORT-001: console.ingress.port unset (default 0) renders a port-less --redirect-url, unchanged from before this field existed"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--redirect-url=https://console.apps.example.com/oauth2/callback"
+
+  - it: "IT-HELM-PORT-002: console.ingress.port set appends :port to --redirect-url so the OIDC callback matches a non-standard-port Ingress controller"
+    set:
+      console:
+        ingress:
+          host: console.apps.example.com
+          port: 8443
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--redirect-url=https://console.apps.example.com:8443/oauth2/callback"
+
+  - it: "IT-HELM-PORT-003: console.ingress.port=443 (the HTTPS default) still omits the port suffix, treating 443 as equivalent to unset"
+    set:
+      console:
+        ingress:
+          host: console.apps.example.com
+          port: 443
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--redirect-url=https://console.apps.example.com/oauth2/callback"

@@ -151,7 +151,6 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
@@ -231,7 +230,6 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 				Priority:              "P0",
 				RiskTolerance:         "low",
 				BusinessCategory:      "critical",
-				ClusterName:           "e2e-test",
 			}, 2*time.Minute)
 
 			Expect(err).NotTo(HaveOccurred(), "KA should succeed with K8s resources present")

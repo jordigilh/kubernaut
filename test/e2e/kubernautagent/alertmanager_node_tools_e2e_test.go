@@ -69,7 +69,6 @@ var _ = Describe("E2E-KA-1507: Alertmanager & Node Proxy Tools", Label("e2e", "k
 				Priority:              "high",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "web-application",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().

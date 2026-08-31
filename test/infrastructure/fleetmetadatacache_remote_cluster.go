@@ -36,6 +36,24 @@ const remoteKubeMCPServerNodePort = 30180
 // "prod-east" registration (DD-TEST-013).
 const remoteBridgeServiceName = "kube-mcp-server-remote"
 
+// remoteMCPServerNamespace is the namespace kube-mcp-server (plus its
+// supporting Keycloak Service bridge and inter-service-CA ConfigMap) is
+// deployed into ON THE REMOTE CLUSTER. Deliberately NOT the caller's
+// "kubernaut-system" namespace parameter: kube-mcp-server is a platform-
+// level Kubernetes API MCP bridge, not a Kubernaut workload, and the remote
+// cluster runs nothing else Kubernaut-owned at all -- "mcp-system" mirrors
+// the primary cluster's own naming for the same class of component (its
+// Kuadrant MCP Gateway controller+broker also live in "mcp-system", see
+// deployKuadrantGatewayInfra in fleet_e2e.go). Confirmed via manual fleet
+// E2E QE run, 2026-08-29: this was previously threaded through from the
+// caller's primary-cluster namespace purely because SetupRemoteClusterForFMC
+// took a single shared "namespace" parameter, not because the two clusters'
+// namespacing needs are actually coupled -- they aren't (the bridge Service
+// this creates in the PRIMARY cluster, remoteBridgeServiceName, only needs
+// a NodeIP:NodePort target and doesn't care what namespace the remote pod
+// actually runs in).
+const remoteMCPServerNamespace = "mcp-system"
+
 // SetupRemoteClusterForFMC provisions a second, independent Kind cluster
 // and wires it into the FMC E2E lane's cross-cluster bridge (DD-TEST-013,
 // validated in Spike S19): a genuinely separate Kubernetes control plane
@@ -54,7 +72,7 @@ const remoteBridgeServiceName = "kube-mcp-server-remote"
 // Returns a RemoteClusterBridgeConfig for the caller to set on
 // KubeMCPServerAuthConfig.RemoteBridge before calling DeployFleetCoreInfra
 // for the primary cluster.
-func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKubeconfigPath, remoteClusterName, remoteKubeconfigPath, namespace string, keycloakIssuerURL string, keycloakNodePort int, authConfig KubeMCPServerAuthConfig, writer io.Writer) (*RemoteClusterBridgeConfig, error) {
+func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKubeconfigPath, remoteClusterName, remoteKubeconfigPath string, keycloakIssuerURL string, keycloakNodePort int, authConfig KubeMCPServerAuthConfig, writer io.Writer) (*RemoteClusterBridgeConfig, error) {
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🌍 Provisioning remote cluster for cross-cluster isolation (DD-TEST-013)...")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -71,7 +89,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 		return nil, fmt.Errorf("remote cluster creation failed: %w", err)
 	}
 
-	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, remoteMCPServerNamespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, fmt.Errorf("remote namespace creation failed: %w", err)
 	}
 
@@ -86,7 +104,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 	// (currently 8443, the port kube-apiserver's OIDC discovery dials) --
 	// NOT the NodePort number. A mismatch here reproduces the exact
 	// "connection refused" bug found in Spike S19.
-	if err := CreateServiceBridge(ctx, remoteKubeconfigPath, namespace, "keycloak", 8443, primaryIP, keycloakNodePort, writer); err != nil {
+	if err := CreateServiceBridge(ctx, remoteKubeconfigPath, remoteMCPServerNamespace, "keycloak", 8443, primaryIP, keycloakNodePort, writer); err != nil {
 		return nil, fmt.Errorf("keycloak bridge Service creation failed: %w", err)
 	}
 
@@ -99,7 +117,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 	// tls-ca volume (TLSCAVolumeYAML); it must exist in-cluster before that
 	// deployment is applied, not just on-disk next to the kubeconfig.
 	_, _ = fmt.Fprintln(writer, "  Replicating inter-service-ca ConfigMap into remote cluster...")
-	if err := ReplicateInterServiceCAConfigMap(ctx, remoteKubeconfigPath, namespace, writer); err != nil {
+	if err := ReplicateInterServiceCAConfigMap(ctx, remoteKubeconfigPath, remoteMCPServerNamespace, writer); err != nil {
 		return nil, fmt.Errorf("CA ConfigMap replication to remote cluster failed: %w", err)
 	}
 
@@ -110,12 +128,20 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
 	}
-	if err := patchAPIServerForOIDCConfig(ctx, remoteClusterName, remoteKubeconfigPath, oidcCfg, writer); err != nil {
+	// Fixed 2026-08-30: previously passed kubernautSystem literally here, a
+	// latent bug dating back to the mcp-system namespace move -- the
+	// "keycloak" bridge Service this resolves the ClusterIP of is actually
+	// created in remoteMCPServerNamespace (mcp-system, see CreateServiceBridge
+	// call above), not kubernautSystem, which doesn't even exist as a
+	// namespace on this remote cluster (only remoteMCPServerNamespace is
+	// created for it). Passing the namespace it's actually created in is the
+	// correct fix.
+	if err := patchAPIServerForOIDCConfig(ctx, remoteClusterName, remoteKubeconfigPath, oidcCfg, remoteMCPServerNamespace, writer); err != nil {
 		return nil, fmt.Errorf("remote API server OIDC patching failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying kube-mcp-server into remote cluster...")
-	if err := deployKubeMCPServer(ctx, namespace, remoteKubeconfigPath, authConfig, writer); err != nil {
+	if err := deployKubeMCPServer(ctx, remoteMCPServerNamespace, remoteKubeconfigPath, authConfig, writer); err != nil {
 		return nil, fmt.Errorf("remote kube-mcp-server deployment failed: %w", err)
 	}
 
@@ -139,7 +165,7 @@ spec:
   - port: 8080
     targetPort: 8080
     nodePort: %[2]d
-`, namespace, remoteKubeMCPServerNodePort)
+`, remoteMCPServerNamespace, remoteKubeMCPServerNodePort)
 	if err := kubectlApplyManifest(ctx, remoteKubeconfigPath, writer, npManifest); err != nil {
 		return nil, fmt.Errorf("remote kube-mcp-server NodePort expose failed: %w", err)
 	}

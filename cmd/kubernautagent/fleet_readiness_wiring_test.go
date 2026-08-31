@@ -28,6 +28,8 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
+	infrastructure "github.com/jordigilh/kubernaut/test/infrastructure"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -77,7 +79,7 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 			Expect(fc.Ready()).To(BeTrue(), "client must report Ready() when the initial connection succeeded")
 		})
 
-		It("IT-KA-1553-001: retains the client (not discarded) when the gateway is unreachable", func() {
+		It("IT-KA-1553-001: retains the client and still returns a self-healing resolver when the gateway is unreachable (issue #2315)", func() {
 			cfg := kaconfig.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = "http://127.0.0.1:1/unreachable"
 			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
@@ -91,7 +93,117 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 			DeferCleanup(func() { _ = fc.Close() })
 
 			Expect(fc.Ready()).To(BeFalse(), "the kept client must not report Ready() when its initial connection failed")
-			Expect(resolver).To(BeNil(), "no fleet overlay resolver should be returned when the initial connection failed")
+
+			// Issue #2315: a fleet overlay resolver must still be returned
+			// even when the initial connect fails -- it resolves the live
+			// session via SessionProvider on every Overlay() call, so it
+			// self-heals once fc reconnects in the background instead of
+			// leaving fleet tools permanently unavailable until a pod
+			// restart. Calling it now (while still disconnected) must
+			// return a clear transient error, not panic and not silently
+			// succeed with stale/no data.
+			Expect(resolver).NotTo(BeNil(), "issue #2315: registerFleetTools must always return a self-healing "+
+				"FleetOverlayResolver once fleet mode is configured, even when the initial connect attempt failed")
+
+			_, overlayErr := resolver.Overlay(ctx, "remote-cluster")
+			Expect(overlayErr).To(HaveOccurred(), "Overlay must return a clear transient error while the gateway is still disconnected")
+		})
+
+		It("IT-KA-2315-001: the resolver self-heals once the gateway becomes reachable, without a restart", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+			DeferCleanup(gw.Close)
+
+			proxy, err := infrastructure.NewInterruptibleProxy(gw.URL()[len("http://"):])
+			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(proxy.Close)
+			proxy.Pause()
+
+			cfg := kaconfig.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = "http://" + proxy.Addr()
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
+			cfg.Integrations.Fleet.Resilience = fleet.FleetResilienceConfig{
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     100 * time.Millisecond,
+				MaxElapsedTime:  500 * time.Millisecond,
+				ConnectTimeout:  200 * time.Millisecond,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			DeferCleanup(cancel)
+
+			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
+			Expect(fc).NotTo(BeNil())
+			DeferCleanup(func() { _ = fc.Close() })
+			Expect(resolver).NotTo(BeNil())
+			Expect(fc.Ready()).To(BeFalse(), "must start disconnected: the proxy is paused")
+
+			_, overlayErr := resolver.Overlay(ctx, "remote-cluster")
+			Expect(overlayErr).To(HaveOccurred(), "must fail while the gateway is unreachable through the paused proxy")
+
+			// The periodic Fleet readiness gate (wireFleetReadinessGate in
+			// production) is what actually drives ResilientClient's
+			// background reconnect via MCPClientProber -- NewResilient
+			// itself only retries during its own initial connect call, per
+			// its own doc comment. Reproduce that same wiring here with a
+			// short interval instead of production's 15s
+			// fleetReadinessProbeInterval, so the test doesn't need to wait
+			// that long.
+			gate := readiness.NewGate(100*time.Millisecond, logr.Discard(), &readiness.MCPClientProber{Client: fc})
+			gate.Start(ctx)
+			DeferCleanup(gate.Stop)
+
+			proxy.Resume()
+
+			Eventually(func() bool { return fc.Ready() }, 10*time.Second, 100*time.Millisecond).Should(BeTrue(),
+				"ResilientClient must reconnect in the background once the proxy resumes forwarding")
+
+			Eventually(func() error {
+				_, err := resolver.Overlay(ctx, "remote-cluster")
+				return err
+			}, 10*time.Second, 100*time.Millisecond).ShouldNot(HaveOccurred(),
+				"issue #2315: the SAME resolver returned at startup must succeed once the gateway becomes reachable, with no restart")
+		})
+
+		It("IT-KA-2317-001: the resolver recovers via reconnect after the session dies mid-lifetime, without a restart", func() {
+			// Regression coverage for a live Fleet E2E hub failure
+			// (2026-08-31): registerFleetTools connected fine at startup,
+			// but a later protocol-level SSE stream failure (broker
+			// healthy, client session dead) left every subsequent
+			// Overlay() call failing forever with "standalone SSE stream:
+			// exceeded 5 retries without progress", reusing the same dead
+			// session ID -- because NewDiscovererWithProvider was never
+			// given a reconnect callback, so nothing repaired the session
+			// once it went bad after the initial connect succeeded. This
+			// is distinct from IT-KA-2315-001 above (initial connect
+			// failure, then gateway becomes reachable): here the initial
+			// connect succeeds, and the session dies afterward.
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+			DeferCleanup(gw.Close)
+
+			cfg := kaconfig.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = gw.URL()
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
+			cfg.Integrations.Fleet.Resilience = fleet.FleetResilienceConfig{
+				MaxElapsedTime: 5 * time.Second,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			DeferCleanup(cancel)
+
+			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
+			Expect(fc).NotTo(BeNil())
+			DeferCleanup(func() { _ = fc.Close() })
+			Expect(resolver).NotTo(BeNil())
+			Expect(fc.Ready()).To(BeTrue(), "must start connected: the gateway is reachable")
+
+			// Simulate the session dying from a protocol-level error while
+			// the Gateway itself stays healthy -- exactly the observed
+			// production scenario.
+			Expect(fc.Session().Close()).ToNot(HaveOccurred())
+
+			_, overlayErr := resolver.Overlay(ctx, "remote-cluster")
+			Expect(overlayErr).ToNot(HaveOccurred(),
+				"Overlay must recover by reconnecting once the session is dead, not fail forever using the same dead session")
 		})
 
 		// Issue #2262 Phase 2: proves a chart-shaped

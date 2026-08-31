@@ -100,9 +100,13 @@ security/stability-relevant opt-out gaps identified during this effort.
 - **FR-10**: Derive `fleetmetadatacache.enabled` from `global.fleet.enabled` +
   `global.fleet.backend` instead of requiring a separate, independently-defaulted toggle; fail
   loudly only on an explicit, contradictory override.
-- **FR-11**: Require `apifrontend.enabled=true` whenever `kubernautAgent.interactive.enabled=true`
-  (APIFrontend is currently the sole consumer of KubernautAgent's interactive MCP endpoint), and
-  whenever `console.enabled=true` (Console's nginx sidecar has no other backend).
+- **FR-11**: ~~Require `apifrontend.enabled=true` whenever `kubernautAgent.interactive.enabled=true`~~
+  Superseded (DD-PLATFORM-006 Decision Area 11, revised): `kubernautAgent.interactive.enabled` is
+  removed entirely and derived from `apifrontend.enabled`'s effective value instead of guarded
+  against it, matching FR-10's "derive, don't just guard" precedent — APIFrontend is the sole
+  consumer of KubernautAgent's interactive MCP endpoint, so the two settings should never be able
+  to disagree. `console.enabled=true` still requires `apifrontend.enabled=true` unchanged (Console's
+  nginx sidecar has no other backend).
 - **FR-12**: ~~Add a `values-fleet.yaml` overlay covering Fleet-Federation-specific fields.~~
   Superseded during implementation (DD-PLATFORM-006 Decision Area 4): a shipped overlay file is
   unreachable via `-f` for a pure-OCI/airgapped install without a `helm pull --untar` step first,

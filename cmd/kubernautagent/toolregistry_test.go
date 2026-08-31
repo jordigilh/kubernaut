@@ -184,7 +184,7 @@ var _ = Describe("fleetOAuth2CredentialsBasePath", func() {
 })
 
 // ============================================================================
-// buildFleetOAuth2Config — CI RCA (PR #1820, E2E-FLEET-017 CI run 30712261367):
+// fleetOAuth2ConfigFromKA — CI RCA (PR #1820, E2E-FLEET-017 CI run 30712261367):
 // KA's FleetOAuth2 carried no TLS CA override, so the OAuth2 token-fetch HTTP
 // client always fell back to the system CA trust store. Against Fleet E2E's
 // Kind cluster (Keycloak's cert-manager-issued, cluster-local certificate),
@@ -195,28 +195,33 @@ var _ = Describe("fleetOAuth2CredentialsBasePath", func() {
 // doc comment records this exact same root cause already fixed for every
 // other fleet-aware service (GW/RO/SP/WE/EM/AF) via a shared TLSCAFile field
 // -- KA was the last holdout because it carries its own parallel FleetOAuth2
-// struct instead of the shared type.
+// struct instead of the shared type. Issue #2315 self-healing fix moved the
+// actual ReloadableOAuth2Config construction into mcpclient.Connect (shared
+// across all fleet-aware services); this is the remaining KA-specific
+// translation into the shared fleet.FleetOAuth2Config DTO Connect expects.
 // ============================================================================
 
-var _ = Describe("buildFleetOAuth2Config", func() {
-	It("wires TLSCaFile from FleetOAuth2.TLSCaFile into the ReloadableOAuth2Config so the OAuth2 token-fetch HTTP client trusts a cluster-local IdP CA instead of falling back to the system trust store", func() {
+var _ = Describe("fleetOAuth2ConfigFromKA", func() {
+	It("wires TLSCaFile from FleetOAuth2.TLSCaFile into fleet.FleetOAuth2Config.TLSCAFile so the OAuth2 token-fetch HTTP client trusts a cluster-local IdP CA instead of falling back to the system trust store", func() {
 		oauth2 := kaconfig.FleetOAuth2{
+			Enabled:   true,
 			TokenURL:  "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			Scopes:    []string{"openid", "groups"},
 			TLSCaFile: "/etc/tls-ca/ca.crt",
 		}
 
-		reloadCfg := buildFleetOAuth2Config(oauth2, "/etc/kubernaut-agent/fleet-oauth2")
+		got := fleetOAuth2ConfigFromKA(oauth2)
 
-		Expect(reloadCfg.TlsCaFile).To(Equal("/etc/tls-ca/ca.crt"))
-		Expect(reloadCfg.TokenURL).To(Equal(oauth2.TokenURL))
-		Expect(reloadCfg.ClientIDPath).To(Equal("/etc/kubernaut-agent/fleet-oauth2/client-id"))
-		Expect(reloadCfg.ClientSecretPath).To(Equal("/etc/kubernaut-agent/fleet-oauth2/client-secret"))
+		Expect(got.Enabled).To(BeTrue())
+		Expect(got.TokenURL).To(Equal(oauth2.TokenURL))
+		Expect(got.Scopes).To(Equal(oauth2.Scopes))
+		Expect(got.TLSCAFile).To(Equal("/etc/tls-ca/ca.crt"))
 	})
 
-	It("leaves TlsCaFile empty when FleetOAuth2.TLSCaFile is unset, preserving the system-CA-trust-store fallback for deployments against a publicly-trusted IdP", func() {
-		reloadCfg := buildFleetOAuth2Config(kaconfig.FleetOAuth2{TokenURL: "https://idp.example.com/token"}, "/etc/kubernaut-agent/fleet-oauth2")
+	It("leaves TLSCAFile empty when FleetOAuth2.TLSCaFile is unset, preserving the system-CA-trust-store fallback for deployments against a publicly-trusted IdP", func() {
+		got := fleetOAuth2ConfigFromKA(kaconfig.FleetOAuth2{TokenURL: "https://idp.example.com/token"})
 
-		Expect(reloadCfg.TlsCaFile).To(BeEmpty())
+		Expect(got.TLSCAFile).To(BeEmpty())
 	})
 })
 
