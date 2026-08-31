@@ -31,6 +31,7 @@ type mcpReaderFactory struct {
 	localClient     client.Reader
 	session         *mcp.ClientSession
 	sessionProvider SessionProvider
+	reconnect       func(context.Context) error
 	prefixResolver  registry.ToolPrefixResolver
 }
 
@@ -53,7 +54,14 @@ func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession, 
 // NewMCPReaderFactoryWithProvider is like NewMCPReaderFactory but uses a
 // SessionProvider for lazy session resolution. Per-cluster readers created by
 // this factory automatically follow ResilientClient reconnections.
-func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider SessionProvider, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
+//
+// reconnect (typically the owning ResilientClient's Reconnect method) is
+// passed through to every per-cluster Client as WithReconnect, so a Get/List
+// call that hits a dead session (SSE stream failure mid-lifetime, not just an
+// initial connect failure -- issue #2317) triggers one reconnect-and-retry
+// instead of failing every call forever until the pod restarts. Pass nil to
+// opt out (matches pre-#2317 behavior).
+func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider SessionProvider, reconnect func(context.Context) error, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
 	var pr registry.ToolPrefixResolver
 	if len(resolver) > 0 {
 		pr = resolver[0]
@@ -61,6 +69,7 @@ func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider Session
 	return &mcpReaderFactory{
 		localClient:     localClient,
 		sessionProvider: provider,
+		reconnect:       reconnect,
 		prefixResolver:  pr,
 	}
 }
@@ -111,6 +120,9 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 	}
 
 	if f.sessionProvider != nil {
+		if f.reconnect != nil {
+			opts = append(opts, WithReconnect(f.reconnect))
+		}
 		return NewFromSessionProvider(f.sessionProvider, clusterID, opts...), nil
 	}
 	return NewFromSession(session, clusterID, opts...), nil

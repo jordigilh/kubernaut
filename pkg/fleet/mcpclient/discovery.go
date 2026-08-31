@@ -86,6 +86,7 @@ func NewDiscoverer(gatewayType registry.MCPGatewayType, session *mcp.ClientSessi
 type providerDiscoverer struct {
 	gatewayType registry.MCPGatewayType
 	provider    SessionProvider
+	reconnect   func(context.Context) error
 }
 
 // Compile-time interface compliance.
@@ -99,8 +100,22 @@ var _ GatewayDiscoverer = (*providerDiscoverer)(nil)
 // reported as a clear per-call error) when a method is actually invoked,
 // since the underlying gateway connection may not exist yet at startup and
 // is expected to self-heal.
-func NewDiscovererWithProvider(gatewayType registry.MCPGatewayType, provider SessionProvider) GatewayDiscoverer {
-	return &providerDiscoverer{gatewayType: gatewayType, provider: provider}
+//
+// reconnect (typically the owning ResilientClient's Reconnect method) is
+// invoked once, with a single retry of the underlying call, when a call
+// fails with a retryable session error. Without it, a session that goes bad
+// mid-lifetime (issue #2317: EAIGWDiscoverer/KuadrantDiscoverer call
+// session.ListTools/CallTool directly on the raw *mcp.ClientSession,
+// bypassing Client.callTool's own retry-on-reconnect logic) stays broken
+// forever -- SessionProvider() alone only re-reads whatever session
+// ResilientClient currently holds, it never repairs it -- exactly mirroring
+// the pre-#2315 "permanently nil resolver" failure mode this package was
+// built to fix, just one level deeper. Observed live on the Fleet E2E hub as
+// repeated "standalone SSE stream: exceeded 5 retries without progress"
+// investigation failures reusing the same dead session ID. Pass nil to opt
+// out.
+func NewDiscovererWithProvider(gatewayType registry.MCPGatewayType, provider SessionProvider, reconnect func(context.Context) error) GatewayDiscoverer {
+	return &providerDiscoverer{gatewayType: gatewayType, provider: provider, reconnect: reconnect}
 }
 
 func (d *providerDiscoverer) resolve() (GatewayDiscoverer, error) {
@@ -111,18 +126,43 @@ func (d *providerDiscoverer) resolve() (GatewayDiscoverer, error) {
 	return NewDiscoverer(d.gatewayType, session)
 }
 
-func (d *providerDiscoverer) ListClusters(ctx context.Context, category string) ([]ClusterInfo, error) {
+// retryWithReconnect runs call() against a freshly resolved discoverer, and
+// on a retryable session error invokes d.reconnect once and retries call() a
+// single time against the now-refreshed session. Shared by
+// ListClusters/ToolsForCluster so both follow identical self-healing
+// semantics (mirrors ResilientClient.Get/List and Client.callTool's own
+// retry-once-after-reconnect pattern).
+func retryWithReconnect[T any](ctx context.Context, d *providerDiscoverer, call func(GatewayDiscoverer) (T, error)) (T, error) {
 	disc, err := d.resolve()
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, err
 	}
-	return disc.ListClusters(ctx, category)
+	result, err := call(disc)
+	if err == nil || d.reconnect == nil || !isRetryableSessionError(err) {
+		return result, err
+	}
+
+	if reconnErr := d.reconnect(ctx); reconnErr != nil {
+		var zero T
+		return zero, fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
+	}
+	disc, resolveErr := d.resolve()
+	if resolveErr != nil {
+		var zero T
+		return zero, resolveErr
+	}
+	return call(disc)
+}
+
+func (d *providerDiscoverer) ListClusters(ctx context.Context, category string) ([]ClusterInfo, error) {
+	return retryWithReconnect(ctx, d, func(disc GatewayDiscoverer) ([]ClusterInfo, error) {
+		return disc.ListClusters(ctx, category)
+	})
 }
 
 func (d *providerDiscoverer) ToolsForCluster(ctx context.Context, clusterID string) ([]ToolDefinition, error) {
-	disc, err := d.resolve()
-	if err != nil {
-		return nil, err
-	}
-	return disc.ToolsForCluster(ctx, clusterID)
+	return retryWithReconnect(ctx, d, func(disc GatewayDiscoverer) ([]ToolDefinition, error) {
+		return disc.ToolsForCluster(ctx, clusterID)
+	})
 }

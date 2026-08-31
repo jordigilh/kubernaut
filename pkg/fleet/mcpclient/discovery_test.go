@@ -19,7 +19,9 @@ package mcpclient_test
 import (
 	"context"
 	"encoding/json"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -360,7 +362,7 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer c.Close()
 
-			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, c.Session)
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, c.Session, nil)
 
 			clusters, err := disc.ListClusters(ctx, "")
 			Expect(err).ToNot(HaveOccurred())
@@ -373,7 +375,7 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 		})
 
 		It("UT-DISC-PROV-002: ListClusters returns a clear transient error when the provider reports disconnected", func() {
-			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, func() *mcp.ClientSession { return nil })
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, func() *mcp.ClientSession { return nil }, nil)
 
 			_, err := disc.ListClusters(ctx, "")
 			Expect(err).To(HaveOccurred())
@@ -381,7 +383,7 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 		})
 
 		It("UT-DISC-PROV-003: ToolsForCluster returns a clear transient error when the provider reports disconnected", func() {
-			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayKuadrant, func() *mcp.ClientSession { return nil })
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayKuadrant, func() *mcp.ClientSession { return nil }, nil)
 
 			_, err := disc.ToolsForCluster(ctx, "prod-east")
 			Expect(err).To(HaveOccurred())
@@ -402,7 +404,7 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 				}
 				return c.Session()
 			}
-			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, provider)
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, provider, nil)
 
 			_, err = disc.ListClusters(ctx, "")
 			Expect(err).To(HaveOccurred(), "must fail while disconnected")
@@ -411,6 +413,60 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 			clusters, err := disc.ListClusters(ctx, "")
 			Expect(err).ToNot(HaveOccurred(), "must succeed once the provider resolves a live session, with no reconstruction needed")
 			Expect(clusters).To(HaveLen(1))
+		})
+	})
+
+	// =========================================================================
+	// 6.6 Mid-lifetime session death (issue #2317)
+	// =========================================================================
+	// EAIGWDiscoverer/KuadrantDiscoverer call session.ListTools/CallTool
+	// directly on the raw *mcp.ClientSession, bypassing Client.callTool's own
+	// retry-on-reconnect logic. Without a reconnect callback wired into
+	// providerDiscoverer, a session that dies from a protocol-level error
+	// mid-lifetime (gateway itself stays healthy) fails every subsequent
+	// ToolsForCluster/ListClusters call forever -- observed live on the Fleet
+	// E2E hub as repeated "standalone SSE stream: exceeded 5 retries without
+	// progress" investigation failures reusing the same dead session ID.
+	Describe("providerDiscoverer reconnect-on-failure (issue #2317)", func() {
+		It("UT-DISC-RECONN-001: ToolsForCluster recovers via reconnect after the underlying session dies", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			defer gw.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, rc.SessionProvider(), rc.Reconnect)
+
+			// Simulate the session dying from a protocol-level error while
+			// the Gateway itself stays healthy -- exactly the observed
+			// production scenario (broker healthy, client session dead).
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			tools, err := disc.ToolsForCluster(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred(),
+				"ToolsForCluster must recover by reconnecting once the session is dead, not fail forever")
+			Expect(tools).ToNot(BeEmpty())
+		})
+
+		It("UT-DISC-RECONN-002: without a reconnect callback, a dead session fails ToolsForCluster every time", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+			defer gw.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, rc.SessionProvider(), nil)
+
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			_, err = disc.ToolsForCluster(ctx, "prod-west")
+			Expect(err).To(HaveOccurred(), "without a reconnect callback there is no way to repair a dead session")
 		})
 	})
 })

@@ -24,7 +24,9 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -113,7 +115,7 @@ var _ = Describe("ReaderFactory (BR-INTEGRATION-054)", func() {
 			Expect(connErr).To(HaveOccurred(), "must start disconnected: the proxy is paused")
 			defer func() { _ = rc.Close() }()
 
-			factory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, rc.SessionProvider())
+			factory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, rc.SessionProvider(), rc.Reconnect)
 
 			_, err = factory.ReaderFor(ctx, "remote-cluster")
 			Expect(err).To(HaveOccurred(), "must fail while the gateway is unreachable through the paused proxy")
@@ -154,6 +156,45 @@ var _ = Describe("ReaderFactory (BR-INTEGRATION-054)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reader).To(Equal(localClient))
 			Expect(called).To(BeTrue())
+		})
+	})
+
+	// =========================================================================
+	// Mid-lifetime session death (issue #2317)
+	// =========================================================================
+	// Representative for every reader-factory-based fleet-aware service
+	// (gateway, signalprocessing, remediationorchestrator,
+	// effectivenessmonitor, apifrontend): unlike IT-FLEET-RF-006 above (which
+	// covers an *initial* connect failure), this proves the per-cluster
+	// Client returned by ReaderFor recovers from a session that dies mid-
+	// lifetime -- e.g. an SSE stream failure between two Get calls, broker
+	// healthy, client session dead -- because ReaderFor now wires the
+	// reconnect callback through as WithReconnect.
+	Describe("MCPReaderFactory reconnect-on-failure (issue #2317)", func() {
+		It("UT-FLEET-RF-007: the reader returned by ReaderFor recovers via reconnect after the session dies", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			defer gw.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			factory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, rc.SessionProvider(), rc.Reconnect)
+
+			reader, err := factory.ReaderFor(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Simulate the session dying from a protocol-level error while
+			// the Gateway itself stays healthy.
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+			err = reader.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).ToNot(HaveOccurred(),
+				"Get must recover by reconnecting once the session is dead, not fail forever")
 		})
 	})
 })

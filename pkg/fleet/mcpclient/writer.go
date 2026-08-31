@@ -39,10 +39,12 @@ var _ ResourceWriter = (*WriterClient)(nil)
 // When toolPrefix is set, tool names use the gateway-specific prefix;
 // otherwise the EAIGW "{clusterID}__{tool}" convention is applied.
 type WriterClient struct {
-	session    *mcp.ClientSession
-	clusterID  string
-	toolPrefix string
-	scheme     *runtime.Scheme
+	session         *mcp.ClientSession
+	sessionProvider SessionProvider
+	reconnect       func(context.Context) error
+	clusterID       string
+	toolPrefix      string
+	scheme          *runtime.Scheme
 }
 
 // NewWriterFromSession creates a WriterClient from an existing MCP session.
@@ -61,6 +63,36 @@ func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...
 	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}
 }
 
+// NewWriterFromSessionProvider creates a WriterClient that lazily resolves
+// the MCP session on each call via the provided SessionProvider, mirroring
+// NewFromSessionProvider's reader-side pattern (issue #2317). Pass
+// WithReconnect(rc.Reconnect) so a dead session (e.g. an SSE stream failure
+// mid-lifetime) is actively repaired instead of every write call failing
+// forever until the pod restarts -- SessionProvider alone only re-reads
+// whatever session is currently stored, it never repairs a broken one.
+func NewWriterFromSessionProvider(provider SessionProvider, clusterID string, opts ...Option) *WriterClient {
+	if provider == nil {
+		panic("mcpclient.NewWriterFromSessionProvider: provider must not be nil")
+	}
+	cfg := &clientConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return &WriterClient{
+		sessionProvider: provider, reconnect: cfg.reconnect, clusterID: clusterID,
+		toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme(),
+	}
+}
+
+// currentSession returns the active MCP session, resolving lazily via
+// sessionProvider on each call when set (mirrors Client.currentSession).
+func (w *WriterClient) currentSession() *mcp.ClientSession {
+	if w.sessionProvider != nil {
+		return w.sessionProvider()
+	}
+	return w.session
+}
+
 func (w *WriterClient) resolveToolName(tool string) string {
 	if w.toolPrefix != "" {
 		return ClusterToolWithPrefix(w.toolPrefix, tool)
@@ -69,6 +101,35 @@ func (w *WriterClient) resolveToolName(tool string) string {
 		return tool
 	}
 	return ClusterTool(w.clusterID, tool)
+}
+
+// callTool invokes the named MCP tool against the current session, retrying
+// once via the reconnect callback (if set) when the call fails with a
+// retryable session error. Mirrors Client.callTool exactly (issue #2317);
+// kept as a WriterClient-local copy rather than a shared helper because the
+// two types' CallTool signatures and zero-value returns differ ((*mcp.CallToolResult, error) vs bespoke per-method returns).
+func (w *WriterClient) callTool(ctx context.Context, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
+	session := w.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
+	}
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: args})
+	if err == nil {
+		return result, nil
+	}
+	if w.reconnect == nil || !isRetryableSessionError(err) {
+		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	if reconnErr := w.reconnect(ctx); reconnErr != nil {
+		return nil, fmt.Errorf("call %s: reconnect failed: %w (original: %w)", toolName, reconnErr, err)
+	}
+
+	session = w.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session after reconnect", toolName)
+	}
+	return session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: args})
 }
 
 // Create implements client.Writer. It serializes the object to JSON and sends
@@ -99,12 +160,9 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 		args["namespace"] = ns
 	}
 
-	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: args,
-	})
+	result, err := w.callTool(ctx, toolName, args)
 	if err != nil {
-		return fmt.Errorf("call %s: %w", toolName, err)
+		return err
 	}
 	if result.IsError {
 		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
@@ -138,14 +196,11 @@ func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, op
 	}
 
 	toolName := w.resolveToolName(ToolCreateOrUpdate)
-	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
-		Name: toolName,
-		Arguments: map[string]any{
-			"resource": manifest,
-		},
+	result, err := w.callTool(ctx, toolName, map[string]any{
+		"resource": manifest,
 	})
 	if err != nil {
-		return fmt.Errorf("call %s: %w", toolName, err)
+		return err
 	}
 	if result.IsError {
 		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
@@ -159,7 +214,9 @@ func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, op
 	return populateFromResponse(text, obj)
 }
 
-// Close is a no-op for WriterClient since it shares the session with its parent.
+// Close is a no-op for WriterClient since it shares the session with its
+// parent (or, when session-provider-backed, the session lifecycle is owned
+// by the provider's owner, typically ResilientClient).
 func (w *WriterClient) Close() error {
 	return nil
 }
