@@ -65,17 +65,36 @@ func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider Session
 	}
 }
 
+// ResolveSession resolves the current MCP session, preferring provider
+// (live, self-healing resolution) over static (a one-time snapshot) when a
+// provider is set. Returns a clear, typed error when the result is nil --
+// i.e. the gateway is currently disconnected -- so callers surface a
+// transient error instead of a nil-pointer panic or a silently-stale
+// session.
+//
+// Extracted from mcpReaderFactory.ReaderFor's pre-existing inline logic
+// (dedup); also used by NewDiscovererWithProvider and workflowexecution's
+// client factory so every fleet-aware consumer resolves sessions
+// identically.
+func ResolveSession(static *mcp.ClientSession, provider SessionProvider) (*mcp.ClientSession, error) {
+	session := static
+	if provider != nil {
+		session = provider()
+	}
+	if session == nil {
+		return nil, fmt.Errorf("MCP session not available (gateway disconnected)")
+	}
+	return session, nil
+}
+
 func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (client.Reader, error) {
 	if clusterID == "" {
 		return f.localClient, nil
 	}
 
-	session := f.session
-	if f.sessionProvider != nil {
-		session = f.sessionProvider()
-	}
-	if session == nil {
-		return nil, fmt.Errorf("MCP session not available for remote cluster %q", clusterID)
+	session, err := ResolveSession(f.session, f.sessionProvider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session for remote cluster %q: %w", clusterID, err)
 	}
 
 	var opts []Option

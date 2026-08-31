@@ -307,4 +307,110 @@ var _ = Describe("GatewayDiscoverer (BR-FLEET-054, ADR-068 #11)", func() {
 			Expect(clusters[0].Name).To(Equal("cluster-a"))
 		})
 	})
+
+	// =========================================================================
+	// 6.4 ResolveSession (issue #2315 self-healing fix)
+	// =========================================================================
+	Describe("ResolveSession (issue #2315)", func() {
+		It("UT-DISC-RS-001: prefers a live provider session over a static one", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("c1"))
+			defer gw.Close()
+			c, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			session, err := mcpclient.ResolveSession(nil, c.Session)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(session).To(Equal(c.Session()))
+		})
+
+		It("UT-DISC-RS-002: falls back to static when no provider is set", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("c1"))
+			defer gw.Close()
+			c, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			session, err := mcpclient.ResolveSession(c.Session(), nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(session).To(Equal(c.Session()))
+		})
+
+		It("UT-DISC-RS-003: returns a clear error when the provider currently reports disconnected", func() {
+			_, err := mcpclient.ResolveSession(nil, func() *mcp.ClientSession { return nil })
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+
+		It("UT-DISC-RS-004: returns a clear error when both static and provider are nil", func() {
+			_, err := mcpclient.ResolveSession(nil, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+	})
+
+	// =========================================================================
+	// 6.5 NewDiscovererWithProvider (issue #2315 self-healing fix)
+	// =========================================================================
+	Describe("NewDiscovererWithProvider (issue #2315)", func() {
+		It("UT-DISC-PROV-001: resolves the live session on each call and discovers tools normally", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			defer gw.Close()
+			c, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, c.Session)
+
+			clusters, err := disc.ListClusters(ctx, "")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(clusters).To(HaveLen(1))
+			Expect(clusters[0].Name).To(Equal("prod-east"))
+
+			tools, err := disc.ToolsForCluster(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(tools).ToNot(BeEmpty())
+		})
+
+		It("UT-DISC-PROV-002: ListClusters returns a clear transient error when the provider reports disconnected", func() {
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, func() *mcp.ClientSession { return nil })
+
+			_, err := disc.ListClusters(ctx, "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+
+		It("UT-DISC-PROV-003: ToolsForCluster returns a clear transient error when the provider reports disconnected", func() {
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayKuadrant, func() *mcp.ClientSession { return nil })
+
+			_, err := disc.ToolsForCluster(ctx, "prod-east")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+
+		It("UT-DISC-PROV-004: recovers automatically once the provider starts returning a live session (self-healing)", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			defer gw.Close()
+			c, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			var connected bool
+			provider := func() *mcp.ClientSession {
+				if !connected {
+					return nil
+				}
+				return c.Session()
+			}
+			disc := mcpclient.NewDiscovererWithProvider(registry.GatewayEAIGW, provider)
+
+			_, err = disc.ListClusters(ctx, "")
+			Expect(err).To(HaveOccurred(), "must fail while disconnected")
+
+			connected = true
+			clusters, err := disc.ListClusters(ctx, "")
+			Expect(err).ToNot(HaveOccurred(), "must succeed once the provider resolves a live session, with no reconstruction needed")
+			Expect(clusters).To(HaveLen(1))
+		})
+	})
 })

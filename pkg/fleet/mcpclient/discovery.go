@@ -74,3 +74,55 @@ func NewDiscoverer(gatewayType registry.MCPGatewayType, session *mcp.ClientSessi
 		return nil, fmt.Errorf("unsupported gateway type %q for tool discovery; must be one of: eaigw, kuadrant", gatewayType)
 	}
 }
+
+// providerDiscoverer implements GatewayDiscoverer by resolving the live MCP
+// session via a SessionProvider on every call and delegating to a freshly
+// constructed concrete discoverer (KuadrantDiscoverer/EAIGWDiscoverer),
+// instead of binding to a single session snapshot at construction time.
+// This is what lets a caller build its GatewayDiscoverer once at startup and
+// have it keep working transparently across ResilientClient reconnects --
+// including recovering from an initial connect failure once the gateway
+// becomes reachable (issue #2315).
+type providerDiscoverer struct {
+	gatewayType registry.MCPGatewayType
+	provider    SessionProvider
+}
+
+// Compile-time interface compliance.
+var _ GatewayDiscoverer = (*providerDiscoverer)(nil)
+
+// NewDiscovererWithProvider creates a GatewayDiscoverer that resolves the
+// live session via ResolveSession on every ListClusters/ToolsForCluster
+// call instead of a fixed snapshot, mirroring NewMCPReaderFactoryWithProvider's
+// pattern. Unlike NewDiscoverer, this never fails at construction time on a
+// nil/disconnected session -- session availability is only checked (and
+// reported as a clear per-call error) when a method is actually invoked,
+// since the underlying gateway connection may not exist yet at startup and
+// is expected to self-heal.
+func NewDiscovererWithProvider(gatewayType registry.MCPGatewayType, provider SessionProvider) GatewayDiscoverer {
+	return &providerDiscoverer{gatewayType: gatewayType, provider: provider}
+}
+
+func (d *providerDiscoverer) resolve() (GatewayDiscoverer, error) {
+	session, err := ResolveSession(nil, d.provider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve gateway discoverer session: %w", err)
+	}
+	return NewDiscoverer(d.gatewayType, session)
+}
+
+func (d *providerDiscoverer) ListClusters(ctx context.Context, category string) ([]ClusterInfo, error) {
+	disc, err := d.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return disc.ListClusters(ctx, category)
+}
+
+func (d *providerDiscoverer) ToolsForCluster(ctx context.Context, clusterID string) ([]ToolDefinition, error) {
+	disc, err := d.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return disc.ToolsForCluster(ctx, clusterID)
+}
