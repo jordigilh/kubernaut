@@ -726,6 +726,22 @@ func provisionFleetCoreInfra(ctx context.Context, clusterName, kubeconfigPath, n
 		return nil, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
+	// Issue #2314: SetupRemoteClusterForFMC only creates remoteMCPServerNamespace
+	// (mcp-system) on the remote cluster -- kubernaut-system (namespace) never
+	// existed there. That was harmless for the FMC-only lane (it never targets
+	// kubernaut-system on the remote cluster), but this suite's
+	// SynchronizedBeforeSuite labels kubernaut-system on BOTH kubeconfigs
+	// (suite_test.go) and shared/cross_cluster_isolation.go's
+	// E2E-FMC-054-015 creates a Service directly in it on the remote cluster --
+	// both fail with "namespaces \"kubernaut-system\" not found" once the
+	// remote cluster is genuinely separate (AllRegistrationsRemote) rather
+	// than the old loopback cluster, which had it via the primary's own Helm
+	// release.
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #2314)...\n", namespace)
+	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
+		return nil, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
+	}
+
 	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
 	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
 	// set, via WE's mcpClientFactory routing. The "kubernaut-workflows"

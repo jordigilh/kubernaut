@@ -208,6 +208,18 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
+	// Issue #2314: SetupRemoteClusterForFMC only creates remoteMCPServerNamespace
+	// (mcp-system) on the remote cluster -- kubernaut-system (namespace) never
+	// existed there. shared/cross_cluster_isolation.go's E2E-FMC-054-015
+	// creates a Service directly in it on the remote cluster (h.Namespace),
+	// which fails with "namespaces \"kubernaut-system\" not found" now that
+	// the remote cluster is genuinely separate (DD-TEST-013) rather than a
+	// loopback pointing at the primary's own Helm-managed namespace.
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #2314)...\n", namespace)
+	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
+		return "", "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
+	}
+
 	// ── Phase 7: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
 	// kube-mcp-server runs in passthrough mode with RFC 8693 token exchange
 	// (Spike S17/S18): it forwards FMC's incoming Bearer token, exchanges it

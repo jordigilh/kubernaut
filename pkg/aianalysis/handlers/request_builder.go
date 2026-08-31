@@ -28,6 +28,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -177,5 +178,5 @@ func clusterNameFor(clusterID string, customLabels map[string][]string) string {
 	if clusterID != "" {
 		return clusterID
 	}
-	return getOrDefault(customLabels, "cluster_name", "default")
+	return getOrDefault(customLabels, "cluster_name", katypes.DefaultClusterNameSentinel)
 }
