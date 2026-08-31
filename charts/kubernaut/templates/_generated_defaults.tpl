@@ -353,7 +353,6 @@ kubernautAgent:
             maxInterval: 30s
             tokenRefreshTimeout: 10s
     interactive:
-        enabled: false
         inactivityTimeout: 10m
         maxAnalyzingTimeout: 45m
         maxConcurrentSessions: 50

@@ -138,7 +138,6 @@
 - kubernautAgent.fleet.resilience.maxElapsedTime
 - kubernautAgent.fleet.resilience.maxInterval
 - kubernautAgent.fleet.resilience.tokenRefreshTimeout
-- kubernautAgent.interactive.enabled
 - kubernautAgent.interactive.inactivityTimeout
 - kubernautAgent.interactive.maxAnalyzingTimeout
 - kubernautAgent.interactive.maxConcurrentSessions

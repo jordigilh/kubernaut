@@ -2459,14 +2459,9 @@
         },
         "interactive": {
           "type": "object",
-          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",
+          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions. No `enabled` field -- DD-PLATFORM-006 Decision Area 11 (revised): APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint anywhere in the codebase, so whether it's active is fully derived from apifrontend.enabled (effective value, schema default true) rather than a separately settable field that could silently drift out of sync and create an unreachable-but-enabled or reachable-but-disabled combination.",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise."
-            },
             "sessionTTL": {
               "allOf": [
                 {
@@ -4095,36 +4090,6 @@
             ]
           }
         }
-      }
-    },
-    {
-      "description": "BR-PLATFORM-010 Phase C: kubernautAgent.interactive.enabled=true requires apifrontend.enabled != false -- APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller (was kubernaut-agent.yaml:24 fail() guard).",
-      "if": {
-        "properties": {
-          "kubernautAgent": {
-            "properties": {
-              "interactive": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "interactive"
-            ]
-          }
-        },
-        "required": [
-          "kubernautAgent"
-        ]
-      },
-      "then": {
-        "$ref": "#/definitions/apifrontendNotDisabledRequirement"
       }
     },
     {

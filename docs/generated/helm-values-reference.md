@@ -408,7 +408,6 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.resilience.maxElapsedTime` | string | Total time before giving up on startup connection. | `"5m"` | No |
 | `fleet.resilience.maxInterval` | string | Maximum backoff interval between connect retries. | `"30s"` | No |
 | `fleet.resilience.tokenRefreshTimeout` | string | Bounds OAuth2 token refresh HTTP calls. | `"10s"` | No |
-| `interactive.enabled` | boolean | Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise. | `false` | No |
 | `interactive.inactivityTimeout` | string | Session timeout after last activity. | `"10m"` | No |
 | `interactive.jwtProviders` | array of object | JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0). | `` | No |
 | `interactive.maxAnalyzingTimeout` | string | Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating. | `"45m"` | No |

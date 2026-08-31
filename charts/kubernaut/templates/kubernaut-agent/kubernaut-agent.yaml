@@ -12,12 +12,20 @@ kubernaut.llm.resolveProfile's own fail() below, with a message naming the
 actual (possibly empty) reference.
 */}}
 {{- /*
-DD-PLATFORM-006 Decision Area 11: APIFrontend's ka.NewSDKMCPClient
+DD-PLATFORM-006 Decision Area 11 (revised): APIFrontend's ka.NewSDKMCPClient
 (pkg/apifrontend/ka/) is the only MCP client anywhere in the codebase that
 connects to KA's interactive /api/v1/mcp endpoint (verified: zero other
-callers). Issue #1984 Phase C: this dependency (kubernautAgent.interactive.enabled=true
-requires apifrontend.enabled != false) moved from a fail() guard here to a
-values.schema.json if/then block (BR-PLATFORM-010).
+callers). Rather than a separately settable kubernautAgent.interactive.enabled
+field requiring a schema if/then guard against apifrontend.enabled (its
+former shape, Issue #1984 Phase C), the interactive block (rendered inside
+kubernaut.kubernautAgent.configYAML below) is now fully derived from
+apifrontend's own effective enabled value -- removes the possibility of
+drift (AF enabled but KA interactive disabled, or vice versa) entirely
+instead of just detecting one direction of it. Reads the merged value
+(schema default true), not a raw .Values.apifrontend.enabled, for the same
+reason as console.yaml's/NOTES.txt's identical guards: values.yaml doesn't
+set apifrontend.enabled explicitly (DA14 zero/non-zero trim), so the raw
+value is nil/falsy until merged with the schema default.
 */}}
 {{- $kaV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
 {{- /*
@@ -83,6 +91,12 @@ declarations.
 */}}
 {{- define "kubernaut.kubernautAgent.configYAML" -}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- /*
+DD-PLATFORM-006 Decision Area 11 (revised, see file-top comment): named
+templates don't inherit file-top variables, so this is recomputed here
+rather than reusing a single file-top $afInteractiveV.
+*/}}
+{{- $afInteractiveV := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
 {{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
 {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
@@ -189,7 +203,7 @@ ai:
     llm:
       {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 6 }}
 {{- end }}
-{{- if .Values.kubernautAgent.interactive.enabled }}
+{{- if $afInteractiveV.enabled }}
 interactive:
   enabled: true
   sessionTTL: {{ $v.interactive.sessionTTL | quote }}
