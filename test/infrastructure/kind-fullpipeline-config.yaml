@@ -13,6 +13,17 @@
 #   AlertManager:      hostPort 9193,  NodePort 30191 (EM alert resolution; moved
 #                       from 30193 per DD-TEST-001 v3.8 after a "fleet" E2E
 #                       NodePort collision)
+#   Keycloak (browser): hostPort 8443, NodePort 30557 (same NodePort as the
+#                       existing in-cluster/local mapping -- second hostPort
+#                       publish only, for Console's OIDC login redirect;
+#                       manual setup-e2e-fleet-infra use only)
+#   Traefik (Console):  hostPort 8880/8843, NodePort 30880/30843 (manual
+#                       setup-e2e-fleet-infra use only, see deployTraefikForKind;
+#                       unprivileged host ports, matched by console.ingress.port
+#                       in the manual `helm install` values -- see
+#                       charts/kubernaut's console.ingress.port field, added so
+#                       CI runners that can't bind 80/443 as a non-root user
+#                       still work)
 #
 # Kubeconfig Convention (per TESTING_GUIDELINES.md):
 #   Pattern: ~/.kube/{service}-e2e-config
@@ -98,6 +109,35 @@ nodes:
   # each suite runs in its own isolated Kind cluster.
   - containerPort: 30557  # Keycloak NodePort
     hostPort: 30557       # DD-TEST-001: Keycloak for fleet token exchange
+    protocol: TCP
+  # Second host port for the SAME Keycloak NodePort (30557), published on
+  # 8443: Keycloak's KC_HOSTNAME is hardcoded to "https://keycloak:8443"
+  # (keycloak_e2e.go), so every URL it issues -- including the browser
+  # authorization-code redirect for Console login -- literally reads
+  # "keycloak:8443". A browser on the host machine can only complete that
+  # redirect if "keycloak" resolves (via /etc/hosts: `127.0.0.1 keycloak`)
+  # AND port 8443 is actually published, which the existing 30557 mapping
+  # above doesn't cover (that one's for in-cluster/local kubectl testing at
+  # its real hostPort). Manual setup-e2e-fleet-infra (Console) use only --
+  # inert for the "fleet"/"fullpipeline" Ginkgo suites, which never open a
+  # browser against Keycloak.
+  - containerPort: 30557  # same Keycloak NodePort as above
+    hostPort: 8443        # matches KC_HOSTNAME's baked-in port for browser reachability
+    protocol: TCP
+  # Traefik ingress controller (manual setup-e2e-fleet-infra Console access
+  # only -- see deployTraefikForKind in fleet_e2e.go). Unprivileged host ports
+  # (>1024), NOT the standard 80/443: most CI runners can't bind non-root
+  # processes to privileged ports, so charts/kubernaut's console.ingress.port
+  # field lets the chart's oauth2-proxy --redirect-url include this exact
+  # port (":8843") instead of assuming port-less HTTPS (443) -- see the
+  # fleet-e2e-values.yaml draft's console.ingress.port and the Keycloak
+  # client's redirectUris, which must both match this hostPort. Inert for
+  # suites that don't deploy Traefik.
+  - containerPort: 30880  # Traefik web (HTTP) NodePort
+    hostPort: 8880
+    protocol: TCP
+  - containerPort: 30843  # Traefik websecure (HTTPS) NodePort
+    hostPort: 8843
     protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure

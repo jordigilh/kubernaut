@@ -177,7 +177,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
 	}
-	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, writer); oidcErr != nil {
+	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, namespace, writer); oidcErr != nil {
 		return "", "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
 	}
 
@@ -203,7 +203,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		StsScopes:        []string{"k8s-api-audience"},
 		CAFilePath:       "/etc/tls-ca/ca.crt",
 	}
-	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, namespace, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
+	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
 	if remoteErr != nil {
 		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
@@ -369,6 +369,46 @@ subjects:
 		return err
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (view)")
+
+	// The built-in "view" ClusterRole deliberately excludes cluster-scoped
+	// Node resources (upstream Kubernetes convention). FMC's Syncer lists
+	// Node alongside namespaced kinds (syncer.go's kind list), so grant a
+	// minimal supplementary read on nodes to the same exchanged identity.
+	nodesRBACManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmc-exchanged-identity-nodes-read
+  labels:
+    app: fleetmetadatacache
+    component: fleet-e2e
+    authorization: token-exchange-spike-s17-s18
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmc-exchanged-identity-nodes-binding
+  labels:
+    app: fleetmetadatacache
+    component: fleet-e2e
+    authorization: token-exchange-spike-s17-s18
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc-exchanged-identity-nodes-read
+subjects:
+- kind: User
+  name: "keycloak:service-account-kubernaut-fleet-read"
+  apiGroup: rbac.authorization.k8s.io
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, nodesRBACManifest); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (nodes read, view doesn't cover cluster-scoped Node)")
 	return nil
 }
 

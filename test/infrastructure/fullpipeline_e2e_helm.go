@@ -512,19 +512,36 @@ func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace stri
 // Must run AFTER `helm install` (Phase 6, via SetupFullPipelineInfrastructure)
 // and BEFORE DeployKeycloakInfra -- mirrors ensureDexTLSFromChartCA's ordering
 // constraint for the same reason (authwebhook-tls's ca.crt/ca.key must exist).
-func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+//
+// namespace is where authwebhook-tls (and thus the chart CA) lives;
+// secretNamespace is where the resulting keycloak-tls Secret is applied --
+// these differ for the fleet DEMO entry point only (secretNamespace=
+// idpNamespace), never for the "fleet"/"fullpipeline" Ginkgo suites (both
+// equal namespace there, unchanged). DNS SANs cover BOTH namespace and
+// secretNamespace so the leaf cert verifies regardless of which one the
+// caller ends up dialing "keycloak" through.
+func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace, secretNamespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Signing keycloak-tls leaf cert from the chart's inter-service CA...")
 	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
 	if err != nil {
 		return err
 	}
-	return signAndApplyLeafTLSSecret(ctx, kubeconfigPath, namespace, "keycloak-tls", "keycloak", []string{
+	dnsNames := []string{
 		"localhost",
 		"keycloak",
 		fmt.Sprintf("keycloak.%s", namespace),
 		fmt.Sprintf("keycloak.%s.svc", namespace),
 		fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace),
-	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
+	}
+	if secretNamespace != namespace {
+		dnsNames = append(dnsNames,
+			fmt.Sprintf("keycloak.%s", secretNamespace),
+			fmt.Sprintf("keycloak.%s.svc", secretNamespace),
+			fmt.Sprintf("keycloak.%s.svc.cluster.local", secretNamespace),
+		)
+	}
+	return signAndApplyLeafTLSSecret(ctx, kubeconfigPath, secretNamespace, "keycloak-tls", "keycloak", dnsNames,
+		[]net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
 }
 
 // PR #1790 round-14 RCA: resignHostAccessedTLSCertsWithLocalhostSAN (which
@@ -643,6 +660,29 @@ subjects:
 		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
 	}
 	return nil
+}
+
+// BindFleetAFPersonaRBAC is the exported, post-`helm install` entry point for
+// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the chart's
+// kubernaut-tool-<persona> ClusterRoles (only ever *created*, never *bound*,
+// by charts/kubernaut/templates/apifrontend -- see
+// bindAFPersonaToolClusterRoles's doc comment, Issue #1737) to the OIDC
+// groups issued by the Keycloak realm's kubernaut-console client
+// (test/infrastructure/keycloak-realm-fleet.json's "sre" group/user).
+//
+// Does NOT also bind kubernaut-console-access: verified via `helm template`
+// that the chart already renders a kubernaut-console-access-<group>
+// ClusterRoleBinding for every apifrontend.config.rbac.consoleAccessGroups
+// entry directly (values.yaml's default list includes "sre") -- unlike the
+// per-tool personas above, that one's genuinely self-contained, no manual
+// step needed.
+//
+// Must run AFTER `helm install charts/kubernaut` -- the ClusterRoles this
+// binds don't exist until the chart's apifrontend templates render them.
+// Reuses bindAFPersonaToolClusterRoles unchanged (same binding shape works
+// for any IdP's "groups" claim, not just DEX's) rather than duplicating it.
+func BindFleetAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	return bindAFPersonaToolClusterRoles(ctx, kubeconfigPath, writer)
 }
 
 // createFullPipelineHelmSecrets creates the Secrets the Helm chart expects to
@@ -921,15 +961,15 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
 		// Addendum 2), so this install exercises that default instead of shadowing
 		// it with a redundant override.
-		// MCP interactive mode (#703) is opt-in (default false) -- without this,
-		// KA never registers the POST /api/v1/mcp Streamable HTTP handler at all,
-		// so every MCP client `initialize` call gets a plain HTTP 404 from Go's
-		// default mux (no route registered), which the MCP SDK's client-side
-		// checkResponse() unconditionally reinterprets as ErrSessionMissing
-		// ("session not found") regardless of the actual cause (Issue #1737 gap
-		// found: every interactive/mcp-labeled FP E2E spec failed this way against
-		// the Helm-deployed chart, whose default leaves interactive mode off).
-		"--set", "kubernautAgent.interactive.enabled=true",
+		// MCP interactive mode (#703): no longer a separately settable flag
+		// (DD-PLATFORM-006 Decision Area 11, revised) -- it's derived from
+		// apifrontend.enabled, which this install leaves at its schema default
+		// (true), so KA registers the POST /api/v1/mcp Streamable HTTP handler
+		// with no override needed here. Previously required an explicit
+		// `--set kubernautAgent.interactive.enabled=true` (Issue #1737 gap:
+		// every interactive/mcp-labeled FP E2E spec failed against the
+		// Helm-deployed chart otherwise, since the old default left it off
+		// even with AF enabled).
 		// #1894 gap found via must-gather RCA on E2E-FP-1853-002: the chart's
 		// own default for interactive.rateLimitPerUser is 20 req/s (burst 40,
 		// see _generated_defaults.tpl), never overridden here -- unlike the

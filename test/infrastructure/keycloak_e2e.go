@@ -36,6 +36,27 @@ import (
 // empirically against the 26.x line.
 const keycloakImage = "quay.io/keycloak/keycloak:26.6.4"
 
+// idpNamespace hosts Keycloak for the fleet DEMO entry point only
+// (SetupFleetCoreInfrastructure / `make setup-e2e-fleet-infra`) -- NOT the
+// "fleet"/"fullpipeline" Ginkgo suites (provisionFleetCoreInfra's other
+// caller), which deliberately keep Keycloak in kubernautSystem unchanged.
+// Same platform-infra-is-not-app-infra reasoning as kube-mcp-server's
+// "mcp-system" and the monitoring stack's "monitoring" moves: in production
+// the IdP is its own namespace, not bundled into the app's.
+//
+// This is intentionally scoped to the demo path only (user decision,
+// 2026-08-30): Keycloak is reached via two different hostnames depending on
+// caller (browser, via a static /etc/hosts "keycloak" -> 127.0.0.1 entry;
+// in-cluster pods, via real CoreDNS), and splitting it across namespaces
+// means oauth2-proxy's OIDC discovery needs a matching frontend/backend URL
+// split (console.oauth2Proxy.skipDiscovery et al., see console.yaml) --
+// validated empirically against oauth2-proxy v7.15.3's source
+// (provider_verifier.go: SkipDiscovery bypasses the discovery HTTP call
+// entirely, so there's no issuer-mismatch risk between the two hostnames).
+// Touching the shared Ginkgo-suite code path for this would need dedicated
+// CI validation the user didn't want to risk right now.
+const idpNamespace = "idp"
+
 // keycloakRealmFleetJSON is the kubernaut-fleet realm export. Notably, the
 // "k8s-api-audience" client-scope carries a "preferred_username" mapper
 // (User Property: username) in addition to its audience mapper: service-
@@ -47,6 +68,51 @@ const keycloakImage = "quay.io/keycloak/keycloak:26.6.4"
 // call site in fleetmetadatacache_e2e.go) needs that claim just to
 // authenticate the exchanged identity at all -- a missing claim is a 401,
 // not merely an authorization failure.
+//
+// This is a hand-authored partial realm, not a real Keycloak admin-console
+// export -- so it must explicitly define the "profile"/"email"/"roles"/
+// "web-origins" clientScopes that a real export always bakes in. Keycloak's
+// --import-realm does NOT auto-seed those standard scopes; referencing them
+// by name in a client's defaultClientScopes without a matching clientScopes
+// entry gets silently dropped at import (a WARN log, not a failure). This
+// went unnoticed for kubernaut-fleet-read/kube-mcp-server -- their
+// client_credentials tokens (GetKeycloakClientCredentialsToken) only ever
+// request the audience scope, never "profile"/"email" -- until Console's
+// oauth2-proxy, the first real Authorization Code browser flow against this
+// realm, hit it: oauth2-proxy's default --scope is "openid email profile",
+// and Keycloak's authorize endpoint 403s with error=invalid_scope on any
+// requested scope name that isn't a real clientScope. Confirmed via manual
+// fleet E2E QE run, 2026-08-29. Keep each clientScope's "description" under
+// H2's 255-char DESCRIPTION column limit (same constraint that broke the
+// "groups" scope earlier) -- Keycloak's own import batches ALL clientScope
+// upserts together, so one oversized description fails the whole import.
+//
+// The realm's ssoSessionMaxLifespan (604800s/7d, up from Keycloak's own
+// 36000s/10h default) plus "kubernaut-fleet-read"'s access.token.lifespan
+// AND client.session.max.lifespan attributes (also 604800s/7d) are a
+// deliberate three-part override: access.token.lifespan alone is silently
+// capped by the client-session-max-lifespan ceiling for client_credentials
+// grants (every access token is tied to a client session), and
+// client.session.max.lifespan itself can't exceed the realm's
+// ssoSessionMaxLifespan (Keycloak 400s "Client session max lifespan cannot
+// exceed realm SSO session max lifespan" otherwise) -- confirmed
+// empirically, 2026-08-29, in that order (each fix exposed the next
+// ceiling). This client mints the
+// static Bearer token embedded into the Kuadrant broker's
+// kube-mcp-server-broker-cred Secret (DeployFleetGatewayInfra), which the
+// broker holds in memory for its whole process lifetime with no built-in
+// refresh. Confirmed via manual fleet E2E QE run, 2026-08-29: once that
+// token expired at the 1h realm default, restarting the broker Deployment
+// to force a refresh did NOT help -- Kuadrant v0.7.1's controller doesn't
+// re-resolve credentialRef on a Secret change or pod restart (it caches the
+// resolved token in a derived mcp-gateway-config Secret), and a bare broker
+// restart instead pushed the MCPGatewayExtension/broker pair into a
+// circular readiness deadlock (Extension waits on broker Ready; broker's
+// credential resolution waits on Extension Ready) that only a full
+// teardown+re-apply of the mcp-system/gateway-system stack recovered from.
+// A long-lived token sidesteps needing any hot-refresh mechanism for this
+// specific client; this is a local/E2E-only realm so the extended lifespan
+// carries no production security exposure.
 //
 //go:embed keycloak-realm-fleet.json
 var keycloakRealmFleetJSON string

@@ -945,6 +945,32 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
+# Fleet E2E infra ONLY: hub+spoke Kind clusters + Keycloak + Kuadrant MCP
+# Gateway + kube-mcp-server -- everything test-e2e-fleet deploys EXCEPT the
+# Kubernaut services themselves (no image build, no `helm install
+# charts/kubernaut`). For QE/local validation: run this, then `helm install`
+# yourself with your own LLM credentials + Rego policies (which vary per
+# setup and don't belong hardcoded into shared test-infra code). Leaves the
+# cluster running -- tear down with `kind delete cluster --name fleet-e2e`
+# (and the `-remote` sibling) when done.
+.PHONY: setup-e2e-fleet-infra
+setup-e2e-fleet-infra: ## Create hub+spoke Kind clusters + fleet-core infra only, no Kubernaut helm install (~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet E2E infra setup (no Kubernaut helm install)"
+	@echo "   Hub + spoke Kind clusters, Keycloak, Kuadrant MCP Gateway, kube-mcp-server, Traefik"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	go run ./hack/setup-fleet-infra
+	@echo "✅ Fleet infra ready. Run 'helm install charts/kubernaut' yourself next."
+	@echo "   Then: make bind-fleet-af-rbac KUBECONFIG=~/.kube/fleet-e2e-config"
+
+.PHONY: bind-fleet-af-rbac
+bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)
+	@if [ -z "$(KUBECONFIG)" ]; then \
+		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/fleet-e2e-config"; \
+		exit 1; \
+	fi
+	go run ./hack/bind-fleet-af-rbac -kubeconfig "$(KUBECONFIG)"
+
 # Fleet Metadata Cache (FMC) E2E: FMC's own journeys in isolation (Issue #54)
 # Deploys ONLY Keycloak + fleet-core (Istio/Kuadrant/kube-mcp-server/
 # Valkey/FMC) -- NOT the other 10+ Kubernaut services the "fleet" suite deploys,
