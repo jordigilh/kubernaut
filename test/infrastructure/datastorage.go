@@ -2098,16 +2098,21 @@ func buildDataStorageImageWithTag(ctx context.Context, imageTag string, writer i
 // - Installs into cert-manager namespace
 // - Requires ~30 seconds for full deployment
 //
-// Usage: Call ONLY in test/e2e/datastorage/05_soc2_compliance_test.go
-func InstallCertManager(kubeconfigPath string, writer io.Writer) error {
+// Usage: test/e2e/datastorage/05_soc2_compliance_test.go (self-signed SOC2
+// flow) and, since BR-PLATFORM-014, the fleet demo entry point's
+// provisionFleetCoreInfra (CA-chained Issuer flow, keycloak-tls).
+func InstallCertManager(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "📦 Installing cert-manager (SOC2 E2E Only)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Use latest stable cert-manager version
-	certManagerURL := "https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
+	// v1.20.3 matches the version this repo's own CI already installs and
+	// validates for "Helm Smoke Tests (Kind, tls=cert-manager)"
+	// (.github/workflows/ci-pipeline.yml) -- kept in sync rather than
+	// introducing a second, drifting pin.
+	certManagerURL := "https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml"
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+	cmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", certManagerURL)
 	cmd.Stdout = writer
@@ -2130,11 +2135,11 @@ func InstallCertManager(kubeconfigPath string, writer io.Writer) error {
 // - cert-manager webhook pod (ready)
 //
 // Timeout: 120 seconds (cert-manager can take 60-90s for webhook registration)
-func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
+func WaitForCertManagerReady(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to be ready...")
 
 	// Wait for cert-manager deployment to be available
-	checkCmd := exec.CommandContext(context.Background(), "kubectl", "wait",
+	checkCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"--kubeconfig", kubeconfigPath,
 		"--namespace", "cert-manager",
 		"--for=condition=available",

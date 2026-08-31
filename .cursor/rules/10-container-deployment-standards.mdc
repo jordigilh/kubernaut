@@ -13,16 +13,16 @@ globs: "Dockerfile,docker/**/*,charts/**/*,.github/workflows/**/*"
 **MANDATORY**: All final service images MUST use the standardized registry prefix:
 
 ```
-quay.io/jordigilh/
+quay.io/kubernaut-ai/
 ```
 
 ### Base Image Strategy
 **IMPORTANT DISTINCTION**:
 - **Base Images**: Use official upstream images (Red Hat UBI, Alpine, etc.)
-- **Final Service Images**: Use `quay.io/jordigilh/` registry
+- **Final Service Images**: Use `quay.io/kubernaut-ai/` registry
 
 ### Image Naming Convention
-**Final Service Images Format**: `quay.io/jordigilh/{service-name}:{version}`
+**Final Service Images Format**: `quay.io/kubernaut-ai/{service-name}:{version}`
 
 **Examples**:
 ```dockerfile
@@ -34,8 +34,8 @@ FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 FROM golang:1.23-alpine AS builder
 FROM alpine:latest
 
-# Final service images use quay.io/jordigilh/ registry
-# Built image will be: quay.io/jordigilh/webhook-service:v1.0.0
+# Final service images use quay.io/kubernaut-ai/ registry
+# Built image will be: quay.io/kubernaut-ai/webhook-service:v1.0.0
 ```
 
 ### Base Image Preferences
@@ -88,7 +88,7 @@ USER 1001
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/service-name"]
 
-# Final image will be pushed as: quay.io/jordigilh/service-name:v1.0.0
+# Final image will be pushed as: quay.io/kubernaut-ai/service-name:v1.0.0
 ```
 
 ### Security Standards
@@ -100,7 +100,7 @@ RUN useradd -r -u 1001 -g root service-user
 USER service-user
 
 # REQUIRED: Minimal attack surface
-FROM quay.io/jordigilh/kubernaut-minimal:latest
+FROM quay.io/kubernaut-ai/kubernaut-minimal:latest
 
 # REQUIRED: Health checks
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
@@ -120,19 +120,19 @@ LABEL name="kubernaut-service-name" \
 
 ```bash
 # Production releases
-quay.io/jordigilh/webhook-service:v1.2.3
-quay.io/jordigilh/webhook-service:v1.2
-quay.io/jordigilh/webhook-service:v1
-quay.io/jordigilh/webhook-service:latest
+quay.io/kubernaut-ai/webhook-service:v1.2.3
+quay.io/kubernaut-ai/webhook-service:v1.2
+quay.io/kubernaut-ai/webhook-service:v1
+quay.io/kubernaut-ai/webhook-service:latest
 
 # Development builds
-quay.io/jordigilh/webhook-service:dev-abc123f
-quay.io/jordigilh/webhook-service:pr-456
-quay.io/jordigilh/webhook-service:main-latest
+quay.io/kubernaut-ai/webhook-service:dev-abc123f
+quay.io/kubernaut-ai/webhook-service:pr-456
+quay.io/kubernaut-ai/webhook-service:main-latest
 
 # Environment-specific
-quay.io/jordigilh/webhook-service:staging-v1.2.3
-quay.io/jordigilh/webhook-service:prod-v1.2.3
+quay.io/kubernaut-ai/webhook-service:staging-v1.2.3
+quay.io/kubernaut-ai/webhook-service:prod-v1.2.3
 ```
 
 ### Build Automation
@@ -142,7 +142,7 @@ quay.io/jordigilh/webhook-service:prod-v1.2.3
 # .github/workflows/build.yml
 - name: Build and push image
   run: |
-    IMAGE_TAG="quay.io/jordigilh/${SERVICE_NAME}:${VERSION}"
+    IMAGE_TAG="quay.io/kubernaut-ai/${SERVICE_NAME}:${VERSION}"
     docker build -t ${IMAGE_TAG} .
     docker push ${IMAGE_TAG}
 ```
@@ -163,7 +163,7 @@ spec:
     spec:
       containers:
       - name: webhook-service
-        image: quay.io/jordigilh/webhook-service:v1.2.3
+        image: quay.io/kubernaut-ai/webhook-service:v1.2.3
         imagePullPolicy: IfNotPresent
 ```
 
@@ -173,7 +173,7 @@ spec:
 ```yaml
 # values.yaml
 image:
-  registry: quay.io/jordigilh
+  registry: quay.io/kubernaut-ai
   repository: webhook-service
   tag: v1.2.3
   pullPolicy: IfNotPresent
@@ -189,10 +189,10 @@ image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.i
 
 ```bash
 # Build local development image
-docker build -t quay.io/jordigilh/webhook-service:dev .
+docker build -t quay.io/kubernaut-ai/webhook-service:dev .
 
 # Run locally
-docker run -p 8080:8080 quay.io/jordigilh/webhook-service:dev
+docker run -p 8080:8080 quay.io/kubernaut-ai/webhook-service:dev
 ```
 
 ### CI/CD Integration
@@ -200,7 +200,7 @@ docker run -p 8080:8080 quay.io/jordigilh/webhook-service:dev
 
 ```bash
 # Environment variables
-export REGISTRY="quay.io/jordigilh"
+export REGISTRY="quay.io/kubernaut-ai"
 export SERVICE_NAME="webhook-service"
 export IMAGE_TAG="${REGISTRY}/${SERVICE_NAME}:${VERSION}"
 
@@ -215,10 +215,10 @@ docker build -t ${IMAGE_TAG} -f docker/${SERVICE_NAME}.Dockerfile .
 
 ```bash
 # Security scan before push
-docker scan quay.io/jordigilh/webhook-service:v1.2.3
+docker scan quay.io/kubernaut-ai/webhook-service:v1.2.3
 
 # Vulnerability assessment
-trivy image quay.io/jordigilh/webhook-service:v1.2.3
+trivy image quay.io/kubernaut-ai/webhook-service:v1.2.3
 ```
 
 ### Image Cleanup
@@ -239,7 +239,7 @@ trivy image quay.io/jordigilh/webhook-service:v1.2.3
 docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
 
 # Build time tracking
-time docker build -t quay.io/jordigilh/service:tag .
+time docker build -t quay.io/kubernaut-ai/service:tag .
 ```
 
 ### Runtime Monitoring
@@ -249,7 +249,7 @@ time docker build -t quay.io/jordigilh/service:tag .
 # Prometheus metrics
 - name: container_image_info
   labels:
-    registry: "quay.io/jordigilh"
+    registry: "quay.io/kubernaut-ai"
     service: "webhook-service"
     version: "v1.2.3"
 ```
@@ -286,12 +286,12 @@ EXPOSE 22 3306 5432
 ```bash
 # WRONG: Inconsistent naming
 quay.io/different-org/webhook:v1.0.0
-docker.io/jordigilh/webhook:latest
+docker.io/kubernaut-ai/webhook:latest
 gcr.io/project/webhook-svc:1.0
 
 # WRONG: No versioning strategy
-quay.io/jordigilh/webhook:random-tag
-quay.io/jordigilh/webhook:build-123
+quay.io/kubernaut-ai/webhook:random-tag
+quay.io/kubernaut-ai/webhook:build-123
 ```
 
 ## Documentation Requirements
@@ -303,18 +303,18 @@ quay.io/jordigilh/webhook:build-123
 # Service Name
 
 ## Container Image
-- **Registry**: quay.io/jordigilh/service-name
+- **Registry**: quay.io/kubernaut-ai/service-name
 - **Latest Version**: v1.2.3
-- **Base Image**: quay.io/jordigilh/kubernaut-runtime:latest
+- **Base Image**: quay.io/kubernaut-ai/kubernaut-runtime:latest
 
 ## Build Instructions
 ```bash
-docker build -t quay.io/jordigilh/service-name:dev .
+docker build -t quay.io/kubernaut-ai/service-name:dev .
 ```
 
 ## Deployment
 ```yaml
-image: quay.io/jordigilh/service-name:v1.2.3
+image: quay.io/kubernaut-ai/service-name:v1.2.3
 ```
 ```
 

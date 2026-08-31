@@ -343,6 +343,15 @@ than discards) the `ResilientClient`/`ClusterRegistry` object on initial connect
 `Gate` has something to keep probing/retrying instead of the client being silently lost with no path
 back to healthy short of a pod restart.
 
+**Related, narrower fail-closed fix (2026-08-30, issue #2312)**: this Gate is pod-wide and
+ticker-probed, so it protects against *sustained* Fleet-dependency unavailability but not
+necessarily a single investigation that hits a transient gateway failure between probe ticks. KA's
+`prescopeFleetOverlay()` — the per-investigation tool-overlay resolver decision #11 below describes —
+had its own, independent fail-open behavior for exactly that gap: an overlay resolution failure let
+the investigation continue against local/hub tools instead of failing that one investigation closed.
+See DD-FLEET-005's "Amendment (2026-08-30, issue #2312 close-out)" for the fix; this ADR's decision
+#11 reference to `prescopeFleetOverlay` below now reflects that fail-closed behavior.
+
 **Resolved: ACM backend auth gap (#1556).** `pkg/fleet/acm.Client` (`fleet.backend: "acm"`) never
 actually sent the `Authorization: Bearer <token>` header the real ACM Search API
 (`stolostron/search-v2-api`) mandatorily requires, despite this being spec'd earlier in this ADR

@@ -2383,27 +2383,30 @@ for d in docs:
       "helm lint failed with monitoring values"
   fi
 
-  echo "# --- Template Tests: MCP Interactive Mode (#703 PR6a) ---"
+  echo "# --- Template Tests: MCP Interactive Mode (#703 PR6a; DD-PLATFORM-006 Decision Area 11 revised) ---"
 
   local interactive_out
 
-  # HELM-01: interactive.enabled=true emits interactive: block in ConfigMap
+  # HELM-01: apifrontend.enabled defaults to true (schema default), and KA's
+  # interactive block is now fully derived from it -- no separately settable
+  # kubernautAgent.interactive.enabled field exists anymore, so the default
+  # template_common_args/template_llm_args (which never touch
+  # apifrontend.enabled) already emit the interactive: block.
   interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.interactive.enabled=true 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if echo "$interactive_out" | grep -q "interactive:" && \
      echo "$interactive_out" | grep -q "enabled: true"; then
-    tap_ok "HELM-01: interactive.enabled=true emits interactive: block in ConfigMap"
+    tap_ok "HELM-01: apifrontend.enabled default (true) derives KA's interactive: block on"
   else
     tap_not_ok "HELM-01: interactive ConfigMap block" \
-      "interactive: block not found when interactive.enabled=true"
+      "interactive: block not found with apifrontend.enabled at its default"
   fi
 
   # HELM-02: Lease RBAC is present under the namespace-scoped Role.
   # DD-AA-KA-001 (#2170): kubernaut-agent-leases is now unconditional (the
-  # AgentSession dispatch Lease is used regardless of interactive.enabled),
-  # so this only re-confirms presence when interactive.enabled=true, not
-  # gating.
+  # AgentSession dispatch Lease is used regardless of interactive mode),
+  # so this only re-confirms presence when interactive is derived enabled,
+  # not gating.
   if echo "$interactive_out" | grep -q "coordination.k8s.io" && \
      echo "$interactive_out" | grep -q "leases" && \
      echo "$interactive_out" | grep -q "kind: Role" && \
@@ -2414,29 +2417,32 @@ for d in docs:
       "coordination.k8s.io/leases RBAC not found under namespace-scoped Role when interactive enabled"
   fi
 
-  # HELM-03: interactive.enabled=true does NOT include impersonate RBAC (#1288)
+  # HELM-03: interactive mode does NOT include impersonate RBAC (#1288)
   if ! echo "$interactive_out" | grep -q "impersonate"; then
-    tap_ok "HELM-03: interactive.enabled=true omits impersonate verb RBAC (#1288)"
+    tap_ok "HELM-03: interactive mode omits impersonate verb RBAC (#1288)"
   else
     tap_not_ok "HELM-03: impersonate RBAC still present" \
       "impersonate verb found when interactive enabled — should have been removed by #1288"
   fi
 
-  # HELM-04: interactive.enabled=false omits interactive: block
+  # HELM-04: apifrontend.enabled=false derives KA's interactive block off too
+  # (DD-PLATFORM-006 Decision Area 11 revised) -- APIFrontend's
+  # ka.NewSDKMCPClient is the only caller of this endpoint anywhere, so there
+  # is no scenario where AF is disabled but KA should still expose it.
   local interactive_off
   interactive_off=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set apifrontend.enabled=false 2>&1)
   if ! echo "$interactive_off" | grep -q "interactive:"; then
-    tap_ok "HELM-04: interactive disabled omits interactive: block"
+    tap_ok "HELM-04: apifrontend.enabled=false derives interactive: block off"
   else
     tap_not_ok "HELM-04: interactive disabled should omit" \
-      "interactive: found when interactive.enabled is false/unset"
+      "interactive: found when apifrontend.enabled=false"
   fi
 
   # HELM-05: custom sessionTTL and maxConcurrentSessions rendered
   interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.interactive.enabled=true \
     --set kubernautAgent.interactive.sessionTTL=15m \
     --set kubernautAgent.interactive.maxConcurrentSessions=10 2>&1)
   if echo "$interactive_out" | grep -q '15m' && \
@@ -2450,7 +2456,6 @@ for d in docs:
   # HELM-06: custom maxAnalyzingTimeout rendered
   interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.interactive.enabled=true \
     --set kubernautAgent.interactive.maxAnalyzingTimeout=60m 2>&1)
   if echo "$interactive_out" | grep -q 'maxAnalyzingTimeout: "60m"'; then
     tap_ok "HELM-06: custom maxAnalyzingTimeout rendered in ConfigMap"
@@ -2459,13 +2464,12 @@ for d in docs:
       "Custom maxAnalyzingTimeout not rendered"
   fi
 
-  # HELM-LINT: helm lint passes with interactive enabled
-  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.interactive.enabled=true >/dev/null 2>&1; then
-    tap_ok "HELM-LINT-INTERACTIVE: helm lint passes with interactive.enabled=true"
+  # HELM-LINT: helm lint passes with apifrontend (and derived KA interactive) enabled
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) >/dev/null 2>&1; then
+    tap_ok "HELM-LINT-INTERACTIVE: helm lint passes with apifrontend.enabled default (derives interactive on)"
   else
     tap_not_ok "HELM-LINT-INTERACTIVE: helm lint with interactive" \
-      "helm lint failed with kubernautAgent.interactive.enabled=true"
+      "helm lint failed with apifrontend.enabled at its default"
   fi
 
   echo "# --- Template Tests: Operator parity + OCP removal (BR-PLATFORM-003/004, Issue #1589) ---"

@@ -1889,6 +1889,8 @@ components:
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
             - $ref: '#/components/schemas/AIAgentAlignmentStepPayload'
             - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
+            - $ref: '#/components/schemas/AIAgentFleetOverlayFailedPayload'
+            - $ref: '#/components/schemas/AIAgentFleetOverlayUnavailablePayload'
             - $ref: '#/components/schemas/ShadowLLMRequestPayload'
             - $ref: '#/components/schemas/ShadowLLMResponsePayload'
             - $ref: '#/components/schemas/AIAgentRatelimitDeniedPayload'
@@ -2047,6 +2049,8 @@ components:
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
               'aiagent.alignment.step': '#/components/schemas/AIAgentAlignmentStepPayload'
               'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
+              'aiagent.fleet.overlay_failed': '#/components/schemas/AIAgentFleetOverlayFailedPayload'
+              'aiagent.fleet.overlay_unavailable': '#/components/schemas/AIAgentFleetOverlayUnavailablePayload'
               'aiagent.shadow.llm.request': '#/components/schemas/ShadowLLMRequestPayload'
               'aiagent.shadow.llm.response': '#/components/schemas/ShadowLLMResponsePayload'
               'aiagent.ratelimit.denied': '#/components/schemas/AIAgentRatelimitDeniedPayload'
@@ -5438,6 +5442,38 @@ components:
           type: integer
           minimum: 0
           description: Total tokens consumed by shadow LLM across all evaluated steps (#1059)
+
+    AIAgentFleetOverlayFailedPayload:
+      type: object
+      required: [event_type, cluster_id, error_message]
+      description: Fleet tool overlay resolution failure payload (aiagent.fleet.overlay_failed) - Emitted when a fleet-target investigation's FleetOverlayResolver.Overlay call fails; the investigation fails open and proceeds without the target cluster's tools rather than aborting (DD-FLEET-005, Issue #1732, AU-3, GA Readiness Dimension 12)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.fleet.overlay_failed']
+          description: Event type for discriminator (matches parent event_type)
+        cluster_id:
+          type: string
+          description: Target cluster whose tool overlay failed to resolve
+        error_message:
+          type: string
+          description: Error returned by FleetOverlayResolver.Overlay
+
+    AIAgentFleetOverlayUnavailablePayload:
+      type: object
+      required: [event_type, cluster_id, reason]
+      description: Fleet tool overlay unavailable payload (aiagent.fleet.overlay_unavailable) - Emitted when a fleet-target investigation reaches prescopeFleetOverlay on a kubernaut-agent instance with no FleetOverlayResolver configured at all (Issue #1768 follow-up, AU-3, AC-4)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.fleet.overlay_unavailable']
+          description: Event type for discriminator (matches parent event_type)
+        cluster_id:
+          type: string
+          description: Target cluster whose investigation had no fleet overlay resolver configured
+        reason:
+          type: string
+          description: Why no overlay was available (e.g. "no FleetOverlayResolver configured on this kubernaut-agent instance")
 
     ShadowLLMRequestPayload:
       type: object

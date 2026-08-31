@@ -70,7 +70,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -120,7 +119,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -169,7 +167,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -216,7 +213,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -265,7 +261,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -317,7 +312,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT: Simulate LLM completing RCA for OOMKilled
@@ -366,7 +360,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -414,7 +407,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -463,7 +455,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -508,7 +499,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -553,7 +543,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)
@@ -598,7 +587,6 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// ========================================
 			// ACT (#2190: AgentSession CRD flow)

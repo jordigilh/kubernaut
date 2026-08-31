@@ -415,33 +415,44 @@ func wireFleetOwnerResolution(
 		"endpoint", serverCfg.Fleet.MCPGatewayEndpoint,
 		"oauth2Enabled", serverCfg.Fleet.OAuth2.Enabled)
 
-	fleetOpts := []fleetclient.Option{}
-	if serverCfg.Fleet.OAuth2.Enabled {
-		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2"))) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
+	connectCfg := fleetclient.ConnectConfig{
+		Endpoint:            serverCfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:              serverCfg.Fleet.OAuth2,
+		Resilience:          serverCfg.Fleet.Resilience,
+		CredentialsBasePath: fleetOAuth2CredentialsBasePath(serverCfg),
 	}
-
-	resilienceCfg := fleetclient.ResilienceConfigFromFleet(serverCfg.Fleet.Resilience)
-	fleetResilientClient, fleetErr := fleetclient.NewResilient(
-		ctx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
-		logger.WithName("fleet-client"), fleetOpts...,
-	)
+	fleetResilientClient, fleetErr := fleetclient.Connect(ctx, connectCfg, logger.WithName("fleet-client")) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
 	if fleetErr != nil {
-		// #1553: keep the (disconnected) client instead of discarding it —
-		// wireFleetReadinessGate attaches an MCPClientProber to it so the
-		// periodic readiness probe keeps retrying and /readyz correctly
-		// fails closed until the Gateway becomes reachable, instead of
-		// silently degrading forever with no path back to healthy.
+		// #1553/#2315: keep the (disconnected) client instead of discarding
+		// it -- wireFleetReadinessGate attaches an MCPClientProber to it so
+		// the periodic readiness probe keeps retrying and /readyz
+		// correctly fails closed until the Gateway becomes reachable. The
+		// reader factory below is still wired from a SessionProvider, so
+		// remote owner resolution self-heals automatically once
+		// fleetResilientClient reconnects in the background, instead of
+		// staying disabled until a pod restart.
 		logger.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
-			"NotReady and keep retrying in the background; remote owner resolution disabled until reconnect",
+			"NotReady and keep retrying in the background; remote owner resolution will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
 			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
-		return fleetResilientClient
+	} else {
+		logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
+			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
 	}
 
-	readerFactory := fleetclient.NewMCPReaderFactory(srv.GetCachedClient(), fleetResilientClient.Session())
+	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(srv.GetCachedClient(), fleetResilientClient.SessionProvider(), fleetResilientClient.Reconnect)
 	prometheusAdapter.SetReaderFactory(readerFactory)
-	logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
-		"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
 	return fleetResilientClient
+}
+
+// fleetOAuth2CredentialsBasePath returns the on-disk directory GW's fleet
+// OAuth2 client-id/client-secret files are mounted at, matching the
+// previous buildFleetOAuth2Option's basePath derivation.
+func fleetOAuth2CredentialsBasePath(serverCfg *config.ServerConfig) string {
+	if serverCfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+		return "/etc/gateway/" + serverCfg.Fleet.OAuth2.CredentialsSecretRef
+	}
+	return "/etc/gateway/fleet-oauth2"
 }
 
 // fleetReadinessProbeInterval controls how often the Fleet readiness gate
@@ -533,23 +544,6 @@ func wireReadinessGates(
 		}
 		dataStorageReadinessGate.Stop()
 	}
-}
-
-// buildFleetOAuth2Option builds the reloadable OAuth2 transport option for
-// the Fleet MCP client from the server config's credentials secret path.
-func buildFleetOAuth2Option(serverCfg *config.ServerConfig, fleetLog logr.Logger) fleetclient.Option {
-	basePath := "/etc/gateway/fleet-oauth2"
-	if serverCfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-		basePath = "/etc/gateway/" + serverCfg.Fleet.OAuth2.CredentialsSecretRef
-	}
-	reloadCfg := fleetclient.ReloadableOAuth2Config{
-		TokenURL:         serverCfg.Fleet.OAuth2.TokenURL,
-		ClientIDPath:     basePath + "/client-id",
-		ClientSecretPath: basePath + "/client-secret",
-		Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
-		TlsCaFile:        serverCfg.Fleet.OAuth2.TLSCAFile,
-	}
-	return fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)
 }
 
 // startLogLevelWatcher starts the config-file log-level hot-reload watcher

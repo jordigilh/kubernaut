@@ -94,11 +94,13 @@ endpoint field is set, mirroring FMC's existing correct pattern.
   (`gateway.yaml`, `remediationorchestrator.yaml`, `fleetmetadatacache.yaml`).
 - **FR-3 (Cross-component dependencies + console leaf fields)**: schema `if`/`then` blocks enforce:
   `console.enabled` requires `apifrontend.enabled`; `console.auth.secretName`, the OIDC issuer, and
-  `console.ingress.host` become schema-required leaf fields when console is enabled;
-  `kubernautAgent.interactive.enabled` requires `apifrontend.enabled`; and
+  `console.ingress.host` become schema-required leaf fields when console is enabled; and
   `fleetmetadatacache.enabled=false` conflicting with a configured `global.fleet.backend` is
-  schema-rejected — replacing the 6 associated `fail()` guards across `console.yaml`,
-  `kubernaut-agent.yaml:24`, and `_helpers.tpl:472`.
+  schema-rejected — replacing the 5 associated `fail()` guards across `console.yaml` and
+  `_helpers.tpl:472`. (`kubernautAgent.interactive.enabled` requiring `apifrontend.enabled`, formerly
+  a 6th guard here, was superseded by DD-PLATFORM-006 Decision Area 11's revision: the field is
+  removed entirely and derived from `apifrontend.enabled` instead of schema-guarded against it, so
+  there's no longer a `kubernaut-agent.yaml:24` guard to replace.)
 - **FR-4 (OAuth2 mandatory-when-MCP-Gateway-used, schema)**: `global.fleet.oauth2.{enabled,
   tokenURL, credentialsSecretRef}` become schema-required (via `if`/`then`, `const: true` on
   `enabled`) whenever `global.fleet.mcpGatewayEndpoint` is non-empty (shared block covering

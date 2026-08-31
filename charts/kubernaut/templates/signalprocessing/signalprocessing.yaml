@@ -181,6 +181,17 @@ rules:
     resources: ["mcpserverregistrations"]
     verbs: ["get", "list", "watch"]
   {{- end }}
+  {{- if and (ne $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") (ne $signalprocessingFleetPreamble.config.mcpGatewayType "") (not $signalprocessingFleetPreamble.config.namespace) }}
+  # BR-FLEET-003 (#1511): SP's ClusterRegistry watches Backend/MCPRoute CRs
+  # directly via a dynamic informer to evaluate the `cluster` classification
+  # dimension when the Envoy AI Gateway is used.
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backends"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aigateway.envoyproxy.io"]
+    resources: ["mcproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -196,12 +207,12 @@ subjects:
   - kind: ServiceAccount
     name: signalprocessing-controller
     namespace: {{ .Release.Namespace }}
-{{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") $signalprocessingFleetPreamble.config.namespace }}
+{{- if and $signalprocessingFleetPreamble.config.namespace (ne $signalprocessingFleetPreamble.config.mcpGatewayType "") }}
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
 # above, granted instead of it when signalprocessing.fleet.namespace (or its
 # global.fleet.mcpGatewayNamespace fallback, Issue #1730) is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "namespace" $signalprocessingFleetPreamble.config.namespace "appLabels" "app: signalprocessing-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "namespace" $signalprocessingFleetPreamble.config.namespace "appLabels" "app: signalprocessing-controller" "mcpServerRegistrations" (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 # Role: namespace-scoped access to configmaps and secrets (#229)

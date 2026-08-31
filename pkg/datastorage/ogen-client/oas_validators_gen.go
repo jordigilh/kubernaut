@@ -430,6 +430,70 @@ func (s AIAgentEnrichmentFailedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentFleetOverlayFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentFleetOverlayFailedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.fleet.overlay_failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentFleetOverlayUnavailablePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentFleetOverlayUnavailablePayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.fleet.overlay_unavailable":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentInteractiveCompletedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3528,6 +3592,16 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentFleetOverlayFailedPayloadAuditEventEventData:
+		if err := s.AIAgentFleetOverlayFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventEventData:
+		if err := s.AIAgentFleetOverlayUnavailablePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case ShadowLLMRequestPayloadAuditEventEventData:
 		if err := s.ShadowLLMRequestPayload.Validate(); err != nil {
 			return err
@@ -4285,6 +4359,16 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AIAgentAlignmentVerdictPayloadAuditEventRequestEventData:
 		if err := s.AIAgentAlignmentVerdictPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentFleetOverlayFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData:
+		if err := s.AIAgentFleetOverlayUnavailablePayload.Validate(); err != nil {
 			return err
 		}
 		return nil

@@ -540,9 +540,25 @@ though APIFrontend's `pkg/apifrontend/ka/` (`ka.NewSDKMCPClient`) is the only MC
 in the codebase that connects to KubernautAgent's interactive `/api/v1/mcp` endpoint (verified:
 zero other callers).
 
-**Decision**: add a `fail()` guard — `kubernautAgent.interactive.enabled=true` requires
+**Original decision**: add a `fail()` guard — `kubernautAgent.interactive.enabled=true` requires
 `apifrontend.enabled=true`, since APIFrontend is currently the sole consumer, making the dependency
 explicit rather than an unenforced possibility that renders successfully but can never be used.
+Later moved from the `fail()` guard to a `values.schema.json` if/then block (Issue #1984 Phase C,
+BR-PLATFORM-010) with identical semantics — still two independently settable fields, just
+schema-enforced instead of template-enforced.
+
+**Revised decision (2026-08)**: a guard against *one direction* of drift (interactive enabled with
+AF disabled) still allowed the opposite, equally broken combination — AF enabled, KA interactive
+left at its default `false` — to render successfully with no warning, silently leaving AF's
+`ka.NewSDKMCPClient` unable to open sessions. Since APIFrontend is the sole possible caller in
+both directions, there is no scenario where the two fields should ever independently disagree, so
+the field is removed entirely (not just guarded) and the interactive block's active/inactive state
+is now derived from `apifrontend.enabled`'s effective (schema-defaulted) value — the same "derive,
+don't just guard" precedent as Decision Area 10's `fleetmetadatacache.enabled`. Unlike Decision
+Area 10, no explicit override escape hatch is kept: FMC's backend choice is a legitimate per-
+deployment decision independent of `global.fleet.enabled`, but there is no equivalent legitimate
+reason to run KA's interactive endpoint without AF (or vice versa), so allowing an override would
+just reintroduce the original drift risk.
 
 ### Decision Area 12 — Post-#1755 Regression Check & Field Census
 

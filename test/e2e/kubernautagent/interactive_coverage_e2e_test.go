@@ -84,7 +84,6 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 					Priority:              "P1",
 					RiskTolerance:         "medium",
 					BusinessCategory:      "standard",
-					ClusterName:           "e2e-test",
 				},
 			}
 			Expect(k8sClient.Create(ctx, as)).To(Succeed())
@@ -369,7 +368,6 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 					Priority:              "P1",
 					RiskTolerance:         "medium",
 					BusinessCategory:      "standard",
-					ClusterName:           "e2e-test",
 				},
 			}
 			Expect(k8sClient.Create(ctx, as)).To(Succeed())
@@ -530,7 +528,6 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 					Priority:              "P1",
 					RiskTolerance:         "medium",
 					BusinessCategory:      "standard",
-					ClusterName:           "e2e-test",
 				},
 			}
 			Expect(k8sClient.Create(ctx, as)).To(Succeed())

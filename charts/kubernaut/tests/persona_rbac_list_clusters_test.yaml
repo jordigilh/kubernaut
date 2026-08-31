@@ -1,0 +1,52 @@
+suite: sre/ai-orchestrator personas grant list_clusters (BR-FLEET-054)
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # list_clusters (BR-FLEET-054) lets the LLM discover cluster_id values
+  # to pass to kubectl_get/kubectl_list for cross-cluster triage. sre and
+  # ai-orchestrator already grant kubectl_get/kubectl_list/list_alerts but
+  # were missing list_clusters itself, leaving multi-cluster investigation
+  # ("list all active alerts in all clusters") forbidden end-to-end.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-FLEET054-001: sre persona ClusterRole grants list_clusters"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-sre
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules[0].resourceNames
+          content: list_clusters
+
+  - it: "IT-HELM-FLEET054-002: ai-orchestrator persona ClusterRole grants list_clusters"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-ai-orchestrator
+    asserts:
+      - contains:
+          path: rules[0].resourceNames
+          content: list_clusters

@@ -95,7 +95,6 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "infrastructure",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// ========================================
@@ -191,7 +190,6 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "infrastructure",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// ========================================

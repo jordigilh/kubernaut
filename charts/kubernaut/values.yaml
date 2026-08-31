@@ -491,11 +491,14 @@ kubernautAgent:
   # equivalent KA-only mechanism to the Helm chart.
   additionalClusterRoles: []
   # -- MCP interactive mode (#703): human-in-the-loop investigation sessions.
-  # When enabled, KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp
-  # and provisions Lease RBAC. (#1288: impersonate ClusterRole removed).
-  interactive:
-    # -- Enable MCP interactive mode endpoint and Lease-based session management.
-    enabled: false
+  # KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp and
+  # provisions Lease RBAC (#1288: impersonate ClusterRole removed) whenever
+  # apifrontend.enabled is true (default) -- APIFrontend's ka.NewSDKMCPClient
+  # is the only caller anywhere in the codebase, so there is no separate
+  # `enabled` field here to set (DD-PLATFORM-006 Decision Area 11, revised):
+  # it would either duplicate apifrontend.enabled or, if set independently,
+  # produce an unreachable-but-enabled or reachable-but-disabled combination.
+  interactive: {}
     # -- Maximum duration for an interactive session before auto-release (Go duration).
     # sessionTTL: "30m"
     # -- Session timeout after last operator activity (Go duration).
@@ -975,6 +978,19 @@ apifrontend:
           # had kubernaut_get_approval_request; sre did not.
           - kubernaut_get_approval_request
           - kubernaut_complete_no_action
+          # AC-14 (docs/tests/1235) requires sre to also have
+          # kubernaut_list_approval_requests -- #1869 added the sibling
+          # kubernaut_get_approval_request but missed this one, leaving sre
+          # able to act on an approval it already knows the RR ID for but
+          # unable to discover pending ones on its own.
+          - kubernaut_list_approval_requests
+          # Cross-cluster discovery (BR-FLEET-054): list_clusters returns the
+          # cluster_id values kubectl_get/kubectl_list (both already granted
+          # above) need for cross-cluster triage. Without it, a "list alerts
+          # in all clusters" request is forbidden before it can even discover
+          # what clusters exist -- confirmed via live reproduction on the demo
+          # fleet.
+          - list_clusters
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
@@ -1000,6 +1016,16 @@ apifrontend:
           - get_alert_details
           # Alert-driven investigation (#1372)
           - kubernaut_investigate_alert
+          # Cross-cluster discovery (BR-FLEET-054): see sre's list_clusters
+          # comment above -- same rationale, ai-orchestrator already has
+          # kubectl_get/kubectl_list.
+          - list_clusters
+          # AC-14 (docs/tests/1235) requires ai-orchestrator to have both
+          # approval-request tools -- neither was ever added here, unlike sre
+          # (#1869 gave sre kubernaut_get_approval_request, though it also
+          # missed kubernaut_list_approval_requests, fixed above).
+          - kubernaut_list_approval_requests
+          - kubernaut_get_approval_request
         cicd:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
@@ -1064,6 +1090,13 @@ apifrontend:
 # while console.enabled=true.
 # DD-PLATFORM-006 DA14: replicas(1)/oauth2Proxy.image both have non-zero
 # schema defaults -- omitted here, override only what you need.
+# oauth2Proxy.skipDiscovery (default false): only needed when the OIDC
+# provider isn't reachable via the SAME hostname from both the browser and
+# in-cluster pods (e.g. IdP deployed in its own namespace/cluster, separate
+# from Console's). When true, also set loginURL (browser-facing), redeemURL
+# and jwksURL (in-cluster, dialed server-side by oauth2-proxy) -- all three
+# are required together; oauth2-proxy skips OIDC discovery entirely and uses
+# these directly instead.
 console:
   enabled: false
   auth: {}
@@ -1078,8 +1111,13 @@ console:
   # should expose externally without an explicit choice. This is a deviation
   # from the Kubernaut Operator's ConsoleRouteSpec (which defaults to
   # enabled=true, opt-out), made deliberately for this reason.
+  # port: leave unset (0) unless the Ingress controller fronting `host` is
+  # reachable on a non-standard HTTPS port (e.g. a NodePort-exposed
+  # controller in a local/CI Kind cluster where 443 isn't bindable) --
+  # oauth2-proxy's --redirect-url includes it only when non-zero.
   ingress:
     enabled: false
+    port: 0
     tls: {}
   resources:
     requests:

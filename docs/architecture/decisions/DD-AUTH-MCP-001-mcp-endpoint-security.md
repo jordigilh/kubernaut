@@ -280,7 +280,7 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 | Location | Key |
 |----------|-----|
 | Config.go field | `Interactive InteractiveConfig` |
-| Helm values | `kubernautAgent.interactive.enabled` |
+| Helm values | *(no field -- derived from `apifrontend.enabled`, DD-PLATFORM-006 Decision Area 11 revised)* |
 | Operator CR | `spec.kubernautAgent.interactive.enabled` |
 | ConfigMap rendered | `interactive.enabled` |
 | JWT providers | `kubernautAgent.interactive.jwtProviders[]` |

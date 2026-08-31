@@ -71,7 +71,6 @@ var _ = Describe("E2E-KA-SNAP: AgentSession Forensic Snapshot", Label("e2e", "ka
 					Priority:              "P1",
 					RiskTolerance:         "medium",
 					BusinessCategory:      "standard",
-					ClusterName:           "e2e-test",
 				},
 			}
 			Expect(k8sClient.Create(ctx, as)).To(Succeed())

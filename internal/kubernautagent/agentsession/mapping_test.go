@@ -127,6 +127,42 @@ var _ = Describe("MapSpecToSignal — BR-AA-KA-065.2", func() {
 			Expect(sc.DeduplicationWindowMinutes).To(BeNil())
 		})
 	})
+
+	Describe("UT-AA-KA-065-117: the \"default\" ClusterName sentinel must not be promoted to ClusterID (Issue #2314)", func() {
+		It("should leave ClusterID empty when ClusterName is the hub-local display placeholder", func() {
+			// pkg/aianalysis/handlers/request_builder.go's clusterNameFor
+			// emits katypes.DefaultClusterNameSentinel ("default") as a
+			// cosmetic ClusterName fallback for hub-local investigations
+			// with no real target cluster. Promoting that literal into
+			// ClusterID made prescopeFleetOverlay (fleet_overlay.go) treat
+			// every such investigation as a fleet target and fail closed
+			// with no FleetOverlayResolver configured -- confirmed root
+			// cause of the kubernautagent integration and aianalysis E2E
+			// "no FleetOverlayResolver configured" CI failures.
+			spec := agentsessionv1.AgentSessionSpec{
+				SignalName:  "PodPending",
+				Severity:    "warning",
+				ClusterName: katypes.DefaultClusterNameSentinel,
+			}
+
+			sc := agentsession.MapSpecToSignal(spec)
+
+			Expect(sc.ClusterName).To(Equal("default"), "cosmetic display field is unaffected")
+			Expect(sc.ClusterID).To(BeEmpty(), "prescopeFleetOverlay must see this as hub-local (skip-overlay), not a fleet target")
+		})
+
+		It("should still promote a genuine fleet cluster name to ClusterID", func() {
+			spec := agentsessionv1.AgentSessionSpec{
+				SignalName:  "PodPending",
+				Severity:    "warning",
+				ClusterName: "remote-cluster",
+			}
+
+			sc := agentsession.MapSpecToSignal(spec)
+
+			Expect(sc.ClusterID).To(Equal("remote-cluster"))
+		})
+	})
 })
 
 // SI-10: AgentSessionResult must carry only the curated investigation

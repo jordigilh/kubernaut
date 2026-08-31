@@ -18,6 +18,7 @@ package investigator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
@@ -78,25 +79,37 @@ func FleetOverlayFromContext(ctx context.Context) (map[string]tools.Tool, bool) 
 // never pay the resolver's cost and this remains a true zero-regression
 // no-op for the overwhelming majority of (non-fleet) deployments.
 //
-// A fleet-target investigation (clusterID != "") arriving at a KA instance
-// with no FleetOverlayResolver configured at all (inv.fleetOverlayResolver
-// == nil, i.e. fleet mode isn't wired on this instance) is a DIFFERENT,
-// degraded condition — distinct from the hub-local no-op above — and is
-// logged plus recorded as an EventTypeFleetOverlayUnavailable audit event
-// (issue #1768 follow-up). Before this, the two cases were indistinguishable
-// from the outside: no log, no audit event, no way to tell "a fleet-scoped
-// investigation silently ran against local/hub tools" apart from "this
-// investigation never had a target cluster" or even "prescopeFleetOverlay
-// was never reached" (e.g. a regression removing the call).
-//
-// On resolver error (resolver present but Overlay itself fails), the
-// investigation fails open: it proceeds with ctx unchanged (no overlay),
-// behaving like a hub-local investigation minus remote-cluster tool access,
-// rather than aborting the investigation over a degraded fleet dependency
-// (GA Readiness Dimension 12: no silent failures). The failure is both
-// logged and recorded as an EventTypeFleetOverlayFailed audit event (AU-3)
-// carrying clusterID and correlationID, so a degraded fleet investigation is
-// independently queryable, not just grep-able from logs.
+// FAIL-CLOSED for fleet-target investigations (amendment 2026-08-30,
+// supersedes ADR-068 decision #11's original fail-open language; see
+// DD-FLEET-005 "Amendment: fail-closed tool-overlay resolution"). Required
+// by OWASP ASVS 4.0.3 V4.1.5 ("access controls fail securely including when
+// an exception occurs") — the tool overlay IS the access-control boundary
+// that scopes which cluster's resources an investigation can read (AC-4), so
+// a resolver exception must deny/abort, not silently fall through to a
+// different (wrong) cluster's access. A
+// fleet-target investigation (clusterID != "") whose overlay cannot be
+// resolved — either because no FleetOverlayResolver is configured on this KA
+// instance at all (EventTypeFleetOverlayUnavailable), or because a
+// configured resolver's Overlay() call itself fails, e.g. the MCP
+// gateway/kube-mcp-server is unreachable (EventTypeFleetOverlayFailed) —
+// now returns a non-nil error instead of silently continuing with the local
+// tool registry. Falling back to local tools is never correct here: the
+// local/hub cluster is never the resource the operator or the firing signal
+// actually targeted, so any tool call the LLM makes without the overlay
+// queries a namespace/pod/deployment on the WRONG cluster. Confirmed live
+// 2026-08-30 (Issue #2312): a real investigation of a remote-cluster pod
+// fell back to hub-only tools after an EAIGW SSE tools/list failure, got
+// clean "not found" responses from the hub (which correctly has no such
+// namespace), and the LLM confidently concluded the incident was
+// "resolved/stale" — a fabricated verdict with no indication anywhere in the
+// response that the investigation never actually reached the target
+// cluster. Had the hub coincidentally had a similarly-named resource, the
+// same fail-open path could just as easily have produced a confident wrong
+// RCA pointing at real (but wrong-cluster) evidence, risking an automated
+// remediation action against the wrong cluster entirely. Both failure modes
+// are still logged and audited exactly as before (AU-3) — the only change
+// is that the investigation now stops instead of proceeding on tools that
+// cannot answer for the cluster it was asked about.
 //
 // On success, ctx also gains audit.WithClusterID(ctx, clusterID) — this is
 // the same context.WithClusterID session.Manager's attachInvestigationContext
@@ -106,28 +119,29 @@ func FleetOverlayFromContext(ctx context.Context) (map[string]tools.Tool, bool) 
 // attributionClusterID) is guaranteed correct even for callers that invoke
 // Investigate() directly without going through session.Manager (as KA's own
 // integration tests do).
-func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, correlationID string) context.Context {
+func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, correlationID string) (context.Context, error) {
 	if clusterID == "" {
-		return ctx
+		return ctx, nil
 	}
 	if inv.fleetOverlayResolver == nil {
-		inv.logger.Info("fleet-target investigation reached prescopeFleetOverlay but no FleetOverlayResolver "+
-			"is configured on this KA instance; proceeding without remote-cluster tools",
+		inv.logger.Error(nil, "fleet-target investigation reached prescopeFleetOverlay but no FleetOverlayResolver "+
+			"is configured on this KA instance; failing closed rather than falling back to local/hub tools",
 			"cluster_id", clusterID,
 		)
 		inv.emitFleetOverlayUnavailableAudit(ctx, clusterID, correlationID)
-		return ctx
+		return ctx, fmt.Errorf("fleet tool overlay unavailable for cluster %q: no FleetOverlayResolver configured "+
+			"on this kubernaut-agent instance", clusterID)
 	}
 	overlay, err := inv.fleetOverlayResolver.Overlay(ctx, clusterID)
 	if err != nil {
-		inv.logger.Error(err, "fleet tool overlay resolution failed; investigation proceeds without remote-cluster tools",
+		inv.logger.Error(err, "fleet tool overlay resolution failed; failing closed rather than falling back to local/hub tools",
 			"cluster_id", clusterID,
 		)
 		inv.emitFleetOverlayFailedAudit(ctx, clusterID, correlationID, err)
-		return ctx
+		return ctx, fmt.Errorf("fleet tool overlay unavailable for cluster %q: %w", clusterID, err)
 	}
 	ctx = audit.WithClusterID(ctx, clusterID)
-	return WithFleetOverlay(ctx, overlay)
+	return WithFleetOverlay(ctx, overlay), nil
 }
 
 // emitFleetOverlayFailedAudit records the AU-3 audit event for a failed fleet

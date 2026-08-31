@@ -64,8 +64,8 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			Expect(cfg.Sync.Interval).To(Equal(30 * time.Second))
 			Expect(cfg.Sync.KeyTTL).To(Equal(45 * time.Second))
 			Expect(cfg.Sync.ResourceKinds).To(ConsistOf(
-				"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node",
-			))
+				"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node", "Namespace",
+			), "Namespace must be synced by default so scopecache.Client can fall back to namespace-level kubernaut.ai/managed labels on fleet clusters (Issue #2311)")
 			Expect(cfg.OAuth2.CredentialsDir).To(Equal("/etc/fleetmetadatacache/fleet-oauth2"))
 			Expect(cfg.OAuth2.TokenURL).To(BeEmpty())
 			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}))
