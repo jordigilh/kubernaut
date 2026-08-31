@@ -459,6 +459,16 @@ rules:
     resources: ["mcpserverregistrations"]
     verbs: ["get", "list", "watch"]
   {{- end }}
+  {{- if and (ne $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") (ne $apifrontendFleetPreamble.config.mcpGatewayType "") (not .Values.apifrontend.fleet.namespace) }}
+  # BR-FLEET-054: AF's ClusterRegistry watches Backend/MCPRoute CRs directly
+  # via a dynamic informer when the Envoy AI Gateway is used.
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backends"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aigateway.envoyproxy.io"]
+    resources: ["mcproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -475,11 +485,11 @@ subjects:
   - kind: ServiceAccount
     name: apifrontend
     namespace: {{ .Release.Namespace }}
-{{- if and (eq $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") .Values.apifrontend.fleet.namespace }}
+{{- if and .Values.apifrontend.fleet.namespace (ne $apifrontendFleetPreamble.config.mcpGatewayType "") }}
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
 # above, granted instead of it when apifrontend.fleet.namespace is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "apifrontend" "serviceAccount" "apifrontend" "namespace" .Values.apifrontend.fleet.namespace "appLabels" "app: apifrontend" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "apifrontend" "serviceAccount" "apifrontend" "namespace" .Values.apifrontend.fleet.namespace "appLabels" "app: apifrontend" "mcpServerRegistrations" (eq $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 # RoleBinding granting AF SA access to KA service (trusted intermediary, #1287)
