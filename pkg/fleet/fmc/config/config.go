@@ -27,6 +27,7 @@ import (
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
@@ -131,9 +132,12 @@ func DefaultServiceConfig() *ServiceConfig {
 			Addr: "valkey:6379",
 		},
 		Sync: SyncConfig{
-			Interval:           30 * time.Second,
-			KeyTTL:             45 * time.Second,
-			ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
+			Interval: 30 * time.Second,
+			KeyTTL:   45 * time.Second,
+			// Reuses fmc.DefaultResourceKinds rather than a hand-maintained
+			// copy -- see that var's doc comment (Issue #2311) for why a
+			// second copy here is exactly what let this drift before.
+			ResourceKinds:      fmc.DefaultResourceKinds,
 			WaitForBrokerReady: true,
 		},
 		OAuth2: OAuth2Config{

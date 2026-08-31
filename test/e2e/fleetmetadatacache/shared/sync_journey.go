@@ -114,5 +114,52 @@ func SyncJourney(h *Harness, v Variant) bool {
 					"resource labeled kubernaut.ai/managed=true should be discovered by FMC's real sync pipeline")
 			}, SyncTimeout, Interval).Should(Succeed())
 		})
+
+		// Issue #2311: every fixture in this suite (and its siblings in this
+		// package) labels the RESOURCE itself directly. None ever proved the
+		// namespace-inheritance half of the 2-level hierarchy (ADR-053,
+		// BR-SCOPE-001) for the fleet path -- unlike
+		// pkg/shared/scope/manager_test.go's UT-SCOPE-001-004..013, which has
+		// covered it for the LOCAL path all along. That one-sided coverage is
+		// how the fleet scope chain silently regressed to a stricter,
+		// resource-only variant: nothing in UT, IT, or E2E exercised it. This
+		// spec drives the real end-to-end journey (Keycloak OAuth2 -> gateway
+		// -> kube-mcp-server RFC 8693 token exchange -> FMC's real Namespace
+		// sync -> Valkey -> HTTP scope check) the same way the spec above
+		// does, so the fix is proven at every pyramid tier, not just UT/IT
+		// with mocked or manually-seeded dependencies.
+		It("marks an unlabeled Service as managed via its namespace's kubernaut.ai/managed=true label after a real sync cycle (Issue #2311, SC-7, AC-3)", func() {
+			nsManagedByNamespace := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   fmt.Sprintf("%s-nsmanaged-%d", v.ResourcePrefix(), time.Now().UnixNano()),
+					Labels: map[string]string{"kubernaut.ai/managed": "true"},
+				},
+			}
+			Expect(h.K8sClient.Create(h.Ctx, nsManagedByNamespace)).To(Succeed())
+			DeferCleanup(func() {
+				_ = h.K8sClient.Delete(h.Ctx, nsManagedByNamespace)
+			})
+
+			svcName := v.ResourcePrefix() + "-ns-inherited-svc"
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      svcName,
+					Namespace: nsManagedByNamespace.Name,
+					// Deliberately no kubernaut.ai/managed label on the
+					// resource itself -- only the namespace carries it.
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{{Port: 80}},
+				},
+			}
+			Expect(h.K8sClient.Create(h.Ctx, svc)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				managed := ScopeCheck(g, h, "loopback-cluster", "", "v1", "Service", nsManagedByNamespace.Name, svcName)
+				g.Expect(managed).To(BeTrue(),
+					"an unlabeled resource in a namespace labeled kubernaut.ai/managed=true must be discovered as "+
+						"managed by FMC's real sync pipeline, matching local scope-check behavior (ADR-053 parity)")
+			}, SyncTimeout, Interval).Should(Succeed())
+		})
 	})
 }
