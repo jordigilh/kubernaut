@@ -235,8 +235,8 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
-	Describe("IT-KA-FLEET-020 [AU-3]: a failed overlay resolution fails open and is independently observable via audit", func() {
-		It("proceeds with the investigation and records an EventTypeFleetOverlayFailed audit event carrying the cluster and correlation IDs", func() {
+	Describe("IT-KA-FLEET-020 [AU-3, Issue #2312]: a failed overlay resolution fails closed and is independently observable via audit", func() {
+		It("aborts the investigation and records an EventTypeFleetOverlayFailed audit event carrying the cluster and correlation IDs", func() {
 			resolveErr := errors.New("fleet gateway unreachable")
 			spy := &fleetOverlayResolverSpy{err: resolveErr}
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
@@ -267,10 +267,12 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
 				RemediationID: "rem-fleet-overlay-failed-001",
 			})
-			Expect(err).NotTo(HaveOccurred(),
-				"IT-KA-FLEET-020: a degraded fleet dependency must fail open — the investigation "+
-					"itself must still complete (GA Readiness Dimension 12: no silent failures, but "+
-					"also no investigation-aborting cascading failures)")
+			Expect(err).To(HaveOccurred(),
+				"IT-KA-FLEET-020: a degraded fleet dependency (e.g. MCP gateway/kube-mcp-server "+
+					"unreachable) must fail closed — the local/hub cluster is never a substitute for "+
+					"the actual target cluster's tools, so continuing would silently investigate the "+
+					"wrong cluster (Issue #2312, amends ADR-068 decision #11's original fail-open text)")
+			Expect(err.Error()).To(ContainSubstring("remote-east"))
 
 			var failureEvents []*audit.AuditEvent
 			for _, ev := range auditStore.events {
@@ -888,8 +890,8 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 	// investigator.Config{} without the field set) via the actual
 	// production entry points (Investigate/RunInteractiveTurn), not a
 	// hand-constructed *Investigator struct literal.
-	Describe("IT-KA-FLEET-029 [AU-3, GA Readiness Dim. 12]: an unconfigured FleetOverlayResolver is observable through the production entry points", func() {
-		It("Investigate() emits EventTypeFleetOverlayUnavailable for a fleet-target investigation when FleetOverlayResolver is unset", func() {
+	Describe("IT-KA-FLEET-029 [AU-3, GA Readiness Dim. 12, Issue #2312]: an unconfigured FleetOverlayResolver fails closed and is observable through the production entry points", func() {
+		It("Investigate() fails closed and emits EventTypeFleetOverlayUnavailable for a fleet-target investigation when FleetOverlayResolver is unset", func() {
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				{
@@ -919,9 +921,10 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
 				RemediationID: "rem-fleet-overlay-unavailable-001",
 			})
-			Expect(err).NotTo(HaveOccurred(),
-				"IT-KA-FLEET-029: an unconfigured fleet resolver must fail open through the real "+
-					"Investigate() entry point too, exactly like a resolver error does (IT-KA-FLEET-020)")
+			Expect(err).To(HaveOccurred(),
+				"IT-KA-FLEET-029: an unconfigured fleet resolver must fail closed through the real "+
+					"Investigate() entry point too, exactly like a resolver error does (IT-KA-FLEET-020, "+
+					"Issue #2312)")
 
 			var unavailableEvents []*audit.AuditEvent
 			for _, ev := range auditStore.events {
@@ -939,7 +942,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				"CC8.1: reconstructable by the investigation's own correlation ID, like IT-KA-FLEET-020")
 		})
 
-		It("RunInteractiveTurn emits EventTypeFleetOverlayUnavailable for a fleet-target interactive turn when FleetOverlayResolver is unset", func() {
+		It("RunInteractiveTurn fails closed and emits EventTypeFleetOverlayUnavailable for a fleet-target interactive turn when FleetOverlayResolver is unset", func() {
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
 			}}
@@ -961,7 +964,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 			_, err := inv.RunInteractiveTurn(ctx, []llm.Message{
 				{Role: "user", Content: "what is wrong with the deployment?"},
 			}, "rem-interactive-fleet-unavailable-001")
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred(),
+				"IT-KA-FLEET-029: an unconfigured fleet resolver must fail closed for an interactive "+
+					"turn too, mirroring Investigate() (Issue #2312)")
 
 			var unavailableEvents []*audit.AuditEvent
 			for _, ev := range auditStore.events {
