@@ -95,8 +95,12 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 				Name: "fleet_organic_gw_signal",
 				Labels: map[string]string{
 					"namespace": namespace,
-					"kind":      "Deployment",
-					"name":      targetName,
+					// Must match the rule's expr label matcher AND the label-key
+					// convention Gateway's extractTargetResource expects (the
+					// lowercase Kind as the label KEY, e.g. "deployment", not a
+					// literal "kind"/"name" pair -- see buildPrometheusAlertWithCluster
+					// in 01_signal_ingestion_test.go for the same convention).
+					"deployment": targetName,
 				},
 				Value:     1,
 				Timestamp: time.Now(),

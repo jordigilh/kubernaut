@@ -113,7 +113,7 @@ var _ = Describe("E2E-FLEET-EAIGW: Envoy AI Gateway Pipeline", Label("fleet"), f
 
 		By("Verifying the shared MCPRoute exists")
 		routeCmd := exec.CommandContext(context.Background(),
-			"kubectl", "get", "mcproute.gateway.envoyproxy.io",
+			"kubectl", "get", "mcproute.aigateway.envoyproxy.io",
 			"-n", namespace, "--kubeconfig", kubeconfigPath,
 			"-o", "name")
 		routeOut, routeErr := routeCmd.Output()

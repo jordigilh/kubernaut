@@ -70,7 +70,6 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Priority:              "high",
 			RiskTolerance:         "medium",
 			BusinessCategory:      "test",
-			ClusterName:           "kubernaut-agent-e2e",
 		}
 	}
 

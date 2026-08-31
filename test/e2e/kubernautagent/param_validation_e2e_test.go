@@ -64,7 +64,6 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================

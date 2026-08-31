@@ -52,7 +52,6 @@ var _ = Describe("E2E-KA-1390-001: Nil-Result Resilience", Label("e2e", "ka", "1
 			Priority:              "P2",
 			RiskTolerance:         "high",
 			BusinessCategory:      "standard",
-			ClusterName:           "e2e-test",
 		}
 
 		By("creating the AgentSession and waiting for a terminal phase")

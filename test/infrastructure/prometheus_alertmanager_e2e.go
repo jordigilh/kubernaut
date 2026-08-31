@@ -331,7 +331,13 @@ data:
       interval: 10s
       rules:
       - alert: FleetOrganicGatewayAlert
-        expr: fleet_organic_gw_signal{namespace="kubernaut-system", kind="Deployment", name="fleet-organic-gw-target"} > 0
+        # Gateway's extractTargetResource (pkg/gateway/adapters/prometheus_adapter.go)
+        # resolves the target Kind/Name from a label KEY matching a K8s resource's
+        # lowercase singular name (e.g. "deployment": "<name>"), the same convention
+        # buildPrometheusAlertWithCluster uses for every other fleet alert -- a
+        # literal "kind"/"name" label pair is not recognized and resolves to
+        # Unknown/unknown, which owner-resolution then drops (target not found).
+        expr: fleet_organic_gw_signal{namespace="kubernaut-system", deployment="fleet-organic-gw-target"} > 0
         for: 0s
         labels:
           severity: warning

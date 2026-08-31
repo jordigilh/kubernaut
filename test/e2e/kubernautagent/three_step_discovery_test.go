@@ -85,7 +85,6 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
@@ -148,7 +147,6 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 
 			// ========================================
