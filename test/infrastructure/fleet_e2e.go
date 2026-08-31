@@ -80,6 +80,13 @@ const (
 	// EAIGW FMC E2E lane's Gateway listener (next in the Kuadrant-31975 block).
 	eaigwGatewayNodePort = 31976
 
+	// gatewayLabelKuadrant/gatewayLabelEAIGW: human-readable gateway-type
+	// labels shared across provisionFleetCoreInfra/DeployFleetCoreInfra
+	// (fleet_e2e.go) and setupFMCE2EInfrastructure (fleetmetadatacache_e2e.go)
+	// -- goconst (Issue #1546 Tier 4).
+	gatewayLabelKuadrant = "Kuadrant MCP Gateway"
+	gatewayLabelEAIGW    = "Envoy AI Gateway (EAIGW)"
+
 	// KubeMCPServerAuthModeKubeconfig makes kube-mcp-server ignore any
 	// caller-forwarded Authorization header and always use its own
 	// ServiceAccount (ADR-068 Decision #9, "no token delegation"). This is
@@ -259,7 +266,7 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 // It composes on the fullpipeline setup (which already deploys GW, SP, RO, WE,
 // AA, EM, KA, AF, DS, DEX, Prometheus, AlertManager, etc.) and adds the fleet-
 // specific infrastructure on top. The Kind cluster config must include the fleet
-// NodePort mapping (31975 for Kuadrant MCP) -- already present in
+// NodePort mapping (31976 for EAIGW MCP) -- already present in
 // kind-fullpipeline-config.yaml.
 //
 // Unlike the FMC E2E lanes' loopback pattern, this suite backs EVERY
@@ -299,7 +306,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet E2E Infrastructure (Issue #54)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Base: Full Pipeline (all services), fleet-enabled from the FIRST helm install (DD-TEST-015)")
-	_, _ = fmt.Fprintln(writer, "  Fleet: Kuadrant MCP Gateway + chart-managed FMC + Valkey, ALL registrations remote (DD-TEST-013)")
+	_, _ = fmt.Fprintln(writer, "  Fleet: Envoy AI Gateway (EAIGW) + chart-managed FMC + Valkey, ALL registrations remote (DD-TEST-013)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	cleanStaleTarFiles(writer)
@@ -319,9 +326,15 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	provisioner := func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetHelmOptions, error) {
 		// keycloakNamespace=namespace: unchanged behavior for this Ginkgo-
 		// suite path (see provisionFleetCoreInfra's doc comment).
-		// gatewayType=GatewayKuadrant explicitly: this suite's own doc
-		// comment above advertises "Kuadrant MCP Gateway", unchanged.
-		fleetOpts, rkp, err := provisionFleetCoreInfra(ctx, clusterName, kubeconfigPath, namespace, namespace, registry.GatewayKuadrant, writer)
+		// gatewayType=GatewayEAIGW: kubernaut#2309 found Kuadrant's static
+		// broker credential (used for its self-initiated tool-discovery
+		// connection to kube-mcp-server) to be a structural SPOF -- no
+		// hot-reload, manual rotation only -- so this suite (the primary
+		// fleet journey coverage) moved to EAIGW, which forwards the
+		// caller's own token instead of relying on a cached credential.
+		// Kuadrant itself stays covered by its own standalone FMC E2E lane
+		// (test/e2e/fleetmetadatacache, non-eaigw variant).
+		fleetOpts, rkp, err := provisionFleetCoreInfra(ctx, clusterName, kubeconfigPath, namespace, namespace, registry.GatewayEAIGW, writer)
 		remoteKubeconfigPath = rkp
 		return fleetOpts, err
 	}
@@ -333,7 +346,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
-	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote_cluster_")
+	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote-cluster__ (EAIGW convention)")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:   %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -375,9 +388,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
-	gatewayLabel := "Kuadrant MCP Gateway"
+	gatewayLabel := gatewayLabelKuadrant
 	if gatewayType == registry.GatewayEAIGW {
-		gatewayLabel = "Envoy AI Gateway (EAIGW)"
+		gatewayLabel = gatewayLabelEAIGW
 	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet-core infrastructure only (no Kubernaut helm install)")
@@ -623,20 +636,22 @@ func provisionFleetCoreInfra(ctx context.Context, clusterName, kubeconfigPath, n
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
-	gatewayLabel := "Kuadrant MCP Gateway"
+	gatewayLabel := gatewayLabelKuadrant
 	// DD-TEST-001-allocated NodePorts: 31975 (Kuadrant) / 31976 (EAIGW).
 	mcpGatewayNodePort := 31975
-	// EAIGW's Backend/MCPRoute registrations are never renamed to
-	// "remote-cluster" the way Kuadrant's MCPServerRegistration is when
-	// AllRegistrationsRemote is set below (see deployEnvoyAIGatewayRegistrations
-	// vs deployKuadrantRegistrations) -- the tool-name prefix EAIGW
-	// auto-derives from the Backend name stays "loopback-cluster__"
-	// regardless of AllRegistrationsRemote.
+	// provisionFleetCoreInfra always sets AllRegistrationsRemote=true below
+	// (both its callers -- the "fleet" Ginkgo suite and the demo entry point
+	// -- back every registration with a genuinely remote cluster), so
+	// EAIGW's first Backend/MCPRoute registration is always renamed
+	// "remote-cluster" (mirroring Kuadrant's MCPServerRegistration renaming
+	// -- see loopbackClusterName in deployEnvoyAIGatewayRegistrations and
+	// deployKuadrantRegistrations), and its auto-derived tool-name prefix is
+	// "remote-cluster__" accordingly.
 	remoteToolPrefix := "remote_cluster_"
 	if gatewayType == registry.GatewayEAIGW {
-		gatewayLabel = "Envoy AI Gateway (EAIGW)"
+		gatewayLabel = gatewayLabelEAIGW
 		mcpGatewayNodePort = eaigwGatewayNodePort
-		remoteToolPrefix = "loopback-cluster__"
+		remoteToolPrefix = "remote-cluster__"
 	}
 
 	// ── Keycloak OIDC + RFC 8693 token-exchange provider (replaces Dex) ──
@@ -1412,13 +1427,14 @@ spec:
 }
 
 // deployEnvoyAIGatewayRegistrations creates the three Backends
-// (loopback-cluster, prod-east, prod-west) plus the single shared MCPRoute
-// that aggregates them -- EAIGW's equivalent of Kuadrant's HTTPRoute +
-// MCPServerRegistrations. EAIGW has no separate broker component:
+// (loopback-cluster/remote-cluster, prod-east, prod-west) plus the single
+// shared MCPRoute that aggregates them -- EAIGW's equivalent of Kuadrant's
+// HTTPRoute + MCPServerRegistrations. EAIGW has no separate broker component:
 // MCPRoute.spec.backendRefs natively aggregates multiple Backends, and each
 // backend's tools are auto-prefixed "{backendRefs[].name}__{toolName}" with
 // zero extra config (Spike S18 mini-spike, confirmed for 3 simultaneous
-// backends).
+// backends). See loopbackClusterName below for why the first Backend is
+// renamed "remote-cluster" when AllRegistrationsRemote is set.
 func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
 
@@ -1437,6 +1453,18 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 	loopbackHostname := kubeMCPHostname
 	prodEastHostname, prodEastPort := kubeMCPHostname, 8080
 	prodWestHostname := kubeMCPHostname
+
+	// The first Backend is named/prefixed "loopback-cluster" EXCEPT when
+	// AllRegistrationsRemote is set (the "fleet" suite): there, it is backed
+	// by the genuinely remote bridge cluster, so it is renamed
+	// "remote-cluster" (tool prefix becomes "remote-cluster__") to match
+	// deployKuadrantRegistrations' identical loopbackClusterName renaming --
+	// every fleet test hardcodes "remote-cluster" as its target identity, so
+	// both gateway implementations must expose that same cluster name.
+	loopbackClusterName := "loopback-cluster"
+	if authConfig.AllRegistrationsRemote {
+		loopbackClusterName = "remote-cluster"
+	}
 	if rb := authConfig.RemoteBridge; rb != nil {
 		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
 		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
@@ -1482,10 +1510,15 @@ spec:
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
-  name: loopback-cluster
+  name: %[12]s
   namespace: %[1]s
   labels:
     kubernaut.ai/managed: "true"
+    # BR-FLEET-003 (#1511): fleet onboarding label consumed by SP's Rego
+    # cluster rule (input.cluster.labels.environment) via ClusterRegistry --
+    # mirrors deployKuadrantRegistrations' identical label on its renamed
+    # "remote-cluster" MCPServerRegistration.
+    environment: "production"
 spec:
   endpoints:
   - fqdn:
@@ -1536,7 +1569,7 @@ spec:
   backendRefs:
   - group: gateway.envoyproxy.io
     kind: Backend
-    name: loopback-cluster
+    name: %[12]s
     forwardHeaders:
     - name: Authorization
   - group: gateway.envoyproxy.io
@@ -1563,12 +1596,12 @@ spec:
             port: 8443
       protectedResourceMetadata:
         resource: %[7]q
-`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint, prodEastHostname, prodEastPort, loopbackHostname, prodWestHostname)
+`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint, prodEastHostname, prodEastPort, loopbackHostname, prodWestHostname, loopbackClusterName)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("backend/MCPRoute creation failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "    ✅ Backends + MCPRoute created (loopback-cluster, prod-east, prod-west)")
+	_, _ = fmt.Fprintf(writer, "    ✅ Backends + MCPRoute created (%s, prod-east, prod-west)\n", loopbackClusterName)
 	return nil
 }
 

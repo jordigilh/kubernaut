@@ -102,6 +102,14 @@ nodes:
   - containerPort: 31975  # Kuadrant Istio gateway MCP NodePort
     hostPort: 31975       # DD-TEST-001: MCP Gateway
     protocol: TCP
+  # Fleet: Envoy AI Gateway (EAIGW) MCP Gateway -- this suite's active
+  # gateway (Kuadrant's static broker credential proved a structural SPOF,
+  # kubernaut#2309; Kuadrant itself stays covered by its own standalone FMC
+  # E2E lane). Both mappings are kept side by side since Kubernaut only runs
+  # one gateway at a time but this Kind config is shared infra.
+  - containerPort: 31976  # Envoy AI Gateway generated-Service MCP NodePort
+    hostPort: 31976       # DD-TEST-001: EAIGW MCP Gateway
+    protocol: TCP
   # Fleet: Keycloak OIDC + RFC 8693 Standard Token Exchange (replaces DEX
   # for kube-mcp-server passthrough auth and the K8s API server's OIDC
   # trust -- DEX has no Standard Token Exchange, Spike S17/S20). Same

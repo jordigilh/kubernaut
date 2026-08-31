@@ -174,7 +174,8 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 			g.Expect(sp).ToNot(BeNil(), "SP should be created for the fleet signal")
 			g.Expect(sp.Status.GetSignalClassification().ClusterClassification).To(Equal("production"),
 				"BR-FLEET-003: SP Rego must classify remote-cluster as 'production' "+
-					"from the MCPServerRegistration's environment=production onboarding label")
+					"from the EAIGW Backend's environment=production onboarding label "+
+					"(Kuadrant's MCPServerRegistration carries the same label)")
 		}, timeout, interval).Should(Succeed())
 
 		By("Step 4: Verifying AIAnalysis carries the propagated cluster classification (RO buildSignalContext(), IT-RO-1511-001 wiring)")

@@ -84,12 +84,12 @@ func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfig
 }
 
 func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
-	gatewayLabel := "Kuadrant MCP Gateway"
+	gatewayLabel := gatewayLabelKuadrant
 	kindConfigPath := "test/infrastructure/kind-fleetmetadatacache-config.yaml"
 	mcpGatewayNodePort := 31975
 	loopbackToolPrefix := "loopback_cluster_"
 	if gatewayType == registry.GatewayEAIGW {
-		gatewayLabel = "Envoy AI Gateway (EAIGW)"
+		gatewayLabel = gatewayLabelEAIGW
 		kindConfigPath = "test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml"
 		mcpGatewayNodePort = eaigwGatewayNodePort
 		// EAIGW does not support an explicit tool-name prefix (unlike Kuadrant's
