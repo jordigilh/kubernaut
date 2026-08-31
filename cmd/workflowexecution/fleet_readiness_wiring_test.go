@@ -26,8 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
+	infrastructure "github.com/jordigilh/kubernaut/test/infrastructure"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -93,6 +96,75 @@ func TestBuildClientFactory_EnabledUnreachable_RetainsClient(t *testing.T) {
 	t.Cleanup(func() { _ = fc.Close() })
 	if fc.Ready() {
 		t.Error("IT-WE-1553-001: the kept client must not report Ready() when its initial connection failed")
+	}
+}
+
+// TestBuildClientFactory_SelfHeals_AfterInitialFailure proves issue #2315's
+// fix end-to-end for WE: the SAME ClientFactory returned when the initial
+// MCP Gateway connect attempt fails must start routing to the remote
+// cluster once the gateway becomes reachable, without a restart. Uses
+// test/infrastructure.InterruptibleProxy to force a deterministic initial
+// connect failure (Pause) then simulate the gateway coming back (Resume),
+// exactly as an already-adopted E2E pattern
+// (test/e2e/fullpipeline/05_mcp_interactive_lifecycle_test.go) does for the
+// same "gateway unreachable then reachable again" scenario.
+func TestBuildClientFactory_SelfHeals_AfterInitialFailure(t *testing.T) {
+	gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+	t.Cleanup(gw.Close)
+
+	proxy, err := infrastructure.NewInterruptibleProxy(gw.URL()[len("http://"):])
+	if err != nil {
+		t.Fatalf("failed to start interruptible proxy: %v", err)
+	}
+	t.Cleanup(proxy.Close)
+	proxy.Pause()
+
+	cfg := weconfig.DefaultConfig()
+	cfg.Fleet.Endpoint = "http://" + proxy.Addr()
+	cfg.Fleet.Resilience = fleet.FleetResilienceConfig{
+		InitialInterval: 50 * time.Millisecond,
+		MaxInterval:     100 * time.Millisecond,
+		MaxElapsedTime:  500 * time.Millisecond,
+		ConnectTimeout:  200 * time.Millisecond,
+	}
+	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	factory, fc := buildClientFactory(ctx, cfg, localClient, logr.Discard())
+	if fc == nil {
+		t.Fatal("*mcpclient.ResilientClient must be returned even when the initial connect fails")
+	}
+	t.Cleanup(func() { _ = fc.Close() })
+	if fc.Ready() {
+		t.Fatal("must start disconnected: the proxy is paused")
+	}
+
+	if _, err := factory.ClientFor(ctx, "remote-cluster"); err == nil {
+		t.Fatal("ClientFor must fail while the gateway is unreachable through the paused proxy")
+	}
+
+	// Mirrors production wiring (wireFleetReadinessGate): the periodic
+	// probe is what actually drives ResilientClient's background
+	// reconnect. Use a short interval here instead of production's 15s.
+	gate := readiness.NewGate(100*time.Millisecond, logr.Discard(), &readiness.MCPClientProber{Client: fc})
+	gate.Start(ctx)
+	t.Cleanup(gate.Stop)
+
+	proxy.Resume()
+
+	deadline := time.Now().Add(10 * time.Second)
+	var clientErr error
+	for time.Now().Before(deadline) {
+		if _, clientErr = factory.ClientFor(ctx, "remote-cluster"); clientErr == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if clientErr != nil {
+		t.Fatalf("issue #2315: the SAME ClientFactory returned at startup must succeed once the gateway "+
+			"becomes reachable, with no restart; last error: %v", clientErr)
 	}
 }
 

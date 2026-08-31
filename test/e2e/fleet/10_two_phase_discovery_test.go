@@ -29,44 +29,47 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
-// E2E-FLEET-DISC: Two-phase discovery journey through Kuadrant MCP Gateway.
+// E2E-FLEET-DISC: Two-phase discovery journey through Envoy AI Gateway (EAIGW).
 //
 // This suite proves the Pyramid Invariant's E2E layer for the
-// GatewayDiscoverer's own two-phase protocol (discover_tools → select_tools
-// → ListTools), in isolation from any caller:
+// GatewayDiscoverer's own two-phase protocol (ListTools scan → filter by
+// "{clusterID}__" prefix), in isolation from any caller:
 //
-//	ListClusters (discover_tools) → ToolsForCluster (select_tools + ListTools)
+//	ListClusters (tools/list scan) → ToolsForCluster (prefix filter)
 //	→ tool call succeeds
 //
 // This is a client-protocol test, not a KA production-flow test. KA itself
 // no longer drives this sequence at investigation time — per DD-FLEET-005
 // (issue #1732), KA pre-scopes server-side via ToolsForCluster(signal.ClusterID)
 // alone, and never calls ListClusters or lets the LLM pick a cluster.
-// ListClusters remains exercised here (and used internally by
-// KuadrantDiscoverer.ToolsForCluster, see discovery_kuadrant.go) as part of
-// the GatewayDiscoverer contract other programmatic callers (SP, WE, FMC,
-// EM) may rely on.
+// ListClusters remains exercised here as part of the GatewayDiscoverer
+// contract other programmatic callers (SP, WE, FMC, EM) may rely on.
+//
+// This suite moved from Kuadrant to EAIGW (kubernaut#2309: Kuadrant's static
+// broker credential proved a structural SPOF). Kuadrant's own
+// discover_tools/select_tools meta-tool protocol stays covered by
+// KuadrantDiscoverer's unit tests plus the standalone FMC E2E lane.
 //
 // Authority: Issue #54, ADR-068 decision #11 (as amended by DD-FLEET-005), BR-FLEET-054
 // FedRAMP: CM-6 (Configuration Settings), AC-3 (Access Enforcement)
 var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), func() {
 
-	It("E2E-FLEET-DISC-001 [CM-6]: ListClusters discovers remote-cluster via discover_tools meta-tool", func() {
+	It("E2E-FLEET-DISC-001 [CM-6]: ListClusters discovers remote-cluster via the EAIGW tools/list prefix scan", func() {
 		mcpCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
-		By("Connecting to Kuadrant MCP gateway")
+		By("Connecting to EAIGW")
 		authClient, err := fleetAuthenticatedHTTPClient()
 		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
 		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway")
 		defer c.Close()
 
-		By("Creating KuadrantDiscoverer via factory")
-		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayKuadrant, c.Session())
-		Expect(err).ToNot(HaveOccurred(), "factory must create KuadrantDiscoverer")
+		By("Creating EAIGWDiscoverer via factory")
+		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayEAIGW, c.Session())
+		Expect(err).ToNot(HaveOccurred(), "factory must create EAIGWDiscoverer")
 
-		By("Calling ListClusters (wraps discover_tools)")
+		By("Calling ListClusters (scans tools/list for the \"{clusterID}__\" prefix)")
 		var clusters []mcpclient.ClusterInfo
 		Eventually(func(g Gomega) {
 			clusters, err = discoverer.ListClusters(mcpCtx, "")
@@ -76,27 +79,27 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 				names = append(names, cl.Name)
 			}
 			g.Expect(names).To(ContainElement("remote-cluster"),
-				"CM-6: remote-cluster must be discoverable via discover_tools")
+				"CM-6: remote-cluster must be discoverable via the EAIGW-generated tool prefix")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
 	})
 
-	It("E2E-FLEET-DISC-002 [AC-3]: ToolsForCluster returns scoped tools for remote-cluster via select_tools", func() {
+	It("E2E-FLEET-DISC-002 [AC-3]: ToolsForCluster returns scoped tools for remote-cluster via prefix filtering", func() {
 		mcpCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
-		By("Connecting to Kuadrant MCP gateway")
+		By("Connecting to EAIGW")
 		authClient, err := fleetAuthenticatedHTTPClient()
 		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
 		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred())
 		defer c.Close()
 
-		By("Creating KuadrantDiscoverer")
-		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayKuadrant, c.Session())
+		By("Creating EAIGWDiscoverer")
+		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayEAIGW, c.Session())
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Calling ToolsForCluster (wraps select_tools + ListTools)")
+		By("Calling ToolsForCluster (filters tools/list by the \"remote-cluster__\" prefix)")
 		var tools []mcpclient.ToolDefinition
 		Eventually(func(g Gomega) {
 			tools, err = discoverer.ToolsForCluster(mcpCtx, "remote-cluster")
@@ -105,13 +108,13 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 			for _, t := range tools {
 				names = append(names, t.Name)
 			}
-			g.Expect(names).To(ContainElement("remote_cluster_namespaces_list"),
+			g.Expect(names).To(ContainElement("remote-cluster__namespaces_list"),
 				"AC-3: scoped tools must include namespaces_list for remote-cluster")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
-		By("Verifying tool names use the remote_cluster_ prefix")
+		By("Verifying tool names use the remote-cluster__ prefix")
 		for _, tool := range tools {
-			Expect(tool.Name).To(HavePrefix("remote_cluster_"),
+			Expect(tool.Name).To(HavePrefix("remote-cluster__"),
 				"AC-3: all scoped tools must carry the cluster prefix")
 		}
 
@@ -120,7 +123,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		for _, tool := range tools {
 			toolNames = append(toolNames, tool.Name)
 		}
-		Expect(toolNames).To(ContainElement("remote_cluster_namespaces_list"),
+		Expect(toolNames).To(ContainElement("remote-cluster__namespaces_list"),
 			"kube-mcp-server must expose namespaces_list through the gateway")
 	})
 
@@ -128,7 +131,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		mcpCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
-		By("Connecting to Kuadrant MCP gateway")
+		By("Connecting to EAIGW")
 		authClient, err := fleetAuthenticatedHTTPClient()
 		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
 		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
@@ -136,7 +139,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		defer c.Close()
 
 		By("Phase 1: ListClusters — discover available clusters")
-		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayKuadrant, c.Session())
+		discoverer, err := mcpclient.NewDiscoverer(registry.GatewayEAIGW, c.Session())
 		Expect(err).ToNot(HaveOccurred())
 
 		var clusters []mcpclient.ClusterInfo
@@ -148,7 +151,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 				names = append(names, cl.Name)
 			}
 			g.Expect(names).To(ContainElement("remote-cluster"),
-				"discover_tools must return remote-cluster")
+				"the tools/list prefix scan must return remote-cluster")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("Phase 2: ToolsForCluster — scope session to remote-cluster")
@@ -158,7 +161,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		for _, t := range tools {
 			scopedNames = append(scopedNames, t.Name)
 		}
-		Expect(scopedNames).To(ContainElement("remote_cluster_namespaces_list"),
+		Expect(scopedNames).To(ContainElement("remote-cluster__namespaces_list"),
 			"scoped tools must include namespaces_list")
 
 		By("Phase 3: Call a discovered tool — namespaces_list via the scoped session")
@@ -173,7 +176,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		var result *mcp.CallToolResult
 		Eventually(func(g Gomega) {
 			result, err = c.Session().CallTool(mcpCtx, &mcp.CallToolParams{
-				Name: "remote_cluster_namespaces_list",
+				Name: "remote-cluster__namespaces_list",
 			})
 			g.Expect(err).ToNot(HaveOccurred(),
 				"AC-3: tool call through two-phase discovery must succeed end-to-end")

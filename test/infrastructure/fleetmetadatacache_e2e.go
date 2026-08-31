@@ -84,12 +84,12 @@ func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfig
 }
 
 func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
-	gatewayLabel := "Kuadrant MCP Gateway"
+	gatewayLabel := gatewayLabelKuadrant
 	kindConfigPath := "test/infrastructure/kind-fleetmetadatacache-config.yaml"
 	mcpGatewayNodePort := 31975
 	loopbackToolPrefix := "loopback_cluster_"
 	if gatewayType == registry.GatewayEAIGW {
-		gatewayLabel = "Envoy AI Gateway (EAIGW)"
+		gatewayLabel = gatewayLabelEAIGW
 		kindConfigPath = "test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml"
 		mcpGatewayNodePort = eaigwGatewayNodePort
 		// EAIGW does not support an explicit tool-name prefix (unlike Kuadrant's
@@ -160,7 +160,9 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 
 	// ── Phase 5: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5: Deploying Keycloak OIDC provider...")
-	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, writer); kcErr != nil {
+	// persistent=false: this lane is short-lived (BR-PLATFORM-014 scopes
+	// persistence to the demo entry point only), same behavior as before.
+	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, false, writer); kcErr != nil {
 		return "", "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 
@@ -177,7 +179,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
 	}
-	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, writer); oidcErr != nil {
+	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, namespace, writer); oidcErr != nil {
 		return "", "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
 	}
 
@@ -203,9 +205,21 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		StsScopes:        []string{"k8s-api-audience"},
 		CAFilePath:       "/etc/tls-ca/ca.crt",
 	}
-	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, namespace, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
+	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
 	if remoteErr != nil {
 		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
+	}
+
+	// Issue #2314: SetupRemoteClusterForFMC only creates remoteMCPServerNamespace
+	// (mcp-system) on the remote cluster -- kubernaut-system (namespace) never
+	// existed there. shared/cross_cluster_isolation.go's E2E-FMC-054-015
+	// creates a Service directly in it on the remote cluster (h.Namespace),
+	// which fails with "namespaces \"kubernaut-system\" not found" now that
+	// the remote cluster is genuinely separate (DD-TEST-013) rather than a
+	// loopback pointing at the primary's own Helm-managed namespace.
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #2314)...\n", namespace)
+	if err := CreateTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
+		return "", "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", namespace, err)
 	}
 
 	// ── Phase 7: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
@@ -369,6 +383,46 @@ subjects:
 		return err
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (view)")
+
+	// The built-in "view" ClusterRole deliberately excludes cluster-scoped
+	// Node resources (upstream Kubernetes convention). FMC's Syncer lists
+	// Node alongside namespaced kinds (syncer.go's kind list), so grant a
+	// minimal supplementary read on nodes to the same exchanged identity.
+	nodesRBACManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmc-exchanged-identity-nodes-read
+  labels:
+    app: fleetmetadatacache
+    component: fleet-e2e
+    authorization: token-exchange-spike-s17-s18
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmc-exchanged-identity-nodes-binding
+  labels:
+    app: fleetmetadatacache
+    component: fleet-e2e
+    authorization: token-exchange-spike-s17-s18
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc-exchanged-identity-nodes-read
+subjects:
+- kind: User
+  name: "keycloak:service-account-kubernaut-fleet-read"
+  apiGroup: rbac.authorization.k8s.io
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, nodesRBACManifest); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (nodes read, view doesn't cover cluster-scoped Node)")
 	return nil
 }
 

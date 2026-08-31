@@ -31,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -105,10 +106,10 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 				&stubRegistry{clusters: []registry.ClusterInfo{{ID: "cluster-a"}}},
 				readerFactory,
 				writer,
-			fmc.Config{
-				KeyTTL:        30 * time.Second,
-				ResourceKinds: []string{"Pod"},
-			},
+				fmc.Config{
+					KeyTTL:        30 * time.Second,
+					ResourceKinds: []string{"Pod"},
+				},
 				logr.Discard(),
 				metrics,
 			)
@@ -120,7 +121,7 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 				"List must be called with a label selector to enforce AC-4 information flow boundaries")
 
 			selectorStr := spy.capturedListOpts.LabelSelector.String()
-			Expect(selectorStr).To(ContainSubstring(scope.ManagedLabelKey + "=" + scope.ManagedLabelValueTrue),
+			Expect(selectorStr).To(ContainSubstring(scope.ManagedLabelKey+"="+scope.ManagedLabelValueTrue),
 				"only resources with kubernaut.ai/managed=true must pass through the information flow boundary")
 		})
 	})
@@ -191,6 +192,59 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			Expect(cfg.KeyTTL).To(Equal(45 * time.Second))
 			Expect(cfg.ResourceKinds).To(ContainElements("Deployment", "StatefulSet", "Pod", "Service", "Node"))
 			Expect(len(cfg.ResourceKinds)).To(BeNumerically(">=", 5))
+		})
+
+		// Issue #2311: without syncing Namespace objects too, a namespace
+		// labeled kubernaut.ai/managed=true with unlabeled resources inside
+		// it never populates a namespace-level cache entry for
+		// scopecache.Client.IsManagedResource's fallback to consult, so the
+		// fleet scope-check hierarchy silently degrades to "resource label
+		// only" -- stricter than the documented (and local-cluster-honored)
+		// 2-level hierarchy (ADR-053).
+		It("UT-FLEET-FMC-014 [Issue #2311]: should include Namespace in default resource kinds", func() {
+			cfg := fmc.DefaultConfig()
+			Expect(cfg.ResourceKinds).To(ContainElement("Namespace"),
+				"Namespace must be synced so scopecache.Client can fall back to namespace-level labels on fleet clusters, same as local")
+		})
+	})
+
+	Describe("syncKind for Namespace (Issue #2311)", func() {
+		It("UT-FLEET-FMC-015: syncs Namespace resources carrying the managed label into the cache", func() {
+			spy := &spyReader{
+				listItems: []unstructured.Unstructured{
+					{Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "Namespace",
+						"metadata": map[string]interface{}{
+							"name": "demo-checkout",
+						},
+					}},
+				},
+			}
+
+			readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				return spy, nil
+			})
+
+			syncer := fmc.NewSyncerWithReaderFactory(
+				&stubRegistry{clusters: []registry.ClusterInfo{{ID: "remote-cluster"}}},
+				readerFactory,
+				writer,
+				fmc.Config{
+					KeyTTL:        30 * time.Second,
+					ResourceKinds: []string{"Namespace"},
+				},
+				logr.Discard(),
+				metrics,
+			)
+
+			err := syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "remote-cluster"})
+			Expect(err).ToNot(HaveOccurred())
+
+			expectedKey, keyErr := scopecache.BuildKey("remote-cluster", "", "v1", "Namespace", "", "demo-checkout")
+			Expect(keyErr).ToNot(HaveOccurred())
+			Expect(writer.keysWritten).To(ContainElement(expectedKey),
+				"a labeled Namespace must be written to the cache so IsManagedResource's namespace fallback can find it")
 		})
 	})
 
@@ -320,12 +374,12 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 				writer,
 				fmc.Config{
 					SyncInterval:               time.Hour,
-					KeyTTL:                      30 * time.Second,
-					ResourceKinds:               []string{"Pod"},
-					WaitForBrokerReady:          true,
-					BrokerProbeInitialInterval:  5 * time.Millisecond,
-					BrokerProbeMaxInterval:      20 * time.Millisecond,
-					BrokerProbeTimeout:          5 * time.Second,
+					KeyTTL:                     30 * time.Second,
+					ResourceKinds:              []string{"Pod"},
+					WaitForBrokerReady:         true,
+					BrokerProbeInitialInterval: 5 * time.Millisecond,
+					BrokerProbeMaxInterval:     20 * time.Millisecond,
+					BrokerProbeTimeout:         5 * time.Second,
 				},
 				logr.Discard(),
 				metrics,
@@ -429,12 +483,12 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 				writer,
 				fmc.Config{
 					SyncInterval:               time.Hour,
-					KeyTTL:                      30 * time.Second,
-					ResourceKinds:               []string{"Pod"},
-					WaitForBrokerReady:          true,
-					BrokerProbeInitialInterval:  5 * time.Millisecond,
-					BrokerProbeMaxInterval:      20 * time.Millisecond,
-					BrokerProbeTimeout:          5 * time.Second,
+					KeyTTL:                     30 * time.Second,
+					ResourceKinds:              []string{"Pod"},
+					WaitForBrokerReady:         true,
+					BrokerProbeInitialInterval: 5 * time.Millisecond,
+					BrokerProbeMaxInterval:     20 * time.Millisecond,
+					BrokerProbeTimeout:         5 * time.Second,
 				},
 				logr.Discard(),
 				metrics,

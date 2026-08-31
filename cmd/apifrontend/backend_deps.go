@@ -78,7 +78,9 @@ type backendDeps struct {
 	// (BR-FLEET-054). Nil when fleet federation is disabled.
 	FleetReaderFactory tools.ResourceReaderFactory
 	// FleetClusterRegistry backs the list_clusters tool (BR-FLEET-054). Nil
-	// when fleet federation is disabled.
+	// when fleet federation is disabled. Owns a background K8s dynamic-
+	// informer goroutine once started -- stopped on shutdown by
+	// stopBackendDeps (#2313).
 	FleetClusterRegistry registry.ClusterRegistry
 	// fleetResilientClient is the underlying MCP Gateway connection; closed
 	// on shutdown by run() when non-nil.
@@ -554,39 +556,14 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	}
 
 	fleetLog := logger.WithName("fleet-mcp")
-	var opts []mcpclient.Option
-	if cfg.Fleet.OAuth2.Enabled {
-		basePath := "/etc/apifrontend/fleet-oauth2"
-		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-			basePath = "/etc/apifrontend/" + cfg.Fleet.OAuth2.CredentialsSecretRef
-		}
-		reloadCfg := mcpclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-			ClientIDPath:     basePath + "/client-id",
-			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           cfg.Fleet.OAuth2.Scopes,
-			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
-		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	}
 
-	resilienceCfg := mcpclient.ResilienceConfigFromFleet(cfg.Fleet.Resilience)
-	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
-	if err != nil {
-		// #1553: keep (don't discard) the disconnected client — the fleet
-		// readiness gate attaches an MCPClientProber to it so the periodic
-		// probe keeps retrying and the "fleet" readyz check correctly
-		// reports NotReady until reconnect, instead of the client being
-		// silently lost with no path back to healthy short of a restart.
-		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
-			"and keep retrying in the background; remote cluster routing disabled until reconnect",
-			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
-		deps.fleetResilientClient = mcpFleetClient
-		deps.fleetReadinessGate = wireFleetReadinessGate(ctx, mcpFleetClient, nil, logger)
-		return nil
-	}
-	deps.fleetResilientClient = mcpFleetClient
-
+	// ClusterRegistry is K8s-watch-based (via deps.k8sDynClient),
+	// independent of the MCP session, so it is built and started before
+	// dialing the MCP Gateway below (#2315 triage): Connect's own
+	// backoff/retry can block for a while against an unreachable Gateway,
+	// and starting the informer-backed registry afterward would otherwise
+	// race against (or get starved by) whatever's left of ctx's deadline,
+	// if any.
 	clusterRegistry, err := registry.NewClusterRegistry(
 		cfg.Fleet.EffectiveMCPGatewayType(),
 		deps.k8sDynClient,
@@ -605,13 +582,40 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	}
 	deps.FleetClusterRegistry = clusterRegistry
 
+	connectCfg := mcpclient.ConnectConfig{
+		Endpoint:   cfg.Fleet.MCPGatewayEndpoint,
+		OAuth2:     cfg.Fleet.OAuth2,
+		Resilience: cfg.Fleet.Resilience,
+	}
+	if cfg.Fleet.OAuth2.Enabled {
+		connectCfg.CredentialsBasePath = "/etc/apifrontend/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			connectCfg.CredentialsBasePath = "/etc/apifrontend/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+	}
+
+	// #1553/#2315: keep (don't discard) the client even when the initial
+	// connect attempt fails — the fleet readiness gate attaches an
+	// MCPClientProber that keeps retrying in the background, and the
+	// reader factory below (built from its SessionProvider) self-heals
+	// automatically once it reconnects, instead of remote cluster routing
+	// staying disabled until a pod restart.
+	mcpFleetClient, connectErr := mcpclient.Connect(ctx, connectCfg, fleetLog) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
+	if connectErr != nil {
+		logger.Error(connectErr, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
+			"and keep retrying in the background; remote cluster routing will become available "+
+			"automatically once the connection is established (self-healing, issue #2315)",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+	} else {
+		logger.Info("Fleet MCP Gateway connected, multi-cluster kubectl routing enabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	}
+	deps.fleetResilientClient = mcpFleetClient
+
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
-		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), mcpFleetClient.Reconnect, registry.NewToolPrefixAdapter(clusterRegistry))
 	deps.FleetReaderFactory = adaptFleetReaderFactory(readerFactory)
 	deps.fleetReadinessGate = wireFleetReadinessGate(ctx, mcpFleetClient, clusterRegistry, logger)
-
-	logger.Info("Fleet MCP Gateway connected, multi-cluster kubectl routing enabled",
-		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
 	return nil
 }
 
@@ -623,8 +627,11 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 // (unlike GW/RO), so its gate carries an MCPClientProber and, when
 // available, a ClusterRegistryProber. fleetClient is always non-nil when
 // called (buildFleetReaderDeps only calls this after Fleet.Enabled +
-// endpoint checks); clusterRegistry may be nil (initial connection
-// failure). The caller (buildFleetReaderDeps) stores the returned Gate on
+// endpoint checks); clusterRegistry is nil only when the caller passes nil
+// explicitly (e.g. a test constructing the gate in isolation) — in
+// production, buildFleetReaderDeps always builds and starts it before the
+// MCP connect attempt (#2315), independent of whether that attempt
+// succeeds. The caller (buildFleetReaderDeps) stores the returned Gate on
 // deps.fleetReadinessGate; stopBackendDeps must Stop() it on shutdown.
 func wireFleetReadinessGate(ctx context.Context, fleetClient *mcpclient.ResilientClient, clusterRegistry registry.ClusterRegistry, logger logr.Logger) *readiness.Gate {
 	probers := []readiness.Prober{&readiness.MCPClientProber{Client: fleetClient}}

@@ -185,6 +185,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"list_alerts":                          true,
 		"get_alert_details":                    true,
 		"kubernaut_investigate_alert":          true,
+		"list_clusters":                        true,
 	}
 
 	allKnownTools := map[string]bool{}

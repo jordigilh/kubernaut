@@ -317,7 +317,64 @@ investigation deals with are already covered.
 | `mcpclient.ParseUnstructuredResponse` / `mcpclient.PopulateObject` (exported) | Called by `overlayClientReader.Get` | `pkg/fleet/mcpclient/parse.go`, `pkg/fleet/mcpclient/client.go` | UT-KA-FLEET-031 (indirect) |
 | K8sClient-selection guard (`resolveK8sClient`) + `remediationHistoryQuery.ClusterID` | `Execute()` on both `resourceContextTools` | `internal/kubernautagent/tools/custom/resource_context.go` | IT-KA-FLEET-032/033 |
 
+## Amendment (2026-08-30, issue #2312 close-out): fail-closed tool-overlay resolution
+
+`prescopeFleetOverlay()` (the "As-Built Wiring" entry above) originally
+**failed open**: if `FleetOverlayResolver` was unconfigured, or a configured
+resolver's `Overlay()` call itself errored (e.g. the MCP gateway or
+`kube-mcp-server` unreachable), the investigation proceeded anyway with
+`ctx` unchanged — silently falling back to the local/hub tool registry for
+what was supposed to be a fleet-target investigation. This was logged and
+audited (`EventTypeFleetOverlayUnavailable`/`EventTypeFleetOverlayFailed`),
+but the investigation itself did not stop.
+
+Reproduced live 2026-08-30 (Issue #2312) on the `fleet-e2e` demo: a real
+investigation targeting a `remote-cluster` pod hit an EAIGW SSE `tools/list`
+failure, fell back to hub-only tools, got a clean "not found" from the hub
+(which correctly has no such namespace), and the LLM confidently reported
+the incident as "resolved/stale" — a fabricated verdict with no signal
+anywhere in the response that the investigation never reached the target
+cluster. The same fail-open path could just as easily have found a
+similarly-named resource that coincidentally exists on the hub, producing a
+confident wrong RCA against real (but wrong-cluster) evidence — a
+materially worse outcome than an explicit failure, since a downstream
+automated remediation could act on it.
+
+**Fix**: `prescopeFleetOverlay()` now returns `(context.Context, error)` and
+fails closed — a `nil` `FleetOverlayResolver` or a resolver error both
+short-circuit `Investigate()`/`RunInteractiveTurn()` with a non-nil error
+instead of continuing with an unscoped context. Falling back to local/hub
+tools is never correct for a fleet-target investigation: the hub is never
+the resource the firing signal or interactive operator actually targeted,
+so any tool call the LLM makes without the overlay queries the wrong
+cluster by construction. This supersedes ADR-068 decision #11's original
+fail-open framing for this specific code path — the pod-wide
+`readiness.Gate` (ADR-068, "Fleet Readiness Gate") remains fail-closed for
+*static/sustained* dependency unavailability at the process level; this
+amendment closes the matching gap at the *per-investigation* level, since a
+gateway blip that recovers before the next readiness probe tick could still
+slip an individual investigation through fail-open otherwise.
+
+Audit behavior is unchanged: both event types are still emitted (AU-3)
+before the error is returned, so a degraded fleet investigation remains
+independently queryable regardless of the caller's handling of the error.
+`api/openapi/data-storage-v1.yaml` gained dedicated discriminator schemas
+(`AIAgentFleetOverlayFailedPayload`/`AIAgentFleetOverlayUnavailablePayload`)
+for these two event types in the same change — they previously fell back to
+an outer-fields-only shape with no dedicated payload variant.
+
+Required by OWASP ASVS 4.0.3 **V4.1.5** ("verify that access controls fail
+securely including when an exception occurs"): the tool overlay is the
+access-control boundary that scopes which cluster's resources an
+investigation can read (FedRAMP AC-4), so a resolution exception must deny
+access to that boundary, not silently substitute a different one.
+
+| Component | Production Entry Point | Wiring Code Location | Test ID |
+|---|---|---|---|
+| Fail-closed overlay resolution | `prescopeFleetOverlay()` -> `Investigate()` / `RunInteractiveTurn()` | `internal/kubernautagent/investigator/fleet_overlay.go`, `investigator.go` | UT-KA-FLEET-028, IT-KA-FLEET-020/029 |
+| `AIAgentFleetOverlayFailedPayload` / `AIAgentFleetOverlayUnavailablePayload` discriminator schemas + builders | `buildFleetOverlayFailedPayload` / `buildFleetOverlayUnavailablePayload` registered in `eventDataBuilders` | `internal/kubernautagent/audit/ds_payloads.go`, `ds_store.go`; schema in `api/openapi/data-storage-v1.yaml` | UT-KA-2312-001/002 |
+
 ## Authority
 
-Issue #1729, Issue #1732, Issue #2306, Issue #2308, ADR-068 (decision #11),
-BR-INTEGRATION-054, BR-INTEGRATION-1489.
+Issue #1729, Issue #1732, Issue #2306, Issue #2308, Issue #2312, ADR-068
+(decision #11), BR-INTEGRATION-054, BR-INTEGRATION-1489.

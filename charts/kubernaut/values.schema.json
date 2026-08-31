@@ -146,6 +146,13 @@
           "default": "",
           "description": "Hostname for external access. Leaving this empty renders a catch-all Ingress rule."
         },
+        "port": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "External (browser-facing) port `host` is actually reached on, when it isn't the scheme's standard port (443 for HTTPS). 0 (default) means \"standard port, omit from any URL built from host\". This does NOT change the Kubernetes Ingress resource itself (Ingress has no port field -- the real listener port is whatever the Ingress controller's own Service/LoadBalancer exposes), it only affects consumers that build an absolute URL from `host` and need to match the port a client will actually connect on -- e.g. console.ingress.port, consumed by the oauth2-proxy --redirect-url so its OIDC callback matches a non-standard-port Ingress controller (privileged host ports 80/443 are frequently unavailable to unprivileged CI runners)."
+        },
         "annotations": {
           "type": "object",
           "default": {}
@@ -2459,14 +2466,9 @@
         },
         "interactive": {
           "type": "object",
-          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",
+          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions. No `enabled` field -- DD-PLATFORM-006 Decision Area 11 (revised): APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint anywhere in the codebase, so whether it's active is fully derived from apifrontend.enabled (effective value, schema default true) rather than a separately settable field that could silently drift out of sync and create an unreachable-but-enabled or reachable-but-disabled combination.",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise."
-            },
             "sessionTTL": {
               "allOf": [
                 {
@@ -3439,7 +3441,38 @@
             "image": {
               "type": "string",
               "default": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3"
+            },
+            "skipDiscovery": {
+              "type": "boolean",
+              "default": false,
+              "description": "Split-horizon OIDC endpoints for when the IdP isn't reachable via the same hostname from both the browser and in-cluster pods (e.g. IdP deployed in a separate namespace/cluster from Console). false (default): oauth2-proxy performs normal OIDC discovery against apifrontend.config.auth issuerURL, unchanged from prior behavior. true: skips discovery entirely and requires loginURL/redeemURL/jwksURL below."
+            },
+            "loginURL": {
+              "type": "string",
+              "default": "",
+              "description": "Browser-facing authorization endpoint. Required when skipDiscovery=true; ignored otherwise."
+            },
+            "redeemURL": {
+              "type": "string",
+              "default": "",
+              "description": "Server-side (in-cluster) token endpoint oauth2-proxy dials to redeem the authorization code. Required when skipDiscovery=true; ignored otherwise."
+            },
+            "jwksURL": {
+              "type": "string",
+              "default": "",
+              "description": "Server-side (in-cluster) JWKS endpoint oauth2-proxy dials to verify ID tokens. Required when skipDiscovery=true; ignored otherwise."
             }
+          },
+          "if": {
+            "properties": { "skipDiscovery": { "const": true } }
+          },
+          "then": {
+            "properties": {
+              "loginURL": { "minLength": 1 },
+              "redeemURL": { "minLength": 1 },
+              "jwksURL": { "minLength": 1 }
+            },
+            "required": ["loginURL", "redeemURL", "jwksURL"]
           }
         },
         "ingress": {
@@ -4095,36 +4128,6 @@
             ]
           }
         }
-      }
-    },
-    {
-      "description": "BR-PLATFORM-010 Phase C: kubernautAgent.interactive.enabled=true requires apifrontend.enabled != false -- APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller (was kubernaut-agent.yaml:24 fail() guard).",
-      "if": {
-        "properties": {
-          "kubernautAgent": {
-            "properties": {
-              "interactive": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "interactive"
-            ]
-          }
-        },
-        "required": [
-          "kubernautAgent"
-        ]
-      },
-      "then": {
-        "$ref": "#/definitions/apifrontendNotDisabledRequirement"
       }
     },
     {

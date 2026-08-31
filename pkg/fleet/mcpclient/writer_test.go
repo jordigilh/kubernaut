@@ -19,7 +19,9 @@ package mcpclient_test
 import (
 	"context"
 	"encoding/json"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -489,6 +491,75 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			Expect(func() {
 				mcpclient.NewWriterFromSession(nil, "any-cluster")
 			}).To(Panic())
+		})
+	})
+
+	Describe("WriterClient panics on nil provider", func() {
+		It("panics when constructed with nil provider (fail-fast)", func() {
+			Expect(func() {
+				mcpclient.NewWriterFromSessionProvider(nil, "any-cluster")
+			}).To(Panic())
+		})
+	})
+
+	// =========================================================================
+	// Session-provider WriterClient reconnect-on-failure (issue #2317)
+	// =========================================================================
+	// Mirrors Client's UT-FLEET-MCP-010/011 (client_test.go): WE's write path
+	// (Create/Update/Delete against a remote-cluster Job during workflow
+	// execution) previously had no self-healing at all -- WriterClient only
+	// supported a fixed session snapshot with no reconnect callback. A
+	// session that died from a protocol-level error mid-lifetime (broker
+	// healthy, client session dead) would fail every subsequent write call
+	// forever, exactly the same failure class already fixed for the read
+	// path (Client.callTool).
+	Describe("Session-provider WriterClient reconnect-on-failure (issue #2317)", func() {
+		It("UT-WE-054-WRITER-RECONN-001: Create recovers via WithReconnect after the underlying session dies", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard(), mcpclient.WithClusterID("prod-east"))
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			writer := mcpclient.NewWriterFromSessionProvider(rc.SessionProvider(), "prod-east",
+				mcpclient.WithReconnect(rc.Reconnect))
+
+			// Simulate the session dying from a protocol-level error while
+			// the Gateway itself stays healthy.
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-recover", Namespace: "kubernaut-workflows"},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Create(ctx, job)
+			Expect(err).ToNot(HaveOccurred(),
+				"Create must recover by reconnecting once the session is dead, not fail forever")
+		})
+
+		It("UT-WE-054-WRITER-RECONN-002: without WithReconnect, a dead session fails Create every time", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard(), mcpclient.WithClusterID("prod-west"))
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			writer := mcpclient.NewWriterFromSessionProvider(rc.SessionProvider(), "prod-west")
+
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-stuck", Namespace: "kubernaut-workflows"},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Create(ctx, job)
+			Expect(err).To(HaveOccurred(), "without a reconnect callback there is no way to repair a dead session")
 		})
 	})
 })

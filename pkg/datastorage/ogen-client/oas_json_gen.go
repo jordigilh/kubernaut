@@ -1848,6 +1848,338 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalJSON(data []byte) err
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentFleetOverlayFailedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentFleetOverlayFailedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("cluster_id")
+		e.Str(s.ClusterID)
+	}
+	{
+		e.FieldStart("error_message")
+		e.Str(s.ErrorMessage)
+	}
+}
+
+var jsonFieldsNameOfAIAgentFleetOverlayFailedPayload = [3]string{
+	0: "event_type",
+	1: "cluster_id",
+	2: "error_message",
+}
+
+// Decode decodes AIAgentFleetOverlayFailedPayload from json.
+func (s *AIAgentFleetOverlayFailedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentFleetOverlayFailedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "cluster_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.ClusterID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "error_message":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.ErrorMessage = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_message\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentFleetOverlayFailedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentFleetOverlayFailedPayload) {
+					name = jsonFieldsNameOfAIAgentFleetOverlayFailedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentFleetOverlayFailedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentFleetOverlayFailedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentFleetOverlayFailedPayloadEventType as json.
+func (s AIAgentFleetOverlayFailedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentFleetOverlayFailedPayloadEventType from json.
+func (s *AIAgentFleetOverlayFailedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentFleetOverlayFailedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentFleetOverlayFailedPayloadEventType(v) {
+	case AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed:
+		*s = AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed
+	default:
+		*s = AIAgentFleetOverlayFailedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentFleetOverlayFailedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentFleetOverlayFailedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentFleetOverlayUnavailablePayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentFleetOverlayUnavailablePayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("cluster_id")
+		e.Str(s.ClusterID)
+	}
+	{
+		e.FieldStart("reason")
+		e.Str(s.Reason)
+	}
+}
+
+var jsonFieldsNameOfAIAgentFleetOverlayUnavailablePayload = [3]string{
+	0: "event_type",
+	1: "cluster_id",
+	2: "reason",
+}
+
+// Decode decodes AIAgentFleetOverlayUnavailablePayload from json.
+func (s *AIAgentFleetOverlayUnavailablePayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentFleetOverlayUnavailablePayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "cluster_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.ClusterID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "reason":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Reason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentFleetOverlayUnavailablePayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentFleetOverlayUnavailablePayload) {
+					name = jsonFieldsNameOfAIAgentFleetOverlayUnavailablePayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentFleetOverlayUnavailablePayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentFleetOverlayUnavailablePayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentFleetOverlayUnavailablePayloadEventType as json.
+func (s AIAgentFleetOverlayUnavailablePayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentFleetOverlayUnavailablePayloadEventType from json.
+func (s *AIAgentFleetOverlayUnavailablePayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentFleetOverlayUnavailablePayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentFleetOverlayUnavailablePayloadEventType(v) {
+	case AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable:
+		*s = AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable
+	default:
+		*s = AIAgentFleetOverlayUnavailablePayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentFleetOverlayUnavailablePayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentFleetOverlayUnavailablePayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentInteractiveCompletedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -18332,6 +18664,34 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentFleetOverlayFailedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.fleet.overlay_failed")
+		{
+			s := s.AIAgentFleetOverlayFailedPayload
+			{
+				e.FieldStart("cluster_id")
+				e.Str(s.ClusterID)
+			}
+			{
+				e.FieldStart("error_message")
+				e.Str(s.ErrorMessage)
+			}
+		}
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.fleet.overlay_unavailable")
+		{
+			s := s.AIAgentFleetOverlayUnavailablePayload
+			{
+				e.FieldStart("cluster_id")
+				e.Str(s.ClusterID)
+			}
+			{
+				e.FieldStart("reason")
+				e.Str(s.Reason)
+			}
+		}
 	case ShadowLLMRequestPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.shadow.llm.request")
@@ -20418,6 +20778,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.alignment.verdict":
 					s.Type = AIAgentAlignmentVerdictPayloadAuditEventEventData
 					found = true
+				case "aiagent.fleet.overlay_failed":
+					s.Type = AIAgentFleetOverlayFailedPayloadAuditEventEventData
+					found = true
+				case "aiagent.fleet.overlay_unavailable":
+					s.Type = AIAgentFleetOverlayUnavailablePayloadAuditEventEventData
+					found = true
 				case "aiagent.shadow.llm.request":
 					s.Type = ShadowLLMRequestPayloadAuditEventEventData
 					found = true
@@ -20858,6 +21224,14 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentAlignmentVerdictPayloadAuditEventEventData:
 		if err := s.AIAgentAlignmentVerdictPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentFleetOverlayFailedPayloadAuditEventEventData:
+		if err := s.AIAgentFleetOverlayFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventEventData:
+		if err := s.AIAgentFleetOverlayUnavailablePayload.Decode(d); err != nil {
 			return err
 		}
 	case ShadowLLMRequestPayloadAuditEventEventData:
@@ -23793,6 +24167,34 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.fleet.overlay_failed")
+		{
+			s := s.AIAgentFleetOverlayFailedPayload
+			{
+				e.FieldStart("cluster_id")
+				e.Str(s.ClusterID)
+			}
+			{
+				e.FieldStart("error_message")
+				e.Str(s.ErrorMessage)
+			}
+		}
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.fleet.overlay_unavailable")
+		{
+			s := s.AIAgentFleetOverlayUnavailablePayload
+			{
+				e.FieldStart("cluster_id")
+				e.Str(s.ClusterID)
+			}
+			{
+				e.FieldStart("reason")
+				e.Str(s.Reason)
+			}
+		}
 	case ShadowLLMRequestPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.shadow.llm.request")
@@ -25879,6 +26281,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.alignment.verdict":
 					s.Type = AIAgentAlignmentVerdictPayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.fleet.overlay_failed":
+					s.Type = AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.fleet.overlay_unavailable":
+					s.Type = AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.shadow.llm.request":
 					s.Type = ShadowLLMRequestPayloadAuditEventRequestEventData
 					found = true
@@ -26319,6 +26727,14 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentAlignmentVerdictPayloadAuditEventRequestEventData:
 		if err := s.AIAgentAlignmentVerdictPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentFleetOverlayFailedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData:
+		if err := s.AIAgentFleetOverlayUnavailablePayload.Decode(d); err != nil {
 			return err
 		}
 	case ShadowLLMRequestPayloadAuditEventRequestEventData:

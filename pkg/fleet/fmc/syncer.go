@@ -47,6 +47,7 @@ var kindToGVK = map[string]schema.GroupVersionKind{
 	"Pod":         {Group: "", Version: "v1", Kind: "Pod"},
 	"Service":     {Group: "", Version: "v1", Kind: "Service"},
 	"Node":        {Group: "", Version: "v1", Kind: "Node"},
+	"Namespace":   {Group: "", Version: "v1", Kind: "Namespace"},
 }
 
 // ReaderFactory creates a cluster-scoped client.Reader for the given clusterID.
@@ -75,12 +76,27 @@ type Config struct {
 	BrokerProbeTimeout         time.Duration
 }
 
+// DefaultResourceKinds lists the resource kinds FMC syncs by default.
+// Namespace is included so scopecache.Client.IsManagedResource can fall back
+// to a namespace-level kubernaut.ai/managed label when a resource itself is
+// unlabeled -- mirroring pkg/shared/scope.Manager's 2-level hierarchy for the
+// local cluster (ADR-053, Issue #2311). Without it, fleet scope checks were
+// silently stricter than local ones: a namespace-only label worked on the hub
+// but never on a managed remote cluster.
+//
+// Exported so pkg/fleet/fmc/config.DefaultServiceConfig can reuse this exact
+// list instead of hand-maintaining a second copy -- the two defaults drifting
+// out of sync (one updated, one not) is exactly how Issue #2311 slipped
+// through: the config-layer default kept the pre-fix kind list even after a
+// first pass at this fix updated only this one.
+var DefaultResourceKinds = []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node", "Namespace"}
+
 // DefaultConfig returns production defaults for FMC Writer.
 func DefaultConfig() Config {
 	return Config{
 		SyncInterval:  30 * time.Second,
 		KeyTTL:        45 * time.Second,
-		ResourceKinds: []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
+		ResourceKinds: DefaultResourceKinds,
 	}
 }
 
@@ -99,10 +115,10 @@ type Syncer struct {
 
 // Metrics tracks FMC Writer operational metrics.
 type Metrics struct {
-	SyncTotal     *prometheus.CounterVec
-	SyncErrors    *prometheus.CounterVec
-	SyncDuration  *prometheus.HistogramVec
-	KeysWritten   *prometheus.CounterVec
+	SyncTotal    *prometheus.CounterVec
+	SyncErrors   *prometheus.CounterVec
+	SyncDuration *prometheus.HistogramVec
+	KeysWritten  *prometheus.CounterVec
 }
 
 // NewMetrics creates FMC Writer Prometheus metrics.
@@ -356,4 +372,3 @@ func (s *Syncer) handleClusterEvent(ctx context.Context, event registry.ClusterE
 		s.logger.V(1).Info("Cluster updated", "cluster", event.Cluster.ID)
 	}
 }
-

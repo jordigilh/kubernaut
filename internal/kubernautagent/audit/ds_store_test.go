@@ -28,8 +28,9 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	inc001 = "inc-001"
-	test   = "test"
+	inc001        = "inc-001"
+	test          = "test"
+	remoteCluster = "remote-cluster"
 )
 
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
@@ -213,16 +214,6 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			skipPayloadCheck := map[string]bool{
 				audit.EventTypeGroundingRequest:  true,
 				audit.EventTypeGroundingResponse: true,
-				// aiagent.fleet.overlay_failed (DD-FLEET-005, issue #1732) has
-				// no dedicated OpenAPI discriminator variant yet either; it is
-				// stored with outer fields only (event_type, cluster_id,
-				// correlation_id, actor, event_action/outcome), same as the
-				// grounding events above.
-				audit.EventTypeFleetOverlayFailed: true,
-				// aiagent.fleet.overlay_unavailable (issue #1768 follow-up)
-				// shares the same outer-fields-only shape as overlay_failed
-				// above -- no dedicated OpenAPI discriminator variant yet.
-				audit.EventTypeFleetOverlayUnavailable: true,
 			}
 
 			for _, eventType := range audit.AllEventTypes {
@@ -257,6 +248,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
 				event.Data["error_message"] = test
+				event.Data["cluster_id"] = remoteCluster
 				event.Data["phase"] = rca
 				event.Data["cancelled_phase"] = rca
 				event.Data["cancelled_at_turn"] = 3
@@ -617,6 +609,57 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.Results.TotalFound).To(Equal(int32(0)))
+		})
+	})
+
+	Describe("UT-KA-2312-001: DSAuditStore builds fleet.overlay_failed payload (Issue #2312, DD-FLEET-005, AU-3/AC-4, OWASP ASVS V4.1.5)", func() {
+		It("should populate AIAgentFleetOverlayFailedPayload with cluster_id and error_message", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeFleetOverlayFailed, "corr-2312-failed")
+			event.EventAction = audit.ActionFleetOverlayFailed
+			event.EventOutcome = audit.OutcomeFailure
+			event.ClusterID = remoteCluster
+			event.Data["cluster_id"] = remoteCluster
+			event.Data["error_message"] = "gateway unreachable: context deadline exceeded"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(req.ClusterID.Value).To(Equal(remoteCluster),
+				"the outer ClusterID field must be set so this event is queryable per-cluster independent of the typed payload")
+
+			payload, ok := req.EventData.GetAIAgentFleetOverlayFailedPayload()
+			Expect(ok).To(BeTrue(), "should extract AIAgentFleetOverlayFailedPayload")
+			Expect(payload.ClusterID).To(Equal(remoteCluster))
+			Expect(payload.ErrorMessage).To(Equal("gateway unreachable: context deadline exceeded"),
+				"the resolver error must survive into the audit record so a degraded fleet investigation is independently queryable, not just grep-able from logs")
+		})
+	})
+
+	Describe("UT-KA-2312-002: DSAuditStore builds fleet.overlay_unavailable payload (Issue #2312, AU-3/AC-4, OWASP ASVS V4.1.5)", func() {
+		It("should populate AIAgentFleetOverlayUnavailablePayload with cluster_id and reason", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeFleetOverlayUnavailable, "corr-2312-unavailable")
+			event.EventAction = audit.ActionFleetOverlayUnavailable
+			event.EventOutcome = audit.OutcomeFailure
+			event.ClusterID = remoteCluster
+			event.Data["cluster_id"] = remoteCluster
+			event.Data["reason"] = "no FleetOverlayResolver configured on this kubernaut-agent instance"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			payload, ok := recorder.calls[0].EventData.GetAIAgentFleetOverlayUnavailablePayload()
+			Expect(ok).To(BeTrue(), "should extract AIAgentFleetOverlayUnavailablePayload")
+			Expect(payload.ClusterID).To(Equal(remoteCluster))
+			Expect(payload.Reason).To(Equal("no FleetOverlayResolver configured on this kubernaut-agent instance"))
 		})
 	})
 })

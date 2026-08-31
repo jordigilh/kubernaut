@@ -81,6 +81,16 @@ const (
 	// this constant as the TestMetric/TestAlert label key rather than a
 	// raw "cluster" string literal.
 	ClusterLabelKey = "cluster"
+
+	// SkipGatewayRouteLabelKey/Value mark a Prometheus alerting rule as
+	// AF-organic-ingestion-only (see DeployAlertManager's route config):
+	// AlertManager routes anything carrying this label to a null receiver
+	// instead of forwarding it to Gateway's webhook, so a rule meant to
+	// prove AF's OWN list_alerts/investigate tools read real Prometheus
+	// alerting-rule state doesn't also organically create a
+	// RemediationRequest via Gateway.
+	SkipGatewayRouteLabelKey   = "route_skip_gateway"
+	SkipGatewayRouteLabelValue = "true"
 )
 
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
@@ -301,6 +311,63 @@ data:
           cluster: collision-cluster
         annotations:
           summary: "marker-collision-cluster-hidden"
+  fleet-organic-gateway-alert.yml: |
+    # kubernaut#2309 follow-up (fleet E2E realism): every other alert this
+    # suite injects into Gateway goes through postFleetAlertUntilAccepted, a
+    # direct synthetic-payload POST -- none of them prove AlertManager's OWN
+    # webhook forward (its real receiver/route config, not a test harness
+    # substitute) organically creates a RemediationRequest with zero test-
+    # initiated HTTP calls to Gateway. This rule stays INACTIVE until
+    # 20_gw_organic_alert_test.go injects fleet_organic_gw_signal (a synthetic
+    # metric, not vector(1) > 0) -- ordering matters: the target Deployment
+    # below must exist BEFORE this fires, since Gateway's owner-resolution
+    # does a live lookup and drops the signal if the target is missing
+    # (test/e2e/fleet/01_signal_ingestion_test.go's identical constraint).
+    # No route_skip_gateway label -- AlertManager's default route (see
+    # DeployAlertManager) forwards this to gateway-webhook like every
+    # pre-existing rule in this ConfigMap.
+    groups:
+    - name: fleet-organic-gateway-alert.rules
+      interval: 10s
+      rules:
+      - alert: FleetOrganicGatewayAlert
+        # Gateway's extractTargetResource (pkg/gateway/adapters/prometheus_adapter.go)
+        # resolves the target Kind/Name from a label KEY matching a K8s resource's
+        # lowercase singular name (e.g. "deployment": "<name>"), the same convention
+        # buildPrometheusAlertWithCluster uses for every other fleet alert -- a
+        # literal "kind"/"name" label pair is not recognized and resolves to
+        # Unknown/unknown, which owner-resolution then drops (target not found).
+        expr: fleet_organic_gw_signal{namespace="kubernaut-system", deployment="fleet-organic-gw-target"} > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+        annotations:
+          summary: "Fleet E2E organic Gateway-ingestion proof (real AlertManager forward, not a direct POST)"
+  fleet-organic-af-only-alert.yml: |
+    # kubernaut#2309 follow-up (fleet E2E realism): mirrors
+    # fleet-alerts-cluster-scoped-2274.yml's always-firing vector(1) > 0
+    # pattern, but carries route_skip_gateway="true" (see DeployAlertManager's
+    # route config) so AlertManager's null-receiver swallows it instead of
+    # forwarding to gateway-webhook -- proving AF's own list_alerts tool
+    # (21_af_organic_alert_test.go) reads real Prometheus alerting-rule state
+    # WITHOUT that same alert ever reaching Gateway/creating a
+    # RemediationRequest. No target resource is required: this alert must
+    # NEVER be resolved against a live object, since Gateway must never see it.
+    groups:
+    - name: fleet-organic-af-only-alert.rules
+      interval: 10s
+      rules:
+      - alert: FleetOrganicAFOnlyAlert
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: fleet-af-only-e2e-ns
+          route_skip_gateway: "true"
+        annotations:
+          summary: "fleet-organic-af-only-marker"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -435,6 +502,10 @@ spec:
 //   - kubeconfigPath: Path to kubeconfig for kubectl commands
 //   - gatewayToken: Bearer token for Gateway signal endpoints (BR-GATEWAY-036/037). If empty, no auth is added.
 //   - writer: Output writer for progress logging
+//
+// Routing: every alert is forwarded to Gateway's real webhook EXCEPT one
+// carrying label SkipGatewayRouteLabelKey=SkipGatewayRouteLabelValue, which
+// AlertManager instead routes to a null receiver (see route config below).
 func DeployAlertManager(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🔔 Deploying AlertManager in namespace %s...\n", namespace)
 
@@ -461,11 +532,26 @@ data:
       group_wait: 5s
       group_interval: 5s
       repeat_interval: 1h
+      routes:
+      # AF-organic-ingestion alerting rules (e.g. an AF-only Prometheus rule
+      # proving AF's own list_alerts/investigate tools read real alerting-rule
+      # state independently of Gateway's push-webhook path) must carry this
+      # label so AlertManager routes them to null-receiver instead of
+      # gateway-webhook -- otherwise the SAME alert that's meant to prove AF's
+      # OWN ingestion path would also organically create a RemediationRequest
+      # via Gateway, contaminating both assertions. continue: false (default)
+      # on the top-level route means anything WITHOUT this label still falls
+      # through to gateway-webhook, unchanged -- opt-in only, no existing
+      # caller of DeployAlertManager is affected.
+      - match:
+          route_skip_gateway: "true"
+        receiver: null-receiver
     receivers:
     - name: gateway-webhook
       webhook_configs:
       - url: 'http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/prometheus'
         send_resolved: false`+webhookAuthYaml+`
+    - name: null-receiver
 ---
 apiVersion: apps/v1
 kind: Deployment

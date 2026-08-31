@@ -539,3 +539,34 @@ func buildAuthDeniedPayload(event *AuditEvent) ogenclient.AuditEventRequestEvent
 	}
 	return ogenclient.NewAIAgentAuthDeniedPayloadAuditEventRequestEventData(payload)
 }
+
+// buildFleetOverlayFailedPayload builds the payload for
+// aiagent.fleet.overlay_failed (DD-FLEET-005, Issue #1732, amended #2312):
+// emitted when a fleet-target investigation's FleetOverlayResolver.Overlay
+// call itself fails (e.g. MCP gateway/kube-mcp-server unreachable). ClusterID
+// and ErrorMessage are both required on this payload (see
+// prescopeFleetOverlay's emitFleetOverlayFailedAudit, which always sets
+// both), unlike most builders above whose fields are individually optional.
+func buildFleetOverlayFailedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
+	payload := ogenclient.AIAgentFleetOverlayFailedPayload{
+		EventType:    ogenclient.AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed,
+		ClusterID:    dataString(event.Data, "cluster_id"),
+		ErrorMessage: dataString(event.Data, "error_message"),
+	}
+	return ogenclient.NewAIAgentFleetOverlayFailedPayloadAuditEventRequestEventData(payload)
+}
+
+// buildFleetOverlayUnavailablePayload builds the payload for
+// aiagent.fleet.overlay_unavailable (Issue #1768 follow-up, amended #2312):
+// emitted when a fleet-target investigation reaches prescopeFleetOverlay on a
+// kubernaut-agent instance with no FleetOverlayResolver configured at all.
+// ClusterID and Reason are both required, mirroring
+// emitFleetOverlayUnavailableAudit which always sets both.
+func buildFleetOverlayUnavailablePayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
+	payload := ogenclient.AIAgentFleetOverlayUnavailablePayload{
+		EventType: ogenclient.AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable,
+		ClusterID: dataString(event.Data, "cluster_id"),
+		Reason:    dataString(event.Data, "reason"),
+	}
+	return ogenclient.NewAIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData(payload)
+}

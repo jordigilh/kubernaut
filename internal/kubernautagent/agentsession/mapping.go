@@ -65,7 +65,18 @@ func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext
 		// the retired HTTP path's MapIncidentRequestToSignal
 		// (internal/kubernautagent/server/handler.go), which mapped
 		// req.ClusterName into both fields for exactly this reason.
-		ClusterID:             spec.ClusterName,
+		//
+		// CI RCA (Issue #2314, kubernautagent integration + aianalysis E2E):
+		// request_builder.go's clusterNameFor falls back to the cosmetic
+		// katypes.DefaultClusterNameSentinel ("default") display value for
+		// hub-local investigations with no real target cluster. Promoting
+		// that literal into ClusterID made prescopeFleetOverlay treat every
+		// such investigation as a fleet target and fail closed with no
+		// FleetOverlayResolver configured. Excluded here so hub-local
+		// investigations keep ClusterID == "" (prescopeFleetOverlay's
+		// documented skip-overlay contract) while genuine fleet-target
+		// cluster names still propagate unchanged.
+		ClusterID:             clusterIDFleetTarget(spec.ClusterName),
 		ClusterClassification: spec.Cluster,
 		FiringTime:            spec.FiringTime,
 		ReceivedTime:          spec.ReceivedTime,
@@ -89,6 +100,18 @@ func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext
 		sc.DeduplicationWindowMinutes = spec.DeduplicationWindowMinutes
 	}
 	return sc
+}
+
+// clusterIDFleetTarget returns clusterName unchanged, except for
+// katypes.DefaultClusterNameSentinel ("default"), which is never a real
+// fleet cluster identifier -- see the ClusterID mapping comment above
+// (Issue #2314) for why that placeholder must not reach
+// SignalContext.ClusterID.
+func clusterIDFleetTarget(clusterName string) string {
+	if clusterName == katypes.DefaultClusterNameSentinel {
+		return ""
+	}
+	return clusterName
 }
 
 // MapInvestigationResultToAgentSessionResult converts KA's internal

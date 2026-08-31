@@ -34,6 +34,16 @@
 - console.ingress.className
 - console.nodeSelector
 - console.oauth2Proxy.image
+# skipDiscovery is a pure boolean template gate ({{- if $v.oauth2Proxy.skipDiscovery }}
+# in charts/kubernaut/templates/console/console.yaml) -- it only controls whether
+# --skip-oidc-discovery/--login-url/--redeem-url/--oidc-jwks-url render, and is never
+# itself echoed as literal text in any rendered manifest, so no assertion string can
+# contain its bare camelCase name. loginURL/redeemURL/jwksURL are covered directly via
+# IT-HELM-OIDCSKIP-002/003 in console_oauth2proxy_skip_discovery_test.yaml (rendered
+# flag values, and the schema's own missing-properties error message). Same class of
+# gap as apifrontend.config.severityTriage.llmEnabled/kubernautAgent.debug.pprofEnabled
+# above.
+- console.oauth2Proxy.skipDiscovery
 - console.replicas
 - datastorage.autoscaling.cpuTarget
 - datastorage.autoscaling.maxReplicas
@@ -138,7 +148,6 @@
 - kubernautAgent.fleet.resilience.maxElapsedTime
 - kubernautAgent.fleet.resilience.maxInterval
 - kubernautAgent.fleet.resilience.tokenRefreshTimeout
-- kubernautAgent.interactive.enabled
 - kubernautAgent.interactive.inactivityTimeout
 - kubernautAgent.interactive.maxAnalyzingTimeout
 - kubernautAgent.interactive.maxConcurrentSessions
