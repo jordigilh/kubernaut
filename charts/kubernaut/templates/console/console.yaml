@@ -258,6 +258,12 @@ spec:
           volumeMounts:
             - name: nginx-tmp
               mountPath: /tmp
+            - name: nginx-var-log
+              mountPath: /var/log/nginx
+            - name: nginx-run
+              mountPath: /run
+            - name: nginx-var-lib
+              mountPath: /var/lib/nginx/tmp
             - name: nginx-config
               mountPath: /opt/app-root/etc/nginx.d/kubernaut-http.conf
               subPath: http.conf
@@ -269,6 +275,24 @@ spec:
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
       volumes:
         - name: nginx-tmp
+          emptyDir: {}
+        {{- /*
+        quay.io/kubernaut-ai/kubernaut-console ships the stock RHEL/Fedora
+        "nginx" package's nginx.conf unmodified (error_log/access_log under
+        /var/log/nginx, pid under /run/nginx.pid, client/proxy/fastcgi temp
+        dirs under /var/lib/nginx/tmp/*) -- none of it redirected to /tmp for
+        read-only-root compatibility. containerSecurityContext (above) sets
+        readOnlyRootFilesystem: true, so nginx's own mkdir()/open() calls
+        against those stock paths fail outright (confirmed via manual fleet
+        E2E QE run, 2026-08-29: CrashLoopBackOff, "Read-only file system" on
+        both paths) unless each is its own writable emptyDir, same pattern as
+        the existing nginx-tmp mount.
+        */}}
+        - name: nginx-var-log
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-var-lib
           emptyDir: {}
         - name: nginx-config
           configMap:
