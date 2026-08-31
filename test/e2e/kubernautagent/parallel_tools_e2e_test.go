@@ -46,7 +46,6 @@ var _ = Describe("E2E-KA-970: Parallel Tool Execution", Label("e2e", "ka", "para
 				Priority:              "high",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "web-application",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().

@@ -96,6 +96,10 @@ tests:
             configMap:
               name: inter-service-ca
               optional: true
+      # nginx-tmp, nginx-var-log, nginx-run, nginx-var-lib (read-only-root
+      # writable dirs for the stock RHEL "nginx" package's nginx.conf, see
+      # console.yaml's volumes comment), nginx-config, tls-ca -- if tls-ca
+      # were duplicated (one per container) this would be 7, not 6.
       - lengthEqual:
           path: spec.template.spec.volumes
-          count: 3
+          count: 6

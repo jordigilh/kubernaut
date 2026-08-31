@@ -399,18 +399,23 @@ func New(cfg Config) *Investigator {
 // (#1374/F9, katypes.WithSignalContext) — this reuses that existing value
 // rather than threading a new parameter through the MCP dispatch path.
 //
-// Fail-open by design, at two layers: (1) if ctx carries no SignalContext at
-// all — hub-local sessions, and the reconstruction-turn replay path
-// (ReconRunnerAdapter.RunReconTurn, see TEST_PLAN_TRACK2.md §6 out-of-scope)
-// — pre-scoping is skipped entirely and behavior is byte-identical to
-// pre-#1768; (2) if a SignalContext IS present but overlay resolution itself
-// fails, prescopeFleetOverlay logs the error, emits an AU-3
-// EventTypeFleetOverlayFailed audit event, and returns ctx unmodified so the
-// turn still proceeds against the local tool registry rather than aborting
-// the investigation.
+// Pre-scoping is skipped entirely (byte-identical to pre-#1768 behavior) if
+// ctx carries no SignalContext at all — hub-local sessions, and the
+// reconstruction-turn replay path (ReconRunnerAdapter.RunReconTurn, see
+// TEST_PLAN_TRACK2.md §6 out-of-scope).
+//
+// FAIL-CLOSED for fleet-target turns (amendment 2026-08-30, see
+// prescopeFleetOverlay's doc comment and DD-FLEET-005): if a SignalContext IS
+// present but overlay resolution fails, this turn returns an error instead
+// of silently falling back to the local tool registry — the hub is never the
+// cluster an interactive operator is actually driving against.
 func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
 	if signal, ok := katypes.SignalContextFromContext(ctx); ok {
-		ctx = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
+		var err error
+		ctx, err = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, LLMInvocationContext{
@@ -477,7 +482,10 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	ctx = inv.prescopeFleetOverlay(ctx, signal.ClusterID, signal.RemediationID)
+	ctx, err := inv.prescopeFleetOverlay(ctx, signal.ClusterID, signal.RemediationID)
+	if err != nil {
+		return nil, err
+	}
 
 	defer inv.startDiagSummary(ctx)()
 

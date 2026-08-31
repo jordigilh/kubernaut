@@ -63,7 +63,6 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 				Priority:              "high",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "web-application",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
@@ -121,7 +120,6 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 				Priority:              "critical",
 				RiskTolerance:         "low",
 				BusinessCategory:      "security",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
@@ -172,7 +170,6 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 				Priority:              "critical",
 				RiskTolerance:         "low",
 				BusinessCategory:      "api-backend",
-				ClusterName:           "kubernaut-agent-e2e",
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().

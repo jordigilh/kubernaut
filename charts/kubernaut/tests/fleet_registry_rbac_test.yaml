@@ -481,3 +481,307 @@ tests:
       - hasDocuments:
           count: 0
           filterAware: true
+
+  # ---------------------------------------------------------------------
+  # SP — eaigw branch (IT-HELM-020-011/012)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-011: SP (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-011b: SP ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: team-a
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-012: SP (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-012b: SP does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: eaigw
+      signalprocessing:
+        fleet:
+          namespace: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # AF — eaigw branch (IT-HELM-020-013/014)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-013: AF (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-013b: AF ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: team-a
+    template: templates/apifrontend/apifrontend.yaml
+    # #1919: see IT-HELM-020-007b comment above -- select by rules[0].resources[0]
+    # to disambiguate from the also-unconditional kubernaut-console-access ClusterRole.
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-014: AF (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: rules[0].resources[0]
+      value: investigationsessions
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-014b: AF does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      apifrontend:
+        fleet:
+          namespace: ""
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
+  # EM — eaigw branch (IT-HELM-020-015/016)
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-020-015: EM (eaigw) namespace-scoped Role replaces the ClusterRole rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: team-a
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-015b: EM ClusterRole does NOT contain the eaigw fleet rule when namespace is set"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: team-a
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-016: EM (eaigw) retains the ClusterRole rule when namespace is unset (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["gateway.envoyproxy.io"]
+            resources: ["backends"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["aigateway.envoyproxy.io"]
+            resources: ["mcproutes"]
+            verbs: ["get", "list", "watch"]
+
+  - it: "IT-HELM-020-016b: EM does not render a Role for the fleet registry when namespace is unset (eaigw)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+      effectivenessmonitor:
+        fleet:
+          namespace: ""
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-fleet-registry
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true

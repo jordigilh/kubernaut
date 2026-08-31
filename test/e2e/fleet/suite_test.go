@@ -17,9 +17,10 @@ limitations under the License.
 // Package fleet contains the Fleet E2E test suite (Issue #54).
 //
 // This suite deploys ALL Kubernaut services in a PRIMARY Kind cluster plus
-// fleet infrastructure (Kuadrant MCP Gateway + FMC + Valkey + K8s MCP Server
-// + Keycloak) and a genuinely separate REMOTE Kind cluster (DD-TEST-013),
-// and validates the complete multi-cluster remediation lifecycle:
+// fleet infrastructure (Envoy AI Gateway (EAIGW) + FMC + Valkey + K8s MCP
+// Server + Keycloak) and a genuinely separate REMOTE Kind cluster
+// (DD-TEST-013), and validates the complete multi-cluster remediation
+// lifecycle:
 //
 //	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
@@ -31,8 +32,10 @@ limitations under the License.
 // primary cluster. kube-mcp-server runs in passthrough mode with a real RFC
 // 8693 Standard Token Exchange against Keycloak (mirrors the FMC E2E lane;
 // Keycloak replaces DEX here because DEX has no Standard Token Exchange,
-// Spike S17/S20). Tool names use the `remote_cluster_` prefix from
-// MCPServerRegistration.
+// Spike S17/S20). Tool names use the `remote-cluster__` prefix EAIGW
+// auto-derives from the Backend name (kubernaut#2309: this suite moved off
+// Kuadrant's static broker credential, a structural SPOF; Kuadrant itself
+// stays covered by its own standalone FMC E2E lane).
 //
 // Because every fleet cluster identity is now remote, any K8s object a test
 // wants Gateway/SP/RO/WE to discover, scope-check, or dispatch against via
@@ -111,7 +114,9 @@ const (
 	clusterName = "fleet-e2e"
 	namespace   = "kubernaut-system"
 
-	mcpGatewayURL = "http://localhost:31975/mcp"
+	// mcpGatewayURL targets EAIGW's generated-Service NodePort (DD-TEST-001:
+	// 31976), not Kuadrant's 31975 -- this suite moved to EAIGW (kubernaut#2309).
+	mcpGatewayURL = "http://localhost:31976/mcp"
 )
 
 var (
@@ -259,10 +264,11 @@ func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix for
 // the "remote-cluster" registration (the only cluster targeted across all
-// e2e/fleet MCP tests). Kuadrant uses "remote_cluster_" (from
-// MCPServerRegistration spec.prefix), not the EAIGW "{clusterID}__" convention.
-// DiscoverToolPrefix queries tools/list and extracts the correct prefix for
-// the given cluster.
+// e2e/fleet MCP tests). This suite runs EAIGW, whose "{clusterID}__" naming
+// convention derives the prefix "remote-cluster__" from the Backend name
+// (deployEnvoyAIGatewayRegistrations); DiscoverToolPrefix is gateway-agnostic
+// (PrefixFromToolNames, mcpclient/discover.go) so it also works unchanged
+// against Kuadrant's admin-set spec.prefix in the standalone FMC E2E lane.
 //
 // Retries up to 90s to handle the broker sync delay where the MCP gateway
 // hasn't finished syncing tools from kube-mcp-server yet (~60s observed in
@@ -593,10 +599,11 @@ var _ = SynchronizedAfterSuite(
 			// DD-TESTING-003 / Issue #2036/#2194: production must-gather image
 			// as a local podman container on each cluster's own "kind" network,
 			// replacing the old in-process kubectl-log-scraping (MustGatherPodLogs).
-			// The primary cluster additionally needs the Kuadrant mesh/gateway
-			// infra namespaces (mcp-system/gateway-system/istio-system) that
-			// DeployFleetCoreInfra creates outside kubernaut-system/kubernaut-workflows
-			// -- must-gather's --extra-namespace flag reaches those. Default
+			// The primary cluster additionally needs the EAIGW gateway infra
+			// namespaces (envoy-gateway-system/envoy-ai-gateway-system/
+			// gateway-system, kubernaut#2309) that DeployFleetCoreInfra creates
+			// outside kubernaut-system/kubernaut-workflows -- must-gather's
+			// --extra-namespace flag reaches those. Default
 			// --namespace/--workflow-namespace already cover kubernaut-system/
 			// kubernaut-workflows on both clusters, including the remote's Job/
 			// Pod/Event diagnostics per Issue #1690 RCA follow-up (BR-FLEET-054
@@ -621,7 +628,7 @@ var _ = SynchronizedAfterSuite(
 					Image:           mustGatherImage,
 					OutputDir:       primaryOutputDir,
 					UsePodman:       true,
-					ExtraNamespaces: []string{"mcp-system", "gateway-system", "istio-system"},
+					ExtraNamespaces: []string{"mcp-system", "gateway-system", "envoy-gateway-system", "envoy-ai-gateway-system"},
 				}, GinkgoWriter); err != nil {
 					GinkgoWriter.Printf("Failed to run must-gather image on primary cluster (non-fatal, no diagnostics collected): %v\n", err)
 				}

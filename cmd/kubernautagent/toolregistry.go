@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -185,6 +186,14 @@ type gatewayOverlayResolver struct {
 	discoverer fleetclient.GatewayDiscoverer
 	session    fleetclient.Session
 
+	// sessionProvider resolves the live MCP session on every Overlay call,
+	// following ResilientClient reconnects instead of binding to a
+	// one-time snapshot (issue #2315 self-healing fix). Takes precedence
+	// over session when set -- production wiring (registerFleetTools)
+	// always sets this; only test doubles construct a gatewayOverlayResolver
+	// literal with a static session and no provider.
+	sessionProvider fleetclient.SessionProvider
+
 	// sf deduplicates concurrent Overlay calls for the same clusterID down
 	// to a single ToolsForCluster gateway round trip (SC-5: Denial of
 	// Service Protection), exactly as the deleted ListToolsForClusterTool
@@ -195,12 +204,38 @@ type gatewayOverlayResolver struct {
 	sf singleflight.Group
 }
 
+// resolveSession returns the session to bind newly-constructed BridgeTools
+// to, preferring a live sessionProvider resolution over the static session
+// snapshot when a provider is set -- mirrors fleetclient.ResolveSession's
+// precedence, reimplemented here (rather than called directly) because this
+// struct's session field is the test-double-friendly fleetclient.Session
+// interface, not ResolveSession's concrete *mcp.ClientSession parameter
+// type.
+func (r *gatewayOverlayResolver) resolveSession() (fleetclient.Session, error) {
+	session := r.session
+	if r.sessionProvider != nil {
+		if live := r.sessionProvider(); live != nil {
+			session = live
+		} else {
+			session = nil
+		}
+	}
+	if session == nil {
+		return nil, fmt.Errorf("MCP session not available (gateway disconnected)")
+	}
+	return session, nil
+}
+
 // Overlay implements investigator.FleetOverlayResolver.
 func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
 	v, err, _ := r.sf.Do(clusterID, func() (any, error) {
 		defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
 		if err != nil {
 			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+		}
+		session, sessErr := r.resolveSession()
+		if sessErr != nil {
+			return nil, fmt.Errorf("resolve session for cluster %q: %w", clusterID, sessErr)
 		}
 		names := make([]string, len(defs))
 		for i, def := range defs {
@@ -221,7 +256,7 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 		overlay := make(map[string]tools.Tool, len(defs))
 		for _, def := range defs {
 			genericName := strings.TrimPrefix(def.Name, prefix)
-			bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
+			bridge := fleetclient.NewBridgeTool(def, clusterID, session)
 			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
 		}
 		return overlay, nil
@@ -285,25 +320,26 @@ func fleetOAuth2CredentialsBasePath(oauth2 kaconfig.FleetOAuth2) string {
 	return "/etc/kubernaut-agent/" + secretRef
 }
 
-// buildFleetOAuth2Config translates KA's FleetOAuth2 settings into the
-// mcpclient.ReloadableOAuth2Config the fleet client's transport needs.
+// fleetOAuth2ConfigFromKA translates KA's bespoke FleetOAuth2 config into
+// the shared fleet.FleetOAuth2Config DTO that mcpclient.Connect expects. KA
+// carries its own parallel FleetOAuth2 struct (rather than the shared type
+// every other fleet-aware service uses) for historical reasons; this is the
+// one remaining KA-specific translation point since Connect() itself only
+// knows the shared type.
 //
-// PR #1820 CI RCA (E2E-FLEET-017, run 30712261367): TlsCaFile was previously
-// never set here, so the OAuth2 token-fetch HTTP client always fell back to
-// the system CA trust store. Against a cluster-local IdP with a
-// cert-manager-issued certificate (e.g. Fleet E2E's Keycloak), every token
-// request failed with "tls: failed to verify certificate: x509: certificate
-// signed by unknown authority", leaving kubernaut-agent's fleet readiness
-// gate permanently NotReady. See pkg/fleet/config.go's FleetOAuth2Config.TLSCAFile
-// for the equivalent field already wired for every other fleet-aware service.
-func buildFleetOAuth2Config(oauth2 kaconfig.FleetOAuth2, basePath string) fleetclient.ReloadableOAuth2Config {
-	return fleetclient.ReloadableOAuth2Config{
-		TokenURL:         oauth2.TokenURL,
-		ClientIDPath:     basePath + "/client-id",
-		ClientSecretPath: basePath + "/client-secret",
-		Scopes:           fleetclient.DefaultFleetScopes(oauth2.Scopes),
-		TokenTimeout:     10 * time.Second,
-		TlsCaFile:        oauth2.TLSCaFile,
+// PR #1820 CI RCA (E2E-FLEET-017, run 30712261367): TLSCAFile must be
+// carried through here -- without it, the OAuth2 token-fetch HTTP client
+// always falls back to the system CA trust store, and every token request
+// against a cluster-local IdP with a cert-manager-issued certificate (e.g.
+// Fleet E2E's Keycloak) fails with "tls: failed to verify certificate:
+// x509: certificate signed by unknown authority", leaving kubernaut-agent's
+// fleet readiness gate permanently NotReady.
+func fleetOAuth2ConfigFromKA(oauth2 kaconfig.FleetOAuth2) fleet.FleetOAuth2Config {
+	return fleet.FleetOAuth2Config{
+		Enabled:   oauth2.Enabled,
+		TokenURL:  oauth2.TokenURL,
+		Scopes:    oauth2.Scopes,
+		TLSCAFile: oauth2.TLSCaFile,
 	}
 }
 
@@ -314,8 +350,16 @@ func buildFleetOAuth2Config(oauth2 kaconfig.FleetOAuth2, basePath string) fleetc
 // are registered into any shared, LLM-facing registry here — pre-scoping
 // happens per-investigation via the resolver, replacing the previous
 // LLM-driven list_clusters/list_tools_for_cluster discovery tools entirely.
-// Returns the fleet client (must be closed on shutdown) and the resolver,
-// or (nil, nil) if fleet is disabled.
+//
+// Both the returned client and resolver are always non-nil once fleet mode
+// is configured (gatewayType/endpoint set), even when the initial connect
+// attempt fails: the resolver is built from a SessionProvider that resolves
+// the live session on every Overlay() call, so it self-heals once
+// resilientClient reconnects in the background, instead of staying
+// permanently unavailable until a pod restart (issue #2315). Callers MUST
+// NOT gate resolver construction/registration on a connect error — only on
+// gatewayType/endpoint being configured at all. Returns (nil, nil) only
+// when fleet mode is not configured.
 //
 // Authority: DD-FLEET-005, ADR-068 decision #11
 func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
@@ -329,42 +373,39 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery",
 		"endpoint", endpoint, "gatewayType", gatewayType)
 
-	var opts []fleetclient.Option
+	connectCfg := fleetclient.ConnectConfig{
+		Endpoint:   endpoint,
+		Resilience: cfg.Integrations.Fleet.Resilience,
+	}
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
 		basePath := fleetOAuth2CredentialsBasePath(cfg.Integrations.Fleet.OAuth2)
-		reloadCfg := buildFleetOAuth2Config(cfg.Integrations.Fleet.OAuth2, basePath)
-		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
+		connectCfg.OAuth2 = fleetOAuth2ConfigFromKA(cfg.Integrations.Fleet.OAuth2)
+		connectCfg.CredentialsBasePath = basePath
 		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
 			"secretPath", basePath,
 			"tlsCaFile", cfg.Integrations.Fleet.OAuth2.TLSCaFile)
 	}
 
-	resilienceCfg := fleetclient.ResilienceConfigFromFleet(cfg.Integrations.Fleet.Resilience)
-	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
+	// #1553/#2315: keep (don't discard) the client even when the initial
+	// connect attempt fails -- the fleet readiness gate attaches an
+	// MCPClientProber to it so the periodic probe keeps retrying and the
+	// "fleet" readyz check correctly reports NotReady until reconnect, and
+	// the resolver built below self-heals via SessionProvider once the
+	// background retry succeeds, instead of the client (and fleet tools)
+	// being silently lost with no path back to healthy short of a restart.
+	resilientClient, err := fleetclient.Connect(ctx, connectCfg, fleetLog) //nolint:contextcheck // Connect's internal reload/backoff loops are intentionally independent of any single request context
 	if err != nil {
-		// #1553: keep (don't discard) the disconnected client — the fleet
-		// readiness gate attaches an MCPClientProber to it so the periodic
-		// probe keeps retrying and the "fleet" readyz check correctly
-		// reports NotReady until reconnect, instead of the client being
-		// silently lost with no path back to healthy short of a restart.
 		fleetLog.Error(err, "failed to connect to MCP Gateway at startup; readiness will report NotReady "+
-			"and keep retrying in the background; fleet tools unavailable until reconnect")
-		return resilientClient, nil
+			"and keep retrying in the background; fleet tools will become available automatically once "+
+			"the connection is established (self-healing, issue #2315)")
 	}
 
-	session := resilientClient.Session()
+	discoverer := fleetclient.NewDiscovererWithProvider(fleetregistry.MCPGatewayType(gatewayType), resilientClient.SessionProvider(), resilientClient.Reconnect)
 
-	discoverer, err := fleetclient.NewDiscoverer(fleetregistry.MCPGatewayType(gatewayType), session)
-	if err != nil {
-		fleetLog.Error(err, "failed to create GatewayDiscoverer", "gatewayType", gatewayType)
-		_ = resilientClient.Close()
-		return nil, nil
-	}
-
-	fleetLog.Info("fleet tool pre-scoping resolver ready (DD-FLEET-005)",
+	fleetLog.Info("fleet tool pre-scoping resolver ready (self-healing, DD-FLEET-005)",
 		"endpoint", endpoint, "gatewayType", gatewayType)
-	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, session: session}
+	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, sessionProvider: resilientClient.SessionProvider()}
 }
 
 // fleetReadinessProbeInterval controls how often the #1553 Fleet readiness

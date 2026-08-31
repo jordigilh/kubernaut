@@ -1,7 +1,6 @@
-suite: "DD-PLATFORM-006 Decision Area 11: kubernautAgent.interactive.enabled requires apifrontend.enabled"
+suite: "DD-PLATFORM-006 Decision Area 11 (revised): kubernautAgent's interactive MCP block is fully derived from apifrontend's effective enabled value, not a separately settable field"
 templates:
   - templates/kubernaut-agent/kubernaut-agent.yaml
-  - templates/NOTES.txt
 set:
   postgresql:
     auth:
@@ -23,49 +22,34 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
-  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=false fails the render -- APIFrontend's ka.NewSDKMCPClient is the only caller of KA's interactive endpoint (Phase C: schema-enforced, was a kubernaut-agent.yaml fail() guard)"
+  - it: "apifrontend.enabled left at its default (true) means KA's interactive MCP block renders with no extra opt-in needed -- APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint, so 'AF is on' already implies 'KA must accept its requests'"
     template: templates/kubernaut-agent/kubernaut-agent.yaml
-    set:
-      kubernautAgent:
-        interactive:
-          enabled: true
-      apifrontend:
-        enabled: false
-    asserts:
-      - failedTemplate: {}
-
-  - it: "IT-HELM-1984-205 (Phase C, BR-PLATFORM-010): kubernautAgent.interactive.enabled=true + apifrontend.enabled=false is schema-rejected even when only NOTES.txt is rendered, proving schema (not kubernaut-agent.yaml's own fail() guard) enforces it"
-    template: templates/NOTES.txt
-    set:
-      kubernautAgent:
-        interactive:
-          enabled: true
-      apifrontend:
-        enabled: false
-    asserts:
-      - failedTemplate: {}
-
-  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=true (default) renders successfully -- no new false-positive from the added guard"
-    template: templates/kubernaut-agent/kubernaut-agent.yaml
-    set:
-      kubernautAgent:
-        interactive:
-          enabled: true
     documentSelector:
-      path: kind
-      value: Deployment
+      path: metadata.name
+      value: kubernaut-agent-config
     asserts:
-      - isKind:
-          of: Deployment
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'interactive:\s*\n\s*enabled:\s*true'
 
-  - it: "kubernautAgent.interactive.enabled=false (default) + apifrontend.enabled=false renders successfully -- the guard is scoped to interactive mode only"
+  - it: "apifrontend.enabled=false derives KA's interactive block to disabled too -- no config drift between AF being down and KA still exposing an endpoint with no possible caller"
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     set:
       apifrontend:
         enabled: false
     documentSelector:
-      path: kind
-      value: Deployment
+      path: metadata.name
+      value: kubernaut-agent-config
     asserts:
-      - isKind:
-          of: Deployment
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'interactive:'
+
+  - it: "there is no kubernautAgent.interactive.enabled field left to set independently -- additionalProperties:false on the interactive schema object rejects it, proving the field was actually removed rather than merely undocumented"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+    asserts:
+      - failedTemplate: {}

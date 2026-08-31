@@ -120,21 +120,24 @@ func TestBuildFleetReaderFactory_Enabled_WiresReaderFactory(t *testing.T) {
 	}
 }
 
-// TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully
-// pins the fail-open contract for an unreachable Fleet MCP Gateway endpoint
-// at the ReaderFactory/error level (mirrors GW's/EM's equivalent tests): a
-// connectivity failure must never error out of buildFleetReaderFactory — RO
-// degrades to hub-only mode instead of blocking startup.
+// TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_SelfHeals proves
+// issue #2315's fix: an unreachable Fleet MCP Gateway at startup must never
+// error out of buildFleetReaderFactory, and — unlike the pre-#2315
+// contract this test used to pin (rf == nil forever) — the ReaderFactory
+// must still be built from the resilient client's SessionProvider, so that
+// once the background reconnect succeeds, remote reads self-heal without a
+// pod restart. Calling ReaderFor for a remote clusterID while still
+// disconnected must return a clear transient error, not silently fall back
+// to the local cluster (which would corrupt the pre-remediation hash).
 //
-// #1553 [readiness gate Wave 3]: unlike the pre-#1553 contract, the
-// resilient client is now kept (not discarded) on an initial connection
-// failure — wireFleetReadinessGate attaches an MCPClientProber to it so the
-// periodic readiness probe keeps retrying and RO's "fleet" readyz check
-// correctly reports NotReady (and later recovers) instead of the client
-// being silently lost with no path back to healthy short of a pod restart.
-// Mirrors the identical change made to GW's wireFleetOwnerResolution in
-// Wave 2 (cmd/gateway/main.go).
-func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t *testing.T) {
+// #1553 [readiness gate Wave 3]: the resilient client is kept (not
+// discarded) on an initial connection failure — wireFleetReadinessGate
+// attaches an MCPClientProber to it so the periodic readiness probe keeps
+// retrying and RO's "fleet" readyz check correctly reports NotReady (and
+// later recovers) instead of the client being silently lost with no path
+// back to healthy short of a pod restart. Mirrors the identical change made
+// to GW's wireFleetOwnerResolution (cmd/gateway/main.go).
+func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_SelfHeals(t *testing.T) {
 	t.Parallel()
 
 	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
@@ -153,8 +156,10 @@ func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t
 	if err != nil {
 		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
 	}
-	if rf != nil {
-		t.Error("IT-RO-054-001: fleet.ReaderFactory must remain nil when the Fleet MCP Gateway is unreachable")
+	if rf == nil {
+		t.Fatal("IT-RO-2315-001: fleet.ReaderFactory must still be built (from the resilient client's " +
+			"SessionProvider) even when the Fleet MCP Gateway is initially unreachable, so it self-heals " +
+			"once the background reconnect succeeds instead of staying nil until a pod restart")
 	}
 	if fc == nil {
 		t.Fatal("IT-RO-1553-001: *mcpclient.ResilientClient must be kept (not discarded) when the Fleet " +
@@ -162,6 +167,11 @@ func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t
 	}
 	if fc.Ready() {
 		t.Error("IT-RO-1553-001: the kept client must not report Ready() when its initial connection failed")
+	}
+
+	if _, readerErr := rf.ReaderFor(context.Background(), "remote-cluster"); readerErr == nil {
+		t.Error("IT-RO-2315-001: ReaderFor for a remote clusterID must return a clear transient error while " +
+			"disconnected, not silently succeed against the local cluster")
 	}
 }
 

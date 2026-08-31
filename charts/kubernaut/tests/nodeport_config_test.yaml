@@ -423,15 +423,11 @@ tests:
                   matchLabels:
                     team: sre
 
-  - it: "kubernautAgent interactive.maxConcurrentSessions/rateLimitPerUser default to 50/20 (Issue #1737 gap: chart fallback previously used 5/10 -- confirmed via full-suite E2E to cause '429: max_sessions: Maximum concurrent sessions reached' on nearly every interactive/MCP spec from Ginkgo's own test parallelism alone, well before any application-level concurrency)"
+  - it: "kubernautAgent interactive.maxConcurrentSessions/rateLimitPerUser default to 50/20 (Issue #1737 gap: chart fallback previously used 5/10 -- confirmed via full-suite E2E to cause '429: max_sessions: Maximum concurrent sessions reached' on nearly every interactive/MCP spec from Ginkgo's own test parallelism alone, well before any application-level concurrency). No kubernautAgent.interactive.enabled override needed (DD-PLATFORM-006 Decision Area 11, revised): the block is derived from apifrontend.enabled, which defaults to true."
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     documentSelector:
       path: metadata.name
       value: kubernaut-agent-config
-    set:
-      kubernautAgent:
-        interactive:
-          enabled: true
     asserts:
       - matchRegex:
           path: data["config.yaml"]

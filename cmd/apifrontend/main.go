@@ -235,8 +235,9 @@ func runShutdown(p runShutdownParams) {
 }
 
 // stopBackendDeps stops the CA file watchers, the #1985 DataStorage
-// readiness gate, and closes the Fleet resilient MCP client, logging any
-// close error. Safe to call via defer unconditionally.
+// readiness gate, the fleet cluster registry's background watcher (#2313),
+// and closes the Fleet resilient MCP client, logging any close error. Safe
+// to call via defer unconditionally.
 func stopBackendDeps(deps *backendDeps, logger logr.Logger) {
 	for _, w := range deps.CAWatchers {
 		w.watcher.Stop()
@@ -246,6 +247,13 @@ func stopBackendDeps(deps *backendDeps, logger logr.Logger) {
 	}
 	if deps.dataStorageReadinessGate != nil {
 		deps.dataStorageReadinessGate.Stop()
+	}
+	if deps.FleetClusterRegistry != nil {
+		// #2313: without this, the registry's background K8s dynamic
+		// informer goroutine and its eventCh/stopCh channels leak on every
+		// AF shutdown -- FleetMetadataCache and SignalProcessing already
+		// Stop() their own ClusterRegistry instances; AF was the outlier.
+		deps.FleetClusterRegistry.Stop()
 	}
 	if fc := deps.FleetResilientClient(); fc != nil {
 		logger.Info("Closing fleet MCP Gateway connection")

@@ -24,11 +24,25 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 )
+
+// stubSession implements mcpclient.Session with a no-op CallTool, letting
+// singleflight-dedup tests below construct a gatewayOverlayResolver whose
+// Overlay() succeeds through session resolution (issue #2315: Overlay now
+// resolves a session -- static or via provider -- before returning, since
+// BridgeTools must be bound to a real session) without needing a live MCP
+// Gateway. None of these tests call Execute() on the resulting tools, so a
+// no-op is sufficient.
+type stubSession struct{}
+
+func (stubSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{}, nil
+}
 
 // countingDiscoverer implements mcpclient.GatewayDiscoverer, counting
 // ToolsForCluster calls per clusterID and gating them behind a channel so a
@@ -80,7 +94,7 @@ func (d *countingDiscoverer) callCount(clusterID string) int {
 var _ = Describe("gatewayOverlayResolver.Overlay singleflight dedup (DD-FLEET-005, BR-INTEGRATION-1489)", func() {
 	It("UT-KA-FLEET-022 [SC-5]: N concurrent Overlay calls for the same cluster trigger exactly one ToolsForCluster call", func() {
 		disc := newCountingDiscoverer()
-		resolver := &gatewayOverlayResolver{discoverer: disc}
+		resolver := &gatewayOverlayResolver{discoverer: disc, session: stubSession{}}
 
 		const concurrency = 5
 		var wg sync.WaitGroup
@@ -164,7 +178,7 @@ var _ = Describe("gatewayOverlayResolver.Overlay singleflight dedup (DD-FLEET-00
 	It("UT-KA-FLEET-023: Overlay calls for different clusters are never deduplicated against each other", func() {
 		disc := newCountingDiscoverer()
 		close(disc.release) // no gating needed; calls run sequentially here
-		resolver := &gatewayOverlayResolver{discoverer: disc}
+		resolver := &gatewayOverlayResolver{discoverer: disc, session: stubSession{}}
 
 		_, errA := resolver.Overlay(context.Background(), "prod-east")
 		_, errB := resolver.Overlay(context.Background(), "prod-west")

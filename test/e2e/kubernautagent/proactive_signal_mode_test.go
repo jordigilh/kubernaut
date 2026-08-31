@@ -75,7 +75,6 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// BR-AI-084: Set signal_mode to proactive
 			spec.SignalMode = "proactive"
@@ -152,7 +151,6 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// Set explicit reactive mode
 			spec.SignalMode = "reactive"
@@ -208,7 +206,6 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 				Priority:              "P1",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
-				ClusterName:           "e2e-test",
 			}
 			// signal_mode intentionally NOT set — defaults to reactive
 

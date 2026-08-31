@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -122,6 +123,13 @@ var _ = Describe("E2E-KA-1802-001: fleet cluster_id scoping isolates remediation
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
 				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
 				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				// This test's cluster-a/cluster-b IDs exist purely to prove
+				// Postgres-level remediation-history isolation (Issue #1802);
+				// they are not genuine fleet targets, so an empty-overlay
+				// resolver (no remote tools published) is enough to satisfy
+				// prescopeFleetOverlay's fail-closed gate (Issue #2312/#2314)
+				// without pulling in a real MCP gateway.
+				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}},
 			})
 			return inv, mockClient
 		}

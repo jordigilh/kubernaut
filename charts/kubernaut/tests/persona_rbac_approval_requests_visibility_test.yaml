@@ -1,0 +1,63 @@
+suite: sre/ai-orchestrator personas grant kubernaut_list_approval_requests + kubernaut_get_approval_request (docs/tests/1235 AC-14)
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # Test plan 1235 AC-14 requires both sre and ai-orchestrator to have
+  # BOTH kubernaut_list_approval_requests and kubernaut_get_approval_request.
+  # #1869 later added kubernaut_get_approval_request to sre (for RAR-detail
+  # visibility) but not kubernaut_list_approval_requests, so sre can act on
+  # a known approval but can't discover pending ones. ai-orchestrator never
+  # got either tool. Both are gaps against 1235's own acceptance criteria.
+  # ---------------------------------------------------------------------
+  - it: "AC-14a: sre persona ClusterRole grants kubernaut_list_approval_requests"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-sre
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_list_approval_requests
+
+  - it: "AC-14b: ai-orchestrator persona ClusterRole grants kubernaut_list_approval_requests"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-ai-orchestrator
+    asserts:
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_list_approval_requests
+
+  - it: "AC-14c: ai-orchestrator persona ClusterRole grants kubernaut_get_approval_request"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-ai-orchestrator
+    asserts:
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_get_approval_request

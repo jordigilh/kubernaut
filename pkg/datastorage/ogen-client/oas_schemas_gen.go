@@ -962,6 +962,163 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// Fleet tool overlay resolution failure payload (aiagent.fleet.overlay_failed) - Emitted when a
+// fleet-target investigation's FleetOverlayResolver.Overlay call fails; the investigation fails open
+// and proceeds without the target cluster's tools rather than aborting (DD-FLEET-005, Issue.
+// Ref: #/components/schemas/AIAgentFleetOverlayFailedPayload
+type AIAgentFleetOverlayFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentFleetOverlayFailedPayloadEventType `json:"event_type"`
+	// Target cluster whose tool overlay failed to resolve.
+	ClusterID string `json:"cluster_id"`
+	// Error returned by FleetOverlayResolver.Overlay.
+	ErrorMessage string `json:"error_message"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentFleetOverlayFailedPayload) GetEventType() AIAgentFleetOverlayFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetClusterID returns the value of ClusterID.
+func (s *AIAgentFleetOverlayFailedPayload) GetClusterID() string {
+	return s.ClusterID
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *AIAgentFleetOverlayFailedPayload) GetErrorMessage() string {
+	return s.ErrorMessage
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentFleetOverlayFailedPayload) SetEventType(val AIAgentFleetOverlayFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetClusterID sets the value of ClusterID.
+func (s *AIAgentFleetOverlayFailedPayload) SetClusterID(val string) {
+	s.ClusterID = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *AIAgentFleetOverlayFailedPayload) SetErrorMessage(val string) {
+	s.ErrorMessage = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentFleetOverlayFailedPayloadEventType string
+
+const (
+	AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed AIAgentFleetOverlayFailedPayloadEventType = "aiagent.fleet.overlay_failed"
+)
+
+// AllValues returns all AIAgentFleetOverlayFailedPayloadEventType values.
+func (AIAgentFleetOverlayFailedPayloadEventType) AllValues() []AIAgentFleetOverlayFailedPayloadEventType {
+	return []AIAgentFleetOverlayFailedPayloadEventType{
+		AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentFleetOverlayFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentFleetOverlayFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentFleetOverlayFailedPayloadEventType(data) {
+	case AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed:
+		*s = AIAgentFleetOverlayFailedPayloadEventTypeAiagentFleetOverlayFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Fleet tool overlay unavailable payload (aiagent.fleet.overlay_unavailable) - Emitted when a
+// fleet-target investigation reaches prescopeFleetOverlay on a kubernaut-agent instance with no
+// FleetOverlayResolver configured at all (Issue.
+// Ref: #/components/schemas/AIAgentFleetOverlayUnavailablePayload
+type AIAgentFleetOverlayUnavailablePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentFleetOverlayUnavailablePayloadEventType `json:"event_type"`
+	// Target cluster whose investigation had no fleet overlay resolver configured.
+	ClusterID string `json:"cluster_id"`
+	// Why no overlay was available (e.g. "no FleetOverlayResolver configured on this kubernaut-agent
+	// instance").
+	Reason string `json:"reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentFleetOverlayUnavailablePayload) GetEventType() AIAgentFleetOverlayUnavailablePayloadEventType {
+	return s.EventType
+}
+
+// GetClusterID returns the value of ClusterID.
+func (s *AIAgentFleetOverlayUnavailablePayload) GetClusterID() string {
+	return s.ClusterID
+}
+
+// GetReason returns the value of Reason.
+func (s *AIAgentFleetOverlayUnavailablePayload) GetReason() string {
+	return s.Reason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentFleetOverlayUnavailablePayload) SetEventType(val AIAgentFleetOverlayUnavailablePayloadEventType) {
+	s.EventType = val
+}
+
+// SetClusterID sets the value of ClusterID.
+func (s *AIAgentFleetOverlayUnavailablePayload) SetClusterID(val string) {
+	s.ClusterID = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentFleetOverlayUnavailablePayload) SetReason(val string) {
+	s.Reason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentFleetOverlayUnavailablePayloadEventType string
+
+const (
+	AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable AIAgentFleetOverlayUnavailablePayloadEventType = "aiagent.fleet.overlay_unavailable"
+)
+
+// AllValues returns all AIAgentFleetOverlayUnavailablePayloadEventType values.
+func (AIAgentFleetOverlayUnavailablePayloadEventType) AllValues() []AIAgentFleetOverlayUnavailablePayloadEventType {
+	return []AIAgentFleetOverlayUnavailablePayloadEventType{
+		AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentFleetOverlayUnavailablePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentFleetOverlayUnavailablePayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentFleetOverlayUnavailablePayloadEventType(data) {
+	case AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable:
+		*s = AIAgentFleetOverlayUnavailablePayloadEventTypeAiagentFleetOverlayUnavailable
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Interactive session completed payload (aiagent.interactive.completed) - Emitted when an
 // interactive session ends by complete, cancel, disconnect, or timeout (BR-INTERACTIVE-004,
 // DD-INTERACTIVE-002).
@@ -8830,6 +8987,8 @@ type AuditEventEventData struct {
 	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
 	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
 	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
+	AIAgentFleetOverlayFailedPayload             AIAgentFleetOverlayFailedPayload
+	AIAgentFleetOverlayUnavailablePayload        AIAgentFleetOverlayUnavailablePayload
 	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
 	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
 	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
@@ -8983,6 +9142,8 @@ const (
 	AIAgentInvestigationCancelledPayloadAuditEventEventData                          AuditEventEventDataType = "aiagent.investigation.cancelled"
 	AIAgentAlignmentStepPayloadAuditEventEventData                                   AuditEventEventDataType = "aiagent.alignment.step"
 	AIAgentAlignmentVerdictPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.alignment.verdict"
+	AIAgentFleetOverlayFailedPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.fleet.overlay_failed"
+	AIAgentFleetOverlayUnavailablePayloadAuditEventEventData                         AuditEventEventDataType = "aiagent.fleet.overlay_unavailable"
 	ShadowLLMRequestPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.shadow.llm.request"
 	ShadowLLMResponsePayloadAuditEventEventData                                      AuditEventEventDataType = "aiagent.shadow.llm.response"
 	AIAgentRatelimitDeniedPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.ratelimit.denied"
@@ -9327,6 +9488,16 @@ func (s AuditEventEventData) IsAIAgentAlignmentStepPayload() bool {
 // IsAIAgentAlignmentVerdictPayload reports whether AuditEventEventData is AIAgentAlignmentVerdictPayload.
 func (s AuditEventEventData) IsAIAgentAlignmentVerdictPayload() bool {
 	return s.Type == AIAgentAlignmentVerdictPayloadAuditEventEventData
+}
+
+// IsAIAgentFleetOverlayFailedPayload reports whether AuditEventEventData is AIAgentFleetOverlayFailedPayload.
+func (s AuditEventEventData) IsAIAgentFleetOverlayFailedPayload() bool {
+	return s.Type == AIAgentFleetOverlayFailedPayloadAuditEventEventData
+}
+
+// IsAIAgentFleetOverlayUnavailablePayload reports whether AuditEventEventData is AIAgentFleetOverlayUnavailablePayload.
+func (s AuditEventEventData) IsAIAgentFleetOverlayUnavailablePayload() bool {
+	return s.Type == AIAgentFleetOverlayUnavailablePayloadAuditEventEventData
 }
 
 // IsShadowLLMRequestPayload reports whether AuditEventEventData is ShadowLLMRequestPayload.
@@ -10878,6 +11049,48 @@ func (s AuditEventEventData) GetAIAgentAlignmentVerdictPayload() (v AIAgentAlign
 func NewAIAgentAlignmentVerdictPayloadAuditEventEventData(v AIAgentAlignmentVerdictPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAgentAlignmentVerdictPayload(v)
+	return s
+}
+
+// SetAIAgentFleetOverlayFailedPayload sets AuditEventEventData to AIAgentFleetOverlayFailedPayload.
+func (s *AuditEventEventData) SetAIAgentFleetOverlayFailedPayload(v AIAgentFleetOverlayFailedPayload) {
+	s.Type = AIAgentFleetOverlayFailedPayloadAuditEventEventData
+	s.AIAgentFleetOverlayFailedPayload = v
+}
+
+// GetAIAgentFleetOverlayFailedPayload returns AIAgentFleetOverlayFailedPayload and true boolean if AuditEventEventData is AIAgentFleetOverlayFailedPayload.
+func (s AuditEventEventData) GetAIAgentFleetOverlayFailedPayload() (v AIAgentFleetOverlayFailedPayload, ok bool) {
+	if !s.IsAIAgentFleetOverlayFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentFleetOverlayFailedPayload, true
+}
+
+// NewAIAgentFleetOverlayFailedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentFleetOverlayFailedPayload.
+func NewAIAgentFleetOverlayFailedPayloadAuditEventEventData(v AIAgentFleetOverlayFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentFleetOverlayFailedPayload(v)
+	return s
+}
+
+// SetAIAgentFleetOverlayUnavailablePayload sets AuditEventEventData to AIAgentFleetOverlayUnavailablePayload.
+func (s *AuditEventEventData) SetAIAgentFleetOverlayUnavailablePayload(v AIAgentFleetOverlayUnavailablePayload) {
+	s.Type = AIAgentFleetOverlayUnavailablePayloadAuditEventEventData
+	s.AIAgentFleetOverlayUnavailablePayload = v
+}
+
+// GetAIAgentFleetOverlayUnavailablePayload returns AIAgentFleetOverlayUnavailablePayload and true boolean if AuditEventEventData is AIAgentFleetOverlayUnavailablePayload.
+func (s AuditEventEventData) GetAIAgentFleetOverlayUnavailablePayload() (v AIAgentFleetOverlayUnavailablePayload, ok bool) {
+	if !s.IsAIAgentFleetOverlayUnavailablePayload() {
+		return v, false
+	}
+	return s.AIAgentFleetOverlayUnavailablePayload, true
+}
+
+// NewAIAgentFleetOverlayUnavailablePayloadAuditEventEventData returns new AuditEventEventData from AIAgentFleetOverlayUnavailablePayload.
+func NewAIAgentFleetOverlayUnavailablePayloadAuditEventEventData(v AIAgentFleetOverlayUnavailablePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentFleetOverlayUnavailablePayload(v)
 	return s
 }
 
@@ -12990,6 +13203,8 @@ type AuditEventRequestEventData struct {
 	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
 	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
 	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
+	AIAgentFleetOverlayFailedPayload             AIAgentFleetOverlayFailedPayload
+	AIAgentFleetOverlayUnavailablePayload        AIAgentFleetOverlayUnavailablePayload
 	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
 	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
 	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
@@ -13143,6 +13358,8 @@ const (
 	AIAgentInvestigationCancelledPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aiagent.investigation.cancelled"
 	AIAgentAlignmentStepPayloadAuditEventRequestEventData                                          AuditEventRequestEventDataType = "aiagent.alignment.step"
 	AIAgentAlignmentVerdictPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.alignment.verdict"
+	AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.fleet.overlay_failed"
+	AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "aiagent.fleet.overlay_unavailable"
 	ShadowLLMRequestPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.shadow.llm.request"
 	ShadowLLMResponsePayloadAuditEventRequestEventData                                             AuditEventRequestEventDataType = "aiagent.shadow.llm.response"
 	AIAgentRatelimitDeniedPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.ratelimit.denied"
@@ -13487,6 +13704,16 @@ func (s AuditEventRequestEventData) IsAIAgentAlignmentStepPayload() bool {
 // IsAIAgentAlignmentVerdictPayload reports whether AuditEventRequestEventData is AIAgentAlignmentVerdictPayload.
 func (s AuditEventRequestEventData) IsAIAgentAlignmentVerdictPayload() bool {
 	return s.Type == AIAgentAlignmentVerdictPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentFleetOverlayFailedPayload reports whether AuditEventRequestEventData is AIAgentFleetOverlayFailedPayload.
+func (s AuditEventRequestEventData) IsAIAgentFleetOverlayFailedPayload() bool {
+	return s.Type == AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentFleetOverlayUnavailablePayload reports whether AuditEventRequestEventData is AIAgentFleetOverlayUnavailablePayload.
+func (s AuditEventRequestEventData) IsAIAgentFleetOverlayUnavailablePayload() bool {
+	return s.Type == AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData
 }
 
 // IsShadowLLMRequestPayload reports whether AuditEventRequestEventData is ShadowLLMRequestPayload.
@@ -15038,6 +15265,48 @@ func (s AuditEventRequestEventData) GetAIAgentAlignmentVerdictPayload() (v AIAge
 func NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(v AIAgentAlignmentVerdictPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentAlignmentVerdictPayload(v)
+	return s
+}
+
+// SetAIAgentFleetOverlayFailedPayload sets AuditEventRequestEventData to AIAgentFleetOverlayFailedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentFleetOverlayFailedPayload(v AIAgentFleetOverlayFailedPayload) {
+	s.Type = AIAgentFleetOverlayFailedPayloadAuditEventRequestEventData
+	s.AIAgentFleetOverlayFailedPayload = v
+}
+
+// GetAIAgentFleetOverlayFailedPayload returns AIAgentFleetOverlayFailedPayload and true boolean if AuditEventRequestEventData is AIAgentFleetOverlayFailedPayload.
+func (s AuditEventRequestEventData) GetAIAgentFleetOverlayFailedPayload() (v AIAgentFleetOverlayFailedPayload, ok bool) {
+	if !s.IsAIAgentFleetOverlayFailedPayload() {
+		return v, false
+	}
+	return s.AIAgentFleetOverlayFailedPayload, true
+}
+
+// NewAIAgentFleetOverlayFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentFleetOverlayFailedPayload.
+func NewAIAgentFleetOverlayFailedPayloadAuditEventRequestEventData(v AIAgentFleetOverlayFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentFleetOverlayFailedPayload(v)
+	return s
+}
+
+// SetAIAgentFleetOverlayUnavailablePayload sets AuditEventRequestEventData to AIAgentFleetOverlayUnavailablePayload.
+func (s *AuditEventRequestEventData) SetAIAgentFleetOverlayUnavailablePayload(v AIAgentFleetOverlayUnavailablePayload) {
+	s.Type = AIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData
+	s.AIAgentFleetOverlayUnavailablePayload = v
+}
+
+// GetAIAgentFleetOverlayUnavailablePayload returns AIAgentFleetOverlayUnavailablePayload and true boolean if AuditEventRequestEventData is AIAgentFleetOverlayUnavailablePayload.
+func (s AuditEventRequestEventData) GetAIAgentFleetOverlayUnavailablePayload() (v AIAgentFleetOverlayUnavailablePayload, ok bool) {
+	if !s.IsAIAgentFleetOverlayUnavailablePayload() {
+		return v, false
+	}
+	return s.AIAgentFleetOverlayUnavailablePayload, true
+}
+
+// NewAIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentFleetOverlayUnavailablePayload.
+func NewAIAgentFleetOverlayUnavailablePayloadAuditEventRequestEventData(v AIAgentFleetOverlayUnavailablePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentFleetOverlayUnavailablePayload(v)
 	return s
 }
 

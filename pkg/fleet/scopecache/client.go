@@ -67,13 +67,34 @@ func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind,
 // Without this inference the read-side key would never match the write-side
 // key, causing every federated scope check to permanently and deterministically
 // resolve to "not managed" (Issue #54 SOC2 gap RCA, CI run 28495045499).
+//
+// 2-level hierarchy (Issue #2311): if the resource itself isn't cached as
+// managed, fall back to checking whether its namespace is, mirroring
+// pkg/shared/scope.Manager's hierarchy for the local/hub cluster (ADR-053).
+// pkg/fleet/fmc/syncer.go now syncs Namespace objects carrying the label for
+// exactly this purpose. Without this fallback, fleet scope checks were
+// silently stricter than local ones: a namespace-only kubernaut.ai/managed
+// label worked on the hub but never on a managed remote cluster. Cluster-
+// scoped kinds (e.g. Node) have no namespace to inherit from and are never
+// eligible for the fallback, same as scope.Manager.
 func (c *Client) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
 	group, version := resource.Group, resource.Version
 	if group == "" && version == "" {
 		gvk := scope.InferGVK(resource.Kind)
 		group, version = gvk.Group, gvk.Version
 	}
-	return c.IsManaged(ctx, resource.ClusterID, group, version, resource.Kind, resource.Namespace, resource.Name)
+
+	managed, err := c.IsManaged(ctx, resource.ClusterID, group, version, resource.Kind, resource.Namespace, resource.Name)
+	if err == nil && managed {
+		return true, nil
+	}
+
+	if resource.Namespace == "" || scope.IsClusterScopedKind(resource.Kind) {
+		return false, err
+	}
+
+	nsGVK := scope.InferGVK("Namespace")
+	return c.IsManaged(ctx, resource.ClusterID, nsGVK.Group, nsGVK.Version, "Namespace", "", resource.Namespace)
 }
 
 // Compile-time verification that Client satisfies scope.ScopeChecker.
