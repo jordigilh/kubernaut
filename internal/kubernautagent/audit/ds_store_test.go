@@ -28,8 +28,9 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	inc001 = "inc-001"
-	test   = "test"
+	inc001        = "inc-001"
+	test          = "test"
+	remoteCluster = "remote-cluster"
 )
 
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
@@ -247,7 +248,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
 				event.Data["error_message"] = test
-				event.Data["cluster_id"] = "remote-cluster"
+				event.Data["cluster_id"] = remoteCluster
 				event.Data["phase"] = rca
 				event.Data["cancelled_phase"] = rca
 				event.Data["cancelled_at_turn"] = 3
@@ -619,8 +620,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event := audit.NewEvent(audit.EventTypeFleetOverlayFailed, "corr-2312-failed")
 			event.EventAction = audit.ActionFleetOverlayFailed
 			event.EventOutcome = audit.OutcomeFailure
-			event.ClusterID = "remote-cluster"
-			event.Data["cluster_id"] = "remote-cluster"
+			event.ClusterID = remoteCluster
+			event.Data["cluster_id"] = remoteCluster
 			event.Data["error_message"] = "gateway unreachable: context deadline exceeded"
 
 			err := store.StoreAudit(context.Background(), event)
@@ -628,12 +629,12 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.ClusterID.Value).To(Equal("remote-cluster"),
+			Expect(req.ClusterID.Value).To(Equal(remoteCluster),
 				"the outer ClusterID field must be set so this event is queryable per-cluster independent of the typed payload")
 
 			payload, ok := req.EventData.GetAIAgentFleetOverlayFailedPayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentFleetOverlayFailedPayload")
-			Expect(payload.ClusterID).To(Equal("remote-cluster"))
+			Expect(payload.ClusterID).To(Equal(remoteCluster))
 			Expect(payload.ErrorMessage).To(Equal("gateway unreachable: context deadline exceeded"),
 				"the resolver error must survive into the audit record so a degraded fleet investigation is independently queryable, not just grep-able from logs")
 		})
@@ -647,8 +648,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event := audit.NewEvent(audit.EventTypeFleetOverlayUnavailable, "corr-2312-unavailable")
 			event.EventAction = audit.ActionFleetOverlayUnavailable
 			event.EventOutcome = audit.OutcomeFailure
-			event.ClusterID = "remote-cluster"
-			event.Data["cluster_id"] = "remote-cluster"
+			event.ClusterID = remoteCluster
+			event.Data["cluster_id"] = remoteCluster
 			event.Data["reason"] = "no FleetOverlayResolver configured on this kubernaut-agent instance"
 
 			err := store.StoreAudit(context.Background(), event)
@@ -657,7 +658,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			payload, ok := recorder.calls[0].EventData.GetAIAgentFleetOverlayUnavailablePayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentFleetOverlayUnavailablePayload")
-			Expect(payload.ClusterID).To(Equal("remote-cluster"))
+			Expect(payload.ClusterID).To(Equal(remoteCluster))
 			Expect(payload.Reason).To(Equal("no FleetOverlayResolver configured on this kubernaut-agent instance"))
 		})
 	})
