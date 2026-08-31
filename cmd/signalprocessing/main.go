@@ -331,7 +331,7 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient cli
 			"endpoint", cfg.Fleet.Endpoint)
 	}
 
-	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(localClient, fleetResilientClient.SessionProvider())
+	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(localClient, fleetResilientClient.SessionProvider(), fleetResilientClient.Reconnect)
 	k8sEnricher.SetReaderFactory(readerFactory)
 
 	return fleetResilientClient

@@ -440,7 +440,7 @@ func wireFleetOwnerResolution(
 			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
 	}
 
-	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(srv.GetCachedClient(), fleetResilientClient.SessionProvider())
+	readerFactory := fleetclient.NewMCPReaderFactoryWithProvider(srv.GetCachedClient(), fleetResilientClient.SessionProvider(), fleetResilientClient.Reconnect)
 	prometheusAdapter.SetReaderFactory(readerFactory)
 	return fleetResilientClient
 }

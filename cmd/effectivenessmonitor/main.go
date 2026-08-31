@@ -550,7 +550,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 	}
 
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
-		localClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+		localClient, mcpFleetClient.SessionProvider(), mcpFleetClient.Reconnect, registry.NewToolPrefixAdapter(clusterRegistry))
 	return readerFactory, mcpFleetClient, nil
 }
 

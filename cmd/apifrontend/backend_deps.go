@@ -613,7 +613,7 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	deps.fleetResilientClient = mcpFleetClient
 
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
-		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), mcpFleetClient.Reconnect, registry.NewToolPrefixAdapter(clusterRegistry))
 	deps.FleetReaderFactory = adaptFleetReaderFactory(readerFactory)
 	deps.fleetReadinessGate = wireFleetReadinessGate(ctx, mcpFleetClient, clusterRegistry, logger)
 	return nil

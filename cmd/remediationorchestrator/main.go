@@ -808,7 +808,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg
 			"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
 	}
 
-	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, mcpFleetClient.SessionProvider())
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, mcpFleetClient.SessionProvider(), mcpFleetClient.Reconnect)
 	return readerFactory, mcpFleetClient, nil
 }
 
