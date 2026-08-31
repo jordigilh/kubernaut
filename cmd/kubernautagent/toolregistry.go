@@ -401,7 +401,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 			"the connection is established (self-healing, issue #2315)")
 	}
 
-	discoverer := fleetclient.NewDiscovererWithProvider(fleetregistry.MCPGatewayType(gatewayType), resilientClient.SessionProvider())
+	discoverer := fleetclient.NewDiscovererWithProvider(fleetregistry.MCPGatewayType(gatewayType), resilientClient.SessionProvider(), resilientClient.Reconnect)
 
 	fleetLog.Info("fleet tool pre-scoping resolver ready (self-healing, DD-FLEET-005)",
 		"endpoint", endpoint, "gatewayType", gatewayType)

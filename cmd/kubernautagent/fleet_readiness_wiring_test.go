@@ -164,6 +164,48 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 				"issue #2315: the SAME resolver returned at startup must succeed once the gateway becomes reachable, with no restart")
 		})
 
+		It("IT-KA-2317-001: the resolver recovers via reconnect after the session dies mid-lifetime, without a restart", func() {
+			// Regression coverage for a live Fleet E2E hub failure
+			// (2026-08-31): registerFleetTools connected fine at startup,
+			// but a later protocol-level SSE stream failure (broker
+			// healthy, client session dead) left every subsequent
+			// Overlay() call failing forever with "standalone SSE stream:
+			// exceeded 5 retries without progress", reusing the same dead
+			// session ID -- because NewDiscovererWithProvider was never
+			// given a reconnect callback, so nothing repaired the session
+			// once it went bad after the initial connect succeeded. This
+			// is distinct from IT-KA-2315-001 above (initial connect
+			// failure, then gateway becomes reachable): here the initial
+			// connect succeeds, and the session dies afterward.
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+			DeferCleanup(gw.Close)
+
+			cfg := kaconfig.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = gw.URL()
+			cfg.Integrations.Fleet.GatewayType = eaigwGatewayType
+			cfg.Integrations.Fleet.Resilience = fleet.FleetResilienceConfig{
+				MaxElapsedTime: 5 * time.Second,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			DeferCleanup(cancel)
+
+			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
+			Expect(fc).NotTo(BeNil())
+			DeferCleanup(func() { _ = fc.Close() })
+			Expect(resolver).NotTo(BeNil())
+			Expect(fc.Ready()).To(BeTrue(), "must start connected: the gateway is reachable")
+
+			// Simulate the session dying from a protocol-level error while
+			// the Gateway itself stays healthy -- exactly the observed
+			// production scenario.
+			Expect(fc.Session().Close()).ToNot(HaveOccurred())
+
+			_, overlayErr := resolver.Overlay(ctx, "remote-cluster")
+			Expect(overlayErr).ToNot(HaveOccurred(),
+				"Overlay must recover by reconnecting once the session is dead, not fail forever using the same dead session")
+		})
+
 		// Issue #2262 Phase 2: proves a chart-shaped
 		// Config.Integrations.Fleet.Resilience override actually reaches the
 		// real mcpclient.NewResilient call inside registerFleetTools
