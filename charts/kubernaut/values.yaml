@@ -978,6 +978,19 @@ apifrontend:
           # had kubernaut_get_approval_request; sre did not.
           - kubernaut_get_approval_request
           - kubernaut_complete_no_action
+          # AC-14 (docs/tests/1235) requires sre to also have
+          # kubernaut_list_approval_requests -- #1869 added the sibling
+          # kubernaut_get_approval_request but missed this one, leaving sre
+          # able to act on an approval it already knows the RR ID for but
+          # unable to discover pending ones on its own.
+          - kubernaut_list_approval_requests
+          # Cross-cluster discovery (BR-FLEET-054): list_clusters returns the
+          # cluster_id values kubectl_get/kubectl_list (both already granted
+          # above) need for cross-cluster triage. Without it, a "list alerts
+          # in all clusters" request is forbidden before it can even discover
+          # what clusters exist -- confirmed via live reproduction on the demo
+          # fleet.
+          - list_clusters
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
@@ -1003,6 +1016,16 @@ apifrontend:
           - get_alert_details
           # Alert-driven investigation (#1372)
           - kubernaut_investigate_alert
+          # Cross-cluster discovery (BR-FLEET-054): see sre's list_clusters
+          # comment above -- same rationale, ai-orchestrator already has
+          # kubectl_get/kubectl_list.
+          - list_clusters
+          # AC-14 (docs/tests/1235) requires ai-orchestrator to have both
+          # approval-request tools -- neither was ever added here, unlike sre
+          # (#1869 gave sre kubernaut_get_approval_request, though it also
+          # missed kubernaut_list_approval_requests, fixed above).
+          - kubernaut_list_approval_requests
+          - kubernaut_get_approval_request
         cicd:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
