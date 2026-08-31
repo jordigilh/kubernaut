@@ -118,6 +118,9 @@ func TestBuildFleetReaderDeps_Enabled_WiresReaderFactoryAndClusterRegistry(t *te
 	if deps.fleetReadinessGate != nil {
 		defer deps.fleetReadinessGate.Stop()
 	}
+	if deps.FleetClusterRegistry != nil {
+		defer deps.FleetClusterRegistry.Stop()
+	}
 
 	if deps.FleetReaderFactory == nil {
 		t.Error("IT-AF-054-005: FleetReaderFactory must be wired from Config.Fleet when fleet is enabled — " +
@@ -270,6 +273,9 @@ func TestBuildFleetReaderDeps_Enabled_WithNamespace_ScopesClusterRegistryWatch(t
 	}
 	if deps.fleetReadinessGate != nil {
 		defer deps.fleetReadinessGate.Stop()
+	}
+	if deps.FleetClusterRegistry != nil {
+		defer deps.FleetClusterRegistry.Stop()
 	}
 
 	if deps.FleetClusterRegistry == nil {

@@ -78,7 +78,9 @@ type backendDeps struct {
 	// (BR-FLEET-054). Nil when fleet federation is disabled.
 	FleetReaderFactory tools.ResourceReaderFactory
 	// FleetClusterRegistry backs the list_clusters tool (BR-FLEET-054). Nil
-	// when fleet federation is disabled.
+	// when fleet federation is disabled. Owns a background K8s dynamic-
+	// informer goroutine once started -- stopped on shutdown by
+	// stopBackendDeps (#2313).
 	FleetClusterRegistry registry.ClusterRegistry
 	// fleetResilientClient is the underlying MCP Gateway connection; closed
 	// on shutdown by run() when non-nil.
