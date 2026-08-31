@@ -269,8 +269,15 @@ func ExchangeKeycloakToken(kubeconfigPath, tokenEndpoint, requesterClientID, req
 //
 // hostPort must match the Kind extraPortMappings host port for the Keycloak
 // NodePort (30557) in the caller's Kind config -- see waitForKeycloakReady.
-func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, hostPort int, writer io.Writer) error {
-	if err := deployKeycloakInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+//
+// persistent gates BR-PLATFORM-014's demo-only PersistentVolumeClaim (see
+// deployKeycloakInNamespace) -- false for the FMC and Ginkgo "fleet"/
+// "fullpipeline" suites, which are short-lived and unaffected by state loss
+// on restart; true for the demo entry point (SetupFleetCoreInfrastructure),
+// where a restart without persistence cascades into every dependent
+// service's cached JWKS going stale.
+func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, hostPort int, persistent bool, writer io.Writer) error {
+	if err := deployKeycloakInNamespace(ctx, namespace, kubeconfigPath, persistent, writer); err != nil {
 		return err
 	}
 	return waitForKeycloakReady(ctx, kubeconfigPath, hostPort, writer)
@@ -282,26 +289,65 @@ func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, 
 // the embedded keycloak-realm-fleet.json -- see that file for the client/scope
 // design validated in Spike S18.
 //
-// start-dev mode is used deliberately: this is throwaway E2E infra (in-memory
-// H2 storage, no persistence needed across runs), and start-dev skips the
-// production-mode preflight checks (external DB, hostname strictness) that
-// would otherwise add startup latency without benefit here.
-func deployKeycloakInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	manifest := fmt.Sprintf(`---
+// start-dev mode is used deliberately in every case (persistent or not):
+// start-dev skips the production-mode preflight checks (external DB,
+// hostname strictness) that would otherwise add startup latency without
+// benefit here. With persistent=false (the FMC and Ginkgo "fleet"/
+// "fullpipeline" suites' unchanged behavior), the default dev-file H2
+// database lives in the container's writable layer with no
+// PersistentVolumeClaim -- fine for throwaway, short-lived E2E infra.
+//
+// persistent=true (BR-PLATFORM-014, demo entry point only) adds a
+// PersistentVolumeClaim mounted at Keycloak's dev-file H2 database path
+// (/opt/keycloak/data/h2) so realm state (signing keys, imported realm,
+// client secrets) survives pod restarts -- otherwise a restart regenerates
+// all of that from the --import-realm fixture, invalidating every
+// dependent service's cached JWKS. It also annotates the pod template so
+// stakater/Reloader (installed by ensureKeycloakCertManagerIssuer's demo
+// call site) auto-restarts Keycloak when cert-manager renews keycloak-tls
+// -- safe now that a restart no longer loses state.
+func deployKeycloakInNamespace(ctx context.Context, namespace, kubeconfigPath string, persistent bool, writer io.Writer) error {
+	var pvcBlock, annotationsBlock, dataVolumeMount, dataVolume string
+	if persistent {
+		pvcBlock = fmt.Sprintf(`---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data
+  namespace: %s
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+`, namespace)
+		annotationsBlock = `
+      annotations:
+        secret.reloader.stakater.com/reload: "keycloak-tls"`
+		dataVolumeMount = `
+        - name: keycloak-data
+          mountPath: /opt/keycloak/data/h2`
+		dataVolume = `
+      - name: keycloak-data
+        persistentVolumeClaim:
+          claimName: keycloak-data`
+	}
+
+	manifest := fmt.Sprintf(`%[1]s---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: keycloak-realm-config
-  namespace: %[1]s
+  namespace: %[2]s
 data:
   kubernaut-fleet-realm.json: |
-%[2]s
+%[3]s
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: keycloak
-  namespace: %[1]s
+  namespace: %[2]s
 spec:
   replicas: 1
   selector:
@@ -310,11 +356,11 @@ spec:
   template:
     metadata:
       labels:
-        app: keycloak
+        app: keycloak%[4]s
     spec:
       containers:
       - name: keycloak
-        image: %[3]s
+        image: %[5]s
         args: ["start-dev", "--import-realm"]
         env:
         - name: KC_BOOTSTRAP_ADMIN_USERNAME
@@ -338,7 +384,7 @@ spec:
           readOnly: true
         - name: tls-certs
           mountPath: /etc/keycloak-tls
-          readOnly: true
+          readOnly: true%[6]s
         readinessProbe:
           httpGet:
             path: /realms/master
@@ -368,13 +414,13 @@ spec:
           name: keycloak-realm-config
       - name: tls-certs
         secret:
-          secretName: keycloak-tls
+          secretName: keycloak-tls%[7]s
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: keycloak
-  namespace: %[1]s
+  namespace: %[2]s
 spec:
   type: NodePort
   ports:
@@ -384,7 +430,7 @@ spec:
     nodePort: 30557
   selector:
     app: keycloak
-`, namespace, indentPEM(keycloakRealmFleetJSON), keycloakImage)
+`, pvcBlock, namespace, indentPEM(keycloakRealmFleetJSON), annotationsBlock, keycloakImage, dataVolumeMount, dataVolume)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

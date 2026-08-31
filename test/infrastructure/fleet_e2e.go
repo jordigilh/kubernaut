@@ -676,16 +676,37 @@ func provisionFleetCoreInfra(ctx context.Context, clusterName, kubeconfigPath, n
 	if err := provisionInterServiceCA(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return nil, "", fmt.Errorf("inter-service CA provisioning failed: %w", err)
 	}
-	if keycloakNamespace != namespace {
+	// isDemo distinguishes the demo entry point (SetupFleetCoreInfrastructure,
+	// keycloakNamespace="idp") from the "fleet"/"fullpipeline" Ginkgo
+	// suites (keycloakNamespace==namespace) -- see idpNamespace's doc
+	// comment. BR-PLATFORM-014's auto-renewing certificate + persistent
+	// Keycloak storage are scoped to the demo path only: the Ginkgo suites
+	// are short-lived and keep their existing ad hoc 24h chart-CA-signed
+	// certificate with zero added dependencies or startup time.
+	isDemo := keycloakNamespace != namespace
+	if isDemo {
 		if err := CreateTestNamespace(ctx, keycloakNamespace, kubeconfigPath, writer); err != nil {
 			return nil, "", fmt.Errorf("failed to create %s namespace for Keycloak: %w", keycloakNamespace, err)
 		}
-	}
-	if kcTLSErr := ensureKeycloakTLSFromChartCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); kcTLSErr != nil {
-		return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", kcTLSErr)
+		if err := InstallCertManager(ctx, kubeconfigPath, writer); err != nil {
+			return nil, "", fmt.Errorf("cert-manager installation failed: %w", err)
+		}
+		if err := WaitForCertManagerReady(ctx, kubeconfigPath, writer); err != nil {
+			return nil, "", fmt.Errorf("cert-manager readiness check failed: %w", err)
+		}
+		if err := installReloader(ctx, kubeconfigPath, writer); err != nil {
+			return nil, "", fmt.Errorf("reloader installation failed: %w", err)
+		}
+		if err := ensureKeycloakCertManagerIssuer(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); err != nil {
+			return nil, "", fmt.Errorf("keycloak-tls cert-manager provisioning failed: %w", err)
+		}
+	} else {
+		if kcTLSErr := ensureKeycloakTLSFromChartCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); kcTLSErr != nil {
+			return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", kcTLSErr)
+		}
 	}
 	_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
-	if kcErr := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, keycloakHostPortFleet, writer); kcErr != nil {
+	if kcErr := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, keycloakHostPortFleet, isDemo, writer); kcErr != nil {
 		return nil, "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 

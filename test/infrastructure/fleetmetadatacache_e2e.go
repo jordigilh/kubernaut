@@ -160,7 +160,9 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 
 	// ── Phase 5: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5: Deploying Keycloak OIDC provider...")
-	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, writer); kcErr != nil {
+	// persistent=false: this lane is short-lived (BR-PLATFORM-014 scopes
+	// persistence to the demo entry point only), same behavior as before.
+	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, false, writer); kcErr != nil {
 		return "", "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 
