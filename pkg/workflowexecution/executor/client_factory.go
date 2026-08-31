@@ -77,7 +77,14 @@ type mcpClientFactory struct {
 	// one-time snapshot (issue #2315 self-healing fix). Takes precedence
 	// over session when set -- see mcpclient.ResolveSession.
 	sessionProvider mcpclient.SessionProvider
-	prefixResolver  registry.ToolPrefixResolver
+	// reconnect (typically the owning ResilientClient's Reconnect method) is
+	// wired into the returned remoteClient's reader/writer as WithReconnect,
+	// so a session that dies mid-lifetime (SSE stream failure between two
+	// Get/List/Create/Delete calls on the same remoteClient, not just an
+	// initial connect failure -- issue #2317) triggers one reconnect-and-retry
+	// instead of failing every call forever until the pod restarts.
+	reconnect      func(context.Context) error
+	prefixResolver registry.ToolPrefixResolver
 }
 
 // NewMCPClientFactory creates a ClientFactory bound to a static session
@@ -103,10 +110,15 @@ func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession, 
 // snapshot, so it keeps working transparently across
 // *mcpclient.ResilientClient reconnects -- including recovering from an
 // initial connect failure once the gateway becomes reachable, with no
-// restart required (issue #2315). An optional ToolPrefixResolver enables
-// gateway-specific tool prefix lookup; when nil, the EAIGW "{clusterID}__"
-// convention is used.
-func NewMCPClientFactoryWithProvider(localClient client.Client, provider mcpclient.SessionProvider, resolver ...registry.ToolPrefixResolver) ClientFactory {
+// restart required (issue #2315).
+//
+// reconnect (typically the owning ResilientClient's Reconnect method) is
+// wired into the returned remoteClient's reader/writer, additionally
+// repairing a session that goes bad *mid-lifetime* rather than only at
+// initial connect (issue #2317). Pass nil to opt out. An optional
+// ToolPrefixResolver enables gateway-specific tool prefix lookup; when nil,
+// the EAIGW "{clusterID}__" convention is used.
+func NewMCPClientFactoryWithProvider(localClient client.Client, provider mcpclient.SessionProvider, reconnect func(context.Context) error, resolver ...registry.ToolPrefixResolver) ClientFactory {
 	var pr registry.ToolPrefixResolver
 	if len(resolver) > 0 {
 		pr = resolver[0]
@@ -114,6 +126,7 @@ func NewMCPClientFactoryWithProvider(localClient client.Client, provider mcpclie
 	return &mcpClientFactory{
 		localClient:     localClient,
 		sessionProvider: provider,
+		reconnect:       reconnect,
 		prefixResolver:  pr,
 	}
 }
@@ -145,6 +158,17 @@ func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (Exe
 		}
 		opts = append(opts, mcpclient.WithToolPrefix(prefix))
 	}
+
+	if f.sessionProvider != nil {
+		readerOpts := opts
+		if f.reconnect != nil {
+			readerOpts = append(readerOpts, mcpclient.WithReconnect(f.reconnect))
+		}
+		reader := mcpclient.NewFromSessionProvider(f.sessionProvider, clusterID, readerOpts...)
+		writer := mcpclient.NewWriterFromSessionProvider(f.sessionProvider, clusterID, readerOpts...)
+		return &remoteClient{reader: reader, writer: writer}, nil
+	}
+
 	reader := mcpclient.NewFromSession(session, clusterID, opts...)
 	writer := mcpclient.NewWriterFromSession(session, clusterID, opts...)
 	return &remoteClient{reader: reader, writer: writer}, nil

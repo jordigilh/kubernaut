@@ -499,7 +499,7 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 			"endpoint", cfg.Fleet.Endpoint)
 	}
 
-	return weexecutor.NewMCPClientFactoryWithProvider(localClient, fleetResilientClient.SessionProvider()), fleetResilientClient
+	return weexecutor.NewMCPClientFactoryWithProvider(localClient, fleetResilientClient.SessionProvider(), fleetResilientClient.Reconnect), fleetResilientClient
 }
 
 // buildExecutorRegistry wires up the BR-WE-014 executor registry (Strategy
