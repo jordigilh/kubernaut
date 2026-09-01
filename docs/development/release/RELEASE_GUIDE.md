@@ -217,11 +217,12 @@ gh run list --workflow=release.yml --limit 1
 gh run watch
 ```
 
-Expected duration: budget at least 90 minutes — 28 image builds, CVE scans,
-two rounds of Helm smoke tests, signing/attestation, SLSA provenance, and the
-GitHub Release all have to complete in sequence or in gated parallel. This
-number is a floor, not a measured average; treat it as "don't panic before
-this," not an SLA.
+Expected duration: ~25–40 minutes end-to-end (measured across the six
+v1.6.0-rc runs on record). The image builds are not the bottleneck — they run
+in parallel and finish in 3-5 minutes each. The `hook`-mode Helm smoke test is
+consistently the longest single job (~15-20 minutes) and sits on the critical
+path for manifests, Helm publish, and the GitHub Release, so it's usually
+what you're waiting on.
 
 ### Step 9: Verify
 
@@ -447,17 +448,50 @@ build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
 signing, and SLSA provenance all gate the release now, not just the image
 builds:
 
-0. **Prepare** — extract version metadata from the tag.
-1. **Build & Push Images** — 28 jobs (14 services × 2 arch).
-2. **Security Scan** — Trivy + SBOM, one job per image per arch.
-3. **Helm Smoke Test** — Kind cluster, both TLS modes, amd64 images only.
-4. **Multi-Arch Manifests** — needs stage 1 (both arches) + stage 3; tags `:latest` on GA.
-5. **Sign & Attest / SLSA Provenance** — needs stage 4 + stage 2 (both arches).
-6. **Helm Chart Publish** — needs stage 1 (both arches) + stage 3; runs in parallel with stage 5.
-7. **GitHub Release** — needs everything above; attaches SBOMs and provenance bundles.
+```mermaid
+flowchart LR
+    P["0: Prepare"] --> BA["1: Build amd64\n(14 jobs)"]
+    P --> BR["1: Build arm64, native\n(12 Go services)"]
+    P --> BQ["1: Build arm64, QEMU\n(must-gather, db-migrate)"]
+
+    BA --> SA["2: Security Scan amd64\n(Trivy + SBOM)"]
+    BR --> SR["2: Security Scan arm64\n(Trivy + SBOM)"]
+    BQ --> SR
+
+    BA --> ST["3: Helm Smoke Test\n(Kind, hook + cert-manager TLS)"]
+
+    BA --> M["4: Multi-Arch Manifests\n(+ :latest on GA)"]
+    BR --> M
+    BQ --> M
+    ST --> M
+
+    BA --> HP["6: Helm Chart Publish"]
+    BR --> HP
+    BQ --> HP
+    ST --> HP
+
+    M --> SG["5: Sign & Attest\n(Cosign)"]
+    SA --> SG
+    SR --> SG
+
+    M --> PR["5: SLSA Provenance"]
+    SA --> PR
+    SR --> PR
+
+    ST --> R["7: GitHub Release"]
+    M --> R
+    HP --> R
+    SA --> R
+    SR --> R
+    SG --> R
+    PR --> R
+```
 
 Security scanning and Helm smoke tests both gate the release: a failing scan
-or smoke test blocks the GitHub Release from being created.
+or smoke test blocks the GitHub Release from being created. Everything
+downstream of stage 1 needs both `build-amd64` and *both* arm64 build jobs to
+finish, not just "arm64 is done" — `build-arm64` (native, 12 services) and
+`build-arm64-qemu` (`must-gather`, `db-migrate`) are separate jobs.
 
 ### Stage 0: Prepare
 
