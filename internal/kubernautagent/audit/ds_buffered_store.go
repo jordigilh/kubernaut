@@ -98,10 +98,10 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		CorrelationID:  event.CorrelationID,
 	}
 	if event.ActingUser != "" {
-		req.ActorType.SetTo("User")
+		req.ActorType.SetTo("user")
 		req.ActorID.SetTo(event.ActingUser)
 	} else {
-		bActorType := "Service"
+		bActorType := "service"
 		bActorID := "kubernaut-agent"
 		if event.ActorID != "" {
 			bActorID = event.ActorID

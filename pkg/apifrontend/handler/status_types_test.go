@@ -210,6 +210,39 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		Expect(meta).To(HaveKey("started_at"))
 	})
 
+	It("UT-AF-2325-001: Analyzing phase surfaces workflow_id once selected (SI-4)", func() {
+		rr := &remediationv1.RemediationRequest{
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseAnalyzing,
+				WorkflowSelection: &remediationv1.WorkflowSelection{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{
+						WorkflowID: "crashloop-rollback-v1",
+					},
+				},
+			},
+		}
+
+		meta := handler.BuildPhaseMetadata(rr, nil)
+
+		Expect(meta).To(HaveKeyWithValue("workflow_id", "crashloop-rollback-v1"),
+			"SI-4 (#2325): workflow_id must surface as soon as status.workflowSelection is "+
+				"populated, not only once OverallPhase reaches Executing -- selection can "+
+				"complete tens of seconds before the phase transitions away from Analyzing")
+	})
+
+	It("UT-AF-2325-002: Analyzing phase omits workflow_id when no workflow selected yet (SI-10)", func() {
+		rr := &remediationv1.RemediationRequest{
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseAnalyzing,
+			},
+		}
+
+		meta := handler.BuildPhaseMetadata(rr, nil)
+
+		Expect(meta).NotTo(HaveKey("workflow_id"),
+			"SI-10: must not fabricate a workflow_id before selection has actually happened")
+	})
+
 	It("UT-AF-1460-008: terminal phases return outcome/failure_reason/skip_reason", func() {
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{

@@ -183,7 +183,7 @@ func makeLLMRequestEvent(correlationID, prompt string, ts time.Time) ogenclient.
 		EventOutcome:   ogenclient.AuditEventEventOutcomeSuccess,
 		CorrelationID:  correlationID,
 	}
-	evt.ActorType.SetTo("Service")
+	evt.ActorType.SetTo("service")
 	evt.ActorID.SetTo("kubernaut-agent")
 	payload := ogenclient.LLMRequestPayload{
 		EventType:     ogenclient.LLMRequestPayloadEventTypeAiagentLlmRequest,
@@ -207,7 +207,7 @@ func makeLLMResponseEvent(correlationID, analysis string, ts time.Time) ogenclie
 		EventOutcome:   ogenclient.AuditEventEventOutcomeSuccess,
 		CorrelationID:  correlationID,
 	}
-	evt.ActorType.SetTo("Service")
+	evt.ActorType.SetTo("service")
 	evt.ActorID.SetTo("kubernaut-agent")
 	payload := ogenclient.LLMResponsePayload{
 		EventType:       ogenclient.LLMResponsePayloadEventTypeAiagentLlmResponse,

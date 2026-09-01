@@ -77,6 +77,13 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 	if rr.Spec.SignalName != "" {
 		meta["alert_name"] = rr.Spec.SignalName
 	}
+	// #2325: workflow_id is phase-independent -- selection completes while
+	// OverallPhase is still "Analyzing", tens of seconds before it moves to
+	// "Executing". Surface it as soon as it exists rather than gating on a
+	// later phase (SI-4).
+	if wf := rr.Status.GetWorkflowSelection().SelectedWorkflowRef; wf != nil {
+		meta["workflow_id"] = wf.WorkflowID
+	}
 
 	addPhaseSpecificMetadata(meta, rr, ea)
 
@@ -122,10 +129,8 @@ func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.Remediation
 }
 
 // addExecutingPhaseMetadata populates phase metadata for PhaseExecuting.
+// workflow_id is set unconditionally in BuildPhaseMetadata (#2325), not here.
 func addExecutingPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
-	if wf := rr.Status.GetWorkflowSelection().SelectedWorkflowRef; wf != nil {
-		meta["workflow_id"] = wf.WorkflowID
-	}
 	if st := rr.Status.GetPhaseProgress().ExecutingStartTime; st != nil {
 		meta["started_at"] = st.Format(time.RFC3339)
 	}
