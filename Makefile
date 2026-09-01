@@ -950,11 +950,18 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # Traefik, THEN `helm upgrade --install charts/kubernaut` itself, wired up
 # Console-first -- Gateway starts disabled (AUTONOMOUS=true to enable it) so
 # you investigate the first demo scenario via Console chat before opting
-# into the fully autonomous flow. Leaves the cluster running -- tear down
-# with `kind delete cluster --name fleet-e2e` (and the `-remote` sibling)
+# into the fully autonomous flow. Leaves the clusters running -- tear down
+# with `kind delete cluster --name kubernaut-hub` (and `kubernaut-remote-cluster`)
 # when done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name
 # read as CI-only test tooling to demo readers, when this is the same
 # "fleet demo/QE environment" BR-PLATFORM-014 already documents by that name.
+# Cluster names default to kubernaut-hub/kubernaut-remote-cluster (2026-09-01,
+# kubernaut-demo-scenarios#427): "fleet-e2e" is CI's own test cluster name
+# (test/e2e/fleet/suite_test.go), reused here only by coincidence of the old
+# default -- this entry point is a separate binary and was never coupled to
+# it. "kubernaut-remote-cluster" matches the "remote-cluster" identity every
+# fleet MCPServerRegistration/AlertManager label already uses for this same
+# physical cluster.
 .PHONY: setup-fleet-demo-infra
 setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, and a pre-created llm-credentials-primary Secret
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_ENDPOINT)" ]; then \
@@ -981,12 +988,13 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
 		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
 		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
-		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
+		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)
 	@if [ -z "$(KUBECONFIG)" ]; then \
-		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/fleet-e2e-config"; \
+		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/kubernaut-hub-config"; \
 		exit 1; \
 	fi
 	go run ./hack/bind-fleet-af-rbac -kubeconfig "$(KUBECONFIG)"

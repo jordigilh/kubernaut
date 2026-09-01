@@ -34,8 +34,8 @@
 // infrastructure.InstallFleetDemoHelmChart (test/infrastructure/fleet_demo_helm.go).
 //
 // The cluster is left running: tear it down manually with
-// `kind delete cluster --name <cluster-name>` (and the "-remote" sibling)
-// when done.
+// `kind delete cluster --name <cluster-name>` (and the "-remote-cluster-name"
+// sibling) when done.
 package main
 
 import (
@@ -50,7 +50,8 @@ import (
 )
 
 func main() {
-	clusterName := flag.String("cluster-name", "fleet-e2e", "Kind cluster name for the hub cluster (the spoke cluster is named <cluster-name>-remote)")
+	clusterName := flag.String("cluster-name", "kubernaut-hub", "Kind cluster name for the hub cluster")
+	remoteClusterName := flag.String("remote-cluster-name", "kubernaut-remote-cluster", "Kind cluster name for the remote/spoke cluster -- matches the \"remote-cluster\" identity every fleet MCPServerRegistration/AlertManager label already uses for it")
 	gatewayTypeFlag := flag.String("gateway-type", string(registry.GatewayEAIGW), "MCP Gateway implementation to deploy: \"eaigw\" or \"kuadrant\" (kuadrant has a known broker-credential SPOF, issue #2309)")
 	// Issue #2333: some E2E demo scenarios (pending-taint, pdb-deadlock,
 	// autoscale, node-notready) taint/drain/pressure-test a worker node
@@ -58,7 +59,7 @@ func main() {
 	// default (control-plane-only). Only takes effect on first creation --
 	// Kind can't add nodes to an already-running cluster, so requesting
 	// workers against an existing single-node spoke requires deleting it
-	// first (`kind delete cluster --name <cluster-name>-remote`).
+	// first (`kind delete cluster --name <remote-cluster-name>`).
 	spokeWorkers := flag.Int("spoke-workers", 0, "number of extra worker nodes to add to the spoke cluster (default 0: control-plane-only, current behavior)")
 	autonomous := flag.Bool("autonomous", false, "enable Gateway (gateway.enabled=true) so demo alerts auto-remediate; default false is Console-first, so you drive the first investigation yourself")
 	llmProvider := flag.String("llm-provider", "", "required: global.llmProfiles.primary.provider (e.g. openai_compatible)")
@@ -109,13 +110,13 @@ func main() {
 	}
 
 	ctx := context.Background()
-	fleetOpts, _, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, kubeconfigPath, gatewayType, *spokeWorkers, os.Stdout)
+	fleetOpts, remoteKubeconfigPath, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, *remoteClusterName, kubeconfigPath, gatewayType, *spokeWorkers, os.Stdout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ setup-fleet-infra failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := infrastructure.InstallFleetDemoHelmChart(ctx, kubeconfigPath, fleetOpts, demoOpts, os.Stdout); err != nil {
+	if err := infrastructure.InstallFleetDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, fleetOpts, demoOpts, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ helm install failed: %v\n", err)
 		os.Exit(1)
 	}

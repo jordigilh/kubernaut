@@ -312,7 +312,7 @@ func checkSecretExists(ctx context.Context, kubeconfigPath, namespace, secretNam
 // value -- must be non-nil for fleet federation to actually work, but the
 // nil case is still handled (mirrors InstallFullPipelineHelmChart) so a
 // caller without fleet infra can still install a non-fleet chart.
-func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath string, fleetOpts *FleetHelmOptions, opts FleetDemoHelmOptions, writer io.Writer) error {
+func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigPath string, fleetOpts *FleetHelmOptions, opts FleetDemoHelmOptions, writer io.Writer) error {
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -409,6 +409,10 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath string, fleet
 		_, _ = fmt.Fprintln(writer, "  Gateway is disabled -- run a demo scenario with --alert-only, then ask")
 		_, _ = fmt.Fprintln(writer, "  Console to investigate. Re-run with -autonomous to see it happen on its own.")
 	}
+	_, _ = fmt.Fprintln(writer, "\n  To run a kubernaut-demo-scenarios scenario in fleet mode (hub+spoke split")
+	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these before ./scenarios/<name>/run.sh:")
+	_, _ = fmt.Fprintf(writer, "    export HUB_KUBECONFIG=%s\n", kubeconfigPath)
+	_, _ = fmt.Fprintf(writer, "    export SPOKE_KUBECONFIG=%s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
