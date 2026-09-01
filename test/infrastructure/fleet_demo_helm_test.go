@@ -44,20 +44,18 @@ var _ = Describe("FleetDemoHelmOptions.Validate", func() {
 		},
 		Entry("UT-INFRA-FLEETDEMO-001: all required fields set passes",
 			FleetDemoHelmOptions{
-				LLMProvider:   "openai_compatible",
-				LLMModel:      "gpt-4o",
-				LLMEndpoint:   "https://api.openai.com/v1",
-				LLMAPIKeyFile: "/tmp/key.txt",
-			}, false, nil),
-		Entry("UT-INFRA-FLEETDEMO-002: missing everything reports every flag",
-			FleetDemoHelmOptions{}, true,
-			[]string{"-llm-provider", "-llm-model", "-llm-endpoint", "-llm-api-key-file"}),
-		Entry("UT-INFRA-FLEETDEMO-003: missing only the API key file reports just that one",
-			FleetDemoHelmOptions{
 				LLMProvider: "openai_compatible",
 				LLMModel:    "gpt-4o",
 				LLMEndpoint: "https://api.openai.com/v1",
-			}, true, []string{"-llm-api-key-file"}),
+			}, false, nil),
+		Entry("UT-INFRA-FLEETDEMO-002: missing everything reports every flag",
+			FleetDemoHelmOptions{}, true,
+			[]string{"-llm-provider", "-llm-model", "-llm-endpoint"}),
+		Entry("UT-INFRA-FLEETDEMO-003: missing only the endpoint reports just that one",
+			FleetDemoHelmOptions{
+				LLMProvider: "openai_compatible",
+				LLMModel:    "gpt-4o",
+			}, true, []string{"-llm-endpoint"}),
 	)
 })
 
@@ -200,23 +198,33 @@ var _ = Describe("buildFleetDemoHelmArgs", func() {
 })
 
 var _ = Describe("buildFleetDemoHelmSecretsManifest", func() {
-	It("UT-INFRA-FLEETDEMO-020: renders all four required Secrets with the values passed in", func() {
-		manifest := buildFleetDemoHelmSecretsManifest("kubernaut-system", "pgpass123", "valkeypass456", "sk-my-real-key", "cookiesecretvalue")
+	It("UT-INFRA-FLEETDEMO-020: renders the three tool-generated Secrets with the values passed in", func() {
+		manifest := buildFleetDemoHelmSecretsManifest("kubernaut-system", "pgpass123", "valkeypass456", "cookiesecretvalue")
 		Expect(manifest).To(ContainSubstring("name: postgresql-secret"))
 		Expect(manifest).To(ContainSubstring("POSTGRES_PASSWORD: pgpass123"))
 		Expect(manifest).To(ContainSubstring("name: valkey-secret"))
 		Expect(manifest).To(ContainSubstring("password: valkeypass456"))
-		Expect(manifest).To(ContainSubstring("name: llm-credentials-primary"))
-		Expect(manifest).To(ContainSubstring("api_key: sk-my-real-key"))
 		Expect(manifest).To(ContainSubstring("name: console-oauth-creds"))
 		Expect(manifest).To(ContainSubstring("client-id: kubernaut-console"))
 		Expect(manifest).To(ContainSubstring("client-secret: e2e-console-secret"))
 		Expect(manifest).To(ContainSubstring("cookie-secret: cookiesecretvalue"))
 	})
 
+	It("UT-INFRA-FLEETDEMO-020b: never renders the LLM credentials Secret -- the user creates it themselves", func() {
+		manifest := buildFleetDemoHelmSecretsManifest("kubernaut-system", "pgpass123", "valkeypass456", "cookiesecretvalue")
+		Expect(manifest).NotTo(ContainSubstring("name: llm-credentials-primary"))
+		Expect(manifest).NotTo(ContainSubstring("api_key:"))
+	})
+
 	It("UT-INFRA-FLEETDEMO-021: scopes every Secret to the namespace passed in", func() {
-		manifest := buildFleetDemoHelmSecretsManifest("my-ns", "a", "b", "c", "d")
+		manifest := buildFleetDemoHelmSecretsManifest("my-ns", "a", "b", "c")
 		Expect(manifest).To(ContainSubstring("namespace: my-ns"))
 		Expect(manifest).NotTo(ContainSubstring("namespace: kubernaut-system"))
+	})
+})
+
+var _ = Describe("fleetDemoDefaultAAPolicyRego", func() {
+	It("UT-INFRA-FLEETDEMO-022: always requires approval, unconditionally", func() {
+		Expect(fleetDemoDefaultAAPolicyRego).To(ContainSubstring("default require_approval := true"))
 	})
 })

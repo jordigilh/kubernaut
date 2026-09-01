@@ -18,9 +18,14 @@
 // -gateway-type=kuadrant if you specifically need it.
 //
 // Use this (`make setup-fleet-demo-infra`) for a one-shot, ready-to-browse
-// fleet + Kubernaut stack: pass your own LLM credentials and (optionally)
-// Rego policy files -- both legitimately vary per setup and don't belong
-// hardcoded into shared test-infra Go code.
+// fleet + Kubernaut stack. You must create the LLM credentials Secret
+// yourself first (`kubectl create secret generic llm-credentials-primary
+// --from-literal=api_key=... -n kubernaut-system`, README "Try It Out") --
+// this tool never reads or handles that credential material. Everything
+// else (PostgreSQL/Valkey/console-oauth Secrets, a catch-all
+// classification policy and an "always require approval" gate for
+// SignalProcessing/AIAnalysis Rego) is generated automatically unless you
+// pass -sp-policy-file/-aa-policy-file to override.
 //
 // Shares its provisioning logic with the "fleet" E2E suite via
 // infrastructure.SetupFleetCoreInfrastructureWithGateway
@@ -51,9 +56,8 @@ func main() {
 	llmProvider := flag.String("llm-provider", "", "required: global.llmProfiles.primary.provider (e.g. openai_compatible)")
 	llmModel := flag.String("llm-model", "", "required: global.llmProfiles.primary.model")
 	llmEndpoint := flag.String("llm-endpoint", "", "required: global.llmProfiles.primary.endpoint")
-	llmAPIKeyFile := flag.String("llm-api-key-file", "", "required: path to a file containing your LLM API key (never pass the key inline)")
-	spPolicyFile := flag.String("sp-policy-file", "", "optional: SignalProcessing Rego policy file (default: a permissive built-in demo policy)")
-	aaPolicyFile := flag.String("aa-policy-file", "", "optional: AIAnalysis Rego policy file (default: a permissive built-in demo policy)")
+	spPolicyFile := flag.String("sp-policy-file", "", "optional: SignalProcessing Rego policy file (default: a built-in catch-all demo policy)")
+	aaPolicyFile := flag.String("aa-policy-file", "", "optional: AIAnalysis Rego policy file (default: a built-in policy that always requires human approval)")
 	// sigs.k8s.io/controller-runtime/pkg/client/config's own init() unconditionally
 	// registers a "-kubeconfig" flag on flag.CommandLine the moment anything --
 	// direct or transitive -- imports it, which already happened here via the
@@ -84,13 +88,12 @@ func main() {
 	}
 
 	demoOpts := infrastructure.FleetDemoHelmOptions{
-		Autonomous:    *autonomous,
-		LLMProvider:   *llmProvider,
-		LLMModel:      *llmModel,
-		LLMEndpoint:   *llmEndpoint,
-		LLMAPIKeyFile: *llmAPIKeyFile,
-		SPPolicyFile:  *spPolicyFile,
-		AAPolicyFile:  *aaPolicyFile,
+		Autonomous:   *autonomous,
+		LLMProvider:  *llmProvider,
+		LLMModel:     *llmModel,
+		LLMEndpoint:  *llmEndpoint,
+		SPPolicyFile: *spPolicyFile,
+		AAPolicyFile: *aaPolicyFile,
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
