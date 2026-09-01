@@ -137,8 +137,8 @@ independent and can be combined on the same install:
 ## Try It Out
 
 Don't have a cluster yet? The steps below spin up a self-contained Kind environment —
-hub + spoke clusters, fleet mode — so you can install Kubernaut and start running demo
-scenarios in about 15 minutes. Already have Kubernaut installed elsewhere? Skip to
+hub + spoke clusters, fleet mode, Kubernaut installed and ready to browse — in about
+15 minutes. Already have Kubernaut installed elsewhere? Skip to
 [Run a scenario](#run-a-scenario).
 
 ### Set up a fleet demo environment in Kind
@@ -148,18 +148,22 @@ podman as the container runtime — `export KIND_EXPERIMENTAL_PROVIDER=podman`),
 API key from an LLM provider.
 
 ```bash
-# Creates the hub + spoke Kind clusters, Keycloak, Kuadrant MCP Gateway,
-# kube-mcp-server, and fleet-wide monitoring (~10 min). Does not install
-# Kubernaut yet.
-make setup-e2e-fleet-infra
-export KUBECONFIG=~/.kube/fleet-e2e-config
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_API_KEY_FILE=~/.secrets/openai-key
 ```
 
-This prints the exact `--set` flags your `helm install` needs (MCP Gateway endpoint,
-OAuth2 token URL, namespaces). Copy them, then follow the chart's
-[Quick Start](charts/kubernaut/README.md#quick-start) to create the PostgreSQL/Valkey/
-LLM Secrets and Rego policies, adding `global.fleet.enabled=true` plus the printed
-flags to your `helm install`.
+This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
+Traefik, and fleet-wide monitoring, then runs `helm install charts/kubernaut` itself —
+Secrets, Rego policies, and RBAC included — and prints a `/etc/hosts` entry plus a
+Console URL and login when it's done (~15 min total).
+
+Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
+in Prometheus, but nothing auto-remediates until you ask Console to investigate — so
+you see how Kubernaut reasons about a problem before opting into the fully autonomous
+flow. Add `AUTONOMOUS=true` to the command above to enable Gateway from the start.
 
 For a walkthrough that explains every moving part instead of running it as a black box
 (or a manual, non-Kind topology), see the
@@ -172,11 +176,18 @@ For a walkthrough that explains every moving part instead of running it as a bla
 
 Once Kubernaut is installed, see it in action. [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) provides 37 fault-injection scenarios you can run against your own cluster.
 
-New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app, lets it crash-loop, and watches Kubernaut detect the issue and roll back to the last working revision automatically:
+New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app and lets it crash-loop:
 
 ```bash
-./scenarios/crashloop/run.sh
+./scenarios/crashloop/run.sh --alert-only
 ```
+
+`--alert-only` fires the alert and stops there — exactly what you want with Gateway
+disabled. Open Console at the URL `setup-fleet-demo-infra` printed, log in, and ask it
+to investigate the alert; watch it diagnose the crash loop and propose (or, once you
+approve, apply) a rollback to the last working revision. If you set `AUTONOMOUS=true`
+above, drop `--alert-only` instead and watch Kubernaut detect and roll back
+automatically, no prompting needed.
 
 ---
 
