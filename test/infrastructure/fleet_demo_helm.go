@@ -399,7 +399,8 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath string, fleet
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Kubernaut installed and ready")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintf(writer, "  Add to /etc/hosts:  127.0.0.1 keycloak %s\n", fleetDemoConsoleHost)
+	_, _ = fmt.Fprintln(writer, "  Add this line to /etc/hosts yourself (never edited automatically):")
+	_, _ = fmt.Fprintf(writer, "    127.0.0.1 keycloak %s\n", fleetDemoConsoleHost)
 	_, _ = fmt.Fprintf(writer, "  Browse to:          https://%s:%d\n", fleetDemoConsoleHost, fleetDemoConsolePort)
 	_, _ = fmt.Fprintln(writer, "  Login:              sre-user / password")
 	if opts.Autonomous {
