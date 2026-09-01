@@ -17,6 +17,8 @@ limitations under the License.
 package infrastructure
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -52,6 +54,53 @@ var _ = Describe("checkKindVersionOutput", func() {
 		Entry("UT-INFRA-KIND-007: rejects empty output",
 			"", true),
 	)
+})
+
+// Issue #2333: some E2E demo scenarios (pending-taint, pdb-deadlock,
+// autoscale, node-notready) taint/drain/pressure-test a worker node distinct
+// from the control plane. The fleet spoke cluster (kind-fleetmetadatacache-
+// remote-config.yaml) is control-plane-only, so these scenarios can't run
+// against it as-is. appendWorkerNodesToKindConfig appends N `role: worker`
+// node entries to a Kind config's `nodes:` list, pinned to the same node
+// image as the existing control-plane node, so those scenarios have a
+// worker node to target.
+var _ = Describe("appendWorkerNodesToKindConfig", func() {
+	const sampleConfig = `kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.36.1@sha256:deadbeef
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+`
+
+	It("UT-INFRA-KIND-008: appends N worker entries pinned to the control-plane's image", func() {
+		result, err := appendWorkerNodesToKindConfig(sampleConfig, 2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.Count(result, "- role: worker")).To(Equal(2))
+		Expect(strings.Count(result, "image: kindest/node:v1.36.1@sha256:deadbeef")).To(Equal(3), "control-plane + 2 workers should share the same pinned image")
+	})
+
+	It("UT-INFRA-KIND-009: workerCount=0 is a no-op passthrough", func() {
+		result, err := appendWorkerNodesToKindConfig(sampleConfig, 0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(sampleConfig))
+	})
+
+	It("UT-INFRA-KIND-010: errors when no image line exists to pin workers to", func() {
+		const noImageConfig = "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n"
+		_, err := appendWorkerNodesToKindConfig(noImageConfig, 1)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no node image found"))
+	})
+
+	It("UT-INFRA-KIND-011: preserves a config with no trailing newline", func() {
+		noTrailingNewline := strings.TrimSuffix(sampleConfig, "\n")
+		result, err := appendWorkerNodesToKindConfig(noTrailingNewline, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring(noTrailingNewline + "\n- role: worker"))
+	})
 })
 
 // Issue #2327/#2326 helios08 fleet E2E triage: an earlier version of

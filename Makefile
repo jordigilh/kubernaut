@@ -978,6 +978,7 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		-llm-endpoint "$(LLM_ENDPOINT)" \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
 		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
 		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
 		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
 		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
