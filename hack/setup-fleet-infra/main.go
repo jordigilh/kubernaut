@@ -36,6 +36,14 @@ import (
 func main() {
 	clusterName := flag.String("cluster-name", "fleet-e2e", "Kind cluster name for the hub cluster (the spoke cluster is named <cluster-name>-remote)")
 	gatewayTypeFlag := flag.String("gateway-type", string(registry.GatewayKuadrant), "MCP Gateway implementation to deploy: \"kuadrant\" or \"eaigw\"")
+	// Issue #2333: some E2E demo scenarios (pending-taint, pdb-deadlock,
+	// autoscale, node-notready) taint/drain/pressure-test a worker node
+	// distinct from the control plane, which the spoke can't provide by
+	// default (control-plane-only). Only takes effect on first creation --
+	// Kind can't add nodes to an already-running cluster, so requesting
+	// workers against an existing single-node spoke requires deleting it
+	// first (`kind delete cluster --name <cluster-name>-remote`).
+	spokeWorkers := flag.Int("spoke-workers", 0, "number of extra worker nodes to add to the spoke cluster (default 0: control-plane-only, current behavior)")
 	// sigs.k8s.io/controller-runtime/pkg/client/config's own init() unconditionally
 	// registers a "-kubeconfig" flag on flag.CommandLine the moment anything --
 	// direct or transitive -- imports it, which already happened here via the
@@ -66,7 +74,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	if _, _, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, kubeconfigPath, gatewayType, os.Stdout); err != nil {
+	if _, _, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, kubeconfigPath, gatewayType, *spokeWorkers, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ setup-fleet-infra failed: %v\n", err)
 		os.Exit(1)
 	}

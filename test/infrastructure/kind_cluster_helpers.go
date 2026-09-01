@@ -45,6 +45,12 @@ const (
 
 var kindVersionPattern = regexp.MustCompile(`kind v(\d+)\.(\d+)\.(\d+)`)
 
+// kindNodeImagePattern extracts a Kind node's image reference (e.g.
+// "kindest/node:v1.36.1@sha256:...") from the first "image:" line in a Kind
+// Cluster config, so generated worker nodes stay pinned to the same K8s
+// version as the existing control-plane node (appendWorkerNodesToKindConfig).
+var kindNodeImagePattern = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
+
 // checkKindVersionOutput parses `kind version` output (format: "kind v0.32.0
 // go1.26.4 linux/amd64") and returns an error if the installed CLI is older
 // than the minimum required version. Pure function (no I/O) so it is
@@ -83,6 +89,39 @@ func validateKindVersion(ctx context.Context, writer io.Writer) error {
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
 	return nil
+}
+
+// appendWorkerNodesToKindConfig returns kindConfigYAML with workerCount
+// additional `role: worker` node entries appended to its `nodes:` list, each
+// pinned to the same node image as the existing control-plane node (Issue
+// #2333: E2E demo scenarios that taint/drain/pressure-test a worker node
+// distinct from the control plane need one on the spoke cluster). Kind
+// requires this at cluster-creation time -- it cannot add nodes to an
+// already-running cluster -- so callers must only invoke this when actually
+// creating (not reusing) a cluster.
+//
+// workerCount=0 is a no-op passthrough (returns kindConfigYAML unchanged),
+// so callers with no worker nodes requested incur no behavior change.
+func appendWorkerNodesToKindConfig(kindConfigYAML string, workerCount int) (string, error) {
+	if workerCount == 0 {
+		return kindConfigYAML, nil
+	}
+
+	match := kindNodeImagePattern.FindStringSubmatch(kindConfigYAML)
+	if match == nil {
+		return "", fmt.Errorf("no node image found in kind config to pin worker nodes to")
+	}
+	image := match[1]
+
+	var b strings.Builder
+	b.WriteString(kindConfigYAML)
+	if !strings.HasSuffix(kindConfigYAML, "\n") {
+		b.WriteString("\n")
+	}
+	for i := 0; i < workerCount; i++ {
+		b.WriteString(fmt.Sprintf("- role: worker\n  image: %s\n", image))
+	}
+	return b.String(), nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -494,6 +533,16 @@ type KindClusterOptions struct {
 
 	// ProjectRootAsWorkingDir sets working directory to project root (for ./coverdata resolution)
 	ProjectRootAsWorkingDir bool
+
+	// ExtraWorkerNodes appends this many `role: worker` node entries to the
+	// Kind config's `nodes:` list at creation time, pinned to the same node
+	// image as the config's existing control-plane node (Issue #2333: some
+	// E2E demo scenarios taint/drain/pressure-test a worker node distinct
+	// from the control plane). Zero (default) preserves the config's
+	// existing node topology unchanged. Kind can't add nodes to an
+	// already-running cluster, so this has no effect when ReuseExisting
+	// short-circuits cluster creation below.
+	ExtraWorkerNodes int
 }
 
 // CreateKindClusterWithConfig creates a Kind cluster with the specified configuration
@@ -580,6 +629,35 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 
 	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", absoluteConfigPath)
 
+	// 3b. Append extra worker nodes if requested (Issue #2333). Only rewrite
+	// the config into a temp file when actually needed -- every existing
+	// caller (ExtraWorkerNodes=0) keeps passing absoluteConfigPath straight
+	// through, unchanged.
+	kindConfigPath := absoluteConfigPath
+	if opts.ExtraWorkerNodes > 0 {
+		configBytes, readErr := os.ReadFile(absoluteConfigPath)
+		if readErr != nil {
+			return fmt.Errorf("failed to read kind config %s: %w", absoluteConfigPath, readErr)
+		}
+		configWithWorkers, appendErr := appendWorkerNodesToKindConfig(string(configBytes), opts.ExtraWorkerNodes)
+		if appendErr != nil {
+			return fmt.Errorf("failed to append %d worker node(s) to kind config: %w", opts.ExtraWorkerNodes, appendErr)
+		}
+		tmpConfig, tmpErr := os.CreateTemp("", fmt.Sprintf("kind-%s-*.yaml", opts.ClusterName))
+		if tmpErr != nil {
+			return fmt.Errorf("failed to create temp config with worker nodes: %w", tmpErr)
+		}
+		defer func() { _ = os.Remove(tmpConfig.Name()) }()
+		if _, writeErr := tmpConfig.WriteString(configWithWorkers); writeErr != nil {
+			return fmt.Errorf("failed to write temp config with worker nodes: %w", writeErr)
+		}
+		if closeErr := tmpConfig.Close(); closeErr != nil {
+			return fmt.Errorf("failed to close temp config with worker nodes: %w", closeErr)
+		}
+		kindConfigPath = tmpConfig.Name()
+		_, _ = fmt.Fprintf(writer, "  ➕ Added %d extra worker node(s) to spoke config\n", opts.ExtraWorkerNodes)
+	}
+
 	// 4. Ensure kubeconfig directory exists
 	kubeconfigDir := filepath.Dir(opts.KubeconfigPath)
 	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
@@ -601,7 +679,7 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 		var captured strings.Builder
 		cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 			"--name", opts.ClusterName,
-			"--config", absoluteConfigPath,
+			"--config", kindConfigPath,
 			"--kubeconfig", opts.KubeconfigPath,
 			"--wait", waitTimeout)
 

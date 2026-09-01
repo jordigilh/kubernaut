@@ -54,6 +54,48 @@ const remoteBridgeServiceName = "kube-mcp-server-remote"
 // actually runs in).
 const remoteMCPServerNamespace = "mcp-system"
 
+// RemoteClusterFMCConfig configures SetupRemoteClusterForFMC. Introduced by
+// Issue #2333 (ExtraWorkerNodes) to keep the function signature under the
+// project's 8-parameter anti-pattern threshold -- see AGENTS.md's Go
+// Anti-Pattern Checklist ("Function/method with 8+ parameters" ->
+// "Use Options pattern or config struct").
+type RemoteClusterFMCConfig struct {
+	// PrimaryClusterName/PrimaryKubeconfigPath identify the already-running
+	// primary cluster this remote cluster bridges to (Keycloak must already
+	// be reachable there).
+	PrimaryClusterName    string
+	PrimaryKubeconfigPath string
+
+	// RemoteClusterName/RemoteKubeconfigPath identify the remote cluster
+	// this function creates.
+	RemoteClusterName    string
+	RemoteKubeconfigPath string
+
+	// KeycloakIssuerURL/KeycloakNodePort locate the primary cluster's
+	// Keycloak, bridged into the remote cluster for its API server's OIDC
+	// patch.
+	KeycloakIssuerURL string
+	KeycloakNodePort  int
+
+	// AuthConfig must be the same passthrough+STS config used for the
+	// primary cluster's kube-mcp-server -- this function deploys an
+	// identical kube-mcp-server into the remote cluster so both perform the
+	// same RFC 8693 exchange against the same bridged Keycloak.
+	AuthConfig KubeMCPServerAuthConfig
+
+	// ExtraWorkerNodes appends this many `role: worker` nodes to the remote
+	// cluster's Kind config at creation time (Issue #2333: E2E demo
+	// scenarios that taint/drain/pressure-test a worker node distinct from
+	// the control plane need one on the spoke). Zero preserves the existing
+	// control-plane-only topology. Since Kind fixes node count at creation,
+	// requesting workers on an already-running single-node spoke requires
+	// tearing it down and recreating (re-running this function's whole
+	// bootstrap sequence) rather than a live add -- this field only takes
+	// effect on first creation/recreation, mirroring
+	// KindClusterOptions.ExtraWorkerNodes.
+	ExtraWorkerNodes int
+}
+
 // SetupRemoteClusterForFMC provisions a second, independent Kind cluster
 // and wires it into the FMC E2E lane's cross-cluster bridge (DD-TEST-013,
 // validated in Spike S19): a genuinely separate Kubernetes control plane
@@ -63,16 +105,21 @@ const remoteMCPServerNamespace = "mcp-system"
 // Must be called AFTER Keycloak is deployed and reachable in the primary
 // cluster (Keycloak must already be running for the remote cluster's own
 // API server OIDC patch to succeed) and AFTER the primary cluster's node
-// exists (its bridge IP is discovered here). authConfig must be the same
-// passthrough+STS config used for the primary cluster's kube-mcp-server --
-// this function deploys an identical kube-mcp-server into the remote
-// cluster so both perform the same RFC 8693 exchange against the same
-// bridged Keycloak.
+// exists (its bridge IP is discovered here). See RemoteClusterFMCConfig's
+// field docs for individual parameter semantics.
 //
 // Returns a RemoteClusterBridgeConfig for the caller to set on
 // KubeMCPServerAuthConfig.RemoteBridge before calling DeployFleetCoreInfra
 // for the primary cluster.
-func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKubeconfigPath, remoteClusterName, remoteKubeconfigPath string, keycloakIssuerURL string, keycloakNodePort int, authConfig KubeMCPServerAuthConfig, writer io.Writer) (*RemoteClusterBridgeConfig, error) {
+func SetupRemoteClusterForFMC(ctx context.Context, cfg RemoteClusterFMCConfig, writer io.Writer) (*RemoteClusterBridgeConfig, error) {
+	primaryClusterName := cfg.PrimaryClusterName
+	primaryKubeconfigPath := cfg.PrimaryKubeconfigPath
+	remoteClusterName := cfg.RemoteClusterName
+	remoteKubeconfigPath := cfg.RemoteKubeconfigPath
+	keycloakIssuerURL := cfg.KeycloakIssuerURL
+	keycloakNodePort := cfg.KeycloakNodePort
+	authConfig := cfg.AuthConfig
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🌍 Provisioning remote cluster for cross-cluster isolation (DD-TEST-013)...")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -84,6 +131,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 		WaitTimeout:             "5m",
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true,
+		ExtraWorkerNodes:        cfg.ExtraWorkerNodes,
 	}
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return nil, fmt.Errorf("remote cluster creation failed: %w", err)
