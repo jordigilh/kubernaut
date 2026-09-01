@@ -325,6 +325,49 @@ type FleetHelmOptions struct {
 	FleetMetadataCacheNamespace string
 }
 
+// buildFleetOAuth2HelmArgs renders the global.fleet.*/workflowexecution.fleet.*/
+// fleetmetadatacache.namespace `--set` block common to every helm install
+// that enables fleet federation. Shared between InstallFullPipelineHelmChart
+// (fleet E2E, via SetupFleetE2EInfrastructure) and InstallFleetDemoHelmChart
+// (demo/QE entry point, fleet_demo_helm.go, Issue #2337) so a regression in
+// this block is caught by fleet E2E CI on every run, not just a demo-only
+// code path nobody runs in CI.
+//
+// Deliberately excludes fleetmetadatacache.image.* (E2E-only: needs the
+// locally-built image tag the demo entry point never overrides) and any
+// networkPolicies.idp.* override (callers need different port strategies --
+// the FP suite also runs DEX on a separate port from Keycloak's fleet-OAuth2
+// endpoint, the demo doesn't) -- callers append those separately.
+//
+// Returns nil when fleetOpts is nil, so callers can safely
+// `args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)` unconditionally.
+func buildFleetOAuth2HelmArgs(fleetOpts *FleetHelmOptions) []string {
+	if fleetOpts == nil {
+		return nil
+	}
+	args := []string{
+		"--set", "global.fleet.enabled=true",
+		"--set", "global.fleet.mcpGatewayEndpoint=" + fleetOpts.MCPGatewayEndpoint,
+		"--set", "global.fleet.mcpGatewayType=" + fleetOpts.MCPGatewayType,
+		"--set", "global.fleet.oauth2.enabled=true",
+		"--set", "global.fleet.oauth2.tokenURL=" + fleetOpts.OAuth2TokenURL,
+		"--set", "global.fleet.oauth2.credentialsSecretRef=" + fleetOpts.OAuth2CredentialsSecret,
+		"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef=" + fleetOpts.WEOAuth2CredentialsSecret,
+	}
+	for i, scope := range fleetOpts.OAuth2Scopes {
+		args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))
+	}
+	if fleetOpts.SignalProcessingNamespace != "" {
+		args = append(args, "--set", "signalprocessing.fleet.namespace="+fleetOpts.SignalProcessingNamespace)
+	}
+	// Issue #2298: fleetmetadatacache.namespace has no safe default -- FMC
+	// refuses to start without it (pkg/fleet/fmc/config.Validate()), so this
+	// is set unconditionally here, unlike SignalProcessingNamespace above
+	// (which may legitimately watch cluster-wide).
+	args = append(args, "--set", "fleetmetadatacache.namespace="+fleetOpts.FleetMetadataCacheNamespace)
+	return args
+}
+
 // FleetProvisioner, when non-nil, is invoked by SetupFullPipelineInfrastructure
 // once the target namespace exists (end of PHASE 5) but before `helm install`
 // (PHASE 6), to deploy fleet-specific infrastructure (IdP, MCP Gateway,
@@ -1168,14 +1211,8 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 	// tag values), so it still needs an explicit override reusing the SAME
 	// registry/tag every other chart-managed service already got above.
 	if fleetOpts != nil {
+		args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)
 		args = append(args,
-			"--set", "global.fleet.enabled=true",
-			"--set", "global.fleet.mcpGatewayEndpoint="+fleetOpts.MCPGatewayEndpoint,
-			"--set", "global.fleet.mcpGatewayType="+fleetOpts.MCPGatewayType,
-			"--set", "global.fleet.oauth2.enabled=true",
-			"--set", "global.fleet.oauth2.tokenURL="+fleetOpts.OAuth2TokenURL,
-			"--set", "global.fleet.oauth2.credentialsSecretRef="+fleetOpts.OAuth2CredentialsSecret,
-			"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef="+fleetOpts.WEOAuth2CredentialsSecret,
 			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
 			"--set", "fleetmetadatacache.image.tag="+tag,
 			// #1755 DD-TEST-015 RCA (3rd finding, live PRESERVE_E2E_CLUSTER=true
@@ -1206,17 +1243,6 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 			// *additional* port (extraPorts) instead of replacing :5556.
 			"--set", "networkPolicies.idp.extraPorts[0]=8443",
 		)
-		for i, scope := range fleetOpts.OAuth2Scopes {
-			args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))
-		}
-		if fleetOpts.SignalProcessingNamespace != "" {
-			args = append(args, "--set", "signalprocessing.fleet.namespace="+fleetOpts.SignalProcessingNamespace)
-		}
-		// Issue #2298: fleetmetadatacache.namespace has no safe default --
-		// FMC refuses to start without it (pkg/fleet/fmc/config.Validate()),
-		// so this is set unconditionally here, unlike SignalProcessingNamespace
-		// above (which may legitimately watch cluster-wide).
-		args = append(args, "--set", "fleetmetadatacache.namespace="+fleetOpts.FleetMetadataCacheNamespace)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  🚀 helm install kubernaut charts/kubernaut ...")

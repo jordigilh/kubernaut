@@ -413,7 +413,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // behavior before gateway-type selection existed). Prefer
 // SetupFleetCoreInfrastructureWithGateway for new callers.
 func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
-	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, kubeconfigPath, registry.GatewayKuadrant, 0, writer)
+	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, "", kubeconfigPath, registry.GatewayKuadrant, 0, writer)
 }
 
 // SetupFleetCoreInfrastructureWithGateway is SetupFleetCoreInfrastructure
@@ -421,13 +421,20 @@ func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPa
 // registry.GatewayEAIGW; empty defaults to Kuadrant). See
 // provisionFleetCoreInfra's doc comment for what differs between the two.
 //
+// remoteClusterName names the remote/spoke Kind cluster explicitly; empty
+// falls back to clusterName+"-remote" (see FleetCoreInfraOptions.
+// RemoteClusterName's doc comment).
+//
 // spokeWorkers appends this many `role: worker` nodes to the spoke cluster
 // at creation time (Issue #2333: some E2E demo scenarios taint/drain/
 // pressure-test a worker node distinct from the control plane, which the
 // spoke can't provide as a control-plane-only cluster). Zero (the
 // long-standing default) leaves the spoke control-plane-only. This is the
 // `hack/setup-fleet-infra -spoke-workers=N` entry point's parameter.
-func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, spokeWorkers int, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, spokeWorkers int, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+	if remoteClusterName == "" {
+		remoteClusterName = clusterName + "-remote"
+	}
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
@@ -473,6 +480,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 	// is scoped here only, not the shared Ginkgo-suite provisioner closure.
 	fleetOpts, remoteKubeconfigPath, err = provisionFleetCoreInfra(ctx, FleetCoreInfraOptions{
 		ClusterName:       clusterName,
+		RemoteClusterName: remoteClusterName,
 		KubeconfigPath:    kubeconfigPath,
 		Namespace:         namespace,
 		KeycloakNamespace: idpNamespace,
@@ -581,7 +589,6 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 		return nil, remoteKubeconfigPath, fmt.Errorf("hub prometheus+thanos-sidecar install failed: %w", err)
 	}
 
-	remoteClusterName := clusterName + "-remote"
 	spokeAlertManagerTarget, err := HubNodeBridgeIPAndPort(ctx, clusterName, AlertManagerNodePort)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to resolve hub AlertManager bridge address for spoke: %w", err)
@@ -687,6 +694,18 @@ type FleetCoreInfraOptions struct {
 	// SetupRemoteClusterForFMC's doc comment for the full rationale and the
 	// recreate-required caveat.
 	SpokeWorkers int
+
+	// RemoteClusterName overrides the remote/spoke Kind cluster's name.
+	// Empty (the default, and every existing Ginkgo-suite caller) falls
+	// back to the long-standing ClusterName+"-remote" convention -- this
+	// keeps CI's "fleet-e2e"/"fleet-e2e-remote" pair byte-for-byte
+	// unchanged. The demo entry point (hack/setup-fleet-infra) sets this
+	// explicitly so the spoke's Kind cluster name can read as
+	// "kubernaut-remote-cluster" -- matching the "remote-cluster" identity
+	// every fleet MCPServerRegistration/AlertManager label already uses for
+	// this same physical cluster -- instead of an arbitrary "<hub>-remote"
+	// suffix.
+	RemoteClusterName string
 }
 
 // provisionFleetCoreInfra deploys Keycloak (IdP), the genuinely separate
@@ -813,7 +832,10 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// test targets) is a genuinely separate physical cluster, not the
 	// primary one.
 	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
-	remoteClusterName := clusterName + "-remote"
+	remoteClusterName := opts.RemoteClusterName
+	if remoteClusterName == "" {
+		remoteClusterName = clusterName + "-remote"
+	}
 	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
 	sharedAuthConfig := KubeMCPServerAuthConfig{
 		Mode:             KubeMCPServerAuthModePassthrough,

@@ -104,9 +104,9 @@ continue reading for the manual walkthrough.
 ### B1. Create the hub cluster
 
 ```bash
-kind create cluster --name fleet-hub
-export KUBECONFIG=~/.kube/fleet-hub-config
-kind get kubeconfig --name fleet-hub > "$KUBECONFIG"
+kind create cluster --name kubernaut-hub
+export KUBECONFIG=~/.kube/kubernaut-hub-config
+kind get kubeconfig --name kubernaut-hub > "$KUBECONFIG"
 kubectl create namespace kubernaut-system
 ```
 
@@ -131,14 +131,14 @@ At the end of B4/B5, note two things you'll need below:
 
 - **Keycloak's TLS cert** (`/tmp/keycloak-tls.crt`) — the spoke's API server needs to
   trust it too.
-- **The hub node's name**: `fleet-hub-control-plane`.
+- **The hub node's name**: `kubernaut-hub-control-plane`.
 
 ### B3. Create the spoke cluster
 
 ```bash
-kind create cluster --name fleet-spoke
-export SPOKE_KUBECONFIG=~/.kube/fleet-spoke-config
-kind get kubeconfig --name fleet-spoke > "$SPOKE_KUBECONFIG"
+kind create cluster --name kubernaut-remote-cluster
+export SPOKE_KUBECONFIG=~/.kube/kubernaut-remote-cluster-config
+kind get kubeconfig --name kubernaut-remote-cluster > "$SPOKE_KUBECONFIG"
 kubectl --kubeconfig "$SPOKE_KUBECONFIG" create namespace kubernaut-system
 ```
 
@@ -207,7 +207,7 @@ The spoke's API server needs to reach the hub's Keycloak by the same hostname
 does this without a selector, resolvable by plain in-cluster DNS:
 
 ```bash
-HUB_NODE_IP=$(podman inspect fleet-hub-control-plane \
+HUB_NODE_IP=$(podman inspect kubernaut-hub-control-plane \
   --format '{{.NetworkSettings.Networks.kind.IPAddress}}')
 
 kubectl --kubeconfig "$SPOKE_KUBECONFIG" apply -f - <<EOF
@@ -244,7 +244,7 @@ expects a CA bundle — same file `/tmp/keycloak-tls.crt` from B2.
 Identical to the hub's B3 step, run against the spoke instead:
 
 ```bash
-NODE=fleet-spoke-control-plane
+NODE=kubernaut-remote-cluster-control-plane
 podman cp /tmp/keycloak-tls.crt "$NODE:/etc/kubernetes/pki/oidc-ca.crt"
 podman exec "$NODE" bash -c '
 sed -i "/--tls-private-key-file/a\\
@@ -320,7 +320,7 @@ spec:
   ports: [{port: 8080, targetPort: 8080, nodePort: 30180}]
 EOF
 
-SPOKE_NODE_IP=$(podman inspect fleet-spoke-control-plane \
+SPOKE_NODE_IP=$(podman inspect kubernaut-remote-cluster-control-plane \
   --format '{{.NetworkSettings.Networks.kind.IPAddress}}')
 ```
 
@@ -495,8 +495,8 @@ KUBECONFIG=$SPOKE_KUBECONFIG kubectl get jobs -n kubernaut-workflows -w
 ## Cleanup
 
 ```bash
-kind delete cluster --name fleet-hub
-kind delete cluster --name fleet-spoke
+kind delete cluster --name kubernaut-hub
+kind delete cluster --name kubernaut-remote-cluster
 ```
 
 ---
