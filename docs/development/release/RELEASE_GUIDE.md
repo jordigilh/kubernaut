@@ -465,6 +465,7 @@ flowchart LR
         buildamd64["build-amd64\n14 jobs"]
         buildarm64["build-arm64\n12 jobs"]
         buildarm64qemu["build-arm64-qemu\n2 jobs"]
+        buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
     end
 
     subgraph P2["Phase 2: Scan & Smoke Test"]
@@ -472,18 +473,21 @@ flowchart LR
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
         smoketest["helm-smoke-test\n2 jobs"]
+        scanamd64 ~~~ scanarm64 ~~~ smoketest
     end
 
     subgraph P3["Phase 3: Manifests & Chart"]
         direction TB
         manifests["create-manifests"]
         helmpublish["helm-publish"]
+        manifests ~~~ helmpublish
     end
 
     subgraph P4["Phase 4: Sign & Provenance"]
         direction TB
         signattest["sign-and-attest\n14 jobs"]
         provenance["provenance\n14 jobs"]
+        signattest ~~~ provenance
     end
 
     subgraph P5["Phase 5: Release"]
