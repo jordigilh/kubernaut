@@ -410,9 +410,10 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeco
 		_, _ = fmt.Fprintln(writer, "  Console to investigate. Re-run with -autonomous to see it happen on its own.")
 	}
 	_, _ = fmt.Fprintln(writer, "\n  To run a kubernaut-demo-scenarios scenario in fleet mode (hub+spoke split")
-	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these before ./scenarios/<name>/run.sh:")
+	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then pass --fleet to run.sh:")
 	_, _ = fmt.Fprintf(writer, "    export HUB_KUBECONFIG=%s\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "    export SPOKE_KUBECONFIG=%s\n", remoteKubeconfigPath)
+	_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
