@@ -4,10 +4,25 @@
 # (github.com/pressly/goose/v3) so the CLI matches application dependencies
 # without maintaining per-release binary SHA256 checksums.
 #
+# Postgres-only build (-tags): kubernaut's migrations (charts/kubernaut/templates/
+# hooks/migration-job.yaml's `goose ... postgres ...` invocation, and
+# test/infrastructure/migrations.go's goose.DialectPostgres) only ever use the
+# postgres dialect. Excluding every other driver goose supports drops their
+# transitive dependencies entirely from the compiled binary (verified via
+# `go version -m`, which is what Trivy's gobinary scanner reads) -- notably
+# github.com/ydb-platform/ydb-go-sdk (driver_ydb.go), whose grpc dependency
+# repeatedly required manual `go get google.golang.org/grpc@vX` overrides here
+# every time a new gRPC-Go CVE landed (see git history for prior golang.org/x/
+# crypto and x/net overrides, same root cause -- most recently CVE-2026-56854,
+# golang.org/x/crypto/ssh auth bypass, fixed in v0.55.0). None of kubernaut's
+# own code ever exercises those drivers, so removing them removes the
+# recurring CVE surface instead of chasing it version-by-version, and shrinks
+# the binary ~3x (56MB -> 20MB).
+#
 # Build:
 #   podman build --platform linux/amd64 \
-#     --build-arg APP_VERSION=v3.27.1 \
-#     -t quay.io/kubernaut-ai/db-migrate:v3.27.1-amd64 \
+#     --build-arg APP_VERSION=v3.27.3 \
+#     -t quay.io/kubernaut-ai/db-migrate:v3.27.3-amd64 \
 #     -f docker/db-migrate.Dockerfile .
 #
 # Multi-arch: TARGETARCH is set from --platform for the goose compile step.
@@ -20,22 +35,25 @@ FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 
 USER root
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
-# golang.org/x/text pin (#1763, CVE-2026-56852, norm.Iter infinite loop,
-# fixed in v0.39.0): this isolated `go mod init tmp` module doesn't see the
-# main project's go.mod, so its x/text bump doesn't reach goose's build.
-# `go mod graph` confirms x/text is pulled in transitively (via the grpc/
-# crypto/net pins below); pin explicitly to the same version already used
-# in the main project's go.mod, following the same precedent as the
-# x/crypto/x/net/grpc pins already in this file.
+# no_clickhouse/no_mssql/no_mysql/no_sqlite3/no_turso/no_vertica/no_ydb: keep
+# only the postgres driver (see comment above) -- libsql remains registered
+# (compiled unconditionally by the core goose library, not gated by a
+# cmd/goose build tag) but is SQLite-based with no grpc/CVE-prone transitive
+# dependencies, so it's left as-is rather than chasing further.
+#
+# golang.org/x/text pin: unlike x/net/x/crypto/grpc above, this one can't be
+# removed by excluding drivers -- it's pulled in by github.com/jackc/pgx/v5,
+# the postgres driver we actually keep (`go mod graph` confirms; `go version -m`
+# on the built binary confirms it's actually linked in, not just resolved).
+# Pin to the same version used in the main project's go.mod to resolve
+# CVE-2026-56852 (golang.org/x/text < v0.39.0, norm.Iter infinite loop).
 RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
-    go get github.com/pressly/goose/v3/cmd/goose@v3.27.1 && \
-    go get golang.org/x/crypto@v0.53.0 && \
-    go get golang.org/x/net@v0.56.0 && \
-    go get golang.org/x/text@v0.40.0 && \
-    go get google.golang.org/grpc@v1.82.1 && \
-    go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
+    go get github.com/pressly/goose/v3/cmd/goose@v3.27.3 && \
+    go get golang.org/x/text@v0.41.0 && \
+    go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
+      -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
 
