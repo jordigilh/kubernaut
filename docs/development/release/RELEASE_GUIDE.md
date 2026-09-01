@@ -217,7 +217,12 @@ gh run list --workflow=release.yml --limit 1
 gh run watch
 ```
 
-Expected duration: ~60–90 minutes (24 image builds + manifests + Helm + GitHub Release).
+Expected duration: ~25–40 minutes end-to-end (measured across the six
+v1.6.0-rc runs on record). The image builds are not the bottleneck — they run
+in parallel and finish in 3-5 minutes each. The `hook`-mode Helm smoke test is
+consistently the longest single job (~15-20 minutes) and sits on the critical
+path for manifests, Helm publish, and the GitHub Release, so it's usually
+what you're waiting on.
 
 ### Step 9: Verify
 
@@ -438,14 +443,65 @@ The Helm migration hook will detect fresh vs. upgrade by checking for the
 
 ## Release Pipeline Stages
 
-The release workflow (`.github/workflows/release.yml`) has 5 stages:
+The release workflow (`.github/workflows/release.yml`) is a lot more than
+build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
+signing, and SLSA provenance all gate the release now, not just the image
+builds:
 
+Node names below are the actual job IDs from `release.yml`. Arrows only run
+phase-to-phase, not job-to-job — see the "Stage N" sections below the diagram
+for the exact per-job `needs:`, since a couple of jobs skip a dependency their
+phase-mates have (e.g. `create-manifests`/`helm-publish` need `helm-smoke-test`
+but not the two `security-scan-*` jobs next to it):
+
+```mermaid
+flowchart LR
+    subgraph P0["Phase 0: Prepare"]
+        prepare(["prepare"])
+    end
+
+    subgraph P1["Phase 1: Build & Push"]
+        direction TB
+        buildamd64["build-amd64\n14 jobs"]
+        buildarm64["build-arm64\n12 jobs"]
+        buildarm64qemu["build-arm64-qemu\n2 jobs"]
+        buildamd64 ~~~ buildarm64 ~~~ buildarm64qemu
+    end
+
+    subgraph P2["Phase 2: Scan & Smoke Test"]
+        direction TB
+        scanamd64["security-scan-amd64\n14 jobs"]
+        scanarm64["security-scan-arm64\n14 jobs"]
+        smoketest["helm-smoke-test\n2 jobs"]
+        scanamd64 ~~~ scanarm64 ~~~ smoketest
+    end
+
+    subgraph P3["Phase 3: Manifests & Chart"]
+        direction TB
+        manifests["create-manifests"]
+        helmpublish["helm-publish"]
+        manifests ~~~ helmpublish
+    end
+
+    subgraph P4["Phase 4: Sign & Provenance"]
+        direction TB
+        signattest["sign-and-attest\n14 jobs"]
+        provenance["provenance\n14 jobs"]
+        signattest ~~~ provenance
+    end
+
+    subgraph P5["Phase 5: Release"]
+        release(["release"])
+    end
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5
 ```
-┌──────────┐    ┌─────────────────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
-│ Prepare  │───>│ Build & Push Images     │───>│ Multi-Arch   │───>│ Helm Publish │───>│ GitHub      │
-│          │    │ (24 parallel jobs)      │    │ Manifests    │    │              │    │ Release     │
-└──────────┘    └─────────────────────────┘    └──────────────┘    └──────────────┘    └─────────────┘
-```
+
+Security scanning and Helm smoke tests both gate the release: a failing scan
+or smoke test blocks the GitHub Release from being created. Note
+`build-arm64` (native cross-compile, 12 Go services) and `build-arm64-qemu`
+(`must-gather`, `db-migrate`) are separate jobs — everything past that phase
+needs both to finish, not just "arm64 is done."
 
 ### Stage 0: Prepare
 
@@ -458,40 +514,81 @@ downstream jobs:
 
 ### Stage 1: Build & Push Images
 
-Runs **24 parallel jobs**: 12 services x 2 architectures (amd64, arm64).
+**28 parallel jobs**: 14 services x 2 architectures (amd64, arm64).
 
 Each job:
 1. Checks out code (with submodules)
 2. Runs `make generate` for code generation
-3. Installs QEMU (arm64 jobs only)
-4. Logs in to Quay.io
-5. Builds the image via `make image-build-<service>`
-6. Pushes `quay.io/kubernaut-ai/<service>:<version>-<arch>`
+3. Logs in to Quay.io
+4. Builds the image and pushes `quay.io/kubernaut-ai/<service>:<version>-<arch>`
 
-Build strategy:
-- **Go services (10)**: `CGO_ENABLED=0` cross-compilation via `GOARCH` (native speed).
-  Builder: `ubi10/go-toolset`, runtime: `ubi10/ubi-minimal`.
-- **Python (1)**: kubernaut-agent uses `ubi10/python-312`. Full QEMU for arm64.
-- **Bash (1)**: must-gather uses `ubi10/ubi` with kubectl and jq. Full QEMU for arm64.
+Three build paths, depending on the service:
+- **12 Go services** (everything except `must-gather` and `db-migrate`): no
+  QEMU on either arch. amd64 builds the full multi-stage Dockerfile
+  (`docker/<service>.Dockerfile`, `ubi10/go-toolset` → `ubi10/ubi-minimal`);
+  arm64 cross-compiles the binary natively (`GOARCH=arm64`, no emulation) and
+  drops it into a `scratch` runtime image (`docker/<service>.runtime.Dockerfile`)
+  — that's why arm64 builds for these are minutes, not tens of minutes.
+- **must-gather** (Bash) and **db-migrate** (shell/goose CLI): still need QEMU
+  on arm64 — there's no Go binary to cross-compile around, so the arm64 image
+  is built under full user-space emulation.
 
-### Stage 2: Multi-Arch Manifests
+### Stage 2: Security Scan (Trivy + SBOM)
 
-After all 24 build jobs complete:
-1. Creates manifest lists so a single tag resolves to the correct arch automatically.
-2. **GA only** (`is_prerelease == false`): tags every image as `:latest`.
+Runs once per image per arch (28 jobs, same matrix as the build stage), after
+that arch's build completes. Each job:
+1. Scans the pushed image with Trivy — a CRITICAL/HIGH CVE with a fix
+   available blocks the release. `must-gather` has a standing, time-bound
+   `.trivyignore` for kubectl CVEs with no upstream fix yet (DD-PLATFORM-003).
+2. Generates a CycloneDX SBOM, uploaded as a workflow artifact for the
+   sign-and-attest and release stages to pick up later.
 
-### Stage 3: Helm Chart Publish
+### Stage 3: Helm Smoke Test
 
-1. Reads chart version from `CHART_VERSION` file and app version from the git tag.
-2. Overwrites `Chart.yaml` `version` (from `CHART_VERSION`) and `appVersion` (from tag).
+Depends only on the amd64 build (arm64 keeps building in parallel and isn't
+blocked by this). Spins up a Kind cluster, pulls the amd64 images, and runs
+the full Helm smoke test suite twice — once with hook-based TLS, once with
+cert-manager — since both are supported install modes and #334 burned us
+once for only covering the default. A failing smoke test blocks the release.
+
+### Stage 4: Multi-Arch Manifests
+
+Needs both build stages *and* the smoke tests to pass. For each service:
+1. Creates a manifest list so a single tag resolves to the correct arch automatically.
+2. **GA only** (`is_prerelease == false`): tags the manifest as `:latest`.
+
+### Stage 5: Sign & Attest / SLSA Provenance
+
+Needs the manifests plus both security-scan stages. Two jobs run per service:
+- **Cosign sign & attest**: keyless-signs the amd64 image, arm64 image, and
+  the manifest list (GitHub OIDC, no stored keys), then attests each arch's
+  SBOM against its own digest.
+- **SLSA provenance**: generates SLSA v1.0 Build L3 provenance via an
+  isolated reusable workflow (`slsa-provenance.yml`), run as a separate job so
+  its OIDC signer identity can't be influenced by this workflow — that's what
+  makes it Build L3 (non-falsifiable) instead of self-asserted Build L2
+  (issue #1109).
+
+### Stage 6: Helm Chart Publish
+
+Runs in parallel with signing/provenance (same dependencies: both build
+stages + smoke tests).
+
+1. Reads chart version from `CHART_VERSION` and app version from the git tag.
+2. Overwrites `Chart.yaml`'s `version` and `appVersion` accordingly.
 3. Packages and pushes to `oci://quay.io/kubernaut-ai/charts`.
 
-For chart-only releases (tag `chart-v*`), a separate `chart-release.yml` workflow
-handles publishing without building container images.
+For chart-only releases (tag `chart-v*`), a separate `chart-release.yml`
+workflow handles publishing without building container images.
 
-### Stage 4: GitHub Release
+### Stage 7: GitHub Release
 
-Creates a GitHub Release with auto-generated notes.
+Needs smoke tests, manifests, Helm publish, both security scans,
+sign-and-attest, and provenance — i.e. everything above has to pass first.
+Creates the GitHub Release with auto-generated notes, then downloads and
+attaches every SBOM and SLSA provenance bundle as release assets (required by
+OpenSSF Scorecard's Signed-Releases check — signatures need to be attached to
+the release itself, not just pushed alongside the image in the registry).
 - **Pre-release tags**: marked as pre-release.
 - **Stable tags**: marked as "Latest".
 
@@ -503,13 +600,14 @@ Run these checks after the release workflow completes.
 
 ### Images (all releases)
 
-Confirm all 12 images exist with the correct multi-arch manifest:
+Confirm all 14 images exist with the correct multi-arch manifest:
 
 ```bash
 VERSION="1.1.0"  # adjust to your release
 for svc in gateway signalprocessing aianalysis authwebhook \
            remediationorchestrator workflowexecution notification \
-           datastorage effectivenessmonitor kubernaut-agent must-gather db-migrate; do
+           datastorage effectivenessmonitor kubernautagent apifrontend \
+           fleetmetadatacache must-gather db-migrate; do
   echo -n "$svc: "
   skopeo inspect --raw docker://quay.io/kubernaut-ai/$svc:$VERSION \
     | python3 -c "import sys,json; m=json.load(sys.stdin); print(f'{len(m.get(\"manifests\",[]))} arch(es)')" \
@@ -518,6 +616,26 @@ done
 ```
 
 Expected output: `2 arch(es)` for every service.
+
+### Signatures, SBOMs, and provenance (all releases)
+
+The release workflow's `sign-and-attest` and `provenance` jobs already fail
+the run if signing or attestation breaks, so this is a spot-check, not the
+primary gate:
+
+```bash
+VERSION="1.1.0"  # adjust to your release
+cosign verify quay.io/kubernaut-ai/gateway:$VERSION \
+  --certificate-identity-regexp "https://github.com/jordigilh/kubernaut" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+gh release view v$VERSION --json assets --jq '.assets[].name' | grep -c '\.cdx\.json$'      # SBOMs
+gh release view v$VERSION --json assets --jq '.assets[].name' | grep -c '\.sigstore\.json$'  # SLSA provenance
+```
+
+Expect 28 SBOMs (14 services × 2 arch) and 14 provenance bundles (one per
+service — the provenance job covers the manifest list, not each arch
+separately) attached to the release.
 
 ### Helm Chart (all releases)
 
@@ -541,7 +659,8 @@ Verify the release exists and the pre-release flag matches expectations.
 ```bash
 for svc in gateway signalprocessing aianalysis authwebhook \
            remediationorchestrator workflowexecution notification \
-           datastorage effectivenessmonitor kubernaut-agent must-gather db-migrate; do
+           datastorage effectivenessmonitor kubernautagent apifrontend \
+           fleetmetadatacache must-gather db-migrate; do
   echo -n "$svc:latest -> "
   skopeo inspect docker://quay.io/kubernaut-ai/$svc:latest \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Labels',{}).get('org.opencontainers.image.version','unknown'))" \
@@ -654,7 +773,7 @@ If the workflow **has already run**, you must also:
 
 ## Appendix: Services and Build Details
 
-### Container Images (12 services)
+### Container Images (14 services)
 
 All images are published to `quay.io/kubernaut-ai/<service>:<version>` as
 multi-arch manifests (amd64 + arm64).
@@ -670,9 +789,17 @@ multi-arch manifests (amd64 + arm64).
 | 7 | notification | Go | `docker/notification-controller.Dockerfile` |
 | 8 | datastorage | Go | `docker/data-storage.Dockerfile` |
 | 9 | effectivenessmonitor | Go | `docker/effectivenessmonitor-controller.Dockerfile` |
-| 10 | kubernaut-agent | Python | `kubernaut-agent/Dockerfile` |
-| 11 | must-gather | Bash | `cmd/must-gather/Dockerfile` |
-| 12 | db-migrate | Shell (goose CLI) | `docker/db-migrate.Dockerfile` |
+| 10 | kubernautagent | Go | `docker/kubernautagent.Dockerfile` |
+| 11 | apifrontend | Go | `docker/apifrontend.Dockerfile` |
+| 12 | fleetmetadatacache | Go | `docker/fleetmetadatacache.Dockerfile` |
+| 13 | must-gather | Bash | `cmd/must-gather/Dockerfile` |
+| 14 | db-migrate | Shell (goose CLI) | `docker/db-migrate.Dockerfile` |
+
+`kubernautagent` was rewritten from Python to native Go (ADR-027, issue #433)
+— if you're looking for the old `kubernaut-agent`/Python image, it no longer
+exists. `apifrontend` (API Frontend) and `fleetmetadatacache` (FMC — caches
+cluster metadata from the MCP Gateway into Valkey and serves scope queries
+over REST, per ADR-068) were added later and were never added to this table.
 
 `mock-llm` is **not** released — it is a test-only artifact.
 
@@ -706,12 +833,15 @@ Every released image carries build-time version metadata:
 
 ### Build Strategy
 
-- **Go services**: `CGO_ENABLED=0` cross-compilation via `GOARCH`. Builder stage
-  uses `ubi10/go-toolset`, runtime uses `ubi10/ubi-minimal`.
-- **Python** (kubernaut-agent): `ubi10/python-312` for both builder and runtime.
-- **must-gather**: `ubi10/ubi` base with kubectl and jq.
-- **arm64 on amd64 runner**: QEMU user-space emulation. Go cross-compiles natively;
-  QEMU handles the container base layer and non-Go build steps.
+- **Go services (12)**: `CGO_ENABLED=0` cross-compilation via `GOARCH`, no QEMU
+  needed on either arch. Builder stage uses `ubi10/go-toolset`, runtime is
+  `ubi10/ubi-minimal` for the amd64 build and `scratch` for the arm64 fast path
+  (binary is cross-compiled natively, then dropped into a `scratch` image —
+  see `docker/*.runtime.Dockerfile`).
+- **must-gather** and **db-migrate**: still need QEMU on arm64 (shell/bash
+  base images, not something `go build -o` alone can cross-compile around).
+- **arm64 QEMU path**: user-space emulation for those two only. Everything
+  else cross-compiles natively — no QEMU involved.
 
 ---
 
@@ -719,8 +849,12 @@ Every released image carries build-time version metadata:
 
 - [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Operator release workflow (tag `v*`)
 - [`.github/workflows/chart-release.yml`](../../../.github/workflows/chart-release.yml) — Chart-only release workflow (tag `chart-v*`)
+- [`.github/workflows/slsa-provenance.yml`](../../../.github/workflows/slsa-provenance.yml) — Isolated SLSA Build L3 provenance workflow
 - [`Makefile`](../../../Makefile) — `image-build`, `image-push`, `image-manifest` targets
 - [`CHANGELOG.md`](../../../CHANGELOG.md) — Release history
 - Issue [#80](https://github.com/jordigilh/kubernaut/issues/80) — Release: Helm chart creation, multi-arch images
 - Issue [#257](https://github.com/jordigilh/kubernaut/issues/257) — Multi-arch image build + Helm OCI publish workflow
 - Issue [#273](https://github.com/jordigilh/kubernaut/issues/273) — Standardize version injection and OCI labels
+- Issue [#569](https://github.com/jordigilh/kubernaut/issues/569) — Helm smoke tests gating the release
+- Issue [#1315](https://github.com/jordigilh/kubernaut/issues/1315) — Trivy CVE scanning + SBOM generation
+- Issue [#1109](https://github.com/jordigilh/kubernaut/issues/1109) — SLSA Build L3 provenance
