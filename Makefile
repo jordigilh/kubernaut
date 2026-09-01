@@ -945,26 +945,38 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
-# Fleet demo/QE infra ONLY (docs/requirements/BR-PLATFORM-014): hub+spoke
-# Kind clusters + Keycloak + MCP Gateway + kube-mcp-server -- everything
-# test-e2e-fleet deploys EXCEPT the Kubernaut services themselves (no image
-# build, no `helm install charts/kubernaut`). For QE/local validation/demos:
-# run this, then `helm install` yourself with your own LLM credentials +
-# Rego policies (which vary per setup and don't belong hardcoded into shared
-# test-infra code). Leaves the cluster running -- tear down with
-# `kind delete cluster --name fleet-e2e` (and the `-remote` sibling) when
-# done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name read
-# as CI-only test tooling to demo readers, when this is the same "fleet
-# demo/QE environment" BR-PLATFORM-014 already documents by that name.
+# Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337):
+# hub+spoke Kind clusters + Keycloak + MCP Gateway + kube-mcp-server +
+# Traefik, THEN `helm upgrade --install charts/kubernaut` itself, wired up
+# Console-first -- Gateway starts disabled (AUTONOMOUS=true to enable it) so
+# you investigate the first demo scenario via Console chat before opting
+# into the fully autonomous flow. Leaves the cluster running -- tear down
+# with `kind delete cluster --name fleet-e2e` (and the `-remote` sibling)
+# when done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name
+# read as CI-only test tooling to demo readers, when this is the same
+# "fleet demo/QE environment" BR-PLATFORM-014 already documents by that name.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create hub+spoke Kind clusters + fleet-core infra only, no Kubernaut helm install (~10 min)
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, LLM_API_KEY_FILE
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_ENDPOINT)" ] || [ -z "$(LLM_API_KEY_FILE)" ]; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, and LLM_API_KEY_FILE are all required, e.g.:"; \
+		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
+		echo "     LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY_FILE=~/.secrets/openai-key"; \
+		exit 1; \
+	fi
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Fleet demo/QE infra setup (no Kubernaut helm install)"
-	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway (EAIGW by default), kube-mcp-server, Traefik"
+	@echo "🚀 Fleet demo/QE setup: infra + helm install (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
+	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway ($(if $(GATEWAY_TYPE),$(GATEWAY_TYPE),eaigw) by default), kube-mcp-server, Traefik"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	go run ./hack/setup-fleet-infra
-	@echo "✅ Fleet infra ready. Run 'helm install charts/kubernaut' yourself next."
-	@echo "   Then: make bind-fleet-af-rbac KUBECONFIG=~/.kube/fleet-e2e-config"
+	go run ./hack/setup-fleet-infra \
+		-llm-provider "$(LLM_PROVIDER)" \
+		-llm-model "$(LLM_MODEL)" \
+		-llm-endpoint "$(LLM_ENDPOINT)" \
+		-llm-api-key-file "$(LLM_API_KEY_FILE)" \
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
+		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)

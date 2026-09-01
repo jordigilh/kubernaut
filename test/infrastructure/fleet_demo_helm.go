@@ -1,0 +1,369 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package infrastructure
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Fleet Demo — Helm Chart Install (Issue #2337)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// hack/setup-fleet-infra's counterpart to InstallFullPipelineHelmChart
+// (fullpipeline_e2e_helm.go): same exec.Command("helm", ...) pattern, but for
+// the demo/QE entry point rather than the E2E Ginkgo suite -- no mock-LLM, no
+// DEX test double, no locally-built/retagged images (this installs against
+// the chart's own default public images, same as a real user would).
+//
+// Default experience is Console-first (BR-PLATFORM-014): Gateway starts
+// disabled so a new user investigates/remediates the first demo scenario via
+// Console chat before opting into the fully autonomous, Gateway-driven flow
+// with -autonomous=true.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const (
+	// fleetDemoTraefikNamespace matches deployTraefikForKind's hardcoded
+	// "traefik-system" (fleet_e2e.go) -- Console's NetworkPolicy needs this
+	// namespace on its ingress allowlist since Traefik forwards browser
+	// traffic into kubernaut-system cross-namespace.
+	fleetDemoTraefikNamespace = "traefik-system"
+	// fleetDemoKeycloakRealm matches keycloak-realm-fleet.json's "kubernaut-fleet"
+	// realm name.
+	fleetDemoKeycloakRealm = "kubernaut-fleet"
+	// fleetDemoConsoleHost/Port match the "kubernaut-console.local:8843"
+	// hostname+hostPort combination deployTraefikForKind/kind-fullpipeline-config.yaml
+	// already wire up (traefikWebsecureNodePort 30843 -> host 8843).
+	fleetDemoConsoleHost = "kubernaut-console.local"
+	fleetDemoConsolePort = 8843
+	// fleetDemoConsoleClientID/Secret match the "kubernaut-console" OIDC
+	// client already registered in keycloak-realm-fleet.json -- not a new
+	// credential, reusing that existing test-realm artifact.
+	fleetDemoConsoleClientID     = "kubernaut-console"
+	fleetDemoConsoleClientSecret = "e2e-console-secret"
+
+	fleetDemoConsoleOAuthSecretName = "console-oauth-creds"
+	fleetDemoLLMSecretName          = "llm-credentials-primary"
+	fleetDemoPGSecretName           = "postgresql-secret"
+	fleetDemoValkeySecretName       = "valkey-secret"
+)
+
+// FleetDemoHelmOptions configures InstallFleetDemoHelmChart's `helm install`
+// invocation. Options-pattern struct (AGENTS.md 8-parameter limit) rather
+// than growing InstallFleetDemoHelmChart's own parameter list.
+type FleetDemoHelmOptions struct {
+	// Autonomous, when true, sets gateway.enabled=true so AlertManager-sourced
+	// signals auto-create RemediationRequests. false (the default) leaves
+	// Gateway disabled -- Prometheus/AlertManager still fire real alerts, but
+	// nothing auto-remediates until the user asks Console to investigate, so
+	// a new user experiences the remediation flow deliberately before opting
+	// into the fully autonomous one.
+	Autonomous bool
+	// LLMProvider/LLMModel/LLMEndpoint/LLMAPIKeyFile configure
+	// global.llmProfiles.primary.* -- required, no hardcoded default (varies
+	// per user's own LLM provider/credentials, same reason the split-infra
+	// design never baked these into shared test-infra Go code).
+	LLMProvider   string
+	LLMModel      string
+	LLMEndpoint   string
+	LLMAPIKeyFile string
+	// SPPolicyFile/AAPolicyFile override the baked-in permissive demo Rego
+	// policies (reusing fullPipelineSignalProcessingPolicyRego/
+	// fullPipelineAIAnalysisPolicyRego -- generic BR-SP-051/070/105 priority/
+	// severity/environment logic, not E2E-specific despite living in
+	// fullpipeline_e2e_helm.go) with a user-supplied file. Empty uses the
+	// baked-in default.
+	SPPolicyFile string
+	AAPolicyFile string
+}
+
+// Validate reports every missing required flag in one error, so
+// hack/setup-fleet-infra's caller can tell the user everything they need to
+// fix in a single run instead of one flag at a time.
+func (o FleetDemoHelmOptions) Validate() error {
+	var missing []string
+	if o.LLMProvider == "" {
+		missing = append(missing, "-llm-provider")
+	}
+	if o.LLMModel == "" {
+		missing = append(missing, "-llm-model")
+	}
+	if o.LLMEndpoint == "" {
+		missing = append(missing, "-llm-endpoint")
+	}
+	if o.LLMAPIKeyFile == "" {
+		missing = append(missing, "-llm-api-key-file")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// buildFleetDemoHelmArgs builds the `helm upgrade --install` argument list
+// for the fleet demo entry point. Pure function (no exec/cluster access) so
+// it's unit-testable independent of InstallFleetDemoHelmChart's I/O.
+//
+// Deliberately no --wait: same reason as InstallFullPipelineHelmChart --
+// charts/kubernaut/templates/hooks/migration-job.yaml is a post-install hook,
+// and DataStorage's Deployment can never become ready before it runs, which
+// deadlocks --wait until timeout.
+func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *FleetHelmOptions, opts FleetDemoHelmOptions, spPolicyFile, aaPolicyFile string) []string {
+	keycloakAuthBase := fmt.Sprintf("https://keycloak:8443/realms/%s", fleetDemoKeycloakRealm)
+	keycloakInClusterBase := fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/%s", idpNamespace, fleetDemoKeycloakRealm)
+
+	args := []string{
+		"--kubeconfig", kubeconfigPath,
+		"upgrade", "--install", "kubernaut", chartPath,
+		"--namespace", namespace,
+		"--create-namespace",
+		"--timeout", "8m",
+		"--set", "global.llmProfiles.primary.provider=" + opts.LLMProvider,
+		"--set", "global.llmProfiles.primary.model=" + opts.LLMModel,
+		"--set", "global.llmProfiles.primary.endpoint=" + opts.LLMEndpoint,
+		"--set", "global.llmProfiles.primary.credentialsSecretName=" + fleetDemoLLMSecretName,
+		"--set", fmt.Sprintf("gateway.enabled=%t", opts.Autonomous),
+		// Console: always on (BR-PLATFORM-014, Console-first default). Reuses
+		// the Traefik ingress + "kubernaut-console" Keycloak client that
+		// SetupFleetCoreInfrastructureWithGateway already provisions.
+		"--set", "console.enabled=true",
+		"--set", "console.auth.secretName=" + fleetDemoConsoleOAuthSecretName,
+		"--set", "console.ingress.className=traefik",
+		"--set", "console.ingress.host=" + fleetDemoConsoleHost,
+		"--set", fmt.Sprintf("console.ingress.port=%d", fleetDemoConsolePort),
+		"--set", "networkPolicies.console.ingressNamespaces[0]=" + fleetDemoTraefikNamespace,
+		// AF/Console browser+in-cluster OIDC: reuses the same Keycloak fleet
+		// infra already stands up (no DEX test double, unlike the FP suite).
+		"--set", "apifrontend.config.auth.issuerURL=" + keycloakAuthBase,
+		"--set", "apifrontend.config.auth.jwksURL=" + keycloakInClusterBase + "/protocol/openid-connect/certs",
+		// Split browser/in-cluster OIDC endpoints (Keycloak lives in its own
+		// "idp" namespace, not kubernaut-system -- see keycloak_e2e.go).
+		"--set", "console.oauth2Proxy.skipDiscovery=true",
+		"--set", "console.oauth2Proxy.loginURL=" + keycloakAuthBase + "/protocol/openid-connect/auth",
+		"--set", "console.oauth2Proxy.redeemURL=" + keycloakInClusterBase + "/protocol/openid-connect/token",
+		"--set", "console.oauth2Proxy.jwksURL=" + keycloakInClusterBase + "/protocol/openid-connect/certs",
+		// Keycloak listens on 8443, not the schema's 443 default -- every
+		// fleet-aware service's idpEgress NetworkPolicy rule needs this to
+		// reach Keycloak for its own OAuth2 token fetch, and AF additionally
+		// uses it for browser-JWT JWKS validation (same host:port, unlike
+		// the FP suite's separate DEX-on-5556 case).
+		"--set", "networkPolicies.idp.port=8443",
+		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
+		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
+	}
+
+	if opts.Autonomous {
+		// AlertManager (Go-managed monitoring stack, deployed by
+		// SetupFleetCoreInfrastructureWithGateway into "monitoring") sends
+		// webhook signals to Gateway cross-namespace -- same concern
+		// InstallFullPipelineHelmChart documents for its own event-exporter.
+		args = append(args, "--set", "networkPolicies.gateway.ingressNamespaces[0]="+monitoringNamespace)
+	}
+
+	// buildFleetOAuth2HelmArgs (fullpipeline_e2e_helm.go) is the SAME
+	// function InstallFullPipelineHelmChart calls for fleet E2E -- a
+	// regression here fails fleet E2E CI, not just this demo-only path.
+	args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)
+
+	return args
+}
+
+// buildFleetDemoHelmSecretsManifest renders the Secrets `helm install`
+// requires to already exist (charts/kubernaut/README.md's Quick Start
+// contract) for namespace, plus console-oauth-creds for the web Console.
+// Pure string-building -- callers own generating pgPassword/valkeyPassword/
+// consoleCookieSecret and reading llmAPIKey, keeping this unit-testable
+// without crypto/rand or file I/O.
+func buildFleetDemoHelmSecretsManifest(namespace, pgPassword, valkeyPassword, llmAPIKey, consoleCookieSecret string) string {
+	return fmt.Sprintf(`---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[1]s
+  namespace: %[2]s
+type: Opaque
+stringData:
+  POSTGRES_USER: slm_user
+  POSTGRES_PASSWORD: %[3]s
+  POSTGRES_DB: action_history
+  db-secrets.yaml: |
+    username: slm_user
+    password: %[3]s
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[4]s
+  namespace: %[2]s
+type: Opaque
+stringData:
+  valkey-secrets.yaml: |
+    password: %[5]s
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[6]s
+  namespace: %[2]s
+type: Opaque
+stringData:
+  api_key: %[7]s
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[8]s
+  namespace: %[2]s
+type: Opaque
+stringData:
+  client-id: %[9]s
+  client-secret: %[10]s
+  cookie-secret: %[11]s
+`,
+		fleetDemoPGSecretName, namespace, pgPassword,
+		fleetDemoValkeySecretName, valkeyPassword,
+		fleetDemoLLMSecretName, llmAPIKey,
+		fleetDemoConsoleOAuthSecretName, fleetDemoConsoleClientID, fleetDemoConsoleClientSecret, consoleCookieSecret)
+}
+
+// generateFleetDemoSecret returns a random, URL-safe base64 string of n
+// random bytes -- the Go-native equivalent of `openssl rand -base64 n` used
+// by charts/kubernaut/README.md's own Quick Start.
+func generateFleetDemoSecret(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("failed to generate random secret: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// InstallFleetDemoHelmChart is the exported, post-fleet-core-infra entry
+// point for hack/setup-fleet-infra (Issue #2337): creates the prerequisite
+// Secrets, writes the Rego policy files, runs `helm upgrade --install
+// charts/kubernaut`, and binds the AF persona RBAC Console needs immediately
+// (previously three separate manual steps -- README Quick Start's secrets,
+// `--set-file` policies, and `make bind-fleet-af-rbac`).
+//
+// fleetOpts comes from SetupFleetCoreInfrastructureWithGateway's return
+// value -- must be non-nil for fleet federation to actually work, but the
+// nil case is still handled (mirrors InstallFullPipelineHelmChart) so a
+// caller without fleet infra can still install a non-fleet chart.
+func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath string, fleetOpts *FleetHelmOptions, opts FleetDemoHelmOptions, writer io.Writer) error {
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+
+	namespace := kubernautSystem
+	projectRoot := getProjectRoot()
+	chartPath := filepath.Join(projectRoot, "charts", "kubernaut")
+
+	_, _ = fmt.Fprintln(writer, "\n🔑 Creating prerequisite Secrets (postgresql, valkey, llm-credentials, console-oauth)...")
+	namespaceManifest := fmt.Sprintf("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n", namespace)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, namespaceManifest); err != nil {
+		return fmt.Errorf("failed to create %s namespace: %w", namespace, err)
+	}
+
+	llmAPIKeyBytes, err := os.ReadFile(opts.LLMAPIKeyFile) //nolint:gosec // G304: user-supplied CLI flag, not a fixed/untrusted path
+	if err != nil {
+		return fmt.Errorf("failed to read -llm-api-key-file %q: %w", opts.LLMAPIKeyFile, err)
+	}
+	llmAPIKey := strings.TrimSpace(string(llmAPIKeyBytes))
+
+	pgPassword, err := generateFleetDemoSecret(24)
+	if err != nil {
+		return err
+	}
+	valkeyPassword, err := generateFleetDemoSecret(24)
+	if err != nil {
+		return err
+	}
+	consoleCookieSecret, err := generateFleetDemoSecret(32)
+	if err != nil {
+		return err
+	}
+
+	secretsManifest := buildFleetDemoHelmSecretsManifest(namespace, pgPassword, valkeyPassword, llmAPIKey, consoleCookieSecret)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, secretsManifest); err != nil {
+		return fmt.Errorf("failed to create prerequisite Secrets: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Secrets ready")
+
+	tmpDir, err := os.MkdirTemp("", "fleet-demo-policies-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir for policy files: %w", err)
+	}
+	defer func() {
+		if rmErr := os.RemoveAll(tmpDir); rmErr != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to clean up temp policy dir %s: %v\n", tmpDir, rmErr)
+		}
+	}()
+
+	spPolicyFile := opts.SPPolicyFile
+	if spPolicyFile == "" {
+		spPolicyFile = filepath.Join(tmpDir, "sp-policy.rego")
+		if writeErr := os.WriteFile(spPolicyFile, []byte(fullPipelineSignalProcessingPolicyRego), 0o644); writeErr != nil {
+			return fmt.Errorf("failed to write default SignalProcessing policy: %w", writeErr)
+		}
+	}
+	aaPolicyFile := opts.AAPolicyFile
+	if aaPolicyFile == "" {
+		aaPolicyFile = filepath.Join(tmpDir, "aa-policy.rego")
+		if writeErr := os.WriteFile(aaPolicyFile, []byte(fullPipelineAIAnalysisPolicyRego), 0o644); writeErr != nil {
+			return fmt.Errorf("failed to write default AIAnalysis policy: %w", writeErr)
+		}
+	}
+
+	args := buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace, fleetOpts, opts, spPolicyFile, aaPolicyFile)
+
+	_, _ = fmt.Fprintln(writer, "\n🚀 helm upgrade --install kubernaut charts/kubernaut ...")
+	cmd := exec.CommandContext(ctx, "helm", args...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("helm install failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Helm chart installed")
+
+	_, _ = fmt.Fprintln(writer, "\n🔑 Binding AF persona RBAC for Console...")
+	if err := BindFleetAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to bind AF persona RBAC: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Kubernaut installed and ready")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "  Add to /etc/hosts:  127.0.0.1 keycloak %s\n", fleetDemoConsoleHost)
+	_, _ = fmt.Fprintf(writer, "  Browse to:          https://%s:%d\n", fleetDemoConsoleHost, fleetDemoConsolePort)
+	_, _ = fmt.Fprintln(writer, "  Login:              sre-user / password")
+	if opts.Autonomous {
+		_, _ = fmt.Fprintln(writer, "  Gateway is ENABLED -- demo scenario alerts remediate autonomously.")
+	} else {
+		_, _ = fmt.Fprintln(writer, "  Gateway is disabled -- run a demo scenario with --alert-only, then ask")
+		_, _ = fmt.Fprintln(writer, "  Console to investigate. Re-run with -autonomous to see it happen on its own.")
+	}
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return nil
+}
