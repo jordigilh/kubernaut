@@ -33,7 +33,8 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	testModel = "test-model"
+	testModel         = "test-model"
+	testPromptPreview = "ping"
 )
 
 // batchSpy implements pkg/audit.DataStorageClient for buffered store tests (BR-AI-056 audit trail).
@@ -165,7 +166,7 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-KA-197 DD-AUDIT-002)", 
 			event.EventOutcome = audit.OutcomeSuccess
 			event.Data["model"] = testModel
 			event.Data["prompt_length"] = 4
-			event.Data["prompt_preview"] = "ping"
+			event.Data["prompt_preview"] = testPromptPreview
 
 			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
 			Expect(store.Close()).To(Succeed())
@@ -174,6 +175,51 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-KA-197 DD-AUDIT-002)", 
 			Expect(batch).To(HaveLen(1))
 			Expect(batch[0].EventType).To(Equal(audit.EventTypeLLMRequest))
 			Expect(batch[0].CorrelationID).To(Equal("corr-buf-668"))
+		})
+
+		It("UT-KA-2317-001: defaults ActorType=service and ActorID=kubernaut-agent (ADR-034 lowercase convention)", func() {
+			spy := &batchSpy{}
+			store, err := audit.NewBufferedDSAuditStore(spy, logr.Discard(), audit.WithBatchSize(1))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = store.Close() }()
+
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-2317-default")
+			event.EventAction = audit.ActionLLMRequest
+			event.EventOutcome = audit.OutcomeSuccess
+			event.Data["model"] = testModel
+			event.Data["prompt_length"] = 4
+			event.Data["prompt_preview"] = testPromptPreview
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(store.Flush(context.Background())).To(Succeed())
+
+			batch := spy.lastBatch()
+			Expect(batch).To(HaveLen(1))
+			Expect(batch[0].ActorType.Value).To(Equal("service"))
+			Expect(batch[0].ActorID.Value).To(Equal("kubernaut-agent"))
+		})
+
+		It("UT-KA-2317-002: sets ActorType=user and ActorID=ActingUser when ActingUser is set", func() {
+			spy := &batchSpy{}
+			store, err := audit.NewBufferedDSAuditStore(spy, logr.Discard(), audit.WithBatchSize(1))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = store.Close() }()
+
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-2317-user")
+			event.EventAction = audit.ActionLLMRequest
+			event.EventOutcome = audit.OutcomeSuccess
+			event.ActingUser = "jane@example.com"
+			event.Data["model"] = testModel
+			event.Data["prompt_length"] = 4
+			event.Data["prompt_preview"] = testPromptPreview
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(store.Flush(context.Background())).To(Succeed())
+
+			batch := spy.lastBatch()
+			Expect(batch).To(HaveLen(1))
+			Expect(batch[0].ActorType.Value).To(Equal("user"))
+			Expect(batch[0].ActorID.Value).To(Equal("jane@example.com"))
 		})
 
 		It("Flush pushes buffered events to DataStorage without closing the worker", func() {
