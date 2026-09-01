@@ -206,6 +206,8 @@ cd kubernaut-demo-scenarios
 New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app and lets it crash-loop:
 
 ```bash
+export HUB_KUBECONFIG=~/.kube/kubernaut-hub-config
+export SPOKE_KUBECONFIG=~/.kube/kubernaut-remote-cluster-config
 ./scenarios/crashloop/run.sh --alert-only
 ```
 
