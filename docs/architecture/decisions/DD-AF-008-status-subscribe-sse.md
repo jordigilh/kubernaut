@@ -75,15 +75,32 @@ Metadata uses raw CRD field names. The console computes derived values.
 
 | Phase | Metadata fields |
 |-------|----------------|
-| Pending, Processing, Analyzing, Cancelled | (none) |
-| AwaitingApproval | approval_request_name |
+| Pending, Processing, Cancelled | (none) |
+| Analyzing | workflow_id (once selected) |
+| AwaitingApproval | workflow_id, approval_request_name |
 | Executing | workflow_id, started_at |
-| Verifying | verification_deadline, started_at, ea_phase, stabilization_deadline |
-| Blocked | blocked_until, block_reason, block_message |
-| Completed | outcome |
-| Failed | failure_reason, failure_phase |
-| TimedOut | failure_phase |
-| Skipped | skip_reason |
+| Verifying | workflow_id, verification_deadline, started_at, ea_phase, stabilization_deadline |
+| Blocked | workflow_id, blocked_until, block_reason, block_message |
+| Completed | workflow_id, outcome |
+| Failed | workflow_id, failure_reason, failure_phase |
+| TimedOut | workflow_id, failure_phase |
+| Skipped | workflow_id, skip_reason |
+
+`workflow_id` is phase-independent (#2325): `BuildPhaseMetadata` sets it
+whenever `status.workflowSelection.selectedWorkflowRef` is non-nil,
+regardless of `OverallPhase`, rather than only for `Executing`. Selection
+completes during `Analyzing` -- tens of seconds before the phase transitions
+-- so gating the field on a later phase silently dropped it from the
+console's Analyzing-phase display.
+
+### RR Sub-Field Events Independent of Phase
+
+The stream also emits `status/update` with the *same* `phase` value when a
+tracked sub-field changes without an `OverallPhase` transition -- currently
+only `status.workflowSelection.selectedWorkflowRef`. This mirrors the EA
+sub-phase pattern below (same phase, updated metadata) and prevents a
+selection that lands mid-phase from being silently dropped until the next
+phase change (#2325).
 
 ### EA Sub-Phase Events During Verifying
 

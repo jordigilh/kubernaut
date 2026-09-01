@@ -206,7 +206,7 @@ func (s *Server) queryVerifyChainEvents(ctx context.Context, correlationID strin
 		FROM audit_events
 		WHERE correlation_id = $1
 		  AND event_hash IS NOT NULL
-		ORDER BY event_timestamp ASC, event_id ASC
+		ORDER BY insert_seq ASC
 		LIMIT $2
 	`
 
@@ -324,35 +324,47 @@ func assignVerifyChainNullableFields(event *repository.AuditEvent, cols verifyCh
 	event.ErrorMessage = cols.errorMessage.String
 }
 
-// verifyEventChain walks events in order, recomputing each event's expected
-// hash (GAP-05: algorithm-aware, honors each event's own hash_algorithm) and
-// comparing it against the stored hash and previous_event_hash link,
-// appending any mismatches to response.TamperedEvents and updating
-// response.IsValid/VerifiedEvents in place. Extracted from verifyHashChain
-// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
-// change.
+// verifyEventChain verifies each event's hash-chain integrity using its own
+// stored previous_event_hash pointer plus a topology map built from the
+// whole event set, rather than a global previousHash carried forward across
+// a caller-supplied ordering.
+//
+// Issue #2318: the prior implementation assumed events arrived in true
+// chain order and compared each event's previous_event_hash against a
+// running variable seeded from the *previous slice element*. Same-timestamp
+// write bursts made that assumption false (event_id, a client-generated
+// UUID, is not a reliable ordering tiebreak -- see migration
+// 019_audit_events_insert_seq.sql), so a correctly-chained set of events
+// handed back in the wrong order was reported as tampered: a cascading
+// false positive. Verifying each event against its own claimed predecessor
+// makes the result independent of input order.
+//
+// DD-AUDIT-009 also adds two checks the old linear walk could not express:
+//   - dangling previous_event_hash: an event's claimed predecessor is not
+//     present in the retrieved set (lost row, or forged pointer)
+//   - fork: more than one event claims the same previous_event_hash (including
+//     more than one genesis event, keyed by the empty string)
+//
+// GAP-05: algorithm-aware, honors each event's own hash_algorithm.
 func verifyEventChain(response *VerifyChainResponse, events []*repository.AuditEvent, hmacKey []byte) error {
-	previousHash := ""
+	hashToEvent := make(map[string]*repository.AuditEvent, len(events))
 	for _, event := range events {
-		expectedHash, err := repository.CalculateHashForVerification(hmacKey, previousHash, event)
+		hashToEvent[event.EventHash] = event
+	}
+
+	predecessorClaimCounts := make(map[string]int, len(events))
+	for _, event := range events {
+		predecessorClaimCounts[event.PreviousEventHash]++
+	}
+
+	for _, event := range events {
+		expectedHash, err := repository.CalculateHashForVerification(hmacKey, event.PreviousEventHash, event)
 		if err != nil {
 			return err
 		}
 
-		// Verify previous_event_hash matches
-		if event.PreviousEventHash != previousHash {
-			response.IsValid = false
-			response.TamperedEvents = append(response.TamperedEvents, TamperedEvent{
-				EventID:        event.EventID.String(),
-				EventTimestamp: event.EventTimestamp,
-				ExpectedHash:   "",
-				ActualHash:     "",
-				PreviousHash:   previousHash,
-				Message:        "Previous hash mismatch: event claims different previous_event_hash",
-			})
-		}
+		verifyEventTopology(response, event, hashToEvent, predecessorClaimCounts)
 
-		// Verify event_hash matches calculated hash
 		if event.EventHash != expectedHash {
 			response.IsValid = false
 			response.TamperedEvents = append(response.TamperedEvents, TamperedEvent{
@@ -360,15 +372,41 @@ func verifyEventChain(response *VerifyChainResponse, events []*repository.AuditE
 				EventTimestamp: event.EventTimestamp,
 				ExpectedHash:   expectedHash,
 				ActualHash:     event.EventHash,
-				PreviousHash:   previousHash,
+				PreviousHash:   event.PreviousEventHash,
 				Message:        "Event hash mismatch: event data has been tampered",
 			})
 		} else {
 			response.VerifiedEvents++
 		}
-
-		// Update previous hash for next iteration
-		previousHash = event.EventHash
 	}
 	return nil
+}
+
+// verifyEventTopology checks event's previous_event_hash pointer against the
+// rest of the chain: dangling (predecessor not present in the retrieved
+// set) and fork (another event claims the same predecessor). Split from
+// verifyEventChain so each check stays independently readable (100go.co:
+// avoid deep nesting in a single loop body).
+func verifyEventTopology(response *VerifyChainResponse, event *repository.AuditEvent, hashToEvent map[string]*repository.AuditEvent, predecessorClaimCounts map[string]int) {
+	if event.PreviousEventHash != "" {
+		if _, ok := hashToEvent[event.PreviousEventHash]; !ok {
+			response.IsValid = false
+			response.TamperedEvents = append(response.TamperedEvents, TamperedEvent{
+				EventID:        event.EventID.String(),
+				EventTimestamp: event.EventTimestamp,
+				PreviousHash:   event.PreviousEventHash,
+				Message:        "Dangling previous hash: event's claimed predecessor is not present in the retrieved chain",
+			})
+		}
+	}
+
+	if predecessorClaimCounts[event.PreviousEventHash] > 1 {
+		response.IsValid = false
+		response.TamperedEvents = append(response.TamperedEvents, TamperedEvent{
+			EventID:        event.EventID.String(),
+			EventTimestamp: event.EventTimestamp,
+			PreviousHash:   event.PreviousEventHash,
+			Message:        "Chain fork detected: multiple events claim the same previous_event_hash",
+		})
+	}
 }

@@ -298,6 +298,7 @@ spec:
 func testCatalogWorkflow(workflowID, content string) *models.RemediationWorkflow {
 	bundleDigest := "sha256:aaa"
 	sa := "workflow-runner"
+	clusterID := "remote-cluster"
 	return &models.RemediationWorkflow{
 		WorkflowID:            workflowID,
 		WorkflowName:          "test-workflow",
@@ -309,6 +310,7 @@ func testCatalogWorkflow(workflowID, content string) *models.RemediationWorkflow
 		ExecutionEngine:       models.ExecutionEngineTekton,
 		ExecutionBundleDigest: &bundleDigest,
 		ServiceAccountName:    &sa,
+		ExecutionClusterID:    &clusterID,
 		Labels: models.MandatoryLabels{
 			Severity:    []string{"critical"},
 			Component:   []string{"v1/Pod"},
@@ -333,6 +335,27 @@ var _ = Describe("buildWorkflowMeta", func() {
 		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
 		Expect(meta.ActionType).To(Equal("RestartPod"))
 		Expect(meta.WorkflowName).To(Equal("test-workflow"))
+	})
+
+	// UT-KA-2326-003 (DD-FLEET-008, BR-FLEET-004): ClusterID is catalog-authoritative
+	// (workflow-declared, not LLM-suppliable), so buildWorkflowMeta must always
+	// copy it verbatim -- same no-schema-parsing-dependency pattern as
+	// ActionType/WorkflowName above.
+	It("UT-KA-2326-003: copies ExecutionClusterID into WorkflowMeta.ClusterID", func() {
+		w := testCatalogWorkflow("550e8400-e29b-41d4-a716-446655440020", validWorkflowSchemaYAML)
+
+		meta := buildWorkflowMeta(w, dsschema.NewParser(), logr.Discard())
+
+		Expect(meta.ClusterID).To(Equal("remote-cluster"))
+	})
+
+	It("UT-KA-2326-004: leaves WorkflowMeta.ClusterID empty when the workflow declares no execution cluster (hub-local default)", func() {
+		w := testCatalogWorkflow("550e8400-e29b-41d4-a716-446655440021", validWorkflowSchemaYAML)
+		w.ExecutionClusterID = nil
+
+		meta := buildWorkflowMeta(w, dsschema.NewParser(), logr.Discard())
+
+		Expect(meta.ClusterID).To(BeEmpty())
 	})
 
 	// UT-KA-337-001 (Issue #1661 Change 11a, DD-WORKFLOW-018): WorkflowMeta must

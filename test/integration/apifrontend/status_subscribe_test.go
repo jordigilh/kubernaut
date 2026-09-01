@@ -577,4 +577,85 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		}
 		Expect(found).To(BeTrue(), "must receive Executing event with both context and phase metadata")
 	})
+
+	It("IT-AF-2325-001: workflow selection during Analyzing emits status/update without a phase change (SI-4)", func() {
+		rr := createTestRR(ctx, "rr-analyzing-select", testNS, "Analyzing")
+		defer cleanupTestRR(ctx, rr.Name, testNS)
+
+		resp, err := http.Post(statusSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		time.Sleep(200 * time.Millisecond)
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		// OverallPhase deliberately left as "Analyzing" -- RCA, discovery, and
+		// selection all happen under this single phase value (#2325).
+		rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{
+			WorkflowID: "crashloop-rollback-v1",
+		}
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		events := collectSSEEvents(resp, 2, 5*time.Second)
+		Expect(len(events)).To(BeNumerically(">=", 2),
+			"#2325: must receive a second status/update once workflowSelection is populated, "+
+				"even though OverallPhase is still Analyzing")
+
+		var found bool
+		for _, evt := range events {
+			var data map[string]any
+			if json.Unmarshal([]byte(evt.Data), &data) != nil {
+				continue
+			}
+			inner, _ := data["params"].(map[string]any)
+			if inner == nil || inner["phase"] != "Analyzing" {
+				continue
+			}
+			meta, _ := inner["metadata"].(map[string]any)
+			if meta != nil && meta["workflow_id"] == "crashloop-rollback-v1" {
+				found = true
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"SI-4 (#2325): must receive an Analyzing-phase event carrying workflow_id once selected")
+	})
+
+	It("IT-AF-2325-002: unrelated RR touch with no phase or workflow-selection change emits no extra event (regression guard)", func() {
+		rr := createTestRR(ctx, "rr-analyzing-noop", testNS, "Analyzing")
+		defer cleanupTestRR(ctx, rr.Name, testNS)
+
+		resp, err := http.Post(statusSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		// Baseline: exactly 1 event (current-state on subscribe).
+		baseline := collectSSEEvents(resp, 1, 5*time.Second)
+		Expect(baseline).To(HaveLen(1))
+
+		time.Sleep(200 * time.Millisecond)
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		// Bump resourceVersion via an unrelated status field; phase and
+		// workflowSelection are both unchanged, so this must not emit.
+		now := metav1.Now()
+		rr.Status.EnsurePhaseProgress().AnalyzingStartTime = &now
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		// Follow up with a real, expected transition so we have a positive
+		// signal that the stream is still alive and not just stalled.
+		time.Sleep(200 * time.Millisecond)
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		rr.Status.OverallPhase = remediationv1.PhaseExecuting
+		rr.Status.EnsureWorkflowSelection().SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "restart-v1"}
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		events := collectSSEEvents(resp, 1, 5*time.Second)
+		Expect(events).To(HaveLen(1), "regression guard: only the Executing transition must be "+
+			"emitted -- the earlier no-op AnalyzingStartTime touch must not produce a duplicate event")
+
+		var data map[string]any
+		Expect(json.Unmarshal([]byte(events[0].Data), &data)).To(Succeed())
+		inner, _ := data["params"].(map[string]any)
+		Expect(inner["phase"]).To(Equal("Executing"))
+	})
 })

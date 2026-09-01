@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -370,11 +371,7 @@ func LoadImageToKind(ctx context.Context, imageName, serviceName, clusterName st
 
 	// Load tar file into Kind
 	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
-	loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFile, "--name", clusterName)
-	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-	if err := loadCmd.Run(); err != nil {
+	if err := loadImageArchiveWithRetry(ctx, tmpFile, clusterName, writer); err != nil {
 		// Clean up tar file on error
 		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to load image to Kind: %w", err)
@@ -403,6 +400,54 @@ func LoadImageToKind(ctx context.Context, imageName, serviceName, clusterName st
 	_, _ = fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
 
 	return nil
+}
+
+// loadImageArchiveMaxAttempts bounds the retry loop in loadImageArchiveWithRetry.
+const loadImageArchiveMaxAttempts = 3
+
+// loadImageArchiveWithRetry runs `kind load image-archive` with a short bounded
+// retry for a specific, known-transient failure: kind's experimental podman
+// provider occasionally reports "no nodes found for cluster" on the very next
+// command immediately after `kind create cluster` itself reported success
+// (control-plane started, kubectl context set) -- a lookup race between the
+// node container becoming visible to `kind create`'s own success path and to a
+// brand-new `kind load` process's independent podman node query. Observed
+// reproducing in ~75% of consecutive fleet E2E attempts on the same host
+// (CI RCA, PR #2327/helios08 triage), always on the first `kind load` call
+// right after cluster creation, never mid-suite -- consistent with a
+// short-lived race rather than a genuine missing cluster. Retrying blind
+// (without inspecting output) would mask a real "cluster doesn't exist"
+// bug, so this only retries when the captured output matches that exact
+// signature; any other failure returns immediately on the first attempt.
+func loadImageArchiveWithRetry(ctx context.Context, tarPath, clusterName string, writer io.Writer) error {
+	var lastErr error
+	for attempt := 1; attempt <= loadImageArchiveMaxAttempts; attempt++ {
+		var captured bytes.Buffer
+		tee := io.MultiWriter(writer, &captured)
+
+		loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tarPath, "--name", clusterName)
+		loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+		loadCmd.Stdout = tee
+		loadCmd.Stderr = tee
+		err := loadCmd.Run()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		isNoNodesRace := strings.Contains(captured.String(), "no nodes found for cluster")
+		if !isNoNodesRace || attempt == loadImageArchiveMaxAttempts {
+			return err
+		}
+		_, _ = fmt.Fprintf(writer, "   ⚠️  kind load hit the known no-nodes-found race (attempt %d/%d), retrying in 5s...\n",
+			attempt, loadImageArchiveMaxAttempts)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+	return lastErr
 }
 
 // PreloadExternalImage pulls a third-party image (e.g., postgres:16-alpine) and loads it into

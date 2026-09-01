@@ -190,6 +190,7 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 				WorkflowRationale:     "restart clears leaked memory",
 				ActionType:            "restart",
 				WorkflowName:          "restart-deployment",
+				ExecutionClusterID:    "prod-east",
 				IsActionable:          &isActionable,
 				ContributingFactors:   []string{"memory leak"},
 				CausalChain:           []string{"leak", "OOM", "crash"},
@@ -229,6 +230,7 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
 			Expect(sw["workflow_id"]).To(Equal("wf-restart"))
 			Expect(sw["execution_bundle_digest"]).To(Equal("sha256:abc"))
+			Expect(sw["execution_cluster_id"]).To(Equal("prod-east"))
 
 			Expect(res.DetectedLabels).NotTo(BeNil())
 
@@ -242,6 +244,41 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(res.AlignmentVerdict.Result).To(Equal("aligned"))
 			Expect(res.AlignmentVerdict.Findings).To(HaveLen(1))
 			Expect(res.AlignmentVerdict.Findings[0].Tool).To(Equal("get_pods"))
+		})
+	})
+
+	Describe("UT-KA-2327-001: ExecutionClusterID propagates onto the wire selected_workflow map", func() {
+		It("should include execution_cluster_id when the workflow declares an execution cluster (DD-FLEET-008, BR-FLEET-004)", func() {
+			result := &katypes.InvestigationResult{
+				WorkflowID:         "wf-fleet",
+				Confidence:         0.9,
+				ExecutionClusterID: "prod-east",
+			}
+
+			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-fleet")
+
+			Expect(res.SelectedWorkflow).NotTo(BeNil())
+			var sw map[string]interface{}
+			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
+			Expect(sw["execution_cluster_id"]).To(Equal("prod-east"),
+				"AA's response_processor.go reads swMap[\"execution_cluster_id\"] into "+
+					"SelectedWorkflow.ExecutionClusterID -- omitting this key here silently "+
+					"drops the workflow-declared execution cluster and falls back to the "+
+					"signal's origin cluster")
+		})
+
+		It("should omit execution_cluster_id when the workflow declares no execution cluster (hub-local default, unchanged behavior)", func() {
+			result := &katypes.InvestigationResult{
+				WorkflowID: "wf-hub-local",
+				Confidence: 0.9,
+			}
+
+			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-hub-local")
+
+			Expect(res.SelectedWorkflow).NotTo(BeNil())
+			var sw map[string]interface{}
+			Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &sw)).To(Succeed())
+			Expect(sw).NotTo(HaveKey("execution_cluster_id"))
 		})
 	})
 

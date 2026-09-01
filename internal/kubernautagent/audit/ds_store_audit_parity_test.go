@@ -79,7 +79,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 	})
 
 	Describe("UT-KA-433-AP-003: StoreAudit sets ActorType and ActorID", func() {
-		It("should set ActorType=Service and ActorID=kubernaut-agent on ogen request", func() {
+		It("should set ActorType=service and ActorID=kubernaut-agent on ogen request (ADR-034 lowercase convention)", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
@@ -89,7 +89,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.ActorType.Value).To(Equal("Service"))
+			Expect(req.ActorType.Value).To(Equal("service"))
 			Expect(req.ActorID.Value).To(Equal("kubernaut-agent"))
 		})
 	})

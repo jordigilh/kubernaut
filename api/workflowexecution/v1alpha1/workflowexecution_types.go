@@ -171,7 +171,12 @@ type WorkflowExecutionSpec struct {
 	// When empty, execution runs on the local (hub) cluster.
 	// When set, execution resources (Jobs, PipelineRuns) are created on the
 	// remote cluster via the MCP Gateway (BR-FLEET-054).
-	// Propagated from RemediationRequest.Spec.ClusterID by the RO creator.
+	// Resolved by the RO creator (DD-FLEET-008, BR-FLEET-004): the selected
+	// workflow's catalog-declared WorkflowRef.ExecutionClusterID takes
+	// precedence when set (e.g. a GitOps-hub cluster, or an aggregator
+	// cluster reaching a resource-constrained edge device); otherwise falls
+	// back to RemediationRequest.Spec.ClusterID, the signal's origin
+	// cluster (pre-DD-FLEET-008 default behavior).
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 

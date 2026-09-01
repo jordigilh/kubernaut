@@ -183,13 +183,18 @@ func (r *AuditEventsRepository) getPreviousEventHash(ctx context.Context, tx *sq
 	}
 
 	// Step 2: Query last event hash for this correlation_id
+	// Issue #2318: insert_seq (migration 019) is a monotonic write-order
+	// column, unlike event_id (a client-generated UUID unrelated to
+	// insertion order). Ordering by event_timestamp/event_id could pick a
+	// stale predecessor on a same-timestamp write burst, silently forking
+	// the hash chain at write time.
 	var previousHash sql.NullString
 	query := `
 		SELECT event_hash
 		FROM audit_events
 		WHERE correlation_id = $1
 		  AND event_hash IS NOT NULL
-		ORDER BY event_timestamp DESC, event_id DESC
+		ORDER BY insert_seq DESC
 		LIMIT 1
 	`
 

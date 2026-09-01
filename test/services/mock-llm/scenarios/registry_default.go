@@ -236,6 +236,12 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// above (see notActionableGrounded1912Config's doc comment).
 	r.Register(signalScenario("not_actionable_grounded_1912", []string{"e2efp1912notactionable"}, notActionableGrounded1912Config()))
 
+	// E2E-FLEET-2326-001 (Issue #2326, DD-FLEET-008, BR-FLEET-004): dedicated
+	// isolated signal so this scenario can never be matched by another Fleet
+	// E2E test's alert traffic -- see fleetExecClusterOverrideConfig's doc
+	// comment.
+	r.Register(signalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
+
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())

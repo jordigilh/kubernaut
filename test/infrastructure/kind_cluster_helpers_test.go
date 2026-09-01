@@ -53,3 +53,29 @@ var _ = Describe("checkKindVersionOutput", func() {
 			"", true),
 	)
 })
+
+// Issue #2327/#2326 helios08 fleet E2E triage: an earlier version of
+// clusterHasLiveNode checked only `err == nil && output != ""`, which is
+// always true for `kind get nodes` -- it exits 0 and prints diagnostic
+// banner lines regardless of whether any node exists, only signaling "no
+// nodes" via the literal text below. That false-positive let the cluster
+// "reuse" fast path in CreateKindClusterWithExtraMounts reuse a stale,
+// nodeless cluster registration, so every subsequent `kind load
+// image-archive` failed with "no nodes found for cluster" after an entire
+// image-build cycle had already run.
+var _ = Describe("hasLiveNodeInOutput", func() {
+	DescribeTable("detecting a live node in `kind get nodes` combined output",
+		func(output string, expectLive bool) {
+			Expect(hasLiveNodeInOutput(output)).To(Equal(expectLive))
+		},
+		Entry("UT-INFRA-KIND-008: reports live when a real node name is present",
+			"using podman due to KIND_EXPERIMENTAL_PROVIDER\nenabling experimental podman provider\nfleet-e2e-control-plane\n",
+			true),
+		Entry("UT-INFRA-KIND-009: reports not live when kind reports zero nodes, "+
+			"despite non-empty banner output (the exact false-positive this guards against)",
+			"using podman due to KIND_EXPERIMENTAL_PROVIDER\nenabling experimental podman provider\nNo kind nodes found for cluster \"fleet-e2e\".\n",
+			false),
+		Entry("UT-INFRA-KIND-010: reports not live for completely empty output",
+			"", false),
+	)
+})

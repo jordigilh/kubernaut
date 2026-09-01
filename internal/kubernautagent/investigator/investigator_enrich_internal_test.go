@@ -145,6 +145,64 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 12", func() {
 })
 
 // ========================================
+// UT-KA-2326 (Issue #2326, DD-FLEET-008, BR-FLEET-004)
+// ========================================
+// ExecutionClusterID is catalog-authoritative (workflow-declared, never
+// LLM-suppliable), so enrichFromCatalog must always overwrite it from
+// WorkflowMeta -- same unconditional-assignment pattern as ActionType/
+// WorkflowName above (UT-KA-1661-651).
+// ========================================
+var _ = Describe("enrichFromCatalog — Issue #2326 (workflow-declared execution cluster)", func() {
+	It("UT-KA-2326-005: copies ExecutionClusterID from WorkflowMeta.ClusterID onto the result", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{
+			ExecutionEngine: "job",
+			ClusterID:       "remote-cluster",
+		})
+
+		result := &katypes.InvestigationResult{WorkflowID: "wf-with-schema"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ExecutionClusterID).To(Equal("remote-cluster"))
+	})
+
+	It("UT-KA-2326-006: always overwrites a pre-populated ExecutionClusterID from the catalog (catalog-authoritative, not LLM-suppliable)", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{ClusterID: "remote-cluster"})
+
+		result := &katypes.InvestigationResult{
+			WorkflowID:         "wf-with-schema",
+			ExecutionClusterID: "llm-supplied-bogus-cluster",
+		}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ExecutionClusterID).To(Equal("remote-cluster"))
+	})
+
+	It("UT-KA-2326-007: leaves ExecutionClusterID empty when the workflow declares no execution cluster (hub-local default)", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{ExecutionEngine: "job"})
+
+		result := &katypes.InvestigationResult{WorkflowID: "wf-with-schema"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ExecutionClusterID).To(BeEmpty())
+	})
+
+	It("UT-KA-2326-008: leaves ExecutionClusterID empty when the workflow has no catalog metadata", func() {
+		v := parser.NewValidator([]string{"wf-unknown"})
+		result := &katypes.InvestigationResult{WorkflowID: "wf-unknown"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ExecutionClusterID).To(BeEmpty())
+	})
+})
+
+// ========================================
 // UT-KA-1711 (Issue #1711, DD-KA-001 v1.1)
 // ========================================
 // DD-KA-001 Step 1 (Workflow Existence) is unconditional: a workflow_id that

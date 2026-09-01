@@ -59,6 +59,14 @@ type WorkflowMeta struct {
 	ActionType   string
 	WorkflowName string
 
+	// ClusterID is the workflow-declared execution cluster (DD-FLEET-008,
+	// BR-FLEET-004, Issue #2326), sourced from RemediationWorkflow's
+	// spec.execution.clusterId via models.RemediationWorkflow.ExecutionClusterID.
+	// Empty means unset (hub/signal-cluster default, unchanged behavior).
+	// Catalog-authoritative like ActionType/WorkflowName above: never
+	// LLM-suppliable, always copied verbatim.
+	ClusterID string
+
 	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
 	// requires in the execution namespace (DD-WE-006). Nil when the schema
 	// declares no dependencies section. Issue #1661 Change 11a

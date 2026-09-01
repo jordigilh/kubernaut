@@ -94,7 +94,12 @@ spec:
                   When empty, execution runs on the local (hub) cluster.
                   When set, execution resources (Jobs, PipelineRuns) are created on the
                   remote cluster via the MCP Gateway (BR-FLEET-054).
-                  Propagated from RemediationRequest.Spec.ClusterID by the RO creator.
+                  Resolved by the RO creator (DD-FLEET-008, BR-FLEET-004): the selected
+                  workflow's catalog-declared WorkflowRef.ExecutionClusterID takes
+                  precedence when set (e.g. a GitOps-hub cluster, or an aggregator
+                  cluster reaching a resource-constrained edge device); otherwise falls
+                  back to RemediationRequest.Spec.ClusterID, the signal's origin
+                  cluster (pre-DD-FLEET-008 default behavior).
                 type: string
               confidence:
                 description: Confidence score from LLM (for audit trail)
@@ -245,6 +250,18 @@ spec:
                   executionBundleDigest:
                     description: ExecutionBundleDigest is retained for audit trail
                       and reproducibility.
+                    type: string
+                  executionClusterId:
+                    description: |-
+                      ExecutionClusterID is the workflow-declared fleet cluster this
+                      workflow's execution resource (Job/PipelineRun/Ansible run) runs on,
+                      resolved from the DS workflow catalog at selection time (DD-FLEET-008,
+                      BR-FLEET-004, Issue #2326). Empty means unset: execution runs on the
+                      same cluster as the triggering signal, the pre-existing default
+                      behavior. When set, RemediationOrchestrator's WorkflowExecutionCreator
+                      uses this value in preference to RemediationRequest.Spec.ClusterID for
+                      WorkflowExecution.Spec.ClusterID -- e.g. a GitOps-hub cluster, or an
+                      aggregator cluster reaching a resource-constrained edge device.
                     type: string
                   executionEngine:
                     description: |-

@@ -95,6 +95,16 @@ type InvestigationResult struct {
 	ActionType   string `json:"action_type,omitempty"`
 	WorkflowName string `json:"workflow_name,omitempty"`
 
+	// ExecutionClusterID is the workflow-declared fleet cluster this
+	// workflow's execution resource runs on, decoupled from the signal's
+	// origin cluster (DD-FLEET-008, BR-FLEET-004, Issue #2326).
+	// Catalog-authoritative like ActionType/WorkflowName above: copied by
+	// enrichFromCatalog, never LLM-suppliable. Empty means unset (execution
+	// runs on the signal's cluster, unchanged default behavior). Flows to
+	// AIAnalysis.Status.SelectedWorkflow (via sharedtypes.WorkflowSnapshot)
+	// and ultimately WorkflowExecution.Spec.ClusterID.
+	ExecutionClusterID string `json:"execution_cluster_id,omitempty"`
+
 	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
 	// schema data (Issue #1661 Change 11a, DD-WORKFLOW-018), copied from
 	// parser.WorkflowMeta by enrichFromCatalog after workflow selection. AA
