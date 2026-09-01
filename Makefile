@@ -945,19 +945,22 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
-# Fleet E2E infra ONLY: hub+spoke Kind clusters + Keycloak + Kuadrant MCP
-# Gateway + kube-mcp-server -- everything test-e2e-fleet deploys EXCEPT the
-# Kubernaut services themselves (no image build, no `helm install
-# charts/kubernaut`). For QE/local validation: run this, then `helm install`
-# yourself with your own LLM credentials + Rego policies (which vary per
-# setup and don't belong hardcoded into shared test-infra code). Leaves the
-# cluster running -- tear down with `kind delete cluster --name fleet-e2e`
-# (and the `-remote` sibling) when done.
-.PHONY: setup-e2e-fleet-infra
-setup-e2e-fleet-infra: ## Create hub+spoke Kind clusters + fleet-core infra only, no Kubernaut helm install (~10 min)
+# Fleet demo/QE infra ONLY (docs/requirements/BR-PLATFORM-014): hub+spoke
+# Kind clusters + Keycloak + MCP Gateway + kube-mcp-server -- everything
+# test-e2e-fleet deploys EXCEPT the Kubernaut services themselves (no image
+# build, no `helm install charts/kubernaut`). For QE/local validation/demos:
+# run this, then `helm install` yourself with your own LLM credentials +
+# Rego policies (which vary per setup and don't belong hardcoded into shared
+# test-infra code). Leaves the cluster running -- tear down with
+# `kind delete cluster --name fleet-e2e` (and the `-remote` sibling) when
+# done. Renamed from setup-e2e-fleet-infra (2026-09-01): the old name read
+# as CI-only test tooling to demo readers, when this is the same "fleet
+# demo/QE environment" BR-PLATFORM-014 already documents by that name.
+.PHONY: setup-fleet-demo-infra
+setup-fleet-demo-infra: ## Create hub+spoke Kind clusters + fleet-core infra only, no Kubernaut helm install (~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Fleet E2E infra setup (no Kubernaut helm install)"
-	@echo "   Hub + spoke Kind clusters, Keycloak, Kuadrant MCP Gateway, kube-mcp-server, Traefik"
+	@echo "🧪 Fleet demo/QE infra setup (no Kubernaut helm install)"
+	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway (EAIGW by default), kube-mcp-server, Traefik"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	go run ./hack/setup-fleet-infra
 	@echo "✅ Fleet infra ready. Run 'helm install charts/kubernaut' yourself next."
