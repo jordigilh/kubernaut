@@ -136,13 +136,11 @@ independent and can be combined on the same install:
 
 ## Try It Out
 
-Once Kubernaut is installed, see it in action. [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) provides 37 fault-injection scenarios you can run against your own cluster.
-
-New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app, lets it crash-loop, and watches Kubernaut detect the issue and roll back to the last working revision automatically:
-
-```bash
-./scenarios/crashloop/run.sh
-```
+Don't have a cluster yet? Follow the
+[Fleet Demo Quick Start](docs/operations/deployment/FLEET_DEMO_QUICKSTART.md) to spin up
+a self-contained hub+spoke Kind environment, install Kubernaut, and run a real
+fault-injection demo scenario yourself. All you need is an LLM provider API key, ~16 GB
+of memory, 4 CPU cores, and ~50 GB of disk space.
 
 ---
 
