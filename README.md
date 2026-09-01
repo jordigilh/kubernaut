@@ -169,8 +169,8 @@ make setup-fleet-demo-infra \
 
 This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
 Traefik, and fleet-wide monitoring, then runs `helm install charts/kubernaut` itself —
-remaining Secrets, default Rego policies, and RBAC included — and prints a `/etc/hosts`
-entry plus a Console URL and login when it's done (~15 min total).
+remaining Secrets, default Rego policies, and RBAC included — and finishes by printing
+a Console URL, a login, and a suggested `/etc/hosts` line (~15 min total).
 
 Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
 in Prometheus, but nothing auto-remediates until you ask Console to investigate — so
@@ -181,7 +181,12 @@ The default Rego policies are a catch-all: SignalProcessing classifies any signa
 instead of rejecting unrecognized ones, and AIAnalysis always requires human approval
 before a workflow executes. Pass `SP_POLICY_FILE=`/`AA_POLICY_FILE=` to use your own.
 
-**3. Proceed to [Run a scenario](#run-a-scenario).**
+**3. Add the printed line to your own `/etc/hosts`.** Modifying a system file needs your
+own privileges, so nothing here does it for you — copy the line the command above
+printed and add it yourself (`sudo sh -c 'echo "..." >> /etc/hosts'` or your editor of
+choice).
+
+**4. Proceed to [Run a scenario](#run-a-scenario).**
 
 For a walkthrough that explains every moving part instead of running it as a black box
 (or a manual, non-Kind topology), see the
