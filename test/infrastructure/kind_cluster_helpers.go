@@ -116,6 +116,14 @@ const kindCreateClusterMaxAttempts = 3
 var transientKindRuntimeErrorPatterns = []string{
 	"crun: unknown version specified",
 	"OCI runtime error",
+	// #2327/#2326 helios08 fleet E2E triage: `podman rm -f` on a stale node
+	// container returns before the runtime has fully released the container
+	// name (overlay unmount / cgroup teardown lag), so the very next `kind
+	// create cluster` can still observe it and refuse with this error even
+	// though `podman ps -a` already reports it gone. purgeStaleKindCluster
+	// re-runs on every retry of this whole call (see caller), so the growing
+	// backoff between attempts gives the runtime time to settle.
+	"node(s) already exist for a cluster with the name",
 }
 
 // isTransientKindRuntimeError reports whether kind's combined output matches a
@@ -127,6 +135,82 @@ func isTransientKindRuntimeError(output string) bool {
 		}
 	}
 	return false
+}
+
+// hasLiveNodeInOutput parses `kind get nodes` combined output and reports
+// whether it lists at least one real node. Pure function (no I/O) so it is
+// independently unit-testable from the exec.Command wrapper below, mirroring
+// checkKindVersionOutput above.
+//
+// `kind get nodes` exits 0 and still prints diagnostic banner lines
+// ("using podman due to KIND_EXPERIMENTAL_PROVIDER", "enabling experimental
+// podman provider") even when zero nodes exist -- it only ever signals "no
+// nodes" via the literal text "No kind nodes found for cluster", never via a
+// non-zero exit code or empty output. Checking output non-emptiness alone
+// is always true regardless of whether any node actually exists, silently
+// defeating the whole check (caught via helios08 fleet E2E triage, PR
+// #2327/#2326, after an initial version of this fix shipped with exactly
+// that bug).
+func hasLiveNodeInOutput(output string) bool {
+	return strings.TrimSpace(output) != "" && !strings.Contains(output, "No kind nodes found")
+}
+
+// clusterHasLiveNode reports whether kind's provider can see at least one
+// running node container for clusterName, via `kind get nodes` -- the same
+// node-listing path `kind load image-archive` itself relies on. Used to
+// distinguish a genuinely reusable cluster from a stale bookkeeping entry
+// left behind by a prior failed run (see caller for the full incident this
+// guards against).
+func clusterHasLiveNode(ctx context.Context, clusterName string) bool {
+	nodesCmd := exec.CommandContext(ctx, "kind", "get", "nodes", "--name", clusterName)
+	nodesCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	output, err := nodesCmd.CombinedOutput()
+	return err == nil && hasLiveNodeInOutput(string(output))
+}
+
+// podmanContainerExists reports whether a podman container matching
+// namePrefix* still exists, in any state (running, exited, created).
+func podmanContainerExists(ctx context.Context, namePrefix string) bool {
+	psCmd := exec.CommandContext(ctx, "podman", "ps", "-a", "--filter", "name="+namePrefix, "--format", "{{.Names}}")
+	output, err := psCmd.CombinedOutput()
+	return err == nil && strings.TrimSpace(string(output)) != ""
+}
+
+// purgeStaleKindCluster removes a stale kind cluster registration (bookkeeping
+// present per `kind get clusters`, but no live node per clusterHasLiveNode)
+// so the immediately-following `kind create cluster` doesn't fail with
+// "node(s) already exist for a cluster with the name". `kind delete cluster`
+// alone was observed to return before the underlying podman node container
+// was actually gone (helios08 fleet E2E triage, PR #2327/#2326): the very
+// next `kind create cluster` call raced it and lost. This force-removes the
+// node container directly, then polls briefly for it to disappear from
+// `podman ps -a` before returning, instead of trusting `kind delete
+// cluster`'s own exit as proof of completion.
+func purgeStaleKindCluster(ctx context.Context, clusterName string, writer io.Writer) error {
+	deleteCmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", clusterName)
+	deleteCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	deleteCmd.Stdout = writer
+	deleteCmd.Stderr = writer
+	_ = deleteCmd.Run()
+
+	rmCmd := exec.CommandContext(ctx, "podman", "rm", "-f", clusterName+"-control-plane")
+	_ = rmCmd.Run() // best-effort: node may not exist under this exact name/at all
+
+	const (
+		pollInterval = 2 * time.Second
+		pollTimeout  = 20 * time.Second
+	)
+	deadline := time.Now().Add(pollTimeout)
+	for time.Now().Before(deadline) {
+		if !podmanContainerExists(ctx, clusterName) {
+			return nil
+		}
+		time.Sleep(pollInterval)
+	}
+	if podmanContainerExists(ctx, clusterName) {
+		return fmt.Errorf("podman container for cluster %s still present %v after delete", clusterName, pollTimeout)
+	}
+	return nil
 }
 
 // retryTransientKindRuntimeError runs runOnce (a `kind create cluster`
@@ -201,12 +285,32 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	if strings.Contains(string(checkOutput), clusterName) {
-		_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
-		// usePodman=false: this function's own "kind create cluster" call below
-		// never sets KIND_EXPERIMENTAL_PROVIDER either, relying entirely on the
-		// ambient process environment (unlike CreateKindClusterWithConfig's
-		// opts.UsePodman-gated cmd.Env) -- mirror that here for consistency.
-		return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, false, writer)
+		// Verify the registration is backed by a live node before reusing it.
+		// `kind get clusters` only consults its own bookkeeping and can still
+		// report a cluster present after its node container has died -- e.g.
+		// a prior attempt's SynchronizedBeforeSuite failed mid image-load
+		// with PRESERVE_E2E_CLUSTER set (so teardown never ran), and the node
+		// was separately removed (host cleanup, OOM, etc.). Reusing that
+		// registration makes every subsequent `kind load image-archive` in
+		// PHASE 3 fail immediately with "no nodes found for cluster", after
+		// already paying the full image-build cost (helios08 fleet E2E
+		// triage, PR #2327/#2326). Confirming a live node here, before PHASE
+		// 3, catches that up front and recreates instead.
+		if clusterHasLiveNode(ctx, clusterName) {
+			_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
+			// usePodman=false: this function's own "kind create cluster" call below
+			// never sets KIND_EXPERIMENTAL_PROVIDER either, relying entirely on the
+			// ambient process environment (unlike CreateKindClusterWithConfig's
+			// opts.UsePodman-gated cmd.Env) -- mirror that here for consistency.
+			return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, false, writer)
+		}
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster %s is registered but has no live node (stale from a prior run) — deleting and recreating\n", clusterName)
+		if err := purgeStaleKindCluster(ctx, clusterName, writer); err != nil {
+			// Best-effort: if the stale registration can't be fully cleared, the
+			// `kind create cluster` call below will fail loudly with its own
+			// "already exist" error rather than silently reusing a dead node.
+			_, _ = fmt.Fprintf(writer, "  ⚠️  Cleanup of stale cluster %s was incomplete: %v\n", clusterName, err)
+		}
 	}
 
 	// 1. Find workspace root
@@ -264,6 +368,13 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 
 	// 7. Create Kind cluster (Issue #1769: retry on transient runtime errors)
 	err = retryTransientKindRuntimeError(writer, func() (string, error) {
+		// #2327/#2326: clear any lingering node registration from a prior
+		// attempt (this call's own earlier retry, or an untorn-down failed
+		// run) before every create attempt, not just the first. See
+		// purgeStaleKindCluster and the "node(s) already exist" pattern
+		// above for why a single purge before the loop isn't enough.
+		_ = purgeStaleKindCluster(ctx, clusterName, writer)
+
 		var captured strings.Builder
 		cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 			"--name", clusterName,

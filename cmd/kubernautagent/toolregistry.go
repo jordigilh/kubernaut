@@ -604,6 +604,9 @@ func buildWorkflowMeta(w *models.RemediationWorkflow, schemaParser *dsschema.Par
 	if w.ServiceAccountName != nil {
 		meta.ServiceAccountName = *w.ServiceAccountName
 	}
+	if w.ExecutionClusterID != nil {
+		meta.ClusterID = *w.ExecutionClusterID
+	}
 	if w.Content != "" {
 		applyParsedSchemaMeta(&meta, w, schemaParser, logger)
 	}

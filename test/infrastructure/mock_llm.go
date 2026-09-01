@@ -476,6 +476,19 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
 
+	return restartMockLLMDeployment(ctx, namespace, kubeconfigPath, writer)
+}
+
+// restartMockLLMDeployment forces the Mock LLM deployment to pick up a
+// ConfigMap change: rollout restart (retried, since the API server
+// occasionally rejects a restart issued immediately after an apply),
+// force-delete of old pods to avoid slow-termination rollout stalls, then
+// wait for the rollout to complete. Shared by UpdateMockLLMConfigMap and by
+// SetupFleetE2EInfrastructure's post-hoc re-deploy for a fleet-only workflow
+// fixture (Issue #2326, DD-FLEET-008) added after the initial Mock LLM
+// ConfigMap (which already carries AF's keyword_scenarios block) was
+// written by DeployMockLLMInNamespace.
+func restartMockLLMDeployment(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
 	var restartErr error
 	for attempt := 0; attempt < 3; attempt++ {

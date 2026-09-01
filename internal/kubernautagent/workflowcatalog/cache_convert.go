@@ -166,6 +166,10 @@ func crdWorkflowToModel(rw *rwv1alpha1.RemediationWorkflow) (models.RemediationW
 		sa := rw.Spec.Execution.ServiceAccountName
 		wf.ServiceAccountName = &sa
 	}
+	if rw.Spec.Execution.ClusterID != "" {
+		clusterID := rw.Spec.Execution.ClusterID
+		wf.ExecutionClusterID = &clusterID
+	}
 	if rw.Spec.Execution.EngineConfig != nil {
 		raw := json.RawMessage(rw.Spec.Execution.EngineConfig.Raw)
 		wf.EngineConfig = &raw

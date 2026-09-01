@@ -287,6 +287,10 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *agentsessionv
 			// fast (BackoffLimitExceeded) despite the image pulling and starting
 			// fine.
 			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+			// Issue #2326 (DD-FLEET-008, BR-FLEET-004): workflow-declared
+			// execution cluster, catalog-authoritative like ActionType/
+			// WorkflowName above.
+			ExecutionClusterID: GetStringFromMap(swMap, "execution_cluster_id"),
 		},
 		Confidence: GetFloat64FromMap(swMap, "confidence"),
 		Rationale:  GetStringFromMap(swMap, "rationale"),
@@ -547,6 +551,7 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, res *age
 			ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
 			ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
 			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+			ExecutionClusterID: GetStringFromMap(swMap, "execution_cluster_id"),
 		},
 		Confidence: GetFloat64FromMap(swMap, "confidence"),
 		Rationale:  GetStringFromMap(swMap, "rationale"),
@@ -849,6 +854,7 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, res *agent
 			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
 			ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
+			ExecutionClusterID:    GetStringFromMap(swMap, "execution_cluster_id"),
 		},
 		Confidence: GetFloat64FromMap(swMap, "confidence"),
 		Rationale:  GetStringFromMap(swMap, "rationale"),

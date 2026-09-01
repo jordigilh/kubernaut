@@ -262,6 +262,17 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 	if r.WorkflowName != "" {
 		sw["workflow_name"] = r.WorkflowName
 	}
+	// Issue #2326/#2327 (DD-FLEET-008, BR-FLEET-004): ExecutionClusterID was
+	// missing from this map entirely -- buildSelectedWorkflowMap is the sole
+	// production path onto the wire selected_workflow map since the HTTP
+	// handler (mapInvestigationResultToResponse) was retired, so AA's
+	// response_processor.go's GetStringFromMap(swMap, "execution_cluster_id")
+	// always saw a zero value regardless of what enrichFromCatalog set on
+	// r.ExecutionClusterID, silently dropping the workflow-declared
+	// execution cluster and falling back to RemediationRequest.Spec.ClusterID.
+	if r.ExecutionClusterID != "" {
+		sw["execution_cluster_id"] = r.ExecutionClusterID
+	}
 	return sw
 }
 

@@ -141,6 +141,7 @@ var _ = Describe("crdWorkflowToModel (Issue #1677 Phase 2b)", func() {
 					Engine:             "job",
 					Bundle:             "quay.io/kubernaut/oom-recovery@sha256:abc123",
 					ServiceAccountName: "oom-recovery-sa",
+					ClusterID:          "remote-cluster",
 				},
 			},
 			Status: rwv1alpha1.RemediationWorkflowStatus{
@@ -167,6 +168,21 @@ var _ = Describe("crdWorkflowToModel (Issue #1677 Phase 2b)", func() {
 		Expect(got.ContentHash).To(Equal("deadbeef"))
 		Expect(got.Description.What).To(Equal("Recovers a Pod from an OOM condition"))
 		Expect(got.Status).To(Equal("Active"))
+	})
+
+	It("UT-KA-2326-001: maps spec.execution.clusterId into ExecutionClusterID (BR-FLEET-004, DD-FLEET-008)", func() {
+		got, err := crdWorkflowToModel(buildRW())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.ExecutionClusterID).ToNot(BeNil())
+		Expect(*got.ExecutionClusterID).To(Equal("remote-cluster"))
+	})
+
+	It("UT-KA-2326-002: empty spec.execution.clusterId maps to a nil ExecutionClusterID (hub-local default, unchanged behavior)", func() {
+		rw := buildRW()
+		rw.Spec.Execution.ClusterID = ""
+		got, err := crdWorkflowToModel(rw)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.ExecutionClusterID).To(BeNil())
 	})
 
 	It("UT-KA-1677-612-002: Content is populated with the same clean-CRD marshaling AuthWebhook hashed into ContentHash (models.RemediationWorkflow.Content is a required OpenAPI field; empty Content previously broke GET /workflows/{id} for every CRD-native workflow)", func() {

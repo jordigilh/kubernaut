@@ -1,0 +1,60 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: fleet-exec-cluster-override-v1
+spec:
+  # E2E-FLEET-2326-001 fixture (DD-FLEET-008, BR-FLEET-004, Issue #2326).
+  # Deliberately isolated: no production alert pattern maps to this
+  # workflow's mock-llm signal (see scenario_fleet_exec_cluster_override.go),
+  # so it can never be selected by any other Fleet E2E test's traffic.
+  #
+  # Same execution bundle/SA/actionType/parameters/labels as
+  # oomkill-increase-memory-job (already proven against the suite-wide
+  # "memory-eater" target on the remote cluster) -- the only functional
+  # difference is execution.clusterId below, which is the field under test.
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for pods experiencing OOMKill events; declares a cross-cluster execution target for DD-FLEET-008 E2E coverage"
+    whenToUse: "E2E-FLEET-2326-001 only -- proves WorkflowExecution.Spec.ClusterID follows this workflow's declared execution.clusterId instead of the signal's origin cluster"
+    whenNotToUse: "Not for production use; isolated fixture, not matched by any production alert pattern"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+
+  actionType: IncreaseMemoryLimits
+
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, test]
+    component: ["*"]
+    priority: "*"
+
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395
+    # DD-WE-005 v2.0: same pre-created SA with cross-namespace RBAC used by
+    # oomkill-increase-memory-job.
+    serviceAccountName: workflow-job-executor
+    # DD-FLEET-008 (BR-FLEET-004): declares the execution cluster this
+    # workflow's Job runs on, decoupled from the signal's origin cluster.
+    # Must be a cluster already registered with the fleet MCP Gateway --
+    # "prod-east" is one of the three registrations this suite backs with a
+    # genuinely separate remote Kind cluster (DD-TEST-013,
+    # AllRegistrationsRemote).
+    clusterId: prod-east
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource (KA-injected from root_owner)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (KA-injected from root_owner)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (KA-injected from root_owner)"
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
+      description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"
