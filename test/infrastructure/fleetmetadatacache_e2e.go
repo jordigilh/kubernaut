@@ -205,7 +205,20 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		StsScopes:        []string{"k8s-api-audience"},
 		CAFilePath:       "/etc/tls-ca/ca.crt",
 	}
-	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
+	// ExtraWorkerNodes=0: this standalone FMC E2E lane only exercises the
+	// "prod-east" cross-cluster bridge (DD-TEST-013) and has no demo
+	// scenario needing a worker node distinct from the control plane --
+	// unlike the "fleet" suite's spoke (see SetupRemoteClusterForFMC call
+	// in fleet_e2e.go), which threads Issue #2333's spokeWorkers through.
+	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
+		PrimaryClusterName:    clusterName,
+		PrimaryKubeconfigPath: kubeconfigPath,
+		RemoteClusterName:     remoteClusterName,
+		RemoteKubeconfigPath:  remoteKubeconfigPath,
+		KeycloakIssuerURL:     oidcCfg.IssuerURL,
+		KeycloakNodePort:      keycloakHostPortFMC,
+		AuthConfig:            remoteKubeMCPAuthConfig,
+	}, writer)
 	if remoteErr != nil {
 		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
