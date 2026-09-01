@@ -334,7 +334,18 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		// caller's own token instead of relying on a cached credential.
 		// Kuadrant itself stays covered by its own standalone FMC E2E lane
 		// (test/e2e/fleetmetadatacache, non-eaigw variant).
-		fleetOpts, rkp, err := provisionFleetCoreInfra(ctx, clusterName, kubeconfigPath, namespace, namespace, registry.GatewayEAIGW, writer)
+		// SpokeWorkers=0 (zero value, left unset): this Ginkgo-suite journey
+		// has no demo scenario needing a worker node distinct from the
+		// control plane (Issue #2333's -spoke-workers flag is exposed via
+		// the CLI entry point, SetupFleetCoreInfrastructureWithGateway,
+		// below -- not this path).
+		fleetOpts, rkp, err := provisionFleetCoreInfra(ctx, FleetCoreInfraOptions{
+			ClusterName:       clusterName,
+			KubeconfigPath:    kubeconfigPath,
+			Namespace:         namespace,
+			KeycloakNamespace: namespace,
+			GatewayType:       registry.GatewayEAIGW,
+		}, writer)
 		remoteKubeconfigPath = rkp
 		return fleetOpts, err
 	}
@@ -402,14 +413,21 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // behavior before gateway-type selection existed). Prefer
 // SetupFleetCoreInfrastructureWithGateway for new callers.
 func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
-	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, kubeconfigPath, registry.GatewayKuadrant, writer)
+	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, kubeconfigPath, registry.GatewayKuadrant, 0, writer)
 }
 
 // SetupFleetCoreInfrastructureWithGateway is SetupFleetCoreInfrastructure
 // with an explicit gatewayType (registry.GatewayKuadrant or
 // registry.GatewayEAIGW; empty defaults to Kuadrant). See
 // provisionFleetCoreInfra's doc comment for what differs between the two.
-func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+//
+// spokeWorkers appends this many `role: worker` nodes to the spoke cluster
+// at creation time (Issue #2333: some E2E demo scenarios taint/drain/
+// pressure-test a worker node distinct from the control plane, which the
+// spoke can't provide as a control-plane-only cluster). Zero (the
+// long-standing default) leaves the spoke control-plane-only. This is the
+// `hack/setup-fleet-infra -spoke-workers=N` entry point's parameter.
+func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, spokeWorkers int, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
@@ -453,7 +471,14 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 	// (Keycloak wouldn't share a namespace with the app it authenticates
 	// for). See idpNamespace's doc comment (keycloak_e2e.go) for why this
 	// is scoped here only, not the shared Ginkgo-suite provisioner closure.
-	fleetOpts, remoteKubeconfigPath, err = provisionFleetCoreInfra(ctx, clusterName, kubeconfigPath, namespace, idpNamespace, gatewayType, writer)
+	fleetOpts, remoteKubeconfigPath, err = provisionFleetCoreInfra(ctx, FleetCoreInfraOptions{
+		ClusterName:       clusterName,
+		KubeconfigPath:    kubeconfigPath,
+		Namespace:         namespace,
+		KeycloakNamespace: idpNamespace,
+		GatewayType:       gatewayType,
+		SpokeWorkers:      spokeWorkers,
+	}, writer)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("fleet-core infrastructure provisioning failed: %w", err)
 	}
@@ -630,6 +655,40 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 	return fleetOpts, remoteKubeconfigPath, nil
 }
 
+// FleetCoreInfraOptions configures provisionFleetCoreInfra. Introduced by
+// Issue #2333 (SpokeWorkers) to keep the function signature under the
+// project's 8-parameter anti-pattern threshold -- see AGENTS.md's Go
+// Anti-Pattern Checklist ("Function/method with 8+ parameters" ->
+// "Use Options pattern or config struct").
+type FleetCoreInfraOptions struct {
+	ClusterName    string
+	KubeconfigPath string
+
+	// Namespace must already exist (both callers create it via
+	// CreateTestNamespace before invoking provisionFleetCoreInfra).
+	Namespace string
+
+	// KeycloakNamespace is Namespace (kubernautSystem) for the "fleet"/
+	// "fullpipeline" Ginkgo suites' provisioner closure -- unchanged
+	// behavior -- and idpNamespace ("idp") for the demo-only entry point
+	// (SetupFleetCoreInfrastructure). See idpNamespace's doc comment
+	// (keycloak_e2e.go) for why this is scoped to the demo path only.
+	KeycloakNamespace string
+
+	// GatewayType selects registry.GatewayKuadrant or registry.GatewayEAIGW
+	// (empty defaults to Kuadrant, matching DeployFleetGatewayInfra's own
+	// zero-value handling) -- see KubeMCPServerAuthConfig.GatewayType's doc
+	// comment for what differs between the two at the edge routing/OAuth
+	// validation layer.
+	GatewayType registry.MCPGatewayType
+
+	// SpokeWorkers appends this many `role: worker` nodes to the remote/
+	// spoke cluster at creation time (Issue #2333); see
+	// SetupRemoteClusterForFMC's doc comment for the full rationale and the
+	// recreate-required caveat.
+	SpokeWorkers int
+}
+
 // provisionFleetCoreInfra deploys Keycloak (IdP), the genuinely separate
 // remote Kind cluster (DD-TEST-013), and the Kuadrant MCP Gateway +
 // kube-mcp-server -- the full fleet-core infrastructure sequence shared by:
@@ -643,16 +702,17 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, k
 //     `helm install` with real LLM credentials and Rego policies
 //     (`make setup-e2e-fleet-infra`).
 //
-// namespace must already exist (both callers create it via
-// CreateTestNamespace before invoking this). gatewayType selects
-// registry.GatewayKuadrant or registry.GatewayEAIGW (empty defaults to
-// Kuadrant, matching DeployFleetGatewayInfra's own zero-value handling) --
-// see KubeMCPServerAuthConfig.GatewayType's doc comment for what differs
-// between the two at the edge routing/OAuth validation layer. Returns the
-// FleetHelmOptions (MCP Gateway endpoint/type, OAuth2 token URL/secret/
-// scopes) needed to render a fleet-enabled `helm install`, and the remote
-// cluster's kubeconfig path.
-func provisionFleetCoreInfra(ctx context.Context, clusterName, kubeconfigPath, namespace, keycloakNamespace string, gatewayType registry.MCPGatewayType, writer io.Writer) (*FleetHelmOptions, string, error) {
+// Returns the FleetHelmOptions (MCP Gateway endpoint/type, OAuth2 token
+// URL/secret/scopes) needed to render a fleet-enabled `helm install`, and
+// the remote cluster's kubeconfig path. See FleetCoreInfraOptions' field
+// docs for individual parameter semantics.
+func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, writer io.Writer) (*FleetHelmOptions, string, error) {
+	clusterName := opts.ClusterName
+	kubeconfigPath := opts.KubeconfigPath
+	namespace := opts.Namespace
+	keycloakNamespace := opts.KeycloakNamespace
+	gatewayType := opts.GatewayType
+	spokeWorkers := opts.SpokeWorkers
 	var remoteKubeconfigPath string
 
 	// Backward-compatible default (all existing callers pre-dating this
@@ -767,7 +827,16 @@ func provisionFleetCoreInfra(ctx context.Context, clusterName, kubeconfigPath, n
 		StsScopes:        []string{"k8s-api-audience"},
 		CAFilePath:       "/etc/tls-ca/ca.crt",
 	}
-	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, oidcCfg.IssuerURL, keycloakHostPortFleet, sharedAuthConfig, writer)
+	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
+		PrimaryClusterName:    clusterName,
+		PrimaryKubeconfigPath: kubeconfigPath,
+		RemoteClusterName:     remoteClusterName,
+		RemoteKubeconfigPath:  remoteKubeconfigPath,
+		KeycloakIssuerURL:     oidcCfg.IssuerURL,
+		KeycloakNodePort:      keycloakHostPortFleet,
+		AuthConfig:            sharedAuthConfig,
+		ExtraWorkerNodes:      spokeWorkers,
+	}, writer)
 	if remoteErr != nil {
 		return nil, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
