@@ -147,27 +147,47 @@ hub + spoke clusters, fleet mode, Kubernaut installed and ready to browse — in
 podman as the container runtime — `export KIND_EXPERIMENTAL_PROVIDER=podman`), and an
 API key from an LLM provider.
 
+The LLM credential is the only thing you provide by hand — everything else (Secrets,
+Rego policies, RBAC) is generated for you.
+
+**1. Create the namespace and your LLM credentials Secret:**
+
+```bash
+kubectl create namespace kubernaut-system
+kubectl create secret generic llm-credentials-primary \
+  --from-literal=api_key=<your-llm-api-key> -n kubernaut-system
+```
+
+**2. Run the setup:**
+
 ```bash
 make setup-fleet-demo-infra \
   LLM_PROVIDER=openai_compatible \
   LLM_MODEL=gpt-4o \
-  LLM_ENDPOINT=https://api.openai.com/v1 \
-  LLM_API_KEY_FILE=~/.secrets/openai-key
+  LLM_ENDPOINT=https://api.openai.com/v1
 ```
 
 This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
 Traefik, and fleet-wide monitoring, then runs `helm install charts/kubernaut` itself —
-Secrets, Rego policies, and RBAC included — and prints a `/etc/hosts` entry plus a
-Console URL and login when it's done (~15 min total).
+remaining Secrets, default Rego policies, and RBAC included — and prints a `/etc/hosts`
+entry plus a Console URL and login when it's done (~15 min total).
 
 Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
 in Prometheus, but nothing auto-remediates until you ask Console to investigate — so
 you see how Kubernaut reasons about a problem before opting into the fully autonomous
 flow. Add `AUTONOMOUS=true` to the command above to enable Gateway from the start.
 
+The default Rego policies are a catch-all: SignalProcessing classifies any signal
+instead of rejecting unrecognized ones, and AIAnalysis always requires human approval
+before a workflow executes. Pass `SP_POLICY_FILE=`/`AA_POLICY_FILE=` to use your own.
+
+**3. Proceed to [Run a scenario](#run-a-scenario).**
+
 For a walkthrough that explains every moving part instead of running it as a black box
 (or a manual, non-Kind topology), see the
-[Fleet Setup Guide](docs/operations/deployment/FLEET_SETUP_GUIDE.md).
+[Fleet Setup Guide](docs/operations/deployment/FLEET_SETUP_GUIDE.md). Already have your
+own cluster and want full control over every Helm value instead of the Kind automation
+above? Use the Helm chart's own [Quick Start](charts/kubernaut/README.md#quick-start).
 
 > A single-cluster (non-fleet) Kind walkthrough is tracked in
 > [#2334](https://github.com/jordigilh/kubernaut/issues/2334).
