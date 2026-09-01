@@ -448,50 +448,65 @@ build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
 signing, and SLSA provenance all gate the release now, not just the image
 builds:
 
+Node names below are the actual job IDs from `release.yml`, so this doubles
+as a map from "what failed in the Actions UI" to "what depends on it":
+
 ```mermaid
 flowchart LR
-    P["0: Prepare"] --> BA["1: Build amd64\n(14 jobs)"]
-    P --> BR["1: Build arm64, native\n(12 Go services)"]
-    P --> BQ["1: Build arm64, QEMU\n(must-gather, db-migrate)"]
+    subgraph c1[ ]
+        prepare(["prepare"])
+    end
+    subgraph c2[ ]
+        direction TB
+        buildamd64["build-amd64\n14 jobs"]
+        buildarm64["build-arm64\n12 jobs"]
+        buildarm64qemu["build-arm64-qemu\n2 jobs"]
+    end
+    subgraph c3[ ]
+        direction TB
+        smoketest["helm-smoke-test\n2 jobs"]
+        scanamd64["security-scan-amd64\n14 jobs"]
+        scanarm64["security-scan-arm64\n14 jobs"]
+    end
+    subgraph c4[ ]
+        direction TB
+        manifests["create-manifests"]
+        helmpublish["helm-publish"]
+    end
+    subgraph c5[ ]
+        direction TB
+        signattest["sign-and-attest\n14 jobs"]
+        provenance["provenance\n14 jobs"]
+    end
+    subgraph c6[ ]
+        release(["release"])
+    end
 
-    BA --> SA["2: Security Scan amd64\n(Trivy + SBOM)"]
-    BR --> SR["2: Security Scan arm64\n(Trivy + SBOM)"]
-    BQ --> SR
+    prepare --> buildamd64 & buildarm64 & buildarm64qemu
 
-    BA --> ST["3: Helm Smoke Test\n(Kind, hook + cert-manager TLS)"]
+    buildamd64 --> smoketest & scanamd64
+    buildarm64 --> scanarm64
+    buildarm64qemu --> scanarm64
 
-    BA --> M["4: Multi-Arch Manifests\n(+ :latest on GA)"]
-    BR --> M
-    BQ --> M
-    ST --> M
+    buildamd64 & buildarm64 & buildarm64qemu & smoketest --> manifests & helmpublish
 
-    BA --> HP["6: Helm Chart Publish"]
-    BR --> HP
-    BQ --> HP
-    ST --> HP
+    manifests & scanamd64 & scanarm64 --> signattest & provenance
 
-    M --> SG["5: Sign & Attest\n(Cosign)"]
-    SA --> SG
-    SR --> SG
+    smoketest & manifests & helmpublish & scanamd64 & scanarm64 & signattest & provenance --> release
 
-    M --> PR["5: SLSA Provenance"]
-    SA --> PR
-    SR --> PR
-
-    ST --> R["7: GitHub Release"]
-    M --> R
-    HP --> R
-    SA --> R
-    SR --> R
-    SG --> R
-    PR --> R
+    style c1 fill:none,stroke:none
+    style c2 fill:none,stroke:none
+    style c3 fill:none,stroke:none
+    style c4 fill:none,stroke:none
+    style c5 fill:none,stroke:none
+    style c6 fill:none,stroke:none
 ```
 
 Security scanning and Helm smoke tests both gate the release: a failing scan
-or smoke test blocks the GitHub Release from being created. Everything
-downstream of stage 1 needs both `build-amd64` and *both* arm64 build jobs to
-finish, not just "arm64 is done" — `build-arm64` (native, 12 services) and
-`build-arm64-qemu` (`must-gather`, `db-migrate`) are separate jobs.
+or smoke test blocks the GitHub Release from being created. Note
+`build-arm64` (native cross-compile, 12 Go services) and `build-arm64-qemu`
+(`must-gather`, `db-migrate`) are separate jobs — everything past that column
+needs both to finish, not just "arm64 is done."
 
 ### Stage 0: Prepare
 
