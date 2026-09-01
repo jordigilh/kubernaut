@@ -208,7 +208,7 @@ New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-
 ```bash
 export HUB_KUBECONFIG=~/.kube/kubernaut-hub-config
 export SPOKE_KUBECONFIG=~/.kube/kubernaut-remote-cluster-config
-./scenarios/crashloop/run.sh --alert-only
+./scenarios/crashloop/run.sh --fleet --alert-only
 ```
 
 `--alert-only` fires the alert and stops there — exactly what you want with Gateway
