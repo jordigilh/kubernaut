@@ -194,12 +194,14 @@ For a walkthrough that explains every moving part instead of running it as a bla
 own cluster and want full control over every Helm value instead of the Kind automation
 above? Use the Helm chart's own [Quick Start](charts/kubernaut/README.md#quick-start).
 
-> A single-cluster (non-fleet) Kind walkthrough is tracked in
-> [#2334](https://github.com/jordigilh/kubernaut/issues/2334).
-
 ### Run a scenario
 
 Once Kubernaut is installed, see it in action. [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) provides 37 fault-injection scenarios you can run against your own cluster.
+
+```bash
+git clone https://github.com/jordigilh/kubernaut-demo-scenarios.git
+cd kubernaut-demo-scenarios
+```
 
 New to Kubernaut? Start with [crashloop](https://github.com/jordigilh/kubernaut-demo-scenarios/tree/main/scenarios/crashloop) — the same demo shown at the top of this page. It deploys a misconfigured app and lets it crash-loop:
 
