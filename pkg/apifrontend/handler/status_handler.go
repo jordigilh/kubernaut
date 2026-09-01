@@ -65,15 +65,16 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // event loop for a single status/subscribe connection (RR + EA watch
 // progress, diff baseline, and terminal-phase tracking).
 type subscribeStreamState struct {
-	ea                *eav1alpha1.EffectivenessAssessment
-	prevEA            *eav1alpha1.EffectivenessAssessment
-	rrWatcher         watch.Interface
-	eaWatcher         watch.Interface
-	eaCh              <-chan watch.Event
-	rrResourceVersion string
-	eaResourceVersion string
-	lastSeenPhase     string
-	isFinal           bool
+	ea                 *eav1alpha1.EffectivenessAssessment
+	prevEA             *eav1alpha1.EffectivenessAssessment
+	rrWatcher          watch.Interface
+	eaWatcher          watch.Interface
+	eaCh               <-chan watch.Event
+	rrResourceVersion  string
+	eaResourceVersion  string
+	lastSeenPhase      string
+	lastSeenWorkflowID string
+	isFinal            bool
 }
 
 // subscribeCleanup accumulates resource-cleanup closures (watch.Interface.Stop,
@@ -196,9 +197,10 @@ func writeSSEHeaders(w http.ResponseWriter) {
 func (h *StatusHandler) initSubscribeState(ctx context.Context, rr *remediationv1.RemediationRequest) *subscribeStreamState {
 	phase := string(rr.Status.OverallPhase)
 	st := &subscribeStreamState{
-		lastSeenPhase:     phase,
-		rrResourceVersion: rr.ResourceVersion,
-		isFinal:           tools.IsTerminalPhase(phase),
+		lastSeenPhase:      phase,
+		lastSeenWorkflowID: selectedWorkflowID(rr),
+		rrResourceVersion:  rr.ResourceVersion,
+		isFinal:            tools.IsTerminalPhase(phase),
 	}
 	if phase == string(remediationv1.PhaseVerifying) {
 		st.ea = h.fetchEA(ctx, rr)
@@ -313,10 +315,18 @@ func (h *StatusHandler) handleRRWatchEvent(
 	}
 	st.rrResourceVersion = rrObj.ResourceVersion
 	newPhase := string(rrObj.Status.OverallPhase)
-	if newPhase == st.lastSeenPhase {
+	newWorkflowID := selectedWorkflowID(rrObj)
+	// #2325: RCA, workflow discovery, selection, and target-alignment-gate
+	// validation all happen while OverallPhase stays "Analyzing" -- gating
+	// solely on phase equality silently dropped the selection update for
+	// the ~80s window before the phase actually moved. Also emit when
+	// status.workflowSelection changes, mirroring how the EA watch loop
+	// already emits on sub-field changes without requiring a phase change.
+	if newPhase == st.lastSeenPhase && newWorkflowID == st.lastSeenWorkflowID {
 		return true
 	}
 	st.lastSeenPhase = newPhase
+	st.lastSeenWorkflowID = newWorkflowID
 
 	if newPhase == string(remediationv1.PhaseVerifying) && st.eaCh == nil {
 		h.bootstrapEAWatch(ctx, rrObj, st, lc.Cleanup)
@@ -327,6 +337,17 @@ func (h *StatusHandler) handleRRWatchEvent(
 	h.writeStatusUpdate(lc.W, lc.Flusher, lc.Req.Params.RRID, newPhase, st.isFinal, meta)
 
 	return !st.isFinal
+}
+
+// selectedWorkflowID returns the currently-selected workflow ID, or "" if
+// none has been selected yet. Used to detect a workflow-selection change
+// independently of OverallPhase (#2325).
+func selectedWorkflowID(rr *remediationv1.RemediationRequest) string {
+	sel := rr.Status.GetWorkflowSelection()
+	if sel == nil || sel.SelectedWorkflowRef == nil {
+		return ""
+	}
+	return sel.SelectedWorkflowRef.WorkflowID
 }
 
 // bootstrapEAWatch starts the EA watch when the RR first transitions into
