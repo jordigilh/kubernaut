@@ -448,64 +448,55 @@ build-and-publish at this point — CVE scanning, Helm smoke tests, Cosign
 signing, and SLSA provenance all gate the release now, not just the image
 builds:
 
-Node names below are the actual job IDs from `release.yml`, so this doubles
-as a map from "what failed in the Actions UI" to "what depends on it":
+Node names below are the actual job IDs from `release.yml`. Arrows only run
+phase-to-phase, not job-to-job — see the "Stage N" sections below the diagram
+for the exact per-job `needs:`, since a couple of jobs skip a dependency their
+phase-mates have (e.g. `create-manifests`/`helm-publish` need `helm-smoke-test`
+but not the two `security-scan-*` jobs next to it):
 
 ```mermaid
 flowchart LR
-    subgraph c1[ ]
+    subgraph P0["Phase 0: Prepare"]
         prepare(["prepare"])
     end
-    subgraph c2[ ]
+
+    subgraph P1["Phase 1: Build & Push"]
         direction TB
         buildamd64["build-amd64\n14 jobs"]
         buildarm64["build-arm64\n12 jobs"]
         buildarm64qemu["build-arm64-qemu\n2 jobs"]
     end
-    subgraph c3[ ]
+
+    subgraph P2["Phase 2: Scan & Smoke Test"]
         direction TB
-        smoketest["helm-smoke-test\n2 jobs"]
         scanamd64["security-scan-amd64\n14 jobs"]
         scanarm64["security-scan-arm64\n14 jobs"]
+        smoketest["helm-smoke-test\n2 jobs"]
     end
-    subgraph c4[ ]
+
+    subgraph P3["Phase 3: Manifests & Chart"]
         direction TB
         manifests["create-manifests"]
         helmpublish["helm-publish"]
     end
-    subgraph c5[ ]
+
+    subgraph P4["Phase 4: Sign & Provenance"]
         direction TB
         signattest["sign-and-attest\n14 jobs"]
         provenance["provenance\n14 jobs"]
     end
-    subgraph c6[ ]
+
+    subgraph P5["Phase 5: Release"]
         release(["release"])
     end
 
-    prepare --> buildamd64 & buildarm64 & buildarm64qemu
-
-    buildamd64 --> smoketest & scanamd64
-    buildarm64 --> scanarm64
-    buildarm64qemu --> scanarm64
-
-    buildamd64 & buildarm64 & buildarm64qemu & smoketest --> manifests & helmpublish
-
-    manifests & scanamd64 & scanarm64 --> signattest & provenance
-
-    smoketest & manifests & helmpublish & scanamd64 & scanarm64 & signattest & provenance --> release
-
-    style c1 fill:none,stroke:none
-    style c2 fill:none,stroke:none
-    style c3 fill:none,stroke:none
-    style c4 fill:none,stroke:none
-    style c5 fill:none,stroke:none
-    style c6 fill:none,stroke:none
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5
 ```
 
 Security scanning and Helm smoke tests both gate the release: a failing scan
 or smoke test blocks the GitHub Release from being created. Note
 `build-arm64` (native cross-compile, 12 Go services) and `build-arm64-qemu`
-(`must-gather`, `db-migrate`) are separate jobs — everything past that column
+(`must-gather`, `db-migrate`) are separate jobs — everything past that phase
 needs both to finish, not just "arm64 is done."
 
 ### Stage 0: Prepare
