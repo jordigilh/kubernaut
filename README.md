@@ -211,12 +211,15 @@ export SPOKE_KUBECONFIG=~/.kube/kubernaut-remote-cluster-config
 ./scenarios/crashloop/run.sh --fleet --alert-only
 ```
 
-`--alert-only` fires the alert and stops there — exactly what you want with Gateway
-disabled. Open Console at the URL `setup-fleet-demo-infra` printed, log in, and ask it
-to investigate the alert; watch it diagnose the crash loop and propose (or, once you
-approve, apply) a rollback to the last working revision. If you set `AUTONOMOUS=true`
-above, drop `--alert-only` instead and watch Kubernaut detect and roll back
-automatically, no prompting needed.
+`--fleet` deploys the workload on the spoke instead of the hub, so Kubernaut
+investigates and remediates it remotely across the two clusters `setup-fleet-demo-infra`
+created — drop it (and the two exports) to run single-cluster instead. `--alert-only`
+fires the alert and stops there — exactly what you want with Gateway disabled. Open
+Console at the URL `setup-fleet-demo-infra` printed, log in, and ask it to investigate
+the alert; watch it diagnose the crash loop and propose (or, once you approve, apply) a
+rollback to the last working revision. If you set `AUTONOMOUS=true` above, drop
+`--alert-only` instead and watch Kubernaut detect and roll back automatically, no
+prompting needed.
 
 ---
 
