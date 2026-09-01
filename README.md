@@ -216,7 +216,8 @@ investigates and remediates it remotely across the two clusters `setup-fleet-dem
 created — drop it to run single-cluster instead (the two exports alone no longer
 trigger fleet mode). `--alert-only` fires the alert and stops there — exactly what you
 want with Gateway disabled. Open
-Console at the URL `setup-fleet-demo-infra` printed, log in, and ask it to investigate
+Console at the URL `setup-fleet-demo-infra` printed, log in with the credentials it
+printed alongside it, and ask it to investigate
 the alert; watch it diagnose the crash loop and propose (or, once you approve, apply) a
 rollback to the last working revision. If you set `AUTONOMOUS=true` above, drop
 `--alert-only` instead and watch Kubernaut detect and roll back automatically, no
