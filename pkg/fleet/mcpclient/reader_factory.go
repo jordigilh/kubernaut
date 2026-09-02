@@ -143,16 +143,44 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 // this call site invoked DiscoverToolPrefix directly on the raw session,
 // bypassing the reconnect callback already available on the struct).
 func (f *mcpReaderFactory) discoverToolPrefixWithReconnect(ctx context.Context, session *mcp.ClientSession, clusterID string) (string, error) {
+	return discoverToolPrefixWithReconnectImpl(ctx, session, f.session, f.sessionProvider, clusterID, f.reconnect)
+}
+
+// DiscoverToolPrefixWithReconnect resolves the current session from static/
+// provider (via ResolveSession) and calls DiscoverToolPrefix against it, and
+// on a retryable session error invokes reconnect once (when non-nil) and
+// retries against the freshly re-resolved session.
+//
+// Exported (issue #2346) so every fleet-aware consumer that calls
+// DiscoverToolPrefix directly shares one self-healing implementation instead
+// of independently reintroducing the pre-#2340 "no reconnect on a dead
+// session" gap at a new call site -- as workflowexecution's
+// mcpClientFactory.ClientFor (pkg/workflowexecution/executor/client_factory.go)
+// had done, the third such occurrence after #2317 and #2340.
+func DiscoverToolPrefixWithReconnect(ctx context.Context, static *mcp.ClientSession, provider SessionProvider, clusterID string, reconnect func(context.Context) error) (string, error) {
+	session, err := ResolveSession(static, provider)
+	if err != nil {
+		return "", err
+	}
+	return discoverToolPrefixWithReconnectImpl(ctx, session, static, provider, clusterID, reconnect)
+}
+
+// discoverToolPrefixWithReconnectImpl is the shared retry body: try once
+// against the already-resolved session, and on a retryable error, reconnect
+// and re-resolve before retrying once more. Split out so mcpReaderFactory
+// (which already has a resolved session in hand for other uses in ReaderFor)
+// doesn't pay a redundant ResolveSession call.
+func discoverToolPrefixWithReconnectImpl(ctx context.Context, session, static *mcp.ClientSession, provider SessionProvider, clusterID string, reconnect func(context.Context) error) (string, error) {
 	prefix, err := DiscoverToolPrefix(ctx, session, clusterID)
-	if err == nil || f.reconnect == nil || !isRetryableSessionError(err) {
+	if err == nil || reconnect == nil || !isRetryableSessionError(err) {
 		return prefix, err
 	}
 
-	if reconnErr := f.reconnect(ctx); reconnErr != nil {
+	if reconnErr := reconnect(ctx); reconnErr != nil {
 		return "", fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
 	}
 
-	session, resolveErr := ResolveSession(f.session, f.sessionProvider)
+	session, resolveErr := ResolveSession(static, provider)
 	if resolveErr != nil {
 		return "", resolveErr
 	}
