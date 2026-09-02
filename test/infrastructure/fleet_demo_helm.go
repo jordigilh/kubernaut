@@ -183,6 +183,13 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		// SetupFleetCoreInfrastructureWithGateway already provisions.
 		"--set", "console.enabled=true",
 		"--set", "console.auth.secretName=" + fleetDemoConsoleOAuthSecretName,
+		// console.ingress.enabled defaults to false (opt-in, same as
+		// gateway.ingress.enabled/apifrontend.ingress.enabled --
+		// charts/kubernaut/templates/console/ingress.yaml) -- without this,
+		// every other console.ingress.* --set below was silently a no-op:
+		// no Ingress resource ever rendered, so kubernaut-console.local
+		// never resolved to anything through Traefik (issue #2351).
+		"--set", "console.ingress.enabled=true",
 		"--set", "console.ingress.className=traefik",
 		"--set", "console.ingress.host=" + fleetDemoConsoleHost,
 		"--set", fmt.Sprintf("console.ingress.port=%d", fleetDemoConsolePort),
