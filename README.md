@@ -99,14 +99,13 @@ See the interactive version with per-phase detail: [How It Works](https://jordig
 
 ---
 
-## Roadmap
+## Try It Out
 
-### v1.6 — Fleet Operations (release candidate)
-
-- **Fleet operations** — Multi-cluster remediation orchestration through a pluggable scope-checking adapter: Red Hat ACM/OCM for ACM shops, or a control-plane-free mode backed by the built-in Fleet Metadata Cache (FMC) for GitOps and standalone clusters — with Rancher and Clusterpedia adapters architected for other vendor fleet platforms ([#54](https://github.com/jordigilh/kubernaut/issues/54))
-- **ServiceNow incident triage** (v1.6.1) — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
-
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — for released features, see the [CHANGELOG](CHANGELOG.md).
+Don't have a cluster yet? Follow the
+[Fleet Demo Quick Start](docs/operations/deployment/FLEET_DEMO_QUICKSTART.md) to spin up
+a self-contained hub+spoke Kind environment, install Kubernaut, and run a real
+fault-injection demo scenario yourself. All you need is an LLM provider API key, ~16 GB
+of memory, 4 CPU cores, and ~50 GB of disk space.
 
 ---
 
@@ -131,16 +130,6 @@ independent and can be combined on the same install:
 | Autonomous | Alert-driven (Prometheus/AlertManager → Gateway) | [Autonomous Mode Setup Guide](docs/operations/deployment/AUTONOMOUS_MODE_SETUP_GUIDE.md) |
 | Interactive | Chat-driven (Console/APIFrontend, human-in-the-loop) | [Interactive Mode Setup Guide](docs/operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md) |
 | Fleet | Multi-cluster (hub + spoke, layers onto either mode above) | [Fleet Setup Guide](docs/operations/deployment/FLEET_SETUP_GUIDE.md) |
-
----
-
-## Try It Out
-
-Don't have a cluster yet? Follow the
-[Fleet Demo Quick Start](docs/operations/deployment/FLEET_DEMO_QUICKSTART.md) to spin up
-a self-contained hub+spoke Kind environment, install Kubernaut, and run a real
-fault-injection demo scenario yourself. All you need is an LLM provider API key, ~16 GB
-of memory, 4 CPU cores, and ~50 GB of disk space.
 
 ---
 
@@ -198,18 +187,14 @@ Security posture is tracked continuously via [OpenSSF Scorecard](https://scoreca
 
 ---
 
-## Development
+## Roadmap
 
-```bash
-make build-all                    # Build all services
-make test-tier-unit               # Run unit tests (all services)
-make test-integration-apifrontend # Run integration tests for a service
-make test-e2e-apifrontend         # Run E2E tests for a service (Kind cluster)
-make test-all-gateway             # Run all test tiers for a service
-make lint                         # Run golangci-lint across the monorepo
-```
+### v1.6 — Fleet Operations (release candidate)
 
-We use **Ginkgo/Gomega BDD** for testing and follow a strict TDD workflow with a defense-in-depth testing pyramid (unit, integration, E2E). See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for environment setup, build targets, and test commands.
+- **Fleet operations** — Multi-cluster remediation orchestration through a pluggable scope-checking adapter: Red Hat ACM/OCM for ACM shops, or a control-plane-free mode backed by the built-in Fleet Metadata Cache (FMC) for GitOps and standalone clusters — with Rancher and Clusterpedia adapters architected for other vendor fleet platforms ([#54](https://github.com/jordigilh/kubernaut/issues/54))
+- **ServiceNow incident triage** (v1.6.1) — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
+
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — for released features, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 

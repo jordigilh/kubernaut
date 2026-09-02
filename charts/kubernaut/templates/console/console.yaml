@@ -87,6 +87,21 @@ Issue #1984 Phase C: console.enabled=true's dependency on apifrontend.enabled,
 console.auth.secretName, an OIDC issuer, and console.ingress.host all moved
 from fail() guards here to values.schema.json if/then blocks (BR-PLATFORM-010).
 */}}
+{{- /*
+console.image (found 2026-09-02): kubernaut-console publishes its own
+release tags on quay.io/kubernaut-ai/kubernaut-console, decoupled from this
+chart's appVersion/global.image.tag train (confirmed: no 1.6.0 or 1.6.0-rcN
+tag has ever existed for it, only its own 1.0.0/1.1.0/1.5.x series) -- the
+previous `kubernaut.image` (service="kubernaut-console", appVersion=.Chart.
+AppVersion) render always resolved a tag that was never actually published.
+Mirrors fleetmetadatacache's existing direct image.repository/image.tag
+schema block (the one per-service override in this chart the template
+actually reads -- apifrontend also declares an `image:` schema block, but
+its own template still calls kubernaut.image unconditionally and never
+consumes it, a separate pre-existing gap out of scope here) rather than
+apifrontend's dead pattern.
+*/}}
+{{- $cv := include "kubernaut.mergedValues" (dict "root" $ "service" "console") | fromYaml }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -233,8 +248,8 @@ spec:
           volumeMounts:
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
         - name: console
-          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
+          image: "{{ $cv.image.repository }}:{{ $cv.image.tag }}"
+          imagePullPolicy: {{ $cv.image.pullPolicy }}
           ports:
             - name: static
               containerPort: 8080

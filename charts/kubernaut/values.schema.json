@@ -2812,7 +2812,8 @@
             },
             "tag": {
               "type": "string",
-              "default": "v1.6.0"
+              "default": "1.6.0",
+              "description": "No 'v' prefix: quay.io/kubernaut-ai/fleetmetadatacache tags follow the same 1.6.0/1.6.0-rcN convention as the rest of the chart's images (fixed 2026-09-02 -- the prior 'v1.6.0' default never matched a published tag)."
             },
             "pullPolicy": {
               "type": "string",
@@ -3431,6 +3432,25 @@
               "type": "string",
               "default": "",
               "description": "Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true."
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "kubernaut-console (2026-09-02): publishes its own quay.io/kubernaut-ai/kubernaut-console release tags, decoupled from this chart's appVersion/global.image.tag train -- no 1.6.0 or 1.6.0-rcN tag has ever existed for it.",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "default": "quay.io/kubernaut-ai/kubernaut-console"
+            },
+            "tag": {
+              "type": "string",
+              "default": "1.1.0"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "default": "IfNotPresent"
             }
           }
         },

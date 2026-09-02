@@ -276,7 +276,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Prometheus: %w", err)
 	}
-	if err := DeployAlertManager(ctx, namespace, kubeconfigPath, "", writer); err != nil {
+	if err := DeployAlertManager(ctx, namespace, namespace, kubeconfigPath, "", writer); err != nil {
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
 
