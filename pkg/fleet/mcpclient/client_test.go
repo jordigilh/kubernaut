@@ -25,6 +25,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -123,6 +124,27 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 
 			err = c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
 			Expect(err).To(HaveOccurred())
+		})
+
+		// UT-FLEET-MCP-NOTFOUND-004 (issue #2349): Get must recognize a
+		// remote resources_get's plain-text "not found" message shape and
+		// return a typed apierrors.NotFound, so callers relying on
+		// apierrors.IsNotFound/client.IgnoreNotFound (e.g.
+		// JobExecutor.Cleanup's ownership-check Get) actually match it.
+		It("UT-FLEET-MCP-NOTFOUND-004: Get returns a typed apierrors.NotFound for a k8s-style remote not-found", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-east"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"})
+
+			err = c.Get(ctx, client.ObjectKey{Namespace: "kubernaut-workflows", Name: mockgw.NotFoundSentinelName}, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+				"remote not-found text must be classified as a typed apierrors NotFound")
 		})
 
 		It("UT-FLEET-P0-007: returns error when GVK Kind is not set", func() {

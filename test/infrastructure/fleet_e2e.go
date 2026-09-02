@@ -19,6 +19,7 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -87,6 +88,14 @@ const (
 	gatewayLabelKuadrant = "Kuadrant MCP Gateway"
 	gatewayLabelEAIGW    = "Envoy AI Gateway (EAIGW)"
 
+	// fleetAlertManagerGatewaySA: ServiceAccount minted so the fleet demo's
+	// hub AlertManager can authenticate its gateway-webhook POSTs (Gateway's
+	// BR-GATEWAY-036/037 auth middleware rejects unauthenticated requests
+	// with 401 -- demo team report, 2026-09-02). Distinct name from
+	// fullpipeline_e2e.go's "fullpipeline-gateway-sa" so both suites' RBAC
+	// bindings can coexist if ever run against the same cluster.
+	fleetAlertManagerGatewaySA = "fleet-alertmanager-gateway-sa"
+
 	// KubeMCPServerAuthModeKubeconfig makes kube-mcp-server ignore any
 	// caller-forwarded Authorization header and always use its own
 	// ServiceAccount (ADR-068 Decision #9, "no token delegation"). This is
@@ -124,6 +133,22 @@ type KubeMCPServerAuthConfig struct {
 	RequireOAuth     bool
 	AuthorizationURL string
 	OAuthAudience    string
+	// KeycloakNamespace is the namespace Keycloak's own Service actually
+	// lives in -- namespace (kubernautSystem) for the "fleet"/"fullpipeline"
+	// Ginkgo suites, idpNamespace ("idp") for the demo-only entry point
+	// (SetupFleetCoreInfrastructureWithGateway). Empty falls back to
+	// whichever namespace the caller passes to deployEnvoyAIGatewayRegistrations/
+	// deployKuadrantRegistrations, preserving every existing caller's
+	// behavior unchanged. Deliberately separate from AuthorizationURL
+	// (already keycloakNamespace-aware via oidcCfg.IssuerURL): the
+	// "keycloak-jwks" EAIGW Backend needs Keycloak's bare hostname for DNS
+	// resolution, not the full issuer URL AuthorizationURL carries -- found
+	// 2026-09-02 when the demo path's Backend hardcoded namespace (kubernaut-system)
+	// instead of idpNamespace, so Envoy's JWKS fetch permanently 503'd
+	// ("Jwks async fetching... failed", never converging regardless of
+	// timeout) even though AuthorizationURL/the token URL were already
+	// correct.
+	KeycloakNamespace string
 	// StsClientID/StsClientSecret/StsAudience drive the RFC 8693 token
 	// exchange. Deliberately NOT setting token_exchange_strategy: Spike S18
 	// found the pluggable "keycloak-v1" exchanger never sets
@@ -389,6 +414,51 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, nil
 }
 
+// buildLLMCredentialsSecretManifest renders the llm-credentials-primary
+// Secret manifest with the given file's raw bytes under BOTH key names the
+// chart's kubernaut.llm.credFile helper can ask for: "api_key" (every
+// provider except vertex_ai) and "credentials.json" (vertex_ai only --
+// confirmed via _helpers.tpl's kubernaut.llm.credFile). This function runs
+// before the LLM provider is known to the infra-provisioning step (that's
+// FleetDemoHelmOptions.LLMProvider, resolved later, in the separate
+// `helm install` step), so it populates both rather than plumbing the
+// provider string through this far earlier in the flow.
+//
+// Base64-encoded via the manifest's `data:` field (not `stringData:`)
+// deliberately: vertex_ai credential material is a JSON blob that may
+// contain characters (quotes, newlines) that don't round-trip safely
+// through a YAML block scalar. Pure function (no exec/cluster access) for
+// unit testing, mirroring buildFleetDemoHelmSecretsManifest.
+func buildLLMCredentialsSecretManifest(namespace string, credentials []byte) string {
+	encoded := base64.StdEncoding.EncodeToString(credentials)
+	return fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: Opaque
+data:
+  api_key: %s
+  credentials.json: %s
+`, fleetDemoLLMSecretName, namespace, encoded, encoded)
+}
+
+// applyRealLLMCredentialsSecret reads llmCredentialsFile and overwrites the
+// mock llm-credentials-primary placeholder createFullPipelineHelmSecrets
+// just created with its raw bytes -- see FleetCoreDemoOptions.
+// LLMCredentialsFile's doc comment for why this exists.
+func applyRealLLMCredentialsSecret(ctx context.Context, namespace, kubeconfigPath, llmCredentialsFile string, writer io.Writer) error {
+	credentials, err := os.ReadFile(llmCredentialsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read -llm-credentials-file %q: %w", llmCredentialsFile, err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, buildLLMCredentialsSecretManifest(namespace, credentials)); err != nil {
+		return fmt.Errorf("failed to apply real %s Secret: %w", fleetDemoLLMSecretName, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ %s replaced with your real credentials (%s)\n", fleetDemoLLMSecretName, llmCredentialsFile)
+	return nil
+}
+
 // SetupFleetCoreInfrastructure creates the hub+spoke Kind cluster pair and
 // deploys ONLY the fleet-core infrastructure (Keycloak IdP, Kuadrant MCP
 // Gateway, kube-mcp-server, the genuinely separate remote/spoke cluster,
@@ -413,28 +483,56 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // behavior before gateway-type selection existed). Prefer
 // SetupFleetCoreInfrastructureWithGateway for new callers.
 func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
-	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, "", kubeconfigPath, registry.GatewayKuadrant, 0, writer)
+	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, "", kubeconfigPath, FleetCoreDemoOptions{GatewayType: registry.GatewayKuadrant}, writer)
+}
+
+// FleetCoreDemoOptions configures SetupFleetCoreInfrastructureWithGateway's
+// optional knobs. Options-pattern struct (AGENTS.md 8-parameter limit) --
+// GatewayType/SpokeWorkers/LLMCredentialsFile as three more positional
+// params would push the function to 8.
+type FleetCoreDemoOptions struct {
+	// GatewayType selects registry.GatewayKuadrant or registry.GatewayEAIGW;
+	// empty defaults to Kuadrant. See provisionFleetCoreInfra's doc comment
+	// for what differs between the two.
+	GatewayType registry.MCPGatewayType
+	// SpokeWorkers appends this many `role: worker` nodes to the spoke
+	// cluster at creation time (Issue #2333: some E2E demo scenarios taint/
+	// drain/pressure-test a worker node distinct from the control plane,
+	// which the spoke can't provide as a control-plane-only cluster). Zero
+	// (the long-standing default) leaves the spoke control-plane-only.
+	// This is the `hack/setup-fleet-infra -spoke-workers=N` entry point's
+	// parameter.
+	SpokeWorkers int
+	// LLMCredentialsFile, when non-empty, overwrites the mock
+	// llm-credentials-primary placeholder createFullPipelineHelmSecrets
+	// creates with this file's raw bytes, right after the hub cluster and
+	// namespace exist. Closes a chicken-and-egg gap (found 2026-09-01,
+	// FLEET_DEMO_QUICKSTART.md): the docs previously told users to
+	// pre-create this Secret before running setup at all, i.e. before the
+	// cluster meant to hold it existed. Empty (the default, and every
+	// existing Ginkgo-suite caller) leaves the long-standing
+	// mock-llm-e2e-key placeholder untouched -- this is the
+	// `hack/setup-fleet-infra -llm-credentials-file` entry point's
+	// parameter, deliberately a file path rather than a literal string:
+	// vertex_ai's credential material is a multi-KB service-account/ADC
+	// JSON blob, not a short token, and a file also keeps the secret out of
+	// argv/shell history.
+	LLMCredentialsFile string
 }
 
 // SetupFleetCoreInfrastructureWithGateway is SetupFleetCoreInfrastructure
-// with an explicit gatewayType (registry.GatewayKuadrant or
-// registry.GatewayEAIGW; empty defaults to Kuadrant). See
-// provisionFleetCoreInfra's doc comment for what differs between the two.
+// with explicit options beyond cluster/kubeconfig identity -- see
+// FleetCoreDemoOptions's field docs for GatewayType/SpokeWorkers/
+// LLMCredentialsFile.
 //
 // remoteClusterName names the remote/spoke Kind cluster explicitly; empty
 // falls back to clusterName+"-remote" (see FleetCoreInfraOptions.
 // RemoteClusterName's doc comment).
-//
-// spokeWorkers appends this many `role: worker` nodes to the spoke cluster
-// at creation time (Issue #2333: some E2E demo scenarios taint/drain/
-// pressure-test a worker node distinct from the control plane, which the
-// spoke can't provide as a control-plane-only cluster). Zero (the
-// long-standing default) leaves the spoke control-plane-only. This is the
-// `hack/setup-fleet-infra -spoke-workers=N` entry point's parameter.
-func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, spokeWorkers int, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath string, opts FleetCoreDemoOptions, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
 	if remoteClusterName == "" {
 		remoteClusterName = clusterName + "-remote"
 	}
+	gatewayType := opts.GatewayType
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
@@ -471,6 +569,11 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if err := createFullPipelineHelmSecrets(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return nil, "", fmt.Errorf("failed to create Helm chart prerequisite secrets: %w", err)
 	}
+	if opts.LLMCredentialsFile != "" {
+		if err := applyRealLLMCredentialsSecret(ctx, namespace, kubeconfigPath, opts.LLMCredentialsFile, writer); err != nil {
+			return nil, "", err
+		}
+	}
 
 	_, _ = fmt.Fprintln(writer, "\n🌐 Provisioning fleet-core infrastructure (IdP + MCP Gateway + spoke cluster)...")
 	// keycloakNamespace=idpNamespace ("idp"), NOT namespace: this demo-only
@@ -485,7 +588,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		Namespace:         namespace,
 		KeycloakNamespace: idpNamespace,
 		GatewayType:       gatewayType,
-		SpokeWorkers:      spokeWorkers,
+		SpokeWorkers:      opts.SpokeWorkers,
 	}, writer)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("fleet-core infrastructure provisioning failed: %w", err)
@@ -542,14 +645,39 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// per cluster). Both clusters' Prometheus instances point their
 	// `alerting:` sink at it: the hub's via in-cluster Service DNS, the
 	// spoke's via the hub's node-bridge IP:NodePort (no in-cluster route
-	// from spoke to a hub Service). gatewayToken="" -- no AlertManager->
-	// Gateway webhook forwarding wired up front (same as kubernautagent.go's
-	// Phase 5.7 and effectivenessmonitor_e2e.go, both of which also pass "");
-	// AlertManager's default "gateway-webhook" receiver still resolves
-	// correctly (gateway-service is in kubernaut-system, unaffected by
-	// which namespace AlertManager itself lives in).
+	// from spoke to a hub Service).
+	//
+	// gatewayNamespace=namespace (kubernaut-system), NOT monitoringNamespace:
+	// AlertManager itself lives in "monitoring" here, but Gateway's Service
+	// is in "kubernaut-system" -- passing monitoringNamespace for both
+	// previously produced an unresolvable
+	// gateway-service.monitoring.svc.cluster.local webhook URL (demo team
+	// report, 2026-09-02: AlertManager logs showed "dial tcp: lookup
+	// gateway-service.monitoring.svc.cluster.local ... no such host").
+	//
+	// gatewayToken: a real Bearer token is required here (unlike
+	// kubernautagent.go's Phase 5.7 and effectivenessmonitor_e2e.go, which
+	// pass "" because their suites don't exercise the AlertManager->Gateway
+	// webhook hop at all). Fleet's Gateway has BR-GATEWAY-036/037 auth
+	// middleware enabled and unconditionally rejects unauthenticated
+	// webhook POSTs with 401 (demo team report, 2026-09-02, round 2:
+	// "missing_auth_header" on every request, confirmed in Gateway's own
+	// security_event audit log) -- passing "" here left the earlier DNS fix
+	// necessary but not sufficient. Reuses the same
+	// CreateE2EServiceAccountWithGatewayAccess/GetServiceAccountToken pair
+	// InstallFullPipelineHelmChart already relies on for this exact hop
+	// (fullpipeline_e2e.go), under a fleet-specific ServiceAccount name so
+	// the two suites' RBAC bindings don't collide if ever run against the
+	// same cluster.
+	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, namespace, kubeconfigPath, fleetAlertManagerGatewaySA, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("fleet AlertManager Gateway ServiceAccount setup failed: %w", err)
+	}
+	fleetGatewayToken, err := GetServiceAccountToken(ctx, namespace, fleetAlertManagerGatewaySA, kubeconfigPath)
+	if err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("failed to mint fleet AlertManager Gateway token: %w", err)
+	}
 	_, _ = fmt.Fprintln(writer, "\n📊 Installing fleet-wide monitoring (Prometheus+Thanos per cluster, hub AlertManager)...")
-	if err := DeployAlertManager(ctx, monitoringNamespace, kubeconfigPath, "", writer); err != nil {
+	if err := DeployAlertManager(ctx, monitoringNamespace, namespace, kubeconfigPath, fleetGatewayToken, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("alertmanager install failed: %w", err)
 	}
 
@@ -637,9 +765,11 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "      external_labels to fired alert instances (thanos-io/thanos#7327), so AF's")
 	_, _ = fmt.Fprintln(writer, "      cluster_id filter will silently drop any alert missing it. See")
 	_, _ = fmt.Fprintln(writer, "      DeployDemoAlertingRules's doc comment (thanos_e2e.go) for details.")
-	_, _ = fmt.Fprintln(writer, "\n  ⚠️  llm-credentials-primary currently holds a MOCK key --")
-	_, _ = fmt.Fprintln(writer, "      kubectl apply your real LLM credentials Secret before")
-	_, _ = fmt.Fprintln(writer, "      `helm install` if you're not using Mock LLM.")
+	if opts.LLMCredentialsFile == "" {
+		_, _ = fmt.Fprintln(writer, "\n  ⚠️  llm-credentials-primary currently holds a MOCK key --")
+		_, _ = fmt.Fprintln(writer, "      kubectl apply your real LLM credentials Secret before")
+		_, _ = fmt.Fprintln(writer, "      `helm install` if you're not using Mock LLM.")
+	}
 	_, _ = fmt.Fprintf(writer, "\n  Keycloak (IdP) lives in its own %q namespace, not %s (production parity).\n", idpNamespace, namespace)
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet")
@@ -838,16 +968,17 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
 	sharedAuthConfig := KubeMCPServerAuthConfig{
-		Mode:             KubeMCPServerAuthModePassthrough,
-		GatewayType:      gatewayType,
-		RequireOAuth:     true,
-		AuthorizationURL: oidcCfg.IssuerURL,
-		OAuthAudience:    "kube-mcp-server",
-		StsClientID:      "kube-mcp-server",
-		StsClientSecret:  "e2e-kube-mcp-server-secret",
-		StsAudience:      "k8s-api",
-		StsScopes:        []string{"k8s-api-audience"},
-		CAFilePath:       "/etc/tls-ca/ca.crt",
+		Mode:              KubeMCPServerAuthModePassthrough,
+		GatewayType:       gatewayType,
+		RequireOAuth:      true,
+		AuthorizationURL:  oidcCfg.IssuerURL,
+		KeycloakNamespace: keycloakNamespace,
+		OAuthAudience:     "kube-mcp-server",
+		StsClientID:       "kube-mcp-server",
+		StsClientSecret:   "e2e-kube-mcp-server-secret",
+		StsAudience:       "k8s-api",
+		StsScopes:         []string{"k8s-api-audience"},
+		CAFilePath:        "/etc/tls-ca/ca.crt",
 	}
 	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
 		PrimaryClusterName:    clusterName,
@@ -1592,7 +1723,11 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
 
 	kubeMCPHostname := fmt.Sprintf("kube-mcp-server.%s.svc.cluster.local", namespace)
-	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace)
+	keycloakNamespace := authConfig.KeycloakNamespace
+	if keycloakNamespace == "" {
+		keycloakNamespace = namespace
+	}
+	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", keycloakNamespace)
 	jwksURI := authConfig.AuthorizationURL + "/protocol/openid-connect/certs"
 
 	// prod-east's Backend targets a genuinely separate Kind cluster's

@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -37,6 +38,7 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
@@ -158,6 +160,18 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient, infra.mapper, logger.WithName("label-detector")))
 		logger.Info("label detector enabled (ADR-056)")
 	}
+	// Issue #2343: without this, Investigate()'s automatic pre-fetch
+	// enrichment step always resolved owner-chain/spec-hash against the hub
+	// (ds.k8sAdapter) even for a fleet-target investigation, unlike the
+	// get_namespaced_resource_context/get_cluster_resource_context tools
+	// (issue #2306), which already resolve per-call from ctx via
+	// custom.ResolveK8sClient. This installs the exact same routing one
+	// call site earlier, so both paths agree on which cluster they're
+	// looking at.
+	k8sResolverLogger := logger.WithName("enricher-k8s-resolver")
+	e.WithK8sResolver(func(ctx context.Context) enrichment.K8sClient {
+		return custom.ResolveK8sClient(ctx, ds.k8sAdapter, k8sResolverLogger)
+	})
 	e.WithRetryConfig(enrichment.RetryConfig{
 		MaxRetries:  cfg.AI.Enrichment.MaxRetries,
 		BaseBackoff: cfg.AI.Enrichment.BaseBackoff,

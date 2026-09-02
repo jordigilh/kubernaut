@@ -158,5 +158,37 @@ var _ = Describe("UT-WE-054-CF: ClientFactory", func() {
 			Expect(err).ToNot(HaveOccurred(),
 				"Get must recover by reconnecting once the session is dead, not fail forever")
 		})
+
+		// UT-WE-054-CF-007 above only kills the session *after* ClientFor has
+		// already returned a client -- it never exercises ClientFor's own
+		// internal DiscoverToolPrefix call against an already-dead session.
+		// Issue #2346 (a third instance of #2340's gap): ClientFor is called
+		// fresh on every JobExecutor.Create/GetStatus (not cached), so a
+		// session that dies *before* ClientFor runs -- e.g. between the
+		// AIAnalysis phase and the WorkflowExecution phase -- hit this
+		// exact, previously-uncovered path in production.
+		It("UT-WE-054-CF-008: ClientFor itself recovers via reconnect when the session is already dead before the call (issue #2346)", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+			defer gw.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = rc.Close() }()
+
+			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := executor.NewMCPClientFactoryWithProvider(localClient, rc.SessionProvider(), rc.Reconnect)
+
+			// Kill the session BEFORE calling ClientFor -- simulates the
+			// production scenario where the gateway stays healthy but the
+			// client's session died in between two ClientFor calls.
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			execClient, err := factory.ClientFor(ctx, "remote-cluster")
+			Expect(err).ToNot(HaveOccurred(),
+				"ClientFor must recover by reconnecting once the session is already dead, not fail forever")
+			Expect(execClient).ToNot(BeNil())
+		})
 	})
 })

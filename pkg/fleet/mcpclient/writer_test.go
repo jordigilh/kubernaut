@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -289,6 +290,34 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			}
 			Expect(found).To(BeTrue(),
 				"WriterClient.Delete must call {clusterID}__resources_delete")
+		})
+
+		// UT-FLEET-MCP-NOTFOUND-005 (issue #2349): an idempotent delete of an
+		// already-gone remote resource must surface as a typed
+		// apierrors.NotFound so client.IgnoreNotFound (e.g.
+		// JobExecutor.Cleanup, pkg/workflowexecution/executor/job.go)
+		// actually recognizes it instead of hard-failing forever.
+		It("UT-FLEET-MCP-NOTFOUND-005: Delete returns a typed apierrors.NotFound for a k8s-style remote not-found", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "prod-west")
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mockgw.NotFoundSentinelName,
+					Namespace: "kubernaut-workflows",
+				},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Delete(ctx, job)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+				"remote not-found text must be classified as a typed apierrors NotFound")
 		})
 	})
 

@@ -21,15 +21,14 @@ the Kind automation below? Use the Helm chart's own
 podman as the container runtime — `export KIND_EXPERIMENTAL_PROVIDER=podman`), and an
 API key from an LLM provider.
 
-The LLM credential is the only thing you provide by hand — everything else (Secrets,
-Rego policies, RBAC) is generated for you.
+The LLM credential is the only thing you provide by hand, and even that is just a file
+path — everything else (Secrets, Rego policies, RBAC) is generated for you.
 
-**1. Create the namespace and your LLM credentials Secret:**
+**1. Put your LLM credential in a file.** A plain API key for most providers, or a
+service-account/ADC JSON blob for `vertex_ai`:
 
 ```bash
-kubectl create namespace kubernaut-system
-kubectl create secret generic llm-credentials-primary \
-  --from-literal=api_key=<your-llm-api-key> -n kubernaut-system
+echo -n "<your-llm-api-key>" > /tmp/llm-credentials
 ```
 
 **2. Run the setup:**
@@ -38,13 +37,17 @@ kubectl create secret generic llm-credentials-primary \
 make setup-fleet-demo-infra \
   LLM_PROVIDER=openai_compatible \
   LLM_MODEL=gpt-4o \
-  LLM_ENDPOINT=https://api.openai.com/v1
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
 This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
-Traefik, and fleet-wide monitoring, then runs `helm install charts/kubernaut` itself —
-remaining Secrets, default Rego policies, and RBAC included — and finishes by printing
-a Console URL, a login, and a suggested `/etc/hosts` line (~15 min total).
+and fleet-wide monitoring; once the hub cluster exists, it writes
+`LLM_CREDENTIALS_FILE`'s contents into the `llm-credentials-primary` Secret (there's no
+way to do this before the cluster exists to hold it); then it runs
+`helm install charts/kubernaut` itself — remaining Secrets, default Rego policies, and
+RBAC included — and finishes by printing a Console URL, a login, and a suggested
+`/etc/hosts` line (~15 min total).
 
 Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
 in Prometheus, but nothing auto-remediates until you ask Console to investigate — so

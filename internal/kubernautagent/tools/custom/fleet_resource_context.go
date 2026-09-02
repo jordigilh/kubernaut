@@ -20,8 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,6 +81,9 @@ func (r *overlayClientReader) Get(ctx context.Context, key client.ObjectKey, obj
 
 	text, err := r.getTool.Execute(ctx, argsJSON)
 	if err != nil {
+		if notFound := asRemoteNotFound(err, gvk, key.Name); notFound != nil {
+			err = notFound
+		}
 		return fmt.Errorf("overlayClientReader.Get: %s/%s in %q: %w", gvk.Kind, key.Name, key.Namespace, err)
 	}
 	fetched, err := mcpclient.ParseUnstructuredResponse(text)
@@ -86,6 +91,32 @@ func (r *overlayClientReader) Get(ctx context.Context, key client.ObjectKey, obj
 		return fmt.Errorf("overlayClientReader.Get: parse response for %s/%s: %w", gvk.Kind, key.Name, err)
 	}
 	return mcpclient.PopulateObject(fetched, obj)
+}
+
+// asRemoteNotFound recognizes the Kubernetes API's standard NotFound message
+// shape (apierrors.NewNotFound's `"<resource>[.<group>] %q not found"`) inside
+// a fleet overlay tool's error text and converts it to a typed
+// *apierrors.StatusError, or returns nil when the text doesn't match.
+//
+// The MCP protocol only carries tool errors as plain text (BridgeTool.Execute
+// renders a remote result.IsError as a formatted string, bridge_tool.go), so
+// a remote cluster's real apierrors.NewNotFound -- raised by kube-mcp-server's
+// own client-go call -- arrives here as a string, not a *apierrors.StatusError.
+// That loses the type enrichment.IsNotFoundError needs to honor the HardFail /
+// TargetResourceDeleted contract (issue #1039): every legitimately-absent
+// remote resource was misclassified as a hard failure, triggering
+// rca_incomplete for any fleet-target investigation whose target doesn't
+// exist (issue #2344, caught by E2E-FLEET-004 once #2343 first routed real
+// investigations through this path instead of the hub-only client).
+//
+// Scoped to the exact requested name (`%q not found`), not a blind "not
+// found" substring match, so an unrelated error that happens to mention a
+// different name isn't misclassified.
+func asRemoteNotFound(err error, gvk schema.GroupVersionKind, name string) error {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%q not found", name)) {
+		return nil
+	}
+	return apierrors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)}, name)
 }
 
 // List is intentionally not supported: overlayClientReader only backs

@@ -498,7 +498,19 @@ spec:
 //
 // Parameters:
 //   - ctx: Context for cancellation
-//   - namespace: Target namespace (e.g., "kubernaut-system")
+//   - namespace: Namespace AlertManager itself is deployed into (e.g.,
+//     "kubernaut-system", or "monitoring" for the fleet demo's dedicated
+//     platform-monitoring namespace).
+//   - gatewayNamespace: Namespace the "gateway-webhook" receiver's URL
+//     targets (Gateway's own Service namespace). Equal to namespace for
+//     every single-cluster caller (Gateway and AlertManager share one
+//     namespace there); MUST be passed separately in fleet mode, where
+//     AlertManager lives in "monitoring" but Gateway lives in
+//     "kubernaut-system" -- passing namespace for both there previously
+//     produced an unresolvable gateway-service.monitoring.svc.cluster.local
+//     webhook URL (demo team report, 2026-09-02: AlertManager logs showed
+//     "dial tcp: lookup gateway-service.monitoring.svc.cluster.local ...
+//     no such host", confirming the bug empirically).
 //   - kubeconfigPath: Path to kubeconfig for kubectl commands
 //   - gatewayToken: Bearer token for Gateway signal endpoints (BR-GATEWAY-036/037). If empty, no auth is added.
 //   - writer: Output writer for progress logging
@@ -506,9 +518,32 @@ spec:
 // Routing: every alert is forwarded to Gateway's real webhook EXCEPT one
 // carrying label SkipGatewayRouteLabelKey=SkipGatewayRouteLabelValue, which
 // AlertManager instead routes to a null receiver (see route config below).
-func DeployAlertManager(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🔔 Deploying AlertManager in namespace %s...\n", namespace)
 
+	manifest := buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = bytes.NewBufferString(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
+		return fmt.Errorf("failed to deploy AlertManager: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ AlertManager deployed (NodePort %d)\n", AlertManagerNodePort)
+	return nil
+}
+
+// buildAlertManagerManifest is the pure manifest-building half of
+// DeployAlertManager, split out for unit testing (2026-09-02, demo team
+// report): asserting on the rendered YAML string directly, without a shell
+// out to kubectl, is how UT-ALERTMGR-001 proves the gateway-webhook URL
+// uses gatewayNamespace and not namespace even when they differ (the fleet
+// case this bug was found in). See DeployAlertManager's doc comment for the
+// namespace/gatewayNamespace distinction.
+func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string) string {
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
 	webhookAuthYaml := ""
 	if gatewayToken != "" {
@@ -517,7 +552,7 @@ func DeployAlertManager(ctx context.Context, namespace, kubeconfigPath, gatewayT
           bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'`
 	}
 
-	manifest := fmt.Sprintf(`---
+	return fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -549,7 +584,7 @@ data:
     receivers:
     - name: gateway-webhook
       webhook_configs:
-      - url: 'http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/prometheus'
+      - url: 'http://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
         send_resolved: false`+webhookAuthYaml+`
     - name: null-receiver
 ---
@@ -623,19 +658,7 @@ spec:
     targetPort: 9093
     nodePort: %[3]d
     protocol: TCP
-`, namespace, AlertManagerImage, AlertManagerNodePort)
-
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = bytes.NewBufferString(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		dumpNodePortAllocations(ctx, kubeconfigPath, writer)
-		return fmt.Errorf("failed to deploy AlertManager: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ AlertManager deployed (NodePort %d)\n", AlertManagerNodePort)
-	return nil
+`, namespace, AlertManagerImage, AlertManagerNodePort, gatewayNamespace)
 }
 
 // dumpNodePortAllocations lists every Service (all namespaces) with its

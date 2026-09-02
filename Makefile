@@ -963,16 +963,16 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, and a pre-created llm-credentials-primary Secret
-	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_ENDPOINT)" ]; then \
-		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_ENDPOINT are all required, e.g.:"; \
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, LLM_CREDENTIALS_FILE
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_ENDPOINT)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ]; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, and LLM_CREDENTIALS_FILE are all required, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
-		echo "     LLM_ENDPOINT=https://api.openai.com/v1"; \
+		echo "     LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
 		echo ""; \
-		echo "You must also create the llm-credentials-primary Secret yourself first:"; \
-		echo "   kubectl create namespace kubernaut-system"; \
-		echo "   kubectl create secret generic llm-credentials-primary \\"; \
-		echo "     --from-literal=api_key=<your-llm-api-key> -n kubernaut-system"; \
+		echo "LLM_CREDENTIALS_FILE is a file holding your raw LLM credential (a plain API"; \
+		echo "key, or a JSON blob for vertex_ai) -- it becomes the llm-credentials-primary"; \
+		echo "Secret's content once the hub cluster exists. Never put credential material"; \
+		echo "directly on the command line."; \
 		exit 1; \
 	fi
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -983,6 +983,7 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		-llm-provider "$(LLM_PROVIDER)" \
 		-llm-model "$(LLM_MODEL)" \
 		-llm-endpoint "$(LLM_ENDPOINT)" \
+		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
 		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
 		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \

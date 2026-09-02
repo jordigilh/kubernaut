@@ -547,7 +547,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		allResults <- waveResult{"Prometheus", nil}
 	}()
 	go func() {
-		if err := DeployAlertManager(ctx, namespace, kubeconfigPath, gatewayToken, writer); err != nil {
+		if err := DeployAlertManager(ctx, namespace, namespace, kubeconfigPath, gatewayToken, writer); err != nil {
 			allResults <- waveResult{"AlertManager", err}
 			return
 		}

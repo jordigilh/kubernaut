@@ -152,7 +152,14 @@ func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (Exe
 			opts = append(opts, mcpclient.WithToolPrefix(prefix))
 		}
 	} else {
-		prefix, err := mcpclient.DiscoverToolPrefix(ctx, session, clusterID)
+		// Issue #2346 (a third instance of #2340's gap): must go through the
+		// reconnect-and-retry wrapper, not call DiscoverToolPrefix directly
+		// on session -- session here can already be a stale snapshot (from
+		// ResolveSession above) if the underlying MCP session died between
+		// this ClientFor call and the previous one, since ClientFor is
+		// invoked fresh on every JobExecutor.Create/GetStatus rather than
+		// cached.
+		prefix, err := mcpclient.DiscoverToolPrefixWithReconnect(ctx, f.session, f.sessionProvider, clusterID, f.reconnect)
 		if err != nil {
 			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
 		}

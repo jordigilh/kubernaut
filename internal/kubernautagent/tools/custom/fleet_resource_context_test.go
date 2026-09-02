@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -113,6 +114,47 @@ var _ = Describe("UT-KA-FLEET-031: overlayClientReader (BR-INTEGRATION-1489)", f
 		err := reader.Get(context.Background(), client.ObjectKey{Name: "p"}, obj)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("remote tool call failed"))
+	})
+
+	// UT-KA-FLEET-033 (issue #2344): the MCP protocol only carries tool
+	// errors as plain text (bridge_tool.go's BridgeTool.Execute renders
+	// result.IsError as a formatted string), so a remote cluster's real
+	// apierrors.NewNotFound arrives here as text, not a typed
+	// *apierrors.StatusError. Get must recognize the k8s-standard
+	// "<resource> \"<name>\" not found" message shape and re-wrap it as a
+	// typed NotFound so enrichment.IsNotFoundError (and the HardFail /
+	// TargetResourceDeleted contract, issue #1039) works identically to the
+	// hub-local K8sAdapter path. Without this, every legitimately-absent
+	// remote resource was misclassified as a hard failure.
+	It("returns a typed apierrors NotFound when the remote tool reports a k8s-style not-found (issue #2344)", func() {
+		getTool := &fakeGetTool{
+			err: fmt.Errorf("remote tool %q (cluster %q) returned error: failed to get resource: pods %q not found",
+				"remote-cluster__resources_get", "remote-cluster", "memory-eater"),
+		}
+		reader := custom.NewOverlayClientReader(getTool)
+
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+		err := reader.Get(context.Background(), client.ObjectKey{Namespace: "kubernaut-system", Name: "memory-eater"}, obj)
+
+		Expect(err).To(HaveOccurred())
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+			"UT-KA-FLEET-033: remote not-found text must be classified as a typed apierrors NotFound")
+	})
+
+	It("does not misclassify an unrelated error mentioning a different resource as not-found (issue #2344)", func() {
+		getTool := &fakeGetTool{
+			err: fmt.Errorf(`remote tool "remote-cluster__resources_get" (cluster "remote-cluster") returned error: connection refused`),
+		}
+		reader := custom.NewOverlayClientReader(getTool)
+
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+		err := reader.Get(context.Background(), client.ObjectKey{Namespace: "kubernaut-system", Name: "memory-eater"}, obj)
+
+		Expect(err).To(HaveOccurred())
+		Expect(apierrors.IsNotFound(err)).To(BeFalse(),
+			"UT-KA-FLEET-033: a non-not-found error must not be misclassified")
 	})
 
 	It("returns a clear not-supported error for List", func() {
