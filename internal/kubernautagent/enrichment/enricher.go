@@ -191,6 +191,7 @@ type Enricher struct {
 	logger        logr.Logger
 	labelDetector *LabelDetector
 	retryConfig   RetryConfig
+	k8sResolver   func(ctx context.Context) K8sClient
 }
 
 // NewEnricher creates an enricher with the given clients.
@@ -215,13 +216,42 @@ func (e *Enricher) WithRetryConfig(cfg RetryConfig) *Enricher {
 	return e
 }
 
+// WithK8sResolver installs a per-call override for the K8sClient used by
+// owner-chain and spec-hash resolution (Issue #2343). When resolver returns
+// non-nil, its result is used instead of the K8sClient passed to
+// NewEnricher; effectiveK8s falls back to that hub client otherwise -- so a
+// hub-local investigation (no resolver installed, or resolver returns nil)
+// is byte-identical to pre-#2343 behavior. Production wiring
+// (cmd/kubernautagent/datastorage.go's buildEnricher) installs a resolver
+// backed by custom.ResolveK8sClient, mirroring the same ctx-based fleet
+// overlay routing the get_namespaced_resource_context/get_cluster_resource_context
+// tools already use (issue #2306) -- this closes the one remaining call
+// site (the automatic pre-fetch enrichment step) that bypassed it.
+func (e *Enricher) WithK8sResolver(resolver func(ctx context.Context) K8sClient) *Enricher {
+	e.k8sResolver = resolver
+	return e
+}
+
+// effectiveK8s returns the K8sClient to use for this call: the resolver's
+// result when one is installed and returns non-nil, otherwise the hub
+// client passed to NewEnricher.
+func (e *Enricher) effectiveK8s(ctx context.Context) K8sClient {
+	if e.k8sResolver != nil {
+		if k8s := e.k8sResolver(ctx); k8s != nil {
+			return k8s
+		}
+	}
+	return e.k8s
+}
+
 // resolveOwnerChainWithRetry calls GetOwnerChain with optional retry logic.
 // With MaxRetries=0 (default): single call, best-effort.
 // With MaxRetries>0: all errors are retried with exponential backoff,
 // matching HAPI v1.2.1 EnrichmentService._retry (except Exception → retry).
 // The caller sets HardFail on EnrichmentResult when this returns a non-nil error.
 func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error) {
-	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
+	k8s := e.effectiveK8s(ctx)
+	chain, err := k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 	if err == nil {
 		return chain, nil
 	}
@@ -253,7 +283,7 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		case <-time.After(wait):
 		}
 
-		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
+		chain, err = k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 		if err == nil {
 			return chain, nil
 		}
@@ -351,7 +381,7 @@ func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, a
 	if specHash != "" {
 		return specHash, nil
 	}
-	computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
+	computed, err := e.effectiveK8s(ctx).GetSpecHash(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		if isForbiddenError(err) {
 			return "", fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)

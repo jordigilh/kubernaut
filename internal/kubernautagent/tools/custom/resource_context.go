@@ -65,8 +65,8 @@ type clusterResponse struct {
 	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
-// resolveK8sClient picks the effective enrichment.K8sClient for one Execute
-// call (issue #2306): the hub-bound client for a hub-local investigation (no
+// ResolveK8sClient picks the effective enrichment.K8sClient for one call
+// (issue #2306): the hub-bound client for a hub-local investigation (no
 // fleet overlay in ctx) — zero regression, byte-identical to before this fix
 // — a new overlay-backed K8sClient wrapping the fleet overlay's resources_get
 // tool for a fleet-target investigation whose overlay publishes it, or a
@@ -75,7 +75,13 @@ type clusterResponse struct {
 // deliberately does NOT fall back to hub, which would silently resolve
 // owner-chain/spec-hash against the wrong cluster — the exact AC-6 defect
 // this issue closes for the k8s-tool suppression half.
-func resolveK8sClient(ctx context.Context, hub enrichment.K8sClient, logger logr.Logger) enrichment.K8sClient {
+//
+// Exported (issue #2343) so cmd/kubernautagent's buildEnricher can install
+// the exact same routing as an Enricher.WithK8sResolver closure — the
+// get_namespaced_resource_context/get_cluster_resource_context tools below
+// and the Investigator's own pre-fetch enrichment step now share one
+// resolution path instead of the tools being the only caller.
+func ResolveK8sClient(ctx context.Context, hub enrichment.K8sClient, logger logr.Logger) enrichment.K8sClient {
 	overlay, hasOverlay := investigator.FleetOverlayFromContext(ctx)
 	if !hasOverlay {
 		return hub
@@ -152,7 +158,7 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	k8sClient := resolveK8sClient(ctx, t.k8s, t.logger)
+	k8sClient := ResolveK8sClient(ctx, t.k8s, t.logger)
 
 	chain, chainErr := k8sClient.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace, "")
 	if chainErr != nil {
@@ -222,7 +228,7 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	k8sClient := resolveK8sClient(ctx, t.k8s, t.logger)
+	k8sClient := ResolveK8sClient(ctx, t.k8s, t.logger)
 
 	specHash := computeSpecHash(ctx, t.logger, k8sClient, params.Kind, params.Name, "", "get_cluster_resource_context")
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
