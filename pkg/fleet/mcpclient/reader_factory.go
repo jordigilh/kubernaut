@@ -112,7 +112,7 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 			opts = append(opts, WithToolPrefix(prefix))
 		}
 	} else {
-		prefix, err := DiscoverToolPrefix(ctx, session, clusterID)
+		prefix, err := f.discoverToolPrefixWithReconnect(ctx, session, clusterID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
 		}
@@ -126,4 +126,35 @@ func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (cli
 		return NewFromSessionProvider(f.sessionProvider, clusterID, opts...), nil
 	}
 	return NewFromSession(session, clusterID, opts...), nil
+}
+
+// discoverToolPrefixWithReconnect calls DiscoverToolPrefix against session,
+// and on a retryable session error invokes f.reconnect once and retries
+// against the freshly-resolved session. Mirrors providerDiscoverer's
+// retryWithReconnect (discovery.go) so this call site follows the same
+// self-healing semantics as ListClusters/ToolsForCluster instead of the
+// pre-#2317 "permanently nil resolver" failure mode one level deeper.
+//
+// Without this, a session that dies mid-lifetime (gateway itself stays
+// healthy) fails ReaderFor -- and therefore remote owner-chain resolution --
+// forever, until the pod restarts. Observed live on the Fleet E2E hub as
+// repeated "standalone SSE stream: exceeded 5 retries without progress"
+// errors reusing the same dead session ID (issue #2340, a gap #2317 missed:
+// this call site invoked DiscoverToolPrefix directly on the raw session,
+// bypassing the reconnect callback already available on the struct).
+func (f *mcpReaderFactory) discoverToolPrefixWithReconnect(ctx context.Context, session *mcp.ClientSession, clusterID string) (string, error) {
+	prefix, err := DiscoverToolPrefix(ctx, session, clusterID)
+	if err == nil || f.reconnect == nil || !isRetryableSessionError(err) {
+		return prefix, err
+	}
+
+	if reconnErr := f.reconnect(ctx); reconnErr != nil {
+		return "", fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
+	}
+
+	session, resolveErr := ResolveSession(f.session, f.sessionProvider)
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	return DiscoverToolPrefix(ctx, session, clusterID)
 }
