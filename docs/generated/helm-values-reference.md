@@ -145,6 +145,9 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `auth.secretName` | string | Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true. | `""` | No |
 | `enabled` | boolean |  | `false` | No |
+| `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
+| `image.repository` | string |  | `"quay.io/kubernaut-ai/kubernaut-console"` | No |
+| `image.tag` | string |  | `"1.1.0"` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
@@ -261,7 +264,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `enabled` | boolean | DD-PLATFORM-006 Decision Area 10: when unset, the effective value is derived from global.fleet.enabled + global.fleet.backend (true whenever the fleet backend resolves to "fleetmetadatacache"); set explicitly to override. An explicit false that contradicts a derived-true fails the render. | `false` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/fleetmetadatacache"` | No |
-| `image.tag` | string |  | `"v1.6.0"` | No |
+| `image.tag` | string | No 'v' prefix: quay.io/kubernaut-ai/fleetmetadatacache tags follow the same 1.6.0/1.6.0-rcN convention as the rest of the chart's images (fixed 2026-09-02 -- the prior 'v1.6.0' default never matched a published tag). | `"1.6.0"` | No |
 | `keyTTL` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"45s"` | No |
 | `namespace` | string | Namespace where the MCP Gateway manages its MCPServerRegistration (kuadrant) or Backend (eaigw) CRs. #2298 RCA: previously defaulted to "kubernaut-system" (FMC's own namespace), which silently scoped the ClusterRegistry watch away from wherever the MCP Gateway actually runs -- there is no safe default (a cluster can run more than one MCP Gateway). This (or its global.fleet.mcpGatewayNamespace fallback) must be set, or the FMC pod fails fast at startup: pkg/fleet/fmc/config.Validate() enforces this at the Go level (covers every deployment path, including the kubernaut-operator, which renders this ConfigMap independently of this chart). | `""` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
