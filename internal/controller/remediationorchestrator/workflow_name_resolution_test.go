@@ -52,7 +52,7 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		actionType   = "RestartPod"
 	)
 
-	It("UT-RO-643-001: should set WorkflowDisplayName as ActionType:WorkflowName from AIAnalysis.Status.SelectedWorkflow, with no DataStorage call", func() {
+	It("UT-RO-643-001: should set WorkflowDisplayName as ActionType/WorkflowName from AIAnalysis.Status.SelectedWorkflow, with no DataStorage call", func() {
 		ctx := context.Background()
 		scheme := setupScheme()
 
@@ -96,8 +96,8 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(
-			Equal(actionType+":"+workflowName),
-			"WorkflowDisplayName should be ActionType:WorkflowName sourced from AIAnalysis.Status.SelectedWorkflow")
+			Equal(actionType+"/"+workflowName),
+			"WorkflowDisplayName should be ActionType/WorkflowName sourced from AIAnalysis.Status.SelectedWorkflow")
 		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).NotTo(
 			ContainSubstring(workflowUUID),
 			"WorkflowDisplayName should NOT contain the raw UUID")
@@ -142,6 +142,6 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643b", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(Equal("RestartPod:" + workflowUUID))
+		Expect(updatedRR.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(Equal("RestartPod/" + workflowUUID))
 	})
 })

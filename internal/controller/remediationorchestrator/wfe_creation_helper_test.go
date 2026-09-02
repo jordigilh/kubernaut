@@ -174,7 +174,7 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		// Issue #1677 Phase 1: WorkflowDisplayName comes directly from
 		// ai.Status.SelectedWorkflow.ActionType/.WorkflowName (set by minimalAI()
 		// to "patch"/"wf-restart") -- no live resolver involved.
-		Expect(updated.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(Equal("patch:wf-restart"))
+		Expect(updated.Status.EnsureWorkflowSelection().WorkflowDisplayName).To(Equal("patch/wf-restart"))
 	})
 
 	It("UT-WEC-005: increments ChildCRDCreationsTotal metric", func() {
