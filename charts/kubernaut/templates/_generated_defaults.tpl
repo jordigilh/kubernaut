@@ -131,6 +131,10 @@ console:
     auth:
         secretName: ""
     enabled: false
+    image:
+        pullPolicy: IfNotPresent
+        repository: quay.io/kubernaut-ai/kubernaut-console
+        tag: 1.1.0
     ingress:
         annotations: {}
         className: ""
@@ -227,7 +231,7 @@ fleetmetadatacache:
     image:
         pullPolicy: IfNotPresent
         repository: quay.io/kubernaut-ai/fleetmetadatacache
-        tag: v1.6.0
+        tag: 1.6.0
     keyTTL: 45s
     namespace: ""
     oauth2:

@@ -37,6 +37,20 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
+// e2eTokenExpirationSeconds bounds every TokenRequest minted by this file for
+// E2E/demo infrastructure setup. These tokens are baked once into a static
+// file/ConfigMap/Secret (e.g. AlertManager's webhook bearer_token, a
+// container-mounted kubeconfig) with no refresh mechanism of their own --
+// unlike an in-cluster pod's projected-volume ServiceAccount token, which
+// kubelet auto-rotates transparently. The previous value (3600, the
+// TokenRequest API's own default when the field is omitted) reliably expired
+// mid-session: any fleet demo running longer than an hour broke on its own,
+// independent of the host-suspend/MCP-session issue that surfaced it
+// (issue #2347). Confirmed empirically this accepts up to at least 90 days
+// on a kind cluster (`kubectl create token --duration=2160h`); a demo/E2E
+// process is not expected to outlive this.
+const e2eTokenExpirationSeconds = 90 * 24 * 3600 // 90 days
+
 // CreateE2EServiceAccountWithDataStorageAccess creates a ServiceAccount for E2E tests
 // with RBAC permissions to access DataStorage via middleware-based SAR validation.
 //
@@ -326,8 +340,7 @@ func GetServiceAccountToken(ctx context.Context, namespace, saName, kubeconfigPa
 	// Authority: https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/
 	treq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			// Request long-lived token for E2E tests (default is 1 hour)
-			ExpirationSeconds: func() *int64 { exp := int64(3600); return &exp }(),
+			ExpirationSeconds: func() *int64 { exp := int64(e2eTokenExpirationSeconds); return &exp }(),
 		},
 	}
 
@@ -1046,7 +1059,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	_, _ = fmt.Fprintf(writer, "🎫 Requesting DataStorage service token...\n")
 	datastorageTokenRequest := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			ExpirationSeconds: int64Ptr(3600), // 1 hour
+			ExpirationSeconds: int64Ptr(e2eTokenExpirationSeconds),
 		},
 	}
 
@@ -1087,7 +1100,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	_, _ = fmt.Fprintf(writer, "🎫 Requesting client ServiceAccount token...\n")
 	tokenRequest := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			ExpirationSeconds: int64Ptr(3600), // 1 hour
+			ExpirationSeconds: int64Ptr(e2eTokenExpirationSeconds),
 		},
 	}
 
@@ -1372,7 +1385,7 @@ func CreateServiceAccountForHTTPService(
 	_, _ = fmt.Fprintf(writer, "🎫 Requesting ServiceAccount token for %s\n", saName)
 	tokenRequest := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			ExpirationSeconds: int64Ptr(3600), // 1 hour
+			ExpirationSeconds: int64Ptr(e2eTokenExpirationSeconds),
 		},
 	}
 	tokenResp, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(

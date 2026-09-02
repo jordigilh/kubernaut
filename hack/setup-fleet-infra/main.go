@@ -18,11 +18,13 @@
 // -gateway-type=kuadrant if you specifically need it.
 //
 // Use this (`make setup-fleet-demo-infra`) for a one-shot, ready-to-browse
-// fleet + Kubernaut stack. You must create the LLM credentials Secret
-// yourself first (`kubectl create secret generic llm-credentials-primary
-// --from-literal=api_key=... -n kubernaut-system`, README "Try It Out") --
-// this tool never reads or handles that credential material. Everything
-// else (PostgreSQL/Valkey/console-oauth Secrets, a catch-all
+// fleet + Kubernaut stack. Pass -llm-credentials-file pointing at a file
+// holding your LLM provider credentials (a plain API key, or a JSON blob
+// for vertex_ai) -- the tool writes it into the llm-credentials-primary
+// Secret itself once the hub cluster exists (2026-09-01: previously the
+// docs asked you to pre-create this Secret before running setup at all,
+// which can't work since the cluster meant to hold it doesn't exist yet).
+// Everything else (PostgreSQL/Valkey/console-oauth Secrets, a catch-all
 // classification policy and an "always require approval" gate for
 // SignalProcessing/AIAnalysis Rego) is generated automatically unless you
 // pass -sp-policy-file/-aa-policy-file to override.
@@ -65,6 +67,7 @@ func main() {
 	llmProvider := flag.String("llm-provider", "", "required: global.llmProfiles.primary.provider (e.g. openai_compatible)")
 	llmModel := flag.String("llm-model", "", "required: global.llmProfiles.primary.model")
 	llmEndpoint := flag.String("llm-endpoint", "", "required: global.llmProfiles.primary.endpoint")
+	llmCredentialsFile := flag.String("llm-credentials-file", "", "required: path to a file holding your LLM provider credentials (a plain API key, or a JSON blob for vertex_ai service-account/ADC credentials) -- written verbatim into the llm-credentials-primary Secret once the hub cluster exists, replacing the mock placeholder")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional: SignalProcessing Rego policy file (default: a built-in catch-all demo policy)")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional: AIAnalysis Rego policy file (default: a built-in policy that always requires human approval)")
 	// sigs.k8s.io/controller-runtime/pkg/client/config's own init() unconditionally
@@ -108,9 +111,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		os.Exit(1)
 	}
+	if *llmCredentialsFile == "" {
+		fmt.Fprintln(os.Stderr, "❌ missing required flag: -llm-credentials-file")
+		os.Exit(1)
+	}
 
 	ctx := context.Background()
-	fleetOpts, remoteKubeconfigPath, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, *remoteClusterName, kubeconfigPath, gatewayType, *spokeWorkers, os.Stdout)
+	fleetOpts, remoteKubeconfigPath, err := infrastructure.SetupFleetCoreInfrastructureWithGateway(ctx, *clusterName, *remoteClusterName, kubeconfigPath, infrastructure.FleetCoreDemoOptions{
+		GatewayType:        gatewayType,
+		SpokeWorkers:       *spokeWorkers,
+		LLMCredentialsFile: *llmCredentialsFile,
+	}, os.Stdout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ setup-fleet-infra failed: %v\n", err)
 		os.Exit(1)

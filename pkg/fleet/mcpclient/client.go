@@ -33,6 +33,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -342,7 +343,19 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 	}
 
 	if result.IsError {
-		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
+		errText := ExtractText(result)
+		// Issue #2349: a NotFound must arrive typed so callers relying on
+		// apierrors.IsNotFound/client.IgnoreNotFound (e.g. JobExecutor.Cleanup's
+		// ownership-check Get, pkg/workflowexecution/executor/job.go) actually
+		// match it instead of hard-failing forever on a resource that
+		// legitimately never existed.
+		gv, gvErr := schema.ParseGroupVersion(apiVersion)
+		if gvErr == nil {
+			if nf := asRemoteNotFound(errText, gv.WithKind(kind), name); nf != nil {
+				return nil, nf
+			}
+		}
+		return nil, fmt.Errorf("call %s returned error: %s", toolName, errText)
 	}
 
 	if m := extractStructuredGet(result); m != nil {

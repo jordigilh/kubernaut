@@ -621,11 +621,30 @@ func reloadSinglePhaseClient(
 	// #1726: a phase override's own apiKeyFile (distinct from the base
 	// profile's) must be resolved into APIKey here — EffectivePhaseConfig
 	// only produces the correct APIKeyFile, it does not read it.
-	// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
+	// An apiKeyFile that IS set but fails to resolve must reject this
+	// phase's client outright (IT-KA-1726-005, SI-10) — never fall back
+	// silently, so this early-return stays unconditional.
 	if err := merged.ResolveAPIKey(); err != nil {
 		logger.Error(err, "reload: failed to resolve phase LLM api key file",
 			"phase", phaseName, "apiKeyFile", merged.APIKeyFile)
 		return
+	}
+	// Issue #2341: a phase with no apiKeyFile override at all -- the common
+	// case, since Helm only renders one when the phase's
+	// credentialsSecretName differs from the base's
+	// (charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml) --
+	// and whose base runtime config never carried a resolved APIKey either
+	// (the base profile's own APIKey resolution at line ~431 is local to
+	// that call site, never written back into the shared LLMRuntimeConfig)
+	// left merged.APIKey empty here for file-based providers like vertex_ai.
+	// The client then fell through to plain GCP ADC lookup, which fails
+	// inside the pod (no metadata server, no GOOGLE_APPLICATION_CREDENTIALS).
+	// Guarding on APIKeyFile == "" keeps this fallback from ever firing for
+	// the reject-on-unreadable-file case above -- it only applies when there
+	// was no apiKeyFile to begin with.
+	if merged.APIKey == "" && merged.APIKeyFile == "" {
+		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+		merged.APIKey = credentials.ResolveCredentialsFile(merged.Provider, credDir, logger)
 	}
 
 	phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
