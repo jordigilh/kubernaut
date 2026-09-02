@@ -165,7 +165,15 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 		return err
 	}
 	if result.IsError {
-		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
+		errText := ExtractText(result)
+		// Issue #2349: a NotFound must arrive typed so an idempotent delete
+		// (client.IgnoreNotFound) of an already-gone remote resource -- e.g.
+		// JobExecutor.Cleanup, pkg/workflowexecution/executor/job.go -- is
+		// actually recognized as such instead of hard-failing.
+		if nf := asRemoteNotFound(errText, gvk, obj.GetName()); nf != nil {
+			return nf
+		}
+		return fmt.Errorf("call %s returned error: %s", toolName, errText)
 	}
 	return nil
 }

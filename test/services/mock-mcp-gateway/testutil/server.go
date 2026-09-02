@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,6 +36,24 @@ import (
 type ToolCall struct {
 	ToolName  string
 	Arguments json.RawMessage
+}
+
+// NotFoundSentinelName: requesting a resource with this name from
+// resources_get/resources_delete simulates the plain-text-rendered
+// apierrors.NewNotFound a real kube-mcp-server would return for a resource
+// that genuinely doesn't exist (issue #2349) -- the MCP protocol only
+// carries tool errors as text, so callers must recognize this shape and
+// re-wrap it as a typed error themselves.
+const NotFoundSentinelName = "__notfound_sentinel__"
+
+// groupSuffix returns ".<group>" for a non-core apiVersion (e.g. "batch/v1"
+// -> ".batch"), or "" for a core apiVersion (e.g. "v1"), matching
+// apierrors.NewNotFound's own GroupResource.String() rendering.
+func groupSuffix(apiVersion string) string {
+	if idx := strings.Index(apiVersion, "/"); idx > 0 {
+		return "." + strings.ToLower(apiVersion[:idx])
+	}
+	return ""
 }
 
 // Option configures a MockGateway.
@@ -273,6 +292,20 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 			}, nil
 		}
 
+		// NotFoundSentinelName: simulates the k8s-standard NotFound message
+		// shape a real kube-mcp-server would render as plain text (issue
+		// #2349) -- lets callers test their own error-typing/reconnect
+		// behavior against a "resource genuinely doesn't exist" response
+		// without needing per-test mock reconfiguration.
+		if args.Name == NotFoundSentinelName {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+					"failed to get resource: %s%s %q not found",
+					strings.ToLower(args.Kind), groupSuffix(args.APIVersion), args.Name)}},
+				IsError: true,
+			}, nil
+		}
+
 		obj := map[string]any{
 			"apiVersion": args.APIVersion,
 			"kind":       args.Kind,
@@ -330,12 +363,23 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 		var args struct {
 			Kind       string `json:"kind"`
 			APIVersion string `json:"apiVersion"`
+			Name       string `json:"name"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
 		if args.APIVersion == "" {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"apiVersion is required"}`}},
+				IsError: true,
+			}, nil
+		}
+
+		// See NotFoundSentinelName above (issue #2349).
+		if args.Name == NotFoundSentinelName {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+					"failed to delete resource: %s%s %q not found",
+					strings.ToLower(args.Kind), groupSuffix(args.APIVersion), args.Name)}},
 				IsError: true,
 			}, nil
 		}
