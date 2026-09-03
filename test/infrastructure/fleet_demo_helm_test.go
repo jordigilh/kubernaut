@@ -183,6 +183,13 @@ var _ = Describe("buildFleetDemoHelmArgs", func() {
 		))
 	})
 
+	It("UT-INFRA-FLEETDEMO-034: sets apifrontend.config.auth.audience to kubernaut-apifrontend (issue #2352, else AF 401s every console token -> 'Unable to Verify Access')", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		Expect(args).To(ContainElements(
+			"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
+		))
+	})
+
 	It("UT-INFRA-FLEETDEMO-018: uses --set-file for the Rego policy paths passed in", func() {
 		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements(

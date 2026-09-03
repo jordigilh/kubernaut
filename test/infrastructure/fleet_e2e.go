@@ -774,6 +774,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet")
 	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.audience=kubernaut-apifrontend (required; else AF 401s every token, issue #2352)")
 	_, _ = fmt.Fprintln(writer, "    console.enabled=true, console.ingress.className=traefik,")
 	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local, console.ingress.port=8843")
 	_, _ = fmt.Fprintln(writer, "    Add to /etc/hosts:  127.0.0.1 keycloak kubernaut-console.local")

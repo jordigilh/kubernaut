@@ -196,8 +196,14 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--set", "networkPolicies.console.ingressNamespaces[0]=" + fleetDemoTraefikNamespace,
 		// AF/Console browser+in-cluster OIDC: reuses the same Keycloak fleet
 		// infra already stands up (no DEX test double, unlike the FP suite).
+		// audience MUST match the kubernaut-apifrontend-audience client scope's
+		// oidc-audience-mapper (test/infrastructure/keycloak-realm-fleet.json),
+		// else AF's JWTValidator.validateAudience rejects every console token
+		// with ErrInvalidAudience -> 401 -> console "Unable to Verify Access"
+		// (issue #2352). Mirrors fullpipeline_e2e_helm.go:1088.
 		"--set", "apifrontend.config.auth.issuerURL=" + keycloakAuthBase,
 		"--set", "apifrontend.config.auth.jwksURL=" + keycloakInClusterBase + "/protocol/openid-connect/certs",
+		"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
 		// Split browser/in-cluster OIDC endpoints (Keycloak lives in its own
 		// "idp" namespace, not kubernaut-system -- see keycloak_e2e.go).
 		"--set", "console.oauth2Proxy.skipDiscovery=true",
