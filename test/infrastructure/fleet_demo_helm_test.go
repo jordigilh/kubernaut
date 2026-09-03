@@ -79,6 +79,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			OAuth2Scopes:                []string{"fleet.read", "fleet.write"},
 			SignalProcessingNamespace:   "kubernaut-system",
 			FleetMetadataCacheNamespace: "kubernaut-system",
+			ImageTag:                    "latest",
 		})
 		Expect(args).To(ContainElements(
 			"--set", "global.fleet.enabled=true",
@@ -92,6 +93,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			"--set", "global.fleet.oauth2.scopes[1]=fleet.write",
 			"--set", "signalprocessing.fleet.namespace=kubernaut-system",
 			"--set", "fleetmetadatacache.namespace=kubernaut-system",
+			"--set", "global.image.tag=latest",
 		))
 	})
 

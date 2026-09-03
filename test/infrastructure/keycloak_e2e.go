@@ -483,6 +483,7 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 			_, _ = fmt.Fprintln(writer, "  ✅ Keycloak kubernaut-fleet realm reachable (HTTPS)")
 			return nil
 		}
+		fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-fleet realm to be reachable...")
 		if resp != nil {
 			_ = resp.Body.Close()
 		}

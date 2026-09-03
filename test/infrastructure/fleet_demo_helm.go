@@ -133,6 +133,8 @@ type FleetDemoHelmOptions struct {
 	// does not bundle default Rego policies").
 	SPPolicyFile string
 	AAPolicyFile string
+	// allows overwritting the image tag used for the fleet demo chart, which defaults to "latest" (the current local build) but can be overridden to test a published image.
+	ImageTag string
 }
 
 // Validate reports every missing required flag in one error, so
@@ -173,6 +175,7 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--namespace", namespace,
 		"--create-namespace",
 		"--timeout", "8m",
+		"--set", "global.image.tag=" + opts.ImageTag,
 		"--set", "global.llmProfiles.primary.provider=" + opts.LLMProvider,
 		"--set", "global.llmProfiles.primary.model=" + opts.LLMModel,
 		"--set", "global.llmProfiles.primary.endpoint=" + opts.LLMEndpoint,
@@ -395,7 +398,7 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeco
 
 	args := buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace, fleetOpts, opts, spPolicyFile, aaPolicyFile)
 
-	_, _ = fmt.Fprintln(writer, "\n🚀 helm upgrade --install kubernaut charts/kubernaut ...")
+	_, _ = fmt.Fprintf(writer, "\n🚀 helm upgrade --install kubernaut charts/kubernaut %s", args)
 	cmd := exec.CommandContext(ctx, "helm", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

@@ -199,7 +199,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache
-          image: "{{ $v.image.repository }}:{{ $v.image.tag }}"
+          image: {{ include "kubernaut.image" (dict "service" "fleetmetadatacache" "root" $ "appVersion" .Chart.AppVersion) }}
+          # image: "{{ $v.image.repository }}:{{ $v.image.tag }}"
           imagePullPolicy: {{ $v.image.pullPolicy }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.fleetmetadatacache | nindent 12 }}
