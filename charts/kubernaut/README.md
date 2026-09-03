@@ -809,6 +809,28 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
 
 See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring instructions.
 
+### Overriding the image tag
+
+Every chart-managed service renders its image via the `kubernaut.image` helper as
+`{registry}/{namespace}{separator}{service}:{tag}`, where `tag` is
+`global.image.tag` when set, otherwise the chart's `appVersion`
+(`charts/kubernaut/Chart.yaml`). To pin or test a published tag without changing
+the chart version:
+
+```bash
+helm upgrade kubernaut charts/kubernaut \
+  --namespace kubernaut-system \
+  --set global.image.tag=1.6.0-rc9 \
+  ...
+```
+
+The fleet demo entry point wires this directly: `setup-fleet-demo-infra
+-image-tag 1.6.0-rc9 ...` (equivalently `make setup-fleet-demo-infra
+IMAGE_TAG=1.6.0-rc9 ...`). When the flag is omitted, no `--set` is emitted and
+every service falls back to `.Chart.AppVersion`. Note the `console` container
+itself is versioned independently (`console.image.repository:tag`) and is
+intentionally not part of the `global.image.tag` train.
+
 ## Upgrading
 
 Helm does **not** upgrade CRDs on `helm upgrade`. Apply new CRDs first:
