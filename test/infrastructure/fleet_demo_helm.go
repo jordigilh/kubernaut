@@ -133,7 +133,10 @@ type FleetDemoHelmOptions struct {
 	// does not bundle default Rego policies").
 	SPPolicyFile string
 	AAPolicyFile string
-	// allows overwritting the image tag used for the fleet demo chart, which defaults to "latest" (the current local build) but can be overridden to test a published image.
+	// ImageTag optionally overrides the container image tag for the fleet
+	// demo chart (global.image.tag). When empty (the default), no --set is
+	// emitted and the chart's kubernaut.image helper falls back to
+	// .Chart.AppVersion (global.image.tag defaults to "").
 	ImageTag string
 }
 
@@ -175,7 +178,6 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--namespace", namespace,
 		"--create-namespace",
 		"--timeout", "8m",
-		"--set", "global.image.tag=" + opts.ImageTag,
 		"--set", "global.llmProfiles.primary.provider=" + opts.LLMProvider,
 		"--set", "global.llmProfiles.primary.model=" + opts.LLMModel,
 		"--set", "global.llmProfiles.primary.endpoint=" + opts.LLMEndpoint,
@@ -221,6 +223,16 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--set", "networkPolicies.idp.port=8443",
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
+	}
+
+	if opts.ImageTag != "" {
+		// Optional tag override (global.image.tag, consumed by the chart's
+		// kubernaut.image helper). Deliberately omitted when empty so the
+		// helper falls back to .Chart.AppVersion -- an unconditional
+		// "--set global.image.tag=" here would be shadowed by
+		// buildFleetOAuth2HelmArgs below anyway (helm --set is last-wins),
+		// which is why a provided override previously never took effect.
+		args = append(args, "--set", "global.image.tag="+opts.ImageTag)
 	}
 
 	if opts.Autonomous {

@@ -17,6 +17,8 @@ limitations under the License.
 package infrastructure
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -110,6 +112,15 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{})
 		Expect(args).To(ContainElements("--set", "fleetmetadatacache.namespace="))
 	})
+
+	It("UT-INFRA-FLEETDEMO-035: omits global.image.tag when ImageTag is empty (a trailing empty --set would clobber the demo override, helm last-wins)", func() {
+		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{FleetMetadataCacheNamespace: "kubernaut-system"})
+		for i, a := range args {
+			if a == "--set" && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.image.tag="))
+			}
+		}
+	})
 })
 
 var _ = Describe("buildFleetDemoHelmArgs", func() {
@@ -183,6 +194,28 @@ var _ = Describe("buildFleetDemoHelmArgs", func() {
 		Expect(args).To(ContainElements(
 			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet",
 		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-036: omits global.image.tag when ImageTag is empty (chart falls back to .Chart.AppVersion)", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		for i, a := range args {
+			if a == "--set" && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.image.tag="))
+			}
+		}
+	})
+
+	It("UT-INFRA-FLEETDEMO-037: sets exactly one global.image.tag when ImageTag is provided (no trailing empty duplicate)", func() {
+		opts := baseOpts
+		opts.ImageTag = "demo-v1.0"
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+		var tags []string
+		for i, a := range args {
+			if a == "--set" && i+1 < len(args) && strings.HasPrefix(args[i+1], "global.image.tag=") {
+				tags = append(tags, args[i+1])
+			}
+		}
+		Expect(tags).To(Equal([]string{"global.image.tag=demo-v1.0"}))
 	})
 
 	It("UT-INFRA-FLEETDEMO-034: sets apifrontend.config.auth.audience to kubernaut-apifrontend (issue #2352, else AF 401s every console token -> 'Unable to Verify Access')", func() {

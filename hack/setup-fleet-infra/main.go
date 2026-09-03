@@ -70,7 +70,7 @@ func main() {
 	llmCredentialsFile := flag.String("llm-credentials-file", "", "required: path to a file holding your LLM provider credentials (a plain API key, or a JSON blob for vertex_ai service-account/ADC credentials) -- written verbatim into the llm-credentials-primary Secret once the hub cluster exists, replacing the mock placeholder")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional: SignalProcessing Rego policy file (default: a built-in catch-all demo policy)")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional: AIAnalysis Rego policy file (default: a built-in policy that always requires human approval)")
-	imageTag := flag.String("image-tag", "latest", "Docker image tag for the fleet demo chart (default: latest, which is the current local build; pass a specific tag to test a published image)")
+	imageTag := flag.String("image-tag", "", "optional: override the container image tag for the fleet demo chart (global.image.tag, e.g. -image-tag 1.6.0-rc9 to test a published image); when empty, the chart's kubernaut.image helper falls back to .Chart.AppVersion")
 	// sigs.k8s.io/controller-runtime/pkg/client/config's own init() unconditionally
 	// registers a "-kubeconfig" flag on flag.CommandLine the moment anything --
 	// direct or transitive -- imports it, which already happened here via the
