@@ -897,7 +897,7 @@ type WorkflowSelection struct {
 	Confidence string `json:"confidence,omitempty"`
 
 	// WorkflowDisplayName is the human-readable workflow identifier
-	// (e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
+	// (e.g., "GitRevertCommit/git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
 	// +optional
 	WorkflowDisplayName string `json:"workflowDisplayName,omitempty"`
 

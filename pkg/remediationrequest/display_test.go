@@ -69,9 +69,9 @@ var _ = Describe("Issue #635: Display Helpers for RR kubectl Columns", func() {
 	// ========================================
 
 	Describe("FormatWorkflowDisplay", func() {
-		It("UT-RO-635-003: should produce ActionType:WorkflowID for standard workflow", func() {
+		It("UT-RO-635-003: should produce ActionType/WorkflowID for standard workflow", func() {
 			result := remediationrequest.FormatWorkflowDisplay("GitRevertCommit", "git-revert-v2")
-			Expect(result).To(Equal("GitRevertCommit:git-revert-v2"))
+			Expect(result).To(Equal("GitRevertCommit/git-revert-v2"))
 		})
 
 		It("UT-RO-635-004a: should return just WorkflowID when ActionType is empty", func() {
@@ -91,7 +91,7 @@ var _ = Describe("Issue #635: Display Helpers for RR kubectl Columns", func() {
 
 		It("should handle RestartPod action type", func() {
 			result := remediationrequest.FormatWorkflowDisplay("RestartPod", "restart-pod-v1")
-			Expect(result).To(Equal("RestartPod:restart-pod-v1"))
+			Expect(result).To(Equal("RestartPod/restart-pod-v1"))
 		})
 	})
 
@@ -136,13 +136,13 @@ var _ = Describe("Issue #635: Display Helpers for RR kubectl Columns", func() {
 				WorkflowSelection: &remediationv1.WorkflowSelection{
 					TargetDisplay:       "Deployment/web-frontend",
 					Confidence:          "0.97",
-					WorkflowDisplayName: "GitRevertCommit:git-revert-v2",
+					WorkflowDisplayName: "GitRevertCommit/git-revert-v2",
 					SignalTargetDisplay: "Pod/web-frontend-cdbdbc4f8-6kn6j",
 				},
 			}
 			Expect(status.WorkflowSelection.TargetDisplay).To(Equal("Deployment/web-frontend"))
 			Expect(status.WorkflowSelection.Confidence).To(Equal("0.97"))
-			Expect(status.WorkflowSelection.WorkflowDisplayName).To(Equal("GitRevertCommit:git-revert-v2"))
+			Expect(status.WorkflowSelection.WorkflowDisplayName).To(Equal("GitRevertCommit/git-revert-v2"))
 			Expect(status.WorkflowSelection.SignalTargetDisplay).To(Equal("Pod/web-frontend-cdbdbc4f8-6kn6j"))
 		})
 	})

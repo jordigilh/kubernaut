@@ -30,9 +30,10 @@ func FormatResourceDisplay(kind, name string) string {
 	return kind + "/" + name
 }
 
-// FormatWorkflowDisplay produces an ActionType:WorkflowID string
-// for human-readable workflow identification. Returns empty string if
-// workflowID is empty.
+// FormatWorkflowDisplay produces an ActionType/WorkflowID string
+// for human-readable workflow identification, consistent with the
+// Kind/Name convention used by FormatResourceDisplay. Returns empty
+// string if workflowID is empty.
 func FormatWorkflowDisplay(actionType, workflowID string) string {
 	if workflowID == "" {
 		return ""
@@ -40,7 +41,7 @@ func FormatWorkflowDisplay(actionType, workflowID string) string {
 	if actionType == "" {
 		return workflowID
 	}
-	return actionType + ":" + workflowID
+	return actionType + "/" + workflowID
 }
 
 // FormatConfidence formats a float64 confidence score as a 2-decimal string.

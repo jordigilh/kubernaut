@@ -1123,7 +1123,7 @@ spec:
                   workflowDisplayName:
                     description: |-
                       WorkflowDisplayName is the human-readable workflow identifier
-                      (e.g., "GitRevertCommit:git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
+                      (e.g., "GitRevertCommit/git-revert-v2"). Populated from AIAnalysis.SelectedWorkflow.
                     type: string
                 type: object
             type: object
