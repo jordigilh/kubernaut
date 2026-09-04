@@ -219,6 +219,11 @@ type InvestigateMCPArgs struct {
 	// candidate's alert name after the user has explicitly confirmed it
 	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
 	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
+	// SessionID is an ambient hint the LLM propagates via cross-phase
+	// preservation (#2364 Tier 2). Tolerated here so strict ADK schema
+	// validation does not kill the turn; ignored by the handler, which owns
+	// session lifecycle server-side.
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.

@@ -149,6 +149,12 @@ func NewGetEffectivenessTool(client ds.Client) (tool.Tool, error) {
 type GetAuditTrailArgs struct {
 	RRID      string `json:"rr_id"`
 	EventType string `json:"event_type,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364 Tier 2). Tolerated here so
+	// strict ADK schema validation does not kill the turn; ignored by the
+	// handler, which keys everything off RRID.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // PhaseGroup represents an aggregated group of audit events in one lifecycle phase.

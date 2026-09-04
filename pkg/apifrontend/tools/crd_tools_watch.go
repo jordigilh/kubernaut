@@ -25,6 +25,12 @@ type WatchArgs struct {
 	Namespace string `json:"-"`
 	RRID      string `json:"rr_id,omitempty"`
 	Name      string `json:"name,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364 Tier 1). Tolerated here so
+	// strict ADK schema validation does not kill the Phase 4 close-out turn;
+	// ignored by the handler.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // WatchEvent represents a single status change event.

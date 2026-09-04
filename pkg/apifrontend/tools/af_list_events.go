@@ -23,6 +23,14 @@ type ListEventsArgs struct {
 	Namespace string `json:"namespace"`
 	Reason    string `json:"reason,omitempty"`
 	Kind      string `json:"involved_kind,omitempty"`
+	// ClusterID, RRID and SessionID are ambient hints the LLM propagates from
+	// fleet context and cross-phase preservation (#2364 Tier 2: fleet triage
+	// naturally scopes events per-cluster, unlike kubectl_get/list which
+	// already declare cluster_id). Tolerated here so strict ADK schema
+	// validation does not kill the turn; ignored by the handler.
+	ClusterID string `json:"cluster_id,omitempty"`
+	RRID      string `json:"rr_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // EventSummary is a compact view of a Kubernetes Event.

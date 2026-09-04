@@ -58,6 +58,12 @@ type DiscoverWorkflowsArgs struct {
 	RRID       string `json:"rr_id"`
 	WorkflowID string `json:"workflow_id,omitempty"`
 	Kind       string `json:"kind,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364). Tolerated here so strict
+	// ADK schema validation does not kill the turn; ignored by the handler,
+	// which keys everything off RRID.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // WorkflowDetail holds a workflow definition with its parameter schemas.
@@ -76,6 +82,11 @@ type TargetInfo struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace"`
+	// ClusterID scopes the target to a fleet cluster (#2364): strict ADK
+	// validation rejects unknown nested properties, so spoke-scoped targets
+	// must declare it. Ignored by consumers, which read cluster identity from
+	// server-side RRContext.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // DiscoverWorkflowsResult is the output of kubernaut_discover_workflows.
@@ -260,6 +271,12 @@ type SelectWorkflowArgs struct {
 	Name       string         `json:"name,omitempty"`
 	Namespace  string         `json:"namespace,omitempty"`
 	Parameters map[string]any `json:"parameters,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364). Tolerated here so strict
+	// ADK schema validation does not kill the turn; ignored by the handler,
+	// which keys everything off RRID.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // SelectWorkflowResult is the output of kubernaut_select_workflow.
@@ -367,6 +384,12 @@ type RCAData struct {
 	// enforceGroundingGuard) rather than relying on the LLM to supply them.
 	ToolCallsCount int `json:"tool_calls_count,omitempty"`
 	LLMTurns       int `json:"llm_turns,omitempty"`
+	// ClusterID is an ambient hint the LLM propagates from fleet context
+	// (#2364): spoke-scoped RCA must validate. Tolerated here so strict ADK
+	// schema validation (which rejects unknown nested properties too) does not
+	// kill the turn; ignored by consumers, which read cluster identity from
+	// server-side RRContext.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // #2110 (v1.6 clone #2111): defense-in-depth only -- production code paths
@@ -393,6 +416,14 @@ type PresentDecisionArgs struct {
 	Options        []WorkflowOption `json:"options"`
 	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
 	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
+	// ClusterID and RRID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364, recurrence of the
+	// #2073/#2074 failure class). Tolerated here so strict ADK schema
+	// validation does not kill the turn; ignored by HandlePresentDecision,
+	// which keys everything off SessionID, and by the artifact path, which
+	// merges authoritative cluster identity from RRContext.
+	ClusterID string `json:"cluster_id,omitempty"`
+	RRID      string `json:"rr_id,omitempty"`
 }
 
 // WorkflowOption represents a remediation workflow choice.
@@ -447,6 +478,12 @@ type CompleteNoActionArgs struct {
 	RRID             string `json:"rr_id"`
 	Reason           string `json:"reason,omitempty"`
 	EscalationReason string `json:"escalation_reason,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364 Tier 2). Tolerated here so
+	// strict ADK schema validation does not kill the turn; ignored by the
+	// handler, which keys everything off RRID.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // CompleteNoActionResult is the output of kubernaut_complete_no_action.
