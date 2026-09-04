@@ -149,15 +149,16 @@ func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
 			return tools.NewInvestigateMCPTool(&tools.InvestigateConfig{
-				MCPClient:    dedicatedC,
-				Client:       cfg.TypedClient,
-				Namespace:    cfg.Namespace,
-				Auditor:      cfg.Auditor,
-				Registry:     cfg.InvestigationRegistry,
-				Pool:         cfg.Pool,
-				Signaler:     buildAgentISSignaler(cfg),
-				Triager:      cfg.Triager,
-				ScopeChecker: cfg.ScopeChecker,
+				MCPClient:     dedicatedC,
+				Client:        cfg.TypedClient,
+				Namespace:     cfg.Namespace,
+				Auditor:       cfg.Auditor,
+				Registry:      cfg.InvestigationRegistry,
+				Pool:          cfg.Pool,
+				Signaler:      buildAgentISSignaler(cfg),
+				Triager:       cfg.Triager,
+				ScopeChecker:  cfg.ScopeChecker,
+				ClusterLister: cfg.ClusterRegistry,
 			}, cfg.RESTMapper)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
@@ -194,7 +195,7 @@ func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
 		}},
 		{"remediate", func() (tool.Tool, error) {
-			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor, cfg.ScopeChecker)
+			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor, cfg.ScopeChecker, cfg.ClusterRegistry)
 		}},
 	}
 }
@@ -224,6 +225,7 @@ func alertToolConstructors(cfg AgentConfig) []toolConstructor {
 				Mapper:             cfg.RESTMapper,
 				Signaler:           buildAlertISSignaler(cfg),
 				ScopeChecker:       cfg.ScopeChecker,
+				ClusterLister:      cfg.ClusterRegistry,
 			})
 		}},
 	}

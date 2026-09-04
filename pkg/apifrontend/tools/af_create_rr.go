@@ -40,6 +40,9 @@ type ToolDeps struct {
 	// backward-compatible: scope validation is skipped (matches Triager's
 	// own nil-safe convention above).
 	ScopeChecker scope.ScopeChecker
+	// ClusterLister names known fleet clusters for the unattributed-refusal
+	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
+	ClusterLister ClusterLister
 }
 
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
@@ -229,7 +232,7 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 	// triage round-trip and an RR CRD create/delete cycle.
 	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, scope.ResourceIdentity{
 		ClusterID: args.ClusterID, Namespace: args.Namespace, Kind: args.Kind, Name: args.Name,
-	}); !managed {
+	}, d.ClusterLister); !managed {
 		return CreateRRResult{}, fmt.Errorf("%w: %s", ErrResourceNotManaged, msg)
 	}
 

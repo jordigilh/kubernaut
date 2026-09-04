@@ -132,7 +132,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 	Describe("NewRemediateTool — tool constructor (F-06)", func() {
 		It("UT-AF-1332-009: creates tool with name kubernaut_remediate", func() {
 			tc := newTypedFakeClient()
-			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil, nil)
+			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_remediate"))
 		})

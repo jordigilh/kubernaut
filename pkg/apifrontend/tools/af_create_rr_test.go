@@ -25,6 +25,7 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
@@ -34,6 +35,17 @@ const (
 	kubernautSystem = "kubernaut-system"
 	production      = "production"
 )
+
+// stubClusterLister is a one-method tools.ClusterLister fake for #2362 specs.
+type stubClusterLister struct{ ids []string }
+
+func (s stubClusterLister) List() []registry.ClusterInfo {
+	infos := make([]registry.ClusterInfo, 0, len(s.ids))
+	for _, id := range s.ids {
+		infos = append(infos, registry.ClusterInfo{ID: id})
+	}
+	return infos
+}
 
 type noopPromClient struct{}
 
@@ -1108,6 +1120,101 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(rec.events[0].Detail["namespace"]).To(Equal("prod"))
 			Expect(rec.events[0].Detail["kind"]).To(Equal("Deployment"))
 			Expect(rec.events[0].Detail["name"]).To(Equal("web"))
+		})
+	})
+
+	// Issue #2362: fleet-enabled + unattributed scope checks must refuse with
+	// cluster attribution guidance (AC-3 fail-closed) instead of assuming
+	// local and misreporting the resource as unmanaged.
+	Describe("ScopeChecker fleet-attribution refusal (#2362)", func() {
+		It("UT-AF-2362-001: fleet + empty cluster + local miss rejects naming known clusters, not the managed label", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:        tc,
+				ControllerNS:  kubernautSystem,
+				Triager:       defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker:  &mocks.NeverManagedScopeChecker{},
+				ClusterLister: stubClusterLister{ids: []string{"remote-cluster"}},
+			}, &tools.CreateRRArgs{
+				Namespace: "demo-checkout", Kind: "Pod", Name: "worker-1",
+				Description: "unattributed spoke resource", APIVersion: "v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue(),
+				"AC-3: an unattributed scope miss must still fail closed")
+			Expect(err.Error()).To(ContainSubstring("remote-cluster"))
+			Expect(err.Error()).To(ContainSubstring("cluster_id"))
+			Expect(err.Error()).NotTo(ContainSubstring("Add label kubernaut.ai/managed=true"),
+				"the label lecture misleads when the label may already exist on a spoke")
+		})
+
+		It("UT-AF-2362-002: nil lister keeps the legacy local message byte-for-byte", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: &mocks.NeverManagedScopeChecker{},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "unmanaged, no fleet", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("(cluster=local)"))
+			Expect(err.Error()).To(ContainSubstring("Add label kubernaut.ai/managed=true"))
+		})
+
+		It("UT-AF-2362-003: explicit cluster_id keeps the cluster-scoped message unchanged", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:        tc,
+				ControllerNS:  kubernautSystem,
+				Triager:       defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker:  &mocks.NeverManagedScopeChecker{},
+				ClusterLister: stubClusterLister{ids: []string{"remote-cluster"}},
+			}, &tools.CreateRRArgs{
+				Namespace: "demo-checkout", Kind: "Pod", Name: "worker-1",
+				Description: "explicit remote miss", APIVersion: "v1", ClusterID: "remote-cluster",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("(cluster=remote-cluster)"))
+		})
+
+		It("UT-AF-2362-004: the attribution refusal still emits EventRRScopeRejected (AU-2/AU-12)", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:        tc,
+				ControllerNS:  kubernautSystem,
+				Triager:       defaultTestTriager("prod", "Deployment", "web"),
+				Auditor:       rec,
+				ScopeChecker:  &mocks.NeverManagedScopeChecker{},
+				ClusterLister: stubClusterLister{ids: []string{"remote-cluster"}},
+			}, &tools.CreateRRArgs{
+				Namespace: "demo-checkout", Kind: "Pod", Name: "worker-1",
+				Description: "unattributed with auditor", APIVersion: "v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(rec.events).To(HaveLen(1))
+			Expect(rec.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+		})
+
+		It("UT-AF-2362-005: local hit with empty cluster proceeds despite a lister being present", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:        tc,
+				ControllerNS:  kubernautSystem,
+				Triager:       defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker:  &mocks.AlwaysManagedScopeChecker{},
+				ClusterLister: stubClusterLister{ids: []string{"remote-cluster"}},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "managed locally", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).To(HavePrefix("rr-"))
 		})
 	})
 
