@@ -137,8 +137,17 @@ var _ = Describe("Late-Subscribe Event Replay — AA/AF Interactive-Upgrade Race
 
 	Describe("UT-KA-1811-003: already-working case (sink active before emission) is unaffected", func() {
 		It("delivers events live with no duplication when Subscribe happens before the goroutine emits", func() {
+			// Gate emission on Subscribe by construction: Launch runs the
+			// worker async, so without this the worker can finish (terminal +
+			// closed channel, no eventChan ever created) before Subscribe runs
+			// and Subscribe correctly returns ErrSessionTerminal -- a load-
+			// dependent flake (CI failure: "session is in terminal state"),
+			// not a product bug. Holding the worker until the sink is
+			// attached is exactly the ordering this spec intends to cover.
+			emitGate := make(chan struct{})
 			pendingID, err := mgr.StartInteractiveSession(context.Background(),
 				func(ctx context.Context) (*katypes.InvestigationResult, error) {
+					<-emitGate
 					session.EmitEvent(ctx, session.InvestigationEvent{Type: session.EventTypeReasoningDelta, Turn: 0})
 					return &katypes.InvestigationResult{RCASummary: "ok"}, nil
 				},
@@ -150,6 +159,7 @@ var _ = Describe("Late-Subscribe Event Replay — AA/AF Interactive-Upgrade Race
 
 			eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 			Expect(subErr).NotTo(HaveOccurred())
+			close(emitGate)
 
 			var received []session.InvestigationEvent
 			for evt := range eventCh {
