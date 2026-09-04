@@ -489,6 +489,9 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeco
 	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then run the scenario:")
 	_, _ = fmt.Fprintf(writer, "    export HUB_KUBECONFIG=%s\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "    export SPOKE_KUBECONFIG=%s\n", remoteKubeconfigPath)
+	_, _ = fmt.Fprintln(writer, "\n  Clone the demo scenarios repo:")
+	_, _ = fmt.Fprintln(writer, "    git clone https://github.com/kubernaut/kubernaut-demo-scenarios.git")
+	_, _ = fmt.Fprintln(writer, "    cd kubernaut-demo-scenarios https://github.com/kubernaut/kubernaut-demo-scenarios.git")
 	if opts.Autonomous {
 		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
 		_, _ = fmt.Fprintln(writer, "  (Gateway enabled: Kubernaut detects and remediates automatically.)")
