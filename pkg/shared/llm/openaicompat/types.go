@@ -58,6 +58,12 @@ type ToolDefinition struct {
 	Parameters  json.RawMessage
 }
 
+// ToolChoice forces a named function call when set. A nil choice preserves
+// the provider's default automatic tool selection behavior.
+type ToolChoice struct {
+	Name string
+}
+
 // TokenUsage tracks token consumption for a single call.
 type TokenUsage struct {
 	PromptTokens     int
@@ -70,6 +76,7 @@ type Request struct {
 	Model          string
 	Messages       []Message
 	Tools          []ToolDefinition
+	ToolChoice     *ToolChoice
 	Temperature    *float64
 	TopP           *float64
 	MaxTokens      int
