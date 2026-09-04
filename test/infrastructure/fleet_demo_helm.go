@@ -474,10 +474,17 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeco
 		_, _ = fmt.Fprintln(writer, "  Console to investigate. Re-run with -autonomous to see it happen on its own.")
 	}
 	_, _ = fmt.Fprintln(writer, "\n  To run a kubernaut-demo-scenarios scenario in fleet mode (hub+spoke split")
-	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then pass --fleet to run.sh:")
+	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then run the scenario:")
 	_, _ = fmt.Fprintf(writer, "    export HUB_KUBECONFIG=%s\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "    export SPOKE_KUBECONFIG=%s\n", remoteKubeconfigPath)
-	_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
+	if opts.Autonomous {
+		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
+		_, _ = fmt.Fprintln(writer, "  (Gateway enabled: Kubernaut detects and remediates automatically.)")
+	} else {
+		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet --alert-only")
+		_, _ = fmt.Fprintln(writer, "  (--alert-only fires the alert and stops: investigate it yourself in")
+		_, _ = fmt.Fprintln(writer, "  Console. Drop --alert-only with -autonomous for full auto-remediation.)")
+	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
