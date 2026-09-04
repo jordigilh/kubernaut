@@ -133,6 +133,15 @@ func knownRemoteClusterIDs(lister ClusterLister) []string {
 
 func emitScopeRejected(ctx context.Context, auditor audit.Emitter, username string, target scope.ResourceIdentity, detail map[string]string) {
 	if auditor == nil {
+		// No emitter to record the refusal -- fail LOUD rather than silent:
+		// audit traces are not optional, so an unaudited denial is logged at
+		// error level with the full refusal context. (Deliberately not a
+		// behavior change: nil-auditor nil-safe convention is pervasive
+		// across the tool layer and production always wires a real emitter;
+		// fail-closed denial itself never depends on the auditor.)
+		logr.FromContextOrDiscard(ctx).Error(nil, "scope refusal emitted without auditor -- no audit trace recorded",
+			"user", username, "namespace", target.Namespace, "kind", target.Kind,
+			"name", target.Name, "cluster", target.ClusterID, "detail", detail)
 		return
 	}
 	auditor.Emit(ctx, &audit.Event{
