@@ -50,6 +50,7 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 		ActiveContextRegistry: d.ActiveCtxRegistry,
 		RESTMapper:            d.Backends.Mapper,
 		ScopeChecker:          d.Backends.ScopeChecker,
+		ClusterLister:         d.Backends.FleetClusterRegistry,
 	}
 
 	h, err := handler.NewMCPHandler(handler.MCPConfig{

@@ -91,6 +91,9 @@ type MCPBridgeConfig struct {
 	// outside Kubernaut's management scope (ADR-053; #2025, main-tracking
 	// clone of #2022). Nil skips scope validation (backward compat).
 	ScopeChecker scope.ScopeChecker
+	// ClusterLister names known fleet clusters for the unattributed-refusal
+	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
+	ClusterLister tools.ClusterLister
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -244,15 +247,16 @@ func registerInvestigationTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semap
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
 			ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
 			return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
-				MCPClient:    dedicatedClient,
-				Client:       cfg.TypedClient,
-				Namespace:    cfg.Namespace,
-				Auditor:      cfg.Auditor,
-				Registry:     cfg.InvestigationRegistry,
-				OnStarted:    onInvestigateStarted,
-				Signaler:     isSignaler,
-				Triager:      cfg.Triager,
-				ScopeChecker: cfg.ScopeChecker,
+				MCPClient:     dedicatedClient,
+				Client:        cfg.TypedClient,
+				Namespace:     cfg.Namespace,
+				Auditor:       cfg.Auditor,
+				Registry:      cfg.InvestigationRegistry,
+				OnStarted:     onInvestigateStarted,
+				Signaler:      isSignaler,
+				Triager:       cfg.Triager,
+				ScopeChecker:  cfg.ScopeChecker,
+				ClusterLister: cfg.ClusterLister,
 			}, args, false, "")
 		})
 }
