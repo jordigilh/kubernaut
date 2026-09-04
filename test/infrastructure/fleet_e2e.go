@@ -749,6 +749,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.tokenURL=%s\n", fleetOpts.OAuth2TokenURL)
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.credentialsSecretRef=%s\n", fleetOpts.OAuth2CredentialsSecret)
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.scopes=%v\n", fleetOpts.OAuth2Scopes)
+	if fleetOpts.ImageTag != "" {
+		_, _ = fmt.Fprintf(writer, "    global.image.tag=%v\n", fleetOpts.ImageTag)
+	}
 	_, _ = fmt.Fprintf(writer, "    workflowexecution.fleet.oauth2.credentialsSecretRef=%s\n", fleetOpts.WEOAuth2CredentialsSecret)
 	_, _ = fmt.Fprintf(writer, "    signalprocessing.fleet.namespace=%s\n", fleetOpts.SignalProcessingNamespace)
 	_, _ = fmt.Fprintf(writer, "    fleetmetadatacache.namespace=%s\n", fleetOpts.FleetMetadataCacheNamespace)
@@ -774,6 +777,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet")
 	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.audience=kubernaut-apifrontend (required; else AF 401s every token, issue #2352)")
 	_, _ = fmt.Fprintln(writer, "    console.enabled=true, console.ingress.className=traefik,")
 	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local, console.ingress.port=8843")
 	_, _ = fmt.Fprintln(writer, "    Add to /etc/hosts:  127.0.0.1 keycloak kubernaut-console.local")

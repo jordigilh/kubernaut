@@ -17,6 +17,8 @@ limitations under the License.
 package infrastructure
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -28,6 +30,11 @@ import (
 // the exec.Command call itself and BindFleetAFPersonaRBAC aren't unit-testable
 // (same as the existing E2E helpers), verified manually against a live Kind
 // cluster instead.
+
+// helmSetFlag is the helm arg separator preceding every rendered value in the
+// builders under test. A const (not a literal) so goconst stays quiet as the
+// prefix-assertion loops below multiply.
+const helmSetFlag = "--set"
 
 var _ = Describe("FleetDemoHelmOptions.Validate", func() {
 	DescribeTable("reporting every missing required LLM flag in one pass",
@@ -56,6 +63,38 @@ var _ = Describe("FleetDemoHelmOptions.Validate", func() {
 				LLMProvider: "openai_compatible",
 				LLMModel:    "gpt-4o",
 			}, true, []string{"-llm-endpoint"}),
+		Entry("UT-INFRA-FLEETDEMO-038: vertex_ai without project/location reports both flags",
+			FleetDemoHelmOptions{
+				LLMProvider: "vertex_ai",
+				LLMModel:    "claude-haiku-4-5@20251001",
+				LLMEndpoint: "https://us-central1-aiplatform.googleapis.com",
+			}, true, []string{"-vertex-project", "-vertex-location"}),
+		Entry("UT-INFRA-FLEETDEMO-039: vertex_ai with project/location passes",
+			FleetDemoHelmOptions{
+				LLMProvider:    "vertex_ai",
+				LLMModel:       "claude-haiku-4-5@20251001",
+				LLMEndpoint:    "https://us-central1-aiplatform.googleapis.com",
+				VertexProject:  "my-gcp-project",
+				VertexLocation: "us-central1",
+			}, false, nil),
+		Entry("UT-INFRA-FLEETDEMO-040: non-vertex provider without project/location passes",
+			FleetDemoHelmOptions{
+				LLMProvider: "openai_compatible",
+				LLMModel:    "gpt-4o",
+				LLMEndpoint: "https://api.openai.com/v1",
+			}, false, nil),
+		Entry("UT-INFRA-FLEETDEMO-043: vertex_ai without endpoint passes (endpoint derived from project/location, issue #2355)",
+			FleetDemoHelmOptions{
+				LLMProvider:    "vertex_ai",
+				LLMModel:       "claude-haiku-4-5@20251001",
+				VertexProject:  "my-gcp-project",
+				VertexLocation: "us-central1",
+			}, false, nil),
+		Entry("UT-INFRA-FLEETDEMO-044: openai_compatible without endpoint still fails",
+			FleetDemoHelmOptions{
+				LLMProvider: "openai_compatible",
+				LLMModel:    "gpt-4o",
+			}, true, []string{"-llm-endpoint"}),
 	)
 })
 
@@ -79,6 +118,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			OAuth2Scopes:                []string{"fleet.read", "fleet.write"},
 			SignalProcessingNamespace:   "kubernaut-system",
 			FleetMetadataCacheNamespace: "kubernaut-system",
+			ImageTag:                    "latest",
 		})
 		Expect(args).To(ContainElements(
 			"--set", "global.fleet.enabled=true",
@@ -92,13 +132,14 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			"--set", "global.fleet.oauth2.scopes[1]=fleet.write",
 			"--set", "signalprocessing.fleet.namespace=kubernaut-system",
 			"--set", "fleetmetadatacache.namespace=kubernaut-system",
+			"--set", "global.image.tag=latest",
 		))
 	})
 
 	It("UT-INFRA-FLEETDEMO-032: omits signalprocessing.fleet.namespace when empty (cluster-wide watch)", func() {
 		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{FleetMetadataCacheNamespace: "kubernaut-system"})
 		for i, a := range args {
-			if a == "--set" && i+1 < len(args) {
+			if a == helmSetFlag && i+1 < len(args) {
 				Expect(args[i+1]).NotTo(HavePrefix("signalprocessing.fleet.namespace="))
 			}
 		}
@@ -107,6 +148,15 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 	It("UT-INFRA-FLEETDEMO-033: always sets fleetmetadatacache.namespace, even when empty (Issue #2298: no safe default)", func() {
 		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{})
 		Expect(args).To(ContainElements("--set", "fleetmetadatacache.namespace="))
+	})
+
+	It("UT-INFRA-FLEETDEMO-035: omits global.image.tag when ImageTag is empty (a trailing empty --set would clobber the demo override, helm last-wins)", func() {
+		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{FleetMetadataCacheNamespace: "kubernaut-system"})
+		for i, a := range args {
+			if a == helmSetFlag && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.image.tag="))
+			}
+		}
 	})
 })
 
@@ -180,6 +230,69 @@ var _ = Describe("buildFleetDemoHelmArgs", func() {
 		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements(
 			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet",
+		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-036: omits global.image.tag when ImageTag is empty (chart falls back to .Chart.AppVersion)", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		for i, a := range args {
+			if a == helmSetFlag && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.image.tag="))
+			}
+		}
+	})
+
+	It("UT-INFRA-FLEETDEMO-037: sets exactly one global.image.tag when ImageTag is provided (no trailing empty duplicate)", func() {
+		opts := baseOpts
+		opts.ImageTag = "demo-v1.0"
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+		var tags []string
+		for i, a := range args {
+			if a == "--set" && i+1 < len(args) && strings.HasPrefix(args[i+1], "global.image.tag=") {
+				tags = append(tags, args[i+1])
+			}
+		}
+		Expect(tags).To(Equal([]string{"global.image.tag=demo-v1.0"}))
+	})
+
+	It("UT-INFRA-FLEETDEMO-041: omits vertexProject/vertexLocation --set when empty (non-Vertex providers)", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		for i, a := range args {
+			if a == helmSetFlag && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.llmProfiles.primary.vertexProject="))
+				Expect(args[i+1]).NotTo(HavePrefix("global.llmProfiles.primary.vertexLocation="))
+			}
+		}
+	})
+
+	It("UT-INFRA-FLEETDEMO-042: sets vertexProject/vertexLocation --set when provided (BR-PLATFORM-014 Vertex AI demo)", func() {
+		opts := baseOpts
+		opts.VertexProject = "my-gcp-project"
+		opts.VertexLocation = "us-central1"
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+		Expect(args).To(ContainElements(
+			"--set", "global.llmProfiles.primary.vertexProject=my-gcp-project",
+			"--set", "global.llmProfiles.primary.vertexLocation=us-central1",
+		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-045: omits the endpoint --set when empty (vertex_ai derives it; issue #2355)", func() {
+		opts := baseOpts
+		opts.LLMEndpoint = ""
+		opts.VertexProject = "my-gcp-project"
+		opts.VertexLocation = "us-central1"
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+		for i, a := range args {
+			if a == helmSetFlag && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.llmProfiles.primary.endpoint="))
+			}
+		}
+	})
+
+	It("UT-INFRA-FLEETDEMO-034: sets apifrontend.config.auth.audience to kubernaut-apifrontend (issue #2352, else AF 401s every console token -> 'Unable to Verify Access')", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		Expect(args).To(ContainElements(
+			"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
 		))
 	})
 

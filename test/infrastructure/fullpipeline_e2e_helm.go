@@ -323,6 +323,8 @@ type FleetHelmOptions struct {
 	// without it, so callers MUST set this whenever FleetHelmOptions is
 	// non-nil (FMC is chart-managed and effectively enabled in that case).
 	FleetMetadataCacheNamespace string
+
+	ImageTag string
 }
 
 // buildFleetOAuth2HelmArgs renders the global.fleet.*/workflowexecution.fleet.*/
@@ -365,6 +367,12 @@ func buildFleetOAuth2HelmArgs(fleetOpts *FleetHelmOptions) []string {
 	// is set unconditionally here, unlike SignalProcessingNamespace above
 	// (which may legitimately watch cluster-wide).
 	args = append(args, "--set", "fleetmetadatacache.namespace="+fleetOpts.FleetMetadataCacheNamespace)
+	if fleetOpts.ImageTag != "" {
+		// Optional tag override only: an unconditional empty --set here would
+		// clobber an earlier global.image.tag (helm --set is last-wins),
+		// silently forcing the chart's .Chart.AppVersion fallback.
+		args = append(args, "--set", "global.image.tag="+fleetOpts.ImageTag)
+	}
 	return args
 }
 

@@ -963,11 +963,13 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, LLM_CREDENTIALS_FILE
-	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_ENDPOINT)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ]; then \
-		echo "❌ LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT, and LLM_CREDENTIALS_FILE are all required, e.g.:"; \
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai)
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
 		echo "     LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
+		echo "   make setup-fleet-demo-infra LLM_PROVIDER=vertex_ai LLM_MODEL=claude-haiku-4-5@20251001 \\"; \
+		echo "     LLM_CREDENTIALS_FILE=~/.config/gcloud/key.json VERTEX_PROJECT=my-project VERTEX_LOCATION=us-central1"; \
 		echo ""; \
 		echo "LLM_CREDENTIALS_FILE is a file holding your raw LLM credential (a plain API"; \
 		echo "key, or a JSON blob for vertex_ai) -- it becomes the llm-credentials-primary"; \
@@ -984,13 +986,16 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		-llm-model "$(LLM_MODEL)" \
 		-llm-endpoint "$(LLM_ENDPOINT)" \
 		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
-		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
-		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
-		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
-		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
-		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
-		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
-		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
+		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)" \ )
+		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)" \ )
+		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)" \ )
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS) \ )
+		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)" \ )
+		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)" \ )
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)" \ )
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)" \ )
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)" \ )
+		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)" \ )
 
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)
