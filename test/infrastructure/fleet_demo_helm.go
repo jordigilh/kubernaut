@@ -26,6 +26,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -138,6 +140,13 @@ type FleetDemoHelmOptions struct {
 	// emitted and the chart's kubernaut.image helper falls back to
 	// .Chart.AppVersion (global.image.tag defaults to "").
 	ImageTag string
+	// VertexProject/VertexLocation feed global.llmProfiles.primary.vertexProject
+	// / vertexLocation -- required by the chart when LLMProvider is vertex_ai
+	// (the provider hosts Claude/Gemini models and derives its endpoint from
+	// project/location). Empty for every other provider; no --set is emitted
+	// then, keeping non-Vertex renders unchanged.
+	VertexProject  string
+	VertexLocation string
 }
 
 // Validate reports every missing required flag in one error, so
@@ -151,8 +160,21 @@ func (o FleetDemoHelmOptions) Validate() error {
 	if o.LLMModel == "" {
 		missing = append(missing, "-llm-model")
 	}
-	if o.LLMEndpoint == "" {
+	// Endpoint is required for every provider except vertex_ai, whose
+	// endpoint is derived from project/location by the SDK (issue #2355) --
+	// mirrors the platform contract in pkg/shared/types LLMConfig
+	// validateProviderRequiredFields (endpoint required only for
+	// openai/openai_compatible).
+	if o.LLMEndpoint == "" && o.LLMProvider != sharedtypes.LLMProviderVertexAI {
 		missing = append(missing, "-llm-endpoint")
+	}
+	if o.LLMProvider == sharedtypes.LLMProviderVertexAI {
+		if o.VertexProject == "" {
+			missing = append(missing, "-vertex-project")
+		}
+		if o.VertexLocation == "" {
+			missing = append(missing, "-vertex-location")
+		}
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
@@ -180,7 +202,6 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--timeout", "8m",
 		"--set", "global.llmProfiles.primary.provider=" + opts.LLMProvider,
 		"--set", "global.llmProfiles.primary.model=" + opts.LLMModel,
-		"--set", "global.llmProfiles.primary.endpoint=" + opts.LLMEndpoint,
 		"--set", "global.llmProfiles.primary.credentialsSecretName=" + fleetDemoLLMSecretName,
 		"--set", fmt.Sprintf("gateway.enabled=%t", opts.Autonomous),
 		// Console: always on (BR-PLATFORM-014, Console-first default). Reuses
@@ -225,6 +246,14 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
 
+	if opts.LLMEndpoint != "" {
+		// Omitted when empty so vertex_ai installs carry no endpoint at all:
+		// every Vertex consumer derives it from project/location (or honors
+		// the SDK default), and an explicit empty --set would only obscure
+		// that (issue #2355). Same omit-when-empty pattern as ImageTag below.
+		args = append(args, "--set", "global.llmProfiles.primary.endpoint="+opts.LLMEndpoint)
+	}
+
 	if opts.ImageTag != "" {
 		// Optional tag override (global.image.tag, consumed by the chart's
 		// kubernaut.image helper). Deliberately omitted when empty so the
@@ -233,6 +262,13 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		// buildFleetOAuth2HelmArgs below anyway (helm --set is last-wins),
 		// which is why a provided override previously never took effect.
 		args = append(args, "--set", "global.image.tag="+opts.ImageTag)
+	}
+
+	if opts.VertexProject != "" {
+		args = append(args, "--set", "global.llmProfiles.primary.vertexProject="+opts.VertexProject)
+	}
+	if opts.VertexLocation != "" {
+		args = append(args, "--set", "global.llmProfiles.primary.vertexLocation="+opts.VertexLocation)
 	}
 
 	if opts.Autonomous {

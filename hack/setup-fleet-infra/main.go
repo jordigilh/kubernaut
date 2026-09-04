@@ -66,11 +66,13 @@ func main() {
 	autonomous := flag.Bool("autonomous", false, "enable Gateway (gateway.enabled=true) so demo alerts auto-remediate; default false is Console-first, so you drive the first investigation yourself")
 	llmProvider := flag.String("llm-provider", "", "required: global.llmProfiles.primary.provider (e.g. openai_compatible)")
 	llmModel := flag.String("llm-model", "", "required: global.llmProfiles.primary.model")
-	llmEndpoint := flag.String("llm-endpoint", "", "required: global.llmProfiles.primary.endpoint")
+	llmEndpoint := flag.String("llm-endpoint", "", "required except with -llm-provider=vertex_ai: global.llmProfiles.primary.endpoint (omit it for vertex_ai -- the Vertex endpoint is derived from -vertex-project/-vertex-location)")
 	llmCredentialsFile := flag.String("llm-credentials-file", "", "required: path to a file holding your LLM provider credentials (a plain API key, or a JSON blob for vertex_ai service-account/ADC credentials) -- written verbatim into the llm-credentials-primary Secret once the hub cluster exists, replacing the mock placeholder")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional: SignalProcessing Rego policy file (default: a built-in catch-all demo policy)")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional: AIAnalysis Rego policy file (default: a built-in policy that always requires human approval)")
 	imageTag := flag.String("image-tag", "", "optional: override the container image tag for the fleet demo chart (global.image.tag, e.g. -image-tag 1.6.0-rc9 to test a published image); when empty, the chart's kubernaut.image helper falls back to .Chart.AppVersion")
+	vertexProject := flag.String("vertex-project", "", "required with -llm-provider=vertex_ai: GCP project ID (global.llmProfiles.primary.vertexProject)")
+	vertexLocation := flag.String("vertex-location", "", "required with -llm-provider=vertex_ai: GCP region, e.g. us-central1 (global.llmProfiles.primary.vertexLocation)")
 	// sigs.k8s.io/controller-runtime/pkg/client/config's own init() unconditionally
 	// registers a "-kubeconfig" flag on flag.CommandLine the moment anything --
 	// direct or transitive -- imports it, which already happened here via the
@@ -101,13 +103,15 @@ func main() {
 	}
 
 	demoOpts := infrastructure.FleetDemoHelmOptions{
-		Autonomous:   *autonomous,
-		LLMProvider:  *llmProvider,
-		LLMModel:     *llmModel,
-		LLMEndpoint:  *llmEndpoint,
-		SPPolicyFile: *spPolicyFile,
-		AAPolicyFile: *aaPolicyFile,
-		ImageTag:     *imageTag,
+		Autonomous:     *autonomous,
+		LLMProvider:    *llmProvider,
+		LLMModel:       *llmModel,
+		LLMEndpoint:    *llmEndpoint,
+		SPPolicyFile:   *spPolicyFile,
+		AAPolicyFile:   *aaPolicyFile,
+		ImageTag:       *imageTag,
+		VertexProject:  *vertexProject,
+		VertexLocation: *vertexLocation,
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
