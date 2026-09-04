@@ -452,7 +452,12 @@ paths against the same hub+spoke topology. Whether an individual `RemediationReq
 resolves to the hub or a spoke is driven entirely by
 `RemediationRequest.spec.clusterID` (SignalProcessing's `ClusterClassification`, or an
 explicit `cluster_id` in an interactive chat message) — independent of which path
-created it.
+created it. In fleet mode an interactive call *without* `cluster_id` whose target
+isn't hub-managed is refused outright (it names the known clusters instead of
+guessing) — see Issue #2362. For this to work end to end, every alerting rule
+must carry a static `cluster:` label: AlertManager groups by alertname, so the
+label never reaches Gateway/audit common labels otherwise, and Thanos does not
+propagate external labels to fired alert instances.
 
 ---
 
