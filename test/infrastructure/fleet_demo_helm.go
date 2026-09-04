@@ -242,6 +242,18 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		// uses it for browser-JWT JWKS validation (same host:port, unlike
 		// the FP suite's separate DEX-on-5556 case).
 		"--set", "networkPolicies.idp.port=8443",
+		// AF alert tools (list_alerts/get_alert_details/kubernaut_investigate_alert)
+		// only register when the chart renders severityTriage.enabled=true with
+		// a prometheusURL, which requires monitoring.prometheus.enabled=true.
+		// Without these, AF runs triage-disabled and Console reports alert
+		// querying as unconfigured -- even though the fleet monitoring stack
+		// below is already running. Matches the manual values printed by
+		// SetupFleetCoreInfrastructureWithGateway. Thanos Querier (not plain
+		// Prometheus) so alerts are fleet-wide (hub+spoke, ADR-068).
+		"--set", "monitoring.prometheus.enabled=true",
+		"--set", "monitoring.prometheus.url=http://thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local:9090",
+		"--set", "monitoring.alertManager.enabled=true",
+		"--set", "monitoring.alertManager.url=http://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093",
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
