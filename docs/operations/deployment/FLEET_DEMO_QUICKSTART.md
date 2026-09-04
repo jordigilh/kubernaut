@@ -41,6 +41,24 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
+For Claude on Vertex AI instead, point the credential file at a GCP
+service-account key JSON and pass the Vertex project/location (required with
+`LLM_PROVIDER=vertex_ai`; the endpoint is the regional host — the Vertex
+endpoint itself is derived from project/location):
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=vertex_ai \
+  LLM_MODEL=claude-haiku-4-5@20251001 \
+  LLM_CREDENTIALS_FILE=~/.config/gcloud/kubernaut-fleet-demo-vertexai-key.json \
+  VERTEX_PROJECT=<GCP_PROJECT_ID> \
+  VERTEX_LOCATION=us-central1
+```
+
+No `LLM_ENDPOINT`: every Vertex consumer derives the endpoint from
+project/location (or honors the SDK default), so the flag is not required
+with `LLM_PROVIDER=vertex_ai` (issue #2355).
+
 This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
 and fleet-wide monitoring; once the hub cluster exists, it writes
 `LLM_CREDENTIALS_FILE`'s contents into the `llm-credentials-primary` Secret (there's no
