@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,8 +63,18 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 	})
 
-	AfterEach(func() {
-		if testNamespace != "" {
+	AfterEach(func(specCtx SpecContext) {
+		if testNamespace == "" {
+			testCancel()
+			return
+		}
+		if specCtx.SpecReport().Failed() {
+			// The namespace is deleted below on success, and must-gather
+			// only covers fixed namespaces -- so without this dump a wait
+			// timeout leaves zero pod-level evidence in the CI log.
+			dumpCrashLoopDiagnostics(testNamespace)
+			GinkgoWriter.Printf("  ⚠️ spec failed: preserving namespace %s for triage (skipped AfterEach delete)\n", testNamespace)
+		} else {
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 			_ = k8sClient.Delete(ctx, ns)
 		}
@@ -142,3 +153,47 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 		})
 	})
 })
+
+// dumpCrashLoopDiagnostics lists the workload objects in a failed spec's test
+// namespace and renders them to the Ginkgo log. Called from AfterEach only
+// when the spec failed (the namespace is deleted on success and must-gather
+// never covers fp-e2e-* namespaces, so this is the only pod-level evidence a
+// recurrence leaves behind).
+func dumpCrashLoopDiagnostics(testNamespace string) {
+	listCtx := context.Background()
+
+	pods := &corev1.PodList{}
+	if err := apiReader.List(listCtx, pods, client.InNamespace(testNamespace),
+		client.MatchingLabels{"app": infrastructure.CrashLoopAppName}); err != nil {
+		GinkgoWriter.Printf("  diagnostics namespace=%s: pod list failed: %v\n", testNamespace, err)
+	} else {
+		GinkgoWriter.Printf("%s", infrastructure.SummarizePodsForDiagnostics(testNamespace, pods))
+	}
+
+	deps := &appsv1.DeploymentList{}
+	if err := apiReader.List(listCtx, deps, client.InNamespace(testNamespace)); err != nil {
+		GinkgoWriter.Printf("  diagnostics namespace=%s: deployment list failed: %v\n", testNamespace, err)
+	}
+	for _, d := range deps.Items {
+		GinkgoWriter.Printf("  diagnostics deployment=%s replicas=%d available=%d updated=%d\n",
+			d.Name, derefInt32CrashLoop(d.Spec.Replicas),
+			d.Status.AvailableReplicas, d.Status.UpdatedReplicas)
+	}
+
+	rss := &appsv1.ReplicaSetList{}
+	if err := apiReader.List(listCtx, rss, client.InNamespace(testNamespace)); err != nil {
+		GinkgoWriter.Printf("  diagnostics namespace=%s: replicaset list failed: %v\n", testNamespace, err)
+	}
+	for _, rs := range rss.Items {
+		GinkgoWriter.Printf("  diagnostics replicaset=%s replicas=%d ready=%d available=%d\n",
+			rs.Name, derefInt32CrashLoop(rs.Spec.Replicas),
+			rs.Status.ReadyReplicas, rs.Status.AvailableReplicas)
+	}
+}
+
+func derefInt32CrashLoop(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
