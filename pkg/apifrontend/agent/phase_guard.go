@@ -444,7 +444,10 @@ func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
 		logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
 	}
-	if err := state.Set(session.StateKeyPresentationRequired, true); err != nil {
+	// Consent-gated discovery is an intentional user checkpoint. Only the
+	// autonomous path requires AF to recover a model narration into the final
+	// presentation artifact without waiting for another user turn.
+	if err := state.Set(session.StateKeyPresentationRequired, !blocked); err != nil {
 		logger.Error(err, "phase-guard failed to persist presentation_required state")
 	}
 	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
