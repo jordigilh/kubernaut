@@ -70,6 +70,13 @@ const (
 	// from a prior RemediationRequest.
 	StateKeyDiscoverWorkflowsSucceeded = "af_discover_workflows_succeeded"
 
+	// StateKeyPresentationRequired marks the narrow recovery window after
+	// discovery when the model must emit the structured decision artifact.
+	StateKeyPresentationRequired = "af_presentation_required"
+
+	// StateKeyPresentationRecoveryCount bounds corrective presentation turns.
+	StateKeyPresentationRecoveryCount = "af_presentation_recovery_count"
+
 	// StateKeyGroundedContentAvailable records whether the most recent
 	// kubernaut_investigate call produced real, groundable RCA content
 	// (#2047, main clone of #2023). phase_guard.go's harness-enforced

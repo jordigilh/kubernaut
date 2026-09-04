@@ -130,6 +130,48 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 		Expect(events).To(HaveLen(2), "both the original and reinvoked turn's events must be yielded")
 	})
 
+	It("IT-AF-2365-002 (AU-3, SI-4): exhausts presentation recovery through the terminalizer", func() {
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(context.Background(), "setup-2365")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:              true,
+			session.StateKeyPhase3Blocked:             true,
+			session.StateKeyPresentationRequired:      true,
+			session.StateKeyPresentationRecoveryCount: 0,
+			session.StateKeyActiveRRID:                "rr-2365",
+		}
+		Expect(sessionSvc.AppendEvent(context.Background(), createResp.Session, setup)).To(Succeed())
+
+		fake := &scriptedRunner{
+			sessionSvc: sessionSvc,
+			responses: []*adksession.Event{
+				textOnlyModelEvent("inv-2365-1", "I have selected the workflow."),
+				textOnlyModelEvent("inv-2365-2", "The workflow is ready."),
+				textOnlyModelEvent("inv-2365-3", "Let me submit the result."),
+			},
+		}
+		var escalatedRR string
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil,
+			func(_ context.Context, rrID string) error {
+				escalatedRR = rrID
+				return nil
+			})
+
+		var terminalErr error
+		for _, runErr := range rr.Run(context.Background(), "user-1", "sess-2365", genai.NewContentFromText("investigate and fix", genai.RoleUser), agent.RunConfig{}) {
+			if runErr != nil {
+				terminalErr = runErr
+			}
+		}
+		Expect(terminalErr).To(MatchError(ContainSubstring("presentation recovery exhausted")))
+		Expect(escalatedRR).To(Equal("rr-2365"))
+		Expect(fake.calls).To(HaveLen(3))
+	})
+
 	It("UT-AF-REINV-003: Run() does NOT re-invoke when last event has a tool call", func() {
 		sessionSvc := adksession.InMemoryService()
 		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{

@@ -238,6 +238,27 @@ var _ = Describe("Re-invocation Fallback", func() {
 			"a genuinely stalled mid-investigation turn (driver active, no checkpoint gate) must still be nudged")
 	})
 
+	It("UT-AF-2365-001 (SI-4): recovers after discovery even when phase 3 is blocked", func() {
+		events := getEvents(textEvent())
+		state := newFakeState(map[string]any{
+			session.StateKeyDriverActive:              true,
+			session.StateKeyPhase3Blocked:             true,
+			session.StateKeyPresentationRequired:      true,
+			session.StateKeyPresentationRecoveryCount: 0,
+		})
+		Expect(session.NeedsReinvocation(v1alpha1.SessionPhaseActive, events, state, 0)).To(BeTrue())
+	})
+
+	It("UT-AF-2365-002 (SI-4): stops after bounded presentation recovery", func() {
+		events := getEvents(textEvent())
+		state := newFakeState(map[string]any{
+			session.StateKeyDriverActive:              true,
+			session.StateKeyPresentationRequired:      true,
+			session.StateKeyPresentationRecoveryCount: session.MaxPresentationRecoveries,
+		})
+		Expect(session.NeedsReinvocation(v1alpha1.SessionPhaseActive, events, state, 0)).To(BeFalse())
+	})
+
 	It("UT-AF-1912-004: does NOT nudge once driverActive is cleared, even if the session phase still reads Active (#1912)", func() {
 		// Simulates the state phase_guard.go now leaves behind post-#1912-fix:
 		// a session-terminal tool (kubernaut_complete/kubernaut_cancel) has

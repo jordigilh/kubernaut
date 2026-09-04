@@ -314,6 +314,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 	// a session-terminal tool, but its success still needs to persist
 	// the phase-3 checkpoint flag.
 	isDiscoverWorkflows := toolName == "kubernaut_discover_workflows"
+	isPresentDecision := toolName == presentDecisionTool
 	isSuccess := toolCallSucceeded(callErr, resp)
 
 	// #2047 (main clone of #2023): track whether THIS kubernaut_investigate
@@ -334,7 +335,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 		refreshActiveContext(registry, ctx)
 	}
 
-	if !isEntry && !isTerminal && !isDiscoverWorkflows {
+	if !isEntry && !isTerminal && !isDiscoverWorkflows && !isPresentDecision {
 		return nil, nil
 	}
 	if !isSuccess {
@@ -343,6 +344,10 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 
 	if isDiscoverWorkflows {
 		recordDiscoverWorkflowsCheckpoint(ctx)
+		return nil, nil
+	}
+	if isPresentDecision {
+		clearPresentationRecoveryState(ctx)
 		return nil, nil
 	}
 
@@ -439,6 +444,26 @@ func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
 		logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
 	}
+	if err := state.Set(session.StateKeyPresentationRequired, true); err != nil {
+		logger.Error(err, "phase-guard failed to persist presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation recovery count")
+	}
+}
+
+func clearPresentationRecoveryState(ctx agent.Context) {
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+	logger := logr.FromContextOrDiscard(ctx)
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
+		logger.Error(err, "phase-guard failed to clear presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to clear presentation recovery count")
+	}
 }
 
 // recordDriverEntryState persists driver-active flag, rr_id, and session_id
@@ -495,6 +520,12 @@ func recordInteractionMode(state adksession.State, inputArgs, resp map[string]an
 	// session.
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, false); err != nil {
 		logger.Error(err, "phase-guard failed to reset discover_workflows_succeeded state")
+	}
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation recovery count")
 	}
 
 	blocked := mode == session.InteractionModeInteractive
