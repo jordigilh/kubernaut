@@ -483,8 +483,13 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 			_, _ = fmt.Fprintln(writer, "  ✅ Keycloak kubernaut-fleet realm reachable (HTTPS)")
 			return nil
 		}
-		fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-fleet realm to be reachable...")
-		if resp != nil {
+		// NB: resp is nil exactly when err != nil (transport failure, the
+		// common case while Keycloak is still starting) -- dereferencing it
+		// unconditionally panics here. Branch on err first (SA5011/errcheck).
+		if err != nil {
+			_, _ = fmt.Fprintln(writer, "  Keycloak not yet reachable, waiting:", err)
+		} else {
+			_, _ = fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-fleet realm to be reachable...")
 			_ = resp.Body.Close()
 		}
 		time.Sleep(3 * time.Second)
