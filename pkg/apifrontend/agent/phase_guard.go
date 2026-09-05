@@ -454,11 +454,14 @@ func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
 		logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
 	}
-	// Full remediation auto-discovers, then presents the structured decision
-	// before its phase-3 consent pause. Fully autonomous remediation instead
-	// continues directly to select_workflow and must not be intercepted here.
-	presentationRequired := mode == session.InteractionModeFullRemediation
-	if err := state.Set(session.StateKeyPresentationRequired, presentationRequired); err != nil {
+	// #2365 presentation recovery is disabled pending a design distinguishing
+	// present_decision-expected flows from select_workflow consent flows.
+	// Auto-enabling it for full_remediation breaks E2E-FP-1899-002: Turn 1
+	// discover success triggers reinvocation and complete_no_action, which
+	// terminates the KA session before the genuine Turn 2 selection can
+	// complete the pipeline. Keep the plumbing inert until that distinction
+	// exists.
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
 		logger.Error(err, "phase-guard failed to persist presentation_required state")
 	}
 	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
