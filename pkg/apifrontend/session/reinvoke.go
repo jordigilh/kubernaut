@@ -31,6 +31,10 @@ const (
 	// investigation. This prevents infinite re-invocation loops.
 	MaxReinvocations = 3
 
+	// MaxPresentationRecoveries bounds retries after discovery narration so a
+	// provider that ignores tool choice cannot spin the A2A turn indefinitely.
+	MaxPresentationRecoveries = 2
+
 	// ReinvocationMessage is the synthetic user message injected to trigger
 	// the agent to continue investigation when a premature text-only turn
 	// end is detected.
@@ -81,11 +85,50 @@ func NeedsReinvocationCtx(ctx context.Context, phase v1alpha1.SessionPhase, even
 	if !driverActive(state) {
 		return false
 	}
-	if checkpointBlocked(state) {
+	if checkpointBlocked(state) && !presentationRecoveryRequired(state) {
+		return false
+	}
+	if presentationRecoveryRequired(state) && presentationRecoveryCount(state) >= MaxPresentationRecoveries {
 		return false
 	}
 
 	return true
+}
+
+func presentationRecoveryRequired(state adksession.State) bool {
+	if state == nil {
+		return false
+	}
+	v, err := state.Get(StateKeyPresentationRequired)
+	if err != nil {
+		return false
+	}
+	required, _ := v.(bool)
+	return required
+}
+
+// PresentationRecoveryRequired reports whether discovery completed but the
+// structured presentation artifact has not yet been emitted.
+func PresentationRecoveryRequired(state adksession.State) bool {
+	return presentationRecoveryRequired(state)
+}
+
+// PresentationRecoveryCount returns the number of corrective presentation
+// turns already attempted.
+func PresentationRecoveryCount(state adksession.State) int {
+	return presentationRecoveryCount(state)
+}
+
+func presentationRecoveryCount(state adksession.State) int {
+	if state == nil {
+		return 0
+	}
+	v, err := state.Get(StateKeyPresentationRecoveryCount)
+	if err != nil {
+		return 0
+	}
+	count, _ := v.(int)
+	return count
 }
 
 // driverActive reports whether an interactive driver session (a successful

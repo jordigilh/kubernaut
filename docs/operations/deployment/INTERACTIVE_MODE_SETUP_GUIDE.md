@@ -184,6 +184,7 @@ kubectl get investigationsessions,agentsessions -n kubernaut-system
 | Login succeeds, but every real tool call fails | No RBAC role binding for the logged-in user's group | See step 4 — configure `apifrontend.config.rbac.roleBindings` |
 | `helm install` fails before applying anything | Missing `console.auth.secretName`, OIDC issuer, or `console.ingress.host` while `console.enabled=true` | The chart's fail-fast validation names exactly which one is missing |
 | APIFrontend rejects every console-issued token outright | No audience mapper injecting `kubernaut-apifrontend` into `aud` | See step 1's note on audience mappers — common on a fresh Keycloak realm with no existing kubernaut-apifrontend-aware client scope |
+| Investigating a spoke resource fails with "cannot determine which cluster it belongs to" (or "not managed") despite the `kubernaut.ai/managed=true` label | No `cluster_id` was supplied and the alert/rule carries no `cluster` label, so fleet scope attribution is ambiguous — by design this refuses rather than guessing (Issue #2362) | Pass `cluster_id` (e.g. from the alert's `cluster` label, see `list_clusters` for IDs); for alerts, bake a static `cluster:` label into the alerting rule so every evaluation carries attribution |
 
 ---
 

@@ -84,7 +84,7 @@ DO NOT chain kubectl_get + kubectl_list_events + your own analysis as a substitu
 
 ## 4-Phase Interactive Remediation Journey
 
-Follow this sequence for every remediation lifecycle. Preserve session_id and rr_id across all phases.
+Follow this sequence for every remediation lifecycle. Keep session_id and rr_id in mind across all phases, but pass ONLY the fields each tool's schema declares -- never copy ambient fields (cluster_id, rr_id, session_id) into a tool call that does not list them, or strict schema validation will reject the call and kill the turn.
 
 ### Phase 1: Investigate
 

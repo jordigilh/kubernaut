@@ -48,12 +48,13 @@ import (
 // a2a-go consumer never observes a premature "final" event and never tears
 // the shared context down mid-reinvocation.
 type reinvokingRunner struct {
-	inner              adka2a.Runner
-	sessionService     adksession.Service
-	appName            string
-	logger             logr.Logger
-	auditor            audit.Emitter
-	toolRetryThreshold int
+	inner                            adka2a.Runner
+	sessionService                   adksession.Service
+	appName                          string
+	logger                           logr.Logger
+	auditor                          audit.Emitter
+	toolRetryThreshold               int
+	presentationRecoveryTerminalizer func(context.Context, string) error
 }
 
 // newReinvokingRunner constructs a reinvokingRunner around inner (the
@@ -62,17 +63,22 @@ type reinvokingRunner struct {
 // auditor may be nil (audit emission is best-effort and skipped when unset,
 // matching this package's other AuditFunc-style call sites); it is used to
 // record SI-4/AU-3 evidence when the #2078 tool-retry circuit breaker trips.
-func newReinvokingRunner(inner adka2a.Runner, sessionService adksession.Service, appName string, logger logr.Logger, auditor audit.Emitter) *reinvokingRunner {
+func newReinvokingRunner(inner adka2a.Runner, sessionService adksession.Service, appName string, logger logr.Logger, auditor audit.Emitter, terminalizer ...func(context.Context, string) error) *reinvokingRunner {
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
+	var recoveryTerminalizer func(context.Context, string) error
+	if len(terminalizer) > 0 {
+		recoveryTerminalizer = terminalizer[0]
+	}
 	return &reinvokingRunner{
-		inner:              inner,
-		sessionService:     sessionService,
-		appName:            appName,
-		logger:             logger,
-		auditor:            auditor,
-		toolRetryThreshold: DefaultToolRetryCircuitBreakerThreshold,
+		inner:                            inner,
+		sessionService:                   sessionService,
+		appName:                          appName,
+		logger:                           logger,
+		auditor:                          auditor,
+		toolRetryThreshold:               DefaultToolRetryCircuitBreakerThreshold,
+		presentationRecoveryTerminalizer: recoveryTerminalizer,
 	}
 }
 
@@ -112,6 +118,10 @@ func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, ms
 			}
 
 			if !r.needsReinvocation(ctx, userID, sessionID, reinvokeCount) {
+				r.handlePresentationRecoveryExhaustion(ctx, userID, sessionID, yield)
+				return
+			}
+			if !r.recordPresentationRecoveryAttempt(ctx, userID, sessionID) {
 				return
 			}
 			reinvokeCount++
@@ -121,6 +131,65 @@ func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, ms
 			)
 			currentMsg = session.SyntheticMessage()
 		}
+	}
+}
+
+func (r *reinvokingRunner) recordPresentationRecoveryAttempt(ctx context.Context, userID, sessionID string) bool {
+	resp, err := r.sessionService.Get(ctx, &adksession.GetRequest{AppName: r.appName, UserID: userID, SessionID: sessionID})
+	if err != nil || resp == nil || resp.Session == nil {
+		if err != nil {
+			r.logger.Error(err, "failed to record presentation recovery attempt", "session_id", sessionID)
+		}
+		return false
+	}
+	if !session.PresentationRecoveryRequired(resp.Session.State()) {
+		return true
+	}
+	event := adksession.NewEvent(ctx, "presentation-recovery")
+	event.Actions.StateDelta = map[string]any{
+		session.StateKeyPresentationRecoveryCount: session.PresentationRecoveryCount(resp.Session.State()) + 1,
+	}
+	if err := r.sessionService.AppendEvent(ctx, resp.Session, event); err != nil {
+		r.logger.Error(err, "failed to persist presentation recovery attempt", "session_id", sessionID)
+		return false
+	}
+	return true
+}
+
+func (r *reinvokingRunner) handlePresentationRecoveryExhaustion(ctx context.Context, userID, sessionID string, yield func(*adksession.Event, error) bool) {
+	resp, err := r.sessionService.Get(ctx, &adksession.GetRequest{AppName: r.appName, UserID: userID, SessionID: sessionID})
+	if err != nil || resp == nil || resp.Session == nil {
+		return
+	}
+	state := resp.Session.State()
+	if !session.PresentationRecoveryRequired(state) || session.PresentationRecoveryCount(state) < session.MaxPresentationRecoveries {
+		return
+	}
+
+	_ = EmitArtifactSafe(ctx, map[string]any{
+		"type":           "investigation_summary",
+		"schema_version": "1.0",
+		"summary":        "Structured decision presentation could not be completed.",
+		"options":        []any{},
+		"status":         "failure",
+		"failure_reason": "presentation_recovery_exhausted",
+	}, "Structured decision presentation could not be completed.", map[string]any{"recovery_exhausted": true})
+
+	r.escalatePresentationRecovery(ctx, sessionID, state)
+	_ = yield(nil, fmt.Errorf("presentation recovery exhausted for session %q", sessionID))
+}
+
+func (r *reinvokingRunner) escalatePresentationRecovery(ctx context.Context, sessionID string, state adksession.State) {
+	if r.presentationRecoveryTerminalizer == nil {
+		return
+	}
+	rrID, _ := state.Get(session.StateKeyActiveRRID)
+	rr, ok := rrID.(string)
+	if !ok || rr == "" {
+		return
+	}
+	if err := r.presentationRecoveryTerminalizer(ctx, rr); err != nil {
+		r.logger.Error(err, "failed to escalate presentation recovery exhaustion", "session_id", sessionID, "rr_id", rr)
 	}
 }
 
@@ -286,7 +355,7 @@ func (a plainRunnerAdapter) Run(ctx context.Context, userID, sessionID string, m
 // *runner.Runner from it, then wraps that runner instead of returning it
 // directly. auditor may be nil; it is threaded through to reinvokingRunner
 // for #2078 tool-retry circuit breaker trip audit events.
-func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger, auditor audit.Emitter) adka2a.RunnerProvider {
+func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger, auditor audit.Emitter, terminalizer ...func(context.Context, string) error) adka2a.RunnerProvider {
 	return func(_ context.Context, _ *a2asrv.RequestContext, p *plugin.Plugin) (adka2a.RunnerConfig, adka2a.Runner, error) {
 		if baseConfig.Agent == nil {
 			return adka2a.RunnerConfig{}, nil, fmt.Errorf("runner.Config.Agent is not provided")
@@ -303,7 +372,7 @@ func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger, a
 		}
 
 		runnerConfig := adka2a.RunnerConfig{AppName: cfg.AppName, Agent: cfg.Agent, SessionService: cfg.SessionService}
-		wrapped := newReinvokingRunner(plainRunnerAdapter{runner: realRunner}, cfg.SessionService, cfg.AppName, logger, auditor)
+		wrapped := newReinvokingRunner(plainRunnerAdapter{runner: realRunner}, cfg.SessionService, cfg.AppName, logger, auditor, terminalizer...)
 		return runnerConfig, wrapped, nil
 	}
 }

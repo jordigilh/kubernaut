@@ -13,6 +13,7 @@ import (
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -50,6 +51,7 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 		ActiveContextRegistry: d.ActiveCtxRegistry,
 		RESTMapper:            d.Backends.Mapper,
 		ScopeChecker:          d.Backends.ScopeChecker,
+		ClusterLister:         d.Backends.FleetClusterRegistry,
 	}
 
 	h, err := handler.NewMCPHandler(handler.MCPConfig{
@@ -185,5 +187,12 @@ func buildA2AConfig(d *handlerDeps, rootAgent agent.Agent, sessionSvcForAgent *s
 			d.ActiveCtxRegistry, d.Logger.WithName("session-interceptor"),
 		),
 		LLMSemaphore: ratelimit.NewLLMSemaphore(d.Cfg.RateLimit.MaxConcurrentSessions),
+		PresentationRecoveryTerminalizer: func(ctx context.Context, rrID string) error {
+			_, err := d.Backends.MCPClient.CompleteNoAction(ctx, ka.CompleteNoActionArgs{
+				RRID:             rrID,
+				EscalationReason: "presentation_recovery_exhausted",
+			})
+			return err
+		},
 	}
 }

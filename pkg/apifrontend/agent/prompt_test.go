@@ -108,8 +108,9 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("call kubernaut_watch"))
 	})
 
-	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {
-		Expect(instruction).To(ContainSubstring("Preserve session_id and rr_id across all phases"))
+	It("UT-AF-1189-035: prompt preserves context without copying undeclared fields", func() {
+		Expect(instruction).To(ContainSubstring("Keep session_id and rr_id in mind across all phases"))
+		Expect(instruction).To(ContainSubstring("pass ONLY the fields each tool's schema declares"))
 	})
 
 	Describe("BuildInstruction (#1275)", func() {

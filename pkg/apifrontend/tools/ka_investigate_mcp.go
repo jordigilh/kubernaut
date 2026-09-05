@@ -219,6 +219,11 @@ type InvestigateMCPArgs struct {
 	// candidate's alert name after the user has explicitly confirmed it
 	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
 	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
+	// SessionID is an ambient hint the LLM propagates via cross-phase
+	// preservation (#2364 Tier 2). Tolerated here so strict ADK schema
+	// validation does not kill the turn; ignored by the handler, which owns
+	// session lifecycle server-side.
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -304,6 +309,9 @@ type InvestigateConfig struct {
 	// existing-rr_id (takeover) path — that RR was already scope-checked at
 	// its own creation time. Nil skips scope validation (backward compat).
 	ScopeChecker scope.ScopeChecker
+	// ClusterLister names known fleet clusters for the unattributed-refusal
+	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
+	ClusterLister ClusterLister
 }
 
 // HandleInvestigationMCP starts a dedicated MCP investigation session. When a
@@ -556,7 +564,7 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	}
 
 	hooks, signaledISCRDName := buildPreCreateISHooks(cfg, identity)
-	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, createUser, hooks)
+	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker, ClusterLister: cfg.ClusterLister}, createArgs, createUser, hooks)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("create RR for investigation: %w", err)
 	}
