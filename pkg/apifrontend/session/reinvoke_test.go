@@ -238,13 +238,23 @@ var _ = Describe("Re-invocation Fallback", func() {
 			"a genuinely stalled mid-investigation turn (driver active, no checkpoint gate) must still be nudged")
 	})
 
-	It("UT-AF-2365-001 (SI-4): recovers after autonomous discovery", func() {
+	It("UT-AF-2365-001 (SI-4): recovers after full-remediation discovery", func() {
 		events := getEvents(textEvent())
 		state := newFakeState(map[string]any{
 			session.StateKeyDriverActive:              true,
-			session.StateKeyPhase3Blocked:             false,
+			session.StateKeyPhase3Blocked:             true,
 			session.StateKeyPresentationRequired:      true,
 			session.StateKeyPresentationRecoveryCount: 0,
+		})
+		Expect(session.NeedsReinvocation(v1alpha1.SessionPhaseActive, events, state, 0)).To(BeTrue())
+	})
+
+	It("UT-AF-2365-004 (AC-6): does not intercept fully autonomous selection", func() {
+		events := getEvents(textEvent())
+		state := newFakeState(map[string]any{
+			session.StateKeyDriverActive:         true,
+			session.StateKeyPhase3Blocked:        false,
+			session.StateKeyPresentationRequired: false,
 		})
 		Expect(session.NeedsReinvocation(v1alpha1.SessionPhaseActive, events, state, 0)).To(BeTrue())
 	})
