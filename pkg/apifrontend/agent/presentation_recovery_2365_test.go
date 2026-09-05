@@ -37,4 +37,19 @@ var _ = Describe("Presentation recovery guard (#2365)", func() {
 		Expect(req.Config.Tools[0].FunctionDeclarations[0].Name).To(Equal("kubernaut_present_decision"))
 		Expect(req.Config.ToolConfig.FunctionCallingConfig.AllowedFunctionNames).To(ConsistOf("kubernaut_present_decision"))
 	})
+
+	It("UT-AF-2365-005 (AC-6): clears recovery after genuine workflow selection", func() {
+		state := newMapState()
+		Expect(state.Set(session.StateKeyPresentationRequired, true)).To(Succeed())
+		ctx := &statefulToolContext{
+			fakeToolContext: fakeToolContext{Context: context.Background()},
+			state:           state,
+		}
+		_, after := NewPhaseGuardForTest()
+		_, err := after(ctx, fakeTool{name: "kubernaut_select_workflow"}, nil, map[string]any{"selected": true}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		value, getErr := state.Get(session.StateKeyPresentationRequired)
+		Expect(getErr).NotTo(HaveOccurred())
+		Expect(value).To(BeFalse())
+	})
 })

@@ -315,6 +315,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 	// the phase-3 checkpoint flag.
 	isDiscoverWorkflows := toolName == "kubernaut_discover_workflows"
 	isPresentDecision := toolName == presentDecisionTool
+	isSelectWorkflow := toolName == "kubernaut_select_workflow"
 	isSuccess := toolCallSucceeded(callErr, resp)
 
 	// #2047 (main clone of #2023): track whether THIS kubernaut_investigate
@@ -335,7 +336,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 		refreshActiveContext(registry, ctx)
 	}
 
-	if !isEntry && !isTerminal && !isDiscoverWorkflows && !isPresentDecision {
+	if !isEntry && !isTerminal && !isDiscoverWorkflows && !isPresentDecision && !isSelectWorkflow {
 		return nil, nil
 	}
 	if !isSuccess {
@@ -347,6 +348,10 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 		return nil, nil
 	}
 	if isPresentDecision {
+		clearPresentationRecoveryState(ctx)
+		return nil, nil
+	}
+	if isSelectWorkflow {
 		clearPresentationRecoveryState(ctx)
 		return nil, nil
 	}
