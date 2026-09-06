@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -35,10 +36,7 @@ var (
 	pdbGVR           = schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}
 	networkPolicyGVR = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}
 	resourceQuotaGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
-	namespaceGVR     = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	pvcGVR           = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}
-	storageClassGVR  = schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}
-	vmGVR            = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachines"}
 )
 
 // cnvKinds lists Kubernetes kinds that indicate a CNV/KubeVirt workload.
@@ -63,6 +61,7 @@ var provisionerToBackend = map[string]string{
 // including non-workload root owners like ConfigMap, Secret, and Service (#679).
 type LabelDetector struct {
 	dynClient dynamic.Interface
+	reader    client.Reader
 	mapper    meta.RESTMapper
 	logger    logr.Logger
 }
@@ -71,6 +70,13 @@ type LabelDetector struct {
 // and REST mapper. The mapper resolves any Kubernetes kind to its GVR (#679).
 func NewLabelDetector(dynClient dynamic.Interface, mapper meta.RESTMapper, logger logr.Logger) *LabelDetector {
 	return &LabelDetector{dynClient: dynClient, mapper: mapper, logger: logger}
+}
+
+// NewLabelDetectorWithReader creates a detector backed by a controller-runtime
+// reader. This is used for fleet overlays, where reads are routed through MCP
+// rather than a local dynamic client.
+func NewLabelDetectorWithReader(reader client.Reader, mapper meta.RESTMapper, logger logr.Logger) *LabelDetector {
+	return &LabelDetector{reader: reader, mapper: mapper, logger: logger}
 }
 
 // DetectLabels detects infrastructure characteristics for the given resource,
@@ -161,13 +167,54 @@ func (d *LabelDetector) fetchResource(ctx context.Context, kind, name, namespace
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve GVR for kind %q: %w", kind, err)
 	}
-	var client dynamic.ResourceInterface
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		client = d.dynClient.Resource(mapping.Resource).Namespace(namespace)
-	} else {
-		client = d.dynClient.Resource(mapping.Resource)
+	if d.reader != nil {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(mapping.GroupVersionKind)
+		if err := d.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, obj); err != nil {
+			return nil, err
+		}
+		return obj, nil
 	}
-	return client.Get(ctx, name, metav1.GetOptions{})
+	var resourceClient dynamic.ResourceInterface
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		resourceClient = d.dynClient.Resource(mapping.Resource).Namespace(namespace)
+	} else {
+		resourceClient = d.dynClient.Resource(mapping.Resource)
+	}
+	return resourceClient.Get(ctx, name, metav1.GetOptions{})
+}
+
+func (d *LabelDetector) listResource(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]unstructured.Unstructured, error) {
+	if d.reader == nil {
+		var resource dynamic.ResourceInterface
+		if namespace != "" {
+			resource = d.dynClient.Resource(gvr).Namespace(namespace)
+		} else {
+			resource = d.dynClient.Resource(gvr)
+		}
+		list, err := resource.List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+
+	gvk, err := d.mapper.KindFor(gvr)
+	if err != nil {
+		return nil, fmt.Errorf("resolve kind for %s: %w", gvr, err)
+	}
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List",
+	})
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := d.reader.List(ctx, list, opts...); err != nil {
+		return nil, err
+	}
+	return list.Items, nil
 }
 
 // resolveMapping returns the full RESTMapping for a Kind, including Scope.
@@ -193,7 +240,7 @@ func (d *LabelDetector) resolveMapping(kind string) (*meta.RESTMapping, error) {
 // fetchNamespace retrieves the Namespace object for namespace-level label/annotation
 // checks per DD-KA-018. Returns nil on any error (best-effort, no failedDetections).
 func (d *LabelDetector) fetchNamespace(ctx context.Context, namespace string) *unstructured.Unstructured {
-	obj, err := d.dynClient.Resource(namespaceGVR).Get(ctx, namespace, metav1.GetOptions{})
+	obj, err := d.fetchResource(ctx, "Namespace", namespace, "")
 	if err != nil {
 		d.logger.Error(err, "label detection: namespace fetch failed (best-effort skip)", "namespace", namespace)
 		return nil
@@ -366,14 +413,14 @@ func (d *LabelDetector) detectHPA(ctx context.Context, ownerChain []OwnerChainEn
 		targetNames[kindName{entry.Kind, entry.Name}] = true
 	}
 
-	list, err := d.dynClient.Resource(hpaGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
+	list, err := d.listResource(ctx, hpaGVR, rootNS)
 	if err != nil {
 		d.logger.Error(err, "label detection: HPA list failed", "namespace", rootNS)
 		*failed = append(*failed, "hpaEnabled")
 		return
 	}
-	for i := range list.Items {
-		targetKind, targetName := extractScaleTargetRef(&list.Items[i])
+	for i := range list {
+		targetKind, targetName := extractScaleTargetRef(&list[i])
 		if targetNames[kindName{targetKind, targetName}] {
 			result.HPAEnabled = true
 			return
@@ -406,14 +453,14 @@ func (d *LabelDetector) detectPDB(ctx context.Context, rootObj *unstructured.Uns
 	if len(podLabels) == 0 && len(rootLabels) == 0 {
 		return
 	}
-	list, err := d.dynClient.Resource(pdbGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
+	list, err := d.listResource(ctx, pdbGVR, rootNS)
 	if err != nil {
 		d.logger.Error(err, "label detection: PDB list failed", "namespace", rootNS)
 		*failed = append(*failed, "pdbProtected")
 		return
 	}
-	for i := range list.Items {
-		matchLabels := extractPDBMatchLabels(&list.Items[i])
+	for i := range list {
+		matchLabels := extractPDBMatchLabels(&list[i])
 		if len(matchLabels) == 0 {
 			continue
 		}
@@ -461,13 +508,13 @@ func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, namespace strin
 		*failed = append(*failed, "networkIsolated")
 		return
 	}
-	list, err := d.dynClient.Resource(networkPolicyGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	list, err := d.listResource(ctx, networkPolicyGVR, namespace)
 	if err != nil {
 		d.logger.Error(err, "label detection: NetworkPolicy list failed", "namespace", namespace)
 		*failed = append(*failed, "networkIsolated")
 		return
 	}
-	result.NetworkIsolated = len(list.Items) > 0
+	result.NetworkIsolated = len(list) > 0
 }
 
 // detectResourceQuota checks for ResourceQuota presence and builds a typed
@@ -477,17 +524,17 @@ func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace strin
 		*failed = append(*failed, "resourceQuotaConstrained")
 		return nil
 	}
-	list, err := d.dynClient.Resource(resourceQuotaGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	list, err := d.listResource(ctx, resourceQuotaGVR, namespace)
 	if err != nil {
 		d.logger.Error(err, "label detection: ResourceQuota list failed", "namespace", namespace)
 		*failed = append(*failed, "resourceQuotaConstrained")
 		return nil
 	}
-	if len(list.Items) == 0 {
+	if len(list) == 0 {
 		return nil
 	}
 	result.ResourceQuotaConstrained = true
-	return summarizeQuotas(list.Items)
+	return summarizeQuotas(list)
 }
 
 // cnvDetectionTarget groups the owner-chain identifiers needed by detectCNV.
@@ -555,7 +602,7 @@ func (d *LabelDetector) detectLiveMigratable(ctx context.Context, rootKind, root
 		return
 	}
 
-	vmObj, err := d.dynClient.Resource(vmGVR).Namespace(vmNS).Get(ctx, vmName, metav1.GetOptions{})
+	vmObj, err := d.fetchResource(ctx, "VirtualMachine", vmName, vmNS)
 	if err != nil {
 		d.logger.Error(err, "CNV: VirtualMachine fetch failed", "name", vmName, "namespace", vmNS)
 		*failed = append(*failed, "liveMigratable")
@@ -575,13 +622,13 @@ func (d *LabelDetector) listNamespacePVCs(ctx context.Context, namespace string,
 		*failed = append(*failed, "cdiManaged", "storageBackend")
 		return nil
 	}
-	list, err := d.dynClient.Resource(pvcGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	list, err := d.listResource(ctx, pvcGVR, namespace)
 	if err != nil {
 		d.logger.Error(err, "CNV: PVC list failed", "namespace", namespace)
 		*failed = append(*failed, "cdiManaged", "storageBackend")
 		return nil
 	}
-	return list.Items
+	return list
 }
 
 // detectCDIManaged checks PVC annotations for CDI import markers.
@@ -605,7 +652,7 @@ func (d *LabelDetector) detectStorageBackend(ctx context.Context, pvcs []unstruc
 		if !found || scName == "" {
 			continue
 		}
-		scObj, err := d.dynClient.Resource(storageClassGVR).Get(ctx, scName, metav1.GetOptions{})
+		scObj, err := d.fetchResource(ctx, "StorageClass", scName, "")
 		if err != nil {
 			d.logger.Error(err, "CNV: StorageClass fetch failed", "name", scName)
 			scFetchError = true

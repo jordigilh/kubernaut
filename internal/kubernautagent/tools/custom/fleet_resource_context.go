@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,7 +49,8 @@ import (
 // server-side kind-only discovery to infer it from (confirmed against
 // upstream kubernetes-mcp-server, see plan preflight).
 type overlayClientReader struct {
-	getTool tools.Tool
+	getTool  tools.Tool
+	listTool tools.Tool
 }
 
 var _ client.Reader = (*overlayClientReader)(nil)
@@ -56,11 +58,18 @@ var _ client.Reader = (*overlayClientReader)(nil)
 // NewOverlayClientReader builds a client.Reader backed by the fleet
 // overlay's resources_get tool. Exported for the fleet_resource_context_test.go
 // unit tests; production callers should go through NewOverlayK8sClient.
-func NewOverlayClientReader(getTool tools.Tool) client.Reader {
-	return &overlayClientReader{getTool: getTool}
+func NewOverlayClientReader(getTool tools.Tool, listTools ...tools.Tool) client.Reader {
+	var listTool tools.Tool
+	if len(listTools) > 0 {
+		listTool = listTools[0]
+	}
+	return &overlayClientReader{getTool: getTool, listTool: listTool}
 }
 
 func (r *overlayClientReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	if r.getTool == nil {
+		return fmt.Errorf("overlayClientReader.Get: resources_get tool is not available")
+	}
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	if gvk.Kind == "" {
 		return fmt.Errorf("overlayClientReader.Get: target object has no GroupVersionKind set")
@@ -119,15 +128,64 @@ func asRemoteNotFound(err error, gvk schema.GroupVersionKind, name string) error
 	return apierrors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)}, name)
 }
 
-// List is intentionally not supported: overlayClientReader only backs
-// ownerchain.K8sOwnerResolver's remote-cluster resolution here, which only
-// ever calls Get directly. The resolver's one internal List call (the
-// optional Service→Pod special case) is gated on WithFallbackReader, which
-// NewOverlayK8sClient deliberately never sets — KA has no local fallback
-// reader for a remote cluster — so this path is unreachable in practice,
-// not silently degraded.
-func (r *overlayClientReader) List(_ context.Context, _ client.ObjectList, _ ...client.ListOption) error {
-	return fmt.Errorf("overlayClientReader: List not supported (owner-chain resolution only requires Get)")
+// List routes controller-runtime list requests through the overlay's
+// resources_list tool. It supports the namespace and label-selector options
+// used by LabelDetector; other list options are intentionally ignored.
+func (r *overlayClientReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if r.listTool == nil {
+		return fmt.Errorf("overlayClientReader.List: not supported, resources_list tool is not available")
+	}
+	gvk := list.GetObjectKind().GroupVersionKind()
+	if gvk.Kind == "" {
+		return fmt.Errorf("overlayClientReader.List: target list has no GroupVersionKind set")
+	}
+	itemKind := strings.TrimSuffix(gvk.Kind, "List")
+	args := map[string]any{
+		"kind":       itemKind,
+		"apiVersion": gvk.GroupVersion().String(),
+	}
+	listOpts := client.ListOptions{}
+	for _, opt := range opts {
+		opt.ApplyToList(&listOpts)
+	}
+	if listOpts.Namespace != "" {
+		args["namespace"] = listOpts.Namespace
+	}
+	if listOpts.LabelSelector != nil && listOpts.LabelSelector.String() != "" {
+		args["labelSelector"] = listOpts.LabelSelector.String()
+	}
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Errorf("overlayClientReader.List: marshal args for %s: %w", itemKind, err)
+	}
+	text, err := r.listTool.Execute(ctx, argsJSON)
+	if err != nil {
+		return fmt.Errorf("overlayClientReader.List: list %s: %w", itemKind, err)
+	}
+	fetched, err := mcpclient.ParseUnstructuredResponse(text)
+	if err != nil {
+		return fmt.Errorf("overlayClientReader.List: parse response for %s: %w", itemKind, err)
+	}
+	rawItems, ok, err := unstructured.NestedSlice(fetched.Object, "items")
+	if err != nil {
+		return fmt.Errorf("overlayClientReader.List: parse items for %s: %w", itemKind, err)
+	}
+	if !ok {
+		rawItems = nil
+	}
+	items := make([]unstructured.Unstructured, 0, len(rawItems))
+	for i, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("overlayClientReader.List: item %d for %s is not an object", i, itemKind)
+		}
+		items = append(items, unstructured.Unstructured{Object: item})
+	}
+	if target, ok := list.(*unstructured.UnstructuredList); ok {
+		target.Items = items
+		return nil
+	}
+	return fmt.Errorf("overlayClientReader.List: unsupported list type %T", list)
 }
 
 // overlayK8sClient implements enrichment.K8sClient by resolving owner-chain
@@ -146,8 +204,14 @@ var _ enrichment.K8sClient = (*overlayK8sClient)(nil)
 // fleet overlay's resources_get tool — see cmd/kubernautagent/toolregistry.go's
 // genericNameTool). No WithRegistry/WithFallbackReader: KA has neither a
 // live APIResourceRegistry nor a local fallback client for a remote cluster.
-func NewOverlayK8sClient(getTool tools.Tool, logger logr.Logger) enrichment.K8sClient {
-	return &overlayK8sClient{reader: NewOverlayClientReader(getTool), logger: logger}
+func NewOverlayK8sClient(getTool tools.Tool, logger logr.Logger, listTools ...tools.Tool) enrichment.K8sClient {
+	return &overlayK8sClient{reader: NewOverlayClientReader(getTool, listTools...), logger: logger}
+}
+
+// NewOverlayLabelDetector creates a detector whose Get/List calls are routed
+// through the fleet overlay instead of the hub dynamic client.
+func NewOverlayLabelDetector(getTool tools.Tool, listTool tools.Tool, mapper meta.RESTMapper, logger logr.Logger) *enrichment.LabelDetector {
+	return enrichment.NewLabelDetectorWithReader(NewOverlayClientReader(getTool, listTool), mapper, logger)
 }
 
 // GetOwnerChain resolves the top-level controller owner of kind/name/namespace

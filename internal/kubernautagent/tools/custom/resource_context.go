@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -91,6 +92,17 @@ func ResolveK8sClient(ctx context.Context, hub enrichment.K8sClient, logger logr
 	}
 	clusterID, _ := audit.ClusterIDFromContext(ctx)
 	return noopK8sClient{clusterID: clusterID}
+}
+
+// ResolveLabelDetector applies the same per-request fleet routing as
+// ResolveK8sClient. A fleet overlay is never allowed to fall back to the hub
+// detector, because that would report labels from the wrong cluster.
+func ResolveLabelDetector(ctx context.Context, hub *enrichment.LabelDetector, mapper meta.RESTMapper, logger logr.Logger) *enrichment.LabelDetector {
+	overlay, hasOverlay := investigator.FleetOverlayFromContext(ctx)
+	if !hasOverlay {
+		return hub
+	}
+	return NewOverlayLabelDetector(overlay[mcpclient.ToolGet], overlay[mcpclient.ToolList], mapper, logger)
 }
 
 func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8sClient, kind, name, namespace, toolName string) string {

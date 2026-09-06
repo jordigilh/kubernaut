@@ -190,6 +190,7 @@ type Enricher struct {
 	auditStore    audit.AuditStore
 	logger        logr.Logger
 	labelDetector *LabelDetector
+	labelResolver func(ctx context.Context) *LabelDetector
 	retryConfig   RetryConfig
 	k8sResolver   func(ctx context.Context) K8sClient
 }
@@ -207,6 +208,13 @@ func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStor
 // WithLabelDetector attaches a LabelDetector to run during Enrich().
 func (e *Enricher) WithLabelDetector(ld *LabelDetector) *Enricher {
 	e.labelDetector = ld
+	return e
+}
+
+// WithLabelDetectorResolver installs a per-call override for label detection,
+// matching WithK8sResolver's fleet routing semantics.
+func (e *Enricher) WithLabelDetectorResolver(resolver func(ctx context.Context) *LabelDetector) *Enricher {
+	e.labelResolver = resolver
 	return e
 }
 
@@ -242,6 +250,15 @@ func (e *Enricher) effectiveK8s(ctx context.Context) K8sClient {
 		}
 	}
 	return e.k8s
+}
+
+func (e *Enricher) effectiveLabelDetector(ctx context.Context) *LabelDetector {
+	if e.labelResolver != nil {
+		if detector := e.labelResolver(ctx); detector != nil {
+			return detector
+		}
+	}
+	return e.labelDetector
 }
 
 // resolveOwnerChainWithRetry calls GetOwnerChain with optional retry logic.
@@ -425,10 +442,11 @@ func (e *Enricher) populateOwnerChain(ctx context.Context, kind, name, namespace
 // stores the results on result. Returns a non-nil error only for a forbidden
 // error, signaling the caller to abort enrichment entirely.
 func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, namespace string, result *EnrichmentResult) error {
-	if e.labelDetector == nil {
+	detector := e.effectiveLabelDetector(ctx)
+	if detector == nil {
 		return nil
 	}
-	labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
+	labels, quotaDetails, labelErr := detector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 	if labelErr != nil {
 		if isForbiddenError(labelErr) {
 			return fmt.Errorf("%w: DetectLabels %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, labelErr)
