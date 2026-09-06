@@ -82,8 +82,8 @@ func fleetSendTurn(id, text string) afA2ATaskResult {
 	return fleetSendTurnWithBody(afA2ATasksSend(id, text), 180*time.Second)
 }
 
-func fleetSendTurnWithTask(id, taskID, contextID, text string) afA2ATaskResult {
-	return fleetSendTurnWithBody(afA2ATasksSendWithTask(id, taskID, contextID, text), 180*time.Second)
+func fleetSendTurnWithTask(id, taskID, contextID, text string) {
+	fleetSendTurnWithBody(afA2ATasksSendWithTask(id, taskID, contextID, text), 180*time.Second)
 }
 
 func fleetSendTurnWithBody(body string, timeout time.Duration) afA2ATaskResult {
@@ -152,10 +152,10 @@ func fleetWaitForWorkflowExecution(rrName string) {
 			if we.Spec.RemediationRequestRef.Name != rrName {
 				continue
 			}
-			if string(we.Status.Phase) == "Failed" {
+			if we.Status.Phase == "Failed" {
 				Fail(fmt.Sprintf("fleet WorkflowExecution %s failed", we.Name))
 			}
-			return string(we.Status.Phase) == "Completed"
+			return we.Status.Phase == "Completed"
 		}
 		return false
 	}, 5*time.Minute, 3*time.Second).Should(BeTrue(), "fleet WorkflowExecution for %s should complete", rrName)
