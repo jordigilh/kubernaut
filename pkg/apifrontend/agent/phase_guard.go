@@ -427,6 +427,21 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 	if err := state.Set(session.StateKeyGroundedRCAPayload, payload); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_rca_payload state")
 	}
+	summary, _ := resp["summary"].(string)
+	provisional := false
+	if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil {
+		provisional = decoded.Provisional
+	}
+	if !grounded {
+		summary = ""
+		provisional = false
+	}
+	if err := state.Set(session.StateKeyGroundedSummary, summary); err != nil {
+		logger.Error(err, "phase-guard failed to persist grounded_summary state")
+	}
+	if err := state.Set(session.StateKeyGroundedSummaryProvisional, provisional); err != nil {
+		logger.Error(err, "phase-guard failed to persist grounded_summary_provisional state")
+	}
 }
 
 // toolCallSucceeded reports whether a tool call completed without a Go error
@@ -579,12 +594,6 @@ func recordInteractionMode(state adksession.State, inputArgs, resp map[string]an
 	}
 	if err := state.Set(session.StateKeyDecisionArtifactStatus, session.DecisionArtifactNotRequired); err != nil {
 		logger.Error(err, "phase-guard failed to reset decision_artifact_status state")
-	}
-	if err := state.Set(session.StateKeyGroundedRCAPayload, nil); err != nil {
-		logger.Error(err, "phase-guard failed to reset grounded_rca_payload state")
-	}
-	if err := state.Set(session.StateKeyDiscoveryResult, nil); err != nil {
-		logger.Error(err, "phase-guard failed to reset discovery_result state")
 	}
 
 	blocked := mode == session.InteractionModeInteractive

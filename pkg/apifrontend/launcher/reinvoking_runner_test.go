@@ -176,9 +176,6 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 			sessionSvc: sessionSvc,
 			appName:    "test-app",
 			responses:  []*adksession.Event{textOnlyModelEvent("inv-2365-incomplete", "I will submit the result.")},
-			sideEffects: map[int]map[string]any{
-				0: {session.StateKeyPhase3Blocked: true},
-			},
 		}
 		queue := &fakeQueue{}
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-2365-incomplete", "sess-2365-incomplete", nil)
@@ -197,6 +194,50 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 		Expect(escalated).To(Equal("rr-2365-incomplete"))
 		data := launcher.LastArtifactDataForTest(queue.events[0])
 		Expect(data).To(HaveKeyWithValue("status", "failure"))
+		Expect(data).To(HaveKeyWithValue("failure_reason", "missing_authoritative_data"))
+	})
+
+	It("IT-AF-2365-008b (AC-6, SI-4): does not escalate incomplete presentation at a consent boundary", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365-consent-incomplete",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(ctx, "setup-2365-consent-incomplete")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:           true,
+			session.StateKeyPhase3Blocked:          false,
+			session.StateKeyDecisionArtifactStatus: session.DecisionArtifactRequired,
+			session.StateKeyActiveRRID:             "rr-2365-consent-incomplete",
+			session.StateKeyActiveSession:          "sess-2365-consent-incomplete",
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, setup)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    "test-app",
+			responses:  []*adksession.Event{textOnlyModelEvent("inv-2365-consent-incomplete", "I need to wait for confirmation.")},
+			sideEffects: map[int]map[string]any{
+				0: {session.StateKeyPhase3Blocked: true},
+			},
+		}
+		queue := &fakeQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-2365-consent-incomplete", "sess-2365-consent-incomplete", nil)
+		var escalated string
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil,
+			func(_ context.Context, rrID string) error {
+				escalated = rrID
+				return nil
+			})
+
+		for event, runErr := range rr.Run(bridgeCtx, "user-1", "sess-2365-consent-incomplete", genai.NewContentFromText("select a workflow", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+			Expect(event).NotTo(BeNil())
+		}
+
+		Expect(escalated).To(BeEmpty())
+		data := launcher.LastArtifactDataForTest(queue.events[0])
 		Expect(data).To(HaveKeyWithValue("failure_reason", "missing_authoritative_data"))
 	})
 

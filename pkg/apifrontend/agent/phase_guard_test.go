@@ -398,6 +398,38 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(status).To(Equal(session.DecisionArtifactNotRequired))
 	})
 
+	It("IT-AF-2365-002 (AU-3): persists grounded summary when structured RCA is absent", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": session.InteractionModeFullRemediation}, map[string]any{
+			"session_id": "sess-2365-summary", "rr_id": "rr-2365-summary", "status": "completed",
+			"summary": "The deployment exceeded its memory limit during a traffic spike.",
+		}, nil)
+
+		grounded, err := state.Get(session.StateKeyGroundedContentAvailable)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(grounded).To(BeTrue())
+		summary, err := state.Get(session.StateKeyGroundedSummary)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(summary).To(Equal("The deployment exceeded its memory limit during a traffic spike."))
+		provisional, err := state.Get(session.StateKeyGroundedSummaryProvisional)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(provisional).To(BeFalse())
+	})
+
+	It("UT-AF-2365-002b (AU-3): marks severity-triage summary provisional", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": session.InteractionModeFullRemediation}, map[string]any{
+			"session_id": "sess-2365-provisional", "rr_id": "rr-2365-provisional", "status": "completed",
+			"summary": "Severity assessed from resource metadata.",
+			"rca": map[string]any{
+				"severity":    "warning",
+				"provisional": true,
+			},
+		}, nil)
+
+		provisional, err := state.Get(session.StateKeyGroundedSummaryProvisional)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(provisional).To(BeTrue())
+	})
+
 	It("IT-AF-1899-003c: a failed discover_workflows does not set phase3_blocked", func() {
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
 			"session_id": "sess-1899-f", "rr_id": "rr-1899-f", "status": "completed",

@@ -43,6 +43,10 @@ func (r *reinvokingRunner) recoverBusinessOutcome(ctx context.Context, sess adks
 	}
 
 	rca := stateMap(state, session.StateKeyGroundedRCAPayload)
+	groundedSummary, _ := state.Get(session.StateKeyGroundedSummary)
+	summary, _ := groundedSummary.(string)
+	provisionalValue, _ := state.Get(session.StateKeyGroundedSummaryProvisional)
+	provisional, _ := provisionalValue.(bool)
 	discovery := discoveryFromState(state)
 	if discovery == nil {
 		discovery = discoveryFromEvents(sess.Events())
@@ -58,10 +62,12 @@ func (r *reinvokingRunner) recoverBusinessOutcome(ctx context.Context, sess adks
 	rr, _ := rrID.(string)
 
 	artifact, buildErr := BuildRecoveredDecisionArtifact(DecisionRecoveryInput{
-		SessionID: activeSessionID,
-		RRID:      rr,
-		RCA:       rca,
-		Discovery: discovery,
+		SessionID:          activeSessionID,
+		RRID:               rr,
+		RCA:                rca,
+		Summary:            summary,
+		SummaryProvisional: provisional,
+		Discovery:          discovery,
 	})
 	if buildErr != nil {
 		r.logger.Error(buildErr, "failed to build recovered decision artifact", "session_id", sessionID)
@@ -78,6 +84,9 @@ func (r *reinvokingRunner) recoverBusinessOutcome(ctx context.Context, sess adks
 	status := session.DecisionArtifactRecovered
 	if !artifact.Complete {
 		status = session.DecisionArtifactFailed
+		if phase3Blocked(state) {
+			return r.persistCompletionStatus(ctx, sess, status)
+		}
 		if err := r.escalateIncompleteDecision(ctx, rr, sessionID); err != nil {
 			return err
 		}
@@ -172,4 +181,10 @@ func stateMap(state adksession.State, key string) map[string]any {
 	}
 	result, _ := value.(map[string]any)
 	return result
+}
+
+func phase3Blocked(state adksession.State) bool {
+	value, err := state.Get(session.StateKeyPhase3Blocked)
+	blocked, ok := value.(bool)
+	return err == nil && ok && blocked
 }

@@ -60,6 +60,37 @@ var _ = Describe("Decision artifact recovery (#2365)", func() {
 		Expect(rca).NotTo(HaveKey("target"))
 	})
 
+	It("UT-AF-2365-007b (AU-3, SI-10): uses an authoritative summary without inventing structured RCA facts", func() {
+		result, err := launcher.BuildRecoveredDecisionArtifact(launcher.DecisionRecoveryInput{
+			SessionID: "sess-2365-summary",
+			Summary:   "The deployment exceeded its memory limit during a traffic spike.",
+			Discovery: &ka.DiscoverWorkflowsResult{
+				Workflows: []ka.DiscoveredWorkflow{{WorkflowID: "wf-restart", Name: "Restart deployment"}},
+			},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Complete).To(BeTrue())
+		Expect(result.Data["summary"]).To(Equal("The deployment exceeded its memory limit during a traffic spike."))
+		rca := result.Data["rca"].(map[string]any)
+		Expect(rca).To(HaveKeyWithValue("explanation", "The deployment exceeded its memory limit during a traffic spike."))
+		Expect(rca).NotTo(HaveKey("severity"))
+		Expect(rca).NotTo(HaveKey("confidence"))
+	})
+
+	It("UT-AF-2365-007c (AU-3, SI-10): rejects provisional summary as authoritative RCA", func() {
+		result, err := launcher.BuildRecoveredDecisionArtifact(launcher.DecisionRecoveryInput{
+			SessionID:          "sess-2365-provisional",
+			Summary:            "Severity assessed from resource metadata.",
+			SummaryProvisional: true,
+			Discovery:          &ka.DiscoverWorkflowsResult{Workflows: []ka.DiscoveredWorkflow{{WorkflowID: "wf-restart", Name: "Restart deployment"}}},
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Complete).To(BeFalse())
+		Expect(result.Data).To(HaveKeyWithValue("failure_reason", "missing_authoritative_data"))
+	})
+
 	It("UT-AF-2365-011 (SI-10, ASVS 5.5.2): recovered artifact satisfies investigation_summary schema", func() {
 		result, err := launcher.BuildRecoveredDecisionArtifact(launcher.DecisionRecoveryInput{
 			SessionID: "sess-2365",

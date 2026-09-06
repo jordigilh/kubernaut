@@ -90,6 +90,14 @@ const (
 	// value used by the agent grounding guard.
 	StateKeyGroundedRCAPayload = "af_grounded_rca_payload"
 
+	// StateKeyGroundedSummary stores the grounded narrative available when KA
+	// returns summary content without a non-provisional structured RCA.
+	StateKeyGroundedSummary = "af_grounded_summary"
+
+	// StateKeyGroundedSummaryProvisional distinguishes severity-triage fallback
+	// text from an authoritative investigation summary.
+	StateKeyGroundedSummaryProvisional = "af_grounded_summary_provisional"
+
 	// StateKeyDiscoveryResult stores the successful canonical discovery result
 	// for completion recovery when ADK trims older events.
 	StateKeyDiscoveryResult = "af_discovery_result"

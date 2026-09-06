@@ -145,6 +145,7 @@ CHECKPOINT W fails if any component lacks a production caller or if tests only c
 - `IT-AF-2365-006`: A2A execution invokes the coordinator before final status publication and emits the structured artifact.
 - `IT-AF-2365-007`: recovered artifact reaches the A2A queue with required metadata and correlation.
 - `IT-AF-2365-008`: incomplete recovery reaches KA operator escalation and finalizes the investigation outcome.
+- `IT-AF-2365-008b`: incomplete recovery at an active phase-3 consent boundary emits failure data but preserves the session and does not escalate.
 - `IT-AF-2365-009`: normal `present_decision` does not produce a duplicate recovered artifact.
 - `IT-AF-2365-010`: repeated finalization does not duplicate escalation.
 - `IT-AF-2365-011`: existing reinvocation and consent integration behavior remains unchanged.
@@ -153,7 +154,7 @@ CHECKPOINT W fails if any component lacks a production caller or if tests only c
 ### E2E Tests
 
 - `E2E-FP-2365-001`: model narrates after successful discovery without calling `present_decision`; Console receives workflow options, RR leaves the pending analysis state, and a genuine selection turn executes the selected workflow without same-turn authorization.
-- `E2E-FP-2365-002`: authoritative data is incomplete; Console receives a structured failure/escalation outcome, notification routing occurs, and the RR is not left in `Analyzing`.
+- `E2E-FP-2365-002`: authoritative data is incomplete outside an active consent boundary; Console receives a structured failure/escalation outcome, notification routing occurs, and the RR is not left in `Analyzing`.
 - Regression: `E2E-FP-1899-002` continues to enforce phase-3 consent.
 - Regression: `E2E-FP-1853-002` continues to complete autonomous discover/select/watch chaining.
 

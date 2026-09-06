@@ -17,10 +17,12 @@ const (
 // missing presentation artifact. It deliberately excludes model-authored
 // presentation fields so recovery cannot amplify untrusted narration.
 type DecisionRecoveryInput struct {
-	SessionID string
-	RRID      string
-	RCA       map[string]any
-	Discovery *ka.DiscoverWorkflowsResult
+	SessionID          string
+	RRID               string
+	RCA                map[string]any
+	Summary            string
+	SummaryProvisional bool
+	Discovery          *ka.DiscoverWorkflowsResult
 }
 
 // DecisionRecoveryResult is the schema-shaped artifact payload and its
@@ -41,12 +43,18 @@ func BuildRecoveredDecisionArtifact(input DecisionRecoveryInput) (DecisionRecove
 		return DecisionRecoveryResult{}, fmt.Errorf("session_id is required for decision recovery")
 	}
 
-	if input.RCA == nil || input.Discovery == nil {
+	if input.Discovery == nil {
 		return incompleteDecisionArtifact(input), nil
 	}
 
-	explanation, ok := input.RCA["explanation"].(string)
-	if !ok || explanation == "" {
+	explanation := ""
+	if input.RCA != nil {
+		explanation, _ = input.RCA["explanation"].(string)
+	}
+	if explanation == "" && !input.SummaryProvisional {
+		explanation = input.Summary
+	}
+	if explanation == "" {
 		return incompleteDecisionArtifact(input), nil
 	}
 
@@ -64,6 +72,9 @@ func BuildRecoveredDecisionArtifact(input DecisionRecoveryInput) (DecisionRecove
 	}
 
 	rca := cloneMap(input.RCA)
+	if len(rca) == 0 {
+		rca = map[string]any{"explanation": explanation}
+	}
 	data := map[string]any{
 		"session_id":              input.SessionID,
 		"summary":                 explanation,

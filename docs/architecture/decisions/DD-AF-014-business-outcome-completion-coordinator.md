@@ -131,7 +131,9 @@ If RCA or discovery data is incomplete, AF must emit a truthful structured failu
 
 The coordinator must not fabricate severity, confidence, causal chains, targets, workflow names, or execution decisions.
 
-If a required outcome still cannot be produced after bounded recovery, AF must use the existing KA `complete_no_action` escalation path with a fixed system-generated escalation reason. This produces `HumanReviewReason=operator_escalation`, a `ManualReviewRequired` outcome, and notification routing. It must not use ordinary dismissal and must be idempotent.
+If a required outcome still cannot be produced after bounded recovery **and no consent boundary is active**, AF must use the existing KA `complete_no_action` escalation path with a fixed system-generated escalation reason. This produces `HumanReviewReason=operator_escalation`, a `ManualReviewRequired` outcome, and notification routing. It must not use ordinary dismissal and must be idempotent.
+
+When `phase3_blocked=true`, incomplete authoritative data is still recoverable from the lifecycle perspective: AF emits the truthful failure artifact, preserves the active session and consent gate, and waits for the genuine user turn. It must not escalate or terminate the RemediationRequest at that boundary.
 
 ### Idempotency
 
