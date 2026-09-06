@@ -61,6 +61,31 @@ SSH tunnel, no separate IdP per cluster.
 
 ---
 
+## Automated demo path
+
+If the goal is a disposable, ready-to-browse Kind demo rather than learning each
+hub/spoke component manually, use the dedicated
+[Fleet Demo Quick Start](./FLEET_DEMO_QUICKSTART.md):
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials
+```
+
+That path provisions the hub, spoke, Keycloak, MCP Gateway, kube-mcp-server,
+monitoring, Helm installation, Console access, generated Secrets, default Rego
+policies, and fleet demo instructions. It is Console-first by default; set
+`AUTONOMOUS=true` to enable Gateway-driven remediation. Continue with Path A for
+the contributor E2E harness or Path B for the manual architecture walkthrough.
+
+The Quick Start is the canonical operator entry point for the throwaway demo;
+this guide remains the detailed topology and troubleshooting reference.
+
+---
+
 ## Path A (recommended): use the existing automation
 
 The full two-cluster topology is already wired into this repo's E2E harness and is
@@ -492,6 +517,7 @@ KUBECONFIG=$SPOKE_KUBECONFIG kubectl get jobs -n kubernaut-workflows -w
 | Kuadrant broker gets `401` discovering `remote-cluster` | No `credentialRef` on the `MCPServerRegistration`, or a stale/expired broker token | Re-mint `BROKER_TOKEN` and recreate the Secret |
 | `tools/call` against `remote_cluster_*` tools returns `403` on Job creation | Spoke RBAC only has the `view` binding, missing `fleet-exchanged-identity-job-write` | Apply B7's second `ClusterRoleBinding` |
 | Job never appears in `kubernaut-workflows` on the spoke | `RemediationRequest.ClusterID` wasn't set, or the alert used a different cluster identity than the `MCPServerRegistration`'s name | Confirm the alert payload's `cluster_id` matches `remote-cluster` exactly (case-sensitive) |
+| Fleet demo alert has no `cluster` label or AF cannot attribute the alert to a spoke | Thanos external labels are not reliably copied onto fired alert instances, and AlertManager grouping can remove labels from `commonLabels` | Add a static `cluster: <cluster-name>` label to every hub/spoke alerting rule; do not rely on Thanos `external_labels` alone. Verify the spoke rule carries `cluster: remote-cluster` before testing the demo |
 | Bridge Service connection refused | `port/targetPort` swapped between the Service (well-known port) and the Endpoints (peer's real NodePort) — see B5's note | Double-check which number is the NodePort vs. the in-cluster dial port |
 | Everything above already covered | Single-cluster loopback issues (Keycloak, Kuadrant, kube-mcp-server itself) | See [`fleet-mcp-gateway-keycloak-local-setup.md`](../../development/getting-started/fleet-mcp-gateway-keycloak-local-setup.md)'s own troubleshooting table |
 
