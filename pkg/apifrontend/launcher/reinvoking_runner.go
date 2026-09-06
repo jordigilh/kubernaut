@@ -116,6 +116,11 @@ func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, ms
 			if outcome.hadError {
 				return
 			}
+			if err := r.completeBusinessOutcome(ctx, userID, sessionID); err != nil {
+				r.logger.Error(err, "business-outcome completion failed", "session_id", sessionID)
+				_ = yield(nil, err)
+				return
+			}
 
 			if !r.needsReinvocation(ctx, userID, sessionID, reinvokeCount) {
 				r.handlePresentationRecoveryExhaustion(ctx, userID, sessionID, yield)

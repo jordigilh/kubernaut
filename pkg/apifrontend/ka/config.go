@@ -179,8 +179,15 @@ type kaDiscoveredWorkflow struct {
 // ({"workflows": [...]}) and KA's InvestigateOutput envelope format
 // ({"session_id":..., "status":..., "response": "{recommended:..., alternatives:...}"}).
 func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResult, error) {
-	var direct DiscoverWorkflowsResult
-	if err := json.Unmarshal(raw, &direct); err == nil && len(direct.Workflows) > 0 {
+	var directShape map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &directShape); err != nil {
+		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
+	}
+	if _, ok := directShape["workflows"]; ok {
+		var direct DiscoverWorkflowsResult
+		if err := json.Unmarshal(raw, &direct); err != nil {
+			return nil, fmt.Errorf("parse direct discover_workflows response: %w", err)
+		}
 		return &direct, nil
 	}
 
@@ -349,16 +356,16 @@ type CompleteNoActionResult struct {
 
 // SSE event type constants matching KA's wire format.
 const (
-	EventTypeReasoningDelta = "reasoning_delta"
-	EventTypeTokenDelta     = "token_delta"
-	EventTypeToolCallStart  = "tool_call_start"
-	EventTypeToolCall       = "tool_call"
-	EventTypeToolResult     = "tool_result"
+	EventTypeReasoningDelta   = "reasoning_delta"
+	EventTypeTokenDelta       = "token_delta"
+	EventTypeToolCallStart    = "tool_call_start"
+	EventTypeToolCall         = "tool_call"
+	EventTypeToolResult       = "tool_result"
 	EventTypeError            = "error"
 	EventTypeComplete         = "complete"
 	EventTypeCancelled        = "cancelled"
 	EventTypeAlignmentVerdict = "alignment_verdict"
-	EventTypeSessionEnded    = "session_ended"
+	EventTypeSessionEnded     = "session_ended"
 	// EventTypeReasoningContentDelta mirrors
 	// internal/kubernautagent/session.EventTypeReasoningContentDelta for wire
 	// compatibility (#1634, #1635, DD-LLM-009).

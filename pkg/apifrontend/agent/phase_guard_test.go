@@ -366,6 +366,38 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(blocked).To(BeFalse(), "full_remediation_autonomous must auto-proceed through workflow selection")
 	})
 
+	It("IT-AF-2365-005 (AU-3, AC-6): full_remediation records a presentation obligation without changing consent", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": session.InteractionModeFullRemediation}, map[string]any{
+			"session_id": "sess-2365-policy", "rr_id": "rr-2365-policy", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{map[string]any{"workflow_id": "wf-1", "name": "Restart"}},
+		}, nil)
+
+		status, err := state.Get(session.StateKeyDecisionArtifactStatus)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(session.DecisionArtifactRequired))
+		blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(BeTrue(), "presentation recovery must not loosen phase-3 consent")
+		discovery, err := state.Get(session.StateKeyDiscoveryResult)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(discovery).To(HaveKey("workflows"))
+	})
+
+	It("IT-AF-2365-005b (AU-3, AC-6): autonomous discovery does not create a presentation obligation", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": session.InteractionModeFullRemediationAutonomous}, map[string]any{
+			"session_id": "sess-2365-auto", "rr_id": "rr-2365-auto", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{map[string]any{"workflow_id": "wf-1", "name": "Restart"}},
+		}, nil)
+
+		status, err := state.Get(session.StateKeyDecisionArtifactStatus)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(session.DecisionArtifactNotRequired))
+	})
+
 	It("IT-AF-1899-003c: a failed discover_workflows does not set phase3_blocked", func() {
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
 			"session_id": "sess-1899-f", "rr_id": "rr-1899-f", "status": "completed",
