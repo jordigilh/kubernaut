@@ -26,7 +26,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -63,7 +67,7 @@ const (
 // it drives is ever told which environment it's running against; KA's own
 // tool-schema advertisement (toolDefinitionsForPhase) and overlay routing
 // (executeResolved) determine that, opaquely, from clusterID alone.
-func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence string) {
+func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence string) *aianalysisv1.AIAnalysis {
 	By(fmt.Sprintf("Deploying dedicated %s marker (memLimit=%s) on the target cluster", kaToolE2ETargetName, evidence))
 	Expect(infrastructure.DeployMemoryEaterNamed(ctx, kaToolE2ETargetName, namespace,
 		targetKubeconfig, evidence, "20Mi", GinkgoWriter)).To(Succeed())
@@ -118,6 +122,7 @@ func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, c
 			"real investigation loop called the correct tool for this environment and reached the correct "+
 			"cluster's live object -- not a canned response and not a wrong-cluster false positive", evidence)
 	GinkgoWriter.Printf("  E2E-FLEET-017: confirmed genuine, correctly-targeted round trip (evidence=%s)\n", evidence)
+	return &ai
 }
 
 // E2E-FLEET-017 [AC-4, AC-6, SI-4]: real KA investigation calls the correct
@@ -149,5 +154,34 @@ var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4]: KA real investigation calls 
 
 	It("fleet: should call resources_get via the real MCP Gateway and return genuine remote-cluster data", func() {
 		runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence)
+	})
+
+	It("fleet: should detect remote HPA and PDB labels through the real MCP Gateway", func() {
+		By("Creating remote infrastructure whose labels must be detected by KA")
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{Name: kaToolE2ETargetName + "-hpa", Namespace: namespace},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: kaToolE2ETargetName},
+				MinReplicas:    ptr.To[int32](1), MaxReplicas: 3,
+			},
+		}
+		Expect(remoteK8sClient.Create(ctx, hpa)).To(Succeed())
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), hpa) })
+
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Name: kaToolE2ETargetName + "-pdb", Namespace: namespace},
+			Spec: policyv1.PodDisruptionBudgetSpec{
+				MinAvailable: ptr.To(intstr.FromInt(1)),
+				Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": kaToolE2ETargetName}},
+			},
+		}
+		Expect(remoteK8sClient.Create(ctx, pdb)).To(Succeed())
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), pdb) })
+
+		ai := runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence)
+		Expect(ai.Status.PostRCAContext).NotTo(BeNil(), "ADR-056: remote investigation must persist post-RCA context")
+		Expect(ai.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(), "BR-INTEGRATION-1489: remote detected labels must be persisted")
+		Expect(ai.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue(), "AC-4/AC-6: HPA label must come from the remote cluster")
+		Expect(ai.Status.PostRCAContext.DetectedLabels.PDBProtected).To(BeTrue(), "AC-4/AC-6: PDB label must come from the remote cluster")
 	})
 })
