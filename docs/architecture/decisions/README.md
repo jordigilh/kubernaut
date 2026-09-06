@@ -61,6 +61,7 @@
 || DD-CONTEXT-002 | [Cache Size Limit Configuration](./DD-CONTEXT-002-cache-size-limit-configuration.md) | Context API | ✅ Approved | 2025-10-20 | OOM prevention, configurable limits |
 || DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / KA | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
 || DD-CONTEXT-004 | [BR-AI-002 Ownership](./DD-CONTEXT-004-BR-AI-002-Ownership.md) | AIAnalysis / Context API | ✅ Approved | 2025-10-22 | Keep BR-AI-002 in AIAnalysis (revised scope) |
+|| DD-AF-014 | [Business-Outcome Completion Coordinator](./DD-AF-014-business-outcome-completion-coordinator.md) | API Frontend / A2A | ✅ Accepted | 2026-09-05 | Separate business-lifecycle completion from ADK turn completion; preserve consent while recovering required decision artifacts |
 || DD-016 | [Dynamic Toolset V2.0 Deferral](./DD-016-dynamic-toolset-v2-deferral.md) | Dynamic Toolset | ✅ Approved | 2025-11-21 | Deferred to V2.0 (redundant with KA Prometheus discovery) |
 || DD-017 | [Effectiveness Monitor V1.1 Deferral](./DD-017-effectiveness-monitor-v1.1-deferral.md) | Effectiveness Monitor | ✅ Approved | 2025-12-01 | Level 1 in V1.0, Level 2 in V1.1 (DD-017 v2.0 partial reinstatement) |
 || DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ✅ Level 1 V1.0 / Level 2 V1.1 | 2025-10-16 | 85-90% effectiveness, 11x ROI (DD-017) |
