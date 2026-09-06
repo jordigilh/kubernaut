@@ -67,7 +67,11 @@ const (
 // it drives is ever told which environment it's running against; KA's own
 // tool-schema advertisement (toolDefinitionsForPhase) and overlay routing
 // (executeResolved) determine that, opaquely, from clusterID alone.
-func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence string) *aianalysisv1.AIAnalysis {
+func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence string) {
+	runKAToolCallE2ECaseWithAlert(targetKubeconfig, targetClient, clusterID, evidence, kaToolE2EKeyword)
+}
+
+func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.Client, clusterID, evidence, alertName string) *aianalysisv1.AIAnalysis {
 	By(fmt.Sprintf("Deploying dedicated %s marker (memLimit=%s) on the target cluster", kaToolE2ETargetName, evidence))
 	Expect(infrastructure.DeployMemoryEaterNamed(ctx, kaToolE2ETargetName, namespace,
 		targetKubeconfig, evidence, "20Mi", GinkgoWriter)).To(Succeed())
@@ -84,7 +88,7 @@ func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, c
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 	By(fmt.Sprintf("Sending the alert (cluster_id=%q)", clusterID))
-	payload := buildPrometheusAlertWithCluster(kaToolE2EKeyword, "high", kaToolE2ETargetName, clusterID)
+	payload := buildPrometheusAlertWithCluster(alertName, "high", kaToolE2ETargetName, clusterID)
 	body := postFleetAlertUntilAccepted(urlLocalhost30080, payload)
 
 	var response map[string]interface{}
@@ -178,7 +182,9 @@ var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4]: KA real investigation calls 
 		Expect(remoteK8sClient.Create(ctx, pdb)).To(Succeed())
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), pdb) })
 
-		ai := runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence)
+		// Keep this signal distinct from E2E-FLEET-017's preceding fleet case;
+		// otherwise Gateway deduplication rejects it before KA can inspect labels.
+		ai := runKAToolCallE2ECaseWithAlert(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence, kaToolE2EKeyword+"-labels")
 		Expect(ai.Status.PostRCAContext).NotTo(BeNil(), "ADR-056: remote investigation must persist post-RCA context")
 		Expect(ai.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(), "BR-INTEGRATION-1489: remote detected labels must be persisted")
 		Expect(ai.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue(), "AC-4/AC-6: HPA label must come from the remote cluster")
