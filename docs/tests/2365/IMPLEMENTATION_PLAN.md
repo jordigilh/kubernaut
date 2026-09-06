@@ -98,9 +98,9 @@ The pyramid invariant is mandatory: unit tests prove logic, integration tests pr
 
 | Control objective | Business behavior | Unit | Integration | E2E |
 |---|---|---|---|---|
-| FedRAMP AC-6 | Recovery cannot authorize workflow execution | UT-AF-2365-003 | IT-AF-2365-006 | E2E-FP-2365-001 |
-| FedRAMP SI-10 / ASVS 5.1 | Only valid normalized discovery data becomes an option | UT-AF-2365-001/002 | IT-AF-2365-004/012 | E2E-FP-2365-001 |
-| FedRAMP AU-3/AU-12 | Artifact provenance, correlation, and escalation outcome are preserved | UT-AF-2365-007/009 | IT-AF-2365-007/008/010 | E2E-FP-2365-001 |
+| FedRAMP AC-6 | Recovery cannot authorize workflow execution | UT-AF-2365-003 | IT-AF-2365-006 | E2E-FP-2365-001, E2E-FLEET-2365-001/002 |
+| FedRAMP SI-10 / ASVS 5.1 | Only valid normalized discovery data becomes an option | UT-AF-2365-001/002 | IT-AF-2365-004/012 | E2E-FP-2365-001, E2E-FLEET-2365-001/002/003 |
+| FedRAMP AU-3/AU-12 | Artifact provenance, correlation, and escalation outcome are preserved | UT-AF-2365-007/009 | IT-AF-2365-007/008/010 | E2E-FP-2365-001, E2E-FLEET-2365-001/002 |
 | FedRAMP SI-4 | Missing presentation and recovery exhaustion are observable | UT-AF-2365-009 | IT-AF-2365-011 | E2E-FP-2365-002 |
 | ASVS 5.5.2 | Structured output passes the sanitized A2A boundary | UT-AF-2365-007/012 | IT-AF-2365-007 | E2E-FP-2365-001 |
 | BR-INTERACTIVE-010 | User receives options and can select on a genuine subsequent turn | UT-AF-2365-003 | IT-AF-2365-006 | E2E-FP-2365-001 |
@@ -157,6 +157,8 @@ CHECKPOINT W fails if any component lacks a production caller or if tests only c
 - `E2E-FP-2365-002`: authoritative data is incomplete outside an active consent boundary; Console receives a structured failure/escalation outcome, notification routing occurs, and the RR is not left in `Analyzing`.
 - Regression: `E2E-FP-1899-002` continues to enforce phase-3 consent.
 - Regression: `E2E-FP-1853-002` continues to complete autonomous discover/select/watch chaining.
+- Fleet parity: `E2E-FLEET-2365-001/002` repeat both consent boundaries through the fleet-enabled stack and prove no WorkflowExecution exists before genuine user confirmation.
+- Fleet regression: `E2E-FLEET-2365-003` repeats autonomous discover/select/watch chaining through fleet deployment and proves execution completion.
 
 ## 8. Execution Order
 

@@ -206,5 +206,6 @@ Implementation must follow the test plan at `docs/tests/2365/IMPLEMENTATION_PLAN
 - Unit tests prove normalization, state transitions, artifact construction, and idempotency.
 - Integration tests prove production A2A wiring, consent preservation, artifact delivery, and escalation.
 - E2E tests prove the Console-visible workflow-card journey and the autonomous regression path.
+- Fleet E2E parity proves the same consent and autonomous contracts through the fleet-enabled AF/KA/RO deployment and remote-aware infrastructure.
 
 No implementation is complete with unit tests alone.
