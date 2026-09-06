@@ -1379,7 +1379,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python -m engram.pipeline.kubernaut_corpus_inventory \
+          python3 -m engram.pipeline.kubernaut_corpus_inventory \
             --repo "${{ github.repository }}" \
             --run-id "${{ github.run_id }}" \
             --output corpus-inventory.json
@@ -1388,7 +1388,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python -m engram.pipeline.kubernaut_rca_backfill \
+          python3 -m engram.pipeline.kubernaut_rca_backfill \
             --inventory corpus-inventory.json \
             --output rca-output \
             --limit 1 \
@@ -1398,7 +1398,7 @@ jobs:
         if: always()
         run: |
           if [ -f rca-output/baseline-metrics.json ]; then
-            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
           metrics = json.loads(Path("rca-output/baseline-metrics.json").read_text())["metrics"]
