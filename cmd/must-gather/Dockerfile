@@ -3,7 +3,7 @@
 # Base: UBI10 Standard (includes tar, gzip, findutils, coreutils pre-installed)
 # Tools: kubectl, jq for Kubernetes diagnostics
 
-FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:2f82a1224fbfda9bd0ed4652f1411c4d4a3364191955611d8c6ad557e22eab35
+FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:4690398669a07627339936c9e79b05233053056ce688efeb4400d3c1c530486b
 
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
