@@ -29,6 +29,8 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -86,6 +88,21 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 		g.Expect(targetClient.Get(ctx, client.ObjectKey{Name: kaToolE2ETargetName, Namespace: namespace}, dep)).To(Succeed())
 		g.Expect(dep.Status.AvailableReplicas).To(BeNumerically(">=", 1))
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+	if clusterID != "" {
+		By("Waiting for the marker Deployment to be readable through the real MCP Gateway")
+		mcpClient, err := newFleetMCPClient(ctx)
+		Expect(err).ToNot(HaveOccurred(), "MCP Gateway must be ready before posting the fleet alert")
+		DeferCleanup(func() { _ = mcpClient.Close() })
+
+		Eventually(func(g Gomega) {
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
+			g.Expect(mcpClient.Get(ctx, client.ObjectKey{Name: kaToolE2ETargetName, Namespace: namespace}, obj)).To(Succeed())
+			g.Expect(obj.GetName()).To(Equal(kaToolE2ETargetName))
+		}, 90*time.Second, 2*time.Second).Should(Succeed(),
+			"the remote marker must be visible to resources_get before Gateway owner resolution")
+	}
 
 	By(fmt.Sprintf("Sending the alert (cluster_id=%q)", clusterID))
 	payload := buildPrometheusAlertWithCluster(alertName, "high", kaToolE2ETargetName, clusterID)

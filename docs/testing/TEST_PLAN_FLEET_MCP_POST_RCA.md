@@ -35,6 +35,7 @@ The plan passes only when all P0 scenarios pass, all affected existing tests pas
 
 ### End-to-End
 
+- `E2E-FLEET-017-000`: After the marker Deployment is Available, verify the same resource is readable through the authenticated `resources_get` MCP path before posting the alert; this prevents a false batch-parse failure caused by remote discovery convergence.
 - `E2E-FLEET-017-001`: Create remote HPA/PDB resources and retrieve them through the real MCP Gateway.
 - `E2E-FLEET-017-002`: Assert `hpaEnabled=true` and `pdbProtected=true`.
 - `E2E-FLEET-017-003`: Assert persisted `PostRCAContext.DetectedLabels`.
