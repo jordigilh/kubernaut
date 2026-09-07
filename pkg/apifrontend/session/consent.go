@@ -39,6 +39,10 @@ const (
 	// af_active_rr_id key.
 	StateKeyActiveRRID = "af_active_rr_id"
 
+	// StateKeyActiveSession records the KA investigation session associated
+	// with the active driver.
+	StateKeyActiveSession = "af_active_session_id"
+
 	// StateKeyInteractionMode records the interaction_mode declared on the
 	// most recent successful kubernaut_investigate call.
 	StateKeyInteractionMode = "af_interaction_mode"
@@ -69,6 +73,34 @@ const (
 	// session can't inherit a stale "discovery already happened" flag
 	// from a prior RemediationRequest.
 	StateKeyDiscoverWorkflowsSucceeded = "af_discover_workflows_succeeded"
+
+	// StateKeyPresentationRequired marks the narrow recovery window after
+	// discovery when the model must emit the structured decision artifact.
+	StateKeyPresentationRequired = "af_presentation_required"
+
+	// StateKeyPresentationRecoveryCount bounds corrective presentation turns.
+	StateKeyPresentationRecoveryCount = "af_presentation_recovery_count"
+
+	// StateKeyDecisionArtifactStatus records whether the business outcome
+	// coordinator still owes a decision artifact for the current discovery.
+	StateKeyDecisionArtifactStatus = "af_decision_artifact_status"
+
+	// StateKeyGroundedRCAPayload stores a gob-safe canonical RCA payload for
+	// deterministic completion recovery. StateKeyGroundedRCA remains the typed
+	// value used by the agent grounding guard.
+	StateKeyGroundedRCAPayload = "af_grounded_rca_payload"
+
+	// StateKeyGroundedSummary stores the grounded narrative available when KA
+	// returns summary content without a non-provisional structured RCA.
+	StateKeyGroundedSummary = "af_grounded_summary"
+
+	// StateKeyGroundedSummaryProvisional distinguishes severity-triage fallback
+	// text from an authoritative investigation summary.
+	StateKeyGroundedSummaryProvisional = "af_grounded_summary_provisional"
+
+	// StateKeyDiscoveryResult stores the successful canonical discovery result
+	// for completion recovery when ADK trims older events.
+	StateKeyDiscoveryResult = "af_discovery_result"
 
 	// StateKeyGroundedContentAvailable records whether the most recent
 	// kubernaut_investigate call produced real, groundable RCA content
@@ -108,6 +140,15 @@ const (
 	// key's name implies). A Provisional-only investigate call is treated
 	// the same as one with no structured RCA at all.
 	StateKeyGroundedRCA = "af_grounded_rca"
+)
+
+// DecisionArtifactStatus values persisted in StateKeyDecisionArtifactStatus.
+const (
+	DecisionArtifactNotRequired = "not_required"
+	DecisionArtifactRequired    = "required"
+	DecisionArtifactEmitted     = "emitted"
+	DecisionArtifactRecovered   = "recovered"
+	DecisionArtifactFailed      = "failed"
 )
 
 // Interaction mode values for InteractionMode / StateKeyInteractionMode.

@@ -245,8 +245,16 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	for i, alert := range webhook.Alerts {
 		resource := a.extractAlertResource(ctx, alert)
 
-		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation).
+		// Issue #2362: AlertManager groups by alertname by default, so `cluster`
+		// never reaches commonLabels even when the firing alert carries it --
+		// fall back to the per-alert label instead of misattributing the
+		// signal to the local hub cluster. commonLabels keeps precedence on
+		// conflict (group-level attribution wins).
 		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+		if clusterID == "" {
+			clusterID = alert.Labels[types.ClusterLabelKey]
+		}
 		resolver := a.resolverForCluster(ctx, clusterID)
 
 		fingerprint, resolvedResource, err := a.resolveAlertForParse(ctx, i, resource, clusterID, resolver)
@@ -408,8 +416,12 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 ) (*types.NormalizedSignal, bool) {
 	resource := a.extractAlertResource(ctx, alert)
 
-	// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+	// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation),
+	// falling back to the per-alert label when grouping strips it (#2362).
 	clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+	if clusterID == "" {
+		clusterID = alert.Labels[types.ClusterLabelKey]
+	}
 	resolver := a.resolverForCluster(ctx, clusterID)
 
 	fingerprint, resolvedResource, ok := a.resolveAlertFingerprint(ctx, alertIndex, resource, clusterID, resolver)

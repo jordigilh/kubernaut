@@ -146,6 +146,22 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 			metav1.ConditionFalse, "NotApplicable")
 	})
 
+	It("UT-AA-056-020 [AU-3][ASVS V11]: persists detected labels on the problem-resolved path", func() {
+		analysis := createAnalysisWithStartedAt()
+		res := buildResultWithDetectedLabels(map[string]interface{}{
+			"hpaEnabled":   true,
+			"pdbProtected": true,
+		})
+		res.Warnings = []string{"Problem self-resolved: alert condition no longer active"}
+		res.SelectedWorkflow = nil
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.PDBProtected).To(BeTrue())
+	})
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-610-003: handleNotActionableFromIncident
 	// ═══════════════════════════════════════════════════════════════════════
@@ -180,6 +196,20 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 			metav1.ConditionFalse, "NotApplicable")
 	})
 
+	It("UT-AA-056-021 [AU-3][ASVS V11]: persists detected labels on the not-actionable path", func() {
+		analysis := createAnalysisWithStartedAt()
+		res := buildResultWithDetectedLabels(map[string]interface{}{"hpaEnabled": true})
+		res.Warnings = []string{"Alert not actionable: condition is benign"}
+		res.SelectedWorkflow = nil
+		isActionable := false
+		res.IsActionable = &isActionable
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue())
+	})
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-610-004: handleNoWorkflowTerminalFailure
 	// ═══════════════════════════════════════════════════════════════════════
@@ -212,6 +242,18 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 			metav1.ConditionFalse, "NotApplicable")
 	})
 
+	It("UT-AA-056-022 [AU-3][ASVS V11]: persists detected labels on the no-workflow failure path", func() {
+		analysis := createAnalysisWithStartedAt()
+		res := buildResultWithDetectedLabels(map[string]interface{}{"pdbProtected": true})
+		res.SelectedWorkflow = nil
+		res.Confidence = 0.3
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.PDBProtected).To(BeTrue())
+	})
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-610-005: handleLowConfidenceFailure
 	// ═══════════════════════════════════════════════════════════════════════
@@ -242,6 +284,29 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 			metav1.ConditionFalse, aianalysis.ReasonWorkflowResolutionFailed)
 		assertCondition(analysis.Status.Conditions, aianalysis.ConditionApprovalRequired,
 			metav1.ConditionFalse, "NotApplicable")
+	})
+
+	It("UT-AA-056-023 [AU-3][ASVS V11]: persists detected labels on the low-confidence path", func() {
+		analysis := createAnalysisWithStartedAt()
+		res := buildResultWithDetectedLabels(map[string]interface{}{"hpaEnabled": true})
+		res.Confidence = 0.3
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue())
+	})
+
+	It("UT-AA-056-024 [AU-3][ASVS V11]: persists detected labels on the human-review path", func() {
+		analysis := createAnalysisWithStartedAt()
+		res := buildResultWithDetectedLabels(map[string]interface{}{"stateful": true})
+		res.NeedsHumanReview = true
+		res.HumanReviewReason = "parameter_validation_failed"
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, res)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.Stateful).To(BeTrue())
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════

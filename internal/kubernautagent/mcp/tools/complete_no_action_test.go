@@ -104,6 +104,29 @@ var _ = Describe("kubernaut_complete_no_action tool — #2076 (v1.6 clone of #20
 		Expect(completedResult).NotTo(BeNil(), "the normal, non-raced path must still complete the HTTP session exactly once")
 	})
 
+	It("UT-KA-2365-001 (AU-3): presentation recovery exhaustion escalates for human review", func() {
+		sessions := &mockSessionManager{
+			isActive:        true,
+			getDriverResult: &mcpinternal.InteractiveSession{SessionID: "sess-2365", ActingUser: mcpinternal.UserInfo{Username: "alice"}},
+		}
+		completer := &mockHTTPCompleter{}
+		tool := mcptools.NewCompleteNoActionTool(sessions,
+			mcptools.WithCompleteNoActionHTTPCompleter(completer))
+
+		output, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+			RRID:             "rr-2365",
+			EscalationReason: "presentation_recovery_exhausted",
+		}, mcpinternal.UserInfo{Username: "alice"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(output.Status).To(Equal("escalated"))
+
+		_, result := completer.getCompleted()
+		Expect(result).NotTo(BeNil())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal("operator_escalation"))
+		Expect(result.Reason).To(Equal("presentation_recovery_exhausted"))
+	})
+
 	It("UT-KA-2075-002d: an inactive session still errors exactly as before when no tombstone is configured (optional dependency, no regression)", func() {
 		sessions := &mockSessionManager{isActive: false}
 		tool := mcptools.NewCompleteNoActionTool(sessions)

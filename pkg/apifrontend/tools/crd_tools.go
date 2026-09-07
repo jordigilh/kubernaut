@@ -105,6 +105,12 @@ type GetRemediationArgs struct {
 	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364 Tier 2). Tolerated here so
+	// strict ADK schema validation does not kill the turn; ignored by the
+	// handler.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // GetRemediationResult is the output of kubernaut_get_remediation.
@@ -542,6 +548,12 @@ type CancelRemediationArgs struct {
 	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
+	// ClusterID and SessionID are ambient hints the LLM propagates from fleet
+	// context and cross-phase preservation (#2364 Tier 2). Tolerated here so
+	// strict ADK schema validation does not kill the turn; ignored by the
+	// handler.
+	ClusterID string `json:"cluster_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // CancelRemediationResult is the output of kubernaut_cancel_remediation.

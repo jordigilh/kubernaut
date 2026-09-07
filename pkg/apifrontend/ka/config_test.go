@@ -90,3 +90,22 @@ var _ = Describe("Issue #1437: ParseDiscoverWorkflowsResponse — target propaga
 		})
 	})
 })
+
+var _ = Describe("ParseDiscoverWorkflowsResponse — empty direct results", func() {
+	It("UT-AF-2365-001 (SI-10, ASVS 5.1): preserves target metadata when no workflows match", func() {
+		raw := json.RawMessage(`{
+			"workflows": [],
+			"searched_target": {"api_version":"apps/v1","kind":"Deployment","name":"worker","namespace":"demo"},
+			"signal_target": {"api_version":"apps/v1","kind":"Deployment","name":"worker","namespace":"demo"}
+		}`)
+
+		result, err := ka.ParseDiscoverWorkflowsResponse(raw)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.Workflows).To(BeEmpty())
+		Expect(result.SearchedTarget).NotTo(BeNil())
+		Expect(result.SearchedTarget.Name).To(Equal("worker"))
+		Expect(result.SignalTarget).NotTo(BeNil())
+		Expect(result.SignalTarget.Name).To(Equal("worker"))
+	})
+})

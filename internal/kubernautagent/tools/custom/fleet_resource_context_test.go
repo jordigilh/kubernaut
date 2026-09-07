@@ -43,6 +43,26 @@ type fakeGetTool struct {
 	calls        int
 }
 
+type fakeListTool struct {
+	responseJSON string
+	err          error
+
+	capturedArgs map[string]any
+	calls        int
+}
+
+func (f *fakeListTool) Name() string                { return "resources_list" }
+func (f *fakeListTool) Description() string         { return "fake resources_list" }
+func (f *fakeListTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
+func (f *fakeListTool) Execute(_ context.Context, args json.RawMessage) (string, error) {
+	f.calls++
+	_ = json.Unmarshal(args, &f.capturedArgs)
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.responseJSON, nil
+}
+
 func (f *fakeGetTool) Name() string                { return "resources_get" }
 func (f *fakeGetTool) Description() string         { return "fake resources_get" }
 func (f *fakeGetTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
@@ -157,11 +177,42 @@ var _ = Describe("UT-KA-FLEET-031: overlayClientReader (BR-INTEGRATION-1489)", f
 			"UT-KA-FLEET-033: a non-not-found error must not be misclassified")
 	})
 
-	It("returns a clear not-supported error for List", func() {
+	It("returns a clear not-supported error for List when resources_list is unavailable", func() {
 		reader := custom.NewOverlayClientReader(&fakeGetTool{})
 		err := reader.List(context.Background(), &unstructured.UnstructuredList{})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not supported"))
+	})
+
+	It("routes List through resources_list with GVK, namespace, and label selector", func() {
+		listTool := &fakeListTool{responseJSON: `{"apiVersion":"apps/v1","kind":"DeploymentList","items":[{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"api-server","namespace":"production"}}]}`}
+		reader := custom.NewOverlayClientReader(&fakeGetTool{}, listTool)
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DeploymentList"})
+
+		err := reader.List(context.Background(), list, client.InNamespace("production"), client.MatchingLabels{"app": "api"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].GetName()).To(Equal("api-server"))
+		Expect(listTool.capturedArgs).To(And(
+			HaveKeyWithValue("kind", "Deployment"),
+			HaveKeyWithValue("apiVersion", "apps/v1"),
+			HaveKeyWithValue("namespace", "production"),
+			HaveKeyWithValue("labelSelector", "app=api"),
+		))
+	})
+
+	It("IT-KA-MCP-LIST-001 [AC-4][SC-7]: reads a top-level YAML list through the production overlay reader", func() {
+		listTool := &fakeListTool{responseJSON: "- apiVersion: apps/v1\n  kind: Deployment\n  metadata:\n    name: api-server\n    namespace: production\n"}
+		reader := custom.NewOverlayClientReader(&fakeGetTool{}, listTool)
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DeploymentList"})
+
+		err := reader.List(context.Background(), list, client.InNamespace("production"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].GetName()).To(Equal("api-server"))
+		Expect(list.Items[0].GetNamespace()).To(Equal("production"))
 	})
 })
 

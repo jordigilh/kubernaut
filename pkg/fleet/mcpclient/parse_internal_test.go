@@ -65,6 +65,43 @@ var _ = Describe("UT-FLEET-MCP-PARSE: MCP response parsing", func() {
 		})
 	})
 
+	Describe("ParseUnstructuredListResponse", func() {
+		It("UT-KA-MCP-LIST-001 [SI-10]: parses a top-level YAML sequence", func() {
+			items, err := ParseUnstructuredListResponse("- apiVersion: v1\n  kind: Pod\n  metadata:\n    name: api-server\n    namespace: production\n")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetKind()).To(Equal("Pod"))
+			Expect(items[0].GetName()).To(Equal("api-server"))
+		})
+
+		It("UT-KA-MCP-LIST-002 [SI-10]: parses a top-level JSON array", func() {
+			items, err := ParseUnstructuredListResponse(`[{"apiVersion":"v1","kind":"Pod","metadata":{"name":"api-server"}}]`)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetKind()).To(Equal("Pod"))
+		})
+
+		It("UT-KA-MCP-LIST-003 [SI-10]: parses an items envelope", func() {
+			items, err := ParseUnstructuredListResponse(`{"apiVersion":"v1","kind":"PodList","items":[{"apiVersion":"v1","kind":"Pod","metadata":{"name":"api-server"}}]}`)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("api-server"))
+		})
+
+		It("UT-KA-MCP-LIST-004 [SI-10]: preserves an empty list", func() {
+			items, err := ParseUnstructuredListResponse("[]")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(items).To(BeEmpty())
+		})
+
+		It("UT-KA-MCP-LIST-005 [SI-10]: rejects malformed or non-object list responses", func() {
+			for _, response := range []string{"not: [valid", `["not an object"]`, `{"items":"not an array"}`} {
+				_, err := ParseUnstructuredListResponse(response)
+				Expect(err).To(HaveOccurred(), response)
+			}
+		})
+	})
+
 	Describe("parseSelectorToMap", func() {
 		It("UT-FLEET-MCP-PARSE-009: parses single key=value", func() {
 			m := parseSelectorToMap("app=nginx")

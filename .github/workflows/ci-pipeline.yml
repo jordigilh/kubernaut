@@ -1356,6 +1356,75 @@ jobs:
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
 
   # ========================================
+  # RCA DOSSIER (NON-BLOCKING)
+  # Runs after the E2E matrix only when a test failed. Engram downloads the
+  # failed job log and must-gather artifact transiently, builds a deterministic
+  # RR-scoped dossier, and uploads only the compact result. This job
+  # is intentionally not part of merge-gate: an RCA outage must never hide the
+  # original test failure or change branch protection semantics.
+  # ========================================
+
+  rca-dossier:
+    name: Generate RCA Dossier
+    needs: [detect-changes, e2e-tests]
+    if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.e2e-tests.result == 'failure'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    container: quay.io/jordigilh/engram:latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Inventory this failed workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m engram.pipeline.kubernaut_corpus_inventory \
+            --repo "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --output corpus-inventory.json
+
+      - name: Generate compact RCA dossier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m engram.pipeline.kubernaut_rca_backfill \
+            --inventory corpus-inventory.json \
+            --output rca-output \
+            --limit 1 \
+            --dossiers-only
+
+      - name: Publish RCA summary
+        if: always()
+        run: |
+          if [ -f rca-output/baseline-metrics.json ]; then
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          metrics = json.loads(Path("rca-output/baseline-metrics.json").read_text())["metrics"]
+          print("## Engram RCA candidate")
+          print(f"- Dossiers generated: {metrics['dossiers_generated']}")
+          print(f"- Candidates promoted: {metrics['candidates_promoted']}")
+          print(f"- Promotion skipped by quality gate: {metrics['promotion_skipped_quality']}")
+          print(f"- Environment/setup failures: {metrics['environment_setup_failures']}")
+          print(f"- Unresolved failures: {metrics['unresolved_failures']}")
+          PY
+          fi
+
+      - name: Upload compact RCA output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rca-dossiers-${{ github.run_id }}
+          path: |
+            corpus-inventory.json
+            rca-output/baseline-metrics.json
+            rca-output/failure-anchors.jsonl
+            rca-output/**/*.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ========================================
   # HELM SMOKE TESTS
   # Validates the Helm chart install/upgrade/uninstall lifecycle on a Kind cluster.
   # Runs after images are built (parallel with integration + E2E tests).

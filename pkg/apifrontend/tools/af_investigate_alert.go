@@ -50,6 +50,9 @@ type InvestigateAlertConfig struct {
 	Mapper             meta.RESTMapper
 	Signaler           AlertISSignaler
 	ScopeChecker       scope.ScopeChecker
+	// ClusterLister names known fleet clusters for the unattributed-refusal
+	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
+	ClusterLister ClusterLister
 }
 
 // InvestigateAlertArgs defines the LLM-supplied input for kubernaut_investigate_alert.
@@ -147,7 +150,7 @@ func HandleInvestigateAlert(
 	}
 
 	hooks, hookFired := buildAlertPreCreateISHooks(cfg.Signaler, username)
-	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, username, hooks)
+	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker, ClusterLister: cfg.ClusterLister}, createArgs, username, hooks)
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}

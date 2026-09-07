@@ -20,6 +20,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/model"
 	adksession "google.golang.org/adk/v2/session"
+	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
@@ -38,7 +39,7 @@ import (
 // llmagent.BeforeModelCallback contract for "no override response, proceed
 // with the (possibly mutated) request" — not an ambiguous error case.
 func checkpointToolFilter(ctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
-	if req == nil || len(req.Tools) == 0 {
+	if req == nil || (len(req.Tools) == 0 && (req.Config == nil || len(req.Config.Tools) == 0)) {
 		return nil, nil // nolint:nilnil
 	}
 
@@ -47,14 +48,78 @@ func checkpointToolFilter(ctx agent.Context, req *model.LLMRequest) (*model.LLMR
 		return nil, nil // nolint:nilnil
 	}
 
+	if presentationRecoveryRequired(state) {
+		retainOnlyPresentationTool(req)
+		return nil, nil // nolint:nilnil
+	}
+
 	if checkpointFlagSet(state, session.StateKeyPhase2Blocked) {
 		delete(req.Tools, "kubernaut_discover_workflows")
+		removeToolDeclaration(req, "kubernaut_discover_workflows")
 	}
 	if checkpointFlagSet(state, session.StateKeyPhase3Blocked) {
 		delete(req.Tools, "kubernaut_select_workflow")
+		removeToolDeclaration(req, "kubernaut_select_workflow")
 	}
 
 	return nil, nil // nolint:nilnil
+}
+
+func presentationRecoveryRequired(state adksession.State) bool {
+	v, err := state.Get(session.StateKeyPresentationRequired)
+	if err != nil {
+		return false
+	}
+	required, _ := v.(bool)
+	return required
+}
+
+func retainOnlyPresentationTool(req *model.LLMRequest) {
+	for name := range req.Tools {
+		if name != "kubernaut_present_decision" {
+			delete(req.Tools, name)
+		}
+	}
+	if req.Config == nil {
+		return
+	}
+	for _, toolDecl := range req.Config.Tools {
+		if toolDecl == nil {
+			continue
+		}
+		filtered := toolDecl.FunctionDeclarations[:0]
+		for _, declaration := range toolDecl.FunctionDeclarations {
+			if declaration != nil && declaration.Name == "kubernaut_present_decision" {
+				filtered = append(filtered, declaration)
+			}
+		}
+		toolDecl.FunctionDeclarations = filtered
+	}
+	if req.Config.ToolConfig == nil {
+		req.Config.ToolConfig = &genai.ToolConfig{}
+	}
+	req.Config.ToolConfig.FunctionCallingConfig = &genai.FunctionCallingConfig{
+		Mode:                 genai.FunctionCallingConfigModeAny,
+		AllowedFunctionNames: []string{"kubernaut_present_decision"},
+	}
+}
+
+func removeToolDeclaration(req *model.LLMRequest, name string) {
+	if req.Config == nil {
+		return
+	}
+	for _, toolDecl := range req.Config.Tools {
+		if toolDecl == nil {
+			continue
+		}
+		filtered := toolDecl.FunctionDeclarations[:0]
+		for _, declaration := range toolDecl.FunctionDeclarations {
+			if declaration != nil && declaration.Name != name {
+				filtered = append(filtered, declaration)
+			}
+		}
+		toolDecl.FunctionDeclarations = filtered
+	}
 }
 
 func checkpointFlagSet(state adksession.State, key string) bool {

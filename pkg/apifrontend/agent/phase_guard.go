@@ -40,7 +40,7 @@ const (
 	// file; both packages read/write the identical state keys.
 	stateKeyDriverActive  = session.StateKeyDriverActive
 	stateKeyActiveRRID    = session.StateKeyActiveRRID
-	stateKeyActiveSession = "af_active_session_id"
+	stateKeyActiveSession = session.StateKeyActiveSession
 )
 
 const errNoActiveDriver = "interactive session not active — you must call kubernaut_investigate first to establish a driver session before using this tool"
@@ -313,7 +313,6 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 	// DD-AF-011 (#1899): discover_workflows is neither a driver-entry nor
 	// a session-terminal tool, but its success still needs to persist
 	// the phase-3 checkpoint flag.
-	isDiscoverWorkflows := toolName == "kubernaut_discover_workflows"
 	isSuccess := toolCallSucceeded(callErr, resp)
 
 	// #2047 (main clone of #2023): track whether THIS kubernaut_investigate
@@ -334,15 +333,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 		refreshActiveContext(registry, ctx)
 	}
 
-	if !isEntry && !isTerminal && !isDiscoverWorkflows {
-		return nil, nil
-	}
-	if !isSuccess {
-		return nil, nil
-	}
-
-	if isDiscoverWorkflows {
-		recordDiscoverWorkflowsCheckpoint(ctx)
+	if phaseGuardAfterTool(ctx, toolName, resp, callErr) {
 		return nil, nil
 	}
 
@@ -355,6 +346,34 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx agent.Context
 	syncActiveContextRegistry(registry, ctx, isEntry, isTerminal)
 
 	return nil, nil
+}
+
+func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any, callErr error) bool {
+	isEntry := driverEntryTools[toolName]
+	isTerminal := sessionTerminalTools[toolName]
+	isDiscoverWorkflows := toolName == "kubernaut_discover_workflows"
+	isPresentDecision := toolName == presentDecisionTool
+	isSelectWorkflow := toolName == "kubernaut_select_workflow"
+	isSuccess := toolCallSucceeded(callErr, resp)
+	if !isEntry && !isTerminal && !isDiscoverWorkflows && !isPresentDecision && !isSelectWorkflow {
+		return true
+	}
+	if !isSuccess {
+		return true
+	}
+	switch {
+	case isDiscoverWorkflows:
+		recordDiscoverWorkflowsCheckpoint(ctx, resp)
+	case isPresentDecision:
+		markDecisionArtifactEmitted(ctx)
+		clearPresentationRecoveryState(ctx)
+		return true
+	case isSelectWorkflow:
+		clearPresentationRecoveryState(ctx)
+	default:
+		return false
+	}
+	return true
 }
 
 // recordInvestigateGroundingState persists whether a kubernaut_investigate
@@ -398,6 +417,31 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 	if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_rca state")
 	}
+	var payload map[string]any
+	if rca != nil {
+		payload = canonicalGroundedRCA(rca)
+		if payload != nil && rca.RCASummary != "" {
+			payload["explanation"] = rca.RCASummary
+		}
+	}
+	if err := state.Set(session.StateKeyGroundedRCAPayload, payload); err != nil {
+		logger.Error(err, "phase-guard failed to persist grounded_rca_payload state")
+	}
+	summary, _ := resp["summary"].(string)
+	provisional := false
+	if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil {
+		provisional = decoded.Provisional
+	}
+	if !grounded {
+		summary = ""
+		provisional = false
+	}
+	if err := state.Set(session.StateKeyGroundedSummary, summary); err != nil {
+		logger.Error(err, "phase-guard failed to persist grounded_summary state")
+	}
+	if err := state.Set(session.StateKeyGroundedSummaryProvisional, provisional); err != nil {
+		logger.Error(err, "phase-guard failed to persist grounded_summary_provisional state")
+	}
 }
 
 // toolCallSucceeded reports whether a tool call completed without a Go error
@@ -423,7 +467,7 @@ func refreshActiveContext(registry *launcher.ActiveContextRegistry, ctx agent.Co
 // blocked unless the session's interaction_mode is
 // full_remediation_autonomous, in which case the harness may auto-chain
 // straight into kubernaut_select_workflow within the same turn.
-func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
+func recordDiscoverWorkflowsCheckpoint(ctx agent.Context, resp map[string]any) {
 	state := ctx.State()
 	if state == nil {
 		return
@@ -438,6 +482,52 @@ func recordDiscoverWorkflowsCheckpoint(ctx agent.Context) {
 	// ordering guard for the remainder of this driver session.
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
 		logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
+	}
+	if err := state.Set(session.StateKeyDiscoveryResult, resp); err != nil {
+		logger.Error(err, "phase-guard failed to persist discovery_result state")
+	}
+	obligation := session.DecisionObligation(mode, true, blocked)
+	status := session.DecisionArtifactNotRequired
+	if obligation.PresentationRequired {
+		status = session.DecisionArtifactRequired
+	}
+	if err := state.Set(session.StateKeyDecisionArtifactStatus, status); err != nil {
+		logger.Error(err, "phase-guard failed to persist decision_artifact_status state")
+	}
+	// The legacy generic-reinvocation recovery flag remains inert. #2365
+	// presentation obligations are tracked independently above and enforced by
+	// the business-outcome coordinator, so recovery cannot bypass phase-3
+	// consent or autonomous workflow chaining.
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
+		logger.Error(err, "phase-guard failed to persist presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation recovery count")
+	}
+}
+
+func clearPresentationRecoveryState(ctx agent.Context) {
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+	logger := logr.FromContextOrDiscard(ctx)
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
+		logger.Error(err, "phase-guard failed to clear presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to clear presentation recovery count")
+	}
+}
+
+func markDecisionArtifactEmitted(ctx agent.Context) {
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+	logger := logr.FromContextOrDiscard(ctx)
+	if err := state.Set(session.StateKeyDecisionArtifactStatus, session.DecisionArtifactEmitted); err != nil {
+		logger.Error(err, "phase-guard failed to persist decision_artifact_status state")
 	}
 }
 
@@ -495,6 +585,15 @@ func recordInteractionMode(state adksession.State, inputArgs, resp map[string]an
 	// session.
 	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, false); err != nil {
 		logger.Error(err, "phase-guard failed to reset discover_workflows_succeeded state")
+	}
+	if err := state.Set(session.StateKeyPresentationRequired, false); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation_required state")
+	}
+	if err := state.Set(session.StateKeyPresentationRecoveryCount, 0); err != nil {
+		logger.Error(err, "phase-guard failed to reset presentation recovery count")
+	}
+	if err := state.Set(session.StateKeyDecisionArtifactStatus, session.DecisionArtifactNotRequired); err != nil {
+		logger.Error(err, "phase-guard failed to reset decision_artifact_status state")
 	}
 
 	blocked := mode == session.InteractionModeInteractive

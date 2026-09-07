@@ -226,6 +226,16 @@ var _ = Describe("buildFleetDemoHelmArgs", func() {
 		}
 	})
 
+	It("UT-INFRA-FLEETDEMO-046: wires AF alert tools to the fleet monitoring stack (Thanos Querier + Alertmanager)", func() {
+		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
+		Expect(args).To(ContainElements(
+			"--set", "monitoring.prometheus.enabled=true",
+			"--set", "monitoring.prometheus.url=http://thanos-querier-svc.monitoring.svc.cluster.local:9090",
+			"--set", "monitoring.alertManager.enabled=true",
+			"--set", "monitoring.alertManager.url=http://alertmanager-svc.monitoring.svc.cluster.local:9093",
+		))
+	})
+
 	It("UT-INFRA-FLEETDEMO-017: points APIFrontend/Console OIDC at Keycloak, not DEX", func() {
 		args := buildFleetDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements(

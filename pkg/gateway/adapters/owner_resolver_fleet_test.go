@@ -157,7 +157,83 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				"ParseBatch must preserve clusterID from remote alerts")
 		})
 	})
+
+	// Issue #2362: AlertManager groups by alertname by default, so `cluster`
+	// never reaches commonLabels even when the firing alert carries it --
+	// the adapter must fall back to the per-alert label instead of
+	// attributing the signal to the local hub cluster.
+	Describe("per-alert cluster label fallback (#2362)", func() {
+		It("UT-GW-2362-101 [AC-3]: Parse attributes ClusterID from per-alert labels when commonLabels lacks cluster", func() {
+			adapter := adapters.NewPrometheusAdapter(&stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "nginx",
+			}, nil, logr.Discard())
+
+			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("", "remote-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal.ClusterID).To(Equal("remote-cluster"),
+				"a per-alert cluster label must attribute the signal when grouping strips it from commonLabels")
+		})
+
+		It("UT-GW-2362-102 [AC-3]: commonLabels cluster keeps precedence over a conflicting per-alert cluster", func() {
+			adapter := adapters.NewPrometheusAdapter(&stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "nginx",
+			}, nil, logr.Discard())
+
+			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("hub", "remote-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal.ClusterID).To(Equal("hub"),
+				"group-level attribution must win over a conflicting per-alert label")
+		})
+
+		It("UT-GW-2362-103 [AC-3]: no cluster anywhere still yields empty ClusterID (local preserved)", func() {
+			adapter := adapters.NewPrometheusAdapter(&stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "nginx",
+			}, nil, logr.Discard())
+
+			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("", ""))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal.ClusterID).To(BeEmpty(),
+				"genuinely unattributed signals keep today's local semantics")
+		})
+	})
 })
+
+// buildAlertPayloadWithPerAlertCluster creates a webhook payload with
+// independent group-level (commonLabels) and per-alert cluster labels,
+// modeling an AlertManager grouped by alertname where `cluster` never
+// reaches commonLabels.
+func buildAlertPayloadWithPerAlertCluster(commonCluster, alertCluster string) []byte {
+	commonLabels := map[string]string{}
+	if commonCluster != "" {
+		commonLabels["cluster"] = commonCluster
+	}
+
+	labels := map[string]string{
+		"alertname": "HighCPU",
+		"severity":  "warning",
+		"namespace": "default",
+		"pod":       "nginx-abc",
+	}
+	if alertCluster != "" {
+		labels["cluster"] = alertCluster
+	}
+
+	payload := map[string]any{
+		"status": "firing",
+		"alerts": []map[string]any{
+			{
+				"status": "firing",
+				"labels": labels,
+			},
+		},
+		"commonLabels": commonLabels,
+	}
+	data, _ := json.Marshal(payload)
+	return data
+}
 
 // stubOwnerResolver returns fixed owner resolution results for testing.
 type stubOwnerResolver struct {

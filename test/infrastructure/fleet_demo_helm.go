@@ -242,6 +242,18 @@ func buildFleetDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOp
 		// uses it for browser-JWT JWKS validation (same host:port, unlike
 		// the FP suite's separate DEX-on-5556 case).
 		"--set", "networkPolicies.idp.port=8443",
+		// AF alert tools (list_alerts/get_alert_details/kubernaut_investigate_alert)
+		// only register when the chart renders severityTriage.enabled=true with
+		// a prometheusURL, which requires monitoring.prometheus.enabled=true.
+		// Without these, AF runs triage-disabled and Console reports alert
+		// querying as unconfigured -- even though the fleet monitoring stack
+		// below is already running. Matches the manual values printed by
+		// SetupFleetCoreInfrastructureWithGateway. Thanos Querier (not plain
+		// Prometheus) so alerts are fleet-wide (hub+spoke, ADR-068).
+		"--set", "monitoring.prometheus.enabled=true",
+		"--set", "monitoring.prometheus.url=http://thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local:9090",
+		"--set", "monitoring.alertManager.enabled=true",
+		"--set", "monitoring.alertManager.url=http://alertmanager-svc." + monitoringNamespace + ".svc.cluster.local:9093",
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
@@ -474,10 +486,20 @@ func InstallFleetDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeco
 		_, _ = fmt.Fprintln(writer, "  Console to investigate. Re-run with -autonomous to see it happen on its own.")
 	}
 	_, _ = fmt.Fprintln(writer, "\n  To run a kubernaut-demo-scenarios scenario in fleet mode (hub+spoke split")
-	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then pass --fleet to run.sh:")
+	_, _ = fmt.Fprintln(writer, "  instead of single-cluster), export these, then run the scenario:")
 	_, _ = fmt.Fprintf(writer, "    export HUB_KUBECONFIG=%s\n", kubeconfigPath)
 	_, _ = fmt.Fprintf(writer, "    export SPOKE_KUBECONFIG=%s\n", remoteKubeconfigPath)
-	_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
+	_, _ = fmt.Fprintln(writer, "\n  Clone the demo scenarios repo:")
+	_, _ = fmt.Fprintln(writer, "    git clone https://github.com/kubernaut/kubernaut-demo-scenarios.git")
+	_, _ = fmt.Fprintln(writer, "    cd kubernaut-demo-scenarios https://github.com/kubernaut/kubernaut-demo-scenarios.git")
+	if opts.Autonomous {
+		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
+		_, _ = fmt.Fprintln(writer, "  (Gateway enabled: Kubernaut detects and remediates automatically.)")
+	} else {
+		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet --alert-only")
+		_, _ = fmt.Fprintln(writer, "  (--alert-only fires the alert and stops: investigate it yourself in")
+		_, _ = fmt.Fprintln(writer, "  Console. Drop --alert-only with -autonomous for full auto-remediation.)")
+	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil

@@ -17,6 +17,7 @@ package scenarios
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -106,19 +107,30 @@ const (
 // resources_get (overlay, fleet-only) once the transparency fix ships, and
 // the overlay's cluster-scoped tool is the correct one to call for that
 // investigation.
-func kaToolCallForAvailability(available []string) (toolName string, args map[string]interface{}, expectedEvidence string, ok bool) {
+var kaToolE2ETargetNamePattern = regexp.MustCompile(`(?i)ka-tool-e2e-target(?:-[a-z0-9]{8})?`)
+
+func kaToolE2ETargetNameFromContext(ctx *DetectionContext) string {
+	if ctx != nil {
+		if targetName := kaToolE2ETargetNamePattern.FindString(ctx.Content + " " + ctx.AllText); targetName != "" {
+			return targetName
+		}
+	}
+	return kaToolE2ETargetName
+}
+
+func kaToolCallForAvailability(available []string, targetName string) (toolName string, args map[string]interface{}, expectedEvidence string, ok bool) {
 	switch {
 	case slices.Contains(available, kaToolE2EFleetToolName):
 		return kaToolE2EFleetToolName, map[string]interface{}{
 			"kind":       "Deployment",
 			"apiVersion": "apps/v1",
-			"name":       kaToolE2ETargetName,
+			"name":       targetName,
 			"namespace":  kaToolE2ETargetNamespace,
 		}, kaToolE2ERemoteEvidence, true
 	case slices.Contains(available, kaToolE2ELocalToolName):
 		return kaToolE2ELocalToolName, map[string]interface{}{
 			"kind":      "Deployment",
-			"name":      kaToolE2ETargetName,
+			"name":      targetName,
 			"namespace": kaToolE2ETargetNamespace,
 		}, kaToolE2ELocalEvidence, true
 	default:
@@ -185,7 +197,8 @@ func (s *kaToolCallE2EScenario) ConfigForContext(ctx *DetectionContext) MockScen
 	if ctx != nil {
 		available = ctx.AvailableTools
 	}
-	toolName, args, expectedEvidence, ok := kaToolCallForAvailability(available)
+	targetName := kaToolE2ETargetNameFromContext(ctx)
+	toolName, args, expectedEvidence, ok := kaToolCallForAvailability(available, targetName)
 	if !ok {
 		cfg.RootCause = fmt.Sprintf(
 			"neither %q nor %q was offered in the tool schema -- fleet overlay wiring or local tool registration is broken",
@@ -214,11 +227,11 @@ func (s *kaToolCallE2EScenario) ConfigForContext(ctx *DetectionContext) MockScen
 	if ctx != nil && strings.Contains(ctx.AllText, strings.ToLower(expectedEvidence)) {
 		cfg.RootCause = fmt.Sprintf(
 			"Verified %s via %s: found expected evidence %q from a genuine, correctly-targeted cluster round trip",
-			kaToolE2ETargetName, toolName, expectedEvidence)
+			targetName, toolName, expectedEvidence)
 	} else {
 		cfg.RootCause = fmt.Sprintf(
 			"%s call for %s did not return the expected evidence %q -- tool call missing, failed, or reached the wrong cluster",
-			toolName, kaToolE2ETargetName, expectedEvidence)
+			toolName, targetName, expectedEvidence)
 	}
 	return cfg
 }

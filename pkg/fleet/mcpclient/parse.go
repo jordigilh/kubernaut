@@ -46,6 +46,51 @@ func ParseUnstructuredResponse(text string) (*unstructured.Unstructured, error) 
 	return obj, nil
 }
 
+// ParseUnstructuredListResponse parses a kube-mcp-server list response into
+// unstructured objects. List tools may return either a top-level sequence or
+// the Kubernetes-style {"items": [...]} envelope.
+func ParseUnstructuredListResponse(text string) ([]unstructured.Unstructured, error) {
+	if text == "" {
+		return nil, fmt.Errorf("empty response")
+	}
+
+	jsonData := []byte(text)
+	if !json.Valid(jsonData) {
+		converted, err := sigsyaml.YAMLToJSON(jsonData)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshaling resource list: %w", err)
+		}
+		jsonData = converted
+	}
+
+	var rawItems []json.RawMessage
+	if err := json.Unmarshal(jsonData, &rawItems); err != nil {
+		var envelope struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if envelopeErr := json.Unmarshal(jsonData, &envelope); envelopeErr != nil {
+			return nil, fmt.Errorf("unmarshaling resource list: %w", err)
+		}
+		if envelope.Items == nil {
+			return nil, fmt.Errorf("resource list response does not contain items")
+		}
+		rawItems = envelope.Items
+	}
+
+	items := make([]unstructured.Unstructured, 0, len(rawItems))
+	for i, rawItem := range rawItems {
+		var object map[string]interface{}
+		if err := json.Unmarshal(rawItem, &object); err != nil || object == nil {
+			if err == nil {
+				err = fmt.Errorf("item is null")
+			}
+			return nil, fmt.Errorf("resource list item %d is not an object: %w", i, err)
+		}
+		items = append(items, unstructured.Unstructured{Object: object})
+	}
+	return items, nil
+}
+
 // normalizeTableItems converts flat table-row maps from kube-mcp-server
 // structuredContent (--list-output=table) into proper unstructured.Unstructured
 // objects using typed setters.

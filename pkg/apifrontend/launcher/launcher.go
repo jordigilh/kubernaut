@@ -47,6 +47,10 @@ type A2AConfig struct {
 	// LLMSemaphore limits global LLM concurrency (SC-5 Denial of Service Protection).
 	// When non-nil, Execute acquires a slot before invoking the agent and releases on return.
 	LLMSemaphore ConcurrencyLimiter
+
+	// PresentationRecoveryTerminalizer escalates bounded presentation failure
+	// through KA's existing complete_no_action escalation contract.
+	PresentationRecoveryTerminalizer func(context.Context, string) error
 }
 
 func (c A2AConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
@@ -89,7 +93,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		// RunnerProvider (not the plain RunnerConfig) wraps the real ADK
 		// runner in a reinvokingRunner, moving BR-SESS-013's reinvocation
 		// decision inside runner.Runner.Run's own iterator (issue #1776).
-		RunnerProvider:        newReinvokingRunnerProvider(runnerCfg, log, cfg.Auditor),
+		RunnerProvider:        newReinvokingRunnerProvider(runnerCfg, log, cfg.Auditor, cfg.PresentationRecoveryTerminalizer),
 		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
 		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
 		GenAIPartConverter:    buildStreamingPartConverter(),
@@ -234,7 +238,7 @@ func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.Af
 				Type:   audit.EventTriageCompleted,
 				UserID: username,
 				Detail: map[string]string{
-					"task_id":       taskID,
+					"task_id":        taskID,
 					"triage_outcome": triageOutcome,
 				},
 			})

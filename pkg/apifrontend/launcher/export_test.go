@@ -18,8 +18,8 @@ import (
 
 // NewReinvokingRunnerForTest exports newReinvokingRunner for unit testing
 // (UT-AF-REINV-002/003, issue #1776; auditor param added for #2078).
-func NewReinvokingRunnerForTest(inner adka2a.Runner, sessionService session.Service, appName string, logger logr.Logger, auditor audit.Emitter) *reinvokingRunner {
-	return newReinvokingRunner(inner, sessionService, appName, logger, auditor)
+func NewReinvokingRunnerForTest(inner adka2a.Runner, sessionService session.Service, appName string, logger logr.Logger, auditor audit.Emitter, terminalizer ...func(context.Context, string) error) *reinvokingRunner {
+	return newReinvokingRunner(inner, sessionService, appName, logger, auditor, terminalizer...)
 }
 
 // EnrichRRDetailForTest exports enrichRRDetail for unit testing.

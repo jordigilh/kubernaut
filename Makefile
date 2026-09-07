@@ -986,16 +986,16 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		-llm-model "$(LLM_MODEL)" \
 		-llm-endpoint "$(LLM_ENDPOINT)" \
 		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
-		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)" \ )
-		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)" \ )
-		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)" \ )
-		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS) \ )
-		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)" \ )
-		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)" \ )
-		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)" \ )
-		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)" \ )
-		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)" \ )
-		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)" \ )
+		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
+		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
+		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
+		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
+		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)

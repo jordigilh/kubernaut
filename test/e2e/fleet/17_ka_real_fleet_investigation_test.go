@@ -22,11 +22,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -64,23 +71,44 @@ const (
 // tool-schema advertisement (toolDefinitionsForPhase) and overlay routing
 // (executeResolved) determine that, opaquely, from clusterID alone.
 func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence string) {
-	By(fmt.Sprintf("Deploying dedicated %s marker (memLimit=%s) on the target cluster", kaToolE2ETargetName, evidence))
-	Expect(infrastructure.DeployMemoryEaterNamed(ctx, kaToolE2ETargetName, namespace,
+	runKAToolCallE2ECaseWithAlert(targetKubeconfig, targetClient, clusterID, evidence, kaToolE2EKeyword, kaToolE2ETargetName)
+}
+
+func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.Client, clusterID, evidence, alertName, targetName string) *aianalysisv1.AIAnalysis {
+	By(fmt.Sprintf("Deploying dedicated %s marker (memLimit=%s) on the target cluster", targetName, evidence))
+	Expect(infrastructure.DeployMemoryEaterNamed(ctx, targetName, namespace,
 		targetKubeconfig, evidence, "20Mi", GinkgoWriter)).To(Succeed())
 	DeferCleanup(func() {
-		dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: kaToolE2ETargetName, Namespace: namespace}}
+		dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace}}
 		_ = targetClient.Delete(context.Background(), dep)
 	})
 
 	By("Waiting for the marker Deployment to become Available")
 	Eventually(func(g Gomega) {
 		dep := &appsv1.Deployment{}
-		g.Expect(targetClient.Get(ctx, client.ObjectKey{Name: kaToolE2ETargetName, Namespace: namespace}, dep)).To(Succeed())
+		g.Expect(targetClient.Get(ctx, client.ObjectKey{Name: targetName, Namespace: namespace}, dep)).To(Succeed())
 		g.Expect(dep.Status.AvailableReplicas).To(BeNumerically(">=", 1))
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+	if clusterID != "" {
+		By("Waiting for the marker Deployment to be readable through the real MCP Gateway")
+		mcpClient, err := newFleetMCPClient(ctx)
+		Expect(err).ToNot(HaveOccurred(), "MCP Gateway must be ready before posting the fleet alert")
+		DeferCleanup(func() { _ = mcpClient.Close() })
+
+		Eventually(func(g Gomega) {
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
+			g.Expect(mcpClient.Get(ctx, client.ObjectKey{Name: targetName, Namespace: namespace}, obj)).To(Succeed())
+			g.Expect(obj.GetName()).To(Equal(targetName))
+		}, 90*time.Second, 2*time.Second).Should(Succeed(),
+			"the remote marker must be visible to resources_get before Gateway owner resolution")
+	}
+
 	By(fmt.Sprintf("Sending the alert (cluster_id=%q)", clusterID))
-	payload := buildPrometheusAlertWithCluster(kaToolE2EKeyword, "high", kaToolE2ETargetName, clusterID)
+	// Fingerprints use the target identity, not alertname. The caller supplies a
+	// unique target when multiple cases use the same remote cluster.
+	payload := buildPrometheusAlertWithCluster(alertName, "high", targetName, clusterID)
 	body := postFleetAlertUntilAccepted(urlLocalhost30080, payload)
 
 	var response map[string]interface{}
@@ -118,6 +146,7 @@ func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, c
 			"real investigation loop called the correct tool for this environment and reached the correct "+
 			"cluster's live object -- not a canned response and not a wrong-cluster false positive", evidence)
 	GinkgoWriter.Printf("  E2E-FLEET-017: confirmed genuine, correctly-targeted round trip (evidence=%s)\n", evidence)
+	return &ai
 }
 
 // E2E-FLEET-017 [AC-4, AC-6, SI-4]: real KA investigation calls the correct
@@ -149,5 +178,35 @@ var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4]: KA real investigation calls 
 
 	It("fleet: should call resources_get via the real MCP Gateway and return genuine remote-cluster data", func() {
 		runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence)
+	})
+
+	It("fleet: should detect remote HPA and PDB labels through the real MCP Gateway", func() {
+		targetName := fmt.Sprintf("%s-%s", kaToolE2ETargetName, uuid.NewString()[:8])
+		By("Creating remote infrastructure whose labels must be detected by KA")
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{Name: targetName + "-hpa", Namespace: namespace},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: targetName},
+				MinReplicas:    ptr.To[int32](1), MaxReplicas: 3,
+			},
+		}
+		Expect(remoteK8sClient.Create(ctx, hpa)).To(Succeed())
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), hpa) })
+
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Name: targetName + "-pdb", Namespace: namespace},
+			Spec: policyv1.PodDisruptionBudgetSpec{
+				MinAvailable: ptr.To(intstr.FromInt(1)),
+				Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": targetName}},
+			},
+		}
+		Expect(remoteK8sClient.Create(ctx, pdb)).To(Succeed())
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), pdb) })
+
+		ai := runKAToolCallE2ECaseWithAlert(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence, kaToolE2EKeyword+"-labels", targetName)
+		Expect(ai.Status.PostRCAContext).NotTo(BeNil(), "ADR-056: remote investigation must persist post-RCA context")
+		Expect(ai.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(), "BR-INTEGRATION-1489: remote detected labels must be persisted")
+		Expect(ai.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue(), "AC-4/AC-6: HPA label must come from the remote cluster")
+		Expect(ai.Status.PostRCAContext.DetectedLabels.PDBProtected).To(BeTrue(), "AC-4/AC-6: PDB label must come from the remote cluster")
 	})
 })

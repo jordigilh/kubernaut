@@ -156,8 +156,10 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 		return nil
 	}
 	e := enrichment.NewEnricher(ds.k8sAdapter, ds.dsAdapter, auditStore, logger)
+	var labelDetector *enrichment.LabelDetector
 	if infra != nil && infra.dynClient != nil {
-		e.WithLabelDetector(enrichment.NewLabelDetector(infra.dynClient, infra.mapper, logger.WithName("label-detector")))
+		labelDetector = enrichment.NewLabelDetector(infra.dynClient, infra.mapper, logger.WithName("label-detector"))
+		e.WithLabelDetector(labelDetector)
 		logger.Info("label detector enabled (ADR-056)")
 	}
 	// Issue #2343: without this, Investigate()'s automatic pre-fetch
@@ -172,6 +174,11 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 	e.WithK8sResolver(func(ctx context.Context) enrichment.K8sClient {
 		return custom.ResolveK8sClient(ctx, ds.k8sAdapter, k8sResolverLogger)
 	})
+	if infra != nil && infra.mapper != nil {
+		e.WithLabelDetectorResolver(func(ctx context.Context) *enrichment.LabelDetector {
+			return custom.ResolveLabelDetector(ctx, labelDetector, infra.mapper, logger.WithName("label-detector-resolver"))
+		})
+	}
 	e.WithRetryConfig(enrichment.RetryConfig{
 		MaxRetries:  cfg.AI.Enrichment.MaxRetries,
 		BaseBackoff: cfg.AI.Enrichment.BaseBackoff,

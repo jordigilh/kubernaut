@@ -232,12 +232,24 @@ func applyGenerationConfig(req *openaicompat.Request, cfg *genai.GenerateContent
 			req.Tools = append(req.Tools, td)
 		}
 	}
+	applyToolChoice(req, cfg.ToolConfig)
 
 	if cfg.ResponseSchema != nil {
 		if raw, err := json.Marshal(convertSchema(cfg.ResponseSchema)); err == nil {
 			req.ResponseSchema = raw
 		}
 	}
+}
+
+func applyToolChoice(req *openaicompat.Request, config *genai.ToolConfig) {
+	if config == nil || config.FunctionCallingConfig == nil {
+		return
+	}
+	fcc := config.FunctionCallingConfig
+	if fcc.Mode != genai.FunctionCallingConfigModeAny || len(fcc.AllowedFunctionNames) != 1 {
+		return
+	}
+	req.ToolChoice = &openaicompat.ToolChoice{Name: fcc.AllowedFunctionNames[0]}
 }
 
 func convertSchema(s *genai.Schema) map[string]any {

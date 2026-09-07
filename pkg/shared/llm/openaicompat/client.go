@@ -206,6 +206,14 @@ func buildRequestBody(model string, req Request, stream bool) map[string]any {
 	if len(req.Tools) > 0 {
 		body["tools"] = buildTools(req.Tools)
 	}
+	if req.ToolChoice != nil && req.ToolChoice.Name != "" {
+		body["tool_choice"] = map[string]any{
+			"type": "function",
+			"function": map[string]string{
+				"name": req.ToolChoice.Name,
+			},
+		}
+	}
 	if len(req.ResponseSchema) > 0 {
 		body["response_format"] = map[string]any{
 			"type":        "json_schema",

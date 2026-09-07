@@ -95,6 +95,152 @@ func toolCallModelEvent(invocationID string) *adksession.Event {
 }
 
 var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
+	It("IT-AF-2365-006 (AC-6, AU-3): recovers the decision artifact without reinvoking past consent", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365-coordinator",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(ctx, "setup-2365-coordinator")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:           true,
+			session.StateKeyPhase3Blocked:          false,
+			session.StateKeyDecisionArtifactStatus: session.DecisionArtifactRequired,
+			session.StateKeyActiveRRID:             "rr-2365-coordinator",
+			session.StateKeyActiveSession:          "sess-2365-coordinator",
+			session.StateKeyGroundedRCAPayload: map[string]any{
+				"explanation": "The deployment is restarting after a bad configuration.",
+				"severity":    "critical",
+				"confidence":  0.94,
+			},
+			session.StateKeyDiscoveryResult: map[string]any{
+				"workflows": []any{map[string]any{
+					"workflow_id": "wf-restart",
+					"name":        "Restart deployment",
+					"description": "Restarts the deployment",
+				}},
+			},
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, setup)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    "test-app",
+			responses:  []*adksession.Event{textOnlyModelEvent("inv-2365-coordinator", "I have selected the workflow.")},
+			sideEffects: map[int]map[string]any{
+				0: {session.StateKeyPhase3Blocked: true},
+			},
+		}
+		queue := &fakeQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-2365-coordinator", "sess-2365-coordinator", nil)
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
+
+		for event, runErr := range rr.Run(bridgeCtx, "user-1", "sess-2365-coordinator", genai.NewContentFromText("investigate and fix", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+			Expect(event).NotTo(BeNil())
+		}
+
+		Expect(fake.calls).To(HaveLen(1), "recovery must not use generic reinvocation")
+		Expect(queue.events).To(HaveLen(1), "recovery must emit one structured decision artifact")
+		data := launcher.LastArtifactDataForTest(queue.events[0])
+		Expect(data).To(HaveKeyWithValue("source", "af_completion_recovery"))
+		Expect(data).To(HaveKeyWithValue("requires_user_selection", true))
+		Expect(data["options"]).To(HaveLen(1))
+
+		stored, err := sessionSvc.Get(ctx, &adksession.GetRequest{AppName: "test-app", UserID: "user-1", SessionID: "sess-2365-coordinator"})
+		Expect(err).NotTo(HaveOccurred())
+		status, err := stored.Session.State().Get(session.StateKeyDecisionArtifactStatus)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(session.DecisionArtifactRecovered))
+	})
+
+	It("IT-AF-2365-008 (AU-12, SI-4): escalates incomplete recovery instead of dismissing it", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365-incomplete",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(ctx, "setup-2365-incomplete")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:           true,
+			session.StateKeyPhase3Blocked:          false,
+			session.StateKeyDecisionArtifactStatus: session.DecisionArtifactRequired,
+			session.StateKeyActiveRRID:             "rr-2365-incomplete",
+			session.StateKeyActiveSession:          "sess-2365-incomplete",
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, setup)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    "test-app",
+			responses:  []*adksession.Event{textOnlyModelEvent("inv-2365-incomplete", "I will submit the result.")},
+		}
+		queue := &fakeQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-2365-incomplete", "sess-2365-incomplete", nil)
+		var escalated string
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil,
+			func(_ context.Context, rrID string) error {
+				escalated = rrID
+				return nil
+			})
+
+		for event, runErr := range rr.Run(bridgeCtx, "user-1", "sess-2365-incomplete", genai.NewContentFromText("investigate and fix", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+			Expect(event).NotTo(BeNil())
+		}
+
+		Expect(escalated).To(Equal("rr-2365-incomplete"))
+		data := launcher.LastArtifactDataForTest(queue.events[0])
+		Expect(data).To(HaveKeyWithValue("status", "failure"))
+		Expect(data).To(HaveKeyWithValue("failure_reason", "missing_authoritative_data"))
+	})
+
+	It("IT-AF-2365-008b (AC-6, SI-4): does not escalate incomplete presentation at a consent boundary", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365-consent-incomplete",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(ctx, "setup-2365-consent-incomplete")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:           true,
+			session.StateKeyPhase3Blocked:          false,
+			session.StateKeyDecisionArtifactStatus: session.DecisionArtifactRequired,
+			session.StateKeyActiveRRID:             "rr-2365-consent-incomplete",
+			session.StateKeyActiveSession:          "sess-2365-consent-incomplete",
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, setup)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    "test-app",
+			responses:  []*adksession.Event{textOnlyModelEvent("inv-2365-consent-incomplete", "I need to wait for confirmation.")},
+			sideEffects: map[int]map[string]any{
+				0: {session.StateKeyPhase3Blocked: true},
+			},
+		}
+		queue := &fakeQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-2365-consent-incomplete", "sess-2365-consent-incomplete", nil)
+		var escalated string
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil,
+			func(_ context.Context, rrID string) error {
+				escalated = rrID
+				return nil
+			})
+
+		for event, runErr := range rr.Run(bridgeCtx, "user-1", "sess-2365-consent-incomplete", genai.NewContentFromText("select a workflow", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+			Expect(event).NotTo(BeNil())
+		}
+
+		Expect(escalated).To(BeEmpty())
+		data := launcher.LastArtifactDataForTest(queue.events[0])
+		Expect(data).To(HaveKeyWithValue("failure_reason", "missing_authoritative_data"))
+	})
+
 	It("UT-AF-REINV-002: Run() re-invokes when last event has no tool call (session Active, count < Max)", func() {
 		sessionSvc := adksession.InMemoryService()
 		createResp, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
@@ -128,6 +274,48 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 		Expect(fake.calls[1].msg).To(Equal(session.SyntheticMessage()),
 			"the reinvocation call must pass the synthetic continuation message, not the original message")
 		Expect(events).To(HaveLen(2), "both the original and reinvoked turn's events must be yielded")
+	})
+
+	It("IT-AF-2365-002 (AU-3, SI-4): exhausts presentation recovery through the terminalizer", func() {
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-2365",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		setup := adksession.NewEvent(context.Background(), "setup-2365")
+		setup.Actions.StateDelta = map[string]any{
+			session.StateKeyDriverActive:              true,
+			session.StateKeyPhase3Blocked:             true,
+			session.StateKeyPresentationRequired:      true,
+			session.StateKeyPresentationRecoveryCount: 0,
+			session.StateKeyActiveRRID:                "rr-2365",
+		}
+		Expect(sessionSvc.AppendEvent(context.Background(), createResp.Session, setup)).To(Succeed())
+
+		fake := &scriptedRunner{
+			sessionSvc: sessionSvc,
+			responses: []*adksession.Event{
+				textOnlyModelEvent("inv-2365-1", "I have selected the workflow."),
+				textOnlyModelEvent("inv-2365-2", "The workflow is ready."),
+				textOnlyModelEvent("inv-2365-3", "Let me submit the result."),
+			},
+		}
+		var escalatedRR string
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil,
+			func(_ context.Context, rrID string) error {
+				escalatedRR = rrID
+				return nil
+			})
+
+		var terminalErr error
+		for _, runErr := range rr.Run(context.Background(), "user-1", "sess-2365", genai.NewContentFromText("investigate and fix", genai.RoleUser), agent.RunConfig{}) {
+			if runErr != nil {
+				terminalErr = runErr
+			}
+		}
+		Expect(terminalErr).To(MatchError(ContainSubstring("presentation recovery exhausted")))
+		Expect(escalatedRR).To(Equal("rr-2365"))
+		Expect(fake.calls).To(HaveLen(3))
 	})
 
 	It("UT-AF-REINV-003: Run() does NOT re-invoke when last event has a tool call", func() {

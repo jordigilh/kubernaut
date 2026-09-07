@@ -3,14 +3,26 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
+
+// ClusterLister lists the IDs of known fleet clusters for scope-refusal
+// messaging when a target carries no cluster attribution (#2362). Satisfied
+// structurally by registry.ClusterRegistry (List method) with no adapter;
+// fakes implement one method. Nil-safe: a nil lister behaves as no known
+// remotes (legacy message).
+type ClusterLister interface {
+	List() []registry.ClusterInfo
+}
 
 type restMapperContextKey struct{}
 
@@ -53,7 +65,12 @@ func RESTMapperFromContext(ctx context.Context) meta.RESTMapper {
 // agent gets identical guidance whether rejected here (fail-fast) or
 // downstream by RO (temporal-drift re-check), and an EventRRScopeRejected
 // audit event is emitted (AU-3/AU-12) when auditor is non-nil.
-func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit.Emitter, username string, target scope.ResourceIdentity) (managed bool, message string) {
+//
+// lister names known fleet clusters for the unattributed-refusal message
+// (#2362). Nil-safe: a nil lister (fleet disabled, single cluster) preserves
+// the legacy message byte-for-byte -- with no remotes, local is the only
+// possible cluster and there is nothing to disambiguate.
+func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit.Emitter, username string, target scope.ResourceIdentity, lister ClusterLister) (managed bool, message string) {
 	if checker == nil {
 		return true, ""
 	}
@@ -73,23 +90,66 @@ func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit
 		return true, ""
 	}
 
+	detail := map[string]string{
+		"namespace": target.Namespace,
+		"kind":      target.Kind,
+		"name":      target.Name,
+	}
+	if target.ClusterID == "" {
+		if ids := knownRemoteClusterIDs(lister); len(ids) > 0 {
+			detail["candidate_clusters"] = strings.Join(ids, ",")
+			message = fmt.Sprintf("Resource %s/%s/%s has no cluster attribution; cannot determine "+
+				"which of [local hub, %s] it belongs to. Specify cluster_id (e.g. from the alert's "+
+				"cluster label); not acting.", target.Namespace, target.Kind, target.Name,
+				strings.Join(ids, ", "))
+			emitScopeRejected(ctx, auditor, username, target, detail)
+			return false, message
+		}
+	}
+
 	message = fmt.Sprintf("Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
 		"Add label kubernaut.ai/managed=true to namespace or resource.", target.Namespace, target.Kind, target.Name, clusterCtx)
 
-	if auditor != nil {
-		auditor.Emit(ctx, &audit.Event{
-			Type:      audit.EventRRScopeRejected,
-			UserID:    username,
-			ClusterID: target.ClusterID,
-			Detail: map[string]string{
-				"namespace": target.Namespace,
-				"kind":      target.Kind,
-				"name":      target.Name,
-			},
-		})
-	}
-
+	emitScopeRejected(ctx, auditor, username, target, detail)
 	return false, message
+}
+
+// knownRemoteClusterIDs returns the sorted IDs of fleet clusters known to
+// lister, or nil when lister is nil or knows none. Sorted for deterministic
+// refusal messages.
+func knownRemoteClusterIDs(lister ClusterLister) []string {
+	if lister == nil {
+		return nil
+	}
+	var ids []string
+	for _, ci := range lister.List() {
+		if ci.ID != "" {
+			ids = append(ids, ci.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func emitScopeRejected(ctx context.Context, auditor audit.Emitter, username string, target scope.ResourceIdentity, detail map[string]string) {
+	if auditor == nil {
+		// No emitter to record the refusal -- fail LOUD rather than silent:
+		// audit traces are not optional, so an unaudited denial is logged at
+		// error level with the full refusal context. (Deliberately not a
+		// behavior change: nil-auditor nil-safe convention is pervasive
+		// across the tool layer and production always wires a real emitter;
+		// fail-closed denial itself never depends on the auditor.)
+		logr.FromContextOrDiscard(ctx).Error(nil, "scope refusal emitted without auditor -- no audit trace recorded",
+			"user", username, "namespace", target.Namespace, "kind", target.Kind,
+			"name", target.Name, "cluster", target.ClusterID, "detail", detail)
+		return
+	}
+	auditor.Emit(ctx, &audit.Event{
+		Type:      audit.EventRRScopeRejected,
+		UserID:    username,
+		ClusterID: target.ClusterID,
+		Detail:    detail,
+	})
 }
 
 // ResolveEffectiveNamespace returns the namespace to use for a Kubernetes API

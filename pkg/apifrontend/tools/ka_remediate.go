@@ -140,14 +140,15 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 // NewRemediateTool creates the kubernaut_remediate tool for autonomous remediation.
 // It creates RRs without InvestigationSessions — the pipeline handles analysis
 // autonomously without user interaction.
-func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter, scopeChecker scope.ScopeChecker) (tool.Tool, error) {
+func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter, scopeChecker scope.ScopeChecker, clusterLister ClusterLister) (tool.Tool, error) {
 	d := &ToolDeps{
-		Client:       client,
-		DynClient:    dynClient,
-		ControllerNS: controllerNS,
-		Triager:      triager,
-		Auditor:      auditor,
-		ScopeChecker: scopeChecker,
+		Client:        client,
+		DynClient:     dynClient,
+		ControllerNS:  controllerNS,
+		Triager:       triager,
+		Auditor:       auditor,
+		ScopeChecker:  scopeChecker,
+		ClusterLister: clusterLister,
 	}
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_remediate",
