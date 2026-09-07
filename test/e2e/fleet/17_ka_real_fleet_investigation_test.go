@@ -105,7 +105,11 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 	}
 
 	By(fmt.Sprintf("Sending the alert (cluster_id=%q)", clusterID))
-	payload := buildPrometheusAlertWithCluster(alertName, "high", kaToolE2ETargetName, clusterID)
+	// Fingerprints intentionally include alertname. Keep the scenario keyword
+	// while making each run unique so a prior CI run cannot turn this creation
+	// assertion into a duplicate-signal replay.
+	uniqueAlertName := fmt.Sprintf("%s-%d", alertName, time.Now().UnixNano())
+	payload := buildPrometheusAlertWithCluster(uniqueAlertName, "high", kaToolE2ETargetName, clusterID)
 	body := postFleetAlertUntilAccepted(urlLocalhost30080, payload)
 
 	var response map[string]interface{}

@@ -199,13 +199,11 @@ const fmcSyncTimeout = 45 * time.Second
 
 // postFleetAlertUntilAccepted posts a Prometheus alert payload to the Gateway and
 // retries while the response status is not one of acceptableStatus (defaults to
-// 201 Created or 202 Accepted). A replay can legitimately return either code:
-// 201 means the request reached the create path, while 202 is the duplicate
-// path. See fmcSyncTimeout for why the retry window must exceed FMC's sync
-// interval.
+// 201 Created). See fmcSyncTimeout for why the retry window must exceed FMC's
+// sync interval.
 func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) []byte {
 	if len(acceptableStatus) == 0 {
-		acceptableStatus = []int{http.StatusCreated, http.StatusAccepted}
+		acceptableStatus = []int{http.StatusCreated}
 	}
 	var respBody []byte
 	Eventually(func(g Gomega) {
