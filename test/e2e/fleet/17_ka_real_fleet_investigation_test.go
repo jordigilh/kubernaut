@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -108,7 +109,7 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 	// Fingerprints intentionally include alertname. Keep the scenario keyword
 	// while making each run unique so a prior CI run cannot turn this creation
 	// assertion into a duplicate-signal replay.
-	uniqueAlertName := fmt.Sprintf("%s-%d", alertName, time.Now().UnixNano())
+	uniqueAlertName := fmt.Sprintf("%s-%s", alertName, uuid.NewString())
 	payload := buildPrometheusAlertWithCluster(uniqueAlertName, "high", kaToolE2ETargetName, clusterID)
 	body := postFleetAlertUntilAccepted(urlLocalhost30080, payload)
 
