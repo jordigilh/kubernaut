@@ -162,24 +162,9 @@ func (r *overlayClientReader) List(ctx context.Context, list client.ObjectList, 
 	if err != nil {
 		return fmt.Errorf("overlayClientReader.List: list %s: %w", itemKind, err)
 	}
-	fetched, err := mcpclient.ParseUnstructuredResponse(text)
+	items, err := mcpclient.ParseUnstructuredListResponse(text)
 	if err != nil {
 		return fmt.Errorf("overlayClientReader.List: parse response for %s: %w", itemKind, err)
-	}
-	rawItems, ok, err := unstructured.NestedSlice(fetched.Object, "items")
-	if err != nil {
-		return fmt.Errorf("overlayClientReader.List: parse items for %s: %w", itemKind, err)
-	}
-	if !ok {
-		rawItems = nil
-	}
-	items := make([]unstructured.Unstructured, 0, len(rawItems))
-	for i, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("overlayClientReader.List: item %d for %s is not an object", i, itemKind)
-		}
-		items = append(items, unstructured.Unstructured{Object: item})
 	}
 	if target, ok := list.(*unstructured.UnstructuredList); ok {
 		target.Items = items

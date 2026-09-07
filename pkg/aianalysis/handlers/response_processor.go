@@ -124,6 +124,10 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// BR-AI-601: Map alignment verdict from KA to CRD status for ALL response paths.
 	p.mapAlignmentVerdict(analysis, res)
 
+	// ADR-056: Persist detected labels before routing any response outcome so
+	// terminal paths retain the same post-RCA context as normal success.
+	p.populatePostRCAContext(analysis, res.DetectedLabels)
+
 	// Check if NeedsHumanReview is set
 	needsHumanReview := res.NeedsHumanReview
 	hasSelectedWorkflow := res.SelectedWorkflow != nil
@@ -221,9 +225,6 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 	im := analysis.Status.EnsureInvestigationMetadata()
 	im.Warnings = res.Warnings
 	im.InvestigationID = res.IncidentID
-
-	// ADR-056: Extract detected_labels from KA response into PostRCAContext
-	p.populatePostRCAContext(analysis, res.DetectedLabels)
 
 	// ADR-055: TargetInOwnerChain removed. remediationTarget is now a first-class
 	// LLM RCA output, not derived from pre-computed owner chain.

@@ -201,6 +201,19 @@ var _ = Describe("UT-KA-FLEET-031: overlayClientReader (BR-INTEGRATION-1489)", f
 			HaveKeyWithValue("labelSelector", "app=api"),
 		))
 	})
+
+	It("IT-KA-MCP-LIST-001 [AC-4][SC-7]: reads a top-level YAML list through the production overlay reader", func() {
+		listTool := &fakeListTool{responseJSON: "- apiVersion: apps/v1\n  kind: Deployment\n  metadata:\n    name: api-server\n    namespace: production\n"}
+		reader := custom.NewOverlayClientReader(&fakeGetTool{}, listTool)
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DeploymentList"})
+
+		err := reader.List(context.Background(), list, client.InNamespace("production"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].GetName()).To(Equal("api-server"))
+		Expect(list.Items[0].GetNamespace()).To(Equal("production"))
+	})
 })
 
 // UT-KA-FLEET-032: overlayK8sClient wraps the moved ownerchain.K8sOwnerResolver
