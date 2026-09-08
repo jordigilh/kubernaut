@@ -13,7 +13,7 @@
 
 ### Problem Statement
 
-The fleet demo/QE environment (`hack/setup-fleet-infra/main.go` -> `SetupFleetCoreInfrastructureWithGateway`)
+The fleet demo/QE environment (`hack/setup-demo-infra/main.go -mode=fleet` -> `SetupFleetCoreInfrastructureWithGateway`)
 is meant to run for days at a time so QE can exercise the full fleet stack against a stable
 cluster. Two compounding gaps made it fragile instead:
 
