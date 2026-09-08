@@ -242,6 +242,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// comment.
 	r.Register(signalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
 
+	// E2E-FP-2378-001: standalone execution must ignore a catalog-declared
+	// execution cluster while retaining the metadata in WorkflowExecution.
+	r.Register(signalScenario("standalone_exec_cluster_id_2378", []string{"standaloneexecutioncluster2378"}, standaloneExecClusterIDConfig()))
+
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())

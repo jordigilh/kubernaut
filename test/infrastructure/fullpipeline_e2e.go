@@ -403,6 +403,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	fpWorkflows := []WorkflowSeedSpec{
 		{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
 		{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
+		{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
 		{FixtureDir: "fix-certificate", Environment: "production"},
 		{FixtureDir: "generic-restart", Environment: "production"},
 	}

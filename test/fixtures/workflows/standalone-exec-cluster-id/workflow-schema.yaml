@@ -1,0 +1,46 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: standalone-exec-cluster-id-v1
+spec:
+  # E2E-FP-2378-001: standalone mode must ignore this catalog-declared ID
+  # while still preserving it in the WorkflowExecution spec.
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for a workload with a declared execution cluster"
+    whenToUse: "E2E-FP-2378-001 only"
+    whenNotToUse: "Not for production use; isolated standalone routing fixture"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+
+  actionType: IncreaseMemoryLimits
+
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, test]
+    component: ["*"]
+    priority: "*"
+
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395
+    serviceAccountName: workflow-job-executor
+    # This ID is deliberately not registered in standalone mode.
+    clusterId: standalone-declared-cluster
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource"
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
+      description: "New memory limit to apply"
