@@ -330,8 +330,8 @@ type FleetHelmOptions struct {
 // buildFleetOAuth2HelmArgs renders the global.fleet.*/workflowexecution.fleet.*/
 // fleetmetadatacache.namespace `--set` block common to every helm install
 // that enables fleet federation. Shared between InstallFullPipelineHelmChart
-// (fleet E2E, via SetupFleetE2EInfrastructure) and InstallFleetDemoHelmChart
-// (demo/QE entry point, fleet_demo_helm.go, Issue #2337) so a regression in
+// (fleet E2E, via SetupFleetE2EInfrastructure) and InstallDemoHelmChart
+// (demo/QE entry point, demo_helm.go, Issue #2337) so a regression in
 // this block is caught by fleet E2E CI on every run, not just a demo-only
 // code path nobody runs in CI.
 //

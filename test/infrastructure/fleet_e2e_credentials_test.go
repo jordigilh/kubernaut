@@ -28,7 +28,7 @@ import (
 // `setup-fleet-demo-infra` at all -- impossible, since the cluster meant to
 // hold it doesn't exist yet at that point. SetupFleetCoreInfrastructureWithGateway
 // always creates a mock placeholder regardless (createFullPipelineHelmSecrets),
-// so the "actionable error if missing" InstallFleetDemoHelmChart's
+// so the "actionable error if missing" InstallDemoHelmChart's
 // checkSecretExists promised was actually unreachable. buildLLMCredentialsSecretManifest
 // is the pure builder behind the fix: -llm-credentials-file overwrites that
 // placeholder with real content once the cluster exists, closing the gap in

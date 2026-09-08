@@ -420,7 +420,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // provider except vertex_ai) and "credentials.json" (vertex_ai only --
 // confirmed via _helpers.tpl's kubernaut.llm.credFile). This function runs
 // before the LLM provider is known to the infra-provisioning step (that's
-// FleetDemoHelmOptions.LLMProvider, resolved later, in the separate
+// DemoHelmOptions.LLMProvider, resolved later, in the separate
 // `helm install` step), so it populates both rather than plumbing the
 // provider string through this far earlier in the flow.
 //
@@ -428,7 +428,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // deliberately: vertex_ai credential material is a JSON blob that may
 // contain characters (quotes, newlines) that don't round-trip safely
 // through a YAML block scalar. Pure function (no exec/cluster access) for
-// unit testing, mirroring buildFleetDemoHelmSecretsManifest.
+// unit testing, mirroring buildDemoHelmSecretsManifest.
 func buildLLMCredentialsSecretManifest(namespace string, credentials []byte) string {
 	encoded := base64.StdEncoding.EncodeToString(credentials)
 	return fmt.Sprintf(`apiVersion: v1
@@ -440,7 +440,7 @@ type: Opaque
 data:
   api_key: %s
   credentials.json: %s
-`, fleetDemoLLMSecretName, namespace, encoded, encoded)
+`, demoLLMSecretName, namespace, encoded, encoded)
 }
 
 // applyRealLLMCredentialsSecret reads llmCredentialsFile and overwrites the
@@ -453,9 +453,9 @@ func applyRealLLMCredentialsSecret(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to read -llm-credentials-file %q: %w", llmCredentialsFile, err)
 	}
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, buildLLMCredentialsSecretManifest(namespace, credentials)); err != nil {
-		return fmt.Errorf("failed to apply real %s Secret: %w", fleetDemoLLMSecretName, err)
+		return fmt.Errorf("failed to apply real %s Secret: %w", demoLLMSecretName, err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ %s replaced with your real credentials (%s)\n", fleetDemoLLMSecretName, llmCredentialsFile)
+	_, _ = fmt.Fprintf(writer, "  ✅ %s replaced with your real credentials (%s)\n", demoLLMSecretName, llmCredentialsFile)
 	return nil
 }
 
@@ -500,7 +500,7 @@ type FleetCoreDemoOptions struct {
 	// drain/pressure-test a worker node distinct from the control plane,
 	// which the spoke can't provide as a control-plane-only cluster). Zero
 	// (the long-standing default) leaves the spoke control-plane-only.
-	// This is the `hack/setup-fleet-infra -spoke-workers=N` entry point's
+// This is the `hack/setup-demo-infra -mode=fleet -spoke-workers=N` entry point's
 	// parameter.
 	SpokeWorkers int
 	// LLMCredentialsFile, when non-empty, overwrites the mock
@@ -512,7 +512,7 @@ type FleetCoreDemoOptions struct {
 	// cluster meant to hold it existed. Empty (the default, and every
 	// existing Ginkgo-suite caller) leaves the long-standing
 	// mock-llm-e2e-key placeholder untouched -- this is the
-	// `hack/setup-fleet-infra -llm-credentials-file` entry point's
+// `hack/setup-demo-infra -mode=fleet -llm-credentials-file` entry point's
 	// parameter, deliberately a file path rather than a literal string:
 	// vertex_ai's credential material is a multi-KB service-account/ADC
 	// JSON blob, not a short token, and a file also keeps the secret out of
@@ -825,7 +825,7 @@ type FleetCoreInfraOptions struct {
 	// Empty (the default, and every existing Ginkgo-suite caller) falls
 	// back to the long-standing ClusterName+"-remote" convention -- this
 	// keeps CI's "fleet-e2e"/"fleet-e2e-remote" pair byte-for-byte
-	// unchanged. The demo entry point (hack/setup-fleet-infra) sets this
+// unchanged. The demo entry point (hack/setup-demo-infra -mode=fleet) sets this
 	// explicitly so the spoke's Kind cluster name can read as
 	// "kubernaut-remote-cluster" -- matching the "remote-cluster" identity
 	// every fleet MCPServerRegistration/AlertManager label already uses for
