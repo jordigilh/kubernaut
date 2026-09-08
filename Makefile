@@ -41,6 +41,8 @@ COMMA := ,
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# FullPipeline specs share one MCP test identity; avoid cross-worker rate-limit bursts.
+FULLPIPELINE_TEST_PROCS ?= 1
 TEST_TIMEOUT_UNIT ?= 8m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 18m
@@ -929,7 +931,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --race --timeout=50m --procs=$(FULLPIPELINE_TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)

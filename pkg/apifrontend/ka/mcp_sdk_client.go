@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -253,7 +254,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	// minutes; the caller controls cleanup via Closer(). We still use ctx
 	// for the initial Connect and SetLoggingLevel calls (which must complete
 	// within the request deadline), but the session itself lives beyond ctx.
-	session, err := connectInvestigationSession(streamClient, c.endpoint, c.streamHTTPClient) //nolint:contextcheck // connectInvestigationSession intentionally connects over a detached background context (see its doc comment / StartInvestigation)
+	session, err := connectInvestigationSession(ctx, streamClient, c.endpoint, c.streamHTTPClient)
 	if err != nil {
 		close(doneCh)
 		close(eventCh)
@@ -335,26 +336,64 @@ func (c *SDKMCPClient) newInvestigationStreamClient(args StartInvestigationArgs,
 	})
 }
 
-// connectInvestigationSession connects streamClient over a detached
-// background context (see StartInvestigation) and sets the KA logging level
-// for the resulting session.
-func connectInvestigationSession(streamClient *mcp.Client, endpoint string, httpClient *http.Client) (*mcp.ClientSession, error) {
+const (
+	maxInvestigationConnectAttempts = 3
+	investigationConnectRetryDelay  = 100 * time.Millisecond
+)
+
+// connectInvestigationSession connects streamClient and sets the KA logging
+// level. Transient 429 responses are retried because interactive MCP traffic
+// can briefly exhaust a per-user token bucket.
+func connectInvestigationSession(ctx context.Context, streamClient *mcp.Client, endpoint string, httpClient *http.Client) (*mcp.ClientSession, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxInvestigationConnectAttempts; attempt++ {
+		session, err := connectInvestigationSessionOnce(ctx, streamClient, endpoint, httpClient)
+		if err == nil {
+			return session, nil
+		}
+		lastErr = err
+		if !isRetryableMCPStartupError(err) || attempt == maxInvestigationConnectAttempts {
+			break
+		}
+
+		timer := time.NewTimer(investigationConnectRetryDelay * time.Duration(attempt))
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func connectInvestigationSessionOnce(ctx context.Context, streamClient *mcp.Client, endpoint string, httpClient *http.Client) (*mcp.ClientSession, error) {
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   endpoint,
 		HTTPClient: httpClient,
 	}
 
-	session, err := streamClient.Connect(context.Background(), transport, nil)
+	session, err := streamClient.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("MCP connect for investigation: %w", err)
 	}
 
-	if err := session.SetLoggingLevel(context.Background(), &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
+	if err := session.SetLoggingLevel(ctx, &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
 		_ = session.Close()
 		return nil, fmt.Errorf("set logging level: %w", err)
 	}
 
 	return session, nil
+}
+
+func isRetryableMCPStartupError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "429") || strings.Contains(errText, "too many requests")
 }
 
 // callStartInvestigation invokes kubernaut_investigate with action=start on
