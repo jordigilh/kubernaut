@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
@@ -560,6 +561,47 @@ var _ = Describe("SDKMCPClient.StartInvestigation (CHAR-AF-1532)", func() {
 		Expect(capturedArgs).NotTo(HaveKey("session_id"), "session_id omitted from args when not provided")
 
 		result.Closer()
+	})
+
+	It("UT-AF-2373-001: retries transient MCP 429 during investigation startup", func() {
+		server := mcp.NewServer(&mcp.Implementation{Name: "ka-mock", Version: "test"}, nil)
+		mcp.AddTool(server, &mcp.Tool{Name: "kubernaut_investigate"}, func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"session_id":"sess-2373","status":"started"}`}}}, nil, nil
+		})
+		httpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return server }, nil)
+		var requests atomic.Int32
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if requests.Add(1) == 1 {
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
+			fakeAuthMiddleware(httpHandler).ServeHTTP(w, r)
+		}))
+		ts = httptest.NewServer(mux)
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		result, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-2373"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.SessionID).To(Equal("sess-2373"))
+		Expect(requests.Load()).To(BeNumerically(">", 1))
+		result.Closer()
+	})
+
+	It("UT-AF-2373-002: returns the startup error when MCP 429 persists", func() {
+		var requests atomic.Int32
+		ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			http.Error(w, "too many requests", http.StatusTooManyRequests)
+		}))
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		_, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-2373-exhausted"})
+		Expect(err).To(HaveOccurred())
+		Expect(strings.ToLower(err.Error())).To(ContainSubstring("too many requests"))
+		Expect(requests.Load()).To(BeNumerically(">=", 3))
 	})
 
 	It("CHAR-AF-1532-012: passes session_id through to args when provided (#1452)", func() {

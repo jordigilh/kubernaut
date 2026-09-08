@@ -472,6 +472,7 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 
 	realmURL := fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet", hostPort)
 	deadline := time.Now().Add(150 * time.Second)
+	var lastErr error
 	for time.Now().Before(deadline) {
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, realmURL, http.NoBody)
 		if reqErr != nil {
@@ -487,14 +488,19 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 		// common case while Keycloak is still starting) -- dereferencing it
 		// unconditionally panics here. Branch on err first (SA5011/errcheck).
 		if err != nil {
+			lastErr = err
 			_, _ = fmt.Fprintln(writer, "  Keycloak not yet reachable, waiting:", err)
 		} else {
+			lastErr = fmt.Errorf("received HTTP status %d", resp.StatusCode)
 			_, _ = fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-fleet realm to be reachable...")
 			_ = resp.Body.Close()
 		}
 		time.Sleep(3 * time.Second)
 	}
 
+	if lastErr != nil {
+		return fmt.Errorf("keycloak kubernaut-fleet realm not responsive after 150 seconds: %w", lastErr)
+	}
 	return fmt.Errorf("keycloak kubernaut-fleet realm not responsive after 150 seconds")
 }
 
