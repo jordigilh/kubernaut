@@ -17,12 +17,15 @@ limitations under the License.
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -93,6 +96,9 @@ func ensureKeycloakCertManagerIssuer(ctx context.Context, kubeconfigPath, namesp
 
 	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
 	if err != nil {
+		return err
+	}
+	if err := removeStaleKeycloakTLSSecret(ctx, kubeconfigPath, keycloakNamespace, caCert, writer); err != nil {
 		return err
 	}
 	caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
@@ -189,4 +195,53 @@ spec:
 	}
 
 	return fmt.Errorf("failed to create keycloak-tls Issuer/Certificate after %d attempts: %w", maxRetries, lastErr)
+}
+
+// removeStaleKeycloakTLSSecret removes only the generated leaf Secret when it
+// was issued by an older chart CA. cert-manager considers an unexpired Secret
+// ready even after its CA issuer Secret changes, so applying the Certificate
+// alone does not reliably trigger reissuance on demo reruns.
+func removeStaleKeycloakTLSSecret(ctx context.Context, kubeconfigPath, namespace string, caCert *x509.Certificate, writer io.Writer) error {
+	getCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "secret", "keycloak-tls", "-n", namespace, "--ignore-not-found",
+		"-o", `jsonpath={.data.tls\.crt}`)
+	encodedCert, err := getCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to inspect existing keycloak-tls Secret: %w", err)
+	}
+	if len(bytes.TrimSpace(encodedCert)) == 0 {
+		return nil
+	}
+
+	certPEM, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encodedCert)))
+	if err != nil {
+		return fmt.Errorf("failed to decode existing keycloak-tls certificate: %w", err)
+	}
+	matches, err := certificateSignedByCA(certPEM, caCert)
+	if err != nil {
+		return fmt.Errorf("failed to validate existing keycloak-tls certificate: %w", err)
+	}
+	if matches {
+		return nil
+	}
+
+	deleteCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"delete", "secret", "keycloak-tls", "-n", namespace, "--ignore-not-found")
+	if output, err := deleteCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to remove stale keycloak-tls Secret: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	_, _ = fmt.Fprintln(writer, "  ♻️  Removed stale keycloak-tls Secret; cert-manager will reissue it from the current chart CA")
+	return nil
+}
+
+func certificateSignedByCA(certPEM []byte, caCert *x509.Certificate) (bool, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, fmt.Errorf("certificate PEM block not found")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, err
+	}
+	return cert.CheckSignatureFrom(caCert) == nil, nil
 }
