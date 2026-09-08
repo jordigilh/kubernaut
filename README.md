@@ -111,7 +111,7 @@ For the simpler single-cluster demo, run the one-command local setup (the execut
 defaults to `-mode=local`):
 
 ```bash
-make setup-local-infra \
+make setup-local-demo-infra \
   LLM_PROVIDER=openai_compatible \
   LLM_MODEL=gpt-4o \
   LLM_ENDPOINT=https://api.openai.com/v1 \
