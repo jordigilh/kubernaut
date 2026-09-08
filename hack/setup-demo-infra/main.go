@@ -106,6 +106,9 @@ func main() {
 		if err == nil {
 			err = infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout)
 		}
+		if err == nil {
+			err = infrastructure.SetupDemoOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout)
+		}
 	}
 	if err != nil {
 		fail(fmt.Sprintf("demo infrastructure setup failed: %v", err))

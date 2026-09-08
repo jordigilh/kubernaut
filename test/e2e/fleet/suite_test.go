@@ -222,7 +222,7 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 }
 
 // fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
-// dedicated port as the FMC E2E lane -- see keycloakHostPortFleet in
+// dedicated port as the FMC E2E lane -- see keycloakHostPortDemo in
 // test/infrastructure/fleet_e2e.go, which is unexported and so can't be
 // referenced directly from this package).
 const fleetKeycloakNodePort = 30557

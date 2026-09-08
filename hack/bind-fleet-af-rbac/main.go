@@ -47,7 +47,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	if err := infrastructure.BindFleetAFPersonaRBAC(ctx, kubeconfigPath, os.Stdout); err != nil {
+	if err := infrastructure.BindAFPersonaRBAC(ctx, kubeconfigPath, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ bind-fleet-af-rbac failed: %v\n", err)
 		os.Exit(1)
 	}

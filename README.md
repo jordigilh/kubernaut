@@ -118,9 +118,9 @@ make setup-local-demo-infra \
   LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt
 ```
 
-This creates one Kind cluster, installs Kubernaut, and leaves fleet disabled. The setup
-command prints the kubeconfig and the next commands for running scenarios from
-`kubernaut-demo-scenarios`.
+This creates one Kind cluster, installs Keycloak, Traefik, Kubernaut, and the Console,
+while leaving fleet disabled. The setup command prints the Console URL/login, kubeconfig,
+and the next commands for running scenarios from `kubernaut-demo-scenarios`.
 
 ---
 

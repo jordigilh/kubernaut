@@ -27,7 +27,7 @@ import (
 // grows a `helm install` step of its own, mirroring InstallFullPipelineHelmChart's
 // exec.Command("helm", ...) pattern without any of its E2E-only overrides.
 // These specs cover the pure options-to-args/options-to-manifest builders --
-// the exec.Command call itself and BindFleetAFPersonaRBAC aren't unit-testable
+// the exec.Command call itself and BindAFPersonaRBAC aren't unit-testable
 // (same as the existing E2E helpers), verified manually against a live Kind
 // cluster instead.
 
@@ -168,14 +168,19 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		LLMEndpoint: "https://api.openai.com/v1",
 	}
 
-	It("UT-INFRA-DEMO-001: local mode omits fleet values and fleet-only OIDC settings", func() {
+	It("UT-INFRA-DEMO-001: local mode enables Console without fleet values", func() {
 		opts := baseOpts
 		opts.Mode = DemoModeLocal
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", nil, opts, "/tmp/sp.rego", "/tmp/aa.rego")
 		for _, arg := range args {
 			Expect(arg).NotTo(ContainSubstring("global.fleet."))
-			Expect(arg).NotTo(ContainSubstring("keycloak"))
 		}
+		Expect(args).To(ContainElements(
+			"--set", "console.enabled=true",
+			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet",
+			"--set", "networkPolicies.idp.port=8443",
+			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
+		))
 	})
 	baseFleetOpts := &FleetHelmOptions{
 		MCPGatewayEndpoint:          "http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
@@ -328,6 +333,48 @@ var _ = Describe("buildDemoHelmArgs", func() {
 	It("UT-INFRA-FLEETDEMO-019: installs into whatever --namespace the caller passes in", func() {
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "some-other-namespace", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements("--namespace", "some-other-namespace"))
+	})
+})
+
+var _ = Describe("appendOIDCConsoleHelmArgs", func() {
+	It("UT-INFRA-OIDC-001: preserves Dex-only full-pipeline configuration", func() {
+		args := appendOIDCConsoleHelmArgs(nil, OIDCConsoleHelmOptions{
+			IssuerURL: "https://dex:5556/dex",
+			JWKSURL:   "https://dex:5556/dex/keys",
+			Audience:  "kubernaut-apifrontend",
+			IDPPort:   5556,
+		})
+		Expect(args).To(ContainElements(
+			"--set", "apifrontend.config.auth.issuerURL=https://dex:5556/dex",
+			"--set", "apifrontend.config.auth.jwksURL=https://dex:5556/dex/keys",
+			"--set", "networkPolicies.idp.port=5556",
+		))
+		Expect(args).NotTo(ContainElement("console.enabled=true"))
+	})
+
+	It("UT-INFRA-OIDC-002: adds shared Console configuration for Keycloak", func() {
+		args := appendOIDCConsoleHelmArgs(nil, OIDCConsoleHelmOptions{
+			IssuerURL:        "https://keycloak:8443/realms/kubernaut-fleet",
+			JWKSURL:          "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs",
+			Audience:         "kubernaut-apifrontend",
+			IDPPort:          8443,
+			ConsoleEnabled:   true,
+			ConsoleSecret:    "console-oauth-creds",
+			ConsoleHost:      "kubernaut-console.local",
+			ConsolePort:      8843,
+			IngressNamespace: "traefik-system",
+			SkipDiscovery:    true,
+			LoginURL:         "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth",
+			RedeemURL:        "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			ConsoleJWKSURL:   "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs",
+		})
+		Expect(args).To(ContainElements(
+			"--set", "console.enabled=true",
+			"--set", "console.auth.secretName=console-oauth-creds",
+			"--set", "console.ingress.host=kubernaut-console.local",
+			"--set", "console.oauth2Proxy.skipDiscovery=true",
+			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
+		))
 	})
 })
 

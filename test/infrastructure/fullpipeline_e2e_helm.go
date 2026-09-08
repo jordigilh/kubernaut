@@ -713,7 +713,7 @@ subjects:
 	return nil
 }
 
-// BindFleetAFPersonaRBAC is the exported, post-`helm install` entry point for
+// BindAFPersonaRBAC is the exported, post-`helm install` entry point for
 // `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the chart's
 // kubernaut-tool-<persona> ClusterRoles (only ever *created*, never *bound*,
 // by charts/kubernaut/templates/apifrontend -- see
@@ -732,7 +732,7 @@ subjects:
 // binds don't exist until the chart's apifrontend templates render them.
 // Reuses bindAFPersonaToolClusterRoles unchanged (same binding shape works
 // for any IdP's "groups" claim, not just DEX's) rather than duplicating it.
-func BindFleetAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+func BindAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	return bindAFPersonaToolClusterRoles(ctx, kubeconfigPath, writer)
 }
 
@@ -1088,9 +1088,6 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// harness (deployAPIFrontendInFP, Issue #1189) wired up directly; Fleet
 		// E2E is the one using Keycloak, for FMC's token-exchange-dependent OAuth2
 		// flow that these AF auth-middleware tests don't exercise.
-		"--set", "apifrontend.config.auth.issuerURL=https://dex:5556/dex",
-		"--set", "apifrontend.config.auth.jwksURL=https://dex:5556/dex/keys",
-		"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
 		"--set", "apifrontend.config.auth.oidcCaFile=/etc/tls-ca/ca.crt",
 		// #1999 (BR-SECURITY-1505, DD-PLATFORM-006 DA18): enable the distributed
 		// jti replay cache against the chart's own bundled Valkey so this suite
@@ -1130,7 +1127,6 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// though the OIDC config itself is fully correct (confirmed via AF pod
 		// logs showing "auth mode: OIDC/JWKS" yet still 401ing every DEX-signed
 		// token -- Issue #1737 gap found).
-		"--set", "networkPolicies.idp.port=5556",
 		// AF LLM egress (Issue #1737 gap found, distinct from the OIDC 401 fix
 		// above): apifrontend.config.agent.llm.endpoint is mandatory AF config
 		// (the A2A launcher agent calls its LLM directly, not just via KA), but
@@ -1201,6 +1197,12 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
+	args = appendOIDCConsoleHelmArgs(args, OIDCConsoleHelmOptions{
+		IssuerURL: "https://dex:5556/dex",
+		JWKSURL:   "https://dex:5556/dex/keys",
+		Audience:  "kubernaut-apifrontend",
+		IDPPort:   5556,
+	})
 
 	// Fleet federation (DD-TEST-015, Issue #54): rendering global.fleet.*
 	// on THIS install (instead of kubectl-patching it in after the fact)
