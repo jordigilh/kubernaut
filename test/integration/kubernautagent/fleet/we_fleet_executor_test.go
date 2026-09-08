@@ -37,15 +37,17 @@ import (
 //
 // Pyramid Invariant: IT proves wiring.
 // These tests prove the wiring path:
-//   MCPClientFactory.ClientFor(clusterID)
-//     -> remoteClient (reader + writer composite)
-//       -> WriterClient.Create/Delete -> MCP session -> correct tool names
+//
+//	MCPClientFactory.ClientFor(clusterID)
+//	  -> remoteClient (reader + writer composite)
+//	    -> WriterClient.Create/Delete -> MCP session -> correct tool names
 //
 // Wiring Manifest:
-//   MCPClientFactory      -> pkg/workflowexecution/executor/client_factory.go -> IT-WE-054-001
-//   WriterClient.Create   -> pkg/fleet/mcpclient/writer.go                   -> IT-WE-054-002
-//   WriterClient.Delete   -> pkg/fleet/mcpclient/writer.go                   -> IT-WE-054-003
-//   localClientFactory    -> pkg/workflowexecution/executor/client_factory.go -> IT-WE-054-004
+//
+//	MCPClientFactory      -> pkg/workflowexecution/executor/client_factory.go -> IT-WE-054-001
+//	WriterClient.Create   -> pkg/fleet/mcpclient/writer.go                   -> IT-WE-054-002
+//	WriterClient.Delete   -> pkg/fleet/mcpclient/writer.go                   -> IT-WE-054-003
+//	localClientFactory    -> pkg/workflowexecution/executor/client_factory.go -> IT-WE-2378-001
 var _ = Describe("WE Fleet Executor Integration (BR-FLEET-054)", func() {
 	var (
 		ctx context.Context
@@ -192,18 +194,22 @@ var _ = Describe("WE Fleet Executor Integration (BR-FLEET-054)", func() {
 		})
 	})
 
-	Describe("IT-WE-054-004: localClientFactory rejects remote ClusterID", func() {
-		It("returns error when fleet is not configured but ClusterID is set", func() {
+	Describe("IT-WE-2378-001: localClientFactory ignores catalog ClusterID", func() {
+		It("returns the local client without routing through MCP", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+
 			scheme := runtime.NewScheme()
 			Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			factory := weexecutor.NewLocalClientFactory(localClient)
 
-			_, err := factory.ClientFor(ctx, "remote-cluster")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("remote execution not configured"),
-				"localClientFactory must reject non-empty ClusterID with clear error")
+			execClient, err := factory.ClientFor(ctx, "remote-cluster")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(execClient).To(BeIdenticalTo(localClient))
+			Expect(gw.CallLog()).To(BeEmpty(),
+				"standalone local execution must not generate MCP tool calls")
 		})
 	})
 })
