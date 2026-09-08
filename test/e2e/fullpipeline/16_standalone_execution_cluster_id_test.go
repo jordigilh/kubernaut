@@ -18,6 +18,7 @@ package fullpipeline
 
 import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -31,12 +32,16 @@ import (
 var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 	It("preserves the declared cluster ID and completes a local Job execution", func() {
 		Expect(workflowUUIDs).To(HaveKey("standalone-exec-cluster-id-v1:production"))
+		targetNamespace, ok := fpRemediateNS["standalone-exec-cluster-id"]
+		Expect(ok).To(BeTrue(), "standalone execution cluster test namespace must be provisioned")
+		Expect(infrastructure.DeployMemoryEaterNamed(ctx, "memory-eater", targetNamespace, kubeconfigPath,
+			"64Mi", "20Mi", GinkgoWriter)).To(Succeed())
 
 		var targetPodName string
 		Eventually(func() string {
 			pods := &corev1.PodList{}
 			if err := apiReader.List(ctx, pods,
-				client.InNamespace(namespace),
+				client.InNamespace(targetNamespace),
 				client.MatchingLabels{"app": "memory-eater"}); err != nil {
 				return ""
 			}
@@ -54,7 +59,7 @@ var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 		rrName := fpPostSignalToGateway(
 			"StandaloneExecutionCluster2378",
 			targetPodName,
-			namespace,
+			targetNamespace,
 		)
 
 		// The WorkflowExecution is created only after AA has copied the
