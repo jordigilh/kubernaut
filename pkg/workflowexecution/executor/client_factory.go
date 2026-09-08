@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,7 +51,9 @@ type ClientFactory interface {
 }
 
 // localClientFactory always returns the injected local client.
-// Used in non-fleet deployments where remote execution is disabled.
+// Used in non-fleet deployments where remote execution is disabled. A
+// catalog-declared ClusterID is metadata for fleet deployments and is ignored
+// here because this factory has no remote client to select.
 type localClientFactory struct {
 	localClient client.Client
 }
@@ -60,9 +63,10 @@ func NewLocalClientFactory(c client.Client) ClientFactory {
 	return &localClientFactory{localClient: c}
 }
 
-func (f *localClientFactory) ClientFor(_ context.Context, clusterID string) (ExecutorClient, error) {
+func (f *localClientFactory) ClientFor(ctx context.Context, clusterID string) (ExecutorClient, error) {
 	if clusterID != "" {
-		return nil, fmt.Errorf("remote execution not configured: cannot target cluster %q (fleet config required)", clusterID)
+		logr.FromContextOrDiscard(ctx).Info("warning: ignoring catalog-declared execution cluster in standalone mode",
+			"cluster_id", clusterID)
 	}
 	return f.localClient, nil
 }

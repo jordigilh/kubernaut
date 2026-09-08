@@ -38,7 +38,7 @@ import (
 
 // UT-WE-054-CF: ClientFactory unit tests
 // Authority: BR-FLEET-054 (Fleet Multi-Cluster Execution)
-// FedRAMP: AC-3 (Access Enforcement) -- local factory rejects remote clusters
+// FedRAMP: AC-4/AC-6 -- standalone execution cannot cross cluster boundaries
 var _ = Describe("UT-WE-054-CF: ClientFactory", func() {
 	var (
 		ctx    context.Context
@@ -61,14 +61,13 @@ var _ = Describe("UT-WE-054-CF: ClientFactory", func() {
 			Expect(client).ToNot(BeNil())
 		})
 
-		It("UT-WE-054-CF-002: should reject non-empty clusterID when fleet not configured", func() {
+		It("UT-WE-2378-001: should use local client for non-empty clusterID when fleet is not configured", func() {
 			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := executor.NewLocalClientFactory(localClient)
 
-			_, err := factory.ClientFor(ctx, "prod-east")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("remote execution not configured"))
-			Expect(err.Error()).To(ContainSubstring("prod-east"))
+			execClient, err := factory.ClientFor(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(execClient).To(BeIdenticalTo(localClient))
 		})
 	})
 

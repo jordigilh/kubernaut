@@ -403,6 +403,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	fpWorkflows := []WorkflowSeedSpec{
 		{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
 		{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
+		{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
 		{FixtureDir: "fix-certificate", Environment: "production"},
 		{FixtureDir: "generic-restart", Environment: "production"},
 	}
@@ -512,6 +513,10 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// chained kubernaut_discover_workflows attempt that follows must be
 		// hard-rejected before it ever reaches KA.
 		"not-actionable-1918": fmt.Sprintf("fp-na1918-%s", uuid.New().String()[:8]),
+		// standalone-exec-cluster-id: dedicated namespace for E2E-FP-2378-001
+		// so its memory-eater signal fingerprint cannot collide with the shared
+		// kubernaut-system fixture or other FullPipeline scenarios.
+		"standalone-exec-cluster-id": fmt.Sprintf("fp-standalone-2378-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {

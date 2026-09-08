@@ -681,9 +681,19 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		return nil, remoteKubeconfigPath, fmt.Errorf("alertmanager install failed: %w", err)
 	}
 
+	// Prometheus Operator on BOTH clusters, before each cluster's Prometheus
+	// resource. The fleet demo uses one operator-managed installation path for
+	// hub and spoke so ServiceMonitor/Probe/PodMonitor/PrometheusRule behavior
+	// is identical on both clusters and matches the production monitoring API.
+	if err := InstallPrometheusOperator(ctx, kubeconfigPath, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("hub Prometheus Operator install failed: %w", err)
+	}
+	if err := InstallPrometheusOperator(ctx, remoteKubeconfigPath, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("spoke Prometheus Operator install failed: %w", err)
+	}
+
 	// kube-state-metrics on BOTH clusters, before each cluster's Prometheus
-	// (whose generated scrape config already targets it by Service name --
-	// see DeployKubeStateMetrics's doc comment). Without this, AF's
+	// resource. Without this, AF's
 	// monitoring-backed tools that depend on pod/deployment/node object-
 	// state metrics (as opposed to cAdvisor's container-resource metrics)
 	// come back empty -- confirmed via manual QE run on fleet-e2e-remote's
@@ -695,35 +705,17 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		return nil, remoteKubeconfigPath, fmt.Errorf("spoke kube-state-metrics install failed: %w", err)
 	}
 
-	// Demo alerting rules (with a STATIC cluster label baked into each rule,
-	// not left to Thanos's external_labels -- see DeployDemoAlertingRules's
-	// doc comment for why) must exist before Prometheus starts, since its
-	// Deployment mounts the ConfigMap they create.
-	if err := DeployDemoAlertingRules(ctx, monitoringNamespace, kubeconfigPath, "hub", writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("hub demo alerting rules install failed: %w", err)
-	}
-	// "remote-cluster", not "spoke": matches the MCPServerRegistration/MCPRoute
-	// identity resource tools already use for this same physical cluster
-	// (test/e2e/fleet's canonical fixture, confirmed 2026-08-30) -- using a
-	// different string here for the SAME cluster would leave AF's alert
-	// cluster_id and its resource-tool cluster_id permanently unable to
-	// cross-reference each other for one physical cluster.
-	if err := DeployDemoAlertingRules(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke demo alerting rules install failed: %w", err)
-	}
-
 	hubAlertManagerTarget := fmt.Sprintf("alertmanager-svc.%s.svc.cluster.local:9093", monitoringNamespace)
-	if err := DeployPrometheusWithThanosSidecar(ctx, monitoringNamespace, kubeconfigPath, "hub", hubAlertManagerTarget, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("hub prometheus+thanos-sidecar install failed: %w", err)
+	if err := DeployManagedPrometheusWithThanosSidecar(ctx, monitoringNamespace, kubeconfigPath, "hub", hubAlertManagerTarget, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("hub managed prometheus+thanos install failed: %w", err)
 	}
 
 	spokeAlertManagerTarget, err := HubNodeBridgeIPAndPort(ctx, clusterName, AlertManagerNodePort)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to resolve hub AlertManager bridge address for spoke: %w", err)
 	}
-	// "remote-cluster", not "spoke" -- see DeployDemoAlertingRules call above.
-	if err := DeployPrometheusWithThanosSidecar(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", spokeAlertManagerTarget, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("spoke prometheus+thanos-sidecar install failed: %w", err)
+	if err := DeployManagedPrometheusWithThanosSidecar(ctx, monitoringNamespace, remoteKubeconfigPath, "remote-cluster", spokeAlertManagerTarget, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("spoke managed prometheus+thanos install failed: %w", err)
 	}
 
 	spokeSidecarStoreAddr, err := BridgeSpokeThanosSidecar(ctx, kubeconfigPath, monitoringNamespace, remoteKubeconfigPath, monitoringNamespace, remoteClusterName, writer)
@@ -767,7 +759,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "      own static `labels:` block -- Thanos does NOT propagate")
 	_, _ = fmt.Fprintln(writer, "      external_labels to fired alert instances (thanos-io/thanos#7327), so AF's")
 	_, _ = fmt.Fprintln(writer, "      cluster_id filter will silently drop any alert missing it. See")
-	_, _ = fmt.Fprintln(writer, "      DeployDemoAlertingRules's doc comment (thanos_e2e.go) for details.")
+	_, _ = fmt.Fprintln(writer, "      the fleet monitoring manifest and scenario PrometheusRules for details.")
 	if opts.LLMCredentialsFile == "" {
 		_, _ = fmt.Fprintln(writer, "\n  ⚠️  llm-credentials-primary currently holds a MOCK key --")
 		_, _ = fmt.Fprintln(writer, "      kubectl apply your real LLM credentials Secret before")

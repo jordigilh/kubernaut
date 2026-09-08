@@ -158,6 +158,7 @@ var _ = SynchronizedBeforeSuite(
 		// Validate workflow catalog was seeded (Phase 6b of infrastructure setup)
 		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("standalone-exec-cluster-id-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))
 
 		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
