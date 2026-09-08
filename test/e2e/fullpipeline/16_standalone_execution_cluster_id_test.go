@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -31,9 +32,28 @@ var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 	It("preserves the declared cluster ID and completes a local Job execution", func() {
 		Expect(workflowUUIDs).To(HaveKey("standalone-exec-cluster-id-v1:production"))
 
+		var targetPodName string
+		Eventually(func() string {
+			pods := &corev1.PodList{}
+			if err := apiReader.List(ctx, pods,
+				client.InNamespace(namespace),
+				client.MatchingLabels{"app": "memory-eater"}); err != nil {
+				return ""
+			}
+			for _, pod := range pods.Items {
+				if pod.DeletionTimestamp == nil {
+					targetPodName = pod.Name
+					return pod.Name
+				}
+			}
+			return ""
+		}, timeout, interval).ShouldNot(BeEmpty(),
+			"memory-eater Deployment must have an active Pod before posting the signal")
+		// Kubernetes generates the Pod name from the Deployment name; Gateway
+		// owner resolution requires that concrete Pod identity.
 		rrName := fpPostSignalToGateway(
 			"StandaloneExecutionCluster2378",
-			"memory-eater",
+			targetPodName,
 			namespace,
 		)
 
