@@ -15,6 +15,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
 // SDKMCPClient implements MCPClient using the MCP Go SDK's StreamableClientTransport.
@@ -338,8 +339,14 @@ func (c *SDKMCPClient) newInvestigationStreamClient(args StartInvestigationArgs,
 
 const (
 	maxInvestigationConnectAttempts = 3
-	investigationConnectRetryDelay  = 100 * time.Millisecond
 )
+
+var investigationConnectBackoff = backoff.Config{
+	BasePeriod:    100 * time.Millisecond,
+	MaxPeriod:     1 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 20,
+}
 
 // connectInvestigationSession connects streamClient and sets the KA logging
 // level. Transient 429 responses are retried because interactive MCP traffic
@@ -356,7 +363,7 @@ func connectInvestigationSession(ctx context.Context, streamClient *mcp.Client, 
 			break
 		}
 
-		timer := time.NewTimer(investigationConnectRetryDelay * time.Duration(attempt))
+		timer := time.NewTimer(investigationConnectBackoff.Calculate(int32(attempt)))
 		select {
 		case <-ctx.Done():
 			if !timer.Stop() {
