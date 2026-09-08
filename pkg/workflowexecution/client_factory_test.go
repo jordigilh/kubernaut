@@ -78,17 +78,18 @@ var _ = Describe("ClientFactory (BR-FLEET-054)", func() {
 		})
 	})
 
-	Describe("UT-WE-054-003b: localClientFactory returns error for non-empty ClusterID", func() {
-		It("returns an error when clusterID is non-empty", func() {
+	Describe("UT-WE-2378-002: localClientFactory uses the local client for non-empty ClusterID", func() {
+		It("returns the local client when clusterID is non-empty", func() {
 			scheme := runtime.NewScheme()
 			Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
 			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := executor.NewLocalClientFactory(localClient)
 
-			_, err := factory.ClientFor(ctx, "prod-east")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("remote"))
+			result, err := factory.ClientFor(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(BeIdenticalTo(localClient))
 		})
 	})
 
