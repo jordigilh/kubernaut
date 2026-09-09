@@ -69,12 +69,28 @@ spec:
             limits:
               cpu: 50m
               memory: 32Mi
+          env:
+            - name: PGHOST
+              value: {{ include "kubernaut.postgresql.host" . }}
+            - name: PGPORT
+              value: "{{ include "kubernaut.postgresql.port" . }}"
+            - name: PGUSER
+              value: {{ include "kubernaut.postgresql.username" . }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubernaut.postgresql.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              value: {{ include "kubernaut.postgresql.database" . }}
+            - name: PGSSLMODE
+              value: {{ $v.config.database.sslMode | quote }}
           command:
             - /bin/sh
             - -c
             - |
               echo "Waiting for PostgreSQL..."
-              until pg_isready -h {{ include "kubernaut.postgresql.host" . }} -p {{ include "kubernaut.postgresql.port" . }} -U {{ include "kubernaut.postgresql.username" . }} -d {{ include "kubernaut.postgresql.database" . }}; do
+              until psql -c 'SELECT 1' >/dev/null 2>&1; do
                 echo "  PostgreSQL not ready, retrying in 2s..."
                 sleep 2
               done
