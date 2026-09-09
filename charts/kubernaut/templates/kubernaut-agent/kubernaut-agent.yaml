@@ -760,7 +760,6 @@ spec:
         - name: tls-certs
           secret:
             secretName: kubernautagent-tls
-            optional: true
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         # BR-PLATFORM-005: 1-hour TTL projected token replacing the default

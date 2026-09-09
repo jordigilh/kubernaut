@@ -18,7 +18,6 @@ spec:
         - name: tls-server
           secret:
             secretName: apifrontend-tls
-            optional: true
         - name: tls-ca
           secret:
             secretName: apifrontend-ca

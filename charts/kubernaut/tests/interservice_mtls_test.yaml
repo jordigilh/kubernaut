@@ -262,7 +262,7 @@ tests:
           content: valkey.NAMESPACE.svc.cluster.local
 
   # DD-PLATFORM-006 DA19 spike finding: apifrontend-tls was already
-  # referenced by apifrontend.yaml's `tls-certs` volume (`optional: true`,
+  # referenced by apifrontend.yaml's required `tls-certs` volume,
   # secretName: apifrontend-tls) but had no corresponding entry here, so a
   # cert-manager-mode install silently ran APIFrontend with no TLS certs at
   # all (the volume mounted empty rather than failing) -- acceptance

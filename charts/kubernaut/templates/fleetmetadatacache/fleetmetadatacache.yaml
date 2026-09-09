@@ -269,7 +269,6 @@ spec:
         - name: tls-certs
           secret:
             secretName: fleetmetadatacache-tls
-            optional: true
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
 ---
 apiVersion: v1

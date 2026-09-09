@@ -712,7 +712,6 @@ spec:
         - name: tls-certs
           secret:
             secretName: apifrontend-tls
-            optional: true
         - name: llm-credentials
           secret:
             secretName: {{ $afProfile.credentialsSecretName }}
