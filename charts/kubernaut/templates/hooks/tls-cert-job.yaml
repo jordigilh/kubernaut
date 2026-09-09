@@ -141,7 +141,7 @@ spec:
               # Issue #753 C-1: checks each inter-service secret independently.
               # Reuses CA from authwebhook-tls (extracted or freshly generated).
               INTERSERVICE_REGEN=false
-              for CHECK_SECRET in gateway-tls datastorage-tls kubernautagent-tls fleetmetadatacache-tls valkey-tls; do
+              for CHECK_SECRET in gateway-tls datastorage-tls kubernautagent-tls fleetmetadatacache-tls apifrontend-tls valkey-tls; do
                 if ! kubectl get secret "$CHECK_SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
                   echo "  $CHECK_SECRET missing — inter-service regen required."
                   INTERSERVICE_REGEN=true
