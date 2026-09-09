@@ -880,7 +880,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// with the local demo. Ginkgo callers retain their lightweight path.
 	isDemo := keycloakNamespace == idpNamespace
 	if isDemo {
-		if err := SetupDemoOIDCInfrastructure(ctx, kubeconfigPath, writer); err != nil {
+		if err := SetupOIDCInfrastructure(ctx, kubeconfigPath, writer); err != nil {
 			return nil, "", err
 		}
 	} else {

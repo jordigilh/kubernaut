@@ -212,14 +212,7 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
-	oidcOptions := keycloakOIDCConsoleHelmOptions(idpNamespace)
-	oidcOptions.ConsoleEnabled = true
-	oidcOptions.ConsoleSecret = demoConsoleOAuthSecretName
-	oidcOptions.ConsoleHost = demoConsoleHost
-	oidcOptions.ConsolePort = demoConsolePort
-	oidcOptions.IngressNamespace = demoTraefikNamespace
-	oidcOptions.ConsoleTLSSecret = "console-tls"
-	args = appendOIDCConsoleHelmArgs(args, oidcOptions)
+	args = appendDemoOIDCConsoleHelmArgs(args, idpNamespace)
 
 	if opts.Mode != DemoModeFleet {
 		args = append(args,

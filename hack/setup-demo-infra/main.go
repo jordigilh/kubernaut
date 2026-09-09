@@ -121,7 +121,7 @@ func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPa
 	if err := infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout); err != nil {
 		return err
 	}
-	if err := infrastructure.SetupDemoOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
+	if err := infrastructure.SetupOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
 		return err
 	}
 	return infrastructure.SetupDemoMonitoringInfrastructure(ctx, kubeconfigPath, os.Stdout)

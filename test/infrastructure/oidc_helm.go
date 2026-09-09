@@ -69,6 +69,24 @@ func keycloakOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOpt
 	}
 }
 
+// demoOIDCConsoleHelmOptions returns the complete AF and Console OIDC wiring
+// shared by local and fleet demo deployments. Fleet-specific gateway and
+// service OAuth2 values are appended separately by the caller.
+func demoOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOptions {
+	opts := keycloakOIDCConsoleHelmOptions(keycloakNamespace)
+	opts.ConsoleEnabled = true
+	opts.ConsoleSecret = demoConsoleOAuthSecretName
+	opts.ConsoleHost = demoConsoleHost
+	opts.ConsolePort = demoConsolePort
+	opts.IngressNamespace = demoTraefikNamespace
+	opts.ConsoleTLSSecret = "console-tls"
+	return opts
+}
+
+func appendDemoOIDCConsoleHelmArgs(args []string, keycloakNamespace string) []string {
+	return appendOIDCConsoleHelmArgs(args, demoOIDCConsoleHelmOptions(keycloakNamespace))
+}
+
 func appendOIDCConsoleHelmArgs(args []string, opts OIDCConsoleHelmOptions) []string {
 	args = append(args,
 		"--set", "apifrontend.config.auth.issuerURL="+opts.IssuerURL,
@@ -108,10 +126,10 @@ func appendOIDCConsoleHelmArgs(args []string, opts OIDCConsoleHelmOptions) []str
 	)
 }
 
-// SetupDemoOIDCInfrastructure provisions the shared browser-authentication
+// SetupOIDCInfrastructure provisions the shared browser-authentication
 // dependencies used by local and fleet demo installations. Fleet-only MCP
 // Gateway, spoke, and API-server OIDC wiring remain outside this helper.
-func SetupDemoOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+func SetupOIDCInfrastructure(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	appNamespace := kubernautSystem
 	if err := provisionInterServiceCA(ctx, kubeconfigPath, appNamespace, writer); err != nil {
 		return fmt.Errorf("inter-service CA provisioning failed: %w", err)
