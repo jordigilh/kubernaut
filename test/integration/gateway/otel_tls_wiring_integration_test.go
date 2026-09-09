@@ -172,8 +172,8 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		cfg.Telemetry = internalconfig.TelemetryConfig{
 			Endpoint: collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		}
 
@@ -254,8 +254,8 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		cfg.Telemetry = internalconfig.TelemetryConfig{
 			Endpoint: collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		}
 
@@ -328,8 +328,8 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		cfg.Telemetry = internalconfig.TelemetryConfig{
 			Endpoint: listener.Addr().String(),
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		}
 

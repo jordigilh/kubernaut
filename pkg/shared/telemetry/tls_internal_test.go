@@ -94,83 +94,75 @@ var _ = Describe("TLSConfig.buildTLSConfig", func() {
 		Expect(os.WriteFile(keyFile, keyPEM, 0600)).To(Succeed())
 	}
 
-	// UT-1519-005: Enabled=false is the default and returns a nil *tls.Config
-	// (no TLS), regardless of what the other fields hold.
-	It("UT-1519-005: returns nil when TLS is disabled", func() {
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: false, CAFile: "/should/be/ignored"})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(cfg).To(BeNil())
-	})
-
-	// UT-1519-006: Enabled=true with CAFile empty trusts the system CA pool
+	// UT-1519-005: an empty CAFile trusts the system CA pool
 	// -- the vendor-collector case (e.g. Datadog, Grafana Cloud) where there
 	// is no private CA to load.
-	It("UT-1519-006: trusts the system CA pool when CAFile is empty", func() {
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true})
+	It("UT-1519-005: trusts the system CA pool when CAFile is empty", func() {
+		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 		Expect(cfg.RootCAs).To(BeNil(), "nil RootCAs means Go falls back to the system trust store")
 	})
 
-	// UT-1519-007: Enabled=true with CAFile set loads that CA into the pool
+	// UT-1519-006: CAFile set loads that CA into the pool
 	// -- the self-signed-collector case.
-	It("UT-1519-007: loads a custom CA pool when CAFile is set", func() {
+	It("UT-1519-006: loads a custom CA pool when CAFile is set", func() {
 		generateSelfSignedCert(certPath, keyPath)
 
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true, CAFile: certPath})
+		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{CAFile: certPath})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg.RootCAs.Subjects()).ToNot(BeEmpty()) //nolint:staticcheck // no alternative for validating cert pool content
 	})
 
-	// UT-1519-008: an unreadable CAFile surfaces a clear, named error instead
+	// UT-1519-007: an unreadable CAFile surfaces a clear, named error instead
 	// of silently falling back to the system pool or an opaque SDK failure.
-	It("UT-1519-008: returns a named error for an unreadable CAFile", func() {
-		_, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true, CAFile: "/nonexistent/ca.pem"})
+	It("UT-1519-007: returns a named error for an unreadable CAFile", func() {
+		_, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{CAFile: "/nonexistent/ca.pem"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("/nonexistent/ca.pem"))
 	})
 
-	// UT-1519-009: CertFile+KeyFile together enable mTLS to the collector.
-	It("UT-1519-009: loads a client certificate when CertFile and KeyFile are both set", func() {
+	// UT-1519-008: CertFile+KeyFile together enable mTLS to the collector.
+	It("UT-1519-008: loads a client certificate when CertFile and KeyFile are both set", func() {
 		generateSelfSignedCert(certPath, keyPath)
 
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true, CertFile: certPath, KeyFile: keyPath})
+		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{CertFile: certPath, KeyFile: keyPath})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg.Certificates).To(HaveLen(1))
 	})
 
-	// UT-1519-010: CertFile without a matching KeyFile is a no-op for mTLS
-	// (both must be set together) rather than a partial/broken client cert.
-	It("UT-1519-010: does not attempt mTLS when only CertFile is set", func() {
+	// UT-1519-009: CertFile without a matching KeyFile is rejected rather than
+	// becoming a partial/broken client cert.
+	It("UT-1519-009: rejects a client certificate without its key", func() {
 		generateSelfSignedCert(certPath, keyPath)
 
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true, CertFile: certPath})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(cfg.Certificates).To(BeEmpty())
+		_, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{CertFile: certPath})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("set together"))
 	})
 
-	// UT-1519-011: the process-wide SecurityProfile (cipher suites, TLS
+	// UT-1519-010: the process-wide SecurityProfile (cipher suites, TLS
 	// version floor -- Issue #748) is applied to the OTLP exporter's TLS
 	// config exactly like every other outbound TLS client in Kubernaut.
 	// This is the behavior that reusing pkg/shared/tls.BuildClientTLSConfig
 	// (instead of hand-rolling *tls.Config construction) buys for free.
-	It("UT-1519-011: applies the process-wide security profile, including cipher suites", func() {
+	It("UT-1519-010: applies the process-wide security profile, including cipher suites", func() {
 		sharedtls.SetDefaultSecurityProfile(sharedtls.IntermediateProfile())
 		defer sharedtls.ResetDefaultSecurityProfileForTesting()
 
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true})
+		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
 		Expect(cfg.CipherSuites).To(HaveLen(6), "Intermediate profile must set its 6 AEAD ECDHE cipher suites")
 	})
 
-	// UT-1519-012: a Modern (TLS 1.3-only) profile raises MinVersion on the
+	// UT-1519-011: a Modern (TLS 1.3-only) profile raises MinVersion on the
 	// OTLP exporter's TLS config too, not just on inter-service transports.
-	It("UT-1519-012: applies a Modern (TLS 1.3) security profile", func() {
+	It("UT-1519-011: applies a Modern (TLS 1.3) security profile", func() {
 		sharedtls.SetDefaultSecurityProfile(sharedtls.ModernProfile())
 		defer sharedtls.ResetDefaultSecurityProfileForTesting()
 
-		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{Enabled: true})
+		cfg, err := buildTLSConfig(internalconfig.TelemetryTLSConfig{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
 	})

@@ -53,20 +53,43 @@ var _ = Describe("NewTracerProvider validation", func() {
 	})
 })
 
-// UT-1519-004: TLS.Enabled with a nonexistent CAFile surfaces a clear error
-// instead of silently falling back to plaintext or an opaque SDK failure.
+// UT-1519-004: a network exporter with a nonexistent CAFile surfaces a clear
+// error instead of silently falling back to plaintext or an opaque SDK failure.
 var _ = Describe("NewTracerProvider with TLS misconfigured", func() {
 	It("returns an error naming the unreadable CA file", func() {
 		_, err := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
 			ServiceName: "gateway",
 			Endpoint:    "collector.example.com:4318",
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  "/nonexistent/ca.pem",
+				CAFile: "/nonexistent/ca.pem",
 			},
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("/nonexistent/ca.pem"))
+	})
+})
+
+var _ = Describe("NewTracerProvider with stdout endpoint", func() {
+	It("uses the log sink without creating a network exporter", func() {
+		var lines []string
+		logger := funcr.New(func(prefix, args string) {
+			lines = append(lines, prefix+" "+args)
+		}, funcr.Options{})
+
+		shutdown, err := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+			ServiceName: "stdout-test",
+			Endpoint:    "stdout",
+			Logger:      logger,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = shutdown(context.Background()) }()
+
+		tracer := otel.Tracer("stdout-test")
+		_, span := tracer.Start(context.Background(), "stdout-span")
+		span.End()
+
+		Expect(lines).To(HaveLen(1))
+		Expect(lines[0]).To(ContainSubstring("stdout-span"))
 	})
 })
 

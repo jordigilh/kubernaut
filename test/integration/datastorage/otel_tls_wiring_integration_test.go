@@ -201,8 +201,8 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 			Telemetry: internalconfig.TelemetryConfig{
 				Endpoint: collectorAddr,
 				TLS: internalconfig.TelemetryTLSConfig{
-					Enabled: true,
-					CAFile:  caCertPath,
+
+					CAFile: caCertPath,
 				},
 			},
 		}
@@ -253,8 +253,8 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 			ServiceName: "datastorage",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())
