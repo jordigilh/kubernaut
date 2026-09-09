@@ -95,7 +95,8 @@ func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
 // cfg.Endpoint over TLS. Extracted out of NewTracerProvider to keep that
 // function's branching flat.
 func buildOTLPBatcherOption(ctx context.Context, cfg Config) (sdktrace.TracerProviderOption, error) {
-	httpOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cfg.Endpoint)}
+	httpOpts := make([]otlptracehttp.Option, 1, 2)
+	httpOpts[0] = otlptracehttp.WithEndpoint(cfg.Endpoint)
 	tlsConfig, err := buildTLSConfig(cfg.TLS)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
