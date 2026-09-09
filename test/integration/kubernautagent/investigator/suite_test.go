@@ -190,7 +190,7 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath := lines[1]
 
 		suiteLogger = logr.Discard()
-		dsURL := fmt.Sprintf("http://127.0.0.1:%d", invDataStoragePort)
+		dsURL := fmt.Sprintf("https://localhost:%d", invDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, dsToken, 10*time.Second)
 		ogenClient = dsClients.OpenAPIClient
 

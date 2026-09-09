@@ -374,7 +374,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
 	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
 	if dataStorageURL == "" {
-		dataStorageURL = "http://127.0.0.1:18096" // NT integration port (IPv4 explicit for CI, DD-TEST-001 v1.1)
+		dataStorageURL = "https://localhost:18096" // NT integration port (DD-TEST-001 v1.1)
 	}
 	// Issue #753: Health probes moved to dedicated port (DataStoragePort + 1000)
 	dataStorageHealthURL := os.Getenv("DATA_STORAGE_HEALTH_URL")

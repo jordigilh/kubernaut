@@ -625,7 +625,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-AUTH-014: Create authenticated DataStorage clients (assign to global variable)
 	// Each process gets its own client but uses the same ServiceAccount token from Phase 1
 	dsClients = integration.NewAuthenticatedDataStorageClients(
-		"http://127.0.0.1:18095", // AIAnalysis integration test DS port
+		"https://localhost:18095", // AIAnalysis integration test DS port
 		token,
 		5*time.Second,
 	)

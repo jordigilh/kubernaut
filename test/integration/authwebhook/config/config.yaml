@@ -15,6 +15,8 @@ server:
   host: "0.0.0.0"
   readTimeout: 30s
   writeTimeout: 30s
+  tls:
+    certDir: /etc/certs
 
 database:
   host: host.containers.internal  # Podman limitation: use host access, not container names
@@ -42,4 +44,3 @@ redis:
 logging:
   level: debug
   format: json
-

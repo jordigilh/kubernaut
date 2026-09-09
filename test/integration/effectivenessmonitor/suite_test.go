@@ -100,7 +100,7 @@ var (
 	dsClients *integration.AuthenticatedDataStorageClients
 
 	// dataStorageBaseURL is the base URL for DataStorage API calls
-	dataStorageBaseURL = fmt.Sprintf("http://127.0.0.1:%d", EMIntegrationDataStoragePort)
+	dataStorageBaseURL = fmt.Sprintf("https://localhost:%d", EMIntegrationDataStoragePort)
 
 	// httptest mocks for external services (per-process, ephemeral ports)
 	mockProm *infrastructure.MockPrometheus

@@ -138,7 +138,7 @@ type DSBootstrapInfra struct {
 	MigrationsContainer  string // Container name: {service}_migrations (ephemeral)
 	Network              string // Network name: {service}_test_network
 
-	ServiceURL string // DataStorage HTTP URL: http://localhost:{DataStoragePort}
+	ServiceURL string // DataStorage HTTPS API URL: https://localhost:{DataStoragePort}
 	HealthURL  string // DataStorage health URL: http://localhost:{HealthPort} (Issue #753)
 	MetricsURL string // DataStorage metrics URL: http://localhost:{MetricsPort}
 
@@ -154,8 +154,9 @@ type DSBootstrapInfra struct {
 	Config DSBootstrapConfig // Original configuration (for reference)
 
 	// SigningCertDir holds the temp directory with tls.crt/tls.key for audit export signing.
-	// Mounted into the container at /etc/certs (AU-9).
+	// Mounted into the container at /etc/certs (AU-9 and API TLS).
 	SigningCertDir string
+	TLSCAFile      string // CA certificate trusted by integration-test clients.
 
 	// SharedTestEnv holds envtest environment for cleanup (DD-AUTH-014)
 	// Only set if envtest was created in Phase 1 (for services needing DataStorage auth)
@@ -333,7 +334,7 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 		DataStorageContainer: fmt.Sprintf("%s_datastorage_test", cfg.ServiceName),
 		MigrationsContainer:  fmt.Sprintf("%s_migrations", cfg.ServiceName),
 		Network:              fmt.Sprintf("%s_test_network", cfg.ServiceName),
-		ServiceURL:           fmt.Sprintf("http://localhost:%d", cfg.DataStoragePort),
+		ServiceURL:           fmt.Sprintf("https://localhost:%d", cfg.DataStoragePort),
 		HealthURL:            fmt.Sprintf("http://localhost:%d", cfg.HealthPort),
 		MetricsURL:           fmt.Sprintf("http://localhost:%d", cfg.MetricsPort),
 		Config:               cfg,
@@ -414,6 +415,10 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 		return nil, fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 	infra.SigningCertDir = signingCertDir
+	infra.TLSCAFile = filepath.Join(signingCertDir, "tls.crt")
+	if err := os.Setenv("TLS_CA_FILE", infra.TLSCAFile); err != nil {
+		return nil, fmt.Errorf("failed to configure integration TLS CA: %w", err)
+	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Signing certificate generated in %s\n\n", signingCertDir)
 
 	// Step 6: DataStorage
@@ -445,7 +450,7 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", cfg.PostgresPort)
 	_, _ = fmt.Fprintf(writer, "  Redis:             localhost:%d\n", cfg.RedisPort)
-	_, _ = fmt.Fprintf(writer, "  DataStorage HTTP:  %s\n", infra.ServiceURL)
+	_, _ = fmt.Fprintf(writer, "  DataStorage HTTPS: %s\n", infra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "  DataStorage Metrics: %s\n", infra.MetricsURL)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
@@ -468,6 +473,11 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 // Errors are ignored to allow cleanup to continue even if containers don't exist.
 func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🛑 Stopping DataStorage Infrastructure (%s)...\n", infra.Config.ServiceName)
+	if infra.TLSCAFile != "" && os.Getenv("TLS_CA_FILE") == infra.TLSCAFile {
+		if err := os.Unsetenv("TLS_CA_FILE"); err != nil {
+			return fmt.Errorf("failed to clear integration TLS CA: %w", err)
+		}
+	}
 
 	// Stop and remove containers (ignore errors if containers don't exist)
 	containers := []string{
