@@ -165,6 +165,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 		serverCfg := &server.Config{
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
+			TLS:          datastorageIntegrationTLSConfig(),
 		}
 		mockAuth := &auth.MockAuthenticator{
 			ValidUsers: map[string]string{

@@ -39,6 +39,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/cert"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
@@ -126,6 +127,10 @@ func datastorageIntegrationSigningCertDirOrDie() string {
 		datastorageIntegrationSigningCertDir = tmpDir
 	})
 	return datastorageIntegrationSigningCertDir
+}
+
+func datastorageIntegrationTLSConfig() sharedtls.TLSConfig {
+	return sharedtls.TLSConfig{CertDir: datastorageIntegrationSigningCertDirOrDie()}
 }
 
 // preflightCheck validates the test environment before running tests

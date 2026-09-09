@@ -93,6 +93,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
@@ -1147,6 +1148,17 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	kaPort := 18200 + (processNum-1)*10
 	kaHealthPort := kaPort + 1
 	kaMetricsPort := kaPort + 2
+	kaCertDir, err := os.MkdirTemp("", fmt.Sprintf("aianalysis-ka-tls-%d-*", processNum))
+	Expect(err).ToNot(HaveOccurred())
+	kaCertPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "localhost",
+		DNSNames:         []string{"localhost"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.crt"), kaCertPair.CertPEM, 0o600)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.key"), kaCertPair.KeyPEM, 0o600)).To(Succeed())
 
 	mockLLMCfg := infrastructure.GetMockLLMConfigForAIAnalysis()
 	var llmEndpoint, dsURL, dsHealthURL string
@@ -1175,6 +1187,8 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
     level: "debug"
   server:
     port: %d
+    tls:
+      certDir: /etc/certs
     healthAddr: ":%d"
     metricsAddr: ":%d"
     rateLimit:
@@ -1220,6 +1234,7 @@ timeoutSeconds: 120
 		Volumes: map[string]string{
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaCertDir:                          "/etc/certs:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},

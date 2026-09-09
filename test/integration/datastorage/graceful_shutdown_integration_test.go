@@ -1050,6 +1050,7 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 		Port:         18090, // DD-TEST-001
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
+		TLS:          datastorageIntegrationTLSConfig(),
 	}
 
 	// Connection string for shared PostgreSQL infrastructure

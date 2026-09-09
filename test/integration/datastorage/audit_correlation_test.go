@@ -242,6 +242,7 @@ var _ = Describe("Audit Correlation Query Integration Tests (Issue #1199)", func
 					Port:         18091,
 					ReadTimeout:  30 * time.Second,
 					WriteTimeout: 30 * time.Second,
+					TLS:          datastorageIntegrationTLSConfig(),
 				},
 				DLQMaxLen: 100,
 				Authenticator: &auth.MockAuthenticator{

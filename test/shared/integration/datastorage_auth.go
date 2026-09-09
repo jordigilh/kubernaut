@@ -24,11 +24,13 @@ package integration
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -102,6 +104,15 @@ type AuthenticatedDataStorageClients struct {
 //	// Use in tests for queries
 //	workflows, _ := dsClients.OpenAPIClient.WorkflowSearch(ctx, ...)
 func NewAuthenticatedDataStorageClients(baseURL, token string, timeout time.Duration) *AuthenticatedDataStorageClients {
+	if os.Getenv("TLS_CA_FILE") == "" {
+		caFile := infrastructure.BootstrapTLSCAFile(baseURL)
+		if _, err := os.Stat(caFile); err == nil {
+			if err := os.Setenv("TLS_CA_FILE", caFile); err != nil {
+				panic(fmt.Sprintf("failed to configure DataStorage TLS CA: %v", err))
+			}
+		}
+	}
+
 	// Use the shared CA-aware transport when DSBootstrap has enabled API TLS,
 	// then layer ServiceAccount bearer-token injection on top.
 	baseTransport, err := sharedtls.DefaultBaseTransport()

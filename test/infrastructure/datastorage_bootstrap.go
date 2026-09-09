@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -415,7 +416,10 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 		return nil, fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 	infra.SigningCertDir = signingCertDir
-	infra.TLSCAFile = filepath.Join(signingCertDir, "tls.crt")
+	infra.TLSCAFile, err = publishBootstrapTLSMaterial(signingCertDir, cfg.DataStoragePort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish integration TLS material: %w", err)
+	}
 	if err := os.Setenv("TLS_CA_FILE", infra.TLSCAFile); err != nil {
 		return nil, fmt.Errorf("failed to configure integration TLS CA: %w", err)
 	}
@@ -476,6 +480,11 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	if infra.TLSCAFile != "" && os.Getenv("TLS_CA_FILE") == infra.TLSCAFile {
 		if err := os.Unsetenv("TLS_CA_FILE"); err != nil {
 			return fmt.Errorf("failed to clear integration TLS CA: %w", err)
+		}
+	}
+	if infra.TLSCAFile != "" {
+		if err := os.RemoveAll(filepath.Dir(infra.TLSCAFile)); err != nil {
+			return fmt.Errorf("failed to remove integration TLS material: %w", err)
 		}
 	}
 
@@ -854,4 +863,48 @@ func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string,
 
 	_, _ = fmt.Fprintf(writer, "   🔏 Generated signing cert: CN=datastorage-signing-%s, validity=24h\n", serviceName)
 	return tmpDir, nil
+}
+
+// publishBootstrapTLSMaterial copies the bootstrap certificate to a stable,
+// per-port location. Ginkgo worker processes do not inherit environment
+// mutations made by process 1, so clients discover this shared path by URL.
+func publishBootstrapTLSMaterial(signingCertDir string, dataStoragePort int) (string, error) {
+	stableDir := filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-datastorage-tls-%d", dataStoragePort))
+	if err := os.RemoveAll(stableDir); err != nil {
+		return "", fmt.Errorf("failed to reset stable tls directory: %w", err)
+	}
+	if err := os.MkdirAll(stableDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create stable tls directory: %w", err)
+	}
+
+	for _, name := range []string{"tls.crt", "tls.key"} {
+		material, err := os.ReadFile(filepath.Join(signingCertDir, name))
+		if err != nil {
+			return "", fmt.Errorf("failed to read %s: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(stableDir, name), material, 0o600); err != nil {
+			return "", fmt.Errorf("failed to publish %s: %w", name, err)
+		}
+	}
+
+	cert, err := os.ReadFile(filepath.Join(stableDir, "tls.crt"))
+	if err != nil {
+		return "", fmt.Errorf("failed to read published certificate: %w", err)
+	}
+	caFile := filepath.Join(stableDir, "ca.crt")
+	if err := os.WriteFile(caFile, cert, 0o644); err != nil {
+		return "", fmt.Errorf("failed to publish CA certificate: %w", err)
+	}
+	return caFile, nil
+}
+
+// BootstrapTLSCAFile returns the stable CA path for a DataStorage HTTPS URL.
+// It is used by parallel integration-test workers that did not inherit the
+// process-1 TLS_CA_FILE environment mutation.
+func BootstrapTLSCAFile(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Port() == "" {
+		return ""
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-datastorage-tls-%s", parsed.Port()), "ca.crt")
 }
