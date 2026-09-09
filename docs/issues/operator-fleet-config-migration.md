@@ -1,5 +1,17 @@
 # Follow-up: kubernaut-operator Fleet Config Migration
 
+> **Correction (2026-09-09, see kubernaut#1678):** the `valkeyAddr` backward-compat
+> path described below never shipped — `pkg/fleet/config.go`'s `FleetConfig` has
+> `backend`/`endpoint` but no `valkeyAddr` field, and no fleet-config code reads one.
+> Disregard the deprecation/precedence rules for `valkeyAddr`; do not build against them.
+> The `backend`/`endpoint` operator-CRD passthrough ask stands as written.
+
+> **Correction (2026-09-09, see kubernaut#1678):** the `valkeyAddr` backward-compat
+> path described below never shipped — `pkg/fleet/config.go`'s `FleetConfig` has
+> `backend`/`endpoint` but no `valkeyAddr` field, and no fleet-config code reads one.
+> Disregard the deprecation/precedence rules for `valkeyAddr`; do not build against them.
+> The `backend`/`endpoint` operator-CRD passthrough ask stands as written.
+
 **Date**: 2026-06-20
 **Origin**: ADR-068 Fleet Federation Architecture refactoring
 **Affects**: kubernaut-operator Helm chart and OLM bundle
