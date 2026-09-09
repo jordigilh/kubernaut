@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -89,17 +90,13 @@ func DeployIsolatedDataStorageInstance(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to deploy isolated RBAC: %w", err)
 	}
 
-	// Deliberately does NOT call GenerateInterServiceTLS here: that helper's
-	// host-side CA PEM path (InterServiceCAPath) is keyed only by
-	// kubeconfigPath, not namespace -- calling it a second time for this
-	// isolated namespace under the SAME kubeconfig would silently regenerate
-	// and overwrite the CA PEM file the shared instance's already-running
-	// clients depend on via NewTLSAwareTransport, breaking concurrently
-	// running specs. datastorage-tls is optional (ConfigureConditionalTLS,
-	// pkg/shared/tls/tls.go:71-94, falls back to plain HTTP when the cert
-	// files are absent), so this isolated instance simply serves HTTP
-	// instead of HTTPS -- irrelevant to what this test proves (cache
-	// recovery), and avoided entirely rather than risk that collision.
+	// Generate a namespace-specific inter-service CA so this isolated stack can
+	// use the same mandatory HTTPS API contract without overwriting the CA used
+	// by the shared stack in the same Kind cluster.
+	isolatedCAPath := filepath.Join(filepath.Dir(kubeconfigPath), "inter-service-ca-"+namespace+".pem")
+	if _, err := GenerateInterServiceTLSAtPath(ctx, kubeconfigPath, namespace, isolatedCAPath, writer); err != nil {
+		return fmt.Errorf("failed to generate isolated inter-service TLS: %w", err)
+	}
 	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate signing certificate for isolated instance: %w", err)
 	}
@@ -513,7 +510,6 @@ spec:
       - name: tls-certs
         secret:
           secretName: datastorage-tls
-          optional: true
       - name: signing-certs
         secret:
           secretName: datastorage-signing

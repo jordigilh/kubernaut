@@ -515,10 +515,9 @@ spec:
               items:
               - key: redis-secrets.yaml
                 path: redis-secrets.yaml
-      - name: tls-certs
-        secret:
-          secretName: datastorage-tls
-          optional: true
+       - name: tls-certs
+         secret:
+           secretName: datastorage-tls
 ---
 apiVersion: v1
 kind: Service

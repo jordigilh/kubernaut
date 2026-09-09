@@ -2602,10 +2602,10 @@ spec:
       - name: tls-ca
         configMap:
           name: inter-service-ca
-      - name: tls-certs
-        secret:
-          secretName: fleetmetadatacache-tls
-          optional: true%[13]s
+       - name: tls-certs
+         secret:
+           secretName: fleetmetadatacache-tls
+       %[13]s
 ---
 apiVersion: v1
 kind: Service

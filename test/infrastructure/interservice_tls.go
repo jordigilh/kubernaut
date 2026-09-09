@@ -55,13 +55,20 @@ func InterServiceCAPath(kubeconfigPath string) string {
 // Issue #753 (S-4): Uses ECDSA P-256 instead of RSA 2048.
 // Issue #753 (C-2): Returns caPEMPath for host-side TLS-aware test clients.
 func GenerateInterServiceTLS(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (string, error) {
+	return GenerateInterServiceTLSAtPath(ctx, kubeconfigPath, namespace, InterServiceCAPath(kubeconfigPath), writer)
+}
+
+// GenerateInterServiceTLSAtPath is the namespace-safe variant used when more
+// than one isolated service topology shares a Kubernetes cluster. Each
+// topology gets its own CA file without overwriting another topology's client
+// trust bundle.
+func GenerateInterServiceTLSAtPath(ctx context.Context, kubeconfigPath, namespace, caPEMPath string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "🔐 Issue #753: Generating inter-service TLS certificates (ECDSA P-256)...")
 
 	// Idempotency guard: if the CA ConfigMap already exists in this namespace and the
 	// host-side CA PEM file is present, skip regeneration. This prevents a race condition
 	// in fullpipeline E2E where multiple component deployers call this function in parallel
 	// goroutines, each generating a different CA and overwriting the Secrets/ConfigMap.
-	caPEMPath := InterServiceCAPath(kubeconfigPath)
 	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "configmap", "inter-service-ca", "-n", namespace, "--ignore-not-found", "-o", "name")
 	checkOut, checkErr := checkCmd.Output()
@@ -165,8 +172,8 @@ data:
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
-			// Issue #1683: FMC's API port presents TLS by default now
-			// (ConfigureConditionalTLS), matching DataStorage/Gateway.
+			// Issue #1683: FMC's API port presents mandatory TLS now
+			// (ConfigureRequiredTLS), matching DataStorage/Gateway.
 			// "localhost" + 127.0.0.1 let the E2E harness's host-side client
 			// (hitting FMC's NodePort) verify the cert.
 			name:       "fleetmetadatacache-service",

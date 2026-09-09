@@ -931,10 +931,10 @@ data:
       # that instance's own Deployment to 0 replicas directly (a real
       # Service-endpoint removal), so no sidecar/proxy/TLS-override is
       # needed here. Plain HTTP: the isolated instance has no TLS cert
-      # configured (datastorage-tls Secret is optional and intentionally
-      # not created for it -- see datastorage_isolated_instance.go).
-      url: "http://data-storage-service.%[2]s.svc.cluster.local:8080"
-      healthUrl: "http://data-storage-service.%[2]s.svc.cluster.local:8080/readyz"
+       # configured. The isolated instance uses its namespace-specific
+       # inter-service CA and follows the same HTTPS contract as production.
+       url: "https://data-storage-service.%[2]s.svc.cluster.local:8080"
+       healthUrl: "https://data-storage-service.%[2]s.svc.cluster.local:8080/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000

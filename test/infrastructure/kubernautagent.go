@@ -1070,10 +1070,9 @@ spec:
       - name: llm-runtime
         configMap:
           name: kubernaut-agent-llm-runtime
-      - name: tls-certs
-        secret:
-          secretName: kubernautagent-tls
-          optional: true
+       - name: tls-certs
+         secret:
+           secretName: kubernautagent-tls
       - name: tls-ca
         configMap:
           name: inter-service-ca
