@@ -112,7 +112,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{
 			MCPGatewayEndpoint:          "http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
 			MCPGatewayType:              "eaigw",
-			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			OAuth2CredentialsSecret:     "fleet-oauth2-creds",
 			WEOAuth2CredentialsSecret:   "we-fleet-oauth2-creds",
 			OAuth2Scopes:                []string{"fleet.read", "fleet.write"},
@@ -125,7 +125,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			"--set", "global.fleet.mcpGatewayEndpoint=http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
 			"--set", "global.fleet.mcpGatewayType=eaigw",
 			"--set", "global.fleet.oauth2.enabled=true",
-			"--set", "global.fleet.oauth2.tokenURL=https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			"--set", "global.fleet.oauth2.tokenURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			"--set", "global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds",
 			"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef=we-fleet-oauth2-creds",
 			"--set", "global.fleet.oauth2.scopes[0]=fleet.read",
@@ -177,15 +177,29 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		}
 		Expect(args).To(ContainElements(
 			"--set", "console.enabled=true",
-			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet",
+			"--set", "console.ingress.tls.secretName=console-tls",
+			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo",
 			"--set", "networkPolicies.idp.port=8443",
 			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
+		))
+	})
+
+	It("UT-INFRA-DEMO-002 [BR-PLATFORM-003]: local mode wires the local monitoring services", func() {
+		opts := baseOpts
+		opts.Mode = DemoModeLocal
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", nil, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements(
+			"--set", "monitoring.prometheus.enabled=true",
+			"--set", "monitoring.prometheus.url=http://prometheus-svc.monitoring.svc.cluster.local:9090",
+			"--set", "monitoring.alertManager.enabled=true",
+			"--set", "monitoring.alertManager.url=http://alertmanager-svc.monitoring.svc.cluster.local:9093",
 		))
 	})
 	baseFleetOpts := &FleetHelmOptions{
 		MCPGatewayEndpoint:          "http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
 		MCPGatewayType:              "eaigw",
-		OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+		OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 		OAuth2CredentialsSecret:     "fleet-oauth2-creds",
 		OAuth2Scopes:                []string{"fleet.read", "fleet.write"},
 		WEOAuth2CredentialsSecret:   "fleet-oauth2-creds",
@@ -255,7 +269,12 @@ var _ = Describe("buildDemoHelmArgs", func() {
 	It("UT-INFRA-FLEETDEMO-017: points APIFrontend/Console OIDC at Keycloak, not DEX", func() {
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements(
-			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet",
+			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo",
+			"--set", "apifrontend.config.auth.jwksURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
+			"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
+			"--set", "console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
+			"--set", "console.oauth2Proxy.redeemURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+			"--set", "console.oauth2Proxy.jwksURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
 		))
 	})
 
@@ -354,8 +373,8 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 
 	It("UT-INFRA-OIDC-002: adds shared Console configuration for Keycloak", func() {
 		args := appendOIDCConsoleHelmArgs(nil, OIDCConsoleHelmOptions{
-			IssuerURL:        "https://keycloak:8443/realms/kubernaut-fleet",
-			JWKSURL:          "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs",
+			IssuerURL:        "https://keycloak:8443/realms/kubernaut-demo",
+			JWKSURL:          "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
 			Audience:         "kubernaut-apifrontend",
 			IDPPort:          8443,
 			ConsoleEnabled:   true,
@@ -363,13 +382,15 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 			ConsoleHost:      "kubernaut-console.local",
 			ConsolePort:      8843,
 			IngressNamespace: "traefik-system",
+			ConsoleTLSSecret: "console-tls",
 			SkipDiscovery:    true,
-			LoginURL:         "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth",
-			RedeemURL:        "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
-			ConsoleJWKSURL:   "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs",
+			LoginURL:         "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
+			RedeemURL:        "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+			ConsoleJWKSURL:   "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
 		})
 		Expect(args).To(ContainElements(
 			"--set", "console.enabled=true",
+			"--set", "console.ingress.tls.secretName=console-tls",
 			"--set", "console.auth.secretName=console-oauth-creds",
 			"--set", "console.ingress.host=kubernaut-console.local",
 			"--set", "console.oauth2Proxy.skipDiscovery=true",

@@ -246,7 +246,7 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
-            tokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+            tokenURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token"
             credentialsSecretRef: fleet-oauth2-creds
     asserts:
       - contains:
@@ -272,7 +272,7 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
-            tokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+            tokenURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token"
             credentialsSecretRef: fleet-oauth2-creds
       networkPolicies:
         idp:

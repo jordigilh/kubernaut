@@ -189,7 +189,7 @@ type KubeMCPServerAuthConfig struct {
 	// Must carry the OAuthAudience claim kube-mcp-server's resource-server
 	// validation expects, and must outlive the E2E run (the token is static
 	// for the lifetime of the cluster -- see accessTokenLifespan in
-	// keycloak-realm-fleet.json).
+	// keycloak-realm-demo.json).
 	BrokerCredentialToken string
 
 	// RemoteBridge, when non-nil, makes the "prod-east" registration target
@@ -759,8 +759,8 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}
 	_, _ = fmt.Fprintf(writer, "\n  Keycloak (IdP) lives in its own %q namespace, not %s (production parity).\n", idpNamespace, namespace)
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
-	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet")
-	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo")
+	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.audience=kubernaut-apifrontend (required; else AF 401s every token, issue #2352)")
 	_, _ = fmt.Fprintln(writer, "    console.enabled=true, console.ingress.className=traefik,")
 	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local, console.ingress.port=8843")
@@ -770,9 +770,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "    console.oauth2Proxy: Keycloak is in a different namespace than Console's")
 	_, _ = fmt.Fprintln(writer, "    oauth2-proxy, so it needs split browser/in-cluster OIDC endpoints:")
 	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.skipDiscovery=true")
-	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth")
-	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.redeemURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token\n", idpNamespace)
-	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth")
+	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.redeemURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token\n", idpNamespace)
+	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
 	_, _ = fmt.Fprintln(writer, "    AFTER `helm install`: make bind-fleet-af-rbac KUBECONFIG="+kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "    See ~/.kubernaut/helm/fleet-e2e-values.yaml for the full worked example.")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -897,7 +897,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 
 	oidcCfg := OIDCPatchConfig{
-		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
 		ClientID:       "k8s-api",
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
@@ -1031,7 +1031,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// minting a credential that would never be read.
 	if gatewayType != registry.GatewayEAIGW {
 		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortDemo),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1073,7 +1073,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// entirely, instead of merely before a later kubectl-patch step.
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortDemo),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1138,7 +1138,7 @@ const fleetOAuth2SecretName = "fleet-oauth2-creds"
 // hostname, matching keycloak_e2e.go's Service), for the case where
 // Keycloak shares appNamespace (the "fleet"/"fullpipeline" Ginkgo suites,
 // unchanged). See keycloakFleetTokenURLFor for the idpNamespace case.
-const fleetKeycloakTokenURL = "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+const fleetKeycloakTokenURL = "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token"
 
 // keycloakFleetTokenURLFor returns the token endpoint every fleet-aware
 // service dials directly (a real client_credentials grant call, not a
@@ -1152,7 +1152,7 @@ func keycloakFleetTokenURLFor(keycloakNamespace, appNamespace string) string {
 	if keycloakNamespace == appNamespace {
 		return fleetKeycloakTokenURL
 	}
-	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakNamespace)
+	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token", keycloakNamespace)
 }
 
 // deployFleetOAuth2Secret creates the shared client_credentials Secret every
@@ -2812,7 +2812,7 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 type OIDCPatchConfig struct {
 	// IssuerURL must match the IdP's configured issuer exactly so the `iss`
 	// claim in JWTs matches the API server's expected value.
-	// e.g. "https://dex:5556/dex" or "https://keycloak:8443/realms/kubernaut-fleet".
+	// e.g. "https://dex:5556/dex" or "https://keycloak:8443/realms/kubernaut-demo".
 	IssuerURL string
 	// ClientID must match a value present in the `aud` claim of tokens the
 	// API server will see. For Dex (no token exchange) this is the caller's

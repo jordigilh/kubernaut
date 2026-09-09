@@ -29,7 +29,7 @@ import (
 // keycloakTokenEndpointFMC is Keycloak's OIDC token endpoint, exposed via
 // NodePort 30557 per DD-TEST-001. Both lanes reuse the exact same Keycloak
 // realm/port -- safe because each runs in its own isolated Kind cluster.
-const keycloakTokenEndpointFMC = "https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token"
+const keycloakTokenEndpointFMC = "https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token"
 
 // TokenExchange proves kube-mcp-server's real RFC 8693 Standard Token
 // Exchange wiring against Keycloak end to end -- driving the exact 3-party

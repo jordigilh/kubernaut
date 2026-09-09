@@ -147,7 +147,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `enabled` | boolean |  | `false` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/kubernaut-console"` | No |
-| `image.tag` | string |  | `"1.1.0"` | No |
+| `image.tag` | string |  | `"1.6.0-rc11"` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |

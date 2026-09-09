@@ -1,7 +1,7 @@
 // Command bind-fleet-af-rbac binds the per-tool kubernaut-tool-<persona>
 // ClusterRoles that `helm install charts/kubernaut` creates for API Frontend
 // to the OIDC groups issued by the fleet-core Keycloak realm's
-// "kubernaut-console" client (test/infrastructure/keycloak-realm-fleet.json's
+// "kubernaut-console" client (test/infrastructure/keycloak-realm-demo.json's
 // "sre" group/user).
 //
 // The chart deliberately creates only these ClusterRoles, never the

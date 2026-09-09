@@ -242,7 +242,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					// would otherwise fire first and mask the intended assertion).
 					OAuth2: fleet.FleetOAuth2Config{
 						Enabled:              true,
-						TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+						TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 						CredentialsSecretRef: "fleet-oauth2-creds",
 					},
 				}
@@ -262,7 +262,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					MCPGatewayType:     fleet.GatewayEAIGW,
 					OAuth2: fleet.FleetOAuth2Config{
 						Enabled:              true,
-						TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+						TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 						CredentialsSecretRef: "fleet-oauth2-creds",
 					},
 				}

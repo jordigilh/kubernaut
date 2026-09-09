@@ -23,7 +23,7 @@ spec:
 apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: MCPRoute
 metadata:
-  name: kubernaut-fleet
+  name: kubernaut-demo
   namespace: kubernaut-system
   labels:
     app.kubernetes.io/part-of: kubernaut

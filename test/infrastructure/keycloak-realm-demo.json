@@ -1,5 +1,5 @@
 {
-  "realm": "kubernaut-fleet",
+  "realm": "kubernaut-demo",
   "enabled": true,
   "sslRequired": "external",
   "accessTokenLifespan": 3600,
@@ -94,7 +94,7 @@
   "clientScopes": [
     {
       "name": "profile",
-      "description": "OpenID Connect built-in scope: profile. Explicit here since hand-authored realm imports don't auto-seed Keycloak's standard scopes (see keycloak-realm-fleet.json file comment).",
+      "description": "OpenID Connect built-in scope: profile. Explicit here since hand-authored realm imports don't auto-seed Keycloak's standard scopes (see keycloak-realm-demo.json file comment).",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",

@@ -67,7 +67,7 @@ var _ = Describe("OAuth2 Auth Transport (BR-INTEGRATION-065)", func() {
 
 		It("UT-FLEET-AUTH-003: loads config from file-mounted paths", func() {
 			Expect(os.WriteFile(filepath.Join(tmpDir, "token-url"), []byte("https://dex.local/token\n"), 0600)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("  kubernaut-fleet  \n"), 0600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("  kubernaut-demo  \n"), 0600)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(tmpDir, "client-secret"), []byte("s3cr3t"), 0600)).To(Succeed())
 
 			cfg, err := mcpclient.LoadOAuth2ConfigFromFiles(
@@ -77,7 +77,7 @@ var _ = Describe("OAuth2 Auth Transport (BR-INTEGRATION-065)", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.TokenURL).To(Equal("https://dex.local/token"))
-			Expect(cfg.ClientID).To(Equal("kubernaut-fleet"))
+			Expect(cfg.ClientID).To(Equal("kubernaut-demo"))
 			Expect(cfg.ClientSecret).To(Equal("s3cr3t"))
 		})
 
@@ -105,7 +105,7 @@ var _ = Describe("OAuth2 Auth Transport (BR-INTEGRATION-065)", func() {
 
 		It("UT-FLEET-AUTH-007 [IA-5]: returns error for missing client secret file", func() {
 			Expect(os.WriteFile(filepath.Join(tmpDir, "token-url"), []byte("https://dex.local/token"), 0600)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("kubernaut-fleet"), 0600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("kubernaut-demo"), 0600)).To(Succeed())
 
 			_, err := mcpclient.LoadOAuth2ConfigFromFiles(
 				filepath.Join(tmpDir, "token-url"),

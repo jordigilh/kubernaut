@@ -39,7 +39,7 @@ fake `email` mapping) to exchange a machine (`client_credentials`) token.
   `start-dev` mode, H2 dev DB)
 - **Feature flags**: `--features=admin-fine-grained-authz:v1` (tested, see
   Finding 3 below — turned out to be a red herring for Standard Exchange)
-- **Realm**: `kubernaut-fleet` (throwaway, created via `kcadm.sh`)
+- **Realm**: `kubernaut-demo` (throwaway, created via `kcadm.sh`)
 - **Clients**:
   - `kubernaut-fleet-read` — confidential, `serviceAccountsEnabled=true`,
     `standard.token.exchange.enabled=true` (mirrors FMC's real gateway client)
@@ -57,7 +57,7 @@ A `client_credentials` token minted for `kubernaut-fleet-read` (baseline
 running instance, for a new token audienced for `kube-mcp-server`:
 
 ```
-POST /realms/kubernaut-fleet/protocol/openid-connect/token
+POST /realms/kubernaut-demo/protocol/openid-connect/token
   grant_type=urn:ietf:params:oauth:grant-type:token-exchange
   client_id=kubernaut-fleet-read&client_secret=***
   subject_token=<client_credentials token>

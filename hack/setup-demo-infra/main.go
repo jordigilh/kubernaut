@@ -16,6 +16,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+//nolint:funlen // CLI flag parsing and topology dispatch are kept together at the entry point.
 func main() {
 	modeFlag := flag.String("mode", string(infrastructure.DemoModeLocal), "demo mode: local or fleet")
 	clusterName := flag.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)")
@@ -95,20 +96,7 @@ func main() {
 				SpokeWorkers: *spokeWorkers,
 			}, os.Stdout)
 	} else {
-		err = infrastructure.CreateKindClusterWithConfig(ctx, infrastructure.KindClusterOptions{
-			ClusterName:             *clusterName,
-			KubeconfigPath:          kubeconfigPath,
-			ConfigPath:              "test/infrastructure/kind-fullpipeline-config.yaml",
-			WaitTimeout:             "60s",
-			ReuseExisting:           true,
-			ProjectRootAsWorkingDir: true,
-		}, os.Stdout)
-		if err == nil {
-			err = infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout)
-		}
-		if err == nil {
-			err = infrastructure.SetupDemoOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout)
-		}
+		err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath)
 	}
 	if err != nil {
 		fail(fmt.Sprintf("demo infrastructure setup failed: %v", err))
@@ -117,6 +105,26 @@ func main() {
 	if err := infrastructure.InstallDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, fleetOpts, demoOpts, os.Stdout); err != nil {
 		fail(fmt.Sprintf("helm install failed: %v", err))
 	}
+}
+
+func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string) error {
+	if err := infrastructure.CreateKindClusterWithConfig(ctx, infrastructure.KindClusterOptions{
+		ClusterName:             clusterName,
+		KubeconfigPath:          kubeconfigPath,
+		ConfigPath:              "test/infrastructure/kind-fullpipeline-config.yaml",
+		WaitTimeout:             "60s",
+		ReuseExisting:           true,
+		ProjectRootAsWorkingDir: true,
+	}, os.Stdout); err != nil {
+		return err
+	}
+	if err := infrastructure.CreateTestNamespace(ctx, "kubernaut-system", kubeconfigPath, os.Stdout); err != nil {
+		return err
+	}
+	if err := infrastructure.SetupDemoOIDCInfrastructure(ctx, kubeconfigPath, os.Stdout); err != nil {
+		return err
+	}
+	return infrastructure.SetupDemoMonitoringInfrastructure(ctx, kubeconfigPath, os.Stdout)
 }
 
 func fail(message string) {

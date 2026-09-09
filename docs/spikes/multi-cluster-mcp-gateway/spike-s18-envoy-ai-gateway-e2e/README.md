@@ -48,7 +48,7 @@ exchange machinery needed.
 
 Deployed in a throwaway Kind cluster: Envoy Gateway + AI Gateway Helm charts,
 a `GatewayClass`/`Gateway`, one `Backend` + one `MCPRoute` with
-`securityPolicy.oauth` against the existing `kubernaut-fleet` Keycloak realm.
+`securityPolicy.oauth` against the existing `kubernaut-demo` Keycloak realm.
 
 **Result: GO.** Full chain validated end-to-end: unauthenticated request ->
 `401`; wrong-audience Keycloak token -> `403 "Audiences in Jwt are not

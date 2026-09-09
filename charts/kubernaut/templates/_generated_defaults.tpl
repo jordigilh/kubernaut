@@ -134,7 +134,7 @@ console:
     image:
         pullPolicy: IfNotPresent
         repository: quay.io/kubernaut-ai/kubernaut-console
-        tag: 1.1.0
+        tag: 1.6.0-rc11
     ingress:
         annotations: {}
         className: ""

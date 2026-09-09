@@ -719,7 +719,7 @@ subjects:
 // by charts/kubernaut/templates/apifrontend -- see
 // bindAFPersonaToolClusterRoles's doc comment, Issue #1737) to the OIDC
 // groups issued by the Keycloak realm's kubernaut-console client
-// (test/infrastructure/keycloak-realm-fleet.json's "sre" group/user).
+// (test/infrastructure/keycloak-realm-demo.json's "sre" group/user).
 //
 // Does NOT also bind kubernaut-console-access: verified via `helm template`
 // that the chart already renders a kubernaut-console-access-<group>
@@ -1197,12 +1197,20 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
-	args = appendOIDCConsoleHelmArgs(args, OIDCConsoleHelmOptions{
+	oidcOptions := OIDCConsoleHelmOptions{
 		IssuerURL: "https://dex:5556/dex",
 		JWKSURL:   "https://dex:5556/dex/keys",
 		Audience:  "kubernaut-apifrontend",
 		IDPPort:   5556,
-	})
+	}
+	if fleetOpts != nil {
+		// Fleet provisions Keycloak, not the DEX test double used by the
+		// non-fleet full-pipeline suite. Keep this selection next to the
+		// shared argument appender so AF and Console receive identical OIDC
+		// realm, audience, and JWKS configuration.
+		oidcOptions = keycloakOIDCConsoleHelmOptions(namespace)
+	}
+	args = appendOIDCConsoleHelmArgs(args, oidcOptions)
 
 	// Fleet federation (DD-TEST-015, Issue #54): rendering global.fleet.*
 	// on THIS install (instead of kubectl-patching it in after the fact)

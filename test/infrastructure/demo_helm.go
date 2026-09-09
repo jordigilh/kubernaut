@@ -52,16 +52,13 @@ const (
 	// namespace on its ingress allowlist since Traefik forwards browser
 	// traffic into kubernaut-system cross-namespace.
 	demoTraefikNamespace = "traefik-system"
-	// demoKeycloakRealm matches keycloak-realm-fleet.json's "kubernaut-fleet"
-	// realm name.
-	demoKeycloakRealm = "kubernaut-fleet"
 	// demoConsoleHost/Port match the "kubernaut-console.local:8843"
 	// hostname+hostPort combination deployTraefikForKind/kind-fullpipeline-config.yaml
 	// already wire up (traefikWebsecureNodePort 30843 -> host 8843).
 	demoConsoleHost = "kubernaut-console.local"
 	demoConsolePort = 8843
 	// demoConsoleClientID/Secret match the "kubernaut-console" OIDC
-	// client already registered in keycloak-realm-fleet.json -- not a new
+	// client already registered in keycloak-realm-demo.json -- not a new
 	// credential, reusing that existing test-realm artifact.
 	demoConsoleClientID     = "kubernaut-console"
 	demoConsoleClientSecret = "e2e-console-secret"
@@ -215,25 +212,22 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
-	keycloakAuthBase := fmt.Sprintf("https://keycloak:8443/realms/%s", demoKeycloakRealm)
-	keycloakInClusterBase := fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/%s", idpNamespace, demoKeycloakRealm)
-	args = appendOIDCConsoleHelmArgs(args, OIDCConsoleHelmOptions{
-		IssuerURL:        keycloakAuthBase,
-		JWKSURL:          keycloakInClusterBase + "/protocol/openid-connect/certs",
-		Audience:         "kubernaut-apifrontend",
-		IDPPort:          8443,
-		ConsoleEnabled:   true,
-		ConsoleSecret:    demoConsoleOAuthSecretName,
-		ConsoleHost:      demoConsoleHost,
-		ConsolePort:      demoConsolePort,
-		IngressNamespace: demoTraefikNamespace,
-		SkipDiscovery:    true,
-		LoginURL:         keycloakAuthBase + "/protocol/openid-connect/auth",
-		RedeemURL:        keycloakInClusterBase + "/protocol/openid-connect/token",
-		ConsoleJWKSURL:   keycloakInClusterBase + "/protocol/openid-connect/certs",
-	})
+	oidcOptions := keycloakOIDCConsoleHelmOptions(idpNamespace)
+	oidcOptions.ConsoleEnabled = true
+	oidcOptions.ConsoleSecret = demoConsoleOAuthSecretName
+	oidcOptions.ConsoleHost = demoConsoleHost
+	oidcOptions.ConsolePort = demoConsolePort
+	oidcOptions.IngressNamespace = demoTraefikNamespace
+	oidcOptions.ConsoleTLSSecret = "console-tls"
+	args = appendOIDCConsoleHelmArgs(args, oidcOptions)
 
 	if opts.Mode != DemoModeFleet {
+		args = append(args,
+			"--set", "monitoring.prometheus.enabled=true",
+			"--set", "monitoring.prometheus.url=http://prometheus-svc."+monitoringNamespace+".svc.cluster.local:9090",
+			"--set", "monitoring.alertManager.enabled=true",
+			"--set", "monitoring.alertManager.url=http://alertmanager-svc."+monitoringNamespace+".svc.cluster.local:9093",
+		)
 		return appendDemoHelmOverrides(args, opts)
 	}
 
@@ -251,7 +245,7 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 		// AF/Console browser+in-cluster OIDC: reuses the same Keycloak fleet
 		// infra already stands up (no DEX test double, unlike the FP suite).
 		// audience MUST match the kubernaut-apifrontend-audience client scope's
-		// oidc-audience-mapper (test/infrastructure/keycloak-realm-fleet.json),
+		// oidc-audience-mapper (test/infrastructure/keycloak-realm-demo.json),
 		// else AF's JWTValidator.validateAudience rejects every console token
 		// with ErrInvalidAudience -> 401 -> console "Unable to Verify Access"
 		// (issue #2352). Mirrors fullpipeline_e2e_helm.go:1088.
@@ -492,6 +486,9 @@ func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigP
 		return fmt.Errorf("helm install failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Helm chart installed")
+	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage did not become ready after Helm install: %w", err)
+	}
 
 	_, _ = fmt.Fprintln(writer, "\n🔑 Binding AF persona RBAC for Console...")
 	if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
@@ -503,6 +500,8 @@ func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigP
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Add this line to /etc/hosts yourself (never edited automatically):")
 	_, _ = fmt.Fprintf(writer, "    127.0.0.1 keycloak %s\n", demoConsoleHost)
+	_, _ = fmt.Fprintf(writer, "  Trust the demo CA before browser login: %s\n", InterServiceCAPath(kubeconfigPath))
+	_, _ = fmt.Fprintf(writer, "    macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s\n", InterServiceCAPath(kubeconfigPath))
 	_, _ = fmt.Fprintf(writer, "  Browse to:          https://%s:%d\n", demoConsoleHost, demoConsolePort)
 	_, _ = fmt.Fprintln(writer, "  Login:              sre-user / password")
 	if opts.Autonomous {
@@ -523,14 +522,15 @@ func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigP
 	_, _ = fmt.Fprintln(writer, "    git clone https://github.com/jordigilh/kubernaut-demo-scenarios.git --depth 1 ../kubernaut-demo-scenarios")
 	_, _ = fmt.Fprintln(writer, "    cd ../kubernaut-demo-scenarios")
 	_, _ = fmt.Fprintln(writer, "    ./scripts/setup-demo-cluster.sh")
-	if opts.Mode == DemoModeFleet && opts.Autonomous {
+	switch {
+	case opts.Mode == DemoModeFleet && opts.Autonomous:
 		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet")
 		_, _ = fmt.Fprintln(writer, "  (Gateway enabled: Kubernaut detects and remediates automatically.)")
-	} else if opts.Mode == DemoModeFleet {
+	case opts.Mode == DemoModeFleet:
 		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh --fleet --alert-only")
 		_, _ = fmt.Fprintln(writer, "  (--alert-only fires the alert and stops: investigate it yourself in")
 		_, _ = fmt.Fprintln(writer, "  Console. Drop --alert-only with -autonomous for full auto-remediation.)")
-	} else {
+	default:
 		_, _ = fmt.Fprintln(writer, "    ./scenarios/<name>/run.sh")
 	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

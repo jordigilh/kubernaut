@@ -96,7 +96,7 @@ wiring that had no E2E test exercising it, per Gap A/C.
   `test/e2e/fullpipeline/suite_test.go:getAFToken`) — Dex is deployed in the fleet suite too,
   inherited from `SetupFullPipelineInfrastructure` (confirmed via
   `test/infrastructure/fullpipeline_e2e.go:1199`); the fleet-suite-only Keycloak realm
-  (`kubernaut-fleet`) is a separate, additive IdP for MCP-gateway service-to-service auth and
+  (`kubernaut-demo`) is a separate, additive IdP for MCP-gateway service-to-service auth and
   is not touched by this plan.
 
 ## 7. Out of Scope (tracked separately)

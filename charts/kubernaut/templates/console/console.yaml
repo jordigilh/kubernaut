@@ -88,12 +88,9 @@ console.auth.secretName, an OIDC issuer, and console.ingress.host all moved
 from fail() guards here to values.schema.json if/then blocks (BR-PLATFORM-010).
 */}}
 {{- /*
-console.image (found 2026-09-02): kubernaut-console publishes its own
-release tags on quay.io/kubernaut-ai/kubernaut-console, decoupled from this
-chart's appVersion/global.image.tag train (confirmed: no 1.6.0 or 1.6.0-rcN
-tag has ever existed for it, only its own 1.0.0/1.1.0/1.5.x series) -- the
-previous `kubernaut.image` (service="kubernaut-console", appVersion=.Chart.
-AppVersion) render always resolved a tag that was never actually published.
+ console.image: kubernaut-console follows the Kubernaut image tag train by
+ default, currently 1.6.0-rc11, while retaining an independent override for
+ deployments that need a different Console image.
 Mirrors fleetmetadatacache's existing direct image.repository/image.tag
 schema block (the one per-service override in this chart the template
 actually reads -- apifrontend also declares an `image:` schema block, but

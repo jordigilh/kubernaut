@@ -69,7 +69,7 @@ var _ = Describe("BR-FLEET-054/ADR-068: Fleet full-federation validation", func(
 			// would otherwise fire first and mask the intended assertion).
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}
@@ -89,7 +89,7 @@ var _ = Describe("BR-FLEET-054/ADR-068: Fleet full-federation validation", func(
 			MCPGatewayType:     fleet.GatewayEAIGW,
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}

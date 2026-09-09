@@ -14,7 +14,7 @@ understand each moving part instead of running it as a black box.
 ```
 ┌─────────────────────────────── hub cluster ───────────────────────────────┐
 │                                                                             │
-│  Kubernaut (Helm, global.fleet.enabled=true)   Keycloak (kubernaut-fleet) │
+│  Kubernaut (Helm, global.fleet.enabled=true)   Keycloak (kubernaut-demo) │
 │  GW · SP · RO · WE · AA · EM · KA · AF · DS  ──────────▲───────────────── │
 │         │ MCP tool calls (Bearer token)                │ OIDC issuer      │
 │         ▼                                               │                 │
@@ -43,7 +43,7 @@ whatever target workloads and the `kubernaut-workflows` namespace where
 (`pkg/workflowexecution/executor/client_factory.go`: an empty `ClusterID` routes to a
 local client, a non-empty one routes through the MCP Gateway to the spoke).
 
-Both clusters trust the **same** Keycloak realm (`kubernaut-fleet`), reached from the
+Both clusters trust the **same** Keycloak realm (`kubernaut-demo`), reached from the
 spoke via a hand-authored Service+Endpoints bridge over the podman `kind` network — no
 SSH tunnel, no separate IdP per cluster.
 
@@ -109,7 +109,7 @@ KUBECONFIG=$REMOTE_KUBECONFIG kubectl get ns kubernaut-workflows  # spoke: dispa
 | Endpoint | URL |
 |---|---|
 | Kuadrant MCP Gateway (hub) | `http://localhost:31975/mcp` |
-| Keycloak (hub) | `https://localhost:30557/realms/kubernaut-fleet` |
+| Keycloak (hub) | `https://localhost:30557/realms/kubernaut-demo` |
 | Remote cluster identity | `remote-cluster` (every fleet test targets this name) |
 
 To tear down: `kind delete cluster --name fleet-e2e && kind delete cluster --name fleet-e2e-remote`.
@@ -135,7 +135,7 @@ kind get kubeconfig --name kubernaut-hub > "$KUBECONFIG"
 kubectl create namespace kubernaut-system
 ```
 
-### B2. Deploy Keycloak with the kubernaut-fleet realm
+### B2. Deploy Keycloak with the kubernaut-demo realm
 
 Same realm three clients used by the single-cluster FMC walkthrough — reused here
 unmodified:
@@ -277,7 +277,7 @@ sed -i "/--tls-private-key-file/a\\
     - --oidc-username-claim=preferred_username\\
     - --oidc-client-id=k8s-api\\
     - --oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\\
-    - \"--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-fleet\"" \
+    - \"--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-demo\"" \
   /etc/kubernetes/manifests/kube-apiserver.yaml'
 
 # Same hostNetwork DNS caveat as the hub (see the referenced doc's B3) --
@@ -382,7 +382,7 @@ into, per-request `tools/call` proxying):
 
 ```bash
 BROKER_TOKEN=$(curl -sk -X POST \
-  https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token \
+  https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token \
   -d grant_type=client_credentials -d client_id=kubernaut-fleet-read \
   -d client_secret=e2e-fleet-secret -d scope=kube-mcp-server-audience \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
@@ -446,7 +446,7 @@ helm install kubernaut charts/kubernaut -n kubernaut-system \
   --set global.fleet.mcpGatewayEndpoint="http://mcp-gateway-istio.gateway-system.svc:8080/mcp" \
   --set global.fleet.mcpGatewayType=kuadrant \
   --set global.fleet.oauth2.enabled=true \
-  --set global.fleet.oauth2.tokenURL="https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token" \
+  --set global.fleet.oauth2.tokenURL="https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token" \
   --set global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
   --set workflowexecution.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
   # ... plus your usual PostgreSQL/Valkey/LLM/Rego overrides

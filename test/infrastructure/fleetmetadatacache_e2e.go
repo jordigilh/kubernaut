@@ -174,7 +174,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// the exchange unchanged, preserving FMC's identity for RBAC purposes.
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 6: Patching API server for OIDC (Keycloak issuer, k8s-api audience)...")
 	oidcCfg := OIDCPatchConfig{
-		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
 		ClientID:       "k8s-api",
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
@@ -197,7 +197,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		Mode:             KubeMCPServerAuthModePassthrough,
 		GatewayType:      gatewayType,
 		RequireOAuth:     true,
-		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-fleet",
+		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-demo",
 		OAuthAudience:    "kube-mcp-server",
 		StsClientID:      "kube-mcp-server",
 		StsClientSecret:  "e2e-kube-mcp-server-secret",
@@ -246,7 +246,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// FMC's own client_credentials grant now goes to Keycloak instead of DEX
 	// (Keycloak replaces DEX in this lane -- Spike S17/S18).
 	fmcOAuth2Config := FMCOAuth2Config{
-		TokenURL:     "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+		TokenURL:     "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 		ClientID:     "kubernaut-fleet-read",
 		ClientSecret: "e2e-fleet-secret",
 		// Keycloak's kubernaut-fleet-read client has no "openid"/"groups"
@@ -259,7 +259,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		Mode:             KubeMCPServerAuthModePassthrough,
 		GatewayType:      gatewayType,
 		RequireOAuth:     true,
-		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-fleet",
+		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-demo",
 		OAuthAudience:    "kube-mcp-server",
 		StsClientID:      "kube-mcp-server",
 		StsClientSecret:  "e2e-kube-mcp-server-secret",
@@ -277,7 +277,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// so there is no discovery connection needing its own credential.
 	if gatewayType != registry.GatewayEAIGW {
 		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
 			ClientID:       fmcOAuth2Config.ClientID,
 			ClientSecret:   fmcOAuth2Config.ClientSecret,
 			Scopes:         fmcOAuth2Config.Scopes,
@@ -308,7 +308,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// tools/call, matching FMC's own runtime OAuth2 config above.
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
 			ClientID:       fmcOAuth2Config.ClientID,
 			ClientSecret:   fmcOAuth2Config.ClientSecret,
 			Scopes:         fmcOAuth2Config.Scopes,
@@ -361,7 +361,7 @@ spec:
 	_, _ = fmt.Fprintln(writer, "✅ FMC E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
-	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-fleet")
+	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-demo")
 	_, _ = fmt.Fprintf(writer, "  Remote cluster (prod-east): %s\n", remoteClusterName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 

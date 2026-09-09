@@ -103,3 +103,12 @@ tests:
       - lengthEqual:
           path: spec.template.spec.volumes
           count: 6
+
+  - it: "IT-HELM-PLATFORM-006-001: Console uses the current Kubernaut image tag by default"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: quay.io/kubernaut-ai/kubernaut-console:1.6.0-rc11

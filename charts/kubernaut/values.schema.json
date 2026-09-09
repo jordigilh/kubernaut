@@ -3438,7 +3438,7 @@
         "image": {
           "type": "object",
           "additionalProperties": false,
-          "description": "kubernaut-console (2026-09-02): publishes its own quay.io/kubernaut-ai/kubernaut-console release tags, decoupled from this chart's appVersion/global.image.tag train -- no 1.6.0 or 1.6.0-rcN tag has ever existed for it.",
+          "description": "kubernaut-console publishes release tags aligned with the Kubernaut image tag train; override this independently when required.",
           "properties": {
             "repository": {
               "type": "string",
@@ -3446,7 +3446,7 @@
             },
             "tag": {
               "type": "string",
-              "default": "1.1.0"
+              "default": "1.6.0-rc11"
             },
             "pullPolicy": {
               "type": "string",
