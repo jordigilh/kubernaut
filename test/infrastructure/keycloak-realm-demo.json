@@ -212,7 +212,7 @@
     },
     {
       "name": "kubernaut-apifrontend-audience",
-      "description": "Adds the kubernaut-apifrontend aud claim required by AF's JWTValidator.validateAudience (matches kubernaut-operator's default). kubernaut-console default scope: Console's oauth2-proxy is this realm's only browser caller of AF.",
+      "description": "Adds the kubernaut-apifrontend and kubernaut-console aud claims required by AF and oauth2-proxy bearer validation.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -226,6 +226,17 @@
           "consentRequired": false,
           "config": {
             "included.custom.audience": "kubernaut-apifrontend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "kubernaut-console-audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "kubernaut-console",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }
