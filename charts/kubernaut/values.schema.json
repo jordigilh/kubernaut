@@ -556,7 +556,7 @@
       }
     },
     "telemetryConfig": {
-      "description": "OTel distributed tracing (GAP-14 / Issue #1519). Opt-in, BYO-collector. Both fields off/empty by default -- zero overhead until set.",
+      "description": "OTel distributed tracing (GAP-14 / Issue #1519). Opt-in, BYO-collector. Network export is always TLS-protected. Both fields off/empty by default -- zero overhead until set.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -573,13 +573,8 @@
         "tls": {
           "type": "object",
           "additionalProperties": false,
-          "description": "TLS for the OTLP/HTTP connection to endpoint. Default is plain HTTP.",
+          "description": "Trust and optional client authentication for the TLS-protected OTLP/HTTP connection.",
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "Use HTTPS for the OTLP/HTTP connection. False (default) uses plain HTTP, matching most in-cluster collectors."
-            },
             "caFile": {
               "type": "string",
               "default": "",

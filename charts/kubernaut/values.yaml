@@ -175,19 +175,12 @@ telemetry:
   # captured by must-gather/CI log collection. Recommended for
   # troubleshooting; leave false in production unless explicitly needed.
   logSink: false
-  # -- TLS for the OTLP/HTTP connection to endpoint. Default is plain HTTP,
-  # matching most in-cluster collectors (e.g. an OTel Collector Service with
-  # no TLS termination). Set enabled=true for a collector that terminates
-  # TLS (e.g. a vendor SaaS endpoint or an in-cluster collector behind a
-  # TLS-terminating route/ingress).
+  # -- Optional CA certificate for a self-signed/privately-issued collector
+  # certificate. Empty uses the system CA pool.
+  # -- Client certificate/key pair for mTLS, if the collector requires client
+  # authentication. Optional; must be set together.
   tls:
-    enabled: false
-    # -- CA certificate for a self-signed/privately-issued collector cert.
-    # Optional -- leave empty to trust the system CA pool (e.g. a
-    # publicly-trusted vendor collector).
     caFile: ""
-    # -- Client certificate/key pair for mTLS, if the collector requires
-    # client authentication. Optional; must be set together.
     certFile: ""
     keyFile: ""
 

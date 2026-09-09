@@ -250,7 +250,6 @@
 - telemetry.logSink
 - telemetry.tls.caFile
 - telemetry.tls.certFile
-- telemetry.tls.enabled
 - telemetry.tls.keyFile
 - tls.certManager.issuerRef.group
 - tls.certManager.issuerRef.kind

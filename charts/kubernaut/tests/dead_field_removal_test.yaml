@@ -42,6 +42,15 @@ tests:
     asserts:
       - failedTemplate: {}
 
+  - it: "the telemetry.tls.enabled key is no longer recognized (network OTLP export is always TLS-protected)"
+    set:
+      telemetry:
+        tls:
+          enabled: false
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
   - it: "gateway ConfigMap's CORS allowedMethods still renders the standard GET/POST/PUT/PATCH/DELETE/OPTIONS list once hardcoded (regression guard: hardcoding must not drop or reorder any pre-existing default method)"
     template: templates/gateway/gateway.yaml
     documentSelector:

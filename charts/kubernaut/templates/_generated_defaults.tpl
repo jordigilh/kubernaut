@@ -556,7 +556,6 @@ telemetry:
     tls:
         caFile: ""
         certFile: ""
-        enabled: false
         keyFile: ""
 tls:
     certManager:

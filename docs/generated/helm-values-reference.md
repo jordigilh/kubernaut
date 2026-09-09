@@ -647,7 +647,6 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `logSink` | boolean | Emit one structured log line per completed span via the service's existing logger. No collector needed -- lands in the same log stream captured by must-gather/CI log collection. | `false` | No |
 | `tls.caFile` | string | CA certificate for a self-signed/privately-issued collector cert. Optional -- empty trusts the system CA pool. | `""` | No |
 | `tls.certFile` | string | Client certificate for mTLS, if the collector requires client authentication. Optional; must be set together with keyFile. | `""` | No |
-| `tls.enabled` | boolean | Use HTTPS for the OTLP/HTTP connection. False (default) uses plain HTTP, matching most in-cluster collectors. | `false` | No |
 | `tls.keyFile` | string | Client private key for mTLS. Optional; must be set together with certFile. | `""` | No |
 
 ## tls
