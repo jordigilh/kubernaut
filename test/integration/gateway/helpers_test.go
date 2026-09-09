@@ -41,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -237,6 +238,7 @@ func StartTestGatewayWithLogger(ctx context.Context, k8sClient *K8sTestClient, d
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native
 // DD-AUDIT-003: Gateway emits audit events to Data Storage
 func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, dataStorageURL string, opts *TestServerOptions) (*gateway.Server, error) {
+	dataStorageURL = normalizeDataStorageURL(dataStorageURL)
 	// Use production logger with console output to capture errors in test logs
 	logConfig := zap.NewProductionConfig()
 	logConfig.OutputPaths = []string{"stdout"}
@@ -259,6 +261,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 			ReadTimeout:  opts.ReadTimeout,
 			WriteTimeout: opts.WriteTimeout,
 			IdleTimeout:  opts.IdleTimeout,
+			TLS:          sharedtls.TLSConfig{CertDir: testTLSCertDir()},
 		},
 
 		// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
@@ -1305,9 +1308,11 @@ func DecodeJSONResponse(resp *http.Response) (map[string]interface{}, error) {
 //   - Explicit URL: Tests WITH audit (use shared audit store)
 //   - Empty string: Tests WITHOUT audit (no DataStorage dependency)
 func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
+	dataStorageURL = normalizeDataStorageURL(dataStorageURL)
 	return &config.ServerConfig{
 		Server: config.ServerSettings{
 			ListenAddr: ":0", // Random port (we don't use HTTP in integration tests)
+			TLS:        sharedtls.TLSConfig{CertDir: testTLSCertDir()},
 		},
 		DataStorage: sharedconfig.DataStorageConfig{
 			URL:     dataStorageURL,
@@ -1319,6 +1324,18 @@ func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
 		},
 		// Middleware uses defaults
 	}
+}
+
+func normalizeDataStorageURL(url string) string {
+	url = strings.Replace(url, "http://127.0.0.1", "https://localhost", 1)
+	return strings.Replace(url, "http://", "https://", 1)
+}
+
+func testTLSCertDir() string {
+	if caFile := os.Getenv("TLS_CA_FILE"); caFile != "" {
+		return filepath.Dir(caFile)
+	}
+	return ""
 }
 
 // createGatewayServer creates a Gateway server with shared K8s client for integration tests

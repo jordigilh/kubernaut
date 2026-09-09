@@ -43,6 +43,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
@@ -86,6 +87,7 @@ var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)"
 				ReadTimeout:  5 * time.Second,
 				WriteTimeout: 10 * time.Second,
 				IdleTimeout:  120 * time.Second,
+				TLS:          sharedtls.TLSConfig{CertDir: testTLSCertDir()},
 			},
 			Processing: config.ProcessingSettings{
 				Deduplication: config.DeduplicationSettings{

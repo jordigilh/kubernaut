@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, ContinueOnFailure, func() {
@@ -104,6 +105,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 					WriteTimeout:      10 * time.Second,
 					IdleTimeout:       120 * time.Second,
 					K8sRequestTimeout: 50 * time.Millisecond, // Very short -- will trigger before 200ms List delay
+					TLS:               sharedtls.TLSConfig{CertDir: testTLSCertDir()},
 				},
 				Processing: config.ProcessingSettings{
 					Deduplication: config.DeduplicationSettings{
@@ -253,6 +255,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 					WriteTimeout:      10 * time.Second,
 					IdleTimeout:       120 * time.Second,
 					K8sRequestTimeout: 15 * time.Second, // Default production value -- plenty of headroom
+					TLS:               sharedtls.TLSConfig{CertDir: testTLSCertDir()},
 				},
 				Processing: config.ProcessingSettings{
 					Deduplication: config.DeduplicationSettings{

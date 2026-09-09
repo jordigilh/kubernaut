@@ -44,8 +44,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	inthelpers "github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	inthelpers "github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
@@ -83,10 +83,10 @@ const (
 	controllerNamespace = "kubernaut-system"
 
 	// Port Configuration - Per DD-TEST-001: Port Allocation Strategy
-	gatewayPostgresPort     = 15437 // PostgreSQL port
-	gatewayRedisPort        = 16380 // Redis port
-	gatewayDataStoragePort  = 18091 // DataStorage HTTP API port
-	gatewayMetricsPort      = 19091 // DataStorage metrics port
+	gatewayPostgresPort    = 15437 // PostgreSQL port
+	gatewayRedisPort       = 16380 // Redis port
+	gatewayDataStoragePort = 18091 // DataStorage HTTP API port
+	gatewayMetricsPort     = 19091 // DataStorage metrics port
 )
 
 var (
@@ -94,16 +94,16 @@ var (
 	dsInfra *infrastructure.DSBootstrapInfra
 
 	// Per-process resources (Phase 2 - All processes)
-	ctx                       context.Context
-	cancel                    context.CancelFunc
-	k8sClient                 client.Client
-	logger                    logr.Logger
-	testEnv                   *envtest.Environment
-	k8sConfig                 *rest.Config
-	dsClient                  audit.DataStorageClient // Per-process DataStorage audit client (authenticated)
-	sharedOgenClient          *ogenclient.Client      // Per-process OpenAPI client (authenticated) - used for audit queries
-	sharedAuditStore          audit.AuditStore        // Shared audit store (background flusher runs continuously)
-	suiteAuthTransport        http.RoundTripper       // Authenticated transport for DI into production code paths
+	ctx                context.Context
+	cancel             context.CancelFunc
+	k8sClient          client.Client
+	logger             logr.Logger
+	testEnv            *envtest.Environment
+	k8sConfig          *rest.Config
+	dsClient           audit.DataStorageClient // Per-process DataStorage audit client (authenticated)
+	sharedOgenClient   *ogenclient.Client      // Per-process OpenAPI client (authenticated) - used for audit queries
+	sharedAuditStore   audit.AuditStore        // Shared audit store (background flusher runs continuously)
+	suiteAuthTransport http.RoundTripper       // Authenticated transport for DI into production code paths
 
 	// BR-GATEWAY-036/037: Suite-level auth for all integration test servers
 	suiteAuthenticator auth.Authenticator
@@ -126,37 +126,37 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		
-	// DD-AUTH-014: Create envtest FIRST (DataStorage middleware needs kubeconfig)
-	logger.Info("[Process 1] Creating envtest for DataStorage authentication...")
-	sharedTestEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{
-			"../../../config/crd/bases",
-		},
-		ErrorIfCRDPathMissing: true,
-	}
-	
-	sharedK8sConfig, err := sharedTestEnv.Start()
-	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
-	Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
-	logger.Info("[Process 1] ✅ envtest started", "api", sharedK8sConfig.Host)
-	
-	// Write kubeconfig to temporary file for DataStorage container
-	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "gateway-integration")
-	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
-	logger.Info("[Process 1] ✅ envtest kubeconfig written", "path", kubeconfigPath)
-	
-	// DD-AUTH-014: Create ServiceAccount with DataStorage access for integration tests
-	// This replaces MockUserTransport with real Bearer token authentication
-	logger.Info("[Process 1] Creating ServiceAccount for DataStorage authentication...")
-	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
-		sharedK8sConfig,
-		"gateway-integration-sa",
-		"default",
-		GinkgoWriter,
-	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
-	logger.Info("[Process 1] ✅ ServiceAccount created with Bearer token")
+
+		// DD-AUTH-014: Create envtest FIRST (DataStorage middleware needs kubeconfig)
+		logger.Info("[Process 1] Creating envtest for DataStorage authentication...")
+		sharedTestEnv := &envtest.Environment{
+			CRDDirectoryPaths: []string{
+				"../../../config/crd/bases",
+			},
+			ErrorIfCRDPathMissing: true,
+		}
+
+		sharedK8sConfig, err := sharedTestEnv.Start()
+		Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
+		Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
+		logger.Info("[Process 1] ✅ envtest started", "api", sharedK8sConfig.Host)
+
+		// Write kubeconfig to temporary file for DataStorage container
+		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "gateway-integration")
+		Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
+		logger.Info("[Process 1] ✅ envtest kubeconfig written", "path", kubeconfigPath)
+
+		// DD-AUTH-014: Create ServiceAccount with DataStorage access for integration tests
+		// This replaces MockUserTransport with real Bearer token authentication
+		logger.Info("[Process 1] Creating ServiceAccount for DataStorage authentication...")
+		authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+			sharedK8sConfig,
+			"gateway-integration-sa",
+			"default",
+			GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
+		logger.Info("[Process 1] ✅ ServiceAccount created with Bearer token")
 
 		logger.Info("[Process 1] Starting DataStorage infrastructure (PostgreSQL, Redis, DataStorage)...")
 
@@ -172,14 +172,14 @@ var _ = SynchronizedBeforeSuite(
 		dsInfra, err = infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 
-	// Store shared envtest for cleanup
-	dsInfra.SharedTestEnv = sharedTestEnv
+		// Store shared envtest for cleanup
+		dsInfra.SharedTestEnv = sharedTestEnv
 
-	logger.Info("✅ Phase 1 complete - DataStorage infrastructure ready for all processes")
-	// Pass ServiceAccount token to all processes for authenticated DataStorage client
-	// Note: DataStorage health check now includes auth readiness (DD-AUTH-014)
-	// StartDSBootstrap waits for /health to return 200, which includes auth middleware validation
-	return []byte(authConfig.Token)
+		logger.Info("✅ Phase 1 complete - DataStorage infrastructure ready for all processes")
+		// Pass ServiceAccount token to all processes for authenticated DataStorage client
+		// Note: DataStorage health check now includes auth readiness (DD-AUTH-014)
+		// StartDSBootstrap waits for /health to return 200, which includes auth middleware validation
+		return []byte(authConfig.Token)
 	},
 
 	// ============================================================================
@@ -202,19 +202,19 @@ var _ = SynchronizedBeforeSuite(
 		// DD-AUTH-014: Create authenticated DataStorage clients using standard helper
 		// This replaces manual client creation with standardized pattern (all services)
 		logger.Info(fmt.Sprintf("[Process %d] Creating authenticated DataStorage clients", processNum))
-		
+
 		// Extract ServiceAccount token from Phase 1
 		saToken := string(data)
-		
+
 		// STANDARDIZED PATTERN: Use shared helper for authenticated client creation
-		dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
+		dataStorageURL := fmt.Sprintf("https://localhost:%d", infrastructure.GatewayIntegrationDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(
 			dataStorageURL,
 			saToken,
 			15*time.Second,
 		)
-		dsClient = dsClients.AuditClient       // ✅ For audit event emission (used by Gateway servers)
-		sharedOgenClient = dsClients.OpenAPIClient // ✅ For audit event queries (used by test assertions)
+		dsClient = dsClients.AuditClient                    // ✅ For audit event emission (used by Gateway servers)
+		sharedOgenClient = dsClients.OpenAPIClient          // ✅ For audit event queries (used by test assertions)
 		suiteAuthTransport = dsClients.HTTPClient.Transport // ✅ For DI into production code paths (DD-AUTH-005)
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage clients created", processNum))
 
@@ -361,10 +361,10 @@ var _ = SynchronizedAfterSuite(
 			}, GinkgoWriter)
 		}
 
-	// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
-	if dsInfra != nil {
-		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
-	}
+		// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
+		if dsInfra != nil {
+			_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		}
 
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
