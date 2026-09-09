@@ -356,6 +356,34 @@ var _ = Describe("buildDemoHelmArgs", func() {
 })
 
 var _ = Describe("appendOIDCConsoleHelmArgs", func() {
+	It("UT-INFRA-OIDC-2385-001: supports the production kubernaut realm without issuer mismatches", func() {
+		opts := keycloakOIDCConsoleHelmOptionsForRealm("idp", "kubernaut")
+		opts.ConsoleEnabled = true
+		opts.ConsoleSecret = "console-oauth-creds"
+		opts.ConsoleHost = "kubernaut-console.example.com"
+		opts.ConsolePort = 443
+		opts.IngressNamespace = "ingress-nginx"
+		opts.ConsoleTLSSecret = "console-tls"
+
+		args := appendOIDCConsoleHelmArgs(nil, opts)
+
+		Expect(args).To(ContainElements(
+			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut",
+			"--set", "console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut/protocol/openid-connect/auth",
+			"--set", "console.oauth2Proxy.redeemURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut/protocol/openid-connect/token",
+			"--set", "console.oauth2Proxy.jwksURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut/protocol/openid-connect/certs",
+		))
+	})
+
+	It("UT-INFRA-OIDC-2385-002: keeps kubernaut-demo limited to explicit demo configuration", func() {
+		opts := demoOIDCConsoleHelmOptions("idp")
+
+		Expect(opts.IssuerURL).To(Equal("https://keycloak:8443/realms/kubernaut-demo"))
+		Expect(opts.LoginURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/auth"))
+		Expect(opts.RedeemURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/token"))
+		Expect(opts.ConsoleJWKSURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/certs"))
+	})
+
 	It("UT-INFRA-OIDC-001: preserves Dex-only full-pipeline configuration", func() {
 		args := appendOIDCConsoleHelmArgs(nil, OIDCConsoleHelmOptions{
 			IssuerURL: "https://dex:5556/dex",

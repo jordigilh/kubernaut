@@ -119,7 +119,7 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
-  --set apifrontend.config.auth.issuerURL="https://keycloak.example.com/realms/kagenti" \
+  --set apifrontend.config.auth.issuerURL="https://login.kubernaut.ai/realms/kubernaut" \
   --set console.enabled=true \
   --set console.auth.secretName=console-oauth-creds \
   --set console.ingress.host=console.apps.example.com \
@@ -137,6 +137,12 @@ is applied, if either is missing.
 externally exposing Kubernaut's ingress points) to front Console with your own
 Ingress/Route/mesh gateway instead — oauth2-proxy needs the browser-facing hostname for its
 OIDC redirect URL regardless of who creates the Ingress.
+
+For production, use the `kubernaut` realm (or provide your organization's full issuer URL).
+The `kubernaut-demo` realm is reserved for the repository's explicit demo/test installation
+path. When upgrading an installation that uses another realm, migrate the Keycloak client,
+issuer configuration, and active sessions before changing `issuerURL`; do not switch realms
+while existing tokens are expected to remain valid.
 
 ## 4. RBAC: gate real tool calls, not just login
 

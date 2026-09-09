@@ -49,12 +49,14 @@ type OIDCConsoleHelmOptions struct {
 	ConsoleTLSSecret string
 }
 
-// keycloakOIDCConsoleHelmOptions returns the shared Keycloak wiring for the
-// local demo and fleet demo Helm installs. Keycloak's browser-facing issuer
-// must include the realm because APIFrontend compares it to the JWT iss claim.
-func keycloakOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOptions {
-	const realm = "kubernaut-demo"
-	const keycloakBrowserBase = "https://keycloak:8443/realms/" + realm
+const demoKeycloakRealm = "kubernaut-demo"
+
+// keycloakOIDCConsoleHelmOptionsForRealm returns shared Keycloak wiring for a
+// Helm install. Keycloak's browser-facing issuer must include the realm because
+// APIFrontend compares it to the JWT iss claim. The realm is explicit so
+// production installs can use kubernaut while demo installs remain isolated.
+func keycloakOIDCConsoleHelmOptionsForRealm(keycloakNamespace, realm string) OIDCConsoleHelmOptions {
+	keycloakBrowserBase := "https://keycloak:8443/realms/" + realm
 	keycloakServiceBase := "https://keycloak." + keycloakNamespace + ".svc.cluster.local:8443/realms/" + realm
 
 	return OIDCConsoleHelmOptions{
@@ -67,6 +69,11 @@ func keycloakOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOpt
 		RedeemURL:      keycloakServiceBase + "/protocol/openid-connect/token",
 		ConsoleJWKSURL: keycloakServiceBase + "/protocol/openid-connect/certs",
 	}
+}
+
+// keycloakOIDCConsoleHelmOptions preserves the demo installation defaults.
+func keycloakOIDCConsoleHelmOptions(keycloakNamespace string) OIDCConsoleHelmOptions {
+	return keycloakOIDCConsoleHelmOptionsForRealm(keycloakNamespace, demoKeycloakRealm)
 }
 
 // demoOIDCConsoleHelmOptions returns the complete AF and Console OIDC wiring

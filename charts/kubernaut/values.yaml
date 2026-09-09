@@ -878,7 +878,9 @@ apifrontend:
     #   prometheus:
     #     requestTimeout: "10s"
     auth:
-      # Simple single-provider (dev/test convenience, backward compat)
+      # Full OIDC issuer URL. Production Keycloak deployments should use the
+      # kubernaut realm, for example https://login.kubernaut.ai/realms/kubernaut.
+      # Keep kubernaut-demo limited to explicit demo/test installations.
       issuerURL: ""
       # Multi-provider JWT configuration (production, #1436)
       # jwtProviders:
