@@ -332,9 +332,9 @@ const (
 // namespace detection pattern as DataStorage (POD_NAMESPACE env > SA mount > "default").
 //
 // Issue #1683: the auto-derived URL uses https:// -- FMC's API port presents
-// TLS by default (ConfigureConditionalTLS), matching every other Kubernaut
-// HTTP-API service (DataStorage, Gateway). An explicit Endpoint is passed
-// through unchanged, so a deployment can still opt into plain HTTP.
+// mandatory TLS (ConfigureRequiredTLS), matching every other Kubernaut
+// HTTP-API service (DataStorage, Gateway). Explicit HTTP endpoints are not
+// valid for Kubernaut-managed APIs.
 func (c FleetConfig) EffectiveEndpoint() string {
 	if c.Endpoint != "" {
 		return c.Endpoint

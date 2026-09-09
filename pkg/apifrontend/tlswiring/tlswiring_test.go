@@ -23,15 +23,15 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 )
 
-func TestConfigureServer_NoCertDir(t *testing.T) {
+func TestConfigureServer_NoCertDirFailsClosed(t *testing.T) {
 	t.Parallel()
 	srv := &http.Server{}
 	enabled, reloader, err := tlswiring.ConfigureServer(srv, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected missing certDir to fail closed")
 	}
 	if enabled {
-		t.Fatal("expected TLS disabled when certDir is empty")
+		t.Fatal("expected TLS to remain disabled after configuration failure")
 	}
 	if reloader != nil {
 		t.Fatal("expected nil reloader when TLS disabled")
@@ -41,15 +41,15 @@ func TestConfigureServer_NoCertDir(t *testing.T) {
 	}
 }
 
-func TestConfigureServer_NonExistentDir(t *testing.T) {
+func TestConfigureServer_NonExistentDirFailsClosed(t *testing.T) {
 	t.Parallel()
 	srv := &http.Server{}
 	enabled, reloader, err := tlswiring.ConfigureServer(srv, "/nonexistent/path")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected missing certificate files to fail closed")
 	}
 	if enabled {
-		t.Fatal("expected TLS disabled when cert files don't exist")
+		t.Fatal("expected TLS to remain disabled after configuration failure")
 	}
 	if reloader != nil {
 		t.Fatal("expected nil reloader when certs missing")

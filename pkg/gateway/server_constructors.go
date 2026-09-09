@@ -212,16 +212,14 @@ func NewServerForTesting(deps ServerTestDeps) (*Server, error) {
 
 	server.wireTestHTTPAndAncillaryServers(cfg, metricsInstance)
 
-	if cfg.Server.TLS.Enabled() {
-		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
-		if tlsErr != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
-		}
-		if isTLS {
-			server.certReloader = reloader
-			server.tlsCertDir = cfg.Server.TLS.CertDir
-			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
-		}
+	isTLS, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(server.httpServer, cfg.Server.TLS.CertDir)
+	if tlsErr != nil {
+		return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+	}
+	if isTLS {
+		server.certReloader = reloader
+		server.tlsCertDir = cfg.Server.TLS.CertDir
+		server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
 	}
 
 	return server, nil
@@ -778,11 +776,7 @@ func (server *Server) attachHealthAndMetricsServers(cfg *config.ServerConfig, me
 // wiring up certificate hot-reload. Extracted from createServerWithClients
 // (funlen).
 func (server *Server) configureTLS(cfg *config.ServerConfig) error {
-	if !cfg.Server.TLS.Enabled() {
-		return nil
-	}
-
-	isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+	isTLS, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(server.httpServer, cfg.Server.TLS.CertDir)
 	if tlsErr != nil {
 		return fmt.Errorf("failed to configure TLS: %w", tlsErr)
 	}

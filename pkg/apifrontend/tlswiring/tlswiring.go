@@ -28,17 +28,14 @@ import (
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
-// ConfigureServer sets up conditional TLS on the server based on certDir.
-// Returns (tlsEnabled, certReloader, error). When certDir is empty or cert
-// files don't exist, returns (false, nil, nil) — the server serves plain HTTP.
+// ConfigureServer sets up required TLS on the API server based on certDir.
+// Missing or invalid certificate material is returned as an error so the API
+// cannot silently downgrade to plaintext.
 // CK-02: Enforces TLS 1.2+ with FedRAMP-compatible cipher suites.
 func ConfigureServer(server *http.Server, certDir string) (bool, *sharedtls.CertReloader, error) {
-	if certDir == "" {
-		return false, nil, nil
-	}
-	enabled, reloader, err := sharedtls.ConfigureConditionalTLS(server, certDir)
-	if err != nil || !enabled {
-		return enabled, reloader, err
+	_, reloader, err := sharedtls.ConfigureRequiredTLS(server, certDir)
+	if err != nil {
+		return false, nil, err
 	}
 	if server.TLSConfig == nil {
 		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // #nosec G402
@@ -52,11 +49,11 @@ func ConfigureServer(server *http.Server, certDir string) (bool, *sharedtls.Cert
 		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
 	}
-	return enabled, reloader, nil
+	return true, reloader, nil
 }
 
-// CheckPartialTLSMaterial returns a warning message if exactly one of tls.crt
-// or tls.key exists in certDir. Returns "" when both or neither exist.
+// CheckPartialTLSMaterial returns a diagnostic message if exactly one of
+// tls.crt or tls.key exists in certDir. Returns "" when both or neither exist.
 func CheckPartialTLSMaterial(certDir string) string {
 	if certDir == "" {
 		return ""
@@ -64,10 +61,10 @@ func CheckPartialTLSMaterial(certDir string) string {
 	certExists := fileExists(filepath.Join(certDir, "tls.crt"))
 	keyExists := fileExists(filepath.Join(certDir, "tls.key"))
 	if certExists && !keyExists {
-		return fmt.Sprintf("tls.crt exists in %s but tls.key is missing — TLS will be disabled; provide both files or remove tls.crt", certDir)
+		return fmt.Sprintf("tls.key is missing from %s", certDir)
 	}
 	if !certExists && keyExists {
-		return fmt.Sprintf("tls.key exists in %s but tls.crt is missing — TLS will be disabled; provide both files or remove tls.key", certDir)
+		return fmt.Sprintf("tls.crt is missing from %s", certDir)
 	}
 	return ""
 }

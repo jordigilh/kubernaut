@@ -102,6 +102,7 @@ func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metr
 			},
 		},
 	}
+	cfg.Server.TLS.CertDir = gatewayTestCertDir()
 
 	logger := logr.Discard()
 	return gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{

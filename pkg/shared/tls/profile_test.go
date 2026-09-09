@@ -145,14 +145,14 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 	// AC-2: Server TLS applies the stored profile
 	// ──────────────────────────────────────────────────────────────
 
-	Describe("ConfigureConditionalTLS applies the stored profile to the server", func() {
+	Describe("ConfigureRequiredTLS applies the stored profile to the server", func() {
 
 		It("UT-TLS-748-050: Modern profile upgrades server MinVersion to TLS 1.3", func() {
 			generateSelfSignedCert(certPath, keyPath)
 			sharedtls.SetDefaultSecurityProfile(sharedtls.ModernProfile())
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -166,7 +166,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 			sharedtls.SetDefaultSecurityProfile(sharedtls.IntermediateProfile())
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -182,7 +182,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 			sharedtls.SetDefaultSecurityProfile(sharedtls.OldProfile())
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -204,7 +204,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 			// No SetDefaultSecurityProfile call — simulates vanilla K8s
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -221,7 +221,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -242,7 +242,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -255,7 +255,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
@@ -278,7 +278,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, tlsErr := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, tlsErr := sharedtls.ConfigureRequiredTLS(server, certDir)
 			Expect(tlsErr).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 

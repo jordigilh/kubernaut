@@ -64,9 +64,8 @@ type ServerConfig struct {
 	HealthAddr  string `yaml:"healthAddr"`
 	MetricsAddr string `yaml:"metricsAddr"`
 
-	// TLS configures optional server-side TLS for the API port only.
-	// Issue #493/#1683: when unset (CertDir==""), the API server falls back
-	// to plain HTTP (ConfigureConditionalTLS fail-open bootstrap behavior).
+	// TLS configures required server-side TLS for the API port only. The
+	// process fails closed when CertDir or either certificate file is missing.
 	TLS sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 

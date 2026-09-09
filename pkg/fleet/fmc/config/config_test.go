@@ -50,7 +50,7 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"),
 				"Issue #753: 3-port standard moves metrics off :8081 to make room for the health port")
 			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(),
-				"TLS is opt-in via server.tls.certDir; disabled by default (plain HTTP fallback)")
+				"Go defaults leave the deployment certificate path unset; API startup must fail closed until chart wiring supplies it")
 			Expect(cfg.TLSProfile).To(BeEmpty(),
 				"Issue #748: TLSProfile is OCP-only, operator-managed; empty is a no-op on vanilla K8s")
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("eaigw"))
@@ -158,7 +158,7 @@ oauth2:
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"), "unset fields keep defaults")
 			Expect(cfg.Server.HealthAddr).To(Equal(":8081"), "unset healthAddr keeps default")
 			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"), "unset metricsAddr keeps default")
-			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(), "unset server.tls keeps TLS disabled")
+			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(), "unset server.tls leaves the API TLS configuration invalid")
 			Expect(cfg.TLSProfile).To(BeEmpty(), "unset tlsProfile keeps the no-op default")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"), "unset fields keep defaults")
 			Expect(cfg.Sync.Interval).To(Equal(30*time.Second), "unset fields keep defaults")
