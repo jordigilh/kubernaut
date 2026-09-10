@@ -906,6 +906,9 @@ func DeployGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPa
 	if err := ReplicateInterServiceCAConfigMapAtPath(ctx, kubeconfigPath, namespace, isolatedCAPath, GatewayResilienceInterServiceCAConfigMap, writer); err != nil {
 		return fmt.Errorf("failed to replicate isolated DataStorage CA for gateway resilience test: %w", err)
 	}
+	if err := ReplicateTLSSecret(ctx, kubeconfigPath, GatewayResilienceDataStorageNamespace, namespace, "gateway-tls", writer); err != nil {
+		return fmt.Errorf("failed to replicate isolated Gateway TLS Secret for gateway resilience test: %w", err)
+	}
 
 	// The isolated instance's own auth.MiddlewareConfig.Namespace (DD-AUTH-014
 	// SAR check) is its own POD_NAMESPACE (GatewayResilienceDataStorageNamespace),
@@ -932,6 +935,8 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      tls:
+        certDir: /etc/tls
       maxConcurrentRequests: 100
       readTimeout: 30s
       writeTimeout: 30s
@@ -1015,6 +1020,9 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
@@ -1042,6 +1050,9 @@ spec:
         - name: config
           configMap:
             name: gateway-resilience-config
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
         - name: tls-ca
           configMap:
             name: %[7]s

@@ -320,6 +320,52 @@ data:
 	return nil
 }
 
+// ReplicateTLSSecret copies a TLS Secret between namespaces without exposing
+// the private key to the host. This is used by isolated-stack tests when a
+// service in the test namespace must present a certificate generated in the
+// isolated stack's namespace.
+func ReplicateTLSSecret(ctx context.Context, kubeconfigPath, sourceNamespace, targetNamespace, secretName string, writer io.Writer) error {
+	getSecretData := func(key string) (string, error) {
+		jsonPath := fmt.Sprintf("{.data.%s}", strings.ReplaceAll(key, ".", `\.`))
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "secret", secretName, "-n", sourceNamespace, "-o", "jsonpath="+jsonPath)
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("read %s from %s/%s: %w", key, sourceNamespace, secretName, err)
+		}
+		value := strings.TrimSpace(string(out))
+		if value == "" {
+			return "", fmt.Errorf("secret %s/%s has no %s data", sourceNamespace, secretName, key)
+		}
+		return value, nil
+	}
+
+	cert, err := getSecretData("tls.crt")
+	if err != nil {
+		return err
+	}
+	key, err := getSecretData("tls.key")
+	if err != nil {
+		return err
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: kubernetes.io/tls
+data:
+  tls.crt: %s
+  tls.key: %s
+`, secretName, targetNamespace, cert, key)
+	if err := kubectlApply(ctx, kubeconfigPath, targetNamespace, manifest, writer); err != nil {
+		return fmt.Errorf("replicate TLS Secret %s to namespace %s: %w", secretName, targetNamespace, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ %s TLS Secret replicated to %s\n", secretName, targetNamespace)
+	return nil
+}
+
 // NewTLSAwareClient creates an HTTP client that trusts the inter-service CA.
 // Used by host-side E2E test code to call HTTPS NodePort endpoints.
 //
