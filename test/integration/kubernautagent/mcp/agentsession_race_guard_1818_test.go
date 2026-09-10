@@ -62,6 +62,12 @@ func (r *countingRunner) RunFullInvestigation(context.Context, katypes.SignalCon
 	return &katypes.InvestigationResult{RCASummary: "duplicate-fresh-investigation"}, nil
 }
 
+// InvestigationTotals satisfies mcptools.InvestigatorRunner (#2387 Gap 2);
+// this race-guard fake never records call-level accounting.
+func (r *countingRunner) InvestigationTotals(context.Context, string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 // IT-KA-1818-RACE-001 reproduces the exact race window #1818's Gap 3
 // amendment closed (CI evidence: run 32188463924, E2E-FLEET-018): AA has
 // already created the AgentSession CRD for an RR, and KA's own dispatcher
