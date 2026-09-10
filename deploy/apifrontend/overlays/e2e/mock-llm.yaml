@@ -246,6 +246,26 @@ data:
             name: "structured-decision-target-3"
             kind: "Pod"
 
+      - name: "af_structured_decision_ground_4"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # E2E-AF-2387-002 alone (structured-decision-target-4,
+        # StructuredDecisionGrounding4). Same intra-suite session_active
+        # contention rationale as ground_2/ground_3: this Ordered block's
+        # Its share nothing, so this grounding call always opens a fresh KA
+        # interactive session and runs a REAL synchronous Investigate
+        # (#1818 Gap 3), whose server-computed totals the test then asserts
+        # on the present_decision artifact. Keyword shares no substring
+        # with any other keyword in this file (strings.Contains match).
+        keywords: ["seed fourth fixture context 2387 002"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-4"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
