@@ -292,7 +292,14 @@ stringData:
 // clusters that must trust inter-service TLS certs signed by the primary
 // cluster's CA without re-running key generation (DD-TEST-013).
 func ReplicateInterServiceCAConfigMap(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	return ReplicateInterServiceCAConfigMapAtPath(ctx, kubeconfigPath, namespace,
+		InterServiceCAPath(kubeconfigPath), "inter-service-ca", writer)
+}
+
+// ReplicateInterServiceCAConfigMapAtPath creates a named CA ConfigMap from a
+// specific PEM file. This is used when multiple isolated stacks in one cluster
+// intentionally have different trust roots.
+func ReplicateInterServiceCAConfigMapAtPath(ctx context.Context, kubeconfigPath, namespace, caPEMPath, configMapName string, writer io.Writer) error {
 	caPEM, err := os.ReadFile(caPEMPath)
 	if err != nil {
 		return fmt.Errorf("read CA PEM from %s: %w", caPEMPath, err)
@@ -301,15 +308,15 @@ func ReplicateInterServiceCAConfigMap(ctx context.Context, kubeconfigPath, names
 	caConfigMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: inter-service-ca
+  name: %s
 data:
   ca.crt: |
-%s`, indentPEM(string(caPEM)))
+%s`, configMapName, indentPEM(string(caPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, caConfigMap, writer); err != nil {
-		return fmt.Errorf("create inter-service-ca ConfigMap: %w", err)
+		return fmt.Errorf("create %s ConfigMap: %w", configMapName, err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ inter-service-ca ConfigMap replicated")
+	_, _ = fmt.Fprintf(writer, "  ✅ %s ConfigMap replicated\n", configMapName)
 	return nil
 }
 
