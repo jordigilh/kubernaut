@@ -1239,9 +1239,9 @@ spec:
       - name: config
         configMap:
           name: datastorage-config
-       - name: tls-certs
-         secret:
-           secretName: datastorage-tls
+      - name: tls-certs
+        secret:
+          secretName: datastorage-tls
       - name: signing-certs
         secret:
           secretName: datastorage-signing
