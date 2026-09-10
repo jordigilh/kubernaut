@@ -10,6 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 type bearerTransport struct {
@@ -28,10 +30,15 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func newAuthenticatedDSClient() (ds.Client, error) {
+	transport, err := sharedtls.NewTLSTransport(infrastructure.BootstrapTLSCAFile("https://localhost:18096"))
+	if err != nil {
+		return nil, err
+	}
+
 	return ds.NewOgenClient(ds.OgenClientConfig{
-		BaseURL:   "http://127.0.0.1:18096",
+		BaseURL:   "https://localhost:18096",
 		Timeout:   10 * time.Second,
-		Transport: &bearerTransport{token: serviceAccountToken},
+		Transport: &bearerTransport{token: serviceAccountToken, base: transport},
 	})
 }
 
