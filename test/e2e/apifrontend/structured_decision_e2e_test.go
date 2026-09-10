@@ -211,6 +211,20 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
 	}
 
+	// groundSessionDelta is the fourth sibling, dedicated to E2E-AF-2387-002
+	// alone (structured-decision-target-4, StructuredDecisionGrounding4 /
+	// the "seed fourth fixture context 2387 002" mock-LLM keyword). Same
+	// intra-suite session_active contention rationale as the three siblings:
+	// each It in this Ordered block grounds against its own RR so no It can
+	// inherit another's still-open KA session.
+	groundSessionDelta := func(ctx context.Context, contextID string) {
+		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
+			"seed fourth fixture context 2387 002 for pod structured-decision-target-4 in af-structured-decision-e2e"))
+		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+	}
+
 	It("E2E-AF-1395-001: SI-10 — structured decision payload > 512 chars arrives intact via SSE", func() {
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -285,18 +299,26 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			"AU-3: severity must flow from mock-LLM through AF to SSE")
 		Expect(payload.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
 		Expect(payload.RCA.CausalChain).To(HaveLen(3))
-		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production"))
-		// #2073: tool_calls_count/llm_turns are mock-LLM-scripted values in
-		// af_structured_decision's present_decision tool_call (mock-llm.yaml)
-		// -- exactly the LLM-invented bookkeeping enforceGroundingGuard's
-		// backfill now overrides with an honest 0, since groundSessionAlt2's
-		// seed-only investigate call never populates
-		// session.StateKeyGroundedRCA with authoritative total_tool_calls/
-		// total_llm_turns to substitute instead (phase_guard.go
-		// canonicalGroundedRCA). severity/confidence/causal_chain/target
-		// above remain LLM-authored pass-through and are unaffected.
-		Expect(payload.RCA.ToolCallsCount).To(Equal(0))
-		Expect(payload.RCA.LLMTurns).To(Equal(0))
+		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production")) // BR-KA-OBSERVABILITY-001: substituted target survives to the artifact
+		// #2073/#2387: tool_calls_count/llm_turns are mock-LLM-scripted
+		// values in af_structured_decision's present_decision tool_call
+		// (mock-llm.yaml) -- exactly the LLM-invented bookkeeping
+		// enforceGroundingGuard's substitution now overrides with the
+		// grounding investigation's server-computed totals (phase_guard.go
+		// canonicalGroundedRCA). The grounding call runs a REAL synchronous
+		// Investigate (#1818 Gap 3), so GroundedRCA is genuinely populated.
+		// Lane-proven on helios08 (E2E-AF-2387-002 triage): the AF agent
+		// issues kubernaut_investigate TWICE ~25s apart for one RR and the
+		// second entry resets the per-RR scope mid-flight, so the artifact
+		// reads 1 turn / 0 tools on the reset landing vs 3 turns / 1 tool
+		// with no reset (duplicate-Investigate reset race -- product
+		// follow-up filed; the audit trail confirms identical executed work
+		// and token sums, 1100/150, on both landings). Either landing proves
+		// a live investigation; pre-#2387 both fields read hard 0 with zero
+		// tokens. severity/confidence/causal_chain/target above remain
+		// LLM-authored pass-through and are unaffected.
+		Expect(payload.RCA.ToolCallsCount).To(BeElementOf(0, 1))
+		Expect(payload.RCA.LLMTurns).To(BeElementOf(1, 2, 3))
 
 		By("Verifying extended workflow options")
 		Expect(payload.Options).To(HaveLen(3))
@@ -338,5 +360,95 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			workflowIDs[i] = opt.WorkflowID
 		}
 		Expect(workflowIDs).To(ConsistOf("wf-restart-pod", "wf-increase-memory", "wf-rollback"))
+	})
+
+	It("E2E-AF-2387-002: AU-3 — grounded artifact serves the investigation's real call-level counts and token sums", func() {
+		readCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		const ctxID = "ctx-e2e-structured-004"
+		groundSessionDelta(readCtx, ctxID)
+
+		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-004-decision", ctxID, "present structured rca decision"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		text, _ := scanDecisionEvent(resp)
+		Expect(text).NotTo(BeEmpty())
+
+		var payload struct {
+			RCA struct {
+				Severity         string   `json:"severity"`
+				Confidence       float64  `json:"confidence"`
+				CausalChain      []string `json:"causal_chain"`
+				Target           string   `json:"target"`
+				ToolCallsCount   int      `json:"tool_calls_count"`
+				LLMTurns         int      `json:"llm_turns"`
+				PromptTokens     int      `json:"prompt_tokens"`
+				CompletionTokens int      `json:"completion_tokens"`
+				TotalTokens      int      `json:"total_tokens"`
+			} `json:"rca"`
+		}
+		err = json.Unmarshal([]byte(text), &payload)
+		Expect(err).NotTo(HaveOccurred(), "AU-3: payload must parse for audit trail")
+
+		By("Verifying substituted RCA content (same script as 1396-001's fixture)")
+		Expect(payload.RCA.Severity).To(Equal("critical")) // BR-KA-OBSERVABILITY-001: substitution serves the scripted fixture RCA
+		Expect(payload.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
+		Expect(payload.RCA.CausalChain).To(HaveLen(3))
+		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production")) // BR-KA-OBSERVABILITY-001: substituted target survives to the artifact
+
+		By("Verifying server-computed counts are real, not honest zeros")
+		// #2387: pre-fix TotalToolCalls/TotalLLMTurns were hard zero, so a
+		// grounded artifact carried 0/0 exactly like the #2073 fallback.
+		// The ground_4 investigation really runs (synchronous Investigate
+		// per #1818 Gap 3), and every leg records at least one LLM turn, so
+		// llm_turns must be non-zero here.
+		//
+		// tool_calls_count is 0 or 1, both honest (lane-proven on helios08):
+		// KA's first turns match the AF-side af_investigate keyword scenario
+		// (keyword shadowing, not the ground_4 signal scenario) and the
+		// resulting kubernaut_investigate call is dispatched by KA, errors
+		// with "tool not found", and counts as one dispatched call.
+		// Whether it survives into the artifact depends on a duplicate-
+		// Investigate race: the AF agent issues kubernaut_investigate TWICE
+		// ~25s apart for one RR, and the second entry resets the per-RR
+		// scope (resetMetrics at Investigate entry) while the first flight
+		// is still accumulating. Reset landing first wipes the errored
+		// dispatch (0); no-reset landing keeps it (1). Both values prove a
+		// live investigation (a #2387 regression reads hard 0/0 with zero
+		// tokens, which the equalities below reject). Product follow-up:
+		// re-entry reset vs in-flight accumulation needs a design decision
+		// (idempotent start or generation-scoped accounting).
+		GinkgoWriter.Printf("  grounded counts: llm_turns=%d tool_calls_count=%d prompt=%d completion=%d total=%d\n",
+			payload.RCA.LLMTurns, payload.RCA.ToolCallsCount,
+			payload.RCA.PromptTokens, payload.RCA.CompletionTokens, payload.RCA.TotalTokens)
+		Expect(payload.RCA.LLMTurns).To(BeNumerically(">=", 1),
+			"E2E-AF-2387-002: grounded artifact must serve the investigation's real turn count, not 0")
+		Expect(payload.RCA.ToolCallsCount).To(BeElementOf(0, 1),
+			"E2E-AF-2387-002: exactly one real dispatch ever occurs (the errored cross-talk call); reset landing decides 0 vs 1")
+
+		By("Verifying token sums tie exactly to the reported turn count")
+		// Per-turn usage is mock-scripted and builder-deterministic:
+		// tool-call responses report (500, 50, 550), text responses
+		// (100, 50, 150) — completion is 50 either way, so N (the reported
+		// turn count) must satisfy completion == 50*N exactly, and the
+		// prompt excess over 100*N must come in units of 400 (500-100),
+		// i.e. whole tool-response turns. This ties the two independent
+		// counters (turns vs tokens) together: a fix that counted turns
+		// but still dropped streamed usage (or vice versa) cannot satisfy
+		// all three equalities at once.
+		n := payload.RCA.LLMTurns
+		Expect(payload.RCA.CompletionTokens).To(Equal(50*n),
+			"E2E-AF-2387-002: completion tokens must equal 50 per reported turn exactly")
+		promptExcess := payload.RCA.PromptTokens - 100*n
+		Expect(promptExcess).To(BeNumerically(">=", 0),
+			"E2E-AF-2387-002: prompt tokens must cover at least 100 per reported turn")
+		Expect(promptExcess%400).To(Equal(0),
+			"E2E-AF-2387-002: prompt excess over 100/turn must decompose into whole 500-prompt tool-response turns")
+		Expect(payload.RCA.TotalTokens).To(Equal(payload.RCA.PromptTokens+payload.RCA.CompletionTokens),
+			"E2E-AF-2387-002: total tokens must equal prompt + completion exactly")
 	})
 })

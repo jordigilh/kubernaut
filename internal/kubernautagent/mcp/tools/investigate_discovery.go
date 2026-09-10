@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -92,6 +93,14 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 
 	// Step 5: Store results on the interactive session.
 	sess.RCAResult = rcaResult
+	// #2387 Gap 2: converge the stored RCA onto the cumulative per-RR
+	// totals (message + extraction + Phase 3 legs, plus any prior
+	// autonomous legs in takeover flows). SET semantics: the scope is the
+	// single source of truth and always supersedes older numbers, so this
+	// cannot double-count. select_workflow's buildFinalResult copies this
+	// RCA verbatim, so the final selection inherits the totals with no
+	// further wiring.
+	investigator.ApplyTotals(sess.RCAResult, t.runner.InvestigationTotals(ctx, input.RRID))
 	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
 
 	// Step 6: Populate discovery target visibility fields (#1437).

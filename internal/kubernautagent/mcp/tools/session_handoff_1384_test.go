@@ -53,6 +53,10 @@ func (r *ctxCapturingDiscoveryRunner) RunRCAExtraction(_ context.Context, _ []mc
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }
 
+func (r *ctxCapturingDiscoveryRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 func (r *ctxCapturingDiscoveryRunner) RunWorkflowDiscovery(ctx context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
 	r.mu.Lock()
 	r.capturedDiscoveryCtx = ctx

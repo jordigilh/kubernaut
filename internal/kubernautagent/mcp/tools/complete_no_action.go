@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -57,8 +58,18 @@ type CompleteNoActionTool struct {
 	mutexProvider      SessionMutexProvider
 	timeoutTracker     TimeoutTracker
 	autoCloseTombstone AutoCloseTombstone
-	logger             logr.Logger
+	// totalsProvider converges the final result onto the cumulative per-RR
+	// accounting (#2387 Gap 2). Unlike select_workflow (which inherits
+	// Step-5 totals via the stored RCA), this tool also runs with no prior
+	// discovery, so it reads the scope directly. Nil-safe: unset means the
+	// result keeps whatever the driver's RCA already carries.
+	totalsProvider TotalsProvider
+	logger         logr.Logger
 }
+
+// TotalsProvider snapshots cumulative per-RR accounting for assembly.
+// Implemented in production by the InvestigatorRunner adapter.
+type TotalsProvider func(ctx context.Context, rrID string) katypes.InvestigationTotals
 
 // errAlreadyResolved is a sentinel returned by authorizeCompleteNoActionDriver
 // when IsDriverActive is false because the backend itself already
@@ -110,6 +121,17 @@ func WithCompleteNoActionAutoCloseTombstone(tombstone AutoCloseTombstone) Comple
 	return func(t *CompleteNoActionTool) {
 		if tombstone != nil {
 			t.autoCloseTombstone = tombstone
+		}
+	}
+}
+
+// WithCompleteNoActionTotalsProvider sets the cumulative-totals reader used
+// to converge the final result onto per-RR accounting (#2387 Gap 2). Omit
+// to keep legacy behavior (result keeps the driver's RCA numbers as-is).
+func WithCompleteNoActionTotalsProvider(p TotalsProvider) CompleteNoActionOption {
+	return func(t *CompleteNoActionTool) {
+		if p != nil {
+			t.totalsProvider = p
 		}
 	}
 }
@@ -204,7 +226,7 @@ func buildNoActionResult(driver *mcpinternal.InteractiveSession, input CompleteN
 	return finalResult
 }
 
-func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionInput, user mcpinternal.UserInfo) (CompleteNoActionOutput, error) {
+func (t *CompleteNoActionTool) Handle(ctx context.Context, input CompleteNoActionInput, user mcpinternal.UserInfo) (CompleteNoActionOutput, error) {
 	if err := validateCompleteNoActionInput(input); err != nil {
 		return CompleteNoActionOutput{}, err
 	}
@@ -224,6 +246,13 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 	}
 
 	finalResult := buildNoActionResult(driver, input)
+
+	// #2387 Gap 2: converge onto the cumulative per-RR accounting, covering
+	// the no-discovery path where the driver's RCA carries no (or stale)
+	// totals. SET semantics via ApplyTotals — the scope always supersedes.
+	if t.totalsProvider != nil {
+		investigator.ApplyTotals(finalResult, t.totalsProvider(ctx, input.RRID))
+	}
 
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.StopTracking(driver.SessionID)

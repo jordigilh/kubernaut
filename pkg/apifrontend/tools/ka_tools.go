@@ -384,6 +384,14 @@ type RCAData struct {
 	// enforceGroundingGuard) rather than relying on the LLM to supply them.
 	ToolCallsCount int `json:"tool_calls_count,omitempty"`
 	LLMTurns       int `json:"llm_turns,omitempty"`
+	// PromptTokens/CompletionTokens/TotalTokens are omitempty bookkeeping
+	// like the two fields above (#2387 tokens; raw provider counts, never
+	// costs): prompt.txt never instructs the LLM to compute them — the
+	// harness substitutes authoritative values (canonicalGroundedRCA) — so
+	// they must never be schema-required (#2073/#2074 lesson).
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
 	// ClusterID is an ambient hint the LLM propagates from fleet context
 	// (#2364): spoke-scoped RCA must validate. Tolerated here so strict ADK
 	// schema validation (which rejects unknown nested properties too) does not

@@ -56,6 +56,15 @@ type sseChunkToolFn struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
+// sseUsageChunk mirrors the OpenAI stream_options.include_usage convention:
+// a trailing chunk carrying the response usage with empty choices, emitted
+// after the finish_reason chunk (issue #2387). The shared openaicompat
+// client attaches it to the terminal streamed Response.
+type sseUsageChunk struct {
+	Usage   openai.Usage     `json:"usage"`
+	Choices []sseChunkChoice `json:"choices"`
+}
+
 // writeChatCompletion writes resp as a plain-JSON body (the historical,
 // still-default behavior) or as a Server-Sent Events stream when stream is
 // true (#1637). Every mock-llm response builder (BuildTextResponse,
@@ -72,13 +81,13 @@ func writeChatCompletion(w http.ResponseWriter, stream bool, resp openai.ChatCom
 
 // writeSSEChatCompletion streams resp as a single OpenAI-compatible Chat
 // Completions chunk carrying the full delta (role, content,
-// reasoning_content, tool_calls) plus finish_reason, followed by the
-// terminal "[DONE]" sentinel. This is a compatibility floor, not
-// token-by-token fragmentation: real providers emit many small deltas, but
-// every field a spec-compliant SSE consumer reads is present here, which is
-// sufficient for the mock's purpose (deterministic, fully-populated
-// responses for E2E assertions) without reimplementing incremental
-// tokenization.
+// reasoning_content, tool_calls) plus finish_reason, followed by a trailing
+// usage chunk and the terminal "[DONE]" sentinel. This is a compatibility
+// floor, not token-by-token fragmentation: real providers emit many small
+// deltas, but every field a spec-compliant SSE consumer reads is present
+// here, which is sufficient for the mock's purpose (deterministic,
+// fully-populated responses for E2E assertions) without reimplementing
+// incremental tokenization.
 func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionResponse) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -91,6 +100,11 @@ func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionRes
 		if canFlush {
 			flusher.Flush()
 		}
+	}
+
+	writeSSEData(w, sseUsageChunk{Usage: resp.Usage, Choices: []sseChunkChoice{}})
+	if canFlush {
+		flusher.Flush()
 	}
 
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
@@ -123,7 +137,7 @@ func sseChunkFromChoice(choice openai.Choice) sseChunk {
 	return sseChunk{Choices: []sseChunkChoice{{Delta: delta, FinishReason: &finishReason}}}
 }
 
-func writeSSEData(w http.ResponseWriter, chunk sseChunk) {
+func writeSSEData(w http.ResponseWriter, chunk any) {
 	data, err := json.Marshal(chunk)
 	if err != nil {
 		return

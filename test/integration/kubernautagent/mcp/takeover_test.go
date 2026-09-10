@@ -65,6 +65,12 @@ func (m *delayedMockRunner) RunFullInvestigation(_ context.Context, _ katypes.Si
 	return &katypes.InvestigationResult{RCASummary: "mock autonomous RCA"}, nil
 }
 
+// InvestigationTotals satisfies InvestigatorRunner (#2387 Gap 2); this
+// timing fake never records call-level accounting.
+func (m *delayedMockRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 // mockReconIT mocks ContextReconstructor for integration tests.
 type mockReconIT struct{}
 

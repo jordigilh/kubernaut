@@ -93,11 +93,17 @@ type mockInvestigatorRunner struct {
 	rcaResult               *katypes.InvestigationResult
 	workflowDiscoveryResult *katypes.InvestigationResult
 	capturedCtx             context.Context
+	// totals seeds InvestigationTotals for Gap-2 assembly tests (#2387).
+	totals katypes.InvestigationTotals
 }
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
 	m.capturedCtx = ctx
 	return m.response, m.err
+}
+
+func (m *mockInvestigatorRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return m.totals
 }
 
 func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
