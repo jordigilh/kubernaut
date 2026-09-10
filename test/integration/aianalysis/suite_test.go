@@ -456,12 +456,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
 		KAImageName    string            `json:"ka_image_name"`
 		KubeconfigPath string            `json:"kubeconfig_path"`
+		TLSCAFile      string            `json:"tls_ca_file"`
 	}
 	phase1Data := Phase1Data{
 		Token:          authConfig.Token,
 		WorkflowUUIDs:  workflowUUIDs,
 		KAImageName:    kaImageName,
 		KubeconfigPath: kubeconfigPath,
+		TLSCAFile:      dsInfra.TLSCAFile,
 	}
 	phase1DataJSON, err := json.Marshal(phase1Data)
 	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
@@ -481,6 +483,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
 		KAImageName    string            `json:"ka_image_name"`
 		KubeconfigPath string            `json:"kubeconfig_path"`
+		TLSCAFile      string            `json:"tls_ca_file"`
 	}
 	var phase1Data Phase1Data
 	deserializeErr := json.Unmarshal(data, &phase1Data)
@@ -493,6 +496,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	if token == "" {
 		Fail("ServiceAccount token from Phase 1 is empty")
 	}
+	Expect(phase1Data.TLSCAFile).NotTo(BeEmpty(), "DataStorage TLS CA path from Phase 1 must be available")
 
 	// DD-AUTH-014: Store token globally for tests that need to create custom authenticated clients
 	serviceAccountToken = token
@@ -664,7 +668,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// RBAC/return-value plumbing for it inside startPerProcessKubernautAgent,
 	// remain until #2190 deletes them together with KA's HTTP server (still
 	// load-bearing for the deferred test/e2e/kubernautagent/ suite).
-	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName, processNamespace)
+	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName, processNamespace, phase1Data.TLSCAFile)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Test-owned policy fixture decoupled from production config.
@@ -920,7 +924,7 @@ var _ = AfterEach(func() {
 // Returns the per-process KA base URL and a caller Bearer token valid
 // against cfg's TokenReview API. Currently unused by this suite's caller --
 // see the #2190 note above.
-func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName, namespace string) (baseURL string, callerToken string) {
+func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName, namespace, tlsCAFile string) (baseURL string, callerToken string) {
 	// DD-AUTH-014: KA's ServiceAccount binding reuses the "datastorage-tokenreview"
 	// ClusterRole (generic TokenReview/SAR create verbs) -- CreateServiceAccountForHTTPService
 	// expects it to already exist; the shared envtest gets it from
@@ -1236,7 +1240,7 @@ timeoutSeconds: 120
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
 			kaCertDir:                          "/etc/certs:ro",
-			dsInfra.TLSCAFile:                  "/etc/tls-ca/ca.crt:ro",
+			tlsCAFile:                          "/etc/tls-ca/ca.crt:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
