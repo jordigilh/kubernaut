@@ -856,6 +856,9 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithCompleteNoActionLogger(d.logger.WithName("complete-no-action")),
 		mcptools.WithCompleteNoActionHTTPCompleter(d.autoMgr),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+		// #2387 Gap 2: cumulative per-RR totals for the no-discovery path.
+		// d.investigatorRunner is the production adapter (built at line ~427).
+		mcptools.WithCompleteNoActionTotalsProvider(d.investigatorRunner.InvestigationTotals),
 		mcptools.WithCompleteNoActionTimeoutTracker(d.timeoutMgr),
 		mcptools.WithCompleteNoActionAutoCloseTombstone(d.autoCloseTombstone),
 	)

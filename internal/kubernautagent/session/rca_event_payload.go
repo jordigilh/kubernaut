@@ -33,8 +33,20 @@ type rcaEventPayload struct {
 	CausalChain    []string `json:"causal_chain,omitempty"`
 	Target         string   `json:"target,omitempty"`
 	RCASummary     string   `json:"rca_summary,omitempty"`
-	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
-	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
+	// #2387: deliberately WITHOUT omitempty. A tracked-zero (0,0 after a
+	// genuinely tool-free investigation) must serialize as explicit zeros so
+	// AF can distinguish it from untracked (keys absent, pre-fix payloads).
+	// The LLM is never asked to supply these (see #2073/#2074); KA injects
+	// them server-side before MarshalRCASubset.
+	TotalLLMTurns  int `json:"total_llm_turns"`
+	TotalToolCalls int `json:"total_tool_calls"`
+	// #2387 tokens: cumulative raw provider counts for console display
+	// (never costs), sourced from InvestigationResult.TokenUsage. Omitempty
+	// like the surrounding AF-owned wire contract: absent when never
+	// recorded, present once any usage exists.
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
 	// IsActionable/HasWorkflow (#1918) give AF's phase_guard.go a structured,
 	// model-independent signal for its harness-enforced Phase 2 gate --
 	// mirrors the same condition (actionable=false && workflow_id=="")
@@ -68,6 +80,13 @@ func MarshalRCASubset(result *katypes.InvestigationResult) json.RawMessage {
 		TotalToolCalls: result.TotalToolCalls,
 		IsActionable:   result.IsActionable,
 		HasWorkflow:    result.WorkflowID != "",
+	}
+	// #2387 tokens: TokenUsage nil (never recorded, e.g. pre-fix results or
+	// pure-sentinel flows) leaves all three keys absent.
+	if result.TokenUsage != nil {
+		payload.PromptTokens = result.TokenUsage.PromptTokens
+		payload.CompletionTokens = result.TokenUsage.CompletionTokens
+		payload.TotalTokens = result.TokenUsage.TotalTokens
 	}
 
 	data, err := json.Marshal(payload)

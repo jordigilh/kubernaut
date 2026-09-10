@@ -153,6 +153,9 @@ func (inv *Investigator) retryGateOnUnexpectedTool(
 	if llmCtx.Tokens != nil {
 		llmCtx.Tokens.Add(resp.Usage)
 	}
+	// #2387: gate reminder retry is its own LLM turn.
+	inv.metricsFor(llmCtx.CorrelationID).IncLLMTurns()
+	inv.recordTokenUsage(llmCtx.CorrelationID, resp.Usage)
 
 	content, otherTools = extractSubmitContent(resp)
 	return content, otherTools, nil
@@ -332,6 +335,9 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	if llmCtx.Tokens != nil {
 		llmCtx.Tokens.Add(resp.Usage)
 	}
+	// #2387: gate retry is its own LLM turn on top of the loop-counted turns.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 
 	retryContent, usedReminder, failOutcome, ok := inv.resolveGateRetrySubmission(
 		ctx, llmCtx, retryMessages, resp, submitOnlyTools, gateEvent, "same-kind validation gate")
@@ -553,6 +559,9 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 	if llmCtx.Tokens != nil {
 		llmCtx.Tokens.Add(resp.Usage)
 	}
+	// #2387: gate retry is its own LLM turn on top of the loop-counted turns.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 
 	retryContent, usedReminder, failOutcome, ok := inv.resolveGateRetrySubmission(
 		ctx, llmCtx, retryMessages, resp, submitOnlyTools, gateEvent, "apiVersionValidationGate")

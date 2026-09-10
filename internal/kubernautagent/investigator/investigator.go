@@ -309,6 +309,17 @@ type Investigator struct {
 	// toolCallTimeout mirrors Config.ToolCallTimeout; see its doc comment
 	// (BR-KA-267, #1949). Always non-zero after New().
 	toolCallTimeout time.Duration
+	// metricsScope hands out a per-correlationID InvestigationMetrics so
+	// concurrent investigations sharing this Investigator never corrupt each
+	// other's LLM-turn/tool-call counts (#2387). Mirrors anomalyScope: the
+	// singleton Investigator must never hold a single shared counter.
+	metricsScope *metricsScope
+	// tokenScope accumulates per-correlationID token usage across every leg
+	// of a remediation request for console reporting (#2387 tokens; raw
+	// provider counts, never costs). Unlike TokenAccumulator (audit-only,
+	// single-Investigate threading), this spans interactive and discovery
+	// legs that carry no accumulator at all.
+	tokenScope *tokenScope
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -383,6 +394,8 @@ func New(cfg Config) *Investigator {
 			template: pipeline.AnomalyDetector,
 			entries:  make(map[string]*anomalyDetectorEntry),
 		},
+		metricsScope:    newMetricsScope(),
+		tokenScope:      newTokenScope(),
 		toolCallTimeout: toolCallTimeout,
 	}
 }
@@ -431,7 +444,6 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 // available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
-	_ = correlationID // reserved for future audit event emission
 	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
@@ -475,6 +487,13 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	if parseErr != nil {
 		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
 	}
+	// #2387: this single submit-only extraction call is one LLM turn with no
+	// real tool dispatches. Recorded into the per-RR scope (the single source
+	// of truth — results never pre-carry counts), so later legs accumulate on
+	// top without double-counting. Token usage likewise joins the cumulative
+	// per-RR scope; this leg carries no TokenAccumulator of its own.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
 	return result, nil
 }
 
@@ -494,6 +513,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// the one reset here.
 	correlationID := signal.RemediationID
 	inv.anomalyDetectorFor(correlationID).Reset()
+	// #2387 (BR-KA-OBSERVABILITY-001): start call-level accounting fresh for
+	// this investigation. Reset once here — never between phases or legs —
+	// so every leg of one remediation request accumulates into cumulative
+	// per-RR totals (turns, tools, and tokens alike).
+	inv.resetMetrics(correlationID)
+	inv.resetTokenScope(correlationID)
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
 	// model name, and runtime params. Subsequent hot-reload swaps do not
@@ -519,6 +544,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 
 	if rcaResult.Cancelled {
+		// #2387: cancelled snapshots still carry the partial counts
+		// accumulated up to the cancellation turn (BR-AUDIT-005). The scope
+		// supersedes the per-phase accumulator: identical in single-leg
+		// runs, cumulative across takeover legs.
+		inv.applyMetricsFromScope(rcaResult, correlationID)
+		inv.setTokenUsageFromScope(rcaResult, correlationID)
 		inv.emitCancellationAudit(ctx, rcaResult, correlationID)
 		return rcaResult, nil
 	}
@@ -583,6 +614,9 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	}
 
 	if workflowResult.Cancelled {
+		// #2387: see the RCA-cancelled path above — partial counts apply here too.
+		inv.applyMetricsFromScope(workflowResult, p.CorrelationID)
+		inv.setTokenUsageFromScope(workflowResult, p.CorrelationID)
 		inv.emitCancellationAudit(ctx, workflowResult, p.CorrelationID)
 		return workflowResult, nil
 	}
@@ -645,6 +679,14 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	attachDetectedLabels(rcaResult, enrichData)
 	InjectRemediationTarget(rcaResult, signal, enrichData)
 	InjectTargetResourceParameters(rcaResult)
+	// #2387 (BR-KA-OBSERVABILITY-001): inject server-computed call-level
+	// counts before the result leaves KA — the LLM is never asked to supply
+	// them (#2073/#2074), so every early-return path must apply them here.
+	inv.applyMetricsFromScope(rcaResult, correlationID)
+	// #2387 tokens: stamp the cumulative per-RR token totals (raw provider
+	// counts, never costs) so completed investigations report tokens exactly
+	// like cancelled ones already do via TokenUsage.
+	inv.setTokenUsageFromScope(rcaResult, correlationID)
 	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 	return rcaResult
 }
@@ -831,6 +873,10 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
 	}
 	InjectTargetResourceParameters(workflowResult)
+	// #2387 (BR-KA-OBSERVABILITY-001): see finalizeAndEmitRCAOnlyResult —
+	// the full-path result gets the same server-side injection.
+	inv.applyMetricsFromScope(workflowResult, correlationID)
+	inv.setTokenUsageFromScope(workflowResult, correlationID)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult
 }

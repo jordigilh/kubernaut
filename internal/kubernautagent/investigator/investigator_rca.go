@@ -267,6 +267,9 @@ func (inv *Investigator) attemptRCASubmitRetry(ctx context.Context, p rcaSubmitR
 	if p.tokens != nil {
 		p.tokens.Add(resp.Usage)
 	}
+	// #2387: the retry is its own LLM turn on top of the loop-counted turns.
+	inv.metricsFor(p.correlationID).IncLLMTurns()
+	inv.recordTokenUsage(p.correlationID, resp.Usage)
 
 	// #1634: field name must be "text" (see investigator_loop.go for rationale).
 	emitToSink(ctx, session.EventTypeReasoningDelta, p.attempt+1, string(katypes.PhaseRCA), map[string]interface{}{

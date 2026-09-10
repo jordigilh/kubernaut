@@ -214,6 +214,10 @@ func (m *takeoverRunner) RunRCAExtraction(_ context.Context, _ []tools.LLMMessag
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }
 
+func (m *takeoverRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 func (m *takeoverRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }

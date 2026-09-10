@@ -44,6 +44,12 @@ type InvestigatorRunner interface {
 	// runs a single LLM call with submit_result as the only available tool.
 	// Returns the parsed structured RCA as an InvestigationResult.
 	RunRCAExtraction(ctx context.Context, messages []LLMMessage, correlationID string) (*katypes.InvestigationResult, error)
+	// InvestigationTotals snapshots the cumulative per-RR accounting
+	// (LLM turns, tool calls, prompt/completion/total tokens) across every
+	// investigation leg for correlationID (#2387 Gap 2). Session assembly
+	// points (discover_workflows Step 5, complete_no_action) converge their
+	// final results onto these numbers. Raw provider counts, never costs.
+	InvestigationTotals(ctx context.Context, correlationID string) katypes.InvestigationTotals
 	// RunWorkflowDiscovery runs the autonomous Phase 3 pipeline (workflow
 	// selection) using the structured RCA, signal context, and enrichment data.
 	// Returns the full InvestigationResult including the selected workflow.

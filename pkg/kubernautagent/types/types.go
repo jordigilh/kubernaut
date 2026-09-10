@@ -233,6 +233,19 @@ type TokenUsageSummary struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
+// InvestigationTotals carries cumulative per-investigation accounting across
+// all legs (autonomous + interactive + discovery) for a single remediation
+// request. Read out at session assembly points that sit outside the
+// investigator package via Investigator.InvestigationTotals (#2387 Gap 2).
+// Token counts are raw provider counts, never financial costs.
+type InvestigationTotals struct {
+	LLMTurns         int `json:"total_llm_turns"`
+	ToolCalls        int `json:"total_tool_calls"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // ValidationAttemptRecord captures a single validation attempt during
 // the LLM self-correction loop. Maps to OpenAPI ValidationAttempt schema.
 type ValidationAttemptRecord struct {
