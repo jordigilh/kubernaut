@@ -138,6 +138,20 @@ type MockScenarioConfig struct {
 	// reasoning-capable OpenAI-compatible model for KA's openaicompat
 	// reasoning-capture E2E tests (BR-AI-086 AC6, issue #1578).
 	ReasoningText string
+
+	// Usage, when non-nil, replaces the response builders' deterministic
+	// default token counts for every response in this scenario, so E2E
+	// tests can assert exact token sums against distinctive scripted
+	// values (issue #2387). Nil keeps the builder defaults.
+	Usage *MockUsage
+}
+
+// MockUsage scripts per-scenario token counts. Plain ints (no wire types)
+// so the scenarios package stays independent of protocol schemas.
+type MockUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

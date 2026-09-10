@@ -53,6 +53,16 @@ type ToolCallOverride struct {
 	FallbackArguments map[string]interface{} `yaml:"fallback_arguments,omitempty"`
 }
 
+// UsageOverride scripts distinctive per-scenario token counts for E2E
+// token assertions (issue #2387). All fields are plain ints (not pointers):
+// a nil Usage pointer means "no override, keep the response builders'
+// deterministic defaults", so existing scenarios are unaffected.
+type UsageOverride struct {
+	PromptTokens     int `yaml:"prompt_tokens"`
+	CompletionTokens int `yaml:"completion_tokens"`
+	TotalTokens      int `yaml:"total_tokens"`
+}
+
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.
 type ScenarioOverride struct {
 	WorkflowID string             `yaml:"workflow_id,omitempty"`
@@ -60,6 +70,7 @@ type ScenarioOverride struct {
 	ForceText  *bool              `yaml:"force_text,omitempty"`
 	ToolCall   *ToolCallOverride  `yaml:"tool_call,omitempty"`
 	ToolCalls  []ToolCallOverride `yaml:"tool_calls,omitempty"`
+	Usage      *UsageOverride     `yaml:"usage,omitempty"`
 }
 
 // KeywordScenarioOverride defines a keyword-matched scenario injected via YAML.

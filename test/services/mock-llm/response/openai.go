@@ -26,6 +26,21 @@ import (
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
+// usageFor returns the scenario-scripted Usage when cfg carries a Usage
+// override (issue #2387), falling back to the builder's deterministic
+// default otherwise. BuildMultiToolCallResponse takes no scenario config
+// and always reports its default.
+func usageFor(cfg scenarios.MockScenarioConfig, def openai.Usage) openai.Usage {
+	if cfg.Usage != nil {
+		return openai.Usage{
+			PromptTokens:     cfg.Usage.PromptTokens,
+			CompletionTokens: cfg.Usage.CompletionTokens,
+			TotalTokens:      cfg.Usage.TotalTokens,
+		}
+	}
+	return def
+}
+
 // BuildToolCallResponse creates a ChatCompletionResponse with a single tool call.
 func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioConfig) openai.ChatCompletionResponse {
 	args := buildToolArguments(toolName, cfg)
@@ -58,7 +73,7 @@ func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioCon
 				FinishReason: "tool_calls",
 			},
 		},
-		Usage: openai.Usage{PromptTokens: 500, CompletionTokens: 50, TotalTokens: 550},
+		Usage: usageFor(cfg, openai.Usage{PromptTokens: 500, CompletionTokens: 50, TotalTokens: 550}),
 	}
 }
 
@@ -118,7 +133,7 @@ func BuildTextResponse(model string, cfg scenarios.MockScenarioConfig) openai.Ch
 				FinishReason: "stop",
 			},
 		},
-		Usage: openai.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+		Usage: usageFor(cfg, openai.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150}),
 	}
 }
 

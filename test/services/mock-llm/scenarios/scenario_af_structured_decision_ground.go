@@ -114,3 +114,53 @@ func structuredDecisionGrounding3Config() MockScenarioConfig {
 		},
 	}
 }
+
+// structuredDecisionGrounding4Config is KA's own (mock-llm) side of
+// structured_decision_e2e_test.go's E2E-AF-2387-002 groundSessionDelta call
+// (deploy/apifrontend/overlays/e2e/mock-llm.yaml's
+// af_structured_decision_ground_4 AF-scenario), which dispatches a real
+// kubernaut_investigate MCP call for the dedicated
+// structured-decision-target-4 fixture.
+//
+// Identical in shape to structuredDecisionGrounding3Config above (same
+// substituted RCA content, same Deployment-kind steering past
+// investigator_gates.go's sameKindValidationGate, same single-turn
+// submit_result resolution): the 2387-002 test asserts the SAME
+// severity/confidence/causal_chain/target values 1396-001 asserts, PLUS the
+// server-computed call-level counts and token sums the grounding
+// investigation really produced. Every constraint documented on the
+// Grounding3 config (ToolCallArgs not typed fields, no ExactAnalysisText,
+// 3-item causal_chain) applies verbatim here.
+func structuredDecisionGrounding4Config() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: "af_structured_decision_ground_4",
+		SignalName:   "StructuredDecisionGrounding4",
+		ToolCallArgs: map[string]interface{}{
+			"root_cause_analysis": map[string]interface{}{
+				"summary":     "Memory leak in the data-processor Deployment's worker goroutine caused sustained memory growth until the container exceeded its configured limit and was OOMKilled.",
+				"severity":    "critical",
+				"signal_name": "StructuredDecisionGrounding4",
+				"contributing_factors": []string{
+					"Memory leak in data-processor worker goroutine",
+					"Container hit 512Mi memory limit",
+					"Kernel sent OOMKill signal to container",
+				},
+				"causal_chain": []string{
+					"Memory leak in data-processor worker goroutine",
+					"Container hit 512Mi memory limit",
+					"Kernel sent OOMKill signal to container",
+				},
+				"remediation_target": map[string]string{
+					"kind":        "Deployment",
+					"name":        "data-processor",
+					"namespace":   "production",
+					"api_version": "apps/v1",
+				},
+			},
+			"severity":              "critical",
+			"confidence":            0.92,
+			"investigation_outcome": "inconclusive",
+			"actionable":            false,
+		},
+	}
+}
