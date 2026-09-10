@@ -422,10 +422,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	var llmEndpoint, dsURL string
 	if useHostNetwork {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)
-		dsURL = "http://127.0.0.1:18096"
+		dsURL = "https://localhost:18096"
 	} else {
 		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig)
-		dsURL = "http://host.containers.internal:18096"
+		dsURL = "https://host.containers.internal:18096"
 	}
 
 	kaConfigContent := fmt.Sprintf(`runtime:
@@ -470,12 +470,14 @@ timeoutSeconds: 120
 		Env: map[string]string{
 			"KUBECONFIG":    "/tmp/kubeconfig",
 			"POD_NAMESPACE": defaultFixture,
+			"TLS_CA_FILE":   "/etc/tls-ca/ca.crt",
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
 			kaCertDir:                          "/etc/certs:ro",
+			dsInfra.TLSCAFile:                  "/etc/tls-ca/ca.crt:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
