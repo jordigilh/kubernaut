@@ -1154,6 +1154,7 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	kaMetricsPort := kaPort + 2
 	kaCertDir, err := os.MkdirTemp("", fmt.Sprintf("aianalysis-ka-tls-%d-*", processNum))
 	Expect(err).ToNot(HaveOccurred())
+	Expect(os.Chmod(kaCertDir, 0755)).To(Succeed())
 	kaCertPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       "localhost",
 		DNSNames:         []string{"localhost"},
