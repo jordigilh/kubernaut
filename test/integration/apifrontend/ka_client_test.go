@@ -11,6 +11,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var _ = Describe("KA Client Integration (ka/)", func() {
@@ -27,7 +28,8 @@ var _ = Describe("KA Client Integration (ka/)", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			client := ka.NewClient(ka.Config{
-				BaseURL:            "http://127.0.0.1:18130",
+				BaseURL:            "https://localhost:18130",
+				BaseTransport:      mustKATLSRoundTripper(),
 				Timeout:            10 * time.Second,
 				CBFailureThreshold: 5,
 				CBTimeout:          5 * time.Second,
@@ -102,3 +104,9 @@ var _ = Describe("KA Client Integration (ka/)", func() {
 		})
 	})
 })
+
+func mustKATLSRoundTripper() http.RoundTripper {
+	transport, err := sharedtls.NewTLSTransport(kaTLSCAFile)
+	Expect(err).NotTo(HaveOccurred())
+	return transport
+}

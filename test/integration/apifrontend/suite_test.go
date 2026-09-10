@@ -43,6 +43,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -79,6 +80,7 @@ var (
 	// Shared infra references (process 1 only)
 	dsInfra     *infrastructure.DSBootstrapInfra
 	kaContainer *infrastructure.ContainerInstance
+	kaTLSCAFile string
 
 	// Shared envtest (process 1 only, for SA/RBAC/TokenReview)
 	sharedTestEnv *envtest.Environment
@@ -404,6 +406,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// KA config
 	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("af-ka-config-%d", time.Now().UnixNano()))
 	Expect(os.MkdirAll(kaConfigDir, 0755)).To(Succeed())
+	kaCertDir := filepath.Join(os.TempDir(), fmt.Sprintf("af-ka-tls-%d", time.Now().UnixNano()))
+	Expect(os.MkdirAll(kaCertDir, 0755)).To(Succeed())
+	kaCertPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "localhost",
+		DNSNames:         []string{"localhost", "127.0.0.1"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.crt"), kaCertPair.CertPEM, 0644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.key"), kaCertPair.KeyPEM, 0644)).To(Succeed())
 
 	useHostNetwork := goruntime.GOOS == linux
 	var llmEndpoint, dsURL string
@@ -420,6 +433,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
     level: "debug"
   server:
     port: 18130
+    tls:
+      certDir: /etc/certs
     healthAddr: ":18131"
     metricsAddr: ":18132"
   audit:
@@ -460,6 +475,7 @@ timeoutSeconds: 120
 		Volumes: map[string]string{
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaCertDir:                          "/etc/certs:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
@@ -483,9 +499,10 @@ timeoutSeconds: 120
 	GinkgoWriter.Println("Phase 1 complete -- passing SA token to all processes")
 
 	type Phase1Data struct {
-		Token string `json:"token"`
+		Token       string `json:"token"`
+		KATLSCAFile string `json:"ka_tls_ca_file"`
 	}
-	data, err := json.Marshal(Phase1Data{Token: authConfig.Token})
+	data, err := json.Marshal(Phase1Data{Token: authConfig.Token, KATLSCAFile: filepath.Join(kaCertDir, "tls.crt")})
 	Expect(err).ToNot(HaveOccurred())
 	return data
 }, func(_ SpecContext, data []byte) {
@@ -493,10 +510,12 @@ timeoutSeconds: 120
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	type Phase1Data struct {
-		Token string `json:"token"`
+		Token       string `json:"token"`
+		KATLSCAFile string `json:"ka_tls_ca_file"`
 	}
 	var phase1Data Phase1Data
 	Expect(json.Unmarshal(data, &phase1Data)).To(Succeed())
+	kaTLSCAFile = phase1Data.KATLSCAFile
 	serviceAccountToken = phase1Data.Token
 	Expect(serviceAccountToken).NotTo(BeEmpty(), "SA token from Phase 1 must not be empty")
 
