@@ -852,16 +852,24 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 	selectWfTool := mcptools.NewSelectWorkflowTool(d.catalogAdapter, d.leaseMgr, swOpts...)
 
 	// Build the CompleteNoActionTool.
-	completeNoActionTool := mcptools.NewCompleteNoActionTool(d.leaseMgr,
+	completeNoActionOpts := []mcptools.CompleteNoActionOption{
 		mcptools.WithCompleteNoActionLogger(d.logger.WithName("complete-no-action")),
 		mcptools.WithCompleteNoActionHTTPCompleter(d.autoMgr),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
-		// #2387 Gap 2: cumulative per-RR totals for the no-discovery path.
-		// d.investigatorRunner is the production adapter (built at line ~427).
-		mcptools.WithCompleteNoActionTotalsProvider(d.investigatorRunner.InvestigationTotals),
 		mcptools.WithCompleteNoActionTimeoutTracker(d.timeoutMgr),
 		mcptools.WithCompleteNoActionAutoCloseTombstone(d.autoCloseTombstone),
-	)
+	}
+	// #2387 Gap 2: cumulative per-RR totals for the no-discovery path.
+	// d.investigatorRunner is the production adapter (built at line ~427);
+	// minimal wirings (notably the #1654 inactivity-timer tests) omit it,
+	// and evaluating a method value on a nil interface panics -- so only
+	// wire the provider when present. The tool itself is nil-safe (keeps
+	// driver RCA numbers when unset).
+	if d.investigatorRunner != nil {
+		completeNoActionOpts = append(completeNoActionOpts,
+			mcptools.WithCompleteNoActionTotalsProvider(d.investigatorRunner.InvestigationTotals))
+	}
+	completeNoActionTool := mcptools.NewCompleteNoActionTool(d.leaseMgr, completeNoActionOpts...)
 
 	return investigateTool, selectWfTool, completeNoActionTool
 }
