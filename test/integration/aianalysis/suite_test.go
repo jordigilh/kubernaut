@@ -1157,14 +1157,14 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 		KeySize:          2048,
 	})
 	Expect(err).ToNot(HaveOccurred())
-	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.crt"), kaCertPair.CertPEM, 0o600)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.key"), kaCertPair.KeyPEM, 0o600)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.crt"), kaCertPair.CertPEM, 0o644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.key"), kaCertPair.KeyPEM, 0o644)).To(Succeed())
 
 	mockLLMCfg := infrastructure.GetMockLLMConfigForAIAnalysis()
 	var llmEndpoint, dsURL, dsHealthURL string
 	if useHostNetworkForKA {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMCfg.Port)
-		dsURL = "http://127.0.0.1:18095"
+		dsURL = "https://localhost:18095"
 		// CI RCA (run 32253223886, "Integration (aianalysis)" job,
 		// UT-AI-050 audit-flow test): 19095 is this suite's DataStorage
 		// MetricsPort (the 5th arg to NewDSBootstrapConfigWithAuth), not
@@ -1178,7 +1178,7 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 		dsHealthURL = "http://127.0.0.1:28095/readyz"
 	} else {
 		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMCfg)
-		dsURL = "http://host.containers.internal:18095"
+		dsURL = "https://host.containers.internal:18095"
 		dsHealthURL = "http://host.containers.internal:28095/readyz"
 	}
 
@@ -1229,12 +1229,14 @@ timeoutSeconds: 120
 			"KUBECONFIG":                "/tmp/kubeconfig",
 			"POD_NAMESPACE":             "default",
 			"KUBERNAUT_AGENT_NAMESPACE": namespace,
+			"TLS_CA_FILE":               "/etc/tls-ca/ca.crt",
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
 			kaCertDir:                          "/etc/certs:ro",
+			dsInfra.TLSCAFile:                  "/etc/tls-ca/ca.crt:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},

@@ -846,7 +846,7 @@ func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string,
 	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       fmt.Sprintf("datastorage-signing-%s", serviceName),
 		Organization:     "Kubernaut Integration Tests",
-		DNSNames:         []string{"localhost"},
+		DNSNames:         []string{"localhost", "host.containers.internal"},
 		ValidityDuration: 24 * time.Hour,
 		KeySize:          2048,
 	})

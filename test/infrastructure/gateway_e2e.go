@@ -659,6 +659,8 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      tls:
+        certDir: /etc/tls
       maxConcurrentRequests: 100
       readTimeout: 30s
       writeTimeout: 30s
@@ -738,6 +740,9 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true%s
@@ -775,6 +780,9 @@ spec:
         - name: config
           configMap:
             name: gateway-config
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
         - name: tls-ca
           configMap:
             name: inter-service-ca%s
