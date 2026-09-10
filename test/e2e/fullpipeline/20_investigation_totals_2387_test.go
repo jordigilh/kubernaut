@@ -79,7 +79,7 @@ var _ = Describe("Investigation Totals on AgentSession Result [E2E-FP-2387-001]"
 		testCancel()
 	})
 
-	It("should record total_llm_turns/total_tool_calls in status.result.rootCauseAnalysis", NodeTimeout(10*time.Minute), func() {
+	It("should record total_llm_turns/total_tool_calls in status.result.rootCauseAnalysis", NodeTimeout(10*time.Minute), func(_ SpecContext) {
 		By("Creating managed test namespace")
 		testNamespace = fmt.Sprintf("fp-e2e-2387-%d", time.Now().Unix())
 		ns := &corev1.Namespace{
