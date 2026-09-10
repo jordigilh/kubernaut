@@ -93,3 +93,35 @@ var _ = Describe("buildAlertManagerManifest", func() {
 		Expect(manifest).To(ContainSubstring("bearer_token: 'test-token'"))
 	})
 })
+
+var _ = Describe("kube-mcp-server E2E configuration", func() {
+	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
+		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
+	})
+
+	It("UT-INFRA-FLEET-031: renders the current RFC 8693 token exchange schema", func() {
+		config := KubeMCPServerAuthConfig{
+			Mode:             KubeMCPServerAuthModePassthrough,
+			RequireOAuth:     true,
+			AuthorizationURL: "https://keycloak.example/realms/fleet",
+			OAuthAudience:    "kube-mcp-server",
+			StsClientID:      "kube-mcp-server",
+			StsClientSecret:  "secret",
+			StsAudience:      "k8s-api",
+			StsScopes:        []string{"k8s-api-audience"},
+			CAFilePath:       "/etc/tls-ca/ca.crt",
+		}
+
+		toml := config.tomlString()
+		Expect(toml).To(ContainSubstring("[token_exchange]"))
+		Expect(toml).To(ContainSubstring("strategy = \"rfc8693\""))
+		Expect(toml).To(ContainSubstring("audience = \"k8s-api\""))
+		Expect(toml).To(ContainSubstring("scopes = [\"k8s-api-audience\"]"))
+		Expect(toml).To(ContainSubstring("[token_exchange.client_auth]"))
+		Expect(toml).To(ContainSubstring("method = \"client_secret_basic\""))
+		Expect(toml).To(ContainSubstring("client_id = \"kube-mcp-server\""))
+		Expect(toml).To(ContainSubstring("client_secret = \"secret\""))
+		Expect(toml).NotTo(ContainSubstring("sts_client_id"))
+		Expect(toml).NotTo(ContainSubstring("sts_audience"))
+	})
+})

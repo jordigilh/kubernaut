@@ -44,9 +44,11 @@ const (
 	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
 )
 
-// KubeMCPServerImage is the Go-native K8s MCP server image.
-// v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
-const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
+// KubeMCPServerImage is the current Go-native K8s MCP server image.
+// Pin this external image by digest: the mutable latest tag changed its
+// token-exchange configuration schema without a Kubernaut source change,
+// breaking all fleet E2E suites.
+const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"
 
 const (
 	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
@@ -271,17 +273,21 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 	_, _ = fmt.Fprintf(&b, "authorization_url = %q\n", c.AuthorizationURL)
 	_, _ = fmt.Fprintf(&b, "oauth_audience = %q\n", c.OAuthAudience)
 	_, _ = fmt.Fprintf(&b, "cluster_auth_mode = %q\n", KubeMCPServerAuthModePassthrough)
-	_, _ = fmt.Fprintf(&b, "sts_client_id = %q\n", c.StsClientID)
-	_, _ = fmt.Fprintf(&b, "sts_client_secret = %q\n", c.StsClientSecret)
-	_, _ = fmt.Fprintf(&b, "sts_audience = %q\n", c.StsAudience)
+	_, _ = fmt.Fprintf(&b, "certificate_authority = %q\n", c.CAFilePath)
+	_, _ = fmt.Fprintln(&b, "[token_exchange]")
+	_, _ = fmt.Fprintln(&b, "strategy = \"rfc8693\"")
+	_, _ = fmt.Fprintf(&b, "audience = %q\n", c.StsAudience)
 	if len(c.StsScopes) > 0 {
 		quoted := make([]string, len(c.StsScopes))
 		for i, s := range c.StsScopes {
 			quoted[i] = fmt.Sprintf("%q", s)
 		}
-		_, _ = fmt.Fprintf(&b, "sts_scopes = [%s]\n", strings.Join(quoted, ", "))
+		_, _ = fmt.Fprintf(&b, "scopes = [%s]\n", strings.Join(quoted, ", "))
 	}
-	_, _ = fmt.Fprintf(&b, "certificate_authority = %q", c.CAFilePath)
+	_, _ = fmt.Fprintln(&b, "[token_exchange.client_auth]")
+	_, _ = fmt.Fprintln(&b, "method = \"client_secret_basic\"")
+	_, _ = fmt.Fprintf(&b, "client_id = %q\n", c.StsClientID)
+	_, _ = fmt.Fprintf(&b, "client_secret = %q\n", c.StsClientSecret)
 	return b.String()
 }
 
