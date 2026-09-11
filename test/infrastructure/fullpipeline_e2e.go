@@ -92,6 +92,10 @@ func skipMockLLM() bool {
 	return os.Getenv("SKIP_MOCK_LLM") != ""
 }
 
+func shouldDeployDexForAF(fleetProvisioner FleetProvisioner) bool {
+	return fleetProvisioner == nil
+}
+
 // fullPipelineImageConfig defines all images required for the full pipeline E2E.
 // Each entry maps to a BuildImageForKind call.
 var fullPipelineImageConfigs = []E2EImageConfig{
@@ -321,8 +325,10 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// already run by this point (helm install above blocks on hooks), so
 	// authwebhook-tls's embedded ca.crt/ca.key are available to sign DEX's
 	// leaf cert. Must happen before PHASE 7's deployDexOIDCProviderForAF.
-	if err := ensureDexTLSFromChartCA(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
+	if shouldDeployDexForAF(fleetProvisioner) {
+		if err := ensureDexTLSFromChartCA(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
+		}
 	}
 
 	// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernautagent's
@@ -447,8 +453,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		err  error
 	}
 	// MockLLM + MockLLMShadow + Prometheus + AlertManager + event-exporter +
-	// DEX + APIFrontend-DataStorage-RoleBinding + workflow-job-executor RBAC = 8
-	allResults := make(chan waveResult, 9)
+	// APIFrontend-DataStorage-RoleBinding + workflow-job-executor RBAC = 8,
+	// plus DEX for the non-Fleet FullPipeline path.
+	allResults := make(chan waveResult, 8)
+	if shouldDeployDexForAF(fleetProvisioner) {
+		allResults = make(chan waveResult, 9)
+	}
 
 	// Per-test namespace isolation: generate a unique namespace per remediate
 	// scenario so parallel Ginkgo processes never cross-match RRs.
@@ -565,12 +575,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		allResults <- waveResult{"event-exporter", err}
 	}()
 
-	// DEX OIDC provider (Issue #1189): test-only IdP that AF authenticates
-	// against. Not part of the production chart -- must stay Go-managed.
-	go func() {
-		err := deployDexOIDCProviderForAF(ctx, kubeconfigPath, writer)
-		allResults <- waveResult{"DEX", err}
-	}()
+	if shouldDeployDexForAF(fleetProvisioner) {
+		// DEX OIDC provider (Issue #1189): test-only IdP that AF authenticates
+		// against on the non-Fleet FullPipeline path.
+		go func() {
+			err := deployDexOIDCProviderForAF(ctx, kubeconfigPath, writer)
+			allResults <- waveResult{"DEX", err}
+		}()
+	}
 
 	// AF persona-to-DEX-group RBAC bindings (Issue #1737 regression fix): the
 	// chart creates the kubernaut-tool-<persona> ClusterRoles (PHASE 6 helm
@@ -678,7 +690,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "✅ Full Pipeline E2E Infrastructure Ready!")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Total setup time: %s\n", totalDuration)
-	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     http://localhost:30080 (chart-pinned NodePort, TLS not yet wired -- tracked follow-up)\n")
+	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     https://localhost:30080 (chart-pinned NodePort)\n")
 	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: https://localhost:30081 (chart-pinned NodePort)\n")
 	_, _ = fmt.Fprintf(writer, "  🖥️  APIFrontend: https://localhost:30443 (chart-pinned NodePort)\n")
 	_, _ = fmt.Fprintf(writer, "  📦 Namespace:   %s\n", namespace)
@@ -842,9 +854,7 @@ func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, 
 //
 // Image: ghcr.io/resmoio/kubernetes-event-exporter:latest
 // (No local build needed — pulled directly by Kind's containerd)
-func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  📡 Deploying kubernetes-event-exporter...")
-
+func buildEventExporterManifest(namespace, gatewayToken string) string {
 	// BR-GATEWAY-036/037: Add Authorization header to webhook when token is provided
 	authHeaderYaml := ""
 	if gatewayToken != "" {
@@ -921,9 +931,11 @@ data:
     receivers:
       - name: gateway-webhook
         webhook:
-          endpoint: "http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
+          endpoint: "https://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
           headers:
             Content-Type: application/json
+          tls:
+            caFile: /etc/tls-ca/ca.crt
 %[2]s
 ---
 # Deployment
@@ -957,6 +969,9 @@ spec:
         - name: config
           mountPath: /config
           readOnly: true
+        - name: inter-service-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         resources:
           requests:
             memory: "32Mi"
@@ -968,8 +983,16 @@ spec:
       - name: config
         configMap:
           name: event-exporter-config
+      - name: inter-service-ca
+        configMap:
+          name: inter-service-ca
 `, namespace, authHeaderYaml)
+	return manifest
+}
 
+func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  📡 Deploying kubernetes-event-exporter...")
+	manifest := buildEventExporterManifest(namespace, gatewayToken)
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer

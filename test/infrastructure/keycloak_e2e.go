@@ -129,6 +129,81 @@ type KeycloakFleetTokenConfig struct {
 	KubeconfigPath string       // locates the inter-service CA (GenerateInterServiceTLS) that signed Keycloak's leaf cert; required when HTTPClient is nil
 }
 
+// KeycloakUserTokenConfig holds configuration for an OAuth2 direct grant.
+type KeycloakUserTokenConfig struct {
+	TokenEndpoint  string
+	ClientID       string
+	ClientSecret   string
+	Username       string
+	Password       string
+	Scopes         []string
+	HTTPClient     *http.Client
+	KubeconfigPath string
+}
+
+// DefaultKeycloakAFA2AConfig returns the Keycloak direct-grant configuration
+// for the Fleet API Frontend A2A tests.
+func DefaultKeycloakAFA2AConfig(hostPort int, kubeconfigPath string) KeycloakUserTokenConfig {
+	return KeycloakUserTokenConfig{
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", hostPort),
+		ClientID:       "kubernaut-apifrontend",
+		ClientSecret:   "e2e-apifrontend-secret",
+		Username:       "sre-user",
+		Password:       "password",
+		Scopes:         []string{"openid", "email", "profile", "groups"},
+		KubeconfigPath: kubeconfigPath,
+	}
+}
+
+// GetKeycloakPasswordToken obtains an access token using a Keycloak direct
+// grant. The resulting token carries the user's persona groups for AF SAR.
+func GetKeycloakPasswordToken(ctx context.Context, cfg KeycloakUserTokenConfig) (string, error) {
+	data := url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"username":      {cfg.Username},
+		"password":      {cfg.Password},
+	}
+	if len(cfg.Scopes) > 0 {
+		data.Set("scope", strings.Join(cfg.Scopes, " "))
+	}
+
+	client, err := keycloakHTTPClient(cfg.HTTPClient, cfg.KubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Keycloak HTTP client: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build keycloak password token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("keycloak password token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read Keycloak password token response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("keycloak password token endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parse Keycloak password token response: %w", err)
+	}
+	if tokenResp.AccessToken == "" {
+		return "", fmt.Errorf("keycloak password token response missing access_token: %s", string(body))
+	}
+	return tokenResp.AccessToken, nil
+}
+
 // DefaultKeycloakFleetReadConfig returns the default Keycloak fleet-read
 // client config matching the kubernaut-fleet-read client declared in
 // keycloak-realm-demo.json. kubeconfigPath locates the inter-service CA

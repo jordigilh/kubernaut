@@ -280,7 +280,7 @@ var _ = SynchronizedBeforeSuite(
 		// SNAT'd-to-node-IP traffic through the otherwise default-deny
 		// NetworkPolicy, and kind-fullpipeline-config.yaml's extraPortMappings
 		// map those exact ports (30080/30081/30443) to the same host ports.
-		gatewayBaseURL = "http://localhost:30080"
+		gatewayBaseURL = "https://localhost:30080"
 
 		By("Setting up authenticated DataStorage client (DD-TEST-001 exception, Issue #785: HTTPS)")
 		dataStorageURL := "https://localhost:30081"

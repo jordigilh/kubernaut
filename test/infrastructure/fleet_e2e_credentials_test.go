@@ -17,7 +17,9 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"encoding/base64"
+	"io"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -72,7 +74,7 @@ var _ = Describe("buildLLMCredentialsSecretManifest", func() {
 var _ = Describe("buildAlertManagerManifest", func() {
 	It("UT-INFRA-FLEETDEMO-026: gateway-webhook URL uses gatewayNamespace, not namespace, when they differ", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
 		Expect(manifest).NotTo(ContainSubstring("gateway-service.monitoring.svc.cluster.local"))
 	})
 
@@ -85,12 +87,39 @@ var _ = Describe("buildAlertManagerManifest", func() {
 
 	It("UT-INFRA-FLEETDEMO-028: single-cluster callers passing the same value for both still resolve correctly", func() {
 		manifest := buildAlertManagerManifest("kubernaut-system", "kubernaut-system", "")
-		Expect(manifest).To(ContainSubstring("http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-029: BR-GATEWAY-036/037 bearer token is still added to the webhook's http_config when provided", func() {
 		manifest := buildAlertManagerManifest("kubernaut-system", "kubernaut-system", "test-token")
 		Expect(manifest).To(ContainSubstring("bearer_token: 'test-token'"))
+	})
+
+	It("UT-INFRA-FLEET-TLS-001: AlertManager uses the Gateway HTTPS endpoint and mounted CA", func() {
+		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"))
+		Expect(manifest).To(ContainSubstring("tls_config:"))
+		Expect(manifest).To(ContainSubstring("ca_file: /etc/tls-ca/ca.crt"))
+		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))
+		Expect(manifest).To(ContainSubstring("name: inter-service-ca"))
+	})
+})
+
+var _ = Describe("Fleet-only identity and webhook setup", func() {
+	It("UT-INFRA-FLEET-OIDC-001: skips Dex when Fleet infrastructure is provisioned", func() {
+		Expect(shouldDeployDexForAF(nil)).To(BeTrue())
+		Expect(shouldDeployDexForAF(func(context.Context, string, string, io.Writer) (*FleetHelmOptions, error) {
+			return nil, nil
+		})).To(BeFalse())
+	})
+
+	It("UT-INFRA-FLEET-TLS-002: event exporter uses the Gateway HTTPS endpoint and mounted CA", func() {
+		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
+		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/kubernetes-event"))
+		Expect(manifest).To(ContainSubstring("tls:"))
+		Expect(manifest).To(ContainSubstring("caFile: /etc/tls-ca/ca.crt"))
+		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))
+		Expect(manifest).To(ContainSubstring("name: inter-service-ca"))
 	})
 })
 

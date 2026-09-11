@@ -89,6 +89,26 @@
         "groups",
         "kubernaut-apifrontend-audience"
       ]
+    },
+    {
+      "clientId": "kubernaut-apifrontend",
+      "name": "Kubernaut API Frontend (E2E, direct grant)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "secret": "e2e-apifrontend-secret",
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "groups",
+        "kubernaut-apifrontend-audience"
+      ]
     }
   ],
   "clientScopes": [
