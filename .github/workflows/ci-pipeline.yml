@@ -1099,7 +1099,11 @@ jobs:
             timeout: 20
           - service: workflowexecution
             service_name: "Workflow Execution"
-            timeout: 20
+            # The Tekton-backed E2E suite can spend most of its budget on
+            # cluster setup and parallel worker startup before Ginkgo reports
+            # results. Keep the CI budget aligned with the documented 30m E2E
+            # timeout instead of allowing GitHub to cancel at 20m.
+            timeout: 30
           - service: remediationorchestrator
             service_name: "Remediation Orchestrator"
             timeout: 20
