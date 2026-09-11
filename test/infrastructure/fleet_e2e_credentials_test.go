@@ -142,6 +142,7 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 	It("UT-INFRA-FLEET-TLS-002: event exporter uses the Gateway HTTPS endpoint and mounted CA", func() {
 		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
 		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/kubernetes-event"))
+		Expect(manifest).To(ContainSubstring("Authorization: \"Bearer test-token\""))
 		Expect(manifest).To(ContainSubstring("tls:"))
 		Expect(manifest).To(ContainSubstring("caFile: /etc/tls-ca/ca.crt"))
 		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))

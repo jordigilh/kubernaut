@@ -112,6 +112,10 @@ var _ = Describe("Investigation Totals on AgentSession Result [E2E-FP-2387-001]"
 						cs.State.Terminated.Reason == oomkill {
 						return true
 					}
+					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
+						cs.State.Waiting.Reason == crashloopbackoff {
+						return true
+					}
 				}
 			}
 			return false

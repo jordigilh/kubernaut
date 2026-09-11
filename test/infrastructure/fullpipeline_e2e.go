@@ -858,7 +858,7 @@ func buildEventExporterManifest(namespace, gatewayToken string) string {
 	// BR-GATEWAY-036/037: Add Authorization header to webhook when token is provided
 	authHeaderYaml := ""
 	if gatewayToken != "" {
-		authHeaderYaml = fmt.Sprintf("            Authorization: Bearer %s\n", gatewayToken)
+		authHeaderYaml = fmt.Sprintf("            Authorization: \"Bearer %s\"\n", gatewayToken)
 	}
 
 	manifest := fmt.Sprintf(`---
