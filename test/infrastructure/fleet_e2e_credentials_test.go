@@ -113,6 +113,16 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 		})).To(BeFalse())
 	})
 
+	It("UT-INFRA-FLEET-OIDC-002: excludes Dex from Fleet readiness checks", func() {
+		fleetDeployments := fullPipelineReadinessDeployments(func(context.Context, string, string, io.Writer) (*FleetHelmOptions, error) {
+			return nil, nil
+		})
+		Expect(fleetDeployments).ToNot(ContainElement("dex"))
+
+		fullPipelineDeployments := fullPipelineReadinessDeployments(nil)
+		Expect(fullPipelineDeployments).To(ContainElement("dex"))
+	})
+
 	It("UT-INFRA-FLEET-TLS-002: event exporter uses the Gateway HTTPS endpoint and mounted CA", func() {
 		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
 		Expect(manifest).To(ContainSubstring("https://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/kubernetes-event"))

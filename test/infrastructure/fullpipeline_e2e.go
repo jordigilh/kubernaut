@@ -651,7 +651,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8: Waiting for all services ready...")
 	phase8Start := time.Now()
 
-	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, fleetProvisioner, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
 	}
 	// fleetmetadatacache is chart-managed only when fleetOpts != nil (its
@@ -1233,9 +1233,26 @@ func indentYAMLLines(s string, spaces int) string {
 // PHASE 11: Service Readiness Checks
 // ============================================================================
 
+func fullPipelineReadinessDeployments(fleetProvisioner FleetProvisioner) []string {
+	deployments := []string{
+		"datastorage",
+		"kubernaut-agent",
+		"gateway",
+		"event-exporter",
+		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
+		"apifrontend",  // Issue #1189: AF as FP signal source
+	}
+	if shouldDeployDexForAF(fleetProvisioner) {
+		deployments = append(deployments, "dex") // Issue #1189: OIDC provider for AF authentication
+	}
+	return deployments
+}
+
 // waitForFullPipelineServicesReady waits for all services to be ready in the cluster.
 // All readiness checks run in parallel for faster convergence.
-func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfigPath string, fleetProvisioner FleetProvisioner, writer io.Writer) error {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to build kubeconfig: %w", err)
@@ -1246,17 +1263,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	}
 
 	// List of deployments that must be ready
-	deployments := []string{
-		"datastorage",
-		"kubernaut-agent",
-		"gateway",
-		"event-exporter",
-		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
-		"apifrontend",  // Issue #1189: AF as FP signal source
-		"dex",          // Issue #1189: OIDC provider for AF authentication
-	}
+	deployments := fullPipelineReadinessDeployments(fleetProvisioner)
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")
 	}
