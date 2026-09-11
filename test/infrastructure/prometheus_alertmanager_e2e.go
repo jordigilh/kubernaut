@@ -546,15 +546,15 @@ func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string) string {
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
 	webhookAuthYaml := `
-         http_config:
-           tls_config:
-             ca_file: /etc/tls-ca/ca.crt`
+          http_config:
+            tls_config:
+              ca_file: /etc/tls-ca/ca.crt`
 	if gatewayToken != "" {
 		webhookAuthYaml = `
-         http_config:
-           bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'
-           tls_config:
-             ca_file: /etc/tls-ca/ca.crt`
+          http_config:
+            bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'
+            tls_config:
+              ca_file: /etc/tls-ca/ca.crt`
 	}
 
 	return fmt.Sprintf(`---
@@ -589,8 +589,8 @@ data:
     receivers:
     - name: gateway-webhook
       webhook_configs:
-       - url: 'https://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
-        send_resolved: false`+webhookAuthYaml+`
+        - url: 'https://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
+          send_resolved: false`+webhookAuthYaml+`
     - name: null-receiver
 ---
 apiVersion: apps/v1

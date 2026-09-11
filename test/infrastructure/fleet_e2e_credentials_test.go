@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 )
 
 // Issue found 2026-09-01 (FLEET_DEMO_QUICKSTART.md): the docs told users to
@@ -102,6 +104,20 @@ var _ = Describe("buildAlertManagerManifest", func() {
 		Expect(manifest).To(ContainSubstring("ca_file: /etc/tls-ca/ca.crt"))
 		Expect(manifest).To(ContainSubstring("mountPath: /etc/tls-ca"))
 		Expect(manifest).To(ContainSubstring("name: inter-service-ca"))
+	})
+
+	It("UT-INFRA-FLEET-TLS-003: AlertManager embedded configuration is valid YAML", func() {
+		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
+		config := strings.SplitN(manifest, "  alertmanager.yml: |\n", 2)
+		Expect(config).To(HaveLen(2))
+		configLines := strings.SplitN(config[1], "\n---\n", 2)
+		Expect(configLines).To(HaveLen(2))
+		indentedLines := strings.Split(configLines[0], "\n")
+		for i, line := range indentedLines {
+			indentedLines[i] = strings.TrimPrefix(line, "    ")
+		}
+		var parsed yaml.Node
+		Expect(yaml.Unmarshal([]byte(strings.Join(indentedLines, "\n")), &parsed)).To(Succeed())
 	})
 })
 
