@@ -19,6 +19,7 @@ import (
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 func TestE2E(t *testing.T) {
@@ -144,6 +145,9 @@ var _ = SynchronizedBeforeSuite(
 		// Ginkgo --procs>1 (CI run 31320575553, E2E-AF-1395-001).
 		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-structured-decision-e2e")).
 			To(Succeed(), "af-structured-decision-e2e namespace must exist and be labeled managed")
+		helpers.EnsureTestPods(context.Background(), k8sClient, "af-structured-decision-e2e",
+			"structured-decision-target", "structured-decision-target-2",
+			"structured-decision-target-3", "structured-decision-target-4")
 
 		healthURL := "http://localhost:18081"
 		Eventually(func() error {
