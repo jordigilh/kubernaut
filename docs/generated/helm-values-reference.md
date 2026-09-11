@@ -304,6 +304,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Gateway ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (e.g. OLM Subscription, ArgoCD Application). | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
+| `auth.enabled` | boolean | Enable TokenReview/SAR authentication for Gateway signal endpoints. Disabled by default; TLS remains the default transport protection. | `false` | No |
 | `auth.signalSources` | array of object | External signal sources that need RBAC to call the Gateway | `` | No |
 | `config.cors.allowCredentials` | boolean | Whether cross-origin requests may include credentials. | `false` | No |
 | `config.cors.allowedOrigins` | array of string | Allowed CORS origins. M2M API — deny by default. | `[                     "https://no-browser-clients.invalid"                   ]` | No |
