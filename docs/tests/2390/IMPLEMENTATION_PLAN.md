@@ -15,6 +15,7 @@
 - `BR-WE-016`: engine-specific configuration reaches the executor.
 - `BR-FLEET-004`: workflow-declared execution cluster is authoritative and routed through the existing fleet trust boundary.
 - `BR-WE-014`: the Job backend creates the correct execution resource.
+- `BR-WE-015`: the Ansible backend receives and executes the selected workflow configuration.
 - `BR-WE-019`: declared Job resources reach the workflow container.
 - `BR-WORKFLOW-008`: dependency failures are observable and fail fast.
 - `BR-KA-191`: KA remains the authoritative workflow-parameter validation layer.
@@ -158,6 +159,27 @@ Mitigation: make the smallest upstream change; preserve existing RO and WE imple
 
 Tests: existing affected package suites and `E2E-WE-006-*`, `E2E-FLEET-2326-001` regressions.
 
+### R7: Job-only E2E coverage misses engine-specific metadata
+
+Impact: a shared snapshot field works for the Job backend but is dropped or misinterpreted
+for Tekton or Ansible.
+
+Mitigation: use one shared snapshot assertion helper at the AA and WFE boundaries, then
+extend an existing live journey for each execution engine with engine-specific assertions.
+Keep actual executor behavior in the existing engine-specific E2E suites.
+
+Tests: `E2E-FP-2390-002`, `E2E-FP-2390-003`, `E2E-FP-2390-004`.
+
+### R8: CRD and workflow-schema contracts drift
+
+Impact: a schema-valid `workflow-schema.yaml` is rejected by Kubernetes before any service
+transition is exercised, as occurred with `execution.resources`.
+
+Mitigation: add an admission matrix test using metadata-rich Job, Tekton, and Ansible
+fixtures against the generated RemediationWorkflow CRD.
+
+Tests: `IT-AW-2390-001`.
+
 ## 5. Control and Business-Outcome Matrix
 
 The pyramid invariant is mandatory: unit tests prove logic, integration tests prove wiring, and E2E proves the remediation journey and control objectives.
@@ -165,12 +187,14 @@ The pyramid invariant is mandatory: unit tests prove logic, integration tests pr
 - FedRAMP `AC-4`: the declared `hub` execution cluster is used only through the existing registered-cluster gateway path. Unit: `UT-RO-2390-001`. Integration: `IT-RO-2390-001`. E2E: `E2E-FLEET-2390-001`.
 - FedRAMP `AC-6`: the LLM can select a workflow but cannot change its service account, dependencies, bundle, or execution cluster. Unit: `UT-KA-2390-004`. Integration: `IT-KA-2390-003`. E2E: `E2E-FLEET-2390-001`.
 - FedRAMP `SI-10`: malformed schema or engine metadata does not produce an unsafe executable snapshot. Unit: `UT-KA-2390-003` and `UT-WE-2390-001`. Integration: `IT-KA-2390-002`.
+- FedRAMP `SI-10`: every engine fixture is admitted by the RemediationWorkflow CRD before service-level E2E execution. Integration: `IT-AW-2390-001`.
 - FedRAMP `AU-3`: workflow ID, version, action, engine, bundle, dependency, and routing metadata remain available for lifecycle reconstruction. Unit: `UT-AA-2390-001`. Integration: `IT-AA-2390-001`. E2E: `E2E-FP-2390-001`.
 - OWASP ASVS `V4.1.1`: routing authorization remains enforced at the trusted fleet gateway layer. Integration: `IT-RO-2390-001`. E2E: `E2E-FLEET-2390-001`.
 - OWASP ASVS `V4.1.3`: execution remains limited to operator-provisioned clusters and service accounts. Unit: `UT-KA-2390-004`. E2E: `E2E-FLEET-2390-001`.
 - OWASP ASVS V5 input-validation objectives: schema-derived parameters and engine configuration are not accepted as uncontrolled LLM input. Unit: `UT-KA-2390-003`, `UT-KA-2390-005`. Integration: `IT-WE-2390-001`.
 - `BR-WE-016`: Ansible engine configuration reaches `WorkflowRef` and the executor. Unit: `UT-KA-2390-006`, `UT-WE-2390-003`. Integration: `IT-RO-2390-002`.
 - `BR-WE-019`: declared resources reach the Job container. Unit: `UT-WE-2390-001`. E2E: `E2E-FP-2390-001`.
+- `BR-WE-015`: Ansible-specific configuration survives the common snapshot path and reaches the Ansible execution boundary. Unit: `UT-WE-2390-003`. E2E: `E2E-FP-2390-004`.
 - `BR-WORKFLOW-008`: missing dependency failures are actionable and sanitized. Unit: `UT-WE-2390-002`. Integration: `IT-WE-2390-002`.
 
 ## 6. TDD Sequence
@@ -188,6 +212,8 @@ Write failing Ginkgo/Gomega tests before implementation:
 7. WE Job receives dependencies, resources, service account, and filtered parameters.
 8. Ansible receives valid engine configuration and rejects invalid/missing configuration.
 9. Missing metadata diagnostics contain no credential values.
+10. A CRD admission matrix accepts the complete metadata shape for Job, Tekton, and Ansible fixtures.
+11. The common snapshot is identical at AA and WFE boundaries for all three engines.
 
 All tests must assert business outcomes and reference the applicable BR or control objective in the test name or comment. No `testing.T`, `Skip`, `XIt`, or `PIt` is permitted.
 
@@ -285,10 +311,15 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 - `IT-WE-2390-001`: WE creates a Job with the declared Secret/ConfigMap mounts, resource requirements, and filtered environment.
 - `IT-WE-2390-002`: missing dependency or metadata failure is observable without sensitive values.
 - `IT-WE-2390-003`: Ansible execution receives the propagated engine configuration.
+- `IT-AW-2390-001`: generated RemediationWorkflow CRD admission accepts the metadata-rich Job, Tekton, and Ansible fixtures, including `execution.resources` only for Job.
 
 ### E2E tests
 
 - `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Job mount, and completes the Git operation.
+- `E2E-FP-2390-002`: shared snapshot contract: a metadata-rich selection is equal at `AIAnalysis.Status.SelectedWorkflow` and `WorkflowExecution.Spec.WorkflowRef` for each engine fixture.
+- `E2E-FP-2390-003`: Job-specific extension verifies `execution.resources`, ServiceAccount, dependencies, filtered parameters, and generated Job behavior.
+- `E2E-FP-2390-004`: Ansible-specific extension verifies `engineConfig` (`playbookPath`, `jobTemplateName`, `inventoryName`), ServiceAccount, dependencies, and the Ansible executor boundary. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
+- `E2E-FP-2390-005`: Tekton-specific extension verifies engine, bundle/digest, ServiceAccount, dependencies, and the PipelineRun dispatch boundary.
 - `E2E-FLEET-2390-001`: a workflow-declared execution cluster remains catalog-authoritative and dispatches through the registered fleet gateway.
 - Regression: `E2E-WE-006-*` continues to prove dependency injection behavior.
 - Regression: `E2E-FLEET-2326-001` continues to prove execution-cluster propagation.
@@ -303,8 +334,10 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 5. Run CHECKPOINT W and affected unit/integration suites.
 6. Refactor duplicated AA snapshot mapping.
 7. Add sanitized diagnostics and test sensitive-value exclusion.
-8. Run the full GitOps-drift E2E scenario and fleet regression.
-9. Run build, lint, unit, integration, and coverage checks.
+8. Add the CRD admission matrix and run it before live E2E suites.
+9. Extend existing Job, Tekton, and Ansible E2E journeys with the shared snapshot assertions and engine-specific checks.
+10. Run the full GitOps-drift E2E scenario and fleet regression.
+11. Run build, lint, unit, integration, and coverage checks.
 
 ## 10. Completion Criteria
 
@@ -314,6 +347,8 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 - `WorkflowExecution.spec.clusterId` follows the workflow declaration when present and preserves the existing fallback when absent.
 - Declared parameters are enforced without conflating nil and empty metadata.
 - `engineConfig` reaches Ansible through the complete chain.
+- Job, Tekton, and Ansible each have one live scenario proving the common snapshot plus their engine-specific fields.
+- The generated RemediationWorkflow CRD admits every valid engine fixture and rejects Job-only resources on non-Job engines through registration validation.
 - No LLM-supplied value can override catalog-authoritative execution metadata.
 - Sanitized diagnostics identify missing fields without exposing credential contents.
 - Every wiring-manifest row has a passing integration test.
