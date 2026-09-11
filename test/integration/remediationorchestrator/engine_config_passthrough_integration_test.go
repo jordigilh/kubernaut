@@ -25,7 +25,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,12 +93,23 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "wf-ansible-restart",
-				WorkflowName:    "wf-ansible-restart",
-				ActionType:      "RestartPod",
-				Version:         "v2.0.0",
-				ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-				ExecutionEngine: "ansible",
+				WorkflowID:         "wf-ansible-restart",
+				WorkflowName:       "wf-ansible-restart",
+				ActionType:         "RestartPod",
+				Version:            "v2.0.0",
+				ExecutionBundle:    "https://github.com/kubernaut/playbooks.git",
+				ExecutionEngine:    "ansible",
+				ServiceAccountName: "workflow-ansible",
+				ExecutionClusterID: "production-east",
+				Dependencies: &sharedtypes.WorkflowDependencies{
+					Secrets:    []sharedtypes.WorkflowResourceDependency{{Name: "gitea-repo-creds"}},
+					ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "workflow-config"}},
+				},
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{"cpu": resource.MustParse("100m")},
+					Limits:   corev1.ResourceList{"memory": resource.MustParse("256Mi")},
+				},
+				DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "MEMORY_LIMIT_NEW": true},
 				EngineConfig: &apiextensionsv1.JSON{
 					Raw: ansibleConfig,
 				},
@@ -152,6 +165,13 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal("wf-ansible-restart"))
 		Expect(we.Spec.WorkflowRef.Version).To(Equal("v2.0.0"))
 		Expect(we.Spec.WorkflowRef.ExecutionBundle).To(Equal("https://github.com/kubernaut/playbooks.git"))
+		Expect(we.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-ansible"))
+		Expect(we.Spec.ClusterID).To(Equal("production-east"))
+		Expect(we.Spec.WorkflowRef.Dependencies.Secrets).To(ConsistOf(sharedtypes.WorkflowResourceDependency{Name: "gitea-repo-creds"}))
+		Expect(we.Spec.WorkflowRef.Dependencies.ConfigMaps).To(ConsistOf(sharedtypes.WorkflowResourceDependency{Name: "workflow-config"}))
+		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
+		Expect(we.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("256Mi")))
+		Expect(we.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "MEMORY_LIMIT_NEW": true}))
 
 		GinkgoWriter.Printf("✅ IT-WE-016-003: engineConfig passed through from AI to WFE\n")
 	})
