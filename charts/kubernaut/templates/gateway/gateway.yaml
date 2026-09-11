@@ -28,6 +28,7 @@ telemetry:
     keyFile: {{ .Values.telemetry.tls.keyFile | default "" | quote }}
 server:
   listenAddr: ":8080"
+  authenticationEnabled: {{ .Values.gateway.auth.enabled | default false }}
   healthAddr: ":8081"
   metricsAddr: ":9090"
   maxConcurrentRequests: {{ $v.config.server.maxConcurrentRequests }}

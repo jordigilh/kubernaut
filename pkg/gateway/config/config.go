@@ -100,6 +100,7 @@ type ServerSettings struct {
 	ListenAddr            string              `yaml:"listenAddr"`            // Default: ":8080"
 	HealthAddr            string              `yaml:"healthAddr"`            // Default: ":8081" (Issue #753: dedicated health probe port)
 	MetricsAddr           string              `yaml:"metricsAddr"`           // Default: ":9090" (Issue #753: dedicated metrics port)
+	AuthenticationEnabled bool                `yaml:"authenticationEnabled"` // Default: false; opt-in TokenReview/SAR auth for signal endpoints
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"` // Default: 100 (0 = unlimited)
 	ReadTimeout           time.Duration       `yaml:"readTimeout"`           // Default: 30s
 	WriteTimeout          time.Duration       `yaml:"writeTimeout"`          // Default: 30s
@@ -411,6 +412,7 @@ func DefaultServerConfig() *ServerConfig {
 			ListenAddr:            ":8080",
 			HealthAddr:            ":8081",
 			MetricsAddr:           ":9090",
+			AuthenticationEnabled: false,
 			MaxConcurrentRequests: 100,
 			ReadTimeout:           30 * time.Second,
 			WriteTimeout:          30 * time.Second,

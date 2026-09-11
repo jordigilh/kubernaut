@@ -429,24 +429,16 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// --wait` blocks until they are). No wave synchronization is needed here
 	// anymore -- everything below is independent Go-managed test
 	// infrastructure that only needs the chart-managed services to already
-	// exist (Gateway for event-exporter/AlertManager auth, DataStorage for
+	// exist (Gateway for event-exporter/AlertManager signal delivery, DataStorage for
 	// RBAC checks), which PHASE 6 guarantees by running before this phase.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 7: Go-managed test infrastructure...")
 	phase7Start := time.Now()
 
-	// BR-GATEWAY-036/037: Create Gateway SA and token for event-exporter and AlertManager webhooks
-	// Signal sources (event-exporter, AlertManager) must send Bearer tokens to /api/v1/signals/* endpoints.
-	_, _ = fmt.Fprintln(writer, "  🔐 Creating E2E ServiceAccount for Gateway signal ingestion (BR-GATEWAY-036/037)...")
-	gatewaySAName := "fullpipeline-gateway-sa"
-	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, namespace, kubeconfigPath, gatewaySAName, writer); err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7: failed to create Gateway SA: %w", err)
-	}
-	gatewayToken, err := GetServiceAccountToken(ctx, namespace, gatewaySAName, kubeconfigPath)
-	if err != nil {
-		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7: failed to get Gateway SA token: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Gateway auth token ready for event-exporter and AlertManager")
+	// Gateway authentication is opt-in. FullPipeline exercises the default
+	// TLS-only signal-source path; test/e2e/gateway covers BR-GATEWAY-036/037
+	// with an explicitly authenticated Gateway deployment.
+	gatewayToken := ""
 
 	type waveResult struct {
 		name string

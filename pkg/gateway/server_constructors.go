@@ -407,11 +407,15 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// BR-GATEWAY-036/037: Auth (TokenReview/SAR)
-	authenticator, authorizer, err := buildGatewayAuth(kubeConfig)
-	if err != nil {
-		cancel()
-		return nil, err
+	var authenticator auth.Authenticator
+	var authorizer auth.Authorizer
+	if cfg.Server.AuthenticationEnabled {
+		// BR-GATEWAY-036/037: Auth (TokenReview/SAR), explicitly opt-in.
+		authenticator, authorizer, err = buildGatewayAuth(kubeConfig)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
 	}
 
 	// DD-STATUS-001: Pass separate cached client and uncached apiReader

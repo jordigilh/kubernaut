@@ -659,6 +659,7 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      authenticationEnabled: true
       tls:
         certDir: /etc/tls
       maxConcurrentRequests: 100

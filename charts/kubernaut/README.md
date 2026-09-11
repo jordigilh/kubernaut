@@ -127,14 +127,15 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set monitoring.prometheus.url=http://kube-prometheus-stack-prometheus.monitoring.svc:9090 \
   --set monitoring.alertManager.enabled=true \
   --set monitoring.alertManager.url=http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 \
+  --set gateway.auth.enabled=true \
   --set gateway.auth.signalSources[0].name=alertmanager \
   --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
   --set gateway.auth.signalSources[0].namespace=monitoring
 ```
 
-Configure AlertManager to send webhooks to the Gateway (requires `gateway.enabled=true`, the
-default — see [Enable/Disable Gateway or APIFrontend](#enable-gateway-or-apifrontend) if you've
-disabled it):
+Configure AlertManager to send webhooks to the Gateway (requires `gateway.enabled=true`; enable
+`gateway.auth.enabled=true` and configure `gateway.auth.signalSources` only when Gateway
+TokenReview/SAR authentication is desired; TLS remains enabled by default):
 
 ```yaml
 receivers:

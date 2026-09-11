@@ -221,6 +221,9 @@ gateway:
     tls: {}
   # BR-GATEWAY-036/037: Auth middleware configuration
   auth:
+    # Authentication is opt-in. TLS protects signal-source transport by default;
+    # enable this for TokenReview/SAR validation and bind signalSources below.
+    enabled: false
     # External signal sources that need RBAC to call the Gateway.
     # Each entry creates a ClusterRoleBinding granting services/gateway-service/create.
     # To enable AlertManager integration, install kube-prometheus-stack and add:
