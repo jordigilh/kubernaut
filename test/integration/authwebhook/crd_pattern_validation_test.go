@@ -26,6 +26,8 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/testutil"
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -120,6 +122,39 @@ var _ = Describe("IT-CRD-312 CRD Schema Format Hardening", Label("integration", 
 			Expect(err).ToNot(HaveOccurred(), "apiserver should accept a well-formed semver version: %v", err)
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
 		})
+	})
+
+	It("IT-AW-2390-001: admits metadata-rich Job, Tekton, and Ansible workflow fixtures", func() {
+		cases := []struct {
+			name         string
+			engine       string
+			bundle       string
+			engineConfig *apiextensionsv1.JSON
+			resources    bool
+		}{
+			{name: "job", engine: "job", bundle: testutil.ValidBundleRef, resources: true},
+			{name: "tekton", engine: "tekton", bundle: testutil.ValidBundleRef},
+			{
+				name:         "ansible",
+				engine:       "ansible",
+				bundle:       "https://github.com/kubernaut/test-playbooks.git",
+				engineConfig: &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"playbooks/site.yml","jobTemplateName":"kubernaut-test"}`)},
+			},
+		}
+
+		for _, tc := range cases {
+			rw := validRW(crdUniqueID("it-aw-2390-" + tc.name))
+			rw.Spec.Execution.Engine = tc.engine
+			rw.Spec.Execution.Bundle = tc.bundle
+			rw.Spec.Execution.EngineConfig = tc.engineConfig
+			if tc.resources {
+				rw.Spec.Execution.Resources = &corev1.ResourceRequirements{}
+			}
+
+			Expect(k8sClient.Create(ctx, rw)).To(Succeed(),
+				"CRD admission should accept metadata-rich %s fixture", tc.engine)
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		}
 	})
 
 	Context("RemediationWorkflow.spec.actionType (PascalCase Pattern)", func() {

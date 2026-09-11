@@ -168,7 +168,7 @@ Mitigation: use one shared snapshot assertion helper at the AA and WFE boundarie
 extend an existing live journey for each execution engine with engine-specific assertions.
 Keep actual executor behavior in the existing engine-specific E2E suites.
 
-Tests: `E2E-FP-2390-002`, `E2E-FP-2390-003`, `E2E-FP-2390-004`.
+Tests: `E2E-WE-2390-002`, `E2E-WE-2390-003`, `E2E-WE-2390-004`.
 
 ### R8: CRD and workflow-schema contracts drift
 
@@ -316,10 +316,9 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 ### E2E tests
 
 - `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Job mount, and completes the Git operation.
-- `E2E-FP-2390-002`: shared snapshot contract: a metadata-rich selection is equal at `AIAnalysis.Status.SelectedWorkflow` and `WorkflowExecution.Spec.WorkflowRef` for each engine fixture.
-- `E2E-FP-2390-003`: Job-specific extension verifies `execution.resources`, ServiceAccount, dependencies, filtered parameters, and generated Job behavior.
-- `E2E-FP-2390-004`: Ansible-specific extension verifies `engineConfig` (`playbookPath`, `jobTemplateName`, `inventoryName`), ServiceAccount, dependencies, and the Ansible executor boundary. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
-- `E2E-FP-2390-005`: Tekton-specific extension verifies engine, bundle/digest, ServiceAccount, dependencies, and the PipelineRun dispatch boundary.
+- `E2E-WE-2390-002`: shared snapshot contract at the WorkflowExecution boundary, with Job-specific resource and ServiceAccount assertions.
+- `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace and PipelineRun dispatch assertions.
+- `E2E-WE-2390-004`: shared snapshot contract at the WorkflowExecution boundary, with Ansible `engineConfig` and AWX execution-reference assertions. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
 - `E2E-FLEET-2390-001`: a workflow-declared execution cluster remains catalog-authoritative and dispatches through the registered fleet gateway.
 - Regression: `E2E-WE-006-*` continues to prove dependency injection behavior.
 - Regression: `E2E-FLEET-2326-001` continues to prove execution-cluster propagation.
