@@ -172,12 +172,9 @@ var _ = SynchronizedBeforeSuite(
 		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
 
-		// BR-GATEWAY-036/037: Create E2E ServiceAccount for Gateway signal endpoint auth
-		// (fullpipeline-gateway-sa is created in SetupFullPipelineInfrastructure for event-exporter/AlertManager)
-		By("Creating E2E ServiceAccount for Gateway authentication (BR-GATEWAY-036/037)")
-		gatewaySAName := "fullpipeline-gateway-sa"
-		gatewayToken, gtwErr := infrastructure.GetServiceAccountToken(ctx, namespace, gatewaySAName, tempKubeconfigPath)
-		Expect(gtwErr).ToNot(HaveOccurred(), "Failed to get Gateway SA token (SA created in SetupFullPipelineInfrastructure)")
+		// Gateway signal authentication is opt-in. The FullPipeline chart uses
+		// the default TLS-only Gateway path; test/e2e/gateway owns BR-GATEWAY-036/037.
+		gatewayToken := ""
 
 		By("Labeling kubernaut-system namespace as managed (for AF E2E tests)")
 		labelCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
