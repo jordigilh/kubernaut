@@ -26,7 +26,10 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 // EnrichmentRunner abstracts the enrichment call for testability.
@@ -42,14 +45,19 @@ type WorkflowCatalog interface {
 // CatalogWorkflow represents the essential fields from a DataStorage workflow
 // entry needed for the interactive selection response.
 type CatalogWorkflow struct {
-	WorkflowID            string `json:"workflow_id"`
-	WorkflowName          string `json:"workflow_name"`
-	ActionType            string `json:"action_type"`
-	Version               string `json:"version"`
-	ExecutionEngine       string `json:"execution_engine,omitempty"`
-	ExecutionBundle       string `json:"execution_bundle,omitempty"`
-	ExecutionBundleDigest string `json:"execution_bundle_digest,omitempty"`
-	ServiceAccountName    string `json:"service_account_name,omitempty"`
+	WorkflowID             string                       `json:"workflow_id"`
+	WorkflowName           string                       `json:"workflow_name"`
+	ActionType             string                       `json:"action_type"`
+	Version                string                       `json:"version"`
+	ExecutionEngine        string                       `json:"execution_engine,omitempty"`
+	ExecutionBundle        string                       `json:"execution_bundle,omitempty"`
+	ExecutionBundleDigest  string                       `json:"execution_bundle_digest,omitempty"`
+	ServiceAccountName     string                       `json:"service_account_name,omitempty"`
+	ExecutionClusterID     string                       `json:"execution_cluster_id,omitempty"`
+	EngineConfig           *apiextensionsv1.JSON        `json:"engine_config,omitempty"`
+	Dependencies           *models.WorkflowDependencies `json:"dependencies,omitempty"`
+	Resources              *corev1.ResourceRequirements `json:"resources,omitempty"`
+	DeclaredParameterNames map[string]bool              `json:"declared_parameter_names,omitempty"`
 }
 
 // PreSelectionContext accumulates results from pre-selection pipeline hooks
@@ -511,6 +519,11 @@ func applySelectedWorkflow(result *katypes.InvestigationResult, workflow *Catalo
 	result.ExecutionBundle = workflow.ExecutionBundle
 	result.ExecutionBundleDigest = workflow.ExecutionBundleDigest
 	result.ServiceAccountName = workflow.ServiceAccountName
+	result.ExecutionClusterID = workflow.ExecutionClusterID
+	result.EngineConfig = workflow.EngineConfig
+	result.Dependencies = workflow.Dependencies
+	result.Resources = workflow.Resources
+	result.DeclaredParameterNames = workflow.DeclaredParameterNames
 	result.WorkflowVersion = workflow.Version
 	result.WorkflowRationale = "User-selected via interactive mode"
 	// Issue #1661 Change 12: catalog-authoritative, mirroring the

@@ -755,7 +755,11 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 				ExecutionEngine:    "argo-workflows",
 				ExecutionBundle:    "oci://registry/increase-memory:v1.2.0",
 				ServiceAccountName: "remediation-sa",
-				Version:            "v1.2.0",
+				ExecutionClusterID: "hub",
+				DeclaredParameterNames: map[string]bool{
+					"TARGET_NAMESPACE": true,
+				},
+				Version: "v1.2.0",
 			}
 
 			result := mcptools.BuildFinalResult(rca, workflow, nil)
@@ -770,6 +774,8 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 			Expect(result.ServiceAccountName).To(Equal("remediation-sa"))
 			Expect(result.WorkflowVersion).To(Equal("v1.2.0"))
 			Expect(result.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			Expect(result.ExecutionClusterID).To(Equal("hub"))
+			Expect(result.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true}))
 			// Issue #1661 Change 12: ActionType/WorkflowName must flow through
 			// buildFinalResult (applySelectedWorkflow) the same as the other
 			// catalog-sourced fields above.

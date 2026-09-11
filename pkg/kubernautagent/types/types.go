@@ -18,6 +18,7 @@ package types
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -78,12 +79,13 @@ type InvestigationResult struct {
 	Confidence        float64                `json:"confidence"`
 
 	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
-	ExecutionBundle       string `json:"execution_bundle,omitempty"`
-	ExecutionBundleDigest string `json:"execution_bundle_digest,omitempty"`
-	ExecutionEngine       string `json:"execution_engine,omitempty"`
-	ServiceAccountName    string `json:"service_account_name,omitempty"`
-	WorkflowVersion       string `json:"workflow_version,omitempty"`
-	WorkflowRationale     string `json:"workflow_rationale,omitempty"`
+	ExecutionBundle       string                `json:"execution_bundle,omitempty"`
+	ExecutionBundleDigest string                `json:"execution_bundle_digest,omitempty"`
+	ExecutionEngine       string                `json:"execution_engine,omitempty"`
+	ServiceAccountName    string                `json:"service_account_name,omitempty"`
+	EngineConfig          *apiextensionsv1.JSON `json:"engine_config,omitempty"`
+	WorkflowVersion       string                `json:"workflow_version,omitempty"`
+	WorkflowRationale     string                `json:"workflow_rationale,omitempty"`
 
 	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
 	// #1661 Change 12) resolved from the DS catalog at selection time and
