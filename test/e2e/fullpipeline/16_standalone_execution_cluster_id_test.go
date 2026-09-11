@@ -18,15 +18,18 @@ package fullpipeline
 
 import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// E2E-FP-2378-001 proves that catalog-declared execution metadata survives the
+// E2E-FP-2390-001 proves that catalog-declared execution metadata survives the
 // full selection path, while standalone WorkflowExecution dispatch remains on
 // the local Kubernetes client.
 var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
@@ -34,6 +37,10 @@ var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 		Expect(workflowUUIDs).To(HaveKey("standalone-exec-cluster-id-v1:production"))
 		targetNamespace, ok := fpRemediateNS["standalone-exec-cluster-id"]
 		Expect(ok).To(BeTrue(), "standalone execution cluster test namespace must be provisioned")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-2390-snapshot-secret", Namespace: infrastructure.ExecutionNamespace},
+			StringData: map[string]string{"marker": "metadata-only"},
+		})).To(Succeed())
 		Expect(infrastructure.DeployMemoryEaterNamed(ctx, "memory-eater", targetNamespace, kubeconfigPath,
 			"64Mi", "20Mi", GinkgoWriter)).To(Succeed())
 
@@ -84,6 +91,19 @@ var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {
 			"WorkflowExecution must preserve the catalog-declared cluster ID")
 
 		Expect(we.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"))
+		Expect(we.Spec.WorkflowRef.WorkflowName).To(Equal("standalone-exec-cluster-id-v1"))
+		Expect(we.Spec.WorkflowRef.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(we.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
+		Expect(we.Spec.WorkflowRef.ExecutionBundle).To(ContainSubstring("oomkill-increase-memory-job:v1.0.0-exec@sha256:"))
+		Expect(we.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-job-executor"))
+		Expect(we.Spec.WorkflowRef.Dependencies.Secrets).To(ConsistOf(
+			sharedtypes.WorkflowResourceDependency{Name: "e2e-2390-snapshot-secret"}))
+		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
+		Expect(we.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
+		Expect(we.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{
+			"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
+			"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
+		}))
 		Eventually(func() bool {
 			jobs := &batchv1.JobList{}
 			if err := apiReader.List(ctx, jobs,

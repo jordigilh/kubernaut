@@ -26,6 +26,15 @@ spec:
     serviceAccountName: workflow-job-executor
     # This ID is deliberately not registered in standalone mode.
     clusterId: standalone-declared-cluster
+    resources:
+      requests:
+        cpu: 10m
+      limits:
+        memory: 64Mi
+
+  dependencies:
+    secrets:
+      - name: e2e-2390-snapshot-secret
 
   parameters:
     - name: TARGET_RESOURCE_NAME

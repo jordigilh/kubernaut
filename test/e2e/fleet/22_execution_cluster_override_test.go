@@ -26,15 +26,18 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// E2E-FLEET-2326-001: workflow-declared execution cluster overrides the
+// E2E-FLEET-2390-001: workflow-declared execution cluster overrides the
 // signal's origin cluster (DD-FLEET-008, BR-FLEET-004, Issue #2326).
 //
 // This proves the real, live chain UT/IT coverage cannot: AuthWebhook's
@@ -94,6 +97,14 @@ var _ = Describe("E2E-FLEET-2326-001 [AC-6]: workflow-declared execution cluster
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create %s fixture", targetName)
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-2390-snapshot-secret", Namespace: infrastructure.ExecutionNamespace},
+			StringData: map[string]string{"marker": "metadata-only"},
+		}
+		if createErr := remoteK8sClient.Create(ctx, secret); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+			Expect(createErr).NotTo(HaveOccurred(), "failed to create workflow dependency secret")
+		}
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), secret) })
 
 		payload := buildPrometheusAlertWithCluster("FleetExecClusterOverride2326", "critical",
 			targetName, "prod-west")
@@ -144,6 +155,19 @@ var _ = Describe("E2E-FLEET-2326-001 [AC-6]: workflow-declared execution cluster
 				"DD-FLEET-008: WFE.Spec.ClusterID must follow the selected workflow's "+
 					"declared execution.clusterId (fleet-exec-cluster-override-v1 -> prod-east), "+
 					"not RemediationRequest.Spec.ClusterID (prod-west)")
+			g.Expect(owned.Spec.WorkflowRef.WorkflowName).To(Equal("fleet-exec-cluster-override-v1"))
+			g.Expect(owned.Spec.WorkflowRef.ActionType).To(Equal("IncreaseMemoryLimits"))
+			g.Expect(owned.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
+			g.Expect(owned.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"))
+			g.Expect(owned.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-job-executor"))
+			g.Expect(owned.Spec.WorkflowRef.Dependencies.Secrets).To(ConsistOf(
+				types.WorkflowResourceDependency{Name: "e2e-2390-snapshot-secret"}))
+			g.Expect(owned.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
+			g.Expect(owned.Spec.WorkflowRef.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
+			g.Expect(owned.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{
+				"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
+				"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
+			}))
 		}, timeout, interval).Should(Succeed())
 	})
 })
