@@ -1128,7 +1128,9 @@ jobs:
             # #1189, ~2m46s) was added, leaving too little headroom -- CI
             # runs were landing at/over 25min and getting hard job-timeout
             # cancelled (distinct from the #1802 ineffective-chain flake).
-            timeout: 30
+            # The suite reached 27m on PR #2383 before the 30m budget expired;
+            # keep headroom for the current full-pipeline scenario set.
+            timeout: 45
           - service: fleet
             service_name: "Fleet Multi-Cluster"
             # 45 (up from 35, PR #1790 round-12 RCA): originally sized around
