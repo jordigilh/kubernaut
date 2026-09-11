@@ -118,6 +118,18 @@ var _ = Describe("Investigation Totals on AgentSession Result [E2E-FP-2387-001]"
 					}
 				}
 			}
+			events := &corev1.EventList{}
+			if err := apiReader.List(ctx, events, client.InNamespace(testNamespace)); err == nil {
+				for _, event := range events.Items {
+					if event.InvolvedObject.Name != "memory-eater" &&
+						!strings.HasPrefix(event.InvolvedObject.Name, "memory-eater-") {
+						continue
+					}
+					if event.Reason == "BackOff" || event.Reason == oomkill {
+						return true
+					}
+				}
+			}
 			return false
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should OOMKill")
 
