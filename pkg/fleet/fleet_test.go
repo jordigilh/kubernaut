@@ -267,7 +267,7 @@ var _ = Describe("FleetConfig.Namespace (#1686, BR-RBAC-020)", func() {
 			MCPGatewayType:     fleet.GatewayKuadrant,
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}
@@ -286,7 +286,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			MCPGatewayType:     fleet.GatewayEAIGW,
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}
@@ -302,7 +302,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			MCPGatewayType:     fleet.GatewayKuadrant,
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}
@@ -365,7 +365,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			MCPGatewayType:     fleet.GatewayEAIGW,
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}
@@ -442,7 +442,7 @@ var _ = Describe("FleetOAuth2Config.TLSCAFile (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-CFG-050 [SC-8]: TLSCAFile is settable and defaults to empty (system CA trust)", func() {
 		cfg := fleet.FleetOAuth2Config{
 			Enabled:  true,
-			TokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			TokenURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 		}
 		Expect(cfg.TLSCAFile).To(BeEmpty(),
 			"zero-value TLSCAFile must fall back to the system CA trust store")
@@ -528,7 +528,7 @@ var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553
 			MCPGatewayType:     "eaigw",
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:  true,
-				TokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			},
 		}
 		err := cfg.Validate()
@@ -543,7 +543,7 @@ var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553
 			MCPGatewayType:     "eaigw",
 			OAuth2: fleet.FleetOAuth2Config{
 				Enabled:              true,
-				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 				CredentialsSecretRef: "fleet-oauth2-creds",
 			},
 		}

@@ -55,6 +55,13 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 		}
 		cs.config.MultiToolCalls = entries
 	}
+	if ov.Usage != nil {
+		cs.config.Usage = &MockUsage{
+			PromptTokens:     ov.Usage.PromptTokens,
+			CompletionTokens: ov.Usage.CompletionTokens,
+			TotalTokens:      ov.Usage.TotalTokens,
+		}
+	}
 }
 
 // convertToolCallChain recursively converts a YAML-parsed ToolCallOverride
@@ -222,6 +229,12 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// doc comment for why ToolCallArgs must hand-craft the RCA substituted
 	// into args["rca"] rather than relying on the typed config fields.
 	r.Register(signalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
+
+	// E2E-AF-2387-002 (issue #2387): dedicated grounding scenario for
+	// structured_decision_e2e_test.go's groundSessionDelta call -- same
+	// single-turn submit_result shape as ground_3 above, for the
+	// StructuredDecisionGrounding4 alert/fixture.
+	r.Register(signalScenario("af_structured_decision_ground_4", []string{"structureddecisiongrounding4"}, structuredDecisionGrounding4Config()))
 
 	// Issue #1918: grounded not-actionable signal for E2E-FP-1918-001, safe
 	// from the ctx.AllText leak that a broadly-matched keyword (like

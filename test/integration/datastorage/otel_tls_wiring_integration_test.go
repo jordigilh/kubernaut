@@ -58,6 +58,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtelemetry "github.com/jordigilh/kubernaut/pkg/shared/telemetry"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 / Issue #1519)", func() {
@@ -135,6 +136,8 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 			pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: srvKeyDER}),
 		)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(filepath.Join(certDir, "tls.crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srvCertDER}), 0o600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(certDir, "tls.key"), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: srvKeyDER}), 0o600)).To(Succeed())
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/v1/traces", func(w http.ResponseWriter, r *http.Request) {
@@ -201,8 +204,8 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 			Telemetry: internalconfig.TelemetryConfig{
 				Endpoint: collectorAddr,
 				TLS: internalconfig.TelemetryTLSConfig{
-					Enabled: true,
-					CAFile:  caCertPath,
+
+					CAFile: caCertPath,
 				},
 			},
 		}
@@ -220,6 +223,7 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 				Port:         18090,
 				ReadTimeout:  30 * time.Second,
 				WriteTimeout: 30 * time.Second,
+				TLS:          sharedtls.TLSConfig{CertDir: certDir},
 			},
 			DLQMaxLen: 100,
 			Authenticator: &auth.MockAuthenticator{
@@ -253,8 +257,8 @@ var _ = Describe("Data Storage production wiring: OTel export over TLS (GAP-14 /
 			ServiceName: "datastorage",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())

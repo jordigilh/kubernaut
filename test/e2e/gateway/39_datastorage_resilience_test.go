@@ -19,6 +19,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -135,7 +136,12 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 	podName := "ds-resilience-test-pod"
 	helpers.EnsureTestPod(reqCtx, k8sClient, alertNamespace, podName)
 
-	resilienceGatewayURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayResilienceAPIHostPort)
+	resilienceGatewayURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.GatewayResilienceAPIHostPort)
+	resilienceGatewayClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed certificate
+		},
+	}
 	alertPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 		AlertName: "DataStorageResilienceTestAlert",
 		Namespace: alertNamespace,
@@ -167,7 +173,7 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eToken))
 
 		var doErr error
-		resp, doErr = http.DefaultClient.Do(req) //nolint:bodyclose // closed below once loop exits
+		resp, doErr = resilienceGatewayClient.Do(req) //nolint:bodyclose // closed below once loop exits
 		if doErr != nil {
 			return 0
 		}
@@ -191,10 +197,13 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 	// DataStorage instance (GatewayResilienceDataStorageNamespace), not
 	// the shared one -- gateway-resilience's datastorage.url points there
 	// too (see DeployGatewayForDataStorageResilienceTest), so this is
-	// where the signal's audit trail actually landed. Plain HTTP: the
-	// isolated instance has no TLS cert configured.
-	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayResilienceDataStorageAPIHostPort)
-	saTransport := testauth.NewServiceAccountTransport(e2eToken)
+	// where the signal's audit trail actually landed. The isolated instance
+	// uses the same HTTPS contract as the production DataStorage service.
+	dataStorageURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.GatewayResilienceDataStorageAPIHostPort)
+	tlsTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed certificate
+	}
+	saTransport := testauth.NewServiceAccountTransportWithBase(e2eToken, tlsTransport)
 	httpClient := &http.Client{Timeout: 20 * time.Second, Transport: saTransport}
 	auditClient, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 	if err != nil {

@@ -204,6 +204,7 @@ func newContextPropagationTestServer() *httptest.Server {
 			Port:         18090,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
+			TLS:          datastorageIntegrationTLSConfig(),
 		},
 		DLQMaxLen: 100,
 		Authenticator: &auth.MockAuthenticator{

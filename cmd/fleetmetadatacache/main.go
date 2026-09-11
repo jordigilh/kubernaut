@@ -305,17 +305,15 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 
 	var certReloader *sharedtls.CertReloader
 	var tlsCertDir string
-	if cfg.Server.TLS.Enabled() {
-		isTLS, reloader, err := sharedtls.ConfigureConditionalTLS(apiServer, cfg.Server.TLS.CertDir)
-		if err != nil {
-			logger.Error(err, "Failed to configure TLS for FMC API server", "certDir", cfg.Server.TLS.CertDir)
-			os.Exit(1)
-		}
-		if isTLS {
-			certReloader = reloader
-			tlsCertDir = cfg.Server.TLS.CertDir
-			logger.Info("TLS configured for FMC API server", "certDir", cfg.Server.TLS.CertDir)
-		}
+	isTLS, reloader, err := sharedtls.ConfigureRequiredTLS(apiServer, cfg.Server.TLS.CertDir)
+	if err != nil {
+		logger.Error(err, "Failed to configure TLS for FMC API server", "certDir", cfg.Server.TLS.CertDir)
+		os.Exit(1)
+	}
+	if isTLS {
+		certReloader = reloader
+		tlsCertDir = cfg.Server.TLS.CertDir
+		logger.Info("TLS configured for FMC API server", "certDir", cfg.Server.TLS.CertDir)
 	}
 
 	// Issue #753: dedicated health-probe server, always plain HTTP -- kubelet
@@ -503,7 +501,7 @@ func run() int {
 	)
 
 	// Issue #748: Load OCP TLS security profile from config before any TLS
-	// setup (buildFMCServers' ConfigureConditionalTLS call reads this via
+	// setup (buildFMCServers' ConfigureRequiredTLS call reads this via
 	// the process-wide default set here).
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")

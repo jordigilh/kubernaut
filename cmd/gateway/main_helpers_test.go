@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	gatewaypkg "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -104,7 +107,7 @@ func newTestGatewayServer(t *testing.T) *gatewaypkg.Server {
 	metricsInstance := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 
 	srv, err := gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
-		Config:          testServerConfig(),
+		Config:          testServerConfigWithTLS(t),
 		Logger:          logr.Discard(),
 		MetricsInstance: metricsInstance,
 		CtrlClient:      k8sClient,
@@ -113,6 +116,28 @@ func newTestGatewayServer(t *testing.T) *gatewaypkg.Server {
 		t.Fatalf("NewServerForTesting failed: %v", err)
 	}
 	return srv
+}
+
+func testServerConfigWithTLS(t *testing.T) *config.ServerConfig {
+	t.Helper()
+
+	cfg := testServerConfig()
+	certDir := t.TempDir()
+	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName: "localhost",
+		DNSNames:   []string{"localhost"},
+	})
+	if err != nil {
+		t.Fatalf("failed to generate test TLS certificate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDir, "tls.crt"), pair.CertPEM, 0o600); err != nil {
+		t.Fatalf("failed to write test TLS certificate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDir, "tls.key"), pair.KeyPEM, 0o600); err != nil {
+		t.Fatalf("failed to write test TLS key: %v", err)
+	}
+	cfg.Server.TLS.CertDir = certDir
+	return cfg
 }
 
 func testServerConfig() *config.ServerConfig {

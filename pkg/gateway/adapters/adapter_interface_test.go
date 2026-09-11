@@ -134,9 +134,9 @@ var _ = Describe("Adapter Interface - Business Metadata", func() {
 			Expect(metadata.SupportedContentTypes).To(ContainElement("application/json"),
 				"Must accept K8s Event JSON payloads")
 
-			// Security requirements (K8s Events require authentication)
-			Expect(metadata.RequiredHeaders).To(ContainElement("Authorization"),
-				"K8s Events must be authenticated (Bearer token required)")
+			// Authentication is a server-level opt-in, not an adapter contract.
+			Expect(metadata.RequiredHeaders).To(BeEmpty(),
+				"K8s Event authentication is optional and configured at the Gateway server")
 		})
 	})
 })
@@ -258,7 +258,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHICH instance to fix
 			// Gateway rejects early - workflow execution needs specific resource name
 			invalidSignal := &types.NormalizedSignal{
-				SignalName:   "PodCrashLooping",
+				SignalName:  "PodCrashLooping",
 				Fingerprint: "fingerprint-123",
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{

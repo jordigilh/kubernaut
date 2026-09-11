@@ -61,7 +61,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	// Data Storage service URL from WE integration infrastructure (DD-TEST-002)
 	// Port 18097 per DD-TEST-001 v1.9 (unique port, parallel with KA)
 	// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
-	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort)
+	dataStorageURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort)
 	dataStorageHealthURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationHealthPort)
 
 	var dsClient *ogenclient.Client

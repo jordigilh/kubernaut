@@ -16,6 +16,8 @@ limitations under the License.
 
 package config
 
+import "fmt"
+
 // TelemetryConfig holds OpenTelemetry distributed tracing settings shared
 // across services (GAP-14 / Issue #1519).
 //
@@ -38,10 +40,8 @@ type TelemetryConfig struct {
 	// harnesses; leave false in production unless explicitly requested.
 	LogSink bool `yaml:"logSink,omitempty"`
 
-	// TLS configures the OTLP/HTTP export connection to Endpoint. Ignored
-	// when Endpoint is empty. Default (TLS.Enabled=false) is a plain HTTP
-	// connection, matching most in-cluster collector deployments (e.g. an
-	// OTel Collector sidecar/Service with no TLS termination).
+	// TLS configures trust and optional client authentication for the OTLP/HTTP
+	// export connection to Endpoint. TLS is mandatory for network endpoints.
 	TLS TelemetryTLSConfig `yaml:"tls,omitempty"`
 }
 
@@ -51,10 +51,6 @@ type TelemetryConfig struct {
 // omit to trust the system CA pool); CertFile/KeyFile are for mTLS, if the
 // collector requires a client certificate.
 type TelemetryTLSConfig struct {
-	// Enabled turns on TLS for the OTLP/HTTP connection. False (default)
-	// uses a plain HTTP connection.
-	Enabled bool `yaml:"enabled,omitempty"`
-
 	// CAFile is the path to a PEM CA certificate used to verify a
 	// self-signed or privately-issued collector certificate. Optional --
 	// leave empty to trust the system CA pool (e.g. a publicly-trusted
@@ -75,6 +71,11 @@ func DefaultTelemetryConfig() TelemetryConfig {
 	return TelemetryConfig{Endpoint: "", LogSink: false}
 }
 
-// No ValidateTelemetryConfig: every value of Endpoint (including empty) is
-// valid -- there is nothing to enforce yet. Add one here if/when a format
-// constraint (e.g. host:port parsing) is needed.
+// Validate validates telemetry configuration that applies to network export.
+// The stdout endpoint is a local log sink and does not require TLS material.
+func (c TelemetryConfig) Validate() error {
+	if (c.TLS.CertFile == "") != (c.TLS.KeyFile == "") {
+		return fmt.Errorf("telemetry TLS certFile and keyFile must be set together")
+	}
+	return nil
+}

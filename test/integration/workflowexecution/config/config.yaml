@@ -18,3 +18,5 @@ redis:
 server:
   port: 8080
   metrics_port: 9090
+  tls:
+    certDir: /etc/certs

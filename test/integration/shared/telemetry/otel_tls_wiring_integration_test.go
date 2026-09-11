@@ -20,7 +20,7 @@ limitations under the License.
 // cmd/datastorage/main.go, and cmd/kubernautagent/main.go. DD-OTEL-001's
 // Wiring Manifest marked that bootstrap call "Manual/build verification
 // (bootstrap-only, no branching logic to unit test)" -- true when it was
-// written, but TLS support added real branching (Enabled/CAFile/CertFile/
+// written, but TLS support added real branching (CAFile/CertFile/
 // KeyFile) after that. pkg/shared/telemetry/tls_internal_test.go covers the
 // branching logic at the unit level (buildTLSConfig); this suite proves the
 // wiring: a real span, produced by the same otelhttp.NewMiddleware call
@@ -182,8 +182,8 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -241,8 +241,8 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath, // trusts the OTHER CA, not the one that signed the collector's cert
+
+				CAFile: caCertPath, // trusts the OTHER CA, not the one that signed the collector's cert
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -372,7 +372,6 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled:  true,
 				CAFile:   caCertPath,
 				CertFile: clientCertPath,
 				KeyFile:  clientKeyPath,
@@ -410,8 +409,8 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath, // server-auth only -- no CertFile/KeyFile
+
+				CAFile: caCertPath, // server-auth only -- no CertFile/KeyFile
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -517,8 +516,8 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -617,8 +616,8 @@ var _ = Describe("OTel OTLP/HTTPS wiring (GAP-14 / Issue #1519)", func() {
 			ServiceName: "gateway-it-1519",
 			Endpoint:    collectorAddr,
 			TLS: internalconfig.TelemetryTLSConfig{
-				Enabled: true,
-				CAFile:  caCertPath,
+
+				CAFile: caCertPath,
 			},
 		})
 		Expect(err).ToNot(HaveOccurred())

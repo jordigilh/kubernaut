@@ -205,7 +205,7 @@ var _ = Describe("fleetOAuth2ConfigFromKA", func() {
 	It("wires TLSCaFile from FleetOAuth2.TLSCaFile into fleet.FleetOAuth2Config.TLSCAFile so the OAuth2 token-fetch HTTP client trusts a cluster-local IdP CA instead of falling back to the system trust store", func() {
 		oauth2 := kaconfig.FleetOAuth2{
 			Enabled:   true,
-			TokenURL:  "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			TokenURL:  "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			Scopes:    []string{"openid", "groups"},
 			TLSCaFile: "/etc/tls-ca/ca.crt",
 		}

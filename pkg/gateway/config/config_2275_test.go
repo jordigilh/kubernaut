@@ -31,3 +31,16 @@ var _ = Describe("BR-PLATFORM-012: Debug.PprofEnabled secure default (Issue #227
 		Expect(cfg.Debug.PprofEnabled).To(BeFalse())
 	})
 })
+
+var _ = Describe("BR-GATEWAY-036/037: signal authentication opt-in", func() {
+	It("UT-GW-036-007: disables TokenReview/SAR authentication by default", func() {
+		cfg := config.DefaultServerConfig()
+		Expect(cfg.Server.AuthenticationEnabled).To(BeFalse())
+	})
+
+	It("UT-GW-036-008: YAML can opt in to TokenReview/SAR authentication", func() {
+		cfg := config.DefaultServerConfig()
+		Expect(yaml.Unmarshal([]byte("server:\n  authenticationEnabled: true\n"), cfg)).To(Succeed())
+		Expect(cfg.Server.AuthenticationEnabled).To(BeTrue())
+	})
+})

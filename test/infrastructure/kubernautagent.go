@@ -1073,7 +1073,6 @@ spec:
       - name: tls-certs
         secret:
           secretName: kubernautagent-tls
-          optional: true
       - name: tls-ca
         configMap:
           name: inter-service-ca

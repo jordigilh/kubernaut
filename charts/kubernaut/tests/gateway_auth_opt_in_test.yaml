@@ -1,0 +1,42 @@
+suite: "BR-GATEWAY-036/037: Gateway signal authentication is opt-in"
+templates:
+  - templates/gateway/gateway.yaml
+set:
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "defaults Gateway signal authentication to disabled"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "authenticationEnabled: false"
+
+  - it: "enables Gateway signal authentication explicitly"
+    template: templates/gateway/gateway.yaml
+    set:
+      gateway:
+        auth:
+          enabled: true
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "authenticationEnabled: true"

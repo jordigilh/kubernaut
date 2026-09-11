@@ -351,7 +351,18 @@ teardown() {
     mkdir -p "${ref_dir}"
     local checked_count=0
     while IFS= read -r pod; do
-        local line=$(kubectl logs "${pod}" -n "${OPERATOR_NAMESPACE}" --tail=1 --timestamps --all-containers 2>/dev/null | tail -n 1)
+        # The operator may restart on non-OpenShift Kind clusters while its
+        # optional APIServer watch fails to establish. Give the kubelet a
+        # short window to expose the current container logs before treating
+        # the live pod as logless.
+        local line=""
+        for _ in 1 2 3 4 5; do
+            line=$(kubectl logs "${pod}" -n "${OPERATOR_NAMESPACE}" --tail=1 --timestamps --all-containers 2>/dev/null | tail -n 1)
+            if [ -n "${line}" ]; then
+                break
+            fi
+            sleep 1
+        done
         if [ -n "${line}" ]; then
             printf '%s' "${line}" > "${ref_dir}/${pod}"
             checked_count=$((checked_count + 1))

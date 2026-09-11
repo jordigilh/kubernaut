@@ -22,6 +22,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // persona holds credentials for a DEX E2E user with a specific RBAC role.
@@ -189,6 +190,14 @@ func newTLSTransport(caCertPath string) *http.Transport {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caCert) {
 			panic("failed to add CA cert to pool")
+		}
+		// DEX serves a leaf signed by the inter-service CA
+		// (GenerateInterServiceTLS), not the e2e CA above — trust both
+		// (mirrors dex_e2e.go's NewTLSAwareClient for infra-side callers).
+		if isCAPath := kinfra.InterServiceCAPath(kubeconfigPath); isCAPath != "" {
+			if isCA, err := os.ReadFile(isCAPath); err == nil {
+				pool.AppendCertsFromPEM(isCA)
+			}
 		}
 		tlsCfg.RootCAs = pool
 	}

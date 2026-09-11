@@ -241,6 +241,8 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		cfg.Server.APIAddr = osAssignedAddr
 		cfg.Server.HealthAddr = osAssignedAddr
 		cfg.Server.MetricsAddr = osAssignedAddr
+		cfg.Server.TLS.CertDir = certDir
+		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
 		ready.Store(true)
 	})
@@ -255,7 +257,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 
 		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
 		Expect(servers.api.TLSConfig).NotTo(BeNil(),
-			"SC-8: API server must be TLS-configured when a cert is mounted (ConfigureConditionalTLS)")
+			"SC-8: API server must be TLS-configured when a cert is mounted (ConfigureRequiredTLS)")
 
 		ln, addr := listenOn()
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
@@ -281,12 +283,6 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 			Expect(plainResp.StatusCode).ToNot(Equal(http.StatusOK),
 				"SC-8: a plaintext request must never reach the API handler behind the TLS-only listener")
 		}
-	})
-
-	It("IT-FMC-1683-A-001b: falls back to plain HTTP when no cert is mounted (fail-open bootstrap, matches DataStorage/Gateway)", func() {
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
-		Expect(servers.api.TLSConfig).To(BeNil(),
-			"no cert mounted -- API server must remain plain HTTP (ConfigureConditionalTLS fail-open)")
 	})
 
 	It("IT-FMC-1683-A-002 [SC-8, AC-4, DD-PLATFORM-010]: fmc.HTTPClient.Ping() succeeds against the TLS-protected API port via the unauthenticated /readyz route, reusing fmc.ReadyzHandler rather than a duplicated liveness handler", func() {
@@ -328,7 +324,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		servers := buildFMCServers(cfg, readyDeps, &ready, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
-		go func() { _ = servers.api.Serve(apiLn) }()
+		go func() { _ = servers.api.ServeTLS(apiLn, "", "") }()
 		defer func() { _ = servers.api.Close() }()
 
 		healthLn, healthAddr := listenOn()
@@ -338,7 +334,10 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		// DD-PLATFORM-010/#2169: /readyz is now ALSO registered, deliberately
 		// unauthenticated, on the API port -- a second registration of the
 		// same fmc.ReadyzHandler, not a leak of the whole router.
-		apiResp, err := http.Get("http://" + apiAddr + fmc.ReadyzPath) //nolint:gosec,noctx // test-only probe
+		apiClient := &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test CA
+		}}
+		apiResp, err := apiClient.Get("https://" + apiAddr + fmc.ReadyzPath)
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = apiResp.Body.Close() }()
 		Expect(apiResp.StatusCode).To(Equal(http.StatusOK),
@@ -348,7 +347,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		// Guard: the auth exemption must be scoped to /readyz only -- the
 		// real business-data route on the same port must still reject an
 		// unauthenticated request (no accidental exemption of the whole router).
-		clustersResp, err := http.Get("http://" + apiAddr + fmc.ClustersPath) //nolint:gosec,noctx // test-only probe
+		clustersResp, err := apiClient.Get("https://" + apiAddr + fmc.ClustersPath)
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = clustersResp.Body.Close() }()
 		Expect(clustersResp.StatusCode).To(Equal(http.StatusUnauthorized),
@@ -368,14 +367,17 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
-		go func() { _ = servers.api.Serve(apiLn) }()
+		go func() { _ = servers.api.ServeTLS(apiLn, "", "") }()
 		defer func() { _ = servers.api.Close() }()
 
 		healthLn, healthAddr := listenOn()
 		go func() { _ = servers.health.Serve(healthLn) }()
 		defer func() { _ = servers.health.Close() }()
 
-		apiResp, err := http.Get("http://" + apiAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
+		apiClient := &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test CA
+		}}
+		apiResp, err := apiClient.Get("https://" + apiAddr + fmc.HealthzPath)
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = apiResp.Body.Close() }()
 		// Issue #1993: see the matching comment in IT-FMC-1683-A-003 above --

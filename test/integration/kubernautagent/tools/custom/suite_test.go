@@ -148,7 +148,7 @@ var _ = SynchronizedBeforeSuite(
 			}
 		}
 
-		dsURL := fmt.Sprintf("http://127.0.0.1:%d", kaDataStoragePort)
+		dsURL := fmt.Sprintf("https://localhost:%d", kaDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, token, 5*time.Second)
 		ogenClient = dsClients.OpenAPIClient
 

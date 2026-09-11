@@ -212,16 +212,14 @@ func NewServerForTesting(deps ServerTestDeps) (*Server, error) {
 
 	server.wireTestHTTPAndAncillaryServers(cfg, metricsInstance)
 
-	if cfg.Server.TLS.Enabled() {
-		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
-		if tlsErr != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
-		}
-		if isTLS {
-			server.certReloader = reloader
-			server.tlsCertDir = cfg.Server.TLS.CertDir
-			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
-		}
+	isTLS, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(server.httpServer, cfg.Server.TLS.CertDir)
+	if tlsErr != nil {
+		return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+	}
+	if isTLS {
+		server.certReloader = reloader
+		server.tlsCertDir = cfg.Server.TLS.CertDir
+		server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
 	}
 
 	return server, nil
@@ -409,11 +407,15 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// BR-GATEWAY-036/037: Auth (TokenReview/SAR)
-	authenticator, authorizer, err := buildGatewayAuth(kubeConfig)
-	if err != nil {
-		cancel()
-		return nil, err
+	var authenticator auth.Authenticator
+	var authorizer auth.Authorizer
+	if cfg.Server.AuthenticationEnabled {
+		// BR-GATEWAY-036/037: Auth (TokenReview/SAR), explicitly opt-in.
+		authenticator, authorizer, err = buildGatewayAuth(kubeConfig)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
 	}
 
 	// DD-STATUS-001: Pass separate cached client and uncached apiReader
@@ -778,11 +780,7 @@ func (server *Server) attachHealthAndMetricsServers(cfg *config.ServerConfig, me
 // wiring up certificate hot-reload. Extracted from createServerWithClients
 // (funlen).
 func (server *Server) configureTLS(cfg *config.ServerConfig) error {
-	if !cfg.Server.TLS.Enabled() {
-		return nil
-	}
-
-	isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+	isTLS, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(server.httpServer, cfg.Server.TLS.CertDir)
 	if tlsErr != nil {
 		return fmt.Errorf("failed to configure TLS: %w", tlsErr)
 	}

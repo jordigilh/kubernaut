@@ -93,6 +93,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
@@ -455,12 +456,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
 		KAImageName    string            `json:"ka_image_name"`
 		KubeconfigPath string            `json:"kubeconfig_path"`
+		TLSCAFile      string            `json:"tls_ca_file"`
 	}
 	phase1Data := Phase1Data{
 		Token:          authConfig.Token,
 		WorkflowUUIDs:  workflowUUIDs,
 		KAImageName:    kaImageName,
 		KubeconfigPath: kubeconfigPath,
+		TLSCAFile:      dsInfra.TLSCAFile,
 	}
 	phase1DataJSON, err := json.Marshal(phase1Data)
 	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
@@ -480,6 +483,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		WorkflowUUIDs  map[string]string `json:"workflow_uuids"`
 		KAImageName    string            `json:"ka_image_name"`
 		KubeconfigPath string            `json:"kubeconfig_path"`
+		TLSCAFile      string            `json:"tls_ca_file"`
 	}
 	var phase1Data Phase1Data
 	deserializeErr := json.Unmarshal(data, &phase1Data)
@@ -492,6 +496,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	if token == "" {
 		Fail("ServiceAccount token from Phase 1 is empty")
 	}
+	Expect(phase1Data.TLSCAFile).NotTo(BeEmpty(), "DataStorage TLS CA path from Phase 1 must be available")
 
 	// DD-AUTH-014: Store token globally for tests that need to create custom authenticated clients
 	serviceAccountToken = token
@@ -625,7 +630,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-AUTH-014: Create authenticated DataStorage clients (assign to global variable)
 	// Each process gets its own client but uses the same ServiceAccount token from Phase 1
 	dsClients = integration.NewAuthenticatedDataStorageClients(
-		"http://127.0.0.1:18095", // AIAnalysis integration test DS port
+		"https://localhost:18095", // AIAnalysis integration test DS port
 		token,
 		5*time.Second,
 	)
@@ -663,7 +668,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// RBAC/return-value plumbing for it inside startPerProcessKubernautAgent,
 	// remain until #2190 deletes them together with KA's HTTP server (still
 	// load-bearing for the deferred test/e2e/kubernautagent/ suite).
-	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName, processNamespace)
+	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName, processNamespace, phase1Data.TLSCAFile)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Test-owned policy fixture decoupled from production config.
@@ -919,7 +924,7 @@ var _ = AfterEach(func() {
 // Returns the per-process KA base URL and a caller Bearer token valid
 // against cfg's TokenReview API. Currently unused by this suite's caller --
 // see the #2190 note above.
-func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName, namespace string) (baseURL string, callerToken string) {
+func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName, namespace, tlsCAFile string) (baseURL string, callerToken string) {
 	// DD-AUTH-014: KA's ServiceAccount binding reuses the "datastorage-tokenreview"
 	// ClusterRole (generic TokenReview/SAR create verbs) -- CreateServiceAccountForHTTPService
 	// expects it to already exist; the shared envtest gets it from
@@ -1147,12 +1152,24 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	kaPort := 18200 + (processNum-1)*10
 	kaHealthPort := kaPort + 1
 	kaMetricsPort := kaPort + 2
+	kaCertDir, err := os.MkdirTemp("", fmt.Sprintf("aianalysis-ka-tls-%d-*", processNum))
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.Chmod(kaCertDir, 0755)).To(Succeed())
+	kaCertPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "localhost",
+		DNSNames:         []string{"localhost"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.crt"), kaCertPair.CertPEM, 0o644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaCertDir, "tls.key"), kaCertPair.KeyPEM, 0o644)).To(Succeed())
 
 	mockLLMCfg := infrastructure.GetMockLLMConfigForAIAnalysis()
 	var llmEndpoint, dsURL, dsHealthURL string
 	if useHostNetworkForKA {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMCfg.Port)
-		dsURL = "http://127.0.0.1:18095"
+		dsURL = "https://localhost:18095"
 		// CI RCA (run 32253223886, "Integration (aianalysis)" job,
 		// UT-AI-050 audit-flow test): 19095 is this suite's DataStorage
 		// MetricsPort (the 5th arg to NewDSBootstrapConfigWithAuth), not
@@ -1166,7 +1183,7 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 		dsHealthURL = "http://127.0.0.1:28095/readyz"
 	} else {
 		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMCfg)
-		dsURL = "http://host.containers.internal:18095"
+		dsURL = "https://host.containers.internal:18095"
 		dsHealthURL = "http://host.containers.internal:28095/readyz"
 	}
 
@@ -1175,6 +1192,8 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
     level: "debug"
   server:
     port: %d
+    tls:
+      certDir: /etc/certs
     healthAddr: ":%d"
     metricsAddr: ":%d"
     rateLimit:
@@ -1215,11 +1234,14 @@ timeoutSeconds: 120
 			"KUBECONFIG":                "/tmp/kubeconfig",
 			"POD_NAMESPACE":             "default",
 			"KUBERNAUT_AGENT_NAMESPACE": namespace,
+			"TLS_CA_FILE":               "/etc/tls-ca/ca.crt",
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
 			kaConfigDir:                        "/etc/kubernautagent:ro",
 			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaCertDir:                          "/etc/certs:ro",
+			tlsCAFile:                          "/etc/tls-ca/ca.crt:ro",
 			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},

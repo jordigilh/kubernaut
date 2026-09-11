@@ -545,11 +545,16 @@ func DeployAlertManager(ctx context.Context, namespace, gatewayNamespace, kubeco
 // namespace/gatewayNamespace distinction.
 func buildAlertManagerManifest(namespace, gatewayNamespace, gatewayToken string) string {
 	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
-	webhookAuthYaml := ""
+	webhookAuthYaml := `
+          http_config:
+            tls_config:
+              ca_file: /etc/tls-ca/ca.crt`
 	if gatewayToken != "" {
 		webhookAuthYaml = `
-        http_config:
-          bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'`
+          http_config:
+            bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'
+            tls_config:
+              ca_file: /etc/tls-ca/ca.crt`
 	}
 
 	return fmt.Sprintf(`---
@@ -584,8 +589,8 @@ data:
     receivers:
     - name: gateway-webhook
       webhook_configs:
-      - url: 'http://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
-        send_resolved: false`+webhookAuthYaml+`
+        - url: 'https://gateway-service.%[4]s.svc.cluster.local:8080/api/v1/signals/prometheus'
+          send_resolved: false`+webhookAuthYaml+`
     - name: null-receiver
 ---
 apiVersion: apps/v1
@@ -631,6 +636,9 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/alertmanager
+        - name: inter-service-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         resources:
           requests:
             memory: "64Mi"
@@ -642,6 +650,9 @@ spec:
       - name: config
         configMap:
           name: alertmanager-config
+      - name: inter-service-ca
+        configMap:
+          name: inter-service-ca
 ---
 apiVersion: v1
 kind: Service

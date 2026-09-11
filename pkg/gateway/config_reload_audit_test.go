@@ -84,6 +84,7 @@ var _ = Describe("GAP-11: Gateway config reload audit events", func() {
 				},
 			},
 		}
+		cfg.Server.TLS.CertDir = gatewayTestCertDir()
 
 		metricsInstance := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 
@@ -136,13 +137,15 @@ var _ = Describe("GAP-11: Gateway config reload audit events", func() {
 
 	Context("when no audit store is configured", func() {
 		It("does not panic and does not attempt to store an event", func() {
-			serverWithoutAudit, err := gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
-				Config: &config.ServerConfig{
-					Server: config.ServerSettings{ListenAddr: "127.0.0.1:0"},
-					Processing: config.ProcessingSettings{
-						Retry: config.RetrySettings{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond},
-					},
+			noAuditConfig := &config.ServerConfig{
+				Server: config.ServerSettings{ListenAddr: "127.0.0.1:0"},
+				Processing: config.ProcessingSettings{
+					Retry: config.RetrySettings{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond},
 				},
+			}
+			noAuditConfig.Server.TLS.CertDir = gatewayTestCertDir()
+			serverWithoutAudit, err := gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
+				Config:          noAuditConfig,
 				Logger:          logr.Discard(),
 				MetricsInstance: metrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 				CtrlClient:      fake.NewClientBuilder().WithScheme(scheme).Build(),

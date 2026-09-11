@@ -59,6 +59,12 @@ func (r *goldenPathRunner) RunFullInvestigation(_ context.Context, _ katypes.Sig
 	return &katypes.InvestigationResult{RCASummary: "mock autonomous RCA"}, nil
 }
 
+// InvestigationTotals satisfies mcptools.InvestigatorRunner (#2387 Gap 2);
+// this happy-path fake never records call-level accounting.
+func (r *goldenPathRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 type goldenPathRecon struct{}
 
 func (r *goldenPathRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {

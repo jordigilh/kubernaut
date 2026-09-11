@@ -1242,7 +1242,6 @@ spec:
       - name: tls-certs
         secret:
           secretName: datastorage-tls
-          optional: true
       - name: signing-certs
         secret:
           secretName: datastorage-signing

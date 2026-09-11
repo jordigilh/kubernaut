@@ -389,7 +389,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (HYBRID PARALLEL MODE)!")
-	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway: https://localhost:%d (TLS)\n", GatewayE2EHostPort)
 	_, _ = fmt.Fprintf(writer, "  • Gateway Health: http://localhost:%d (plain HTTP)\n", GatewayE2EHealthPort)
 	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics (plain HTTP)\n", GatewayE2EMetricsPort)
 	_, _ = fmt.Fprintf(writer, "  • DataStorage: https://localhost:%d (TLS, NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
@@ -659,6 +659,9 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      authenticationEnabled: true
+      tls:
+        certDir: /etc/tls
       maxConcurrentRequests: 100
       readTimeout: 30s
       writeTimeout: 30s
@@ -738,6 +741,9 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true%s
@@ -775,6 +781,9 @@ spec:
         - name: config
           configMap:
             name: gateway-config
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
         - name: tls-ca
           configMap:
             name: inter-service-ca%s
@@ -841,6 +850,9 @@ const (
 	// touches the real, shared DataStorage instance every other spec in
 	// this suite depends on.
 	GatewayResilienceDataStorageNamespace = "gateway-resilience-ds"
+	// GatewayResilienceInterServiceCAConfigMap is kept separate from the shared
+	// cluster CA because the isolated DataStorage stack has its own trust root.
+	GatewayResilienceInterServiceCAConfigMap = "inter-service-ca-gateway-resilience"
 
 	// GatewayResilienceDataStorageAPIHostPort exposes the isolated
 	// DataStorage instance's API to the host so
@@ -875,10 +887,8 @@ func resolveDeployedImage(ctx context.Context, kubeconfigPath, namespace, deploy
 // DeployGatewayForDataStorageResilienceTest deploys BOTH a dedicated,
 // isolated DataStorage instance (GatewayResilienceDataStorageNamespace)
 // and the dedicated, throwaway "gateway-resilience" Gateway instance wired
-// to it (datastorage.url/healthUrl both pointed at the isolated instance,
-// plain HTTP -- it has no TLS cert configured, same as
-// datastorage_isolated_instance.go's other caller), waiting for both to
-// report Ready.
+// to it (datastorage.url/healthUrl both point at the isolated instance over
+// HTTPS), waiting for both to report Ready.
 func DeployGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	imageName, err := resolveDeployedImage(ctx, kubeconfigPath, namespace, "gateway")
 	if err != nil {
@@ -892,6 +902,13 @@ func DeployGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPa
 
 	if err := DeployIsolatedDataStorageInstance(ctx, GatewayResilienceDataStorageNamespace, kubeconfigPath, dsImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy isolated DataStorage instance for gateway resilience test: %w", err)
+	}
+	isolatedCAPath := filepath.Join(filepath.Dir(kubeconfigPath), "inter-service-ca-"+GatewayResilienceDataStorageNamespace+".pem")
+	if err := ReplicateInterServiceCAConfigMapAtPath(ctx, kubeconfigPath, namespace, isolatedCAPath, GatewayResilienceInterServiceCAConfigMap, writer); err != nil {
+		return fmt.Errorf("failed to replicate isolated DataStorage CA for gateway resilience test: %w", err)
+	}
+	if err := ReplicateTLSSecret(ctx, kubeconfigPath, GatewayResilienceDataStorageNamespace, namespace, "gateway-tls", writer); err != nil {
+		return fmt.Errorf("failed to replicate isolated Gateway TLS Secret for gateway resilience test: %w", err)
 	}
 
 	// The isolated instance's own auth.MiddlewareConfig.Namespace (DD-AUTH-014
@@ -919,6 +936,8 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      tls:
+        certDir: /etc/tls
       maxConcurrentRequests: 100
       readTimeout: 30s
       writeTimeout: 30s
@@ -930,11 +949,10 @@ data:
       # never the shared one -- Journey induces the outage by scaling
       # that instance's own Deployment to 0 replicas directly (a real
       # Service-endpoint removal), so no sidecar/proxy/TLS-override is
-      # needed here. Plain HTTP: the isolated instance has no TLS cert
-      # configured (datastorage-tls Secret is optional and intentionally
-      # not created for it -- see datastorage_isolated_instance.go).
-      url: "http://data-storage-service.%[2]s.svc.cluster.local:8080"
-      healthUrl: "http://data-storage-service.%[2]s.svc.cluster.local:8080/readyz"
+      # needed here. The isolated instance uses its namespace-specific
+      # inter-service CA and follows the same HTTPS contract as production.
+      url: "https://data-storage-service.%[2]s.svc.cluster.local:8080"
+      healthUrl: "https://data-storage-service.%[2]s.svc.cluster.local:8080/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -1003,6 +1021,9 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
@@ -1030,9 +1051,12 @@ spec:
         - name: config
           configMap:
             name: gateway-resilience-config
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
         - name: tls-ca
           configMap:
-            name: inter-service-ca
+            name: %[7]s
 ---
 apiVersion: v1
 kind: Service
@@ -1056,7 +1080,7 @@ spec:
       port: 8081
       targetPort: 8081
       nodePort: %[6]d
-`, namespace, GatewayResilienceDataStorageNamespace, imageName, pullPolicy, GatewayResilienceAPINodePort, GatewayResilienceHealthNodePort)
+`, namespace, GatewayResilienceDataStorageNamespace, imageName, pullPolicy, GatewayResilienceAPINodePort, GatewayResilienceHealthNodePort, GatewayResilienceInterServiceCAConfigMap)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("failed to deploy gateway-resilience: %w", err)
@@ -1075,6 +1099,14 @@ func TeardownGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfig
 	del.Stderr = writer
 	if err := del.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  failed to delete gateway-resilience resources: %v\n", err)
+	}
+
+	delCA := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"delete", "configmap", GatewayResilienceInterServiceCAConfigMap, "--ignore-not-found")
+	delCA.Stdout = writer
+	delCA.Stderr = writer
+	if err := delCA.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  failed to delete %s ConfigMap: %v\n", GatewayResilienceInterServiceCAConfigMap, err)
 	}
 
 	if err := TeardownIsolatedDataStorageInstance(ctx, GatewayResilienceDataStorageNamespace, kubeconfigPath, writer); err != nil {

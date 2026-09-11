@@ -829,12 +829,15 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) map[string]any {
 		return nil
 	}
 	return map[string]any{
-		"severity":         rca.Severity,
-		"confidence":       rca.Confidence,
-		"causal_chain":     rca.CausalChain,
-		"target":           rca.Target,
-		"tool_calls_count": rca.TotalToolCalls,
-		"llm_turns":        rca.TotalLLMTurns,
+		"severity":          rca.Severity,
+		"confidence":        rca.Confidence,
+		"causal_chain":      rca.CausalChain,
+		"target":            rca.Target,
+		"tool_calls_count":  rca.TotalToolCalls,
+		"llm_turns":         rca.TotalLLMTurns,
+		"prompt_tokens":     rca.PromptTokens,
+		"completion_tokens": rca.CompletionTokens,
+		"total_tokens":      rca.TotalTokens,
 	}
 }
 
@@ -886,6 +889,11 @@ func substituteGroundedRCA(state adksession.State, args map[string]any) {
 		if rcaMap, ok := args["rca"].(map[string]any); ok {
 			rcaMap["tool_calls_count"] = 0
 			rcaMap["llm_turns"] = 0
+			// #2387 tokens: same honest-zero rule as the two bookkeeping
+			// fields above — never let an invented token count through.
+			rcaMap["prompt_tokens"] = 0
+			rcaMap["completion_tokens"] = 0
+			rcaMap["total_tokens"] = 0
 		}
 	}
 }

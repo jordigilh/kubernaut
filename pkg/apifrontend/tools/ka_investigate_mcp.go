@@ -266,6 +266,13 @@ type InvestigateRCA struct {
 	RCASummary     string   `json:"rca_summary,omitempty"`
 	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
 	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
+	// PromptTokens/CompletionTokens/TotalTokens carry KA's cumulative raw
+	// provider token counts for console display (#2387 tokens; never costs).
+	// Parsed from the wire like the counts above — never requested from the
+	// LLM. Omitempty like every other field on this struct.
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
 	// IsActionable/HasWorkflow (#1918) mirror KA's rcaEventPayload fields of
 	// the same name, giving phase_guard.go's harness-enforced gate a
 	// structured signal for whether Phase 2 (kubernaut_discover_workflows)

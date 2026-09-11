@@ -127,14 +127,15 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set monitoring.prometheus.url=http://kube-prometheus-stack-prometheus.monitoring.svc:9090 \
   --set monitoring.alertManager.enabled=true \
   --set monitoring.alertManager.url=http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 \
+  --set gateway.auth.enabled=true \
   --set gateway.auth.signalSources[0].name=alertmanager \
   --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
   --set gateway.auth.signalSources[0].namespace=monitoring
 ```
 
-Configure AlertManager to send webhooks to the Gateway (requires `gateway.enabled=true`, the
-default — see [Enable/Disable Gateway or APIFrontend](#enable-gateway-or-apifrontend) if you've
-disabled it):
+Configure AlertManager to send webhooks to the Gateway (requires `gateway.enabled=true`; enable
+`gateway.auth.enabled=true` and configure `gateway.auth.signalSources` only when Gateway
+TokenReview/SAR authentication is desired; TLS remains enabled by default):
 
 ```yaml
 receivers:
@@ -820,16 +821,16 @@ the chart version:
 ```bash
 helm upgrade kubernaut charts/kubernaut \
   --namespace kubernaut-system \
-  --set global.image.tag=1.6.0-rc10 \
+  --set global.image.tag=1.6.0-rc11 \
   ...
 ```
 
 The fleet demo entry point wires this directly: `setup-fleet-demo-infra
--image-tag 1.6.0-rc10 ...` (equivalently `make setup-fleet-demo-infra
-IMAGE_TAG=1.6.0-rc10 ...`). When the flag is omitted, no `--set` is emitted and
-every service falls back to `.Chart.AppVersion`. Note the `console` container
-itself is versioned independently (`console.image.repository:tag`) and is
-intentionally not part of the `global.image.tag` train.
+-image-tag 1.6.0-rc11 ...` (equivalently `make setup-fleet-demo-infra
+IMAGE_TAG=1.6.0-rc11 ...`). When the flag is omitted, no `--set` is emitted and
+every service falls back to `.Chart.AppVersion`. The `console` container
+ defaults to the matching Kubernaut image tag and can still be overridden
+ independently with `console.image.repository` and `console.image.tag`.
 
 ## Upgrading
 

@@ -795,31 +795,15 @@ func buildHTTPServers(p routerBuildParams, router http.Handler) (addr string, ht
 	return addr, httpServer, healthServer, metricsServer
 }
 
-// configureServerTLS wires hot-reloadable TLS certs onto httpServer if
-// certificate material is present, warning loudly (F-006) when TLS ends up
-// disabled and failing fast if TLS is explicitly required but unavailable.
+// configureServerTLS wires required hot-reloadable TLS certs onto httpServer.
+// Missing certificate material is fatal so the API cannot downgrade to HTTP.
 func configureServerTLS(httpServer *http.Server, cfg *config.Config, logger logr.Logger) (tlsEnabled bool, certReloader *sharedtls.CertReloader, err error) {
 	tlsEnabled, certReloader, err = tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
 	if err != nil {
 		logger.Error(err, "failed to configure TLS")
 		return false, nil, err
 	}
-	if tlsEnabled {
-		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
-		return tlsEnabled, certReloader, nil
-	}
-
-	// F-006: Warn loudly when TLS is disabled; production deployments must use
-	// either application TLS or document mesh/ingress TLS as compensating control.
-	if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
-		logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
-	}
-	if cfg.Server.TLS.Required {
-		reqErr := fmt.Errorf("TLS required but no certificates found")
-		logger.Error(reqErr, "server.tls.required is true but certDir is empty or missing certs")
-		return false, nil, reqErr
-	}
-	logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
+	logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
 	return tlsEnabled, certReloader, nil
 }
 

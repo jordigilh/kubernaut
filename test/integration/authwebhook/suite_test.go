@@ -39,7 +39,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 
 	"k8s.io/client-go/kubernetes/scheme"
@@ -196,7 +195,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Creating REAL audit store with ServiceAccount authentication (DD-AUTH-014)")
 	// Create OpenAPI DataStorage client adapter for audit writes
 	// DD-AUTH-014: Integration tests use ServiceAccount Bearer token authentication
-	authTransport := testauth.NewServiceAccountTransport(saToken)
+	authTransport := dsClients.HTTPClient.Transport
 	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageURL,
 		5*time.Second,

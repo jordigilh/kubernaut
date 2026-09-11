@@ -160,7 +160,7 @@ var (
 )
 
 // SetDefaultSecurityProfile stores the process-wide TLS security profile.
-// Must be called before any TLS setup (ConfigureConditionalTLS, DefaultBaseTransport).
+// Must be called before any TLS setup (ConfigureRequiredTLS, DefaultBaseTransport).
 func SetDefaultSecurityProfile(p *SecurityProfile) {
 	profileMu.Lock()
 	defer profileMu.Unlock()

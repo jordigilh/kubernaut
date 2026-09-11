@@ -1,0 +1,56 @@
+suite: "Issue #2385: API Frontend and Console use one configurable OIDC issuer"
+templates:
+  - templates/apifrontend/apifrontend.yaml
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+  apifrontend:
+    config:
+      auth:
+        issuerURL: https://login.kubernaut.ai/realms/kubernaut
+        jwksURL: https://login.kubernaut.ai/realms/kubernaut/protocol/openid-connect/certs
+        audience: kubernaut-apifrontend
+tests:
+  - it: "IT-HELM-OIDC-2385-001 [BR-PLATFORM-006, IA-2, IA-5]: API Frontend validates against the configured production issuer"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'issuerURL: "https://login.kubernaut.ai/realms/kubernaut"'
+
+  - it: "IT-HELM-OIDC-2385-002 [BR-PLATFORM-006, IA-2, SC-8]: Console oauth2-proxy receives the same issuer"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--oidc-issuer-url=https://login.kubernaut.ai/realms/kubernaut"

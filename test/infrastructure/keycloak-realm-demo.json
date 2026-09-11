@@ -1,5 +1,5 @@
 {
-  "realm": "kubernaut-fleet",
+  "realm": "kubernaut-demo",
   "enabled": true,
   "sslRequired": "external",
   "accessTokenLifespan": 3600,
@@ -89,12 +89,32 @@
         "groups",
         "kubernaut-apifrontend-audience"
       ]
+    },
+    {
+      "clientId": "kubernaut-apifrontend",
+      "name": "Kubernaut API Frontend (E2E, direct grant)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "secret": "e2e-apifrontend-secret",
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "groups",
+        "kubernaut-apifrontend-audience"
+      ]
     }
   ],
   "clientScopes": [
     {
       "name": "profile",
-      "description": "OpenID Connect built-in scope: profile. Explicit here since hand-authored realm imports don't auto-seed Keycloak's standard scopes (see keycloak-realm-fleet.json file comment).",
+      "description": "OpenID Connect built-in scope: profile. Explicit here since hand-authored realm imports don't auto-seed Keycloak's standard scopes (see keycloak-realm-demo.json file comment).",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -212,7 +232,7 @@
     },
     {
       "name": "kubernaut-apifrontend-audience",
-      "description": "Adds the kubernaut-apifrontend aud claim required by AF's JWTValidator.validateAudience (matches kubernaut-operator's default). kubernaut-console default scope: Console's oauth2-proxy is this realm's only browser caller of AF.",
+      "description": "Adds the kubernaut-apifrontend and kubernaut-console aud claims required by AF and oauth2-proxy bearer validation.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -226,6 +246,17 @@
           "consentRequired": false,
           "config": {
             "included.custom.audience": "kubernaut-apifrontend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "kubernaut-console-audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "kubernaut-console",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }

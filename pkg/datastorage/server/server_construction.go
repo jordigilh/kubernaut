@@ -491,16 +491,14 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()
 
-	if serverCfg.TLS.Enabled() {
-		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
-		if tlsErr != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr) // cleanups run via defer
-		}
-		if isTLS {
-			srv.certReloader = reloader
-			srv.tlsCertDir = serverCfg.TLS.CertDir
-			logger.Info("TLS configured for DataStorage server", "certDir", serverCfg.TLS.CertDir)
-		}
+	isTLS, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(srv.httpServer, serverCfg.TLS.CertDir)
+	if tlsErr != nil {
+		return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr) // cleanups run via defer
+	}
+	if isTLS {
+		srv.certReloader = reloader
+		srv.tlsCertDir = serverCfg.TLS.CertDir
+		logger.Info("TLS configured for DataStorage server", "certDir", serverCfg.TLS.CertDir)
 	}
 
 	success = true

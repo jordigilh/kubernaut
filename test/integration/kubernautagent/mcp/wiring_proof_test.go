@@ -79,6 +79,12 @@ func (r *contextCapturingRunner) RunFullInvestigation(ctx context.Context, signa
 	return r.inner.RunFullInvestigation(ctx, signal)
 }
 
+// InvestigationTotals delegates to the wrapped runner (#2387 Gap 2),
+// preserving this decorator's pass-through contract.
+func (r *contextCapturingRunner) InvestigationTotals(ctx context.Context, correlationID string) katypes.InvestigationTotals {
+	return r.inner.InvestigationTotals(ctx, correlationID)
+}
+
 func (r *contextCapturingRunner) getSignals() []katypes.SignalContext {
 	r.mu.Lock()
 	defer r.mu.Unlock()

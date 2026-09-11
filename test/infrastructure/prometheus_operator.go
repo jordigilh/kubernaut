@@ -18,7 +18,17 @@ const (
 	prometheusOperatorNamespace   = "prometheus-operator"
 	managedPrometheusName         = "fleet-spoke"
 	managedPrometheusStatefulSet  = "prometheus-fleet-spoke"
+	localPrometheusName           = "local"
+	localPrometheusStatefulSet    = "prometheus-local"
 )
+
+type managedPrometheusOptions struct {
+	clusterLabel       string
+	alertManagerTarget string
+	prometheusName     string
+	statefulSetName    string
+	thanosEnabled      bool
+}
 
 // InstallPrometheusOperator installs the CRDs and controller used by the fleet
 // demo monitoring clusters. Both hub and spoke use this same path.
@@ -49,29 +59,73 @@ func InstallPrometheusOperator(ctx context.Context, kubeconfigPath string, write
 // PodMonitor, Probe, and PrometheusRule resources; only infrastructure-owned
 // kubelet scraping remains an additional scrape config.
 func DeployManagedPrometheusWithThanosSidecar(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
-	manifest, err := buildManagedPrometheusManifestChecked(namespace, clusterLabel, alertManagerTarget)
+	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     managedPrometheusName,
+		statefulSetName:    managedPrometheusStatefulSet,
+		thanosEnabled:      true,
+	}, writer)
+}
+
+func DeployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath, clusterLabel, alertManagerTarget string, writer io.Writer) error {
+	return deployManagedPrometheus(ctx, namespace, kubeconfigPath, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     localPrometheusName,
+		statefulSetName:    localPrometheusStatefulSet,
+		thanosEnabled:      false,
+	}, writer)
+}
+
+func deployManagedPrometheus(ctx context.Context, namespace, kubeconfigPath string, options managedPrometheusOptions, writer io.Writer) error {
+	manifest, err := buildManagedPrometheusManifestWithOptionsChecked(namespace, options)
 	if err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintf(writer, "  Deploying operator-managed Prometheus+Thanos (cluster=%s) in namespace %s...\n", clusterLabel, namespace)
+	component := "Prometheus"
+	if options.thanosEnabled {
+		component += "+Thanos"
+	}
+	_, _ = fmt.Fprintf(writer, "  Deploying operator-managed %s (cluster=%s) in namespace %s...\n", component, options.clusterLabel, namespace)
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("managed Prometheus manifest apply failed: %w", err)
 	}
-	if err := waitForResource(ctx, kubeconfigPath, "statefulset", managedPrometheusStatefulSet, namespace, 180*time.Second); err != nil {
+	if err := waitForResource(ctx, kubeconfigPath, "statefulset", options.statefulSetName, namespace, 180*time.Second); err != nil {
 		return fmt.Errorf("managed Prometheus StatefulSet was not created: %w", err)
 	}
 	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "status",
-		"statefulset/"+managedPrometheusStatefulSet, "-n", namespace, "--timeout=180s"); err != nil {
+		"statefulset/"+options.statefulSetName, "-n", namespace, "--timeout=180s"); err != nil {
 		return fmt.Errorf("managed Prometheus rollout failed: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  operator-managed Prometheus+Thanos ready (cluster=%s, NodePort %d)\n", clusterLabel, PrometheusNodePort)
+	_, _ = fmt.Fprintf(writer, "  operator-managed %s ready (cluster=%s, NodePort %d)\n", component, options.clusterLabel, PrometheusNodePort)
 	return nil
 }
 
 //nolint:unparam // tests exercise namespace substitution in the shared manifest builder.
 func buildManagedPrometheusManifest(namespace, clusterLabel, alertManagerTarget string) string {
-	manifest, err := buildManagedPrometheusManifestChecked(namespace, clusterLabel, alertManagerTarget)
+	manifest, err := buildManagedPrometheusManifestWithOptionsChecked(namespace, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     managedPrometheusName,
+		statefulSetName:    managedPrometheusStatefulSet,
+		thanosEnabled:      true,
+	})
+	if err != nil {
+		return ""
+	}
+	return manifest
+}
+
+func buildLocalManagedPrometheusManifest(namespace, clusterLabel, alertManagerTarget string) string {
+	manifest, err := buildManagedPrometheusManifestWithOptionsChecked(namespace, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     localPrometheusName,
+		statefulSetName:    localPrometheusStatefulSet,
+		thanosEnabled:      false,
+	})
 	if err != nil {
 		return ""
 	}
@@ -79,13 +133,23 @@ func buildManagedPrometheusManifest(namespace, clusterLabel, alertManagerTarget 
 }
 
 func buildManagedPrometheusManifestChecked(namespace, clusterLabel, alertManagerTarget string) (string, error) {
-	host, portText, err := net.SplitHostPort(alertManagerTarget)
+	return buildManagedPrometheusManifestWithOptionsChecked(namespace, managedPrometheusOptions{
+		clusterLabel:       clusterLabel,
+		alertManagerTarget: alertManagerTarget,
+		prometheusName:     managedPrometheusName,
+		statefulSetName:    managedPrometheusStatefulSet,
+		thanosEnabled:      true,
+	})
+}
+
+func buildManagedPrometheusManifestWithOptionsChecked(namespace string, options managedPrometheusOptions) (string, error) {
+	host, portText, err := net.SplitHostPort(options.alertManagerTarget)
 	if err != nil {
-		return "", fmt.Errorf("invalid Alertmanager bridge address %q: %w", alertManagerTarget, err)
+		return "", fmt.Errorf("invalid Alertmanager bridge address %q: %w", options.alertManagerTarget, err)
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {
-		return "", fmt.Errorf("invalid Alertmanager bridge address %q: invalid port", alertManagerTarget)
+		return "", fmt.Errorf("invalid Alertmanager bridge address %q: invalid port", options.alertManagerTarget)
 	}
 
 	alertManagerName := "alertmanager-remote"
@@ -117,6 +181,10 @@ subsets:
 		alertManagerName = strings.Split(host, ".")[0]
 		alertManagerPortName = "http"
 		alertManagerBridge = ""
+	}
+	thanosConfig := ""
+	if options.thanosEnabled {
+		thanosConfig = fmt.Sprintf("  thanos:\n    image: %s\n", ThanosImage)
 	}
 
 	return fmt.Sprintf(`---
@@ -287,7 +355,5 @@ spec:
     - name: %[7]s
       namespace: %[1]s
       port: %[9]s
-  thanos:
-    image: %[8]s
-`, namespace, alertManagerBridge, PrometheusNodePort, clusterLabel, managedPrometheusName, PrometheusImage, alertManagerName, ThanosImage, alertManagerPortName), nil
+%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName), nil
 }

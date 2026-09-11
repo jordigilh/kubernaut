@@ -37,8 +37,8 @@ import (
 
 // TLSConfig holds TLS configuration shared across services.
 type TLSConfig struct {
-	// CertDir is the directory containing tls.crt and tls.key files.
-	// When empty, TLS is disabled.
+	// CertDir is the directory containing tls.crt and tls.key files. An empty
+	// value is invalid for a Kubernaut API listener.
 	CertDir string `yaml:"certDir,omitempty"`
 
 	// CAFile is the path to the CA certificate for client trust.
@@ -46,7 +46,8 @@ type TLSConfig struct {
 	CAFile string `yaml:"caFile,omitempty"`
 }
 
-// Enabled returns true when a cert directory is configured.
+// Enabled returns true when a certificate directory is configured. API
+// startup still validates that both certificate files are present and valid.
 func (c TLSConfig) Enabled() bool {
 	return c.CertDir != ""
 }
@@ -61,22 +62,24 @@ func (c TLSConfig) KeyPath() string {
 	return filepath.Join(c.CertDir, "tls.key")
 }
 
-// ConfigureConditionalTLS configures the server for TLS if cert files exist in certDir.
-// Returns (true, reloader, nil) if TLS was configured with hot-reload support,
-// (false, nil, nil) if no certs found (plain HTTP),
-// or (false, nil, error) if certs exist but are invalid.
+// ConfigureRequiredTLS configures the server for TLS and fails when the
+// certificate material is unavailable or invalid. API listeners must not
+// silently downgrade to plaintext while a Secret is missing or delayed.
 //
 // Issue #756: Returns a CertReloader that can be wired to a FileWatcher for
 // zero-downtime certificate rotation.
-func ConfigureConditionalTLS(server *http.Server, certDir string) (bool, *CertReloader, error) {
+func ConfigureRequiredTLS(server *http.Server, certDir string) (bool, *CertReloader, error) {
+	if certDir == "" {
+		return false, nil, fmt.Errorf("tls certificate directory is required")
+	}
+
 	certFile := filepath.Join(certDir, "tls.crt")
 	keyFile := filepath.Join(certDir, "tls.key")
 
-	if _, err := os.Stat(certFile); os.IsNotExist(err) {
-		return false, nil, nil
-	}
-	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		return false, nil, nil
+	for _, file := range []string{certFile, keyFile} {
+		if _, err := os.Stat(file); err != nil {
+			return false, nil, fmt.Errorf("required tls file %s is unavailable: %w", file, err)
+		}
 	}
 
 	reloader, err := NewCertReloader(certFile, keyFile)

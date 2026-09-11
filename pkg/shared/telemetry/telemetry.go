@@ -21,9 +21,8 @@ limitations under the License.
 // composable sinks:
 //
 //   - Endpoint: OTLP/HTTP export to a real collector/backend (bring-your-own
-//     -- Jaeger, Tempo, a vendor). Batched for throughput. Plain HTTP by
-//     default (TLS.Enabled=false); set TLS.Enabled to use HTTPS, with an
-//     optional CAFile for a self-signed/private collector certificate.
+//     -- Jaeger, Tempo, a vendor). Batched for throughput over mandatory TLS,
+//     with an optional CAFile for a self-signed/private collector certificate.
 //   - LogSink: a compact structured log line per span through the service's
 //     existing logr.Logger. No collector needed -- lands in the same log
 //     stream already captured by must-gather and CI log collection. Uses a
@@ -62,9 +61,8 @@ type Config struct {
 	// Empty disables OTLP export.
 	Endpoint string
 
-	// TLS configures the OTLP/HTTP connection to Endpoint. Ignored when
-	// Endpoint is empty. Zero value (Enabled=false) is a plain HTTP
-	// connection -- the existing default, unchanged. Reuses
+	// TLS configures trust and optional client authentication for the OTLP/HTTP
+	// connection to Endpoint. Reuses
 	// internal/config.TelemetryTLSConfig directly (rather than redefining an
 	// identical shape here) so every caller passes serverCfg.Telemetry.TLS
 	// straight through with no field-by-field remapping.
@@ -81,16 +79,11 @@ type Config struct {
 // buildTLSConfig delegates to pkg/shared/tls.BuildClientTLSConfig -- the
 // same CA-loading, optional-mTLS, and process-wide SecurityProfile logic
 // used by every other outbound TLS client in Kubernaut (Issue #493/#748) --
-// rather than re-implementing it here. Returns nil if TLS is disabled.
+// rather than re-implementing it here.
 func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
-	if !t.Enabled {
-		// nil config + nil error is a valid, deliberate "TLS disabled" result
-		// (otlptracehttp.WithTLSClientConfig is never called by the caller
-		// in that case) -- not an error path with a missing value.
-		//nolint:nilnil
-		return nil, nil
+	if (t.CertFile == "") != (t.KeyFile == "") {
+		return nil, fmt.Errorf("telemetry TLS certFile and keyFile must be set together")
 	}
-
 	var opts []sharedtls.TLSTransportOption
 	if t.CertFile != "" && t.KeyFile != "" {
 		opts = append(opts, sharedtls.WithClientCert(t.CertFile, t.KeyFile))
@@ -99,21 +92,16 @@ func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
 }
 
 // buildOTLPBatcherOption builds the sdktrace.WithBatcher option for
-// cfg.Endpoint, over plain HTTP or TLS per cfg.TLS.Enabled. Extracted out of
-// NewTracerProvider to keep that function's branching flat.
+// cfg.Endpoint over TLS. Extracted out of NewTracerProvider to keep that
+// function's branching flat.
 func buildOTLPBatcherOption(ctx context.Context, cfg Config) (sdktrace.TracerProviderOption, error) {
-	httpOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cfg.Endpoint)}
-	if cfg.TLS.Enabled {
-		tlsConfig, err := buildTLSConfig(cfg.TLS)
-		if err != nil {
-			return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
-		}
-		httpOpts = append(httpOpts, otlptracehttp.WithTLSClientConfig(tlsConfig))
-	} else {
-		// Default: plain HTTP, matching most in-cluster collector
-		// deployments (no TLS termination in front of the collector).
-		httpOpts = append(httpOpts, otlptracehttp.WithInsecure())
+	httpOpts := make([]otlptracehttp.Option, 1, 2)
+	httpOpts[0] = otlptracehttp.WithEndpoint(cfg.Endpoint)
+	tlsConfig, err := buildTLSConfig(cfg.TLS)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
 	}
+	httpOpts = append(httpOpts, otlptracehttp.WithTLSClientConfig(tlsConfig))
 
 	exporter, err := otlptracehttp.New(ctx, httpOpts...)
 	if err != nil {
@@ -143,7 +131,18 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 	if cfg.LogSink && cfg.Logger.GetSink() == nil {
 		return nil, fmt.Errorf("telemetry: LogSink requires a Logger")
 	}
-	if cfg.Endpoint == "" && !cfg.LogSink {
+	if err := (internalconfig.TelemetryConfig{
+		Endpoint: cfg.Endpoint,
+		LogSink:  cfg.LogSink,
+		TLS:      cfg.TLS,
+	}).Validate(); err != nil {
+		return nil, err
+	}
+	logSinkEnabled := cfg.LogSink || cfg.Endpoint == "stdout"
+	if logSinkEnabled && cfg.Logger.GetSink() == nil {
+		return nil, fmt.Errorf("telemetry: stdout or LogSink requires a Logger")
+	}
+	if cfg.Endpoint == "" && !logSinkEnabled {
 		return noopShutdown, nil
 	}
 
@@ -156,7 +155,7 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 
 	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
 
-	if cfg.Endpoint != "" {
+	if cfg.Endpoint != "" && cfg.Endpoint != "stdout" {
 		batcherOpt, err := buildOTLPBatcherOption(ctx, cfg)
 		if err != nil {
 			return nil, err
@@ -164,7 +163,7 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 		opts = append(opts, batcherOpt)
 	}
 
-	if cfg.LogSink {
+	if logSinkEnabled {
 		// WithSyncer (not WithBatcher): export on every span End() so a
 		// span survives a hard crash immediately after an error, the same
 		// way a normal log.Error() call already would.

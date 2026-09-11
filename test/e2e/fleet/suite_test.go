@@ -222,7 +222,7 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 }
 
 // fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
-// dedicated port as the FMC E2E lane -- see keycloakHostPortFleet in
+// dedicated port as the FMC E2E lane -- see keycloakHostPortDemo in
 // test/infrastructure/fleet_e2e.go, which is unexported and so can't be
 // referenced directly from this package).
 const fleetKeycloakNodePort = 30557
@@ -246,7 +246,7 @@ const fleetKeycloakNodePort = 30557
 // confirmed by reproducing the exact broker/router error via a raw MCP
 // tools/call through mcp-gateway-istio with and without a client-supplied
 // token (2026-07-04 RCA). The token has a 3600s lifespan
-// (keycloak-realm-fleet.json accessTokenLifespan) -- comfortably longer than
+// (keycloak-realm-demo.json accessTokenLifespan) -- comfortably longer than
 // any single test or this suite's ~20 minute runtime -- so fetching once per
 // client construction (no refresh) is sufficient; mirrors
 // probeAuthenticatedResourcesList's bearerTokenTransport in

@@ -107,6 +107,21 @@ a self-contained hub+spoke Kind environment, install Kubernaut, and run a real
 fault-injection demo scenario yourself. All you need is an LLM provider API key, ~16 GB
 of memory, 4 CPU cores, and ~50 GB of disk space.
 
+For the simpler single-cluster demo, run the one-command local setup (the executable
+defaults to `-mode=local`):
+
+```bash
+make setup-local-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt
+```
+
+This creates one Kind cluster, installs Keycloak, Traefik, Kubernaut, and the Console,
+while leaving fleet disabled. The setup command prints the Console URL/login, kubeconfig,
+and the next commands for running scenarios from `kubernaut-demo-scenarios`.
+
 ---
 
 ## Installation

@@ -99,6 +99,11 @@ func mapResponse(resp *chatCompletionResponse) *Response {
 // Streaming wire types.
 type chatCompletionChunk struct {
 	Choices []chatCompletionChunkChoice `json:"choices"`
+	// Usage carries the provider-reported token counts. OpenAI-protocol
+	// servers send it once, typically as a trailing chunk with empty
+	// choices (when stream_options.include_usage is set) or attached to
+	// the finish_reason chunk — #2387.
+	Usage *chatCompletionUsage `json:"usage,omitempty"`
 }
 
 type chatCompletionChunkChoice struct {
@@ -135,11 +140,63 @@ type toolCallAccumulator struct {
 }
 
 // streamResponse reads the SSE stream, forwarding text deltas via yield and
-// emitting a final accumulated Response (as StreamEvent.Final) once a
-// choice reports a finish_reason.
+// emitting the final accumulated Response (as StreamEvent.Final) at stream
+// end. The terminal event is deliberately deferred past the finish_reason
+// chunk: providers send the usage object in a trailing chunk after it, and
+// emitting at finish_reason time would leave Final.Usage permanently zero.
+// streamTerminal accumulates one SSE stream's provider-sent usage and its
+// deferred terminal event. The terminal event is buffered rather than
+// forwarded because providers send the usage object in a trailing chunk
+// AFTER the finish_reason chunk — emitting at finish_reason time would
+// leave Final.Usage permanently zero — #2387.
+type streamTerminal struct {
+	usage   TokenUsage
+	pending *StreamEvent
+	yield   func(StreamEvent) bool
+}
+
+// feed incorporates one decoded chunk: usage capture (last-write wins —
+// providers send cumulative totals once, so summing would double-count
+// proxies that repeat them) plus choice dispatch, if the chunk has one.
+func (t *streamTerminal) feed(chunk *chatCompletionChunk, accumulators map[int]*toolCallAccumulator, reasoning *strings.Builder) bool {
+	if chunk.Usage != nil {
+		t.usage = TokenUsage{
+			PromptTokens:     chunk.Usage.PromptTokens,
+			CompletionTokens: chunk.Usage.CompletionTokens,
+			TotalTokens:      chunk.Usage.TotalTokens,
+		}
+	}
+	if len(chunk.Choices) == 0 {
+		return true
+	}
+	return processStreamChoice(chunk.Choices[0], accumulators, reasoning, t.buffer)
+}
+
+// buffer forwards interim events and holds back the Done event.
+func (t *streamTerminal) buffer(ev StreamEvent) bool {
+	if ev.Done {
+		t.pending = &ev
+		return true
+	}
+	return t.yield(ev)
+}
+
+// flush emits the buffered terminal event with the complete usage, once
+// the (possibly trailing) usage chunk has been seen.
+func (t *streamTerminal) flush() bool {
+	if t.pending == nil {
+		return true
+	}
+	if t.pending.Final != nil {
+		t.pending.Final.Usage = t.usage
+	}
+	return t.yield(*t.pending)
+}
+
 func streamResponse(body io.Reader, yield func(StreamEvent) bool) error {
 	accumulators := make(map[int]*toolCallAccumulator)
 	var reasoning strings.Builder
+	terminal := &streamTerminal{yield: yield}
 	scanner := bufio.NewScanner(body)
 
 	for scanner.Scan() {
@@ -155,18 +212,16 @@ func streamResponse(body io.Reader, yield func(StreamEvent) bool) error {
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-
-		cont := processStreamChoice(chunk.Choices[0], accumulators, &reasoning, yield)
-		if !cont {
+		if !terminal.feed(&chunk, accumulators, &reasoning) {
 			return nil
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("openaicompat: read SSE stream: %w", err)
+	}
+	if !terminal.flush() {
+		return nil
 	}
 	return nil
 }

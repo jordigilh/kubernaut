@@ -323,7 +323,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Create authenticated DataStorage clients (both audit + query)
 	// Uses centralized helper to ensure both clients use ServiceAccount authentication
 	saToken := string(data) // Extract token from Phase 1
-	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
+	dataStorageURL := fmt.Sprintf("https://localhost:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
 
 	dsClients := integration.NewAuthenticatedDataStorageClients(
 		dataStorageURL,

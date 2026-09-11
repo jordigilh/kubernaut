@@ -1397,7 +1397,7 @@ Platform teams deploying Kubernaut with multi-cluster federation MUST configure:
 apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: MCPRoute
 metadata:
-  name: kubernaut-fleet
+  name: kubernaut-demo
 spec:
   securityPolicy:
     oauth:

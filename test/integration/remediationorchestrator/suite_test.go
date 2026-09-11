@@ -127,7 +127,7 @@ var (
 
 	// dataStorageBaseURL is the base URL for DataStorage API calls
 	// Uses ROIntegrationDataStoragePort to avoid brittle hardcoded ports (DD-TEST-001 v2.2)
-	dataStorageBaseURL = fmt.Sprintf("http://127.0.0.1:%d", ROIntegrationDataStoragePort)
+	dataStorageBaseURL = fmt.Sprintf("https://localhost:%d", ROIntegrationDataStoragePort)
 )
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {

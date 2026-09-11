@@ -98,6 +98,11 @@ func (a *InvestigatorRunnerAdapter) RunWorkflowDiscovery(ctx context.Context, si
 	return a.inv.RunWorkflowDiscoveryFromRCA(ctx, signal, rcaResult, enrichData, correlationID)
 }
 
+// InvestigationTotals implements tools.InvestigatorRunner.
+func (a *InvestigatorRunnerAdapter) InvestigationTotals(_ context.Context, correlationID string) katypes.InvestigationTotals {
+	return a.inv.InvestigationTotals(correlationID)
+}
+
 // RunFullInvestigation implements tools.InvestigatorRunner.
 // F4 (#1374): Delegates to the full autonomous Investigate() pipeline.
 func (a *InvestigatorRunnerAdapter) RunFullInvestigation(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {

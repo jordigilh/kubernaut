@@ -466,4 +466,15 @@ groups:
           name: structured-decision-target-3
         annotations:
           summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-1396-001 (dedicated target -- #1396-002's own fix above only closed contention for the 3rd It relative to the first two; the 2nd It (1396-001) still shared #1395-001's target, CI run 31351842574)"
+      - alert: StructuredDecisionGrounding4
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: af-structured-decision-e2e
+          kind: Pod
+          name: structured-decision-target-4
+        annotations:
+          summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-2387-002 (dedicated target -- same intra-suite session_active contention rationale as Grounding2/3; Gateway creates the RR directly from this alert so the grounding kubernaut_investigate dedups onto it and KA investigates signal StructuredDecisionGrounding4)"
 `

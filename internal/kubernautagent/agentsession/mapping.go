@@ -215,6 +215,17 @@ func buildRootCauseAnalysisMap(r *katypes.InvestigationResult) map[string]interf
 	if r.DueDiligence != nil {
 		rca["due_diligence"] = r.DueDiligence
 	}
+	// #2387 Gap 1 (acceptance criterion #1): surface the server-computed
+	// call-level counts in status.result.rootCauseAnalysis (free-form JSON —
+	// no CRD change needed). Emitted only when non-zero so the empty-result
+	// → nil-RCA contract below (and UT-AA-KA-065-015) is preserved; any real
+	// investigation records at least one LLM turn.
+	if r.TotalLLMTurns > 0 {
+		rca["total_llm_turns"] = r.TotalLLMTurns
+	}
+	if r.TotalToolCalls > 0 {
+		rca["total_tool_calls"] = r.TotalToolCalls
+	}
 	if len(rca) == 0 {
 		return nil
 	}

@@ -86,6 +86,12 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if len(r.CausalChain) > 0 {
 		m["causal_chain"] = r.CausalChain
 	}
+	// #2387 (BR-KA-OBSERVABILITY-001, FedRAMP AU-3): server-computed
+	// call-level counts ride the audit trail so a remediation lifecycle is
+	// fully reconstructable from audit traces alone (BR-AUDIT-005). Always
+	// present — even zero — for a uniform SIEM query schema.
+	m["total_llm_turns"] = r.TotalLLMTurns
+	m["total_tool_calls"] = r.TotalToolCalls
 	if r.DueDiligence != nil {
 		m["due_diligence"] = dueDiligenceToAuditJSON(r.DueDiligence)
 	}

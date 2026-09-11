@@ -40,7 +40,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 		// Exchange, Spike S17/S20 -- DEX has no Standard Token Exchange).
 		By("Obtaining OAuth2 client_credentials token from Keycloak (IA-5)")
 		// 30557: this suite's Keycloak NodePort (DD-TEST-001, same dedicated
-		// port as the FMC E2E lane -- see keycloakHostPortFleet in fleet_e2e.go).
+		// port as the FMC E2E lane -- see keycloakHostPortDemo in fleet_e2e.go).
 		cfg := infrastructure.DefaultKeycloakFleetReadConfig(30557, kubeconfigPath)
 		cfg.Scopes = []string{"kube-mcp-server-audience"}
 		token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)

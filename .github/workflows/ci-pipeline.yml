@@ -1099,7 +1099,11 @@ jobs:
             timeout: 20
           - service: workflowexecution
             service_name: "Workflow Execution"
-            timeout: 20
+            # The Tekton-backed E2E suite can spend most of its budget on
+            # cluster setup and parallel worker startup before Ginkgo reports
+            # results. Keep the CI budget aligned with the documented 30m E2E
+            # timeout instead of allowing GitHub to cancel at 20m.
+            timeout: 30
           - service: remediationorchestrator
             service_name: "Remediation Orchestrator"
             timeout: 20
@@ -1128,7 +1132,9 @@ jobs:
             # #1189, ~2m46s) was added, leaving too little headroom -- CI
             # runs were landing at/over 25min and getting hard job-timeout
             # cancelled (distinct from the #1802 ineffective-chain flake).
-            timeout: 30
+            # The suite reached 27m on PR #2383 before the 30m budget expired;
+            # keep headroom for the current full-pipeline scenario set.
+            timeout: 45
           - service: fleet
             service_name: "Fleet Multi-Cluster"
             # 45 (up from 35, PR #1790 round-12 RCA): originally sized around

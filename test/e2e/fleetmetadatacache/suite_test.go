@@ -113,7 +113,7 @@ const (
 	// SetupFMCE2EInfrastructure's Phase 9.
 	//
 	// Issue #1683: https:// -- FMC's API port presents TLS by default now
-	// (ConfigureConditionalTLS), matching production. The harness's
+	// (ConfigureRequiredTLS), matching production. The harness's
 	// FMCHTTPClient trusts the E2E inter-service CA via
 	// http.DefaultTransport (set to infrastructure.NewTLSAwareTransport in
 	// SynchronizedBeforeSuite below), so no other change is needed here.

@@ -17,17 +17,18 @@ logging:
   level: {{ $v.logging.level | quote }}
 # GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
 # Shared across Gateway/DataStorage/KubernautAgent (top-level .Values.telemetry).
-# Empty endpoint + logSink=false (default) disables tracing entirely.
+# Empty endpoint + logSink=false (default) disables tracing entirely. Network
+# OTLP export is always TLS-protected.
 telemetry:
   endpoint: {{ .Values.telemetry.endpoint | default "" | quote }}
   logSink: {{ .Values.telemetry.logSink | default false }}
   tls:
-    enabled: {{ .Values.telemetry.tls.enabled | default false }}
     caFile: {{ .Values.telemetry.tls.caFile | default "" | quote }}
     certFile: {{ .Values.telemetry.tls.certFile | default "" | quote }}
     keyFile: {{ .Values.telemetry.tls.keyFile | default "" | quote }}
 server:
   listenAddr: ":8080"
+  authenticationEnabled: {{ .Values.gateway.auth.enabled | default false }}
   healthAddr: ":8081"
   metricsAddr: ":9090"
   maxConcurrentRequests: {{ $v.config.server.maxConcurrentRequests }}
@@ -35,6 +36,8 @@ server:
   writeTimeout: {{ $v.config.server.writeTimeout }}
   idleTimeout: {{ $v.config.server.idleTimeout }}
   k8sRequestTimeout: {{ $v.config.server.k8sRequestTimeout }}
+  tls:
+    certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
 # BR-PLATFORM-012, Issue #2275: secure-by-default pprof toggle.
 debug:
   pprofEnabled: {{ $v.debug.pprofEnabled }}
@@ -328,6 +331,9 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- include "kubernaut.tmpVolumeMount" . | nindent 12 }}
             {{- if and .Values.global.fleet.enabled $gatewayFleetPreamble.oauth2.enabled }}
@@ -374,6 +380,9 @@ spec:
         - name: config
           configMap:
             name: gateway-config
+        - name: tls-certs
+          secret:
+            secretName: gateway-tls
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- include "kubernaut.tmpVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $gatewayFleetPreamble.oauth2.enabled }}

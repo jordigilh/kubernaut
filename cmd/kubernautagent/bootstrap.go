@@ -507,21 +507,14 @@ func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
 	}
 }
 
-// wireServerTLS configures conditional TLS on httpServer (Issue #493) and,
-// when TLS is enabled, starts a FileWatcher for hot-reloading the server
-// certificate (Issue #756). Returns a stopper for the cert watcher, or nil
-// when TLS is disabled. Terminates the process on unrecoverable failures.
+// wireServerTLS configures required TLS on httpServer (Issue #493) and starts
+// a FileWatcher for hot-reloading the server certificate (Issue #756).
+// Terminates the process on unrecoverable failures.
 func wireServerTLS(ctx context.Context, cfg *kaconfig.Config, httpServer *http.Server, logger logr.Logger) func() {
-	if !cfg.Runtime.Server.TLS.Enabled() {
-		return nil
-	}
-	isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Runtime.Server.TLS.CertDir)
+	_, reloader, tlsErr := sharedtls.ConfigureRequiredTLS(httpServer, cfg.Runtime.Server.TLS.CertDir)
 	if tlsErr != nil {
 		logger.Error(tlsErr, "Failed to configure TLS")
 		os.Exit(1)
-	}
-	if !isTLS {
-		return nil
 	}
 	logger.Info("TLS configured for HTTP server", "certDir", cfg.Runtime.Server.TLS.CertDir)
 

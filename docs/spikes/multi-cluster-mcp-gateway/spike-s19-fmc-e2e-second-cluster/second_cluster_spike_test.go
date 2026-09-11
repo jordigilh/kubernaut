@@ -133,7 +133,7 @@ func TestSpikeB_RemoteClusterAndKeycloakBridge(t *testing.T) {
 
 	t.Log("── OIDC-patching remote cluster's API server against the bridged Keycloak ──")
 	oidcCfg := OIDCPatchConfig{
-		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
 		ClientID:       "k8s-api",
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
@@ -163,7 +163,7 @@ func TestSpikeC_KubeMCPOnRemote(t *testing.T) {
 		Mode:             KubeMCPServerAuthModePassthrough,
 		GatewayType:      registry.GatewayKuadrant,
 		RequireOAuth:     true,
-		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-fleet",
+		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-demo",
 		OAuthAudience:    "kube-mcp-server",
 		StsClientID:      "kube-mcp-server",
 		StsClientSecret:  "e2e-kube-mcp-server-secret",
@@ -205,7 +205,7 @@ spec:
 	t.Log("── authenticated tools/call against kube-mcp-server-2 (proves Keycloak bridge + STS + remote API server trust all work) ──")
 	tokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-			TokenEndpoint: "https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token",
+			TokenEndpoint: "https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token",
 			ClientID:      "kubernaut-fleet-read",
 			ClientSecret:  "e2e-fleet-secret",
 			Scopes:        []string{"kube-mcp-server-audience"},

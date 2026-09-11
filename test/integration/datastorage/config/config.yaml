@@ -9,6 +9,8 @@ server:
   host: "0.0.0.0"
   readTimeout: 30s
   writeTimeout: 30s
+  tls:
+    certDir: /etc/certs
 
 database:
   host: postgres
@@ -36,4 +38,3 @@ redis:
 logging:
   level: debug
   format: json
-

@@ -88,7 +88,12 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 				var chunk map[string]any
 				Expect(json.Unmarshal([]byte(data), &chunk)).To(Succeed())
 				choices, _ := chunk["choices"].([]any)
-				Expect(choices).NotTo(BeEmpty())
+				if len(choices) == 0 {
+					// Trailing usage chunk (issue #2387, OpenAI
+					// stream_options.include_usage convention): carries
+					// token counts, no delta — nothing to assert here.
+					continue
+				}
 				choice, _ := choices[0].(map[string]any)
 				delta, _ := choice["delta"].(map[string]any)
 				Expect(delta).NotTo(BeNil())

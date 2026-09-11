@@ -195,15 +195,10 @@ tests:
   # rejected by the very `hostssl`-only pg_hba.conf this Decision Area just
   # added ("no pg_hba.conf entry for host ..., no encryption" -- confirmed
   # via must-gather pod logs from Helm Smoke Tests hook-mode run
-  # 32744324902, job 97489456779). initContainer wait-for-postgresql's
-  # pg_isready was unaffected (libpq's own sslmode=prefer default already
-  # negotiates TLS opportunistically), matching this Decision Area's earlier
-  # probe-compatibility spike -- only the goose-driven main container had a
-  # hardcoded override that bypassed that default. Fixed by sourcing
-  # PGSSLMODE from the same datastorage.config.database.sslMode value
-  # DataStorage's own runtime connection uses (both target the identical
-  # kubernaut.postgresql.host), via libpq's standard env var so it also
-  # covers the `psql` heredoc later in the same script.
+  # 32744324902, job 97489456779). Both the readiness probe and the goose
+  # migration must source PGSSLMODE from the same database.sslMode value
+  # DataStorage's own runtime connection uses, because libpq's default
+  # negotiation is not reliable for the probe's user/database check.
   - it: "db-migration Job's migrate container sources PGSSLMODE from database.sslMode (not hardcoded disable)"
     template: templates/hooks/migration-job.yaml
     documentIndex: 0
@@ -219,6 +214,22 @@ tests:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
           pattern: 'sslmode=\$PGSSLMODE'
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PGSSLMODE
+            value: "require"
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: dummy
+                key: POSTGRES_PASSWORD
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].command[2]
+          pattern: "psql.*SELECT 1"
 
   - it: "db-migration Job's PGSSLMODE follows an explicit database.sslMode override"
     template: templates/hooks/migration-job.yaml
@@ -231,6 +242,11 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
+          content:
+            name: PGSSLMODE
+            value: "verify-full"
+      - contains:
+          path: spec.template.spec.initContainers[0].env
           content:
             name: PGSSLMODE
             value: "verify-full"

@@ -45,6 +45,10 @@ func (r *it1389Runner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessa
 	return r.rcaResult, nil
 }
 
+func (r *it1389Runner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 func (r *it1389Runner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
 	return r.discoveryResult, nil
 }

@@ -44,6 +44,10 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	rcaResult = &rcaCopy
 
 	inv.anomalyDetectorFor(correlationID).Reset()
+	// #2387 (BR-KA-OBSERVABILITY-001): cumulative per-RR accounting — NO
+	// reset here. Message turns, the extraction turn, and (in takeover
+	// flows) the autonomous legs all share this scope; resetting would wipe
+	// them. Assembly below sets cumulative totals from the scope.
 
 	inv.autoResolveRCATargetAPIVersion(rcaResult, correlationID)
 
@@ -66,6 +70,10 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// differs (cross-resource RCA).
 	rawEnrichData, enricherWired, hardFailResult := inv.resolveRCAWorkflowDiscoveryEnrichment(ctx, signal, rcaResult, correlationID)
 	if hardFailResult != nil {
+		// #2387: hard-fail skips FinalizeWorkflowResult, so apply the
+		// cumulative scope totals (and tokens) here directly.
+		inv.applyMetricsFromScope(hardFailResult, correlationID)
+		inv.setTokenUsageFromScope(hardFailResult, correlationID)
 		return hardFailResult, nil
 	}
 	if enricherWired {
@@ -91,6 +99,12 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	}
 
 	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
+	// #2387: cumulative per-RR totals straight from the scope (message +
+	// extraction + Phase 3 legs, plus any prior autonomous legs in takeover
+	// flows). No rcaResult summation: under scope-source-of-truth results
+	// never pre-carry counts.
+	inv.applyMetricsFromScope(workflowResult, correlationID)
+	inv.setTokenUsageFromScope(workflowResult, correlationID)
 	return workflowResult, nil
 }
 

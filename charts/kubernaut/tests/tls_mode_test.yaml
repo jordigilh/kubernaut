@@ -142,6 +142,9 @@ tests:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
           pattern: 'for SVC_NAME in [^\n]*\bapifrontend\b'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'for CHECK_SECRET in [^\n]*\bapifrontend-tls\b'
 
   - it: "cert-manager mode: datastorage-signing-cert Certificate is auto-provisioned"
     set:

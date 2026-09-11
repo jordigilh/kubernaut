@@ -61,6 +61,10 @@ func (r *messagesCapturingInvestigatorRunner) RunRCAExtraction(_ context.Context
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }
 
+func (r *messagesCapturingInvestigatorRunner) InvestigationTotals(_ context.Context, _ string) katypes.InvestigationTotals {
+	return katypes.InvestigationTotals{}
+}
+
 func (r *messagesCapturingInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }

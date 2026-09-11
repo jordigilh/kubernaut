@@ -44,9 +44,11 @@ const (
 	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
 )
 
-// KubeMCPServerImage is the Go-native K8s MCP server image.
-// v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
-const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
+// KubeMCPServerImage is the current Go-native K8s MCP server image.
+// Pin this external image by digest: the mutable latest tag changed its
+// token-exchange configuration schema without a Kubernaut source change,
+// breaking all fleet E2E suites.
+const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"
 
 const (
 	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
@@ -189,7 +191,7 @@ type KubeMCPServerAuthConfig struct {
 	// Must carry the OAuthAudience claim kube-mcp-server's resource-server
 	// validation expects, and must outlive the E2E run (the token is static
 	// for the lifetime of the cluster -- see accessTokenLifespan in
-	// keycloak-realm-fleet.json).
+	// keycloak-realm-demo.json).
 	BrokerCredentialToken string
 
 	// RemoteBridge, when non-nil, makes the "prod-east" registration target
@@ -271,17 +273,21 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 	_, _ = fmt.Fprintf(&b, "authorization_url = %q\n", c.AuthorizationURL)
 	_, _ = fmt.Fprintf(&b, "oauth_audience = %q\n", c.OAuthAudience)
 	_, _ = fmt.Fprintf(&b, "cluster_auth_mode = %q\n", KubeMCPServerAuthModePassthrough)
-	_, _ = fmt.Fprintf(&b, "sts_client_id = %q\n", c.StsClientID)
-	_, _ = fmt.Fprintf(&b, "sts_client_secret = %q\n", c.StsClientSecret)
-	_, _ = fmt.Fprintf(&b, "sts_audience = %q\n", c.StsAudience)
+	_, _ = fmt.Fprintf(&b, "certificate_authority = %q\n", c.CAFilePath)
+	_, _ = fmt.Fprintln(&b, "[token_exchange]")
+	_, _ = fmt.Fprintln(&b, "strategy = \"rfc8693\"")
+	_, _ = fmt.Fprintf(&b, "audience = %q\n", c.StsAudience)
 	if len(c.StsScopes) > 0 {
 		quoted := make([]string, len(c.StsScopes))
 		for i, s := range c.StsScopes {
 			quoted[i] = fmt.Sprintf("%q", s)
 		}
-		_, _ = fmt.Fprintf(&b, "sts_scopes = [%s]\n", strings.Join(quoted, ", "))
+		_, _ = fmt.Fprintf(&b, "scopes = [%s]\n", strings.Join(quoted, ", "))
 	}
-	_, _ = fmt.Fprintf(&b, "certificate_authority = %q", c.CAFilePath)
+	_, _ = fmt.Fprintln(&b, "[token_exchange.client_auth]")
+	_, _ = fmt.Fprintln(&b, "method = \"client_secret_basic\"")
+	_, _ = fmt.Fprintf(&b, "client_id = %q\n", c.StsClientID)
+	_, _ = fmt.Fprintf(&b, "client_secret = %q\n", c.StsClientSecret)
 	return b.String()
 }
 
@@ -303,9 +309,9 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 // (Istio ~250 MB + Kuadrant ~60 MB + kube-mcp-server ~16 MB + Valkey ~30 MB + FMC ~32 MB).
 //
 // Authority: Issue #54, ADR-068
-// keycloakHostPortFleet is the Kind extraPortMappings host port for Keycloak
-// in the "fleet" suite's Kind config, mirroring keycloakHostPortFMC.
-const keycloakHostPortFleet = 30557
+// keycloakHostPortDemo is the Kind extraPortMappings host port for Keycloak
+// in the shared demo/fleet Kind config, mirroring keycloakHostPortFMC.
+const keycloakHostPortDemo = 30557
 
 // SetupFleetE2EInfrastructure returns remoteKubeconfigPath, the second Kind
 // cluster's kubeconfig (DD-TEST-013) backing remote-cluster/prod-east/
@@ -420,7 +426,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // provider except vertex_ai) and "credentials.json" (vertex_ai only --
 // confirmed via _helpers.tpl's kubernaut.llm.credFile). This function runs
 // before the LLM provider is known to the infra-provisioning step (that's
-// FleetDemoHelmOptions.LLMProvider, resolved later, in the separate
+// DemoHelmOptions.LLMProvider, resolved later, in the separate
 // `helm install` step), so it populates both rather than plumbing the
 // provider string through this far earlier in the flow.
 //
@@ -428,7 +434,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // deliberately: vertex_ai credential material is a JSON blob that may
 // contain characters (quotes, newlines) that don't round-trip safely
 // through a YAML block scalar. Pure function (no exec/cluster access) for
-// unit testing, mirroring buildFleetDemoHelmSecretsManifest.
+// unit testing, mirroring buildDemoHelmSecretsManifest.
 func buildLLMCredentialsSecretManifest(namespace string, credentials []byte) string {
 	encoded := base64.StdEncoding.EncodeToString(credentials)
 	return fmt.Sprintf(`apiVersion: v1
@@ -440,7 +446,7 @@ type: Opaque
 data:
   api_key: %s
   credentials.json: %s
-`, fleetDemoLLMSecretName, namespace, encoded, encoded)
+`, demoLLMSecretName, namespace, encoded, encoded)
 }
 
 // applyRealLLMCredentialsSecret reads llmCredentialsFile and overwrites the
@@ -453,9 +459,9 @@ func applyRealLLMCredentialsSecret(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to read -llm-credentials-file %q: %w", llmCredentialsFile, err)
 	}
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, buildLLMCredentialsSecretManifest(namespace, credentials)); err != nil {
-		return fmt.Errorf("failed to apply real %s Secret: %w", fleetDemoLLMSecretName, err)
+		return fmt.Errorf("failed to apply real %s Secret: %w", demoLLMSecretName, err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ %s replaced with your real credentials (%s)\n", fleetDemoLLMSecretName, llmCredentialsFile)
+	_, _ = fmt.Fprintf(writer, "  ✅ %s replaced with your real credentials (%s)\n", demoLLMSecretName, llmCredentialsFile)
 	return nil
 }
 
@@ -500,7 +506,7 @@ type FleetCoreDemoOptions struct {
 	// drain/pressure-test a worker node distinct from the control plane,
 	// which the spoke can't provide as a control-plane-only cluster). Zero
 	// (the long-standing default) leaves the spoke control-plane-only.
-	// This is the `hack/setup-fleet-infra -spoke-workers=N` entry point's
+	// This is the `hack/setup-demo-infra -mode=fleet -spoke-workers=N` entry point's
 	// parameter.
 	SpokeWorkers int
 	// LLMCredentialsFile, when non-empty, overwrites the mock
@@ -512,7 +518,7 @@ type FleetCoreDemoOptions struct {
 	// cluster meant to hold it existed. Empty (the default, and every
 	// existing Ginkgo-suite caller) leaves the long-standing
 	// mock-llm-e2e-key placeholder untouched -- this is the
-	// `hack/setup-fleet-infra -llm-credentials-file` entry point's
+	// `hack/setup-demo-infra -mode=fleet -llm-credentials-file` entry point's
 	// parameter, deliberately a file path rather than a literal string:
 	// vertex_ai's credential material is a multi-KB service-account/ADC
 	// JSON blob, not a short token, and a file also keeps the secret out of
@@ -592,14 +598,6 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}, writer)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("fleet-core infrastructure provisioning failed: %w", err)
-	}
-
-	// Console-only addition, not shared with provisionFleetCoreInfra (the
-	// "fleet"/"fullpipeline" Ginkgo suites never open a browser against
-	// Console, so they don't need an Ingress controller).
-	_, _ = fmt.Fprintln(writer, "\n🌐 Installing Traefik (Console Ingress controller)...")
-	if err := deployTraefikForKind(ctx, kubeconfigPath, writer); err != nil {
-		return nil, remoteKubeconfigPath, fmt.Errorf("traefik install failed: %w", err)
 	}
 
 	// Fleet-wide monitoring (Prometheus+Thanos-sidecar per cluster + hub
@@ -767,8 +765,8 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}
 	_, _ = fmt.Fprintf(writer, "\n  Keycloak (IdP) lives in its own %q namespace, not %s (production parity).\n", idpNamespace, namespace)
 	_, _ = fmt.Fprintln(writer, "  For AF/Console browser login (reuses the same Keycloak, no DEX):")
-	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-fleet")
-	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo")
+	_, _ = fmt.Fprintf(writer, "    apifrontend.config.auth.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
 	_, _ = fmt.Fprintln(writer, "    apifrontend.config.auth.audience=kubernaut-apifrontend (required; else AF 401s every token, issue #2352)")
 	_, _ = fmt.Fprintln(writer, "    console.enabled=true, console.ingress.className=traefik,")
 	_, _ = fmt.Fprintln(writer, "    console.ingress.host=kubernaut-console.local, console.ingress.port=8843")
@@ -778,9 +776,9 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "    console.oauth2Proxy: Keycloak is in a different namespace than Console's")
 	_, _ = fmt.Fprintln(writer, "    oauth2-proxy, so it needs split browser/in-cluster OIDC endpoints:")
 	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.skipDiscovery=true")
-	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth")
-	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.redeemURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token\n", idpNamespace)
-	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth")
+	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.redeemURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token\n", idpNamespace)
+	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
 	_, _ = fmt.Fprintln(writer, "    AFTER `helm install`: make bind-fleet-af-rbac KUBECONFIG="+kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "    See ~/.kubernaut/helm/fleet-e2e-values.yaml for the full worked example.")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -825,7 +823,7 @@ type FleetCoreInfraOptions struct {
 	// Empty (the default, and every existing Ginkgo-suite caller) falls
 	// back to the long-standing ClusterName+"-remote" convention -- this
 	// keeps CI's "fleet-e2e"/"fleet-e2e-remote" pair byte-for-byte
-	// unchanged. The demo entry point (hack/setup-fleet-infra) sets this
+	// unchanged. The demo entry point (hack/setup-demo-infra -mode=fleet) sets this
 	// explicitly so the spoke's Kind cluster name can read as
 	// "kubernaut-remote-cluster" -- matching the "remote-cluster" identity
 	// every fleet MCPServerRegistration/AlertManager label already uses for
@@ -884,64 +882,28 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		remoteToolPrefix = "remote-cluster__"
 	}
 
-	// ── Keycloak OIDC + RFC 8693 token-exchange provider (replaces Dex) ──
-	// Dex has no Standard Token Exchange (Spike S20); Keycloak is the same
-	// proven IdP the FMC E2E lane already uses in CI for passthrough+STS.
-	//
-	// keycloakNamespace is namespace (kubernautSystem) for the "fleet"/
-	// "fullpipeline" Ginkgo suites' provisioner closure -- unchanged
-	// behavior -- and idpNamespace ("idp") for the demo-only entry point
-	// (SetupFleetCoreInfrastructure). See idpNamespace's doc comment
-	// (keycloak_e2e.go) for why this is scoped to the demo path only.
-	//
-	// provisionInterServiceCA (DD-TEST-015) must run first: it creates
-	// authwebhook-tls (with ca.crt/ca.key) and the inter-service-ca
-	// ConfigMap BEFORE `helm install`'s own pre-install hook would
-	// otherwise generate them, so Keycloak's leaf cert below is signed
-	// from the SAME CA the chart's hook will detect as already-valid and
-	// reuse for gateway-tls/datastorage-tls/kubernautagent-tls/
-	// fleetmetadatacache-tls/apifrontend-tls, and kube-mcp-server's
-	// required tls-ca volume (mounted further down) has something to
-	// mount.
-	if err := provisionInterServiceCA(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return nil, "", fmt.Errorf("inter-service CA provisioning failed: %w", err)
-	}
-	// isDemo distinguishes the demo entry point (SetupFleetCoreInfrastructure,
-	// keycloakNamespace="idp") from the "fleet"/"fullpipeline" Ginkgo
-	// suites (keycloakNamespace==namespace) -- see idpNamespace's doc
-	// comment. BR-PLATFORM-014's auto-renewing certificate + persistent
-	// Keycloak storage are scoped to the demo path only: the Ginkgo suites
-	// are short-lived and keep their existing ad hoc 24h chart-CA-signed
-	// certificate with zero added dependencies or startup time.
-	isDemo := keycloakNamespace != namespace
+	// Demo callers share the persistent Keycloak and certificate lifecycle
+	// with the local demo. Ginkgo callers retain their lightweight path.
+	isDemo := keycloakNamespace == idpNamespace
 	if isDemo {
-		if err := CreateTestNamespace(ctx, keycloakNamespace, kubeconfigPath, writer); err != nil {
-			return nil, "", fmt.Errorf("failed to create %s namespace for Keycloak: %w", keycloakNamespace, err)
-		}
-		if err := InstallCertManager(ctx, kubeconfigPath, writer); err != nil {
-			return nil, "", fmt.Errorf("cert-manager installation failed: %w", err)
-		}
-		if err := WaitForCertManagerReady(ctx, kubeconfigPath, writer); err != nil {
-			return nil, "", fmt.Errorf("cert-manager readiness check failed: %w", err)
-		}
-		if err := installReloader(ctx, kubeconfigPath, writer); err != nil {
-			return nil, "", fmt.Errorf("reloader installation failed: %w", err)
-		}
-		if err := ensureKeycloakCertManagerIssuer(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); err != nil {
-			return nil, "", fmt.Errorf("keycloak-tls cert-manager provisioning failed: %w", err)
+		if err := SetupOIDCInfrastructure(ctx, kubeconfigPath, writer); err != nil {
+			return nil, "", err
 		}
 	} else {
-		if kcTLSErr := ensureKeycloakTLSFromChartCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); kcTLSErr != nil {
-			return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", kcTLSErr)
+		if err := provisionInterServiceCA(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return nil, "", fmt.Errorf("inter-service CA provisioning failed: %w", err)
 		}
-	}
-	_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
-	if kcErr := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, keycloakHostPortFleet, isDemo, writer); kcErr != nil {
-		return nil, "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
+		if err := ensureKeycloakTLSFromChartCA(ctx, kubeconfigPath, namespace, keycloakNamespace, writer); err != nil {
+			return nil, "", fmt.Errorf("keycloak-tls provisioning failed: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "\n🔑 Deploying Keycloak OIDC provider (replaces Dex -- RFC 8693 token exchange, Spike S17/S20)...")
+		if err := DeployKeycloakInfra(ctx, keycloakNamespace, kubeconfigPath, keycloakHostPortDemo, false, writer); err != nil {
+			return nil, "", fmt.Errorf("failed to deploy Keycloak: %w", err)
+		}
 	}
 
 	oidcCfg := OIDCPatchConfig{
-		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
 		ClientID:       "k8s-api",
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
@@ -982,7 +944,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		RemoteClusterName:     remoteClusterName,
 		RemoteKubeconfigPath:  remoteKubeconfigPath,
 		KeycloakIssuerURL:     oidcCfg.IssuerURL,
-		KeycloakNodePort:      keycloakHostPortFleet,
+		KeycloakNodePort:      keycloakHostPortDemo,
 		AuthConfig:            sharedAuthConfig,
 		ExtraWorkerNodes:      spokeWorkers,
 	}, writer)
@@ -1075,7 +1037,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// minting a credential that would never be read.
 	if gatewayType != registry.GatewayEAIGW {
 		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1117,7 +1079,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	// entirely, instead of merely before a later kubectl-patch step.
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortDemo),
 			ClientID:       fleetClientID,
 			ClientSecret:   fleetClientSecret,
 			Scopes:         fleetScopes,
@@ -1182,7 +1144,7 @@ const fleetOAuth2SecretName = "fleet-oauth2-creds"
 // hostname, matching keycloak_e2e.go's Service), for the case where
 // Keycloak shares appNamespace (the "fleet"/"fullpipeline" Ginkgo suites,
 // unchanged). See keycloakFleetTokenURLFor for the idpNamespace case.
-const fleetKeycloakTokenURL = "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+const fleetKeycloakTokenURL = "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token"
 
 // keycloakFleetTokenURLFor returns the token endpoint every fleet-aware
 // service dials directly (a real client_credentials grant call, not a
@@ -1196,7 +1158,7 @@ func keycloakFleetTokenURLFor(keycloakNamespace, appNamespace string) string {
 	if keycloakNamespace == appNamespace {
 		return fleetKeycloakTokenURL
 	}
-	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakNamespace)
+	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token", keycloakNamespace)
 }
 
 // deployFleetOAuth2Secret creates the shared client_credentials Secret every
@@ -2649,7 +2611,7 @@ spec:
       - name: tls-certs
         secret:
           secretName: fleetmetadatacache-tls
-          optional: true%[13]s
+       %[13]s
 ---
 apiVersion: v1
 kind: Service
@@ -2856,7 +2818,7 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 type OIDCPatchConfig struct {
 	// IssuerURL must match the IdP's configured issuer exactly so the `iss`
 	// claim in JWTs matches the API server's expected value.
-	// e.g. "https://dex:5556/dex" or "https://keycloak:8443/realms/kubernaut-fleet".
+	// e.g. "https://dex:5556/dex" or "https://keycloak:8443/realms/kubernaut-demo".
 	IssuerURL string
 	// ClientID must match a value present in the `aud` claim of tokens the
 	// API server will see. For Dex (no token exchange) this is the caller's

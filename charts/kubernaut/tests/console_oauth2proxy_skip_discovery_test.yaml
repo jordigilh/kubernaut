@@ -30,7 +30,7 @@ set:
   apifrontend:
     config:
       auth:
-        issuerURL: https://keycloak:8443/realms/kubernaut-fleet
+        issuerURL: https://keycloak:8443/realms/kubernaut-demo
 tests:
   - it: "IT-HELM-OIDCSKIP-001: skipDiscovery unset (default false) renders plain OIDC discovery, unchanged from before this field existed"
     documentSelector:
@@ -42,35 +42,35 @@ tests:
           content: "--skip-oidc-discovery=true"
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-fleet"
+          content: "--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-demo"
 
   - it: "IT-HELM-OIDCSKIP-002: skipDiscovery=true renders --skip-oidc-discovery plus the three manual endpoint flags, --oidc-issuer-url unchanged (string-matched against the IdP's iss claim, not dialed)"
     set:
       console:
         oauth2Proxy:
           skipDiscovery: true
-          loginURL: https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth
-          redeemURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token
-          jwksURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs
+          loginURL: https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth
+          redeemURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token
+          jwksURL: https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs
     documentSelector:
       path: kind
       value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-fleet"
+          content: "--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-demo"
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--skip-oidc-discovery=true"
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--login-url=https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/auth"
+          content: "--login-url=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth"
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--redeem-url=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+          content: "--redeem-url=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token"
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--oidc-jwks-url=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-fleet/protocol/openid-connect/certs"
+          content: "--oidc-jwks-url=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
 
   - it: "IT-HELM-OIDCSKIP-003: skipDiscovery=true without loginURL/redeemURL/jwksURL fails schema validation, proving the schema's if/then dependency"
     set:

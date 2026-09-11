@@ -39,7 +39,7 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	urlLocalhost30080 = "http://localhost:30080"
+	urlLocalhost30080 = "https://localhost:30080"
 )
 
 // E2E-FLEET-CC81-001: SOC2 CC8.1 Fleet Reconstruction Compliance

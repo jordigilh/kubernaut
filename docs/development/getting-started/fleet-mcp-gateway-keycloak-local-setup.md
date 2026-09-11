@@ -86,7 +86,7 @@ You now have a live stack with:
 |---|---|
 | FMC API | `http://localhost:8150` |
 | Kuadrant MCP Gateway | `http://localhost:31975/mcp` |
-| Keycloak | `https://localhost:30557/realms/kubernaut-fleet` |
+| Keycloak | `https://localhost:30557/realms/kubernaut-demo` |
 | DataStorage | `https://localhost:30081` |
 
 The EAIGW variant is identical except the Kind cluster is named
@@ -118,9 +118,9 @@ export KUBECONFIG="$(kind get kubeconfig-path --name=fleet-dev 2>/dev/null || ec
 kubectl create namespace kubernaut-system
 ```
 
-### B2. Deploy Keycloak with the kubernaut-fleet realm
+### B2. Deploy Keycloak with the kubernaut-demo realm
 
-The realm (`test/infrastructure/keycloak-realm-fleet.json`) pre-declares three
+The realm (`test/infrastructure/keycloak-realm-demo.json`) pre-declares three
 clients — copy it locally or reference the checked-in file:
 
 | Client ID | Secret | Purpose |
@@ -131,7 +131,7 @@ clients — copy it locally or reference the checked-in file:
 
 ```bash
 kubectl create configmap keycloak-realm-config \
-  --from-file=kubernaut-fleet-realm.json=test/infrastructure/keycloak-realm-fleet.json \
+  --from-file=kubernaut-demo-realm.json=test/infrastructure/keycloak-realm-demo.json \
   -n kubernaut-system
 
 # Self-signed TLS cert for Keycloak's HTTPS listener
@@ -216,7 +216,7 @@ sed -i "/--tls-private-key-file/a\\
     - --oidc-username-claim=preferred_username\\
     - --oidc-client-id=k8s-api\\
     - --oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\\
-    - \"--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-fleet\"" \
+    - \"--oidc-issuer-url=https://keycloak:8443/realms/kubernaut-demo\"" \
   /etc/kubernetes/manifests/kube-apiserver.yaml'
 ```
 
@@ -289,7 +289,7 @@ metadata: {name: kube-mcp-server-config}
 data:
   config.toml: |
     require_oauth = true
-    authorization_url = "https://keycloak:8443/realms/kubernaut-fleet"
+    authorization_url = "https://keycloak:8443/realms/kubernaut-demo"
     oauth_audience = "kube-mcp-server"
     cluster_auth_mode = "passthrough"
     sts_client_id = "kube-mcp-server"
@@ -404,7 +404,7 @@ uses for its own upstream discovery connection (separate from per-request
 
 ```bash
 BROKER_TOKEN=$(curl -sk -X POST \
-  https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token \
+  https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token \
   -d grant_type=client_credentials -d client_id=kubernaut-fleet-read \
   -d client_secret=e2e-fleet-secret -d scope=kube-mcp-server-audience \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
@@ -620,10 +620,10 @@ spec:
       jwt:
         providers:
         - name: keycloak
-          issuer: "https://keycloak:8443/realms/kubernaut-fleet"
+          issuer: "https://keycloak:8443/realms/kubernaut-demo"
           audiences: ["kube-mcp-server"]
           remoteJWKS:
-            uri: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/certs"
+            uri: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
             backendRefs: [{name: keycloak-jwks}]
 EOF
 ```
@@ -647,7 +647,7 @@ Get a token as FMC would, and call the gateway directly:
 
 ```bash
 TOKEN=$(curl -sk -X POST \
-  https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token \
+  https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token \
   -d grant_type=client_credentials -d client_id=kubernaut-fleet-read \
   -d client_secret=e2e-fleet-secret -d scope=kube-mcp-server-audience \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')

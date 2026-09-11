@@ -55,13 +55,20 @@ func InterServiceCAPath(kubeconfigPath string) string {
 // Issue #753 (S-4): Uses ECDSA P-256 instead of RSA 2048.
 // Issue #753 (C-2): Returns caPEMPath for host-side TLS-aware test clients.
 func GenerateInterServiceTLS(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (string, error) {
+	return GenerateInterServiceTLSAtPath(ctx, kubeconfigPath, namespace, InterServiceCAPath(kubeconfigPath), writer)
+}
+
+// GenerateInterServiceTLSAtPath is the namespace-safe variant used when more
+// than one isolated service topology shares a Kubernetes cluster. Each
+// topology gets its own CA file without overwriting another topology's client
+// trust bundle.
+func GenerateInterServiceTLSAtPath(ctx context.Context, kubeconfigPath, namespace, caPEMPath string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "🔐 Issue #753: Generating inter-service TLS certificates (ECDSA P-256)...")
 
 	// Idempotency guard: if the CA ConfigMap already exists in this namespace and the
 	// host-side CA PEM file is present, skip regeneration. This prevents a race condition
 	// in fullpipeline E2E where multiple component deployers call this function in parallel
 	// goroutines, each generating a different CA and overwriting the Secrets/ConfigMap.
-	caPEMPath := InterServiceCAPath(kubeconfigPath)
 	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "configmap", "inter-service-ca", "-n", namespace, "--ignore-not-found", "-o", "name")
 	checkOut, checkErr := checkCmd.Output()
@@ -165,8 +172,8 @@ data:
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
-			// Issue #1683: FMC's API port presents TLS by default now
-			// (ConfigureConditionalTLS), matching DataStorage/Gateway.
+			// Issue #1683: FMC's API port presents mandatory TLS now
+			// (ConfigureRequiredTLS), matching DataStorage/Gateway.
 			// "localhost" + 127.0.0.1 let the E2E harness's host-side client
 			// (hitting FMC's NodePort) verify the cert.
 			name:       "fleetmetadatacache-service",
@@ -285,7 +292,14 @@ stringData:
 // clusters that must trust inter-service TLS certs signed by the primary
 // cluster's CA without re-running key generation (DD-TEST-013).
 func ReplicateInterServiceCAConfigMap(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	return ReplicateInterServiceCAConfigMapAtPath(ctx, kubeconfigPath, namespace,
+		InterServiceCAPath(kubeconfigPath), "inter-service-ca", writer)
+}
+
+// ReplicateInterServiceCAConfigMapAtPath creates a named CA ConfigMap from a
+// specific PEM file. This is used when multiple isolated stacks in one cluster
+// intentionally have different trust roots.
+func ReplicateInterServiceCAConfigMapAtPath(ctx context.Context, kubeconfigPath, namespace, caPEMPath, configMapName string, writer io.Writer) error {
 	caPEM, err := os.ReadFile(caPEMPath)
 	if err != nil {
 		return fmt.Errorf("read CA PEM from %s: %w", caPEMPath, err)
@@ -294,15 +308,61 @@ func ReplicateInterServiceCAConfigMap(ctx context.Context, kubeconfigPath, names
 	caConfigMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: inter-service-ca
+  name: %s
 data:
   ca.crt: |
-%s`, indentPEM(string(caPEM)))
+%s`, configMapName, indentPEM(string(caPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, caConfigMap, writer); err != nil {
-		return fmt.Errorf("create inter-service-ca ConfigMap: %w", err)
+		return fmt.Errorf("create %s ConfigMap: %w", configMapName, err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ inter-service-ca ConfigMap replicated")
+	_, _ = fmt.Fprintf(writer, "  ✅ %s ConfigMap replicated\n", configMapName)
+	return nil
+}
+
+// ReplicateTLSSecret copies a TLS Secret between namespaces without exposing
+// the private key to the host. This is used by isolated-stack tests when a
+// service in the test namespace must present a certificate generated in the
+// isolated stack's namespace.
+func ReplicateTLSSecret(ctx context.Context, kubeconfigPath, sourceNamespace, targetNamespace, secretName string, writer io.Writer) error {
+	getSecretData := func(key string) (string, error) {
+		jsonPath := fmt.Sprintf("{.data.%s}", strings.ReplaceAll(key, ".", `\.`))
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "secret", secretName, "-n", sourceNamespace, "-o", "jsonpath="+jsonPath)
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("read %s from %s/%s: %w", key, sourceNamespace, secretName, err)
+		}
+		value := strings.TrimSpace(string(out))
+		if value == "" {
+			return "", fmt.Errorf("secret %s/%s has no %s data", sourceNamespace, secretName, key)
+		}
+		return value, nil
+	}
+
+	cert, err := getSecretData("tls.crt")
+	if err != nil {
+		return err
+	}
+	key, err := getSecretData("tls.key")
+	if err != nil {
+		return err
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: kubernetes.io/tls
+data:
+  tls.crt: %s
+  tls.key: %s
+`, secretName, targetNamespace, cert, key)
+	if err := kubectlApply(ctx, kubeconfigPath, targetNamespace, manifest, writer); err != nil {
+		return fmt.Errorf("replicate TLS Secret %s to namespace %s: %w", secretName, targetNamespace, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ %s TLS Secret replicated to %s\n", secretName, targetNamespace)
 	return nil
 }
 

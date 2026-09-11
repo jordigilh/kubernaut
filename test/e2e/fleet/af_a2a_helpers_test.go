@@ -22,21 +22,15 @@ package fleet
 // packages. Kept intentionally minimal: only what E2E-FLEET-016 needs, not
 // the full fullpipeline helper surface (RR polling, artifact lookup, etc.).
 //
-// Auth: this suite's AF is deployed by the SAME SetupFullPipelineInfrastructure
-// base (fleet_e2e.go's SetupFleetE2EInfrastructure calls it first) that backs
-// the fullpipeline suite, so AF's own JWT provider config is untouched Dex
-// (patchAPIFrontendConfigForFleet only appends a "fleet:" block for the
-// FleetReaderFactory wiring -- it never touches "auth:"). Keycloak is added
-// alongside Dex for the fleet-specific MCP-gateway/kube-mcp-server OAuth2
-// path (fleetAuthenticatedHTTPClient in suite_test.go); it does not replace
-// Dex as AF's own incoming-request validator. So the fullpipeline suite's
-// Dex client_credentials-via-password-grant flow applies unchanged here.
+// Auth: Fleet's AF is configured against the Keycloak realm provisioned by
+// SetupFleetE2EInfrastructure. The direct-grant token carries the /sre group
+// needed by AF's persona authorization.
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -45,48 +39,19 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// afA2AAuthToken caches the Dex token across calls within a process (mirrors
+// afA2AAuthToken caches the Keycloak token across calls within a process (mirrors
 // fullpipeline's afAuthToken caching in suite_test.go).
 var afA2AAuthToken string
 
-// getAFA2AToken fetches (and caches) a Dex password-grant token for AF's A2A
-// endpoint. Same IdP, client, and user as test/e2e/fullpipeline's getAFToken --
-// Dex is deployed once by SetupFullPipelineInfrastructure and inherited
-// unchanged by this suite (see file-level doc comment).
+// getAFA2AToken fetches (and caches) a Keycloak password-grant token for AF's
+// A2A endpoint.
 func getAFA2AToken() string {
 	if afA2AAuthToken != "" {
 		return afA2AAuthToken
 	}
-	tlsClient, tlsErr := infrastructure.NewTLSAwareClient(kubeconfigPath, 10*time.Second)
-	Expect(tlsErr).NotTo(HaveOccurred(), "TLS client for Dex token endpoint")
-
-	resp, err := tlsClient.PostForm("https://localhost:30556/dex/token", url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"kubernaut-apifrontend"},
-		"client_secret": {"e2e-client-secret"},
-		"username":      {"sre@kubernaut.ai"},
-		"password":      {"password"},
-		"scope":         {"openid email profile groups"},
-	})
-	Expect(err).NotTo(HaveOccurred())
-	defer func() { _ = resp.Body.Close() }()
-
-	body, readErr := io.ReadAll(resp.Body)
-	Expect(readErr).NotTo(HaveOccurred())
-	// Dex's /token endpoint returns a 200 with an access_token on success, or a
-	// non-200 with a JSON {"error": "...", "error_description": "..."} body on
-	// failure (e.g. unsupported_grant_type, invalid_grant). Both decode fine as
-	// JSON, so without this status check a rejected grant silently yields an
-	// empty AccessToken that AF then 401s with no diagnostic trail back to the
-	// actual Dex-side cause (Issue #1768 E2E-FLEET-016 CI flake RCA).
-	Expect(resp.StatusCode).To(Equal(http.StatusOK), "Dex token endpoint rejected the grant: %s", string(body))
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-	}
-	Expect(json.Unmarshal(body, &tokenResp)).To(Succeed())
-	Expect(tokenResp.AccessToken).NotTo(BeEmpty(), "Dex returned 200 but no access_token: %s", string(body))
-	afA2AAuthToken = tokenResp.AccessToken
+	token, err := infrastructure.GetKeycloakPasswordToken(context.Background(), infrastructure.DefaultKeycloakAFA2AConfig(30557, kubeconfigPath))
+	Expect(err).NotTo(HaveOccurred(), "Keycloak token endpoint")
+	afA2AAuthToken = token
 	return afA2AAuthToken
 }
 

@@ -86,6 +86,13 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return cancelled, messages, true, nil
 	}
 
+	// #2387 (BR-KA-OBSERVABILITY-001): one successful provider round-trip is
+	// one LLM turn — tool-call, sentinel-submit, truncation, and plain-text
+	// turns all count. Failures and cancellations above do not. Token usage
+	// joins the cumulative per-RR scope alongside the audit accumulator.
+	inv.metricsFor(correlationID).IncLLMTurns()
+	inv.recordTokenUsage(correlationID, resp.Usage)
+
 	if tokens != nil {
 		tokens.Add(resp.Usage)
 	}
@@ -323,6 +330,11 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 		})
 	}
 	_ = g.Wait()
+
+	// #2387 (BR-KA-OBSERVABILITY-001): batch-count the dispatched tools.
+	// Sentinel submits (submit_result*) return before this point, so they are
+	// consumed, never executed, and never counted here.
+	inv.metricsFor(correlationID).AddToolCalls(len(resp.ToolCalls))
 
 	for i, tc := range resp.ToolCalls {
 		emitToSink(ctx, session.EventTypeToolResult, turn, phase, map[string]interface{}{

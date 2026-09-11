@@ -52,6 +52,8 @@ server:
   # datastorage/kubernaut-agent, which are also TLS-on-by-default).
   tls:
     certDir: "/etc/apifrontend/tls"
+shutdown:
+  drainSeconds: 15
 agent:
   kaBaseURL: "https://kubernaut-agent.{{ .Release.Namespace }}.svc:8443"
   # Issue #1737 gap found: kaMCPEndpoint/dsBaseURL/kaBearerTokenFile/
@@ -710,7 +712,6 @@ spec:
         - name: tls-certs
           secret:
             secretName: apifrontend-tls
-            optional: true
         - name: llm-credentials
           secret:
             secretName: {{ $afProfile.credentialsSecretName }}

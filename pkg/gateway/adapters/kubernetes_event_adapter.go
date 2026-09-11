@@ -276,6 +276,7 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 		Version:               a.version,
 		Description:           a.description,
 		SupportedContentTypes: []string{"application/json"},
-		RequiredHeaders:       []string{"Authorization"}, // Bearer token required
+		// Authentication is enforced only when Gateway auth is explicitly enabled.
+		RequiredHeaders: []string{},
 	}
 }

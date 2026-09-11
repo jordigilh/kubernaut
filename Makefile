@@ -983,7 +983,8 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 	@echo "🚀 Fleet demo/QE setup: infra + helm install (Console-first, AUTONOMOUS=$(if $(AUTONOMOUS),$(AUTONOMOUS),false))"
 	@echo "   Hub + spoke Kind clusters, Keycloak, MCP Gateway ($(if $(GATEWAY_TYPE),$(GATEWAY_TYPE),eaigw) by default), kube-mcp-server, Traefik"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	go run ./hack/setup-fleet-infra \
+	go run ./hack/setup-demo-infra \
+		-mode fleet \
 		-llm-provider "$(LLM_PROVIDER)" \
 		-llm-model "$(LLM_MODEL)" \
 		-llm-endpoint "$(LLM_ENDPOINT)" \
@@ -998,6 +999,26 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
 		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)") \
 		$(if $(REMOTE_CLUSTER_NAME),-remote-cluster-name "$(REMOTE_CLUSTER_NAME)")
+
+.PHONY: setup-local-demo-infra
+setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai)
+	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
+		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai"; \
+		echo "   make setup-local-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o LLM_ENDPOINT=https://api.openai.com/v1 LLM_CREDENTIALS_FILE=~/.secrets/llm-api-key.txt"; \
+		exit 1; \
+	fi
+	go run ./hack/setup-demo-infra \
+		-llm-provider "$(LLM_PROVIDER)" \
+		-llm-model "$(LLM_MODEL)" \
+		-llm-endpoint "$(LLM_ENDPOINT)" \
+		-llm-credentials-file "$(LLM_CREDENTIALS_FILE)" \
+		$(if $(IMAGE_TAG),-image-tag "$(IMAGE_TAG)") \
+		$(if $(VERTEX_PROJECT),-vertex-project "$(VERTEX_PROJECT)") \
+		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
+		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
+		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
+		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \
+		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
 bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (run AFTER helm install)

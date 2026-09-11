@@ -93,7 +93,7 @@ Dex. Full removal is scoped as separate follow-up work (see the Dex-removal
 tracking issue) because two other E2E lanes (`test/e2e/kubernautagent`,
 `test/e2e/apifrontend` full-pipeline) still depend on Dex's `password`
 (ROPC) grant and a 7-persona-group realm shape that Keycloak's current fleet
-realm (`keycloak-realm-fleet.json`, `client_credentials`+exchange only) does
+realm (`keycloak-realm-demo.json`, `client_credentials`+exchange only) does
 not yet provide.
 
 ### 3. Rename `loopback-cluster` to `remote-cluster`

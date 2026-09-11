@@ -57,7 +57,7 @@ const keycloakImage = "quay.io/keycloak/keycloak:26.6.4"
 // CI validation the user didn't want to risk right now.
 const idpNamespace = "idp"
 
-// keycloakRealmFleetJSON is the kubernaut-fleet realm export. Notably, the
+// keycloakRealmDemoJSON is the kubernaut-demo realm export. Notably, the
 // "k8s-api-audience" client-scope carries a "preferred_username" mapper
 // (User Property: username) in addition to its audience mapper: service-
 // account (client_credentials) tokens in this realm's minimal --import-realm
@@ -114,14 +114,14 @@ const idpNamespace = "idp"
 // specific client; this is a local/E2E-only realm so the extended lifespan
 // carries no production security exposure.
 //
-//go:embed keycloak-realm-fleet.json
-var keycloakRealmFleetJSON string
+//go:embed keycloak-realm-demo.json
+var keycloakRealmDemoJSON string
 
 // KeycloakFleetTokenConfig holds configuration for obtaining a
 // client_credentials token from Keycloak for fleet service-to-service
 // authentication.
 type KeycloakFleetTokenConfig struct {
-	TokenEndpoint  string       // e.g. https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token
+	TokenEndpoint  string       // e.g. https://localhost:30557/realms/kubernaut-demo/protocol/openid-connect/token
 	ClientID       string       // e.g. kubernaut-fleet-read
 	ClientSecret   string       // e.g. e2e-fleet-secret
 	Scopes         []string     // e.g. ["kube-mcp-server-audience"]
@@ -129,14 +129,89 @@ type KeycloakFleetTokenConfig struct {
 	KubeconfigPath string       // locates the inter-service CA (GenerateInterServiceTLS) that signed Keycloak's leaf cert; required when HTTPClient is nil
 }
 
+// KeycloakUserTokenConfig holds configuration for an OAuth2 direct grant.
+type KeycloakUserTokenConfig struct {
+	TokenEndpoint  string
+	ClientID       string
+	ClientSecret   string
+	Username       string
+	Password       string
+	Scopes         []string
+	HTTPClient     *http.Client
+	KubeconfigPath string
+}
+
+// DefaultKeycloakAFA2AConfig returns the Keycloak direct-grant configuration
+// for the Fleet API Frontend A2A tests.
+func DefaultKeycloakAFA2AConfig(hostPort int, kubeconfigPath string) KeycloakUserTokenConfig {
+	return KeycloakUserTokenConfig{
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", hostPort),
+		ClientID:       "kubernaut-apifrontend",
+		ClientSecret:   "e2e-apifrontend-secret",
+		Username:       "sre-user",
+		Password:       "password",
+		Scopes:         []string{"openid", "email", "profile", "groups"},
+		KubeconfigPath: kubeconfigPath,
+	}
+}
+
+// GetKeycloakPasswordToken obtains an access token using a Keycloak direct
+// grant. The resulting token carries the user's persona groups for AF SAR.
+func GetKeycloakPasswordToken(ctx context.Context, cfg KeycloakUserTokenConfig) (string, error) {
+	data := url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"username":      {cfg.Username},
+		"password":      {cfg.Password},
+	}
+	if len(cfg.Scopes) > 0 {
+		data.Set("scope", strings.Join(cfg.Scopes, " "))
+	}
+
+	client, err := keycloakHTTPClient(cfg.HTTPClient, cfg.KubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Keycloak HTTP client: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build keycloak password token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("keycloak password token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read Keycloak password token response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("keycloak password token endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parse Keycloak password token response: %w", err)
+	}
+	if tokenResp.AccessToken == "" {
+		return "", fmt.Errorf("keycloak password token response missing access_token: %s", string(body))
+	}
+	return tokenResp.AccessToken, nil
+}
+
 // DefaultKeycloakFleetReadConfig returns the default Keycloak fleet-read
 // client config matching the kubernaut-fleet-read client declared in
-// keycloak-realm-fleet.json. kubeconfigPath locates the inter-service CA
+// keycloak-realm-demo.json. kubeconfigPath locates the inter-service CA
 // (GenerateInterServiceTLS) so the client keycloakHTTPClient builds verifies
 // Keycloak's certificate instead of skipping verification.
 func DefaultKeycloakFleetReadConfig(hostPort int, kubeconfigPath string) KeycloakFleetTokenConfig {
 	return KeycloakFleetTokenConfig{
-		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", hostPort),
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", hostPort),
 		ClientID:       "kubernaut-fleet-read",
 		ClientSecret:   "e2e-fleet-secret",
 		KubeconfigPath: kubeconfigPath,
@@ -260,7 +335,7 @@ func ExchangeKeycloakToken(kubeconfigPath, tokenEndpoint, requesterClientID, req
 	return tokenResp.AccessToken, nil
 }
 
-// DeployKeycloakInfra deploys Keycloak (with the kubernaut-fleet realm
+// DeployKeycloakInfra deploys Keycloak (with the kubernaut-demo realm
 // pre-imported) and waits for it to be ready. This is the exported entry
 // point for the FMC E2E lane, replacing DeployDexInfra so that kube-mcp-server
 // passthrough + RFC 8693 token exchange can be validated against a real
@@ -284,9 +359,9 @@ func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, 
 }
 
 // deployKeycloakInNamespace deploys Keycloak as an OIDC provider + RFC 8693
-// token-exchange IdP in the Kind cluster for E2E testing. The kubernaut-fleet
+// token-exchange IdP in the Kind cluster for E2E testing. The kubernaut-demo
 // realm (clients, audience-mapper client-scopes) is imported at startup from
-// the embedded keycloak-realm-fleet.json -- see that file for the client/scope
+// the embedded keycloak-realm-demo.json -- see that file for the client/scope
 // design validated in Spike S18.
 //
 // start-dev mode is used deliberately in every case (persistent or not):
@@ -340,7 +415,7 @@ metadata:
   name: keycloak-realm-config
   namespace: %[2]s
 data:
-  kubernaut-fleet-realm.json: |
+  kubernaut-demo-realm.json: |
 %[3]s
 ---
 apiVersion: apps/v1
@@ -430,7 +505,7 @@ spec:
     nodePort: 30557
   selector:
     app: keycloak
-`, pvcBlock, namespace, indentPEM(keycloakRealmFleetJSON), annotationsBlock, keycloakImage, dataVolumeMount, dataVolume)
+`, pvcBlock, namespace, indentPEM(keycloakRealmDemoJSON), annotationsBlock, keycloakImage, dataVolumeMount, dataVolume)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -457,20 +532,20 @@ spec:
 
 // waitForKeycloakReady polls the Keycloak realm endpoint via NodePort until it
 // responds or the timeout is reached, confirming both that Keycloak is up AND
-// that the kubernaut-fleet realm was successfully imported (mirrors
+// that the kubernaut-demo realm was successfully imported (mirrors
 // waitForDexReady).
 //
 // hostPort is the Kind extraPortMappings host port that maps to the Keycloak
 // NodePort (30557) in the running cluster.
 func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort int, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Keycloak kubernaut-fleet realm to be reachable (HTTPS)...")
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Keycloak kubernaut-demo realm to be reachable (HTTPS)...")
 
 	client, err := NewTLSAwareClient(kubeconfigPath, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to build TLS-aware client for Keycloak health check: %w", err)
 	}
 
-	realmURL := fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet", hostPort)
+	realmURL := fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo", hostPort)
 	deadline := time.Now().Add(150 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -481,7 +556,7 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
-			_, _ = fmt.Fprintln(writer, "  ✅ Keycloak kubernaut-fleet realm reachable (HTTPS)")
+			_, _ = fmt.Fprintln(writer, "  ✅ Keycloak kubernaut-demo realm reachable (HTTPS)")
 			return nil
 		}
 		// NB: resp is nil exactly when err != nil (transport failure, the
@@ -492,16 +567,16 @@ func waitForKeycloakReady(ctx context.Context, kubeconfigPath string, hostPort i
 			_, _ = fmt.Fprintln(writer, "  Keycloak not yet reachable, waiting:", err)
 		} else {
 			lastErr = fmt.Errorf("received HTTP status %d", resp.StatusCode)
-			_, _ = fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-fleet realm to be reachable...")
+			_, _ = fmt.Fprintln(writer, "resp.StatusCode:", resp.StatusCode, "waiting for Keycloak kubernaut-demo realm to be reachable...")
 			_ = resp.Body.Close()
 		}
 		time.Sleep(3 * time.Second)
 	}
 
 	if lastErr != nil {
-		return fmt.Errorf("keycloak kubernaut-fleet realm not responsive after 150 seconds: %w", lastErr)
+		return fmt.Errorf("keycloak kubernaut-demo realm not responsive after 150 seconds: %w", lastErr)
 	}
-	return fmt.Errorf("keycloak kubernaut-fleet realm not responsive after 150 seconds")
+	return fmt.Errorf("keycloak kubernaut-demo realm not responsive after 150 seconds")
 }
 
 // keycloakHTTPClient returns the provided client if non-nil, or a client

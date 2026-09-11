@@ -140,7 +140,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			cfg := mcpclient.OAuth2Config{
 				TokenURL:     tokenServer.URL,
-				ClientID:     "kubernaut-fleet",
+				ClientID:     "kubernaut-demo",
 				ClientSecret: "test-secret",
 				Scopes:       []string{"openid"},
 			}

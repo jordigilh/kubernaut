@@ -178,7 +178,7 @@ var _ = SynchronizedBeforeSuite(
 		dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), dsCfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		sharedDSInfra = dsInfra
-		sharedDSEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
+		sharedDSEndpoint = fmt.Sprintf("https://localhost:%d", mcpDataStoragePort)
 		GinkgoWriter.Printf("DataStorage endpoint: %s\n", sharedDSEndpoint)
 
 		// Build the DS client for seeding (primary process).
@@ -278,7 +278,7 @@ var _ = SynchronizedBeforeSuite(
 			sharedMockLLMEndpoint = p.MockLLMEndpoint
 		}
 
-		dsURL := fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
+		dsURL := fmt.Sprintf("https://localhost:%d", mcpDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, p.Token, 10*time.Second)
 		sharedDSClient = dsClients.OpenAPIClient
 

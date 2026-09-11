@@ -182,6 +182,17 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 
 		Expect(documents).To(BeNumerically(">=", 8))
 	})
+
+	It("UT-INFRA-DEMO-PROMETHEUS-001 [BR-PLATFORM-003]: renders a local operator-managed Prometheus without Thanos", func() {
+		manifest := buildLocalManagedPrometheusManifest("monitoring", "local", "alertmanager-svc.monitoring.svc.cluster.local:9093")
+
+		Expect(manifest).To(ContainSubstring("name: local\n"))
+		Expect(manifest).To(ContainSubstring("cluster: local"))
+		Expect(manifest).To(ContainSubstring("serviceMonitorNamespaceSelector: {}"))
+		Expect(manifest).To(ContainSubstring("name: alertmanager-svc"))
+		Expect(manifest).NotTo(ContainSubstring("thanos:"))
+		Expect(manifest).NotTo(ContainSubstring("image: " + ThanosImage))
+	})
 })
 
 func findManifestDocument(manifest, kind, name string) unstructured.Unstructured {

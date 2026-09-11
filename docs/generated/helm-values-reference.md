@@ -147,7 +147,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `enabled` | boolean |  | `false` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/kubernaut-console"` | No |
-| `image.tag` | string |  | `"1.1.0"` | No |
+| `image.tag` | string |  | `"1.6.0-rc11"` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |
@@ -304,6 +304,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Gateway ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (e.g. OLM Subscription, ArgoCD Application). | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
+| `auth.enabled` | boolean | Enable TokenReview/SAR authentication for Gateway signal endpoints. Disabled by default; TLS remains the default transport protection. | `false` | No |
 | `auth.signalSources` | array of object | External signal sources that need RBAC to call the Gateway | `` | No |
 | `config.cors.allowCredentials` | boolean | Whether cross-origin requests may include credentials. | `false` | No |
 | `config.cors.allowedOrigins` | array of string | Allowed CORS origins. M2M API — deny by default. | `[                     "https://no-browser-clients.invalid"                   ]` | No |
@@ -647,7 +648,6 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `logSink` | boolean | Emit one structured log line per completed span via the service's existing logger. No collector needed -- lands in the same log stream captured by must-gather/CI log collection. | `false` | No |
 | `tls.caFile` | string | CA certificate for a self-signed/privately-issued collector cert. Optional -- empty trusts the system CA pool. | `""` | No |
 | `tls.certFile` | string | Client certificate for mTLS, if the collector requires client authentication. Optional; must be set together with keyFile. | `""` | No |
-| `tls.enabled` | boolean | Use HTTPS for the OTLP/HTTP connection. False (default) uses plain HTTP, matching most in-cluster collectors. | `false` | No |
 | `tls.keyFile` | string | Client private key for mTLS. Optional; must be set together with certFile. | `""` | No |
 
 ## tls

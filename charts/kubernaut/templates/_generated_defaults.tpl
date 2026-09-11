@@ -134,7 +134,7 @@ console:
     image:
         pullPolicy: IfNotPresent
         repository: quay.io/kubernaut-ai/kubernaut-console
-        tag: 1.1.0
+        tag: 1.6.0-rc11
     ingress:
         annotations: {}
         className: ""
@@ -254,6 +254,8 @@ fleetmetadatacache:
         keyFile: ""
 gateway:
     additionalClusterRoles: []
+    auth:
+        enabled: false
     config:
         cors:
             allowCredentials: false
@@ -556,7 +558,6 @@ telemetry:
     tls:
         caFile: ""
         certFile: ""
-        enabled: false
         keyFile: ""
 tls:
     certManager:
