@@ -254,6 +254,8 @@ fleetmetadatacache:
         keyFile: ""
 gateway:
     additionalClusterRoles: []
+    auth:
+        enabled: false
     config:
         cors:
             allowCredentials: false
