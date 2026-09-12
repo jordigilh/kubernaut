@@ -2016,7 +2016,7 @@ var _ = Describe("Ansible Executor Parameter Filtering (#243)", func() {
 		awxClient = &mockAWXClient{}
 	})
 
-	It("UT-WE-243-040: should strip undeclared params from AWX extra_vars when DeclaredParameterNames is set", func() {
+	It("UT-WE-2390-003: should strip undeclared params from AWX extra_vars when DeclaredParameterNames is set", func() {
 		var capturedExtraVars map[string]interface{}
 		awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, _ []int) (int, error) {
 			capturedExtraVars = extraVars

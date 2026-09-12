@@ -131,7 +131,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 	})
 
 	Describe("UT-KA-703-TOOL-006: Successful workflow selection", func() {
-		It("should look up workflow from catalog and return selection confirmation", func() {
+		It("UT-KA-2390-006: should look up workflow from catalog and return catalog-authoritative engine configuration", func() {
 			wfID := uuid.New().String()
 			catalog := &mockWorkflowCatalog{
 				workflow: &mcptools.CatalogWorkflow{

@@ -49,7 +49,7 @@ import (
 // ============================================================================
 
 var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
-	It("IT-WE-016-003: should pass engineConfig from AIAnalysis to WorkflowExecution CRD", func() {
+	It("IT-RO-2390-001/002: should pass the complete workflow snapshot, including engineConfig and declared cluster, from AIAnalysis to WorkflowExecution CRD", func() {
 		ns := createTestNamespace(ctx, "ro-ec-003")
 		defer deleteTestNamespace(ns)
 

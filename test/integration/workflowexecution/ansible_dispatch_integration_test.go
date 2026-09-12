@@ -29,6 +29,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ========================================
@@ -47,7 +48,7 @@ import (
 
 var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 	Context("controller dispatch without ansible executor registered", func() {
-		It("IT-WE-015-001: should fail WFE with UnsupportedEngine when ansible executor is not registered", func() {
+		It("IT-WE-2390-003: should preserve engineConfig before failing WFE with UnsupportedEngine when ansible executor is not registered", func() {
 			targetResource := fmt.Sprintf("default/deployment/ansible-dispatch-%d", time.Now().UnixNano())
 
 			engineConfig, err := json.Marshal(map[string]interface{}{
@@ -88,6 +89,12 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), persisted)
+			}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
+			Expect(persisted.Spec.WorkflowRef.EngineConfig).To(Equal(wfe.Spec.WorkflowRef.EngineConfig),
+				"IT-WE-2390-003: engineConfig must reach the WFE unchanged before executor dispatch")
 
 			// Controller should transition to Failed because no ansible executor is registered.
 			// This proves the dispatch path is reached and the engine is correctly identified.

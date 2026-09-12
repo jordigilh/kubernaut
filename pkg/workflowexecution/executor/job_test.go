@@ -256,7 +256,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		// BR-WE-019 / DD-WE-008: the "workflow" container's resource requests
 		// and limits come from WFE.Spec.WorkflowRef.Resources, the immutable
 		// CRD-embedded snapshot (Issue #1661 Change 11f).
-		It("UT-WE-054-JOB-021 [BR-WE-019]: should apply WFE.Spec.WorkflowRef.Resources to the workflow container", func() {
+		It("UT-WE-2390-001 [BR-WE-019]: should apply WFE.Spec.WorkflowRef.Resources to the workflow container", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
@@ -528,7 +528,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		// surfaces only via the Job's Pod events (kubelet-emitted FailedMount /
 		// CreateContainerConfigError). GetStatus must inspect these and enrich
 		// the generic Job condition message with the specific missing resource.
-		It("UT-WE-054-JOB-018 [BR-WORKFLOW-008]: should enrich Failed message with FailedMount Pod event detail", func() {
+		It("UT-WE-2390-002 [BR-WORKFLOW-008]: should enrich Failed message with FailedMount Pod event detail", func() {
 			jobName := executor.ExecutionResourceName("default/deployment/dep-missing")
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},

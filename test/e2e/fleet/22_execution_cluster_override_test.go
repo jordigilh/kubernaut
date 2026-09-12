@@ -59,7 +59,7 @@ import (
 //
 // Authority: Issue #2326, DD-FLEET-008, BR-FLEET-004
 // FedRAMP: AC-6 (least privilege -- cluster-scoped workflow execution routing)
-var _ = Describe("E2E-FLEET-2326-001 [AC-6]: workflow-declared execution cluster overrides signal origin cluster (BR-FLEET-004)", Label("fleet"), func() {
+var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster overrides signal origin cluster (BR-FLEET-004)", Label("fleet"), func() {
 	It("should route WorkflowExecution to the workflow's declared execution cluster, not the signal's origin cluster", func() {
 		// Issue #54 dedup-fingerprint collision, recurring: the shared
 		// "memory-eater" fixture + "prod-west" is already claimed by
