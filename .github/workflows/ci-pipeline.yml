@@ -2178,6 +2178,7 @@ jobs:
             --set global.llmProfiles.primary.model=mock-model \
             --set global.llmProfiles.primary.endpoint="http://mock-llm.${RELEASE_NAMESPACE}.svc.cluster.local:8080" \
             --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
+            --set workflowexecution.config.execution.retainFailedExecutions=true \
             --timeout 180s
 
       - name: Wait for all chart-managed Deployments to become Available

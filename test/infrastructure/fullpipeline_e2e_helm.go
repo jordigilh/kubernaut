@@ -1008,6 +1008,9 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set", "global.llmProfiles.primary.model=mock-model",
 		"--set", "global.llmProfiles.primary.endpoint=http://mock-llm." + namespace + ".svc.cluster.local:8080",
 		"--set", "global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary",
+		// Retain failed execution resources so CI must-gather can collect the
+		// Job/PipelineRun diagnostics after an E2E failure.
+		"--set", "workflowexecution.config.execution.retainFailedExecutions=true",
 		// kubernautAgent.llmProfileRef is deliberately NOT set here -- it defaults
 		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
 		// Addendum 2), so this install exercises that default instead of shadowing

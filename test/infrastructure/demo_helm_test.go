@@ -181,6 +181,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 			"--set", "apifrontend.config.auth.issuerURL=https://keycloak:8443/realms/kubernaut-demo",
 			"--set", "networkPolicies.idp.port=8443",
 			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
+			"--set", "workflowexecution.config.execution.retainFailedExecutions=true",
 		))
 	})
 
