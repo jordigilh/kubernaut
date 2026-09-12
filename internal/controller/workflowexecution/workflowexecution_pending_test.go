@@ -45,7 +45,7 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		r = &WorkflowExecutionReconciler{}
+		r = &WorkflowExecutionReconciler{RetainFailedExecutions: true}
 
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -72,6 +72,7 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 			ConfigMaps: []models.ResourceDependency{{Name: "app-config"}},
 		}), "Dependencies must be converted from wfe.Spec.WorkflowRef.Dependencies, not fetched from the (forbidden) DS schema")
 		Expect(opts.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true, "NAMESPACE": true}))
+		Expect(opts.RetainFailedExecutions).To(BeTrue())
 	})
 
 	It("UT-WE-1661-006: builds nil CreateOptions.Dependencies when WorkflowRef.Dependencies is nil (no filtering, backward compatible)", func() {
