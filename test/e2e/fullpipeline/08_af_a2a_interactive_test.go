@@ -132,6 +132,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsConfig) })
 
 		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
+		turn1ContextID := "ctx-fp-int-1"
 		body := fpA2ATasksSend("fp-int-1",
 			"create interactive gitops-drift-2390 remediation for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
@@ -148,7 +149,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
 		By("Turn 2: investigate the remediation (blocks until KA investigation completes)")
-		body = fpA2ATasksSendWithTask("fp-int-2", taskID,
+		body = fpA2ATasksSendWithContext("fp-int-2", turn1ContextID, taskID,
 			"investigate the remediation")
 		resp2, err := fpA2AInvokeWithTimeout(body, 180*time.Second)
 		Expect(err).NotTo(HaveOccurred())
@@ -160,7 +161,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		GinkgoWriter.Printf("  Turn 2 — investigate OK\n")
 
 		By("Turn 3: discover available workflows")
-		body = fpA2ATasksSendWithTask("fp-int-3", taskID,
+		body = fpA2ATasksSendWithContext("fp-int-3", turn1ContextID, taskID,
 			"discover available workflows")
 		resp3, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
@@ -172,7 +173,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		GinkgoWriter.Printf("  Turn 3 — discover workflows OK\n")
 
 		By("Turn 4: select workflow")
-		body = fpA2ATasksSendWithTask("fp-int-4", taskID,
+		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
 			"select workflow gitops-drift-2390-v1")
 		resp4, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
@@ -184,7 +185,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		GinkgoWriter.Printf("  Turn 4 — select workflow OK\n")
 
 		By("Turn 5: watch remediation progress (blocks until terminal phase)")
-		body = fpA2ATasksSendWithTask("fp-int-5", taskID,
+		body = fpA2ATasksSendWithContext("fp-int-5", turn1ContextID, taskID,
 			"watch remediation progress")
 		resp5, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
