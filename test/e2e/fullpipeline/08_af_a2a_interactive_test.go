@@ -56,6 +56,9 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 	It("should complete 5-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]
 		Expect(targetNS).NotTo(BeEmpty(), "interactive namespace must be set by SynchronizedBeforeSuite")
+		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:production"]
+		Expect(ok).To(BeTrue(), "E2E-FP-2390-001: GitOps workflow must be seeded")
+		Expect(gitOpsWorkflowUUID).NotTo(BeEmpty(), "E2E-FP-2390-001: GitOps workflow UUID must be populated")
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -213,6 +216,8 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 			}
 		}
 		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(gitOpsWorkflowUUID),
+			"E2E-FP-2390-001: GitOps workflow must be selected")
 		Expect(we.Spec.WorkflowRef.Dependencies).NotTo(BeNil(),
 			"E2E-FP-2390-001: selected GitOps workflow must declare dependencies")
 		// DD-WE-006 / FedRAMP AC-6 and AU-3: both declared dependency kinds must
