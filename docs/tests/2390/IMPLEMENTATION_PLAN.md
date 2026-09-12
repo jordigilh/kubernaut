@@ -310,6 +310,7 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 - `IT-RO-2390-001`: RO creates WFE with dependencies, resources, declared parameters, service account, and declared cluster routing.
 - `IT-RO-2390-002`: RO passes engine configuration into `WorkflowRef`.
 - `IT-WE-2390-001`: WE creates a Job with the declared Secret/ConfigMap mounts, resource requirements, and filtered environment.
+- `IT-WE-2390-004`: WE creates a read-only ConfigMap-backed Job volume and mount from the declared ConfigMap dependency.
 - `IT-WE-2390-002`: missing dependency or metadata failure is observable without sensitive values.
 - `IT-WE-2390-003`: Ansible execution receives the propagated engine configuration.
 - `IT-AW-2390-001`: generated RemediationWorkflow CRD admission accepts the metadata-rich Job, Tekton, and Ansible fixtures, including `execution.resources` only for Job.
@@ -341,6 +342,8 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 Implemented in the `fix/issue-2390-workflow-snapshot` branch:
 
 - `IT-WE-2390-001` now verifies dependency mounts, resources, service account, and declared-parameter filtering on a real Job.
+- `UT-WE-2390-001` verifies both dependency volume sources and read-only mounts in the Job builder.
+- `IT-WE-2390-004` verifies ConfigMap dependency propagation and read-only Job wiring through the controller path.
 - `IT-WE-2390-002` and `UT-WE-2390-002` cover observable missing-dependency diagnostics.
 - `IT-WE-2390-003` verifies Ansible `engineConfig` survives WFE persistence before dispatch classification.
 - `IT-AA-2390-001` verifies workflow identity, version, action type, bundle, engine, and selection timestamp persistence.

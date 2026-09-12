@@ -179,7 +179,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(envNames).To(ContainElement("TIMEOUT"))
 		})
 
-		It("UT-WE-054-JOB-003: should mount secret and configmap dependencies", func() {
+		It("UT-WE-2390-001 [DD-WE-006, AC-6]: should mount secret and configmap dependencies read-only", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
@@ -205,6 +205,10 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(volNames).To(ContainElement("secret-db-creds"))
 			Expect(volNames).To(ContainElement("configmap-app-config"))
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(And(
+				HaveField("Name", "configmap-app-config"),
+				HaveField("VolumeSource.ConfigMap.Name", "app-config"),
+			)), "ConfigMap volume must be backed by the declared resource")
 
 			mountPaths := make([]string, 0, len(job.Spec.Template.Spec.Containers[0].VolumeMounts))
 			for _, m := range job.Spec.Template.Spec.Containers[0].VolumeMounts {
@@ -212,6 +216,14 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(mountPaths).To(ContainElement(ContainSubstring("secrets/db-creds")))
 			Expect(mountPaths).To(ContainElement(ContainSubstring("configmaps/app-config")))
+			Expect(job.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "secret-db-creds"),
+				HaveField("ReadOnly", true),
+			)), "Secret dependency must be mounted read-only")
+			Expect(job.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "configmap-app-config"),
+				HaveField("ReadOnly", true),
+			)), "ConfigMap dependency must be mounted read-only")
 		})
 
 		It("UT-WE-054-JOB-004: should propagate ClientFactory error", func() {

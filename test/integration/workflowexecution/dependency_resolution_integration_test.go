@@ -106,7 +106,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 				"IT-WE-2390-001: undeclared parameters must be filtered")
 		})
 
-		It("IT-WE-006-002: should mount configMap volumes when workflow declares configMap dependencies", func() {
+		It("IT-WE-2390-004 [DD-WE-006, AC-6]: should mount ConfigMap volumes when workflow declares ConfigMap dependencies", func() {
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "it-remediation-config-002",
@@ -133,6 +133,10 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
 				HaveField("Name", "configmap-it-remediation-config-002"),
 			), "Job should have a volume for the declared configMap")
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(And(
+				HaveField("Name", "configmap-it-remediation-config-002"),
+				HaveField("VolumeSource.ConfigMap.Name", "it-remediation-config-002"),
+			)), "Job volume must be backed by the declared ConfigMap")
 
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.VolumeMounts).To(ContainElement(And(
