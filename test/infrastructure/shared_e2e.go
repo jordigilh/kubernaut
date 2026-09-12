@@ -757,6 +757,17 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// invalid_workflow (silently, unless the caller strictly asserts on
 	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
 	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
+	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
+	afGitOpsSelectScenarioYAML := fmt.Sprintf(`      - name: "af_select_gitops_workflow_2390"
+        keywords: ["select the discovered GitOps workflow"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            workflow_id: "%s"
+`, afGitOpsWorkflowID)
 	// #1853 mode 2/3 and #1899 consent-gate scenarios are registered before
 	// af_investigate below: all of their keywords contain the substring
 	// "investigate", and mock-llm's registry breaks confidence ties (all
@@ -765,6 +776,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
+		afGitOpsSelectScenarioYAML +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +

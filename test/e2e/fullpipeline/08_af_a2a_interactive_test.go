@@ -174,7 +174,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 
 		By("Turn 4: select workflow")
 		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
-			"select workflow gitops-drift-2390-v1")
+			"select the discovered GitOps workflow")
 		resp4, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
