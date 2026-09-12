@@ -695,6 +695,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.ansible.tokenSecretRef.name` | string | Secret name | `` | Yes |
 | `config.ansible.tokenSecretRef.namespace` | string | Namespace of the Secret (empty = release namespace) | `""` | No |
 | `config.execution.cooldownPeriod` | string | Cooldown between workflow executions | `"1m"` | No |
+| `config.execution.failedExecutionRetentionSeconds` | integer | Maximum failed execution resource retention period in seconds | `600` | No |
+| `config.execution.retainFailedExecutions` | boolean | Retain failed execution resources for bounded diagnosis | `false` | No |
 | `config.tekton.enabled` | boolean | true or omit = auto-discover CRDs; false = disable Tekton engine | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `debug.pprofEnabled` | boolean | Enables the /debug/pprof/* endpoints (net/http/pprof) on the service's health listener, or a dedicated :6060 pprof listener for controller-runtime-managed services. Defaults to false -- an operator must explicitly opt in. | `false` | No |

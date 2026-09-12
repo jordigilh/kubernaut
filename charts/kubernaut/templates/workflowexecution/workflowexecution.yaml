@@ -209,6 +209,8 @@ controller:
 execution:
   namespace: {{ include "kubernaut.workflowNamespace" . }}
   cooldownPeriod: {{ $v.config.execution.cooldownPeriod }}
+  retainFailedExecutions: {{ $v.config.execution.retainFailedExecutions | default false }}
+  failedExecutionRetentionSeconds: {{ $v.config.execution.failedExecutionRetentionSeconds | default 600 }}
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"

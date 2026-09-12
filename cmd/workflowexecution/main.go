@@ -132,6 +132,8 @@ func setupWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLe
 	setupLog.Info("WorkflowExecution controller configuration",
 		"executionNamespace", cfg.Execution.Namespace,
 		"cooldownPeriod", cfg.Execution.CooldownPeriod,
+		"retainFailedExecutions", cfg.Execution.RetainFailedExecutions,
+		"failedExecutionRetention", cfg.Execution.FailedExecutionRetention(),
 		"metricsAddr", cfg.Controller.MetricsAddr,
 		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
 		"dataStorageURL", cfg.DataStorage.URL,
@@ -275,14 +277,16 @@ func run() int {
 	// directly from WorkflowExecution.Spec.WorkflowRef's CRD-embedded
 	// execution snapshot instead of a DataStorage round-trip.
 	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
-		ExecutionNamespace: cfg.Execution.Namespace,
-		CooldownPeriod:     cfg.Execution.CooldownPeriod,
-		Metrics:            weMetrics,
-		StatusManager:      statusManager,
-		AuditStore:         auditStore,
-		PhaseManager:       phaseManager,
-		AuditManager:       auditManager,
-		ExecutorRegistry:   executorRegistry,
+		ExecutionNamespace:       cfg.Execution.Namespace,
+		CooldownPeriod:           cfg.Execution.CooldownPeriod,
+		RetainFailedExecutions:   cfg.Execution.RetainFailedExecutions,
+		FailedExecutionRetention: cfg.Execution.FailedExecutionRetention(),
+		Metrics:                  weMetrics,
+		StatusManager:            statusManager,
+		AuditStore:               auditStore,
+		PhaseManager:             phaseManager,
+		AuditManager:             auditManager,
+		ExecutorRegistry:         executorRegistry,
 	})
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
