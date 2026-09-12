@@ -677,6 +677,17 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
 		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
+	// Override the built-in GitOps selection scenario with the UUID assigned by
+	// the seeded catalog. The keyword scenario below is also registered for the
+	// A2A turn, but registry ties retain the earlier built-in scenario.
+	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
+	scenariosYAML += fmt.Sprintf(`      af_select_gitops_workflow_2390:
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            workflow_id: "%s"
+`, afGitOpsWorkflowID)
 	scenariosYAML += fmt.Sprintf("      injection_configmap_read:\n"+
 		"        force_text: false\n"+
 		"        tool_call:\n"+
@@ -757,7 +768,6 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// invalid_workflow (silently, unless the caller strictly asserts on
 	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
 	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
-	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
 	// This phrase is also used by the generic consent-gate scenario below.
 	// Register the GitOps-specific rule first so E2E-FP-2390 selects the
 	// workflow whose snapshot contains the dependency and resource assertions.
