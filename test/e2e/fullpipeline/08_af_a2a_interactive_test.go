@@ -134,7 +134,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
 		turn1ContextID := "ctx-fp-int-1"
 		body := fpA2ATasksSend("fp-int-1",
-			"create interactive gitops-drift-2390 remediation for deployment memory-eater")
+			"create interactive GitOps remediation for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
