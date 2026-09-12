@@ -1,13 +1,13 @@
-# Implementation Plan: Interactive Workflow Snapshot Metadata Parity
+# Verification Report: Interactive Workflow Snapshot Metadata Parity
 
-> Ephemeral implementation plan for issue #2390. Replace with a verification report after implementation.
+> Implementation and verification record for issue #2390.
 
 **Plan Identifier**: IP-2390-v1
 **Feature**: Preserve catalog-authoritative workflow execution metadata through interactive KA selection.
 **Created**: 2026-09-11
 **Author**: Kubernaut maintainers
-**Status**: Draft
-**Branch**: `main`
+**Status**: Complete; E2E execution deferred to CI/CD
+**Branch**: `fix/issue-2390-workflow-snapshot`
 **Issue**: [#2390](https://github.com/jordigilh/kubernaut/issues/2390)
 
 **Business requirements**:
@@ -315,7 +315,7 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 
 ### E2E tests
 
-- `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Job mount, and completes the Git operation.
+- `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Job mount, and completes the Git operation. The existing standalone execution-cluster journey is separately tracked as `E2E-FP-2390-005`.
 - `E2E-WE-2390-002`: shared snapshot contract at the WorkflowExecution boundary, with Job-specific resource and ServiceAccount assertions.
 - `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace and PipelineRun dispatch assertions.
 - `E2E-WE-2390-004`: shared snapshot contract at the WorkflowExecution boundary, with Ansible `engineConfig` and AWX execution-reference assertions. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
@@ -332,6 +332,25 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 4. Implement complete interactive result mapping.
 5. Run CHECKPOINT W and affected unit/integration suites.
 6. Refactor duplicated AA snapshot mapping.
+
+## 10. Verification Status
+
+Implemented in the `fix/issue-2390-workflow-snapshot` branch:
+
+- `IT-WE-2390-001` now verifies dependency mounts, resources, service account, and declared-parameter filtering on a real Job.
+- `IT-WE-2390-002` and `UT-WE-2390-002` cover observable missing-dependency diagnostics.
+- `IT-WE-2390-003` verifies Ansible `engineConfig` survives WFE persistence before dispatch classification.
+- `IT-AA-2390-001` verifies workflow identity, version, action type, bundle, engine, and selection timestamp persistence.
+- `E2E-FP-2390-001` adds the dedicated interactive GitOps fixture and verifies the Secret mount.
+- `E2E-FLEET-2390-001` is wired to the existing workflow-declared-cluster journey.
+
+Validation completed:
+
+- `go build ./...`
+- Affected package compile checks and unit suites passed.
+- Engram diagnostics report no errors in changed source files.
+
+The full GitOps and fleet E2E suites are intentionally deferred to the CI/CD Kubernetes environment; the source, fixture, registration, and assertions are complete.
 7. Add sanitized diagnostics and test sensitive-value exclusion.
 8. Add the CRD admission matrix and run it before live E2E suites.
 9. Extend existing Job, Tekton, and Ansible E2E journeys with the shared snapshot assertions and engine-specific checks.
