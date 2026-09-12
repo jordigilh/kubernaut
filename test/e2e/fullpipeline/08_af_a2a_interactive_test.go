@@ -213,12 +213,16 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 			}
 		}
 		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+		Expect(we.Spec.WorkflowRef.Dependencies).NotTo(BeNil(),
+			"E2E-FP-2390-001: selected GitOps workflow must declare dependencies")
 		// DD-WE-006 / FedRAMP AC-6 and AU-3: both declared dependency kinds must
 		// survive catalog selection as attributable, least-privilege inputs.
 		Expect(we.Spec.WorkflowRef.Dependencies.Secrets).To(ContainElement(HaveField("Name", "gitea-repo-creds")),
 			"E2E-FP-2390-001: gitea-repo-creds must survive interactive selection")
 		Expect(we.Spec.WorkflowRef.Dependencies.ConfigMaps).To(ContainElement(HaveField("Name", "gitea-repo-config")),
 			"E2E-FP-2390-002: gitea-repo-config must survive interactive selection")
+		Expect(we.Spec.WorkflowRef.Resources).NotTo(BeNil(),
+			"E2E-FP-2390-001: selected GitOps workflow must declare resources")
 		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")),
 			"E2E-FP-2390-001: catalog resources must survive interactive selection")
 		jobs := &batchv1.JobList{}
