@@ -18,6 +18,8 @@ spec:
   dependencies:
     secrets:
       - name: gitea-repo-creds
+    configMaps:
+      - name: gitea-repo-config
   execution:
     engine: job
     bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395

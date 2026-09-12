@@ -121,6 +121,16 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		}
 		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsSecret) })
 
+		By("Creating the GitOps repository configuration dependency")
+		gitOpsConfig := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-config", Namespace: namespace},
+			Data:       map[string]string{"repository": "http://gitea.test/gitops/remediation.git"},
+		}
+		if err := k8sClient.Create(ctx, gitOpsConfig); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsConfig) })
+
 		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
 		body := fpA2ATasksSend("fp-int-1",
 			"create interactive gitops-drift-2390 remediation for deployment memory-eater")
@@ -202,8 +212,12 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 			}
 		}
 		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+		// DD-WE-006 / FedRAMP AC-6 and AU-3: both declared dependency kinds must
+		// survive catalog selection as attributable, least-privilege inputs.
 		Expect(we.Spec.WorkflowRef.Dependencies.Secrets).To(ContainElement(HaveField("Name", "gitea-repo-creds")),
 			"E2E-FP-2390-001: gitea-repo-creds must survive interactive selection")
+		Expect(we.Spec.WorkflowRef.Dependencies.ConfigMaps).To(ContainElement(HaveField("Name", "gitea-repo-config")),
+			"E2E-FP-2390-002: gitea-repo-config must survive interactive selection")
 		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")),
 			"E2E-FP-2390-001: catalog resources must survive interactive selection")
 		jobs := &batchv1.JobList{}
@@ -217,6 +231,20 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		Expect(jobs.Items[0].Spec.Template.Spec.Volumes).To(ContainElement(
 			HaveField("Name", "secret-gitea-repo-creds")),
 			"E2E-FP-2390-001: Job must mount gitea-repo-creds")
+		Expect(jobs.Items[0].Spec.Template.Spec.Volumes).To(ContainElement(And(
+			HaveField("Name", "configmap-gitea-repo-config"),
+			HaveField("VolumeSource.ConfigMap.Name", "gitea-repo-config"),
+		)), "E2E-FP-2390-002: Job must mount gitea-repo-config")
+		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "secret-gitea-repo-creds"),
+			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
+			HaveField("ReadOnly", BeTrue()),
+		)), "E2E-FP-2390-003: Secret dependency must be mounted read-only")
+		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "configmap-gitea-repo-config"),
+			HaveField("MountPath", "/run/kubernaut/configmaps/gitea-repo-config"),
+			HaveField("ReadOnly", BeTrue()),
+		)), "E2E-FP-2390-003: ConfigMap dependency must be mounted read-only")
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),

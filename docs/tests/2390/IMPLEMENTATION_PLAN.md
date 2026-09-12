@@ -60,6 +60,7 @@ Affected objects:
 Live catalog metadata included:
 
 - `dependencies.secrets: gitea-repo-creds`
+- `dependencies.configMaps: gitea-repo-config`
 - `execution.clusterId: hub`
 - `execution.engine: job`
 - `execution.serviceAccountName: git-revert-v2-runner`
@@ -315,7 +316,9 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 
 ### E2E tests
 
-- `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Job mount, and completes the Git operation. The existing standalone execution-cluster journey is separately tracked as `E2E-FP-2390-005`.
+- `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Secret mount, and completes the Git operation.
+- `E2E-FP-2390-002`: the same journey preserves `gitea-repo-config` and creates the correct ConfigMap-backed Job volume and mount.
+- `E2E-FP-2390-003`: both dependency mounts are read-only, satisfying the least-privilege verification objective. The existing standalone execution-cluster journey is separately tracked as `E2E-FP-2390-005`.
 - `E2E-WE-2390-002`: shared snapshot contract at the WorkflowExecution boundary, with Job-specific resource and ServiceAccount assertions.
 - `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace and PipelineRun dispatch assertions.
 - `E2E-WE-2390-004`: shared snapshot contract at the WorkflowExecution boundary, with Ansible `engineConfig` and AWX execution-reference assertions. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
@@ -341,7 +344,7 @@ Implemented in the `fix/issue-2390-workflow-snapshot` branch:
 - `IT-WE-2390-002` and `UT-WE-2390-002` cover observable missing-dependency diagnostics.
 - `IT-WE-2390-003` verifies Ansible `engineConfig` survives WFE persistence before dispatch classification.
 - `IT-AA-2390-001` verifies workflow identity, version, action type, bundle, engine, and selection timestamp persistence.
-- `E2E-FP-2390-001` adds the dedicated interactive GitOps fixture and verifies the Secret mount.
+- `E2E-FP-2390-001/002/003` adds the dedicated interactive GitOps fixture and verifies both dependency kinds, their Job backing sources, and read-only mounts.
 - `E2E-FLEET-2390-001` is wired to the existing workflow-declared-cluster journey.
 
 Validation completed:
@@ -361,7 +364,7 @@ The full GitOps and fleet E2E suites are intentionally deferred to the CI/CD Kub
 
 - All P0/P1 tests pass.
 - Interactive and autonomous paths produce equivalent catalog-authoritative snapshots.
-- `gitea-repo-creds` reaches the generated Job as a read-only mount.
+- `gitea-repo-creds` and `gitea-repo-config` reach the generated Job as read-only mounts.
 - `WorkflowExecution.spec.clusterId` follows the workflow declaration when present and preserves the existing fallback when absent.
 - Declared parameters are enforced without conflating nil and empty metadata.
 - `engineConfig` reaches Ansible through the complete chain.
