@@ -52,20 +52,23 @@ func oomkilledScenario() *configScenario {
 	highConfidencePatterns := []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}
 	return &configScenario{
 		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			signal := extractSignal(ctx)
-			if signal == "" {
-				return false, 0
-			}
-			for _, p := range highConfidencePatterns {
-				if strings.Contains(signal, p) {
-					return true, 0.8
+		selector: ScenarioSelector{
+			SignalPatterns: highConfidencePatterns,
+			CustomMatch: func(ctx *DetectionContext) (bool, float64) {
+				signal := extractSignal(ctx)
+				if signal == "" {
+					return false, 0
 				}
-			}
-			if strings.Contains(signal, "backoff") {
-				return true, 0.5
-			}
-			return false, 0
+				for _, p := range highConfidencePatterns {
+					if strings.Contains(signal, p) {
+						return true, 0.8
+					}
+				}
+				if strings.Contains(signal, "backoff") {
+					return true, 0.5
+				}
+				return false, 0
+			},
 		},
 	}
 }

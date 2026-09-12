@@ -27,10 +27,16 @@ const transcriptConfidence = 1.05
 type transcriptScenario struct {
 	name  string
 	steps []config.TranscriptStepOverride
+	scope ScenarioScope
 }
 
 func newTranscriptScenario(override config.TranscriptScenarioOverride) *transcriptScenario {
-	return &transcriptScenario{name: override.Name, steps: override.Steps}
+	caller := Caller(override.Caller)
+	return &transcriptScenario{
+		name:  override.Name,
+		steps: override.Steps,
+		scope: ScenarioScope{Caller: caller, Phase: Phase(override.Phase)},
+	}
 }
 
 func (s *transcriptScenario) Name() string { return s.name }
@@ -46,6 +52,8 @@ func (s *transcriptScenario) Metadata() ScenarioMetadata {
 	return ScenarioMetadata{
 		Name:        s.name,
 		Description: "explicit A2A transcript scenario",
+		Caller:      s.scope.Caller,
+		Phase:       s.scope.Phase,
 	}
 }
 

@@ -186,7 +186,7 @@ subjects:
 	return nil
 }
 
-// fleetClusterIDScenarioYAML returns a keyword_scenarios YAML fragment for
+// fleetClusterIDScenarioYAML returns a scenario_selectors YAML fragment for
 // E2E-AF-1409-001 (#1409, ADR-065): a single-turn conversation where
 // kubernaut_remediate (LLM-supplied cluster_id, creates the RR) is chained
 // via NextToolCall into kubernaut_present_decision (no cluster_id of its
@@ -283,7 +283,7 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 // Turn 1's keyword deliberately avoids the substring "investigate" so it
 // can never tie with the generic "af_investigate" scenario registered
 // below (mock-llm's registry breaks same-confidence ties by registration
-// order; both keyword_scenarios would otherwise score 1.0).
+// order; both selector scenarios would otherwise score 1.0).
 //
 // The message scenario's repeat_tool_call: true is mandatory, not
 // optional (mirrors af_investigate's own repeat_tool_call below, same
@@ -704,7 +704,7 @@ func resolveWorkflowUUID(workflowUUIDs map[string]string, workflowName string) s
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
 // afRemediateNS controls per-test namespace isolation for the mock-LLM's
-// kubernaut_remediate keyword scenarios. Each map entry generates a distinct
+// kubernaut_remediate selector scenario. Each map entry generates a distinct
 // scenario with keyword "<key> remediation" targeting the given namespace.
 // For example {"autonomous": "fp-auto-abc"} produces a scenario named
 // "kubernaut_remediate_autonomous" that matches the keyword "autonomous remediation"
@@ -754,7 +754,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		"              name: api-server-abc\n" +
 		"              namespace: production\n"
 
-	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
+	// Issue #1189: Append AF scenario selectors with match_last_only so the FP
 	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
 	// Tool schemas updated for #1326 MCP migration and #1332 intent-based redesign:
 	// kubernaut_remediate creates RR; kubernaut_investigate accepts {rr_id}.
@@ -823,9 +823,9 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// #1853 mode 2/3 and #1899 consent-gate scenarios are registered before
 	// af_investigate below: all of their keywords contain the substring
 	// "investigate", and mock-llm's registry breaks confidence ties (all
-	// keyword_scenarios score 1.0) by registration order, so these must
+	// selector scenarios score 1.0) by registration order, so these must
 	// come first to win over the bare "investigate" keyword.
-	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios +
+	afKeywordYAML := "scenario_selectors:\n" + remediateScenarios +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
 		afGitOpsSelectScenarioYAML +
@@ -834,6 +834,8 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
 		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"
+        caller: "af"
+        phase: "investigation"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         repeat_tool_call: true
@@ -898,7 +900,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       # doc comments). Keyword phrasing is deliberately non-overlapping with
       # "discover available workflows"/"discover workflows" and "watch
       # remediation"/"watch pipeline"/"watch progress": mock-llm's registry
-      # breaks confidence ties (all keyword_scenarios score 1.0) by
+      # breaks confidence ties (all selector scenarios score 1.0) by
       # registration order, so a phrase that's a superset of an
       # earlier-registered keyword would silently resolve to the wrong
       # scenario instead of failing loudly.

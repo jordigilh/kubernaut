@@ -15,11 +15,7 @@ limitations under the License.
 */
 package scenarios
 
-import (
-	"strings"
-
-	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
-)
+import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 
 func testSignalConfig() MockScenarioConfig {
 	return MockScenarioConfig{
@@ -37,14 +33,8 @@ func testSignalConfig() MockScenarioConfig {
 
 func testSignalScenario() *configScenario {
 	cfg := testSignalConfig()
-	return &configScenario{
-		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			lower := strings.ToLower(ctx.Content)
-			if strings.Contains(lower, "testsignal") || strings.Contains(lower, "test signal") {
-				return true, 0.95
-			}
-			return false, 0
-		},
-	}
+	return newSelectorScenario(cfg.ScenarioName, ScenarioSelector{
+		Keywords:   []string{"testsignal", "test signal"},
+		Confidence: 0.95,
+	}, cfg)
 }

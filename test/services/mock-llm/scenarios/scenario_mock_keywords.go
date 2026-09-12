@@ -130,7 +130,7 @@ func notActionableConfig() MockScenarioConfig {
 //
 // Unlike notActionableConfig (registered via the free-text "mock_not_actionable"
 // keyword in registry_default.go, matched broadly against ctx.Content+ctx.AllText),
-// this scenario is registered via signalScenario, which only inspects
+// this scenario is registered via a signal selector, which only inspects
 // ctx.Content -- the fixed last-user-text of a single Gemini request, never
 // the accumulated allText that folds in prior turns' function responses/args
 // (see response.ExtractTextFromContents). This distinction matters because
@@ -142,7 +142,7 @@ func notActionableConfig() MockScenarioConfig {
 // exactly as empirically confirmed happening with notActionableConfig's
 // "mock_not_actionable" keyword during E2E-FP-1918-001 development. Grounding
 // this scenario via a real K8s Event Reason (deriveSignalName's Tier 3a) and
-// matching only via signalScenario keeps it safe: KA's own investigation
+// matching only via the signal selector keeps it safe: KA's own investigation
 // prompt literally renders "Signal Name: <value>" (see
 // incident_investigation.tmpl) which extractSignal's regex picks up from
 // ctx.Content, while AF's own conversation content never contains that
@@ -165,7 +165,7 @@ func notActionableGroundedConfig() MockScenarioConfig {
 // reinvocation after a session-terminal tool; #2265 tracks a CI flake where
 // this test's "no WorkflowExecution is ever created" assertion had no
 // deterministic backstop). Mirrors notActionableGroundedConfig's pattern
-// exactly (same grounding mechanism, same signalScenario-only matching, same
+// exactly (same grounding mechanism, same signal-selector-only matching, same
 // leak-avoidance rationale -- see that config's doc comment) with a distinct
 // SignalName/ScenarioName so the two tests can't collide. Without this, the
 // RR created by E2E-FP-1912-001's kubernaut_remediate call (no synthetic

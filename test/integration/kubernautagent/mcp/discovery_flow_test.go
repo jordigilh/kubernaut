@@ -47,7 +47,7 @@ import (
 
 // discoverySignalResolver returns a signal context that triggers the oomkilled
 // scenario in the real Mock LLM container. The Phase 3 prompt template emits
-// "Signal Name: OOMKilled" which the Mock LLM's signalScenario matcher detects.
+// "Signal Name: OOMKilled" which the Mock LLM's signal selector detects.
 type discoverySignalResolver struct{}
 
 func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {

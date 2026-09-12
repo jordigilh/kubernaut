@@ -486,7 +486,7 @@ data:
 // wait for the rollout to complete. Shared by UpdateMockLLMConfigMap and by
 // SetupFleetE2EInfrastructure's post-hoc re-deploy for a fleet-only workflow
 // fixture (Issue #2326, DD-FLEET-008) added after the initial Mock LLM
-// ConfigMap (which already carries AF's keyword_scenarios block) was
+// ConfigMap (which already carries AF's scenario_selectors block) was
 // written by DeployMockLLMInNamespace.
 func restartMockLLMDeployment(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")

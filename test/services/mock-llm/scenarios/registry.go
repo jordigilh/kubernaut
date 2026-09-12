@@ -39,6 +39,8 @@ type ScenarioMetadata struct {
 	IsProactive    bool
 	SignalPatterns []string
 	Keywords       []string
+	Caller         Caller
+	Phase          Phase
 }
 
 // DetectionResult captures which scenario matched and how.
@@ -87,6 +89,9 @@ func (r *Registry) Detect(ctx *DetectionContext) *DetectionResult {
 	var best *DetectionResult
 
 	for _, s := range r.scenarios {
+		if !s.Metadata().Matches(ctx) {
+			continue
+		}
 		matched, confidence := s.Match(ctx)
 		if !matched {
 			continue

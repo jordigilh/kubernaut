@@ -15,11 +15,7 @@ limitations under the License.
 */
 package scenarios
 
-import (
-	"strings"
-
-	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
-)
+import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 
 func oomkilledPredictiveConfig() MockScenarioConfig {
 	return MockScenarioConfig{
@@ -51,34 +47,18 @@ func predictiveNoActionConfig() MockScenarioConfig {
 
 func predictiveNoActionScenario() *configScenario {
 	cfg := predictiveNoActionConfig()
-	return &configScenario{
-		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			if !isProactive(ctx) {
-				return false, 0
-			}
-			lower := strings.ToLower(ctx.Content + " " + ctx.AllText)
-			if strings.Contains(lower, "predictive_no_action") || strings.Contains(lower, "mock_predictive_no_action") {
-				return true, 0.98
-			}
-			return false, 0
-		},
-	}
+	return newSelectorScenario(cfg.ScenarioName, ScenarioSelector{
+		Keywords:         []string{"predictive_no_action", "mock_predictive_no_action"},
+		RequireProactive: true,
+		Confidence:       0.98,
+	}, cfg)
 }
 
 func oomkilledPredictiveScenario() *configScenario {
 	cfg := oomkilledPredictiveConfig()
-	return &configScenario{
-		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			if !isProactive(ctx) {
-				return false, 0
-			}
-			signal := extractSignal(ctx)
-			if strings.Contains(signal, "oomkilled") || strings.Contains(signal, "oomkill") {
-				return true, 0.96
-			}
-			return false, 0
-		},
-	}
+	return newSelectorScenario(cfg.ScenarioName, ScenarioSelector{
+		SignalPatterns:   []string{"oomkilled", "oomkill"},
+		RequireProactive: true,
+		Confidence:       0.96,
+	}, cfg)
 }
