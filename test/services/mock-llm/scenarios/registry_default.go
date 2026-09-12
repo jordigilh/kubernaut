@@ -260,6 +260,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("standalone_exec_cluster_id_2378", []string{"standaloneexecutioncluster2378"}, standaloneExecClusterIDConfig()))
 
 	// E2E-FP-2390-001: interactive GitOps workflow snapshot parity.
+	r.Register(lastUserKeywordScenarioMulti("af_select_gitops_workflow_2390", []string{"select the discovered GitOps workflow"}, gitopsSelectWorkflow2390Config()))
 	r.Register(mockKeywordScenario("gitops_drift_2390", "gitops-drift-2390", gitopsDrift2390Config()))
 
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).

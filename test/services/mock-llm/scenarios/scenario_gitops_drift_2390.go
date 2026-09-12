@@ -18,6 +18,19 @@ package scenarios
 
 import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 
+// gitopsSelectWorkflow2390Config drives the explicit workflow-selection turn
+// in the Issue #2390 A2A journey. It is registered before broad AF keyword
+// scenarios so prior-turn remediation text cannot select the generic workflow.
+func gitopsSelectWorkflow2390Config() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName:   "af_select_gitops_workflow_2390",
+		ToolCallName:   "kubernaut_select_workflow",
+		ToolCallArgs:   map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id", "workflow_id": uuid.DeterministicUUID("gitops-drift-2390-v1")},
+		ForceText:      BoolPtr(false),
+		RepeatToolCall: true,
+	}
+}
+
 // gitopsDrift2390Config backs the interactive GitOps snapshot journey. The
 // catalog, not the mock response, supplies dependencies and execution policy.
 func gitopsDrift2390Config() MockScenarioConfig {
