@@ -147,6 +147,20 @@ type ExecutionConfig struct {
 
 	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
 	CooldownPeriod time.Duration `yaml:"cooldownPeriod" validate:"required,gt=0"`
+
+	// RetainFailedExecutions keeps failed execution resources available for
+	// bounded diagnosis (BR-WE-019, FedRAMP AU-11). Default is disabled.
+	RetainFailedExecutions bool `yaml:"retainFailedExecutions"`
+
+	// FailedExecutionRetentionSeconds is the bounded failed-resource retention
+	// period. It is validated when retention is enabled.
+	FailedExecutionRetentionSeconds int64 `yaml:"failedExecutionRetentionSeconds" validate:"gte=0,lte=604800"`
+}
+
+// FailedExecutionRetention returns the configured failed-resource retention
+// period (BR-WE-019, FedRAMP AU-11).
+func (c ExecutionConfig) FailedExecutionRetention() time.Duration {
+	return time.Duration(c.FailedExecutionRetentionSeconds) * time.Second
 }
 
 // ControllerConfig holds controller runtime settings.
@@ -176,8 +190,9 @@ type ControllerConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Execution: ExecutionConfig{
-			Namespace:      "kubernaut-workflows",
-			CooldownPeriod: 5 * time.Minute,
+			Namespace:                       "kubernaut-workflows",
+			CooldownPeriod:                  5 * time.Minute,
+			FailedExecutionRetentionSeconds: 600,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Logging:     sharedconfig.DefaultLoggingConfig(),
@@ -239,6 +254,9 @@ func (c *Config) Validate() error {
 	validate := validator.New()
 	if err := validate.Struct(c); err != nil {
 		return err
+	}
+	if c.Execution.RetainFailedExecutions && c.Execution.FailedExecutionRetentionSeconds <= 0 {
+		return fmt.Errorf("failed execution retention seconds must be positive when retention is enabled")
 	}
 	// DataStorage uses shared validation (ADR-030)
 	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {

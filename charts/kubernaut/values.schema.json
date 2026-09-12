@@ -2005,6 +2005,18 @@
                   ],
                   "default": "1m",
                   "description": "Cooldown between workflow executions"
+                },
+                "retainFailedExecutions": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Retain failed execution resources for bounded diagnosis"
+                },
+                "failedExecutionRetentionSeconds": {
+                  "type": "integer",
+                  "default": 600,
+                  "minimum": 0,
+                  "maximum": 604800,
+                  "description": "Maximum failed execution resource retention period in seconds"
                 }
               }
             },
