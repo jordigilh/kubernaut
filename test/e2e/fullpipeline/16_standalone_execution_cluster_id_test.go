@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// E2E-FP-2390-001 proves that catalog-declared execution metadata survives the
+// E2E-FP-2390-005 proves that catalog-declared execution metadata survives the
 // full selection path, while standalone WorkflowExecution dispatch remains on
 // the local Kubernetes client.
 var _ = Describe("Standalone catalog execution cluster [BR-FLEET-054]", func() {

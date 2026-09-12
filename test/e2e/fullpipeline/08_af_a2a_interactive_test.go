@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -34,7 +35,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// E2E-FP-1189-003: A2A Interactive 5-Phase — Simulates a multi-turn conversation
+// E2E-FP-2390-001 (extends E2E-FP-1189-003): A2A Interactive 5-Phase — Simulates a multi-turn conversation
 // where the user creates an RR, investigates, discovers workflows, selects one,
 // and watches the pipeline to completion.
 //
@@ -50,7 +51,7 @@ import (
 // Turn 3: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
 // Turn 4: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
 // Turn 5: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
-var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-1332"), func() {
+var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-1332", "issue-2390"), func() {
 
 	It("should complete 5-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]
@@ -110,9 +111,19 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
+		By("Creating the GitOps repository credential dependency")
+		gitOpsSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: namespace},
+			StringData: map[string]string{"username": "kubernaut", "password": "test-password"},
+		}
+		if err := k8sClient.Create(ctx, gitOpsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsSecret) })
+
 		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
 		body := fpA2ATasksSend("fp-int-1",
-			"create interactive remediation for deployment memory-eater")
+			"create interactive gitops-drift-2390 remediation for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -152,7 +163,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 
 		By("Turn 4: select workflow")
 		body = fpA2ATasksSendWithTask("fp-int-4", taskID,
-			"select workflow oomkill-increase-memory-v1")
+			"select workflow gitops-drift-2390-v1")
 		resp4, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
@@ -191,6 +202,21 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 			}
 		}
 		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+		Expect(we.Spec.WorkflowRef.Dependencies.Secrets).To(ContainElement(HaveField("Name", "gitea-repo-creds")),
+			"E2E-FP-2390-001: gitea-repo-creds must survive interactive selection")
+		Expect(we.Spec.WorkflowRef.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")),
+			"E2E-FP-2390-001: catalog resources must survive interactive selection")
+		jobs := &batchv1.JobList{}
+		Eventually(func() int {
+			if err := apiReader.List(ctx, jobs, client.InNamespace(namespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": we.Name}); err != nil {
+				return 0
+			}
+			return len(jobs.Items)
+		}, 30*time.Second, 2*time.Second).Should(Equal(1),
+			"E2E-FP-2390-001: selected GitOps workflow must create a Job")
+		Expect(jobs.Items[0].Spec.Template.Spec.Volumes).To(ContainElement(
+			HaveField("Name", "secret-gitea-repo-creds")),
+			"E2E-FP-2390-001: Job must mount gitea-repo-creds")
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
@@ -201,5 +227,6 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
 		GinkgoWriter.Printf("  [E2E-FP-1189-004] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
+
 	})
 })

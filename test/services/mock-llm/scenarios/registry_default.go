@@ -259,6 +259,9 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// execution cluster while retaining the metadata in WorkflowExecution.
 	r.Register(signalScenario("standalone_exec_cluster_id_2378", []string{"standaloneexecutioncluster2378"}, standaloneExecClusterIDConfig()))
 
+	// E2E-FP-2390-001: interactive GitOps workflow snapshot parity.
+	r.Register(mockKeywordScenario("gitops_drift_2390", "gitops-drift-2390", gitopsDrift2390Config()))
+
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())

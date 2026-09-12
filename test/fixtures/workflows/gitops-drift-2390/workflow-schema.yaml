@@ -1,0 +1,42 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: gitops-drift-2390-v1
+spec:
+  version: "1.0.0"
+  description:
+    what: "Applies the selected GitOps remediation bundle"
+    whenToUse: "When an interactive GitOps remediation is requested"
+    whenNotToUse: "When the target is not managed by the GitOps workflow"
+    preconditions: "The target Deployment is managed by the test GitOps repository"
+  actionType: IncreaseMemoryLimits
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, test]
+    component: [apps/v1/Deployment]
+    priority: "*"
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395
+    serviceAccountName: workflow-job-executor
+    resources:
+      requests:
+        cpu: 10m
+      limits:
+        memory: 64Mi
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
