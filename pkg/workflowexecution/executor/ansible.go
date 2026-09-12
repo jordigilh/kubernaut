@@ -766,13 +766,17 @@ func (a *AnsibleExecutor) GetStatus(
 	return MapAWXStatusToResult(status), nil
 }
 
-// Cleanup deletes ephemeral AWX credentials (if any) and cancels the AWX job.
+// Cleanup cancels the AWX job and deletes ephemeral credentials during WFE
+// finalization. Terminal failure retention uses CleanupEphemeralResources so
+// credentials do not outlive the retention policy.
 func (a *AnsibleExecutor) Cleanup(
 	ctx context.Context,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	namespace string,
 ) error {
-	a.cleanupEphemeralCredentials(ctx, wfe)
+	if err := a.CleanupEphemeralResources(ctx, wfe, namespace); err != nil {
+		a.Logger.Error(err, "Failed to cleanup ephemeral AWX credentials during cleanup")
+	}
 
 	if wfe.Status.ExecutionRef == nil {
 		return nil
@@ -796,6 +800,17 @@ func (a *AnsibleExecutor) Cleanup(
 		a.Logger.Error(err, "Failed to cancel AWX job during cleanup (best-effort, not blocking finalizer)", "jobID", jobID)
 	}
 
+	return nil
+}
+
+// CleanupEphemeralResources deletes AWX credentials created for a WFE while
+// leaving its execution job untouched (BR-WE-015, FedRAMP AU-9).
+func (a *AnsibleExecutor) CleanupEphemeralResources(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	_ string,
+) error {
+	a.cleanupEphemeralCredentials(ctx, wfe)
 	return nil
 }
 

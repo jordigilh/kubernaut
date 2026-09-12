@@ -179,6 +179,37 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(envNames).To(ContainElement("TIMEOUT"))
 		})
 
+		It("UT-WE-2392-JOB-001 [BR-WE-014, AU-11]: omits Kubernetes TTL when failed execution retention is enabled", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-retention-enabled", "default/deployment/api", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{
+				RetainFailedExecutions: true,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+			Expect(job.Spec.TTLSecondsAfterFinished).To(BeNil())
+		})
+
+		It("UT-WE-2392-JOB-002 [BR-WE-014]: preserves the existing TTL when retention is disabled", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-retention-disabled", "default/deployment/api", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+			Expect(job.Spec.TTLSecondsAfterFinished).ToNot(BeNil())
+			Expect(*job.Spec.TTLSecondsAfterFinished).To(Equal(int32(600)))
+		})
+
 		It("UT-WE-2390-001 [DD-WE-006, AC-6]: should mount secret and configmap dependencies read-only", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
