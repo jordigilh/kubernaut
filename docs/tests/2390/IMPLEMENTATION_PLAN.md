@@ -320,6 +320,8 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 - `E2E-FP-2390-001`: GitOps-drift interactive selection preserves `gitea-repo-creds`, creates the correct Secret mount, and completes the Git operation.
 - `E2E-FP-2390-002`: the same journey preserves `gitea-repo-config` and creates the correct ConfigMap-backed Job volume and mount.
 - `E2E-FP-2390-003`: both dependency mounts are read-only, satisfying the least-privilege verification objective. The existing standalone execution-cluster journey is separately tracked as `E2E-FP-2390-005`.
+- `E2E-WE-2390-005`: one Tekton PipelineRun binds both the declared Secret and ConfigMap workspaces.
+- `E2E-WE-2390-006`: one Ansible WFE carries both dependencies, creating an AWX credential for the Secret and ConfigMap `extra_vars` for the ConfigMap.
 - `E2E-WE-2390-002`: shared snapshot contract at the WorkflowExecution boundary, with Job-specific resource and ServiceAccount assertions.
 - `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace and PipelineRun dispatch assertions.
 - `E2E-WE-2390-004`: shared snapshot contract at the WorkflowExecution boundary, with Ansible `engineConfig` and AWX execution-reference assertions. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
