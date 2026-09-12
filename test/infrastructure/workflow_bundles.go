@@ -26,11 +26,11 @@ import (
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
 //
-// This implements the production-like workflow registration flow:
-// 1. Build Tekton Pipeline as OCI bundle (tkn bundle push)
-// 2. Load bundle OCI image into Kind cluster
-// 3. Register workflow in DataStorage (POST /api/v1/workflows)
-// 4. WorkflowExecution references the bundle via schema_image field
+// This implements the production-like workflow registration and execution flow:
+// 1. Use pre-built workflow schema and Tekton execution bundle references
+// 2. Register workflow schemas through the Kubernetes admission path
+// 3. WorkflowExecution references the execution bundle
+// 4. Tekton's bundle resolver pulls and runs the Pipeline from the OCI bundle
 //
 // **Design Pattern**: Mirrors production workflow authoring flow
 // - Operators author Tekton Pipelines and package as OCI bundles

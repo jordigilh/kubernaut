@@ -323,7 +323,7 @@ CHECKPOINT W fails if a component is only tested through a direct helper call, i
 - `E2E-WE-2390-005`: one Tekton PipelineRun binds both the declared Secret and ConfigMap workspaces.
 - `E2E-WE-2390-006`: one Ansible WFE carries both dependencies, creating an AWX credential for the Secret and ConfigMap `extra_vars` for the ConfigMap.
 - `E2E-WE-2390-002`: shared snapshot contract at the WorkflowExecution boundary, with Job-specific resource and ServiceAccount assertions.
-- `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace and PipelineRun dispatch assertions.
+- `E2E-WE-2390-003`: shared snapshot contract at the WorkflowExecution boundary, with Tekton dependency workspace assertions, exact bundle-resolver dispatch parameters, and a real `PipelineRun` reaching `Succeeded=True` before the WFE reaches `Completed`.
 - `E2E-WE-2390-004`: shared snapshot contract at the WorkflowExecution boundary, with Ansible `engineConfig` and AWX execution-reference assertions. Actual AWX completion remains covered by the existing Ansible E2E scenario where AWX is available.
 - `E2E-FLEET-2390-001`: a workflow-declared execution cluster remains catalog-authoritative and dispatches through the registered fleet gateway.
 - Regression: `E2E-WE-006-*` continues to prove dependency injection behavior.
@@ -350,6 +350,7 @@ Implemented in the `fix/issue-2390-workflow-snapshot` branch:
 - `IT-WE-2390-003` verifies Ansible `engineConfig` survives WFE persistence before dispatch classification.
 - `IT-AA-2390-001` verifies workflow identity, version, action type, bundle, engine, and selection timestamp persistence.
 - `E2E-FP-2390-001/002/003` adds the dedicated interactive GitOps fixture and verifies both dependency kinds, their Job backing sources, and read-only mounts.
+- `E2E-WE-2390-003` verifies that the live WFE-created PipelineRun uses the `bundles` resolver with the requested OCI bundle and reaches Tekton success before controller completion.
 - `E2E-FLEET-2390-001` is wired to the existing workflow-declared-cluster journey.
 
 Validation completed:

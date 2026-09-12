@@ -29,6 +29,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -101,8 +102,54 @@ var _ = Describe("E2E-WE-2390: cross-engine workflow snapshot metadata", Label("
 			}
 			return len(runs.Items)
 		}, 30*time.Second, 2*time.Second).Should(Equal(1))
-		Expect(runs.Items[0].Spec.Workspaces).To(ContainElement(
+
+		pipelineRun := runs.Items[0]
+		By("E2E-WE-2390-003: verifying the PipelineRun uses the Tekton bundle resolver")
+		Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil(), "PipelineRun should reference the resolved Pipeline")
+		Expect(pipelineRun.Spec.PipelineRef.Resolver).To(BeEquivalentTo("bundles"))
+		resolverParams := make(map[string]string, len(pipelineRun.Spec.PipelineRef.Params))
+		for _, param := range pipelineRun.Spec.PipelineRef.Params {
+			Expect(param.Value.Type).To(Equal(tektonv1.ParamTypeString),
+				"Tekton resolver parameter %q should be a string", param.Name)
+			resolverParams[param.Name] = param.Value.StringVal
+		}
+		Expect(resolverParams).To(Equal(map[string]string{
+			"bundle": wfe.Spec.WorkflowRef.ExecutionBundle,
+			"name":   "workflow",
+			"kind":   "pipeline",
+		}), "PipelineRun should resolve the Pipeline from the WFE execution bundle")
+
+		By("Verifying the WFE references the observed PipelineRun")
+		Eventually(func() string {
+			updated, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			if err != nil || updated == nil || updated.Status.ExecutionRef == nil {
+				return ""
+			}
+			return updated.Status.ExecutionRef.Name
+		}, 30*time.Second, 2*time.Second).Should(Equal(pipelineRun.Name))
+
+		Expect(pipelineRun.Spec.Workspaces).To(ContainElement(
 			HaveField("Name", "secret-e2e-dep-secret-tekton")))
+
+		By("E2E-WE-2390-003: waiting for Tekton PipelineRun success")
+		Eventually(func() bool {
+			var current tektonv1.PipelineRun
+			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(&pipelineRun), &current); err != nil {
+				return false
+			}
+			condition := current.Status.GetCondition(apis.ConditionSucceeded)
+			if condition == nil {
+				return false
+			}
+			GinkgoWriter.Printf("Tekton PipelineRun %s condition: %s (%s)\n",
+				current.Name, condition.Status, condition.Reason)
+			return condition.IsTrue()
+		}, 120*time.Second, 2*time.Second).Should(BeTrue(),
+			"Tekton PipelineRun should reach Succeeded=True")
+
+		By("E2E-WE-2390-003: verifying the controller maps Tekton success to WFE completion")
+		Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 30*time.Second, 2*time.Second).
+			Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 	})
 
 	It("E2E-WE-2390-004: preserves the common snapshot and Ansible engine configuration", func() {

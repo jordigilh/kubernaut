@@ -612,11 +612,6 @@ subjects:
 		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", result.name)
 	}
 
-	_, _ = fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
-	if err := CreateSimpleTestPipeline(ctx, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create test pipeline: %w", err)
-	}
-
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
 	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
@@ -1002,116 +997,6 @@ subjects:
 		return fmt.Errorf("failed to apply workflow-job-executor RBAC: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "  ✅ workflow-job-executor SA + RBAC created\n")
-	return nil
-}
-
-func CreateSimpleTestPipeline(ctx context.Context, kubeconfigPath string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "\n📝 Creating test pipelines (success + failure)...\n")
-
-	pipelineYAML := `
-apiVersion: tekton.dev/v1
-kind: Pipeline
-metadata:
-  name: test-hello-world
-  namespace: kubernaut-workflows
-spec:
-  params:
-    - name: TARGET_RESOURCE
-      type: string
-      description: Target resource being remediated
-    - name: MESSAGE
-      type: string
-      default: "Hello from Kubernaut!"
-  tasks:
-    - name: echo-hello
-      taskRef:
-        name: test-echo-task
-      params:
-        - name: message
-          value: $(params.MESSAGE)
----
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: test-echo-task
-  namespace: kubernaut-workflows
-spec:
-  params:
-    - name: message
-      type: string
-  steps:
-    - name: echo
-      image: registry.access.redhat.com/ubi10/ubi-minimal:latest
-      script: |
-        #!/bin/sh
-        echo "$(params.message)"
-        echo "Test task completed successfully"
-        sleep 2
----
-# Intentionally failing pipeline for BR-WE-004 failure details testing
-apiVersion: tekton.dev/v1
-kind: Pipeline
-metadata:
-  name: test-intentional-failure
-  namespace: kubernaut-workflows
-spec:
-  params:
-    - name: TARGET_RESOURCE
-      type: string
-      description: Target resource being remediated
-    - name: FAILURE_REASON
-      type: string
-      default: "Simulated failure for E2E testing"
-  tasks:
-    - name: fail-task
-      taskRef:
-        name: test-fail-task
-      params:
-        - name: reason
-          value: $(params.FAILURE_REASON)
----
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: test-fail-task
-  namespace: kubernaut-workflows
-spec:
-  params:
-    - name: reason
-      type: string
-  steps:
-    - name: fail
-      image: registry.access.redhat.com/ubi10/ubi-minimal:latest
-      script: |
-        #!/bin/sh
-        echo "Task will fail with reason: $(params.reason)"
-        echo "This is an intentional failure for BR-WE-004 E2E testing"
-        exit 1
-`
-
-	// Write to temp file and apply
-	tmpFile, err := os.CreateTemp("", "test-pipeline-*.yaml")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpFile.Name()) }()
-
-	if _, err := tmpFile.WriteString(pipelineYAML); err != nil {
-		return fmt.Errorf("failed to write pipeline YAML: %w", err)
-	}
-	_ = tmpFile.Close()
-
-	applyCmd := exec.CommandContext(ctx, "kubectl", "apply",
-		"-f", tmpFile.Name(),
-		"--kubeconfig", kubeconfigPath,
-	)
-	applyCmd.Stdout = output
-	applyCmd.Stderr = output
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to create test pipeline: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(output, "✅ Test pipeline created\n")
 	return nil
 }
 

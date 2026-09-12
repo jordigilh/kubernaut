@@ -111,6 +111,27 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
+		By("Grounding the interactive investigation with a synthetic GitOps signal event")
+		Expect(k8sClient.Create(ctx, &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "memory-eater-e2efp2390-gitops-",
+				Namespace:    targetNS,
+			},
+			InvolvedObject: corev1.ObjectReference{
+				Kind:       "Deployment",
+				Namespace:  targetNS,
+				Name:       "memory-eater",
+				APIVersion: "apps/v1",
+			},
+			Reason:         "GitOpsDrift2390",
+			Message:        "E2E-FP-2390-001: synthetic signal for the interactive GitOps workflow snapshot journey",
+			Type:           corev1.EventTypeWarning,
+			FirstTimestamp: metav1.Now(),
+			LastTimestamp:  metav1.Now(),
+			Count:          1,
+			Source:         corev1.EventSource{Component: "e2e-fp-2390-test"},
+		})).To(Succeed())
+
 		By("Creating the GitOps repository credential dependency")
 		gitOpsSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: namespace},
