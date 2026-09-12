@@ -33,12 +33,16 @@ spec:
     - name: TARGET_RESOURCE_NAME
       type: string
       required: true
+      description: "Name of the target Kubernetes resource"
     - name: TARGET_RESOURCE_KIND
       type: string
       required: true
+      description: "Kind of the target Kubernetes resource"
     - name: TARGET_RESOURCE_NAMESPACE
       type: string
       required: true
+      description: "Namespace containing the target Kubernetes resource"
     - name: MEMORY_LIMIT_NEW
       type: string
       required: true
+      description: "New memory limit to apply to the target resource"
