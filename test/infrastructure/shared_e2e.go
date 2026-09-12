@@ -413,6 +413,46 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string 
 `, ns, selectWorkflowID)
 }
 
+// gitOpsInteractiveInvestigationScenarioYAML returns the explicit transcript
+// for the Issue #2390 multi-turn journey. Starting with kubernaut_investigate
+// creates the interactive session before the RR becomes visible to backend
+// controllers, preventing autonomous workflow selection from racing the later
+// manual discover/select turns (DD-AA-KA-001 Gap 6, DD-TEST-016).
+func gitOpsInteractiveInvestigationScenarioYAML(ns, workflowID string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`transcript_scenarios:
+      - name: "af_gitops_interactive_2390"
+        steps:
+          - user: "investigate GitOps remediation for deployment memory-eater"
+            tool_call:
+              name: "kubernaut_investigate"
+              arguments:
+                namespace: "%s"
+                kind: "Deployment"
+                name: "memory-eater"
+                api_version: "apps/v1"
+                interaction_mode: "interactive"
+          - user: "discover available workflows"
+            tool_call:
+              name: "kubernaut_discover_workflows"
+              arguments:
+                rr_id: "$from_tool:kubernaut_investigate:rr_id"
+          - user: "select the discovered GitOps workflow"
+            tool_call:
+              name: "kubernaut_select_workflow"
+              arguments:
+                rr_id: "$from_tool:kubernaut_investigate:rr_id"
+                workflow_id: "%s"
+          - user: "watch remediation progress"
+            tool_call:
+              name: "kubernaut_watch"
+              arguments:
+                name: "$from_tool:kubernaut_investigate:rr_id"
+`, ns, workflowID)
+}
+
 // consentGatePhase2AttemptScenarioYAML returns a keyword scenario for
 // E2E-FP-1899-001 (DD-AF-011, issue #1899 Phase 1->2 consent gate): a single
 // message calls kubernaut_investigate directly on resource args (declaring
@@ -678,14 +718,13 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
 	// Override the built-in GitOps selection scenario with the UUID assigned by
-	// the seeded catalog. The keyword scenario below is also registered for the
-	// A2A turn, but registry ties retain the earlier built-in scenario.
+	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
 	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
 	scenariosYAML += fmt.Sprintf(`      af_select_gitops_workflow_2390:
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
-            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
             workflow_id: "%s"
 `, afGitOpsWorkflowID)
 	scenariosYAML += fmt.Sprintf("      injection_configmap_read:\n"+
@@ -778,7 +817,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
-            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
             workflow_id: "%s"
 `, afGitOpsWorkflowID)
 	// #1853 mode 2/3 and #1899 consent-gate scenarios are registered before
@@ -888,6 +927,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
 ` + fleetClusterIDScenarioYAML(afRemediateNS["fleet"]) + kaInteractiveFleetBridgeScenarioYAML()
+	afTranscriptYAML := gitOpsInteractiveInvestigationScenarioYAML(afRemediateNS["interactive"], afGitOpsWorkflowID)
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
@@ -901,7 +941,8 @@ data:
   scenarios.yaml: |
     %s
     %s
----`, namespace, scenariosYAML, afKeywordYAML)
+    %s
+---`, namespace, scenariosYAML, afKeywordYAML, afTranscriptYAML)
 
 	_, _ = fmt.Fprintf(writer, "   📦 Creating Mock LLM ConfigMap...\n")
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)

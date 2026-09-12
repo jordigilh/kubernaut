@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -90,11 +91,28 @@ type KeywordScenarioOverride struct {
 	NextToolCall   *ToolCallOverride `yaml:"next_tool_call,omitempty"`
 }
 
+// TranscriptStepOverride defines one exact user-turn/tool-call pair in an
+// explicit A2A conversation transcript. Unlike KeywordScenarioOverride, the
+// user message is matched as a complete, case-insensitive string.
+type TranscriptStepOverride struct {
+	User     string           `yaml:"user"`
+	ToolCall ToolCallOverride `yaml:"tool_call"`
+}
+
+// TranscriptScenarioOverride defines the ordered turns of one A2A journey.
+// Each step is selected from the current last user message, not accumulated
+// assistant text or prior tool-call arguments.
+type TranscriptScenarioOverride struct {
+	Name  string                   `yaml:"name"`
+	Steps []TranscriptStepOverride `yaml:"steps"`
+}
+
 // Overrides holds the parsed YAML override configuration.
 type Overrides struct {
-	Mode             string                      `yaml:"mode"`
-	Scenarios        map[string]ScenarioOverride `yaml:"scenarios"`
-	KeywordScenarios []KeywordScenarioOverride   `yaml:"keyword_scenarios,omitempty"`
+	Mode                string                       `yaml:"mode"`
+	Scenarios           map[string]ScenarioOverride  `yaml:"scenarios"`
+	KeywordScenarios    []KeywordScenarioOverride    `yaml:"keyword_scenarios,omitempty"`
+	TranscriptScenarios []TranscriptScenarioOverride `yaml:"transcript_scenarios,omitempty"`
 }
 
 // LoadYAMLOverrides reads a YAML overrides file. If the path is empty or the
@@ -121,6 +139,35 @@ func LoadYAMLOverrides(path string) (*Overrides, error) {
 	if o.Scenarios == nil {
 		o.Scenarios = map[string]ScenarioOverride{}
 	}
+	if err := validateTranscriptScenarios(o.TranscriptScenarios); err != nil {
+		return nil, err
+	}
 
 	return &o, nil
+}
+
+func validateTranscriptScenarios(transcripts []TranscriptScenarioOverride) error {
+	seen := make(map[string]struct{}, len(transcripts))
+	for _, transcript := range transcripts {
+		if strings.TrimSpace(transcript.Name) == "" {
+			return errors.New("transcript scenario name is required")
+		}
+		name := strings.ToLower(strings.TrimSpace(transcript.Name))
+		if _, exists := seen[name]; exists {
+			return errors.New("transcript scenario names must be unique")
+		}
+		seen[name] = struct{}{}
+		if len(transcript.Steps) == 0 {
+			return errors.New("transcript scenario must define at least one step")
+		}
+		for _, step := range transcript.Steps {
+			if strings.TrimSpace(step.User) == "" {
+				return errors.New("transcript step user message is required")
+			}
+			if strings.TrimSpace(step.ToolCall.Name) == "" {
+				return errors.New("transcript step tool call name is required")
+			}
+		}
+	}
+	return nil
 }

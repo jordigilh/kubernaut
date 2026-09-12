@@ -122,6 +122,10 @@ func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, wo
 func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registry {
 	r := defaultRegistryWithGoldenDir(goldenDir)
 	if overrides != nil {
+		for _, ts := range overrides.TranscriptScenarios {
+			r.Register(newTranscriptScenario(ts))
+		}
+
 		for _, s := range r.scenarios {
 			switch ts := s.(type) {
 			case *configScenario:

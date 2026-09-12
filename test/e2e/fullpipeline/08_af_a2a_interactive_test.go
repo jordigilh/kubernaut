@@ -35,25 +35,22 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// E2E-FP-2390-001 (extends E2E-FP-1189-003): A2A Interactive 5-Phase — Simulates a multi-turn conversation
-// where the user creates an RR, investigates, discovers workflows, selects one,
-// and watches the pipeline to completion.
+// E2E-FP-2390-001 (extends E2E-FP-1189-003): A2A Interactive four-turn
+// transcript - simulates a multi-turn conversation where the user starts a
+// fresh interactive investigation, discovers workflows, selects one, and
+// watches the pipeline to completion (DD-TEST-016).
 //
 // Namespace isolation: the RR targets a dedicated fp-a2a-interactive namespace
 // with a zero-replica deployment, keeping the fingerprint distinct from the
 // shared kubernaut-system memory-eater used by other FP tests.
 //
-// Issue #1332: Turn 1 now uses kubernaut_remediate
-// for autonomous RR creation. Turn 2 upgrades to interactive via kubernaut_investigate.
-//
-// Turn 1: "create a remediation request"   → kubernaut_remediate  (creates RR, no IS)
-// Turn 2: "investigate the remediation"    → kubernaut_investigate  (rr_id, blocks until complete)
-// Turn 3: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
-// Turn 4: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
-// Turn 5: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
-var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-1332", "issue-2390"), func() {
+// Turn 1: "investigate GitOps remediation" → kubernaut_investigate (creates RR+IS)
+// Turn 2: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
+// Turn 3: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
+// Turn 4: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
+var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-2390"), func() {
 
-	It("should complete 5-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
+	It("should complete 4-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]
 		Expect(targetNS).NotTo(BeEmpty(), "interactive namespace must be set by SynchronizedBeforeSuite")
 		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:production"]
@@ -134,10 +131,10 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		}
 		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), gitOpsConfig) })
 
-		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
+		By("Turn 1: investigate the remediation (kubernaut_investigate — creates an interactive RR)")
 		turn1ContextID := "ctx-fp-int-1"
 		body := fpA2ATasksSend("fp-int-1",
-			"create interactive remediation for GitOps deployment memory-eater")
+			"investigate GitOps remediation for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -151,21 +148,21 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		Expect(taskID).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
-		By("Turn 2: investigate the remediation (blocks until KA investigation completes)")
+		By("Turn 2: discover available workflows")
 		body = fpA2ATasksSendWithContext("fp-int-2", turn1ContextID, taskID,
-			"investigate the remediation")
-		resp2, err := fpA2AInvokeWithTimeout(body, 180*time.Second)
+			"discover available workflows")
+		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
 		Expect(resp2.StatusCode).To(Equal(http.StatusOK))
 		rpc, parseErr = fpParseRPC(resp2)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 2 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 2 — investigate OK\n")
+		GinkgoWriter.Printf("  Turn 2 — discover workflows OK\n")
 
-		By("Turn 3: discover available workflows")
+		By("Turn 3: select workflow")
 		body = fpA2ATasksSendWithContext("fp-int-3", turn1ContextID, taskID,
-			"discover available workflows")
+			"select the discovered GitOps workflow")
 		resp3, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()
@@ -173,31 +170,19 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-2390-001]", L
 		rpc, parseErr = fpParseRPC(resp3)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 3 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 3 — discover workflows OK\n")
+		GinkgoWriter.Printf("  Turn 3 — select workflow OK\n")
 
-		By("Turn 4: select workflow")
+		By("Turn 4: watch remediation progress (blocks until terminal phase)")
 		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
-			"select the discovered GitOps workflow")
-		resp4, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
+			"watch remediation progress")
+		resp4, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
 		Expect(resp4.StatusCode).To(Equal(http.StatusOK))
 		rpc, parseErr = fpParseRPC(resp4)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 4 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 4 — select workflow OK\n")
-
-		By("Turn 5: watch remediation progress (blocks until terminal phase)")
-		body = fpA2ATasksSendWithContext("fp-int-5", turn1ContextID, taskID,
-			"watch remediation progress")
-		resp5, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp5.Body.Close() }()
-		Expect(resp5.StatusCode).To(Equal(http.StatusOK))
-		rpc, parseErr = fpParseRPC(resp5)
-		Expect(parseErr).NotTo(HaveOccurred())
-		Expect(rpc.Error).To(BeNil(), "Turn 5 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 5 — watch OK\n")
+		GinkgoWriter.Printf("  Turn 4 — watch OK\n")
 
 		By("Verifying full pipeline completed")
 		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
