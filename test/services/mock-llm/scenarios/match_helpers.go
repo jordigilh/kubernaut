@@ -52,7 +52,7 @@ func lastUserKeywordScenarioMulti(name string, keywords []string, cfg MockScenar
 			}
 			target := strings.ToLower(ctx.LastUserContent)
 			for _, kw := range keywords {
-				if strings.Contains(target, kw) {
+				if strings.Contains(target, strings.ToLower(kw)) {
 					return true, 1.0
 				}
 			}
