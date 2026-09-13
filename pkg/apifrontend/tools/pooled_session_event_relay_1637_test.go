@@ -30,11 +30,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-// #1637 / DD-AF-009: WatchTerminalEvents must relay non-terminal events to
-// whichever pooled call's ctx is currently attached to the EventRelay, and
-// must preserve #1438's original idle/terminal-only behavior byte-for-byte
-// when no relay is attached (relay is nil, or relay.Current() is nil).
-var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
+// #1637 / DD-AF-015: WatchTerminalEvents publishes session events to every
+// explicitly registered subscriber, while preserving #1438's fallback when
+// no router is provided.
+var _ = Describe("WatchTerminalEvents session router — #1637", func() {
 
 	It("IT-AF-1637-004: relays a non-terminal event to the attached ctx's EventBridge", func() {
 		watchQueue := &bridgeQueue{}
@@ -43,9 +42,11 @@ var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
 		liveQueue := &bridgeQueue{}
 		liveCtx := launcher.WithEventBridge(context.Background(), liveQueue, "task-1637-004-live", "ctx-1637-004-live", nil)
 
-		relay := &ka.EventRelay{}
-		detach := relay.Attach(liveCtx)
-		defer detach()
+		router := ka.NewEventRouter()
+		unsubscribe := router.Subscribe(func(evt ka.InvestigationEvent) {
+			tools.EmitKAEventToA2A(liveCtx, evt)
+		})
+		defer unsubscribe()
 
 		events := make(chan ka.InvestigationEvent, 5)
 		done := make(chan struct{})
@@ -53,7 +54,7 @@ var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
 
 		exited := make(chan struct{})
 		go func() {
-			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-004", done, relay)
+			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-004", done, router)
 			close(exited)
 		}()
 
@@ -84,11 +85,11 @@ var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
 			"IT-AF-1637-004: relayed event must carry metadata.type=reasoning_content")
 	})
 
-	It("IT-AF-1637-004: idle (relay.Current() nil) drops non-terminal events exactly like #1438's original behavior", func() {
+	It("IT-AF-1637-004: idle (no router subscribers) drops non-terminal events exactly like #1438's original behavior", func() {
 		watchQueue := &bridgeQueue{}
 		watchCtx := launcher.WithEventBridge(context.Background(), watchQueue, "task-1637-005-watch", "ctx-1637-005-watch", nil)
 
-		relay := &ka.EventRelay{} // never attached — idle
+		router := ka.NewEventRouter() // no subscribers — idle
 
 		events := make(chan ka.InvestigationEvent, 5)
 		done := make(chan struct{})
@@ -96,7 +97,7 @@ var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
 
 		exited := make(chan struct{})
 		go func() {
-			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-005", done, relay)
+			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-005", done, router)
 			close(exited)
 		}()
 
@@ -143,16 +144,18 @@ var _ = Describe("WatchTerminalEvents live relay — #1637", func() {
 		liveQueue := &bridgeQueue{}
 		liveCtx := launcher.WithEventBridge(context.Background(), liveQueue, "task-1637-007-live", "ctx-1637-007-live", nil)
 
-		relay := &ka.EventRelay{}
-		detach := relay.Attach(liveCtx)
-		defer detach()
+		router := ka.NewEventRouter()
+		unsubscribe := router.Subscribe(func(evt ka.InvestigationEvent) {
+			tools.EmitKAEventToA2A(liveCtx, evt)
+		})
+		defer unsubscribe()
 
 		events := make(chan ka.InvestigationEvent, 5)
 		done := make(chan struct{})
 
 		exited := make(chan struct{})
 		go func() {
-			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-007", done, relay)
+			tools.WatchTerminalEvents(watchCtx, events, "rr-1637-007", done, router)
 			close(exited)
 		}()
 

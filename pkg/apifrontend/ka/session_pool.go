@@ -37,12 +37,11 @@ type poolEntry struct {
 	sessionID string
 	lastUsed  time.Time
 	onRelease func()
-	// relay is non-nil only for entries created via InjectVerified (the
-	// kubernaut_investigate handoff path, #1637/DD-AF-009). It lets
-	// PooledMCPClient.callPooledTool advertise which A2A call is
-	// currently in flight, so the background event-watcher goroutine can
-	// relay KA's mid-call notifications to it instead of dropping them.
-	relay *EventRelay
+	// router is non-nil only for entries created via InjectVerified (the
+	// kubernaut_investigate handoff path, #1637/DD-AF-015). It lets pooled
+	// calls and kubernaut_watch explicitly subscribe to the one background
+	// event watcher without competing for the session's event channel.
+	router *EventRouter
 }
 
 func extractSessionID(s PoolSession) string {
@@ -236,14 +235,14 @@ func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSes
 // avoids inserting sessions that died between creation and injection (#1442).
 // An optional onRelease callback is forwarded to InjectWithCleanup.
 //
-// InjectVerified always constructs and stores an EventRelay for the entry,
+// InjectVerified always constructs and stores an EventRouter for the entry,
 // returned alongside the (nil) error on success (#1637/DD-AF-009). This is
 // the sole handoff path used after a blocking kubernaut_investigate, so the
 // injected session is guaranteed to still be receiving KA's live
-// notifications; RelayFor later exposes the same relay to
+// notifications; RouterFor later exposes the same router to
 // PooledMCPClient.callPooledTool. Callers that don't need it (most existing
 // callers) can discard it: `_, err := pool.InjectVerified(...)`.
-func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username string, session PoolSession, onRelease ...func()) (*EventRelay, error) {
+func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username string, session PoolSession, onRelease ...func()) (*EventRouter, error) {
 	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := session.Ping(pingCtx, nil); err != nil {
@@ -256,15 +255,15 @@ func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username strin
 	if len(onRelease) > 0 && onRelease[0] != nil {
 		release = onRelease[0]
 	}
-	relay := &EventRelay{}
-	p.injectEntry(rrID, username, session, release, relay)
-	return relay, nil
+	router := NewEventRouter()
+	p.injectEntry(rrID, username, session, release, router)
+	return router, nil
 }
 
 // injectEntry is the shared low-level entry-construction/replacement logic
-// used by Inject, InjectWithCleanup, and InjectVerified. relay may be nil
-// (Inject/InjectWithCleanup entries have no events channel to relay).
-func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, onRelease func(), relay *EventRelay) {
+// used by Inject, InjectWithCleanup, and InjectVerified. router may be nil
+// (Inject/InjectWithCleanup entries have no event router).
+func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, onRelease func(), router *EventRouter) {
 	key := poolKey{rrID: rrID, username: username}
 	sid := extractSessionID(session)
 
@@ -275,7 +274,7 @@ func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, 
 		sessionID: sid,
 		lastUsed:  time.Now(),
 		onRelease: onRelease,
-		relay:     relay,
+		router:    router,
 	}
 	p.mu.Unlock()
 
@@ -289,15 +288,15 @@ func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, 
 	}
 }
 
-// RelayFor returns the EventRelay for the pooled entry keyed by
-// (rrID, username), or nil if no entry exists or the entry has no relay
+// RouterFor returns the EventRouter for the pooled entry keyed by
+// (rrID, username), or nil if no entry exists or the entry has no router
 // (e.g. it was created via Inject/InjectWithCleanup rather than
-// InjectVerified). #1637/DD-AF-009.
-func (p *KASessionPool) RelayFor(rrID, username string) *EventRelay {
+// InjectVerified). #1637/DD-AF-015.
+func (p *KASessionPool) RouterFor(rrID, username string) *EventRouter {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if e, ok := p.entries[poolKey{rrID: rrID, username: username}]; ok {
-		return e.relay
+		return e.router
 	}
 	return nil
 }

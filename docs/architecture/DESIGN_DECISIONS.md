@@ -125,6 +125,7 @@
 | DD-AA-KA-001 | `AgentSession` CRD — Replacing AA↔KA HTTP Polling with K8s-Native Watch+Lease | ✅ Approved | 2026-08-17 | [DD-AA-KA-001-agentsession-crd-http-removal.md](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md) |
 | DD-TEST-016 | Explicit Transcript Scenarios for A2A E2E Tests | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-016-a2a-transcript-scenario-harness.md](decisions/DD-TEST-016-a2a-transcript-scenario-harness.md) |
 | DD-TEST-017 | Structured Mock-LLM Scenario Selectors | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-017-structured-mock-llm-scenario-selectors.md](decisions/DD-TEST-017-structured-mock-llm-scenario-selectors.md) |
+| DD-AF-015 | Session-Scoped In-Process Event Router | ✅ Approved | 2026-09-13 | [DD-AF-015-session-scoped-event-router.md](decisions/DD-AF-015-session-scoped-event-router.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

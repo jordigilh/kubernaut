@@ -146,7 +146,7 @@ func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(cfg.TypedClient, cfg.Namespace) }},
 		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(cfg.TypedClient, cfg.Namespace) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(cfg.TypedClient, cfg.Namespace) }},
-		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace) }},
+		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace, cfg.Pool) }},
 		{"investigate", func() (tool.Tool, error) {
 			return tools.NewInvestigateMCPTool(&tools.InvestigateConfig{
 				MCPClient:     dedicatedC,

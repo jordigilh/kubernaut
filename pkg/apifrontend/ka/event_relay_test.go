@@ -17,7 +17,7 @@ limitations under the License.
 package ka_test
 
 import (
-	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,73 +26,66 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
-// #1637: EventRelay lets a pooled session's background event-watcher
-// goroutine discover, for the duration of a specific pooled MCP call,
-// which A2A call's context (and therefore EventBridge) should receive KA
-// events arriving mid-call. See DD-AF-009.
-var _ = Describe("EventRelay — #1637", func() {
+// #1637 / DD-AF-015: EventRouter fans one pooled session's event stream out to
+// explicitly registered subscribers. The router is session-scoped by the
+// KASessionPool entry, so subscribers cannot cross the existing (rr_id,
+// username) isolation boundary.
+var _ = Describe("EventRouter — #1637", func() {
 
-	It("UT-AF-1637-001: Current returns nil when idle (no call attached)", func() {
-		relay := &ka.EventRelay{}
-		Expect(relay.Current()).To(BeNil(),
-			"an EventRelay with no attached call must report idle (nil)")
+	It("UT-AF-1637-001: Publish does nothing when there are no subscribers", func() {
+		router := ka.NewEventRouter()
+
+		Expect(router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})).To(Equal(0),
+			"an idle EventRouter must not report delivery")
 	})
 
-	It("UT-AF-1637-001: Attach records ctx, Current returns it while attached", func() {
-		relay := &ka.EventRelay{}
-		ctx := context.WithValue(context.Background(), ctxKeyTest{}, "call-1")
+	It("UT-AF-1637-001: Subscribe receives published events and unsubscribe stops delivery", func() {
+		router := ka.NewEventRouter()
+		var received atomic.Int32
 
-		detach := relay.Attach(ctx)
-		Expect(relay.Current()).To(Equal(ctx),
-			"Current must return the exact ctx passed to Attach")
+		unsubscribe := router.Subscribe(func(evt ka.InvestigationEvent) {
+			if evt.Type == ka.EventTypeReasoningDelta {
+				received.Add(1)
+			}
+		})
 
-		detach()
-		Expect(relay.Current()).To(BeNil(),
-			"Current must return nil after detach")
+		Expect(router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})).To(Equal(1))
+		Expect(received.Load()).To(Equal(int32(1)))
+
+		unsubscribe()
+		Expect(router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})).To(Equal(0))
+		Expect(received.Load()).To(Equal(int32(1)),
+			"unsubscribed sinks must not receive later events")
 	})
 
-	It("UT-AF-1637-001: an outer Attach is not clobbered by an inner call's stale detach", func() {
-		relay := &ka.EventRelay{}
-		outerCtx := context.WithValue(context.Background(), ctxKeyTest{}, "outer")
-		innerCtx := context.WithValue(context.Background(), ctxKeyTest{}, "inner")
+	It("UT-AF-1637-001: supports multiple subscribers without last-writer-wins routing", func() {
+		router := ka.NewEventRouter()
+		var first, second atomic.Int32
 
-		relay.Attach(outerCtx)
+		unsubscribeFirst := router.Subscribe(func(ka.InvestigationEvent) { first.Add(1) })
+		defer unsubscribeFirst()
+		unsubscribeSecond := router.Subscribe(func(ka.InvestigationEvent) { second.Add(1) })
+		defer unsubscribeSecond()
 
-		detachInner := relay.Attach(innerCtx)
-		detachInner()
-		Expect(relay.Current()).To(BeNil(),
-			"inner detach clears Current since it was the last attach")
-
-		// Re-attach outer to simulate the realistic nested-call ordering:
-		// outer attaches, inner attaches+detaches, outer's own detach must
-		// still only clear its own ctx (never someone else's).
-		detachOuter := relay.Attach(outerCtx)
-		detachInner = relay.Attach(innerCtx)
-		detachOuter() // stale — outerCtx is no longer Current
-		Expect(relay.Current()).To(Equal(innerCtx),
-			"a stale outer detach firing after an inner Attach must not clobber the inner (current) ctx")
-
-		detachInner()
-		Expect(relay.Current()).To(BeNil())
+		Expect(router.Publish(ka.InvestigationEvent{Type: ka.EventTypeToolCallStart})).To(Equal(2))
+		Expect(first.Load()).To(Equal(int32(1)))
+		Expect(second.Load()).To(Equal(int32(1)))
 	})
 
-	It("UT-AF-1637-001: concurrent Attach/Current/detach do not race", func() {
-		relay := &ka.EventRelay{}
+	It("UT-AF-1637-001: concurrent subscribe, publish, and unsubscribe do not race", func() {
+		router := ka.NewEventRouter()
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
 			for i := 0; i < 200; i++ {
-				ctx := context.WithValue(context.Background(), ctxKeyTest{}, i)
-				detach := relay.Attach(ctx)
-				_ = relay.Current()
-				detach()
+				unsubscribe := router.Subscribe(func(ka.InvestigationEvent) {})
+				router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})
+				unsubscribe()
 			}
 		}()
 		for i := 0; i < 200; i++ {
-			_ = relay.Current()
+			router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})
 		}
 		Eventually(done, 3*time.Second).Should(BeClosed())
 	})
 })
-
-type ctxKeyTest struct{}

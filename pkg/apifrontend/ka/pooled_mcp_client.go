@@ -29,15 +29,28 @@ var terminalActions = map[string]bool{
 // Non-terminal actions (takeover, message, status, discover_workflows) reuse
 // the existing session or create a new one via the pool factory.
 type PooledMCPClient struct {
-	pool   *KASessionPool
-	logger logr.Logger
+	pool      *KASessionPool
+	logger    logr.Logger
+	emitEvent EventEmitter
 }
 
+// EventEmitter delivers a KA event to the current caller's event stream.
+// Keeping this adapter injected prevents the KA session package from depending
+// on A2A presentation details.
+type EventEmitter func(ctx context.Context, event InvestigationEvent)
+
 // NewPooledMCPClient creates a PooledMCPClient backed by the given session pool.
-func NewPooledMCPClient(pool *KASessionPool, logger logr.Logger) *PooledMCPClient {
+// An optional emitter enables live event delivery for A2A callers; callers
+// without an event stream retain the existing request/response behavior.
+func NewPooledMCPClient(pool *KASessionPool, logger logr.Logger, emitters ...EventEmitter) *PooledMCPClient {
+	var emitEvent EventEmitter
+	if len(emitters) > 0 {
+		emitEvent = emitters[0]
+	}
 	return &PooledMCPClient{
-		pool:   pool,
-		logger: logger.WithName("pooled-mcp"),
+		pool:      pool,
+		logger:    logger.WithName("pooled-mcp"),
+		emitEvent: emitEvent,
 	}
 }
 
@@ -184,18 +197,22 @@ func (c *PooledMCPClient) StartInvestigation(_ context.Context, _ StartInvestiga
 // On stale-session errors (#1386), it evicts the dead entry and retries once
 // with a fresh session from the pool factory.
 //
-// #1637/DD-AF-009: for the duration of the call, attaches ctx to the pooled
-// entry's EventRelay (if any) so that WatchTerminalEvents — the sole
+// #1637/DD-AF-015: for the duration of the call, subscribes the caller to the
+// pooled entry's EventRouter (if any) so that WatchTerminalEvents — the sole
 // consumer of the session's residual event channel after a
 // kubernaut_investigate handoff — can relay KA's mid-call notifications
 // (reasoning_content_delta, reasoning_delta, tool_call_start, error, ...)
 // live to this call's EventBridge instead of dropping them. A session
 // acquired directly (never handed off from an investigate call) has no
-// relay (RelayFor returns nil) and this is a no-op, matching prior behavior.
+// router (RouterFor returns nil) and this is a no-op, matching prior behavior.
 func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any, rrID, username string) (json.RawMessage, error) {
-	if relay := c.pool.RelayFor(rrID, username); relay != nil {
-		detach := relay.Attach(ctx)
-		defer detach()
+	if c.emitEvent != nil {
+		if router := c.pool.RouterFor(rrID, username); router != nil {
+			unsubscribe := router.Subscribe(func(evt InvestigationEvent) {
+				c.emitEvent(ctx, evt)
+			})
+			defer unsubscribe()
+		}
 	}
 	raw, err := c.doCallTool(ctx, session, name, args)
 	if err != nil && isStaleSessionError(err) {

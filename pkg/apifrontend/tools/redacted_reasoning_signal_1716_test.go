@@ -95,15 +95,17 @@ var _ = Describe("AF redacted reasoning content live signal — #1716", func() {
 		liveQueue := &bridgeQueue{}
 		liveCtx := launcher.WithEventBridge(context.Background(), liveQueue, "task-1716-it-002-live", "ctx-1716-it-002-live", nil)
 
-		relay := &ka.EventRelay{}
-		detach := relay.Attach(liveCtx)
-		defer detach()
+		router := ka.NewEventRouter()
+		unsubscribe := router.Subscribe(func(evt ka.InvestigationEvent) {
+			tools.EmitKAEventToA2A(liveCtx, evt)
+		})
+		defer unsubscribe()
 
 		events := make(chan ka.InvestigationEvent, 5)
 		done := make(chan struct{})
 		defer close(done)
 
-		go tools.WatchTerminalEvents(watchCtx, events, "rr-1716-it-002", done, relay)
+		go tools.WatchTerminalEvents(watchCtx, events, "rr-1716-it-002", done, router)
 
 		events <- ka.InvestigationEvent{
 			Type: ka.EventTypeReasoningContentDelta,

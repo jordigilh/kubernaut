@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E-FP-2390-001 (extends E2E-FP-1189-003): A2A Interactive four-turn
@@ -150,7 +151,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 
 		By("Creating the GitOps repository credential dependency")
 		gitOpsSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-creds", Namespace: infrastructure.ExecutionNamespace},
 			StringData: map[string]string{"username": "kubernaut", "password": "test-password"},
 		}
 		if err := k8sClient.Create(ctx, gitOpsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
@@ -160,7 +161,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 
 		By("Creating the GitOps repository configuration dependency")
 		gitOpsConfig := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-config", Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: "gitea-repo-config", Namespace: infrastructure.ExecutionNamespace},
 			Data:       map[string]string{"repository": "http://gitea.test/gitops/remediation.git"},
 		}
 		if err := k8sClient.Create(ctx, gitOpsConfig); err != nil && !apierrors.IsAlreadyExists(err) {

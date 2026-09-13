@@ -16,6 +16,8 @@ import (
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
@@ -57,6 +59,18 @@ const maxWatchDuration = 15 * time.Minute
 // typedClient is the controller-runtime client for typed CRD operations (EA);
 // may be nil (graceful degradation — EA metadata omitted).
 func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs) (WatchResult, error) {
+	return handleWatch(ctx, client, args, nil)
+}
+
+// HandleWatchWithPool runs kubernaut_watch with the session event router
+// associated with the authenticated user's pooled investigation. It is the
+// A2A production entry point; direct MCP callers use HandleWatch because MCP
+// has no progressive A2A event stream.
+func HandleWatchWithPool(ctx context.Context, client crclient.WithWatch, args WatchArgs, pool *ka.KASessionPool) (WatchResult, error) {
+	return handleWatch(ctx, client, args, pool)
+}
+
+func handleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs, pool *ka.KASessionPool) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
@@ -65,6 +79,19 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 	}
 
 	logger := logr.FromContextOrDiscard(ctx)
+	var unsubscribe func()
+	if pool != nil {
+		if identity := auth.UserIdentityFromContext(ctx); identity != nil {
+			if router := pool.RouterFor(args.RRID, identity.Username); router != nil {
+				unsubscribe = router.Subscribe(func(evt ka.InvestigationEvent) {
+					EmitKAEventToA2A(ctx, evt)
+				})
+			}
+		}
+	}
+	if unsubscribe != nil {
+		defer unsubscribe()
+	}
 
 	var rrCheck remediationv1.RemediationRequest
 	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.Name}, &rrCheck); err != nil {
@@ -397,12 +424,12 @@ func (s *watchLoopState) handleEAEvent(ctx context.Context, evt watch.Event) {
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client crclient.WithWatch, controllerNS string) (tool.Tool, error) {
+func NewWatchTool(client crclient.WithWatch, controllerNS string, pool *ka.KASessionPool) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
 	}, func(ctx agent.Context, args WatchArgs) (WatchResult, error) {
 		args.Namespace = controllerNS
-		return HandleWatch(ctx, client, args)
+		return HandleWatchWithPool(ctx, client, args, pool)
 	})
 }

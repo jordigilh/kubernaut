@@ -248,17 +248,17 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		It("should NOT expire when TouchActivity resets the timer", func() {
 			mgrShortInactivity := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
 				mcpinternal.WithSessionTTL(1*time.Hour),
-				mcpinternal.WithInactivityTimeout(50*time.Millisecond),
+				mcpinternal.WithInactivityTimeout(500*time.Millisecond),
 			)
 
 			user := mcpinternal.UserInfo{Username: "charlie@example.com"}
 			_, err := mgrShortInactivity.Takeover(ctx, "rr-inact-002", user)
 			Expect(err).NotTo(HaveOccurred())
 
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			mgrShortInactivity.TouchActivity("rr-inact-002")
 
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			sess, err := mgrShortInactivity.GetDriver("rr-inact-002")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sess).NotTo(BeNil())

@@ -358,16 +358,13 @@ var _ = Describe("PooledMCPClient (#1306)", func() {
 	})
 })
 
-// #1637: PooledMCPClient must attach the caller's ctx to the pooled entry's
-// EventRelay for the exact duration of the pooled CallTool, so that
-// WatchTerminalEvents (the sole consumer of the session's residual event
-// channel after handoff) can discover which A2A call is "live" and relay
-// KA's mid-call notifications to it. See DD-AF-009.
-var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", func() {
+// #1637 / DD-AF-015: PooledMCPClient subscribes the caller for the exact
+// duration of the pooled CallTool, so the session's single event watcher can
+// publish KA notifications to the active A2A call.
+var _ = Describe("PooledMCPClient live event subscription — #1637", func() {
 
-	It("IT-AF-1637-003: callPooledTool attaches ctx to the relay during CallTool and detaches after", func() {
-		var duringCallCurrent context.Context
-		var duringCallOK bool
+	It("IT-AF-1637-003: subscribes during CallTool and unsubscribes after", func() {
+		var received int
 
 		session := &mockPoolSession{}
 		pool := ka.NewKASessionPool(ka.PoolConfig{
@@ -378,20 +375,23 @@ var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", fun
 			Logger:     logr.Discard(),
 		})
 
-		relay, err := pool.InjectVerified(context.Background(), "ns/rr-relay-call", "alice", session)
+		router, err := pool.InjectVerified(context.Background(), "ns/rr-relay-call", "alice", session)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relay).NotTo(BeNil())
+		Expect(router).NotTo(BeNil())
 
 		session.callFn = func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
-			duringCallCurrent = relay.Current()
-			duringCallOK = duringCallCurrent != nil
+			router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})
 			resp := `{"status":"message_received","session_id":"sess-relay"}`
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: resp}},
 			}, nil
 		}
 
-		client := ka.NewPooledMCPClient(pool, logr.Discard())
+		client := ka.NewPooledMCPClient(pool, logr.Discard(), func(_ context.Context, evt ka.InvestigationEvent) {
+			if evt.Type == ka.EventTypeReasoningDelta {
+				received++
+			}
+		})
 		ctx := ctxWithIdentity("alice", []string{"sre"})
 
 		_, err = client.InvokeAction(ctx, ka.InvokeActionArgs{
@@ -399,15 +399,14 @@ var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", fun
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(duringCallOK).To(BeTrue(),
-			"IT-AF-1637-003: relay.Current() must be non-nil while CallTool is in flight")
-		Expect(duringCallCurrent).To(Equal(ctx),
-			"IT-AF-1637-003: relay.Current() during the call must be the exact ctx passed to InvokeAction")
-		Expect(relay.Current()).To(BeNil(),
-			"IT-AF-1637-003: relay must be detached after the pooled call returns")
+		Expect(received).To(Equal(1),
+			"IT-AF-1637-003: active pooled calls must receive session events")
+		router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta})
+		Expect(received).To(Equal(1),
+			"IT-AF-1637-003: the pooled subscription must be removed after the call returns")
 	})
 
-	It("IT-AF-1637-003: does not attach when the pooled entry has no relay (plain Inject, no events channel)", func() {
+	It("IT-AF-1637-003: does not subscribe when the pooled entry has no router (plain Inject, no events channel)", func() {
 		var duringCallCurrent context.Context
 
 		session := &mockPoolSession{}
@@ -419,10 +418,10 @@ var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", fun
 			Logger:     logr.Discard(),
 		})
 		pool.Inject("ns/rr-no-relay", "alice", session)
-		Expect(pool.RelayFor("ns/rr-no-relay", "alice")).To(BeNil())
+		Expect(pool.RouterFor("ns/rr-no-relay", "alice")).To(BeNil())
 
 		session.callFn = func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
-			duringCallCurrent = context.Background() // sentinel: overwritten only if a relay existed
+			duringCallCurrent = context.Background() // sentinel: overwritten only if a router existed
 			resp := `{"status":"message_received","session_id":"sess-no-relay"}`
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: resp}},
@@ -437,6 +436,6 @@ var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", fun
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(duringCallCurrent).To(Equal(context.Background()),
-			"no relay means callPooledTool has nothing to attach — call must still succeed unaffected")
+			"no router means callPooledTool has nothing to subscribe — call must still succeed unaffected")
 	})
 })

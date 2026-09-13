@@ -183,7 +183,7 @@ var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema valida
 			WithStatusSubresource(rr).
 			Build()
 
-		watchTool, err := tools.NewWatchTool(wc, "payments")
+		watchTool, err := tools.NewWatchTool(wc, "payments", nil)
 		Expect(err).NotTo(HaveOccurred())
 		runnable, ok := watchTool.(runnableTool)
 		Expect(ok).To(BeTrue())

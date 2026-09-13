@@ -315,7 +315,7 @@ func buildKAClientDeps(ctx context.Context, cfg *config.Config, deps *backendDep
 		IdleTTL:    10 * time.Minute,
 		Logger:     logger.WithName("ka-session-pool"),
 	})
-	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger)
+	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger, tools.EmitKAEventToA2A)
 	deps.DedicatedClient = mcpClient
 	deps.InvestigationRegistry = tools.NewMonitorRegistry()
 
