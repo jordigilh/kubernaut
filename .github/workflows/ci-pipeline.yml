@@ -1926,20 +1926,29 @@ jobs:
             FAIL=1
           fi
 
-          echo "=== datastorage + gateway Ready (DD-PLATFORM-002 end-to-end proof) ==="
+          echo "=== All GitOps application Deployments Ready (DD-PLATFORM-002 end-to-end proof) ==="
           # 180s (not 120s): the "Recover pods" step above already absorbs most
           # of the CI resource-contention-driven restarts, but leaves some
           # margin here in case a pod's crash-loop backoff had grown past 45s
           # by the time this runs.
-          for dep in datastorage gateway; do
-            if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
-              echo "OK: ${dep} Available"
-            else
-              echo "FAIL: ${dep} not Available"
-              kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
-              FAIL=1
-            fi
-          done
+          mapfile -t deployments < <(
+            kubectl get deployments -n "$GITOPS_NAMESPACE" \
+              -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true
+          )
+          if [[ "${#deployments[@]}" -eq 0 ]]; then
+            echo "FAIL: no GitOps application Deployments found"
+            FAIL=1
+          else
+            for dep in "${deployments[@]}"; do
+              if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
+                echo "OK: ${dep} Available"
+              else
+                echo "FAIL: ${dep} not Available"
+                kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
+                FAIL=1
+              fi
+            done
+          fi
 
           echo "=== Pod status (informational) ==="
           kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
