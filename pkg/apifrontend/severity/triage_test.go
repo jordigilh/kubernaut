@@ -15,6 +15,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
+const fleetClusterID = "remote-cluster"
+
 var _ = Describe("Triage Orchestrator", func() {
 
 	var (
@@ -82,6 +84,105 @@ var _ = Describe("Triage Orchestrator", func() {
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Source).To(Equal(severity.SourcePendingAlert))
+		})
+	})
+
+	// BR-FLEET-054 / BR-INTEGRATION-065: fleet triage must preserve cluster
+	// attribution. FedRAMP AC-4/AC-6/SI-4 and OWASP ASVS V4/V5 are behavioral
+	// objectives here: another cluster's evidence must not influence the result.
+	Describe("Fleet cluster attribution (#2394)", func() {
+		It("UT-AF-2394-001: fleet triage selects the requested cluster's resource alert", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{
+						"alertname": "OtherClusterAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "critical", "cluster": "other-cluster",
+					}, State: "firing"},
+					{Labels: map[string]string{
+						"alertname": "TargetClusterAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "warning", "cluster": fleetClusterID,
+					}, State: "firing"},
+				},
+			}
+			fleetInput := defaultInput
+			fleetInput.ClusterID = fleetClusterID
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), fleetInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("TargetClusterAlert"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-002: fleet triage rejects un-attributed and other-cluster alerts", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{
+						"alertname": "OtherClusterAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "critical", "cluster": "other-cluster",
+					}, State: "firing"},
+					{Labels: map[string]string{
+						"alertname": "UnattributedAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "critical",
+					}, State: "firing"},
+				},
+			}
+			fleetInput := defaultInput
+			fleetInput.ClusterID = fleetClusterID
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), fleetInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"fleet triage must fail closed when no alert is attributed to the requested cluster")
+		})
+
+		It("UT-AF-2394-003: empty cluster ID preserves hub-local alert matching", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{{Labels: map[string]string{
+					"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+					"severity": "warning", "cluster": "remote-cluster",
+				}, State: "firing"}},
+			}
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("HubAlert"))
+		})
+
+		It("UT-AF-2394-004: pending rules are selected only from the requested cluster", func() {
+			mockProm := &mockPromClient{
+				ruleGroups: []prom.RuleGroup{{Rules: []prom.Rule{
+					{Name: "OtherClusterRule", Query: `up{namespace="prod"}`, State: "pending", Labels: map[string]string{"severity": "critical", "cluster": "other-cluster"}},
+					{Name: "TargetClusterRule", Query: `up{namespace="prod"}`, State: "pending", Labels: map[string]string{"severity": "warning", "cluster": fleetClusterID}},
+				}}},
+			}
+			fleetInput := defaultInput
+			fleetInput.ClusterID = fleetClusterID
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), fleetInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RuleName).To(Equal("TargetClusterRule"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-005: inactive rules are evaluated only from the requested cluster", func() {
+			mockProm := &mockPromClient{
+				ruleGroups: []prom.RuleGroup{{Rules: []prom.Rule{
+					{Name: "OtherClusterRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "critical", "cluster": "other-cluster"}},
+					{Name: "TargetClusterRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "warning", "cluster": fleetClusterID}},
+				}}},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{{Value: 1, Metric: map[string]string{"namespace": "prod"}}}},
+			}
+			fleetInput := defaultInput
+			fleetInput.ClusterID = fleetClusterID
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), fleetInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RuleName).To(Equal("TargetClusterRule"))
+			Expect(result.Severity).To(Equal("warning"))
 		})
 	})
 

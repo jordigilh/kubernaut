@@ -55,9 +55,8 @@ type ISSessionInitializer interface {
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
-	// K8sClient is the dynamic K8s client. Not used by the bridge directly
-	// (kubernaut CRDs use TypedClient); retained for test compatibility and
-	// future kubectl/events tool registration if moved from the agent path.
+	// K8sClient is the dynamic K8s client used to ground newly-created
+	// investigation RRs from Kubernetes Events.
 	K8sClient             dynamic.Interface
 	TypedClient           crclient.WithWatch
 	Namespace             string
@@ -249,6 +248,7 @@ func registerInvestigationTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semap
 			return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
 				MCPClient:     dedicatedClient,
 				Client:        cfg.TypedClient,
+				DynClient:     cfg.K8sClient,
 				Namespace:     cfg.Namespace,
 				Auditor:       cfg.Auditor,
 				Registry:      cfg.InvestigationRegistry,

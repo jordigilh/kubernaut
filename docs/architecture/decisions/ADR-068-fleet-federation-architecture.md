@@ -121,11 +121,53 @@ business logic.
                     └───────────────────┘
 ```
 
+### Signal and Network Boundaries
+
+Fleet has two separate data paths that must not be conflated:
+
+1. **Observability signal path**: Prometheus alerts from managed clusters are
+   federated through Thanos and queried from the management cluster. The
+   `cluster` label identifies the source cluster. This is the fleet signal
+   source used for alert grounding and signal-derived severity.
+2. **Kubernetes resource path**: Reads and writes against a managed cluster's
+   Kubernetes API are routed through the MCP Gateway to that cluster's
+   kube-mcp-server. Kubernaut services do not maintain a direct hub-to-spoke
+   Kubernetes connection or per-cluster kubeconfig credentials.
+
+Fleet does not define or require a direct Kubernetes Event transport. A
+platform may independently export Event-derived telemetry to Prometheus/Thanos
+and configure AlertManager to generate an alert from it. In that case,
+Kubernaut consumes the resulting Prometheus alert and its cluster attribution;
+it does not consume the original Kubernetes Event. Thanos and AlertManager do
+not inherently replicate Kubernetes Events, and the current fleet MCP contract
+does not provide Event propagation or watch semantics to AF signal derivation.
+Therefore:
+
+- A hub-local AF-created RR may use the hub-local Kubernetes API to derive a
+  signal from local Kubernetes Events when no Prometheus signal is available.
+- An AF-created RR with a non-empty `cluster_id` must use Prometheus/Thanos
+  grounding, including any alert produced from user-configured Event-derived
+  telemetry, or an explicitly supplied alert name. It must never use the
+  hub-local Kubernetes API to infer a signal from Events for the remote
+  cluster.
+- AF's generic Prometheus severity triage must apply the same `cluster_id`
+  boundary to alert instances and alerting rules. Resource labels alone are
+  insufficient because equivalent resources may exist in multiple clusters
+  (Issue #2394).
+- If a fleet AF-created RR has no alert/rule grounding, its signal name remains
+  `unknown`; this is safer than attributing an unrelated hub Event to a remote
+  resource.
+- Supporting remote Kubernetes Event reads or watches would require an
+  explicitly supported MCP Gateway tool contract and a separate design
+  decision. It is not part of this architecture and must not be implemented as
+  a direct network path.
+
 ### Component Responsibilities
 
 | Component | Role | Package |
 |-----------|------|---------|
 | **Gateway (GW)** | Extracts `cluster` label from Thanos alerts, computes cluster-aware fingerprints, gates signals via FederatedScopeChecker | `pkg/gateway/` |
+| **APIFrontend (AF)** | Creates user-initiated RRs. Uses local Kubernetes Events only for hub-local targets; fleet targets use Prometheus/Thanos or an explicit alert name and never bypass the MCP Gateway for remote Kubernetes access. | `pkg/apifrontend/` |
 | **WorkflowExecution (WE)** | Executes remediation on remote clusters via MCP Gateway: creates Jobs, Tekton PipelineRuns, and Ansible workflows. Requires read+write access. | `internal/controller/workflowexecution/`, `pkg/workflowexecution/executor/` |
 | **FMC (Fleet Metadata Cache)** | Polls MCP Gateway for `kubernaut.ai/managed=true` resources, caches metadata in Valkey, exposes scope queries via REST API | `cmd/fmc/`, `pkg/fleet/fmc/` |
 | **Fleet Metadata Cache (Valkey)** | Low-latency key-existence checks for remote scope validation | `pkg/fleet/scopecache/` |

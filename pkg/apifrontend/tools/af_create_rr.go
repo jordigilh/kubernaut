@@ -327,6 +327,7 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		Kind:                args.Kind,
 		Name:                args.Name,
 		Description:         args.Description,
+		ClusterID:           args.ClusterID,
 		Labels:              map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
 		ConfirmedSignalName: args.ConfirmedAmbiguousSignalName,
 	}
@@ -524,8 +525,8 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 // deriveSignalName selects a grounded signal name using a priority cascade:
 //  1. Triager AlertName (from Prometheus firing/pending alert — most specific)
 //  2. Triager RuleName (from inactive rule match — known rule, not yet firing)
-//     3a. Dominant K8s event reason on the target resource (e.g., Deployment)
-//     3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
+//     3a. Dominant local K8s event reason on the target resource (e.g., Deployment)
+//     3b. Dominant local K8s event reason on Pods owned by the target (name-prefix match)
 //  4. Fallback: "unknown" (no grounded infrastructure signal found)
 //
 // The signal name is critical: KA uses it to drive investigation behavior.
@@ -544,6 +545,12 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
 	if name := signalNameFromTriage(triageResult); name != "" {
 		return name
+	}
+	// Kubernetes Events are local to the cluster whose API is queried. Fleet
+	// investigations are grounded by Prometheus/Thanos above; never use the
+	// hub-local dynamic client as a remote cluster Event source.
+	if args.ClusterID != "" {
+		return unknownValue
 	}
 	if client == nil {
 		return unknownValue

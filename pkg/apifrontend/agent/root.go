@@ -151,6 +151,7 @@ func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 			return tools.NewInvestigateMCPTool(&tools.InvestigateConfig{
 				MCPClient:     dedicatedC,
 				Client:        cfg.TypedClient,
+				DynClient:     cfg.K8sClient,
 				Namespace:     cfg.Namespace,
 				Auditor:       cfg.Auditor,
 				Registry:      cfg.InvestigationRegistry,

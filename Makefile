@@ -41,6 +41,9 @@ COMMA := ,
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# Independent service suites can run concurrently from the aggregate target.
+# Override this when local CPU/memory capacity is lower than the default.
+TEST_SUITE_PROCS ?= $(words $(SERVICES))
 # FullPipeline specs share one MCP test identity; avoid cross-worker rate-limit bursts.
 FULLPIPELINE_TEST_PROCS ?= 1
 TEST_TIMEOUT_UNIT ?= 8m
@@ -1075,7 +1078,9 @@ test-gateway: test-integration-gateway ## Legacy alias for Gateway integration t
 test-e2e-fleetmetadatacache: test-e2e-fleetmetadatacache-kuadrant ## Legacy alias for the Kuadrant-variant FMC E2E suite (renamed for symmetry with test-e2e-fleetmetadatacache-eaigw)
 
 .PHONY: test
-test: test-tier-unit ## Legacy alias: Run all unit tests
+test: ## Run all unit test suites in parallel
+	@echo "🧪 Running all unit test suites in parallel ($(TEST_SUITE_PROCS) suites)"
+	@$(MAKE) -j$(TEST_SUITE_PROCS) test-tier-unit
 
 ##@ Coverage Analysis
 
@@ -1121,7 +1126,7 @@ OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.9.0
-GINKGO_VERSION ?= v2.32.0
+GINKGO_VERSION ?= v2.32.1
 CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize

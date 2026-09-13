@@ -48,6 +48,9 @@ type TriageInput struct {
 	Description string
 	Labels      map[string]string
 	PodNames    []string // Resolved pod names for alert correlation (auto-populated by Triager when PodResolver is set)
+	// ClusterID scopes alert and rule correlation for fleet targets. Empty keeps
+	// the hub-local behavior of considering all returned Prometheus data.
+	ClusterID string
 	// ConfirmedSignalName, when non-empty and it exactly matches an
 	// ambiguous candidate's AlertName, indicates the user has already
 	// confirmed that specific weak candidate (DD-AF-012). Triage() bypasses
