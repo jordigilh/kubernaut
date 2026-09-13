@@ -39,7 +39,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `autoscaling.minReplicas` | integer |  | `1` | No |
 | `config.auth.allowInsecureIssuers` | boolean | Allow http:// (non-TLS) issuerURL/jwksURL values. Dev/test only -- never set true in production (SC-8). | `false` | No |
 | `config.auth.audience` | string | Expected JWT audience claim | `""` | No |
-| `config.auth.issuerURL` | string | OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected. | `""` | No |
+| `config.auth.issuerURL` | string | OIDC issuer URL for JWT validation. Defaults to the production kubernaut Keycloak realm. Override for an external IdP or explicitly selected demo/test realm. When empty, K8s TokenReview is auto-detected. | `"https://login.kubernaut.ai/realms/kubernaut"` | No |
 | `config.auth.jwksURL` | string | JWKS endpoint URL for the legacy single-provider issuerURL (optional, defaults to issuerURL's well-known discovery when empty) | `""` | No |
 | `config.auth.jwtProviders` | array of object | Multi-provider JWT configuration (#1436). When set, takes precedence over issuerURL/audience. | `` | No |
 | `config.auth.oidcCaFile` | string | Path to a CA bundle used when fetching JWKS from issuerURL over TLS with a private/self-signed CA (e.g. an in-cluster OIDC test double signed by the chart's own inter-service CA). Requires mounting that CA into the pod -- the chart does this automatically when this field is set (or when global.fleet.enabled is true). | `""` | No |

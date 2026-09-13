@@ -279,6 +279,34 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		))
 	})
 
+	It("UT-INFRA-OIDC-2385-007: local and fleet demo Helm installs explicitly override the production issuer with kubernaut-demo", func() {
+		for _, mode := range []DemoMode{DemoModeLocal, DemoModeFleet} {
+			opts := baseOpts
+			opts.Mode = mode
+			fleetOpts := baseFleetOpts
+			if mode == DemoModeLocal {
+				fleetOpts = nil
+			}
+
+			args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", fleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+			var oidcValues []string
+			for i, arg := range args {
+				if arg != helmSetFlag || i+1 >= len(args) {
+					continue
+				}
+				value := args[i+1]
+				if strings.Contains(value, "issuerURL=") || strings.Contains(value, "URL=https://keycloak") {
+					oidcValues = append(oidcValues, value)
+				}
+			}
+
+			Expect(oidcValues).NotTo(BeEmpty(), "mode %s should populate OIDC Helm values", mode)
+			for _, value := range oidcValues {
+				Expect(value).To(ContainSubstring("/realms/kubernaut-demo"), "mode %s value %s", mode, value)
+			}
+		}
+	})
+
 	It("UT-INFRA-FLEETDEMO-036: omits global.image.tag when ImageTag is empty (chart falls back to .Chart.AppVersion)", func() {
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		for i, a := range args {

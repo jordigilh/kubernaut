@@ -3201,8 +3201,8 @@
               "properties": {
                 "issuerURL": {
                   "type": "string",
-                  "default": "",
-                  "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected."
+                  "default": "https://login.kubernaut.ai/realms/kubernaut",
+                  "description": "OIDC issuer URL for JWT validation. Defaults to the production kubernaut Keycloak realm. Override for an external IdP or explicitly selected demo/test realm. When empty, K8s TokenReview is auto-detected."
                 },
                 "jwksURL": {
                   "type": "string",

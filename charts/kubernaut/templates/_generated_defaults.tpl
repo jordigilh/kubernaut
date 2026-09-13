@@ -33,7 +33,7 @@ apifrontend:
         auth:
             allowInsecureIssuers: false
             audience: ""
-            issuerURL: ""
+            issuerURL: https://login.kubernaut.ai/realms/kubernaut
             jwksURL: ""
             oidcCaFile: ""
             replayCache:

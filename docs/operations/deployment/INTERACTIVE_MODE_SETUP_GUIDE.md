@@ -119,7 +119,6 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
-  --set apifrontend.config.auth.issuerURL="https://login.kubernaut.ai/realms/kubernaut" \
   --set console.enabled=true \
   --set console.auth.secretName=console-oauth-creds \
   --set console.ingress.host=console.apps.example.com \
@@ -128,9 +127,9 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 
 `apifrontend.enabled` defaults to `true` — no need to set it. `console.enabled=true`
 requires `apifrontend.enabled=true` (Console proxies to APIFrontend only) and a resolvable
-OIDC issuer (either `apifrontend.config.auth.issuerURL` above, or
-`jwtProviders`) — the chart fails fast at `helm template`/`install` time, before anything
-is applied, if either is missing.
+OIDC issuer. The chart defaults to `https://login.kubernaut.ai/realms/kubernaut`; override
+`apifrontend.config.auth.issuerURL` or `jwtProviders` for another IdP. The chart fails fast at
+`helm template`/`install` time, before anything is applied, when the issuer is explicitly empty.
 
 `console.ingress.host` is **required** whenever `console.enabled=true`, even if you leave
 `console.ingress.enabled=false` (the default, per BR-PLATFORM-009's opt-in-only stance on

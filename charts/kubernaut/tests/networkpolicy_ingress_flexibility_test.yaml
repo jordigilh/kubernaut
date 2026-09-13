@@ -185,6 +185,10 @@ tests:
   - it: "apifrontend NetworkPolicy omits the auth-only IDP egress rule when auth is not configured, but still renders the unconditional LLM egress rule (Issue #1737: agent.llm.endpoint is mandatory AF config, distinguished here via a non-default idp override so the two same-shaped-by-default rules don't mask each other)"
     template: templates/apifrontend/networkpolicy.yaml
     set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: ""
       networkPolicies:
         idp:
           cidr: "10.244.0.0/24"
@@ -225,6 +229,10 @@ tests:
   - it: "apifrontend NetworkPolicy LLM egress rule uses networkPolicies.llm.cidr/port overrides (e.g. an in-cluster mock-LLM double on a non-443 port)"
     template: templates/apifrontend/networkpolicy.yaml
     set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: ""
       networkPolicies:
         llm:
           cidr: "10.244.0.0/24"
