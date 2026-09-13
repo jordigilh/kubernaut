@@ -131,6 +131,22 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			Count:          1,
 			Source:         corev1.EventSource{Component: "e2e-fp-2390-test"},
 		})).To(Succeed())
+		Eventually(func() bool {
+			events := &corev1.EventList{}
+			if err := apiReader.List(ctx, events, client.InNamespace(targetNS)); err != nil {
+				return false
+			}
+			for _, event := range events.Items {
+				if event.Reason == "GitOpsDrift2390" &&
+					event.Type == corev1.EventTypeWarning &&
+					event.InvolvedObject.Kind == "Deployment" &&
+					event.InvolvedObject.Name == "memory-eater" {
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"E2E-FP-2390-001: synthetic GitOps signal event must be observable before RR creation")
 
 		By("Creating the GitOps repository credential dependency")
 		gitOpsSecret := &corev1.Secret{
