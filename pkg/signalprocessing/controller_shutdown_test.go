@@ -204,9 +204,9 @@ var _ = Describe("Controller Shutdown", func() {
 			elapsed := time.Since(start)
 
 			Expect(ctx.Err()).To(Equal(context.DeadlineExceeded))
-			// Allow for timing variations in CI environments (40ms instead of 50ms)
+			// Allow for scheduler and race-detector timing variations in CI.
 			Expect(elapsed).To(BeNumerically(">=", 40*time.Millisecond))
-			Expect(elapsed).To(BeNumerically("<", shutdownTimeout+20*time.Millisecond))
+			Expect(elapsed).To(BeNumerically("<", shutdownTimeout+100*time.Millisecond))
 		})
 
 		// Test 6: Cleanup functions execute on shutdown

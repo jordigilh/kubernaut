@@ -104,7 +104,11 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		if createErr := remoteK8sClient.Create(ctx, secret); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
 			Expect(createErr).NotTo(HaveOccurred(), "failed to create workflow dependency secret")
 		}
-		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), secret) })
+		// The WFE and its remote Job are reconciled asynchronously. Removing the
+		// dependency when this spec finishes its WFE assertions races kubelet
+		// startup and causes a FailedMount after the test has already passed. The
+		// remote cluster is torn down with the suite, so retain this fixed-name
+		// fixture until then.
 
 		payload := buildPrometheusAlertWithCluster("FleetExecClusterOverride2326", "critical",
 			targetName, "prod-west")

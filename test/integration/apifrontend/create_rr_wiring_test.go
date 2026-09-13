@@ -20,6 +20,7 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	gatewaytypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 type noopPromClientIT struct{}
@@ -47,14 +48,18 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 // namespaced target, which would make HandleCreateRR/HandleRemediate return
 // early without creating an RR.
 type alwaysFiringPromClientIT struct {
-	namespace, kind, name string
+	namespace, kind, name, clusterID string
 }
 
 func (a *alwaysFiringPromClientIT) GetAlerts(_ context.Context) ([]prom.Alert, error) {
-	return []prom.Alert{{State: "firing", Labels: map[string]string{
+	labels := map[string]string{
 		"alertname": "TestDefaultAlert", "severity": "warning",
 		"namespace": a.namespace, "kind": a.kind, "name": a.name,
-	}}}, nil
+	}
+	if a.clusterID != "" {
+		labels[gatewaytypes.ClusterLabelKey] = a.clusterID
+	}
+	return []prom.Alert{{State: "firing", Labels: labels}}, nil
 }
 func (a *alwaysFiringPromClientIT) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
 	return nil, nil
@@ -68,8 +73,15 @@ func (a *alwaysFiringPromClientIT) InstantQuery(_ context.Context, _ string) (*p
 // param would require touching every caller in lockstep across both files
 // for a value that may legitimately vary as fixtures grow (mirrors
 // unnamedAlertTestTriagerIT's identical (namespace, kind, name) shape above).
-func defaultTestTriagerIT(namespace, kind, name string) *severity.Triager {
-	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+// clusterID is optional so existing local/hub fixtures continue to exercise
+// the unscoped path; fleet fixtures provide it to satisfy cluster-aware alert
+// correlation (Issue #2394).
+func defaultTestTriagerIT(namespace, kind, name string, clusterID ...string) *severity.Triager {
+	alertClusterID := ""
+	if len(clusterID) > 0 {
+		alertClusterID = clusterID[0]
+	}
+	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name, clusterID: alertClusterID}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }
 
 // unnamedAlertTestTriagerIT resolves a severity from a resource-matching
@@ -352,7 +364,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		resourceName := "web-fleet-004-" + uuid.New().String()[:6]
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", resourceName)}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", resourceName, "prod-east-1")}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        resourceName,
@@ -381,7 +393,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		baseName := "web-fleet-005-" + uuid.New().String()[:6]
 
-		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName)}, &tools.CreateRRArgs{
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-east")}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
@@ -391,7 +403,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result1.AlreadyExists).To(BeFalse())
 
-		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName)}, &tools.CreateRRArgs{
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-west")}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,

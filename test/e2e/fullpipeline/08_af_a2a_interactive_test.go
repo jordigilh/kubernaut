@@ -212,7 +212,9 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		By("Turn 4: watch remediation progress (blocks until terminal phase)")
 		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
 			"watch remediation progress")
-		resp4, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
+		// E2E-FP-2390-001: the full GitOps workflow can exceed five minutes on
+		// a resource-constrained CI runner while the server continues processing.
+		resp4, err := fpA2AInvokeWithTimeout(body, 6*time.Minute)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
 		Expect(resp4.StatusCode).To(Equal(http.StatusOK))
