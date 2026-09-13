@@ -81,33 +81,6 @@ func fpA2ATasksSend(id, text string) string {
 	})
 }
 
-// fpA2ATasksSendWithTask continues an existing A2A task by including taskId.
-// Includes a contextId derived from the taskId to prevent the SessionInterceptor
-// from overriding to a stale session.
-//
-// This is safe for multi-turn tests whose driver-establishing kubernaut_investigate
-// call happens on Turn 2+ (e.g. 07/08/09/17): every fpA2ATasksSendWithTask call for
-// the same taskID derives the identical "ctx-"+taskID session, so ADK session state
-// (af_interactive_driver_active, etc.) set on Turn 2 is visible on Turn 3+. It is NOT
-// safe when Turn 1 itself (via fpA2ATasksSend, whose contextId is "ctx-"+id, NOT
-// "ctx-"+taskID) already ran kubernaut_investigate -- Turn 2's derived "ctx-"+taskID
-// session is a brand-new, empty ADK session that never saw that state, so a
-// driver-gated tool call on Turn 2 is wrongly hard-rejected with "no_active_driver"
-// (issue #1899 E2E tests: use fpA2ATasksSendWithContext instead in that case).
-func fpA2ATasksSendWithTask(id, taskID, text string) string {
-	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
-		"id": taskID,
-		"message": map[string]interface{}{
-			"messageId": "msg-" + id,
-			"contextId": "ctx-" + taskID,
-			"role":      "user",
-			"parts": []map[string]interface{}{
-				{"kind": "text", "text": text},
-			},
-		},
-	})
-}
-
 // fpA2AMessageStreamWithContext is a message/stream JSON-RPC payload builder
 // (SSE variant of fpA2ATasksSend/fpA2ATasksSendWithTask) that takes an
 // explicit shared contextID instead of deriving one from id, so a later SSE

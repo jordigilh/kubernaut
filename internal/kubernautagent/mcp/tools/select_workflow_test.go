@@ -30,7 +30,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // mockHTTPCompleter implements mcptools.HTTPSessionCompleter for unit tests.
@@ -127,16 +131,28 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 	})
 
 	Describe("UT-KA-703-TOOL-006: Successful workflow selection", func() {
-		It("should look up workflow from catalog and return selection confirmation", func() {
+		It("UT-KA-2390-006: should look up workflow from catalog and return catalog-authoritative engine configuration", func() {
 			wfID := uuid.New().String()
 			catalog := &mockWorkflowCatalog{
 				workflow: &mcptools.CatalogWorkflow{
-					WorkflowID:      wfID,
-					WorkflowName:    "increase-memory",
-					ActionType:      "scale-vertical",
-					Version:         "v1.2.0",
-					ExecutionEngine: "argo-workflows",
-					ExecutionBundle: "oci://registry/increase-memory:v1.2.0",
+					WorkflowID:            wfID,
+					WorkflowName:          "increase-memory",
+					ActionType:            "scale-vertical",
+					Version:               "v1.2.0",
+					ExecutionEngine:       "argo-workflows",
+					ExecutionBundle:       "oci://registry/increase-memory:v1.2.0",
+					ExecutionBundleDigest: "sha256:2390",
+					ServiceAccountName:    "workflow-runner",
+					ExecutionClusterID:    "prod-east",
+					EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"namespace":"workflows"}`)},
+					Dependencies: &models.WorkflowDependencies{
+						Secrets: []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
+						Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi")},
+					},
+					DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true},
 				},
 			}
 			sessions := &mockSessionManager{
@@ -162,6 +178,14 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			Expect(output.Workflow.WorkflowName).To(Equal("increase-memory"))
 			Expect(output.Workflow.ActionType).To(Equal("scale-vertical"))
 			Expect(output.Workflow.ExecutionEngine).To(Equal("argo-workflows"))
+			Expect(output.Workflow.ExecutionBundleDigest).To(Equal("sha256:2390"))
+			Expect(output.Workflow.ServiceAccountName).To(Equal("workflow-runner"))
+			Expect(output.Workflow.ExecutionClusterID).To(Equal("prod-east"))
+			Expect(output.Workflow.EngineConfig.Raw).To(MatchJSON(`{"namespace":"workflows"}`))
+			Expect(output.Workflow.Dependencies.Secrets).To(ConsistOf(models.ResourceDependency{Name: "gitea-repo-creds"}))
+			Expect(output.Workflow.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
+			Expect(output.Workflow.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
+			Expect(output.Workflow.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true}))
 			Expect(output.Confidence).To(Equal(1.0))
 			Expect(output.Rationale).To(Equal("User-selected via interactive mode"))
 		})
@@ -755,7 +779,11 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 				ExecutionEngine:    "argo-workflows",
 				ExecutionBundle:    "oci://registry/increase-memory:v1.2.0",
 				ServiceAccountName: "remediation-sa",
-				Version:            "v1.2.0",
+				ExecutionClusterID: "hub",
+				DeclaredParameterNames: map[string]bool{
+					"TARGET_NAMESPACE": true,
+				},
+				Version: "v1.2.0",
 			}
 
 			result := mcptools.BuildFinalResult(rca, workflow, nil)
@@ -770,6 +798,8 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 			Expect(result.ServiceAccountName).To(Equal("remediation-sa"))
 			Expect(result.WorkflowVersion).To(Equal("v1.2.0"))
 			Expect(result.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			Expect(result.ExecutionClusterID).To(Equal("hub"))
+			Expect(result.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true}))
 			// Issue #1661 Change 12: ActionType/WorkflowName must flow through
 			// buildFinalResult (applySelectedWorkflow) the same as the other
 			// catalog-sourced fields above.

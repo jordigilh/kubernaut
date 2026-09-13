@@ -179,7 +179,38 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(envNames).To(ContainElement("TIMEOUT"))
 		})
 
-		It("UT-WE-054-JOB-003: should mount secret and configmap dependencies", func() {
+		It("UT-WE-2392-JOB-001 [BR-WE-014, AU-11]: omits Kubernetes TTL when failed execution retention is enabled", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-retention-enabled", "default/deployment/api", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{
+				RetainFailedExecutions: true,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+			Expect(job.Spec.TTLSecondsAfterFinished).To(BeNil())
+		})
+
+		It("UT-WE-2392-JOB-002 [BR-WE-014]: preserves the existing TTL when retention is disabled", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-retention-disabled", "default/deployment/api", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+			Expect(job.Spec.TTLSecondsAfterFinished).ToNot(BeNil())
+			Expect(*job.Spec.TTLSecondsAfterFinished).To(Equal(int32(600)))
+		})
+
+		It("UT-WE-2390-001 [DD-WE-006, AC-6]: should mount secret and configmap dependencies read-only", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
@@ -205,6 +236,10 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(volNames).To(ContainElement("secret-db-creds"))
 			Expect(volNames).To(ContainElement("configmap-app-config"))
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(And(
+				HaveField("Name", "configmap-app-config"),
+				HaveField("VolumeSource.ConfigMap.Name", "app-config"),
+			)), "ConfigMap volume must be backed by the declared resource")
 
 			mountPaths := make([]string, 0, len(job.Spec.Template.Spec.Containers[0].VolumeMounts))
 			for _, m := range job.Spec.Template.Spec.Containers[0].VolumeMounts {
@@ -212,6 +247,14 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(mountPaths).To(ContainElement(ContainSubstring("secrets/db-creds")))
 			Expect(mountPaths).To(ContainElement(ContainSubstring("configmaps/app-config")))
+			Expect(job.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "secret-db-creds"),
+				HaveField("ReadOnly", true),
+			)), "Secret dependency must be mounted read-only")
+			Expect(job.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "configmap-app-config"),
+				HaveField("ReadOnly", true),
+			)), "ConfigMap dependency must be mounted read-only")
 		})
 
 		It("UT-WE-054-JOB-004: should propagate ClientFactory error", func() {
@@ -256,7 +299,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		// BR-WE-019 / DD-WE-008: the "workflow" container's resource requests
 		// and limits come from WFE.Spec.WorkflowRef.Resources, the immutable
 		// CRD-embedded snapshot (Issue #1661 Change 11f).
-		It("UT-WE-054-JOB-021 [BR-WE-019]: should apply WFE.Spec.WorkflowRef.Resources to the workflow container", func() {
+		It("UT-WE-2390-001 [BR-WE-019]: should apply WFE.Spec.WorkflowRef.Resources to the workflow container", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
@@ -528,7 +571,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		// surfaces only via the Job's Pod events (kubelet-emitted FailedMount /
 		// CreateContainerConfigError). GetStatus must inspect these and enrich
 		// the generic Job condition message with the specific missing resource.
-		It("UT-WE-054-JOB-018 [BR-WORKFLOW-008]: should enrich Failed message with FailedMount Pod event detail", func() {
+		It("UT-WE-2390-002 [BR-WORKFLOW-008]: should enrich Failed message with FailedMount Pod event detail", func() {
 			jobName := executor.ExecutionResourceName("default/deployment/dep-missing")
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},

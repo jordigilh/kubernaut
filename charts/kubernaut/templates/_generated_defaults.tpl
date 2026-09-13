@@ -590,6 +590,8 @@ workflowexecution:
                 namespace: ""
         execution:
             cooldownPeriod: 1m
+            failedExecutionRetentionSeconds: 600
+            retainFailedExecutions: false
     debug:
         pprofEnabled: false
     fleet:

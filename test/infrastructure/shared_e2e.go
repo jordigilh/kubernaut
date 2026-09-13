@@ -186,7 +186,7 @@ subjects:
 	return nil
 }
 
-// fleetClusterIDScenarioYAML returns a keyword_scenarios YAML fragment for
+// fleetClusterIDScenarioYAML returns a scenario_selectors YAML fragment for
 // E2E-AF-1409-001 (#1409, ADR-065): a single-turn conversation where
 // kubernaut_remediate (LLM-supplied cluster_id, creates the RR) is chained
 // via NextToolCall into kubernaut_present_decision (no cluster_id of its
@@ -283,7 +283,7 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 // Turn 1's keyword deliberately avoids the substring "investigate" so it
 // can never tie with the generic "af_investigate" scenario registered
 // below (mock-llm's registry breaks same-confidence ties by registration
-// order; both keyword_scenarios would otherwise score 1.0).
+// order; both selector scenarios would otherwise score 1.0).
 //
 // The message scenario's repeat_tool_call: true is mandatory, not
 // optional (mirrors af_investigate's own repeat_tool_call below, same
@@ -411,6 +411,46 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string 
               arguments:
                 name: "$from_tool:kubernaut_investigate:rr_id"
 `, ns, selectWorkflowID)
+}
+
+// gitOpsInteractiveInvestigationScenarioYAML returns the explicit transcript
+// for the Issue #2390 multi-turn journey. Starting with kubernaut_investigate
+// creates the interactive session before the RR becomes visible to backend
+// controllers, preventing autonomous workflow selection from racing the later
+// manual discover/select turns (DD-AA-KA-001 Gap 6, DD-TEST-016).
+func gitOpsInteractiveInvestigationScenarioYAML(ns, workflowID string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`transcript_scenarios:
+      - name: "af_gitops_interactive_2390"
+        steps:
+          - user: "investigate GitOps remediation for deployment memory-eater"
+            tool_call:
+              name: "kubernaut_investigate"
+              arguments:
+                namespace: "%s"
+                kind: "Deployment"
+                name: "memory-eater"
+                api_version: "apps/v1"
+                interaction_mode: "interactive"
+          - user: "discover available workflows"
+            tool_call:
+              name: "kubernaut_discover_workflows"
+              arguments:
+                rr_id: "$from_tool:kubernaut_investigate:rr_id"
+          - user: "select the discovered GitOps workflow"
+            tool_call:
+              name: "kubernaut_select_workflow"
+              arguments:
+                rr_id: "$from_tool:kubernaut_investigate:rr_id"
+                workflow_id: "%s"
+          - user: "watch remediation progress"
+            tool_call:
+              name: "kubernaut_watch"
+              arguments:
+                name: "$from_tool:kubernaut_investigate:rr_id"
+`, ns, workflowID)
 }
 
 // consentGatePhase2AttemptScenarioYAML returns a keyword scenario for
@@ -664,7 +704,7 @@ func resolveWorkflowUUID(workflowUUIDs map[string]string, workflowName string) s
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
 // afRemediateNS controls per-test namespace isolation for the mock-LLM's
-// kubernaut_remediate keyword scenarios. Each map entry generates a distinct
+// kubernaut_remediate selector scenario. Each map entry generates a distinct
 // scenario with keyword "<key> remediation" targeting the given namespace.
 // For example {"autonomous": "fp-auto-abc"} produces a scenario named
 // "kubernaut_remediate_autonomous" that matches the keyword "autonomous remediation"
@@ -677,6 +717,16 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
 		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
+	// Override the built-in GitOps selection scenario with the UUID assigned by
+	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
+	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
+	scenariosYAML += fmt.Sprintf(`      af_select_gitops_workflow_2390:
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
+            workflow_id: "%s"
+`, afGitOpsWorkflowID)
 	scenariosYAML += fmt.Sprintf("      injection_configmap_read:\n"+
 		"        force_text: false\n"+
 		"        tool_call:\n"+
@@ -704,7 +754,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		"              name: api-server-abc\n" +
 		"              namespace: production\n"
 
-	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
+	// Issue #1189: Append AF scenario selectors with match_last_only so the FP
 	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
 	// Tool schemas updated for #1326 MCP migration and #1332 intent-based redesign:
 	// kubernaut_remediate creates RR; kubernaut_investigate accepts {rr_id}.
@@ -757,19 +807,35 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// invalid_workflow (silently, unless the caller strictly asserts on
 	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
 	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
+	// This phrase is also used by the generic consent-gate scenario below.
+	// Register the GitOps-specific rule first so E2E-FP-2390 selects the
+	// workflow whose snapshot contains the dependency and resource assertions.
+	afGitOpsSelectScenarioYAML := fmt.Sprintf(`      - name: "af_select_gitops_workflow_2390"
+        keywords: ["select the discovered GitOps workflow"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
+            workflow_id: "%s"
+`, afGitOpsWorkflowID)
 	// #1853 mode 2/3 and #1899 consent-gate scenarios are registered before
 	// af_investigate below: all of their keywords contain the substring
 	// "investigate", and mock-llm's registry breaks confidence ties (all
-	// keyword_scenarios score 1.0) by registration order, so these must
+	// selector scenarios score 1.0) by registration order, so these must
 	// come first to win over the bare "investigate" keyword.
-	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios +
+	afKeywordYAML := "scenario_selectors:\n" + remediateScenarios +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
+		afGitOpsSelectScenarioYAML +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
 		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"
+        caller: "af"
+        phase: "investigation"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         repeat_tool_call: true
@@ -834,7 +900,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       # doc comments). Keyword phrasing is deliberately non-overlapping with
       # "discover available workflows"/"discover workflows" and "watch
       # remediation"/"watch pipeline"/"watch progress": mock-llm's registry
-      # breaks confidence ties (all keyword_scenarios score 1.0) by
+      # breaks confidence ties (all selector scenarios score 1.0) by
       # registration order, so a phrase that's a superset of an
       # earlier-registered keyword would silently resolve to the wrong
       # scenario instead of failing loudly.
@@ -863,6 +929,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
 ` + fleetClusterIDScenarioYAML(afRemediateNS["fleet"]) + kaInteractiveFleetBridgeScenarioYAML()
+	afTranscriptYAML := gitOpsInteractiveInvestigationScenarioYAML(afRemediateNS["interactive"], afGitOpsWorkflowID)
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
@@ -876,7 +943,8 @@ data:
   scenarios.yaml: |
     %s
     %s
----`, namespace, scenariosYAML, afKeywordYAML)
+    %s
+---`, namespace, scenariosYAML, afKeywordYAML, afTranscriptYAML)
 
 	_, _ = fmt.Fprintf(writer, "   📦 Creating Mock LLM ConfigMap...\n")
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)

@@ -35,8 +35,10 @@ func defaultFallbackScenario() *configScenario {
 	cfg := defaultConfig()
 	return &configScenario{
 		config: cfg,
-		matchFunc: func(_ *DetectionContext) (bool, float64) {
-			return true, 0.01
+		selector: ScenarioSelector{
+			CustomMatch: func(_ *DetectionContext) (bool, float64) {
+				return true, 0.01
+			},
 		},
 	}
 }

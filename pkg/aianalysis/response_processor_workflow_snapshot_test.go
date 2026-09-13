@@ -86,7 +86,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// DeclaredParameterNames from KA's response map (DD-WORKFLOW-018)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-338-001: extracts Dependencies/Resources/DeclaredParameterNames from the KA response into SelectedWorkflow", func() {
+	It("UT-AA-2390-001: extracts Dependencies/Resources/DeclaredParameterNames from the KA response into SelectedWorkflow", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-001",
 			Analysis:         "Root cause: memory pressure",
@@ -135,7 +135,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// UT-AA-338-002: round-trip when the fields are absent — no panic, nil/empty
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-338-002: leaves Dependencies/Resources/DeclaredParameterNames nil when absent from the KA response, without panicking", func() {
+	It("UT-AA-2390-002: leaves Dependencies/Resources/DeclaredParameterNames nil when absent from the KA response, without panicking", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-002",
 			Analysis:         "Root cause: crash loop",
@@ -168,7 +168,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 	// terminal paths must also stamp SelectedAt (all 3 population call sites)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	It("UT-AA-338-003: preserveLowConfidenceWorkflow stamps SelectedAt (low-confidence terminal path)", func() {
+	It("UT-AA-2390-002: preserveLowConfidenceWorkflow stamps SelectedAt (low-confidence terminal path)", func() {
 		kaResp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-wfsnap-003",
 			Analysis:         "Root cause: low confidence match",

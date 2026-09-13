@@ -62,18 +62,21 @@ func crashloopScenario() *configScenario {
 	cfg := crashloopConfig()
 	return &configScenario{
 		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			signal := extractSignal(ctx)
-			if signal == "" {
+		selector: ScenarioSelector{
+			SignalPatterns: []string{"crashloop", "backoff"},
+			CustomMatch: func(ctx *DetectionContext) (bool, float64) {
+				signal := extractSignal(ctx)
+				if signal == "" {
+					return false, 0
+				}
+				if strings.Contains(signal, "crashloop") {
+					return true, 0.8
+				}
+				if strings.Contains(signal, "backoff") && strings.Contains(strings.ToLower(ctx.AllText), "crashloop") {
+					return true, 0.8
+				}
 				return false, 0
-			}
-			if strings.Contains(signal, "crashloop") {
-				return true, 0.8
-			}
-			if strings.Contains(signal, "backoff") && strings.Contains(ctx.AllText, "crashloop") {
-				return true, 0.8
-			}
-			return false, 0
+			},
 		},
 	}
 }

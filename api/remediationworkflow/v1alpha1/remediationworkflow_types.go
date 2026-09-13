@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
@@ -184,6 +185,11 @@ type RemediationWorkflowExecution struct {
 	// admission-time cluster-registry validation, DD-FLEET-008).
 	// +optional
 	ClusterID string `json:"clusterId,omitempty"`
+
+	// Resources declares CPU and memory requests/limits for the workflow
+	// container when using the Job execution engine (BR-WE-019 / DD-WE-008).
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // RemediationWorkflowDependencies declares infrastructure resources

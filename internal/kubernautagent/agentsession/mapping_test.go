@@ -22,6 +22,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
@@ -191,6 +192,7 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 				ActionType:            "restart",
 				WorkflowName:          "restart-deployment",
 				ExecutionClusterID:    "prod-east",
+				EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"site.yml"}`)},
 				IsActionable:          &isActionable,
 				ContributingFactors:   []string{"memory leak"},
 				CausalChain:           []string{"leak", "OOM", "crash"},
@@ -231,6 +233,7 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 			Expect(sw["workflow_id"]).To(Equal("wf-restart"))
 			Expect(sw["execution_bundle_digest"]).To(Equal("sha256:abc"))
 			Expect(sw["execution_cluster_id"]).To(Equal("prod-east"))
+			Expect(sw["engine_config"]).To(Equal(map[string]interface{}{"playbookPath": "site.yml"}))
 
 			Expect(res.DetectedLabels).NotTo(BeNil())
 

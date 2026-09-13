@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -54,7 +55,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 
 	Context("Job execution backend with schema-declared dependencies", func() {
 
-		It("IT-WE-006-001: should mount secret volumes when workflow declares secret dependencies", func() {
+		It("IT-WE-2390-001 / IT-WE-006-001: should mount secret volumes and preserve Job snapshot metadata", func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "it-gitea-creds-001",
@@ -72,6 +73,12 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "it-gitea-creds-001"}},
 			}
+			wfe.Spec.WorkflowRef.ServiceAccountName = "workflow-job-executor"
+			wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
+			}
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"NAMESPACE": true}
+			wfe.Spec.Parameters = map[string]string{"NAMESPACE": "default", "UNDECLARED": "must-not-reach-job"}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -89,9 +96,17 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 				HaveField("MountPath", "/run/kubernaut/secrets/it-gitea-creds-001"),
 				HaveField("ReadOnly", true),
 			)), "Container should mount secret at convention path, read-only")
+			Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("workflow-job-executor"),
+				"IT-WE-2390-001: Job must use the snapshot service account")
+			Expect(job.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("10m")),
+				"IT-WE-2390-001: Job must use snapshot resource requirements")
+			Expect(container.Env).To(ContainElement(HaveField("Name", "NAMESPACE")),
+				"IT-WE-2390-001: declared parameters must reach the Job")
+			Expect(container.Env).NotTo(ContainElement(HaveField("Name", "UNDECLARED")),
+				"IT-WE-2390-001: undeclared parameters must be filtered")
 		})
 
-		It("IT-WE-006-002: should mount configMap volumes when workflow declares configMap dependencies", func() {
+		It("IT-WE-2390-004 [DD-WE-006, AC-6]: should mount ConfigMap volumes when workflow declares ConfigMap dependencies", func() {
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "it-remediation-config-002",
@@ -118,6 +133,10 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
 				HaveField("Name", "configmap-it-remediation-config-002"),
 			), "Job should have a volume for the declared configMap")
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(And(
+				HaveField("Name", "configmap-it-remediation-config-002"),
+				HaveField("VolumeSource.ConfigMap.Name", "it-remediation-config-002"),
+			)), "Job volume must be backed by the declared ConfigMap")
 
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.VolumeMounts).To(ContainElement(And(
@@ -127,7 +146,7 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			)), "Container should mount configMap at convention path, read-only")
 		})
 
-		It("IT-WE-1481-001 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
+		It("IT-WE-2390-002 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
 			wfe := createUniqueJobWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
 			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},

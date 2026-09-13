@@ -68,6 +68,7 @@ func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(_ context.Context, w
 	opts := weexecutor.CreateOptions{
 		Dependencies:           convertWorkflowDependencies(ref.Dependencies),
 		DeclaredParameterNames: ref.DeclaredParameterNames,
+		RetainFailedExecutions: r.RetainFailedExecutions,
 	}
 	return nil, opts, nil
 }

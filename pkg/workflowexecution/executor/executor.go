@@ -36,6 +36,10 @@ import (
 type CreateOptions struct {
 	Dependencies *models.WorkflowDependencies
 
+	// RetainFailedExecutions disables backend-native cleanup that could remove
+	// failed diagnostics before the controller retention deadline (BR-WE-019).
+	RetainFailedExecutions bool
+
 	// DeclaredParameterNames is the set of parameter names declared in the
 	// workflow schema (from DS catalog). Used by executors to strip undeclared
 	// parameters before injecting them into execution resources.
@@ -94,6 +98,13 @@ type Executor interface {
 
 	// Engine returns the execution engine identifier ("tekton", "job", or "ansible")
 	Engine() string
+}
+
+// EphemeralResourceCleaner is an optional executor capability for deleting
+// short-lived supporting resources without deleting the execution resource
+// itself (BR-WE-015, ASVS V7.1.1).
+type EphemeralResourceCleaner interface {
+	CleanupEphemeralResources(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error
 }
 
 // ExecutionResult represents the mapped status of an execution resource.

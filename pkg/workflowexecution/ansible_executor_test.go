@@ -706,6 +706,34 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 	})
 
 	Context("Cleanup with ephemeral credentials", func() {
+		It("UT-WE-2392-AWX-003 [BR-WE-015, AU-9]: deletes credentials without cancelling a retained failed AWX job", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+
+			var deletedCredIDs []int
+			awxClient.deleteCredentialFn = func(_ context.Context, credID int) error {
+				deletedCredIDs = append(deletedCredIDs, credID)
+				return nil
+			}
+			cancelCalled := false
+			awxClient.cancelFunc = func(_ context.Context, _ int) error {
+				cancelCalled = true
+				return nil
+			}
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "retained-failed-awx", Namespace: "default"},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					EphemeralCredentialIDs: []int{42, 55},
+					ExecutionRef:           &corev1.LocalObjectReference{Name: "awx-job-99"},
+				},
+			}
+
+			Expect(ansibleExec.CleanupEphemeralResources(ctx, wfe, "default")).To(Succeed())
+			Expect(deletedCredIDs).To(ConsistOf(42, 55))
+			Expect(cancelCalled).To(BeFalse())
+		})
+
 		It("UT-WE-015-034: should delete ephemeral credentials from status before cancelling job", func() {
 			fakeClient = newFakeClient()
 			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
@@ -2016,7 +2044,7 @@ var _ = Describe("Ansible Executor Parameter Filtering (#243)", func() {
 		awxClient = &mockAWXClient{}
 	})
 
-	It("UT-WE-243-040: should strip undeclared params from AWX extra_vars when DeclaredParameterNames is set", func() {
+	It("UT-WE-2390-003: should strip undeclared params from AWX extra_vars when DeclaredParameterNames is set", func() {
 		var capturedExtraVars map[string]interface{}
 		awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, _ []int) (int, error) {
 			capturedExtraVars = extraVars

@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -157,21 +157,25 @@ type MockUsage struct {
 // BoolPtr is a helper for creating *bool literals in scenario configs.
 func BoolPtr(v bool) *bool { return &v }
 
-// configScenario is a Scenario backed by a static MockScenarioConfig and
-// a MatchFunc that implements the detection logic.
+// configScenario is a Scenario backed by a static MockScenarioConfig and a
+// canonical ScenarioSelector.
 type configScenario struct {
-	config    MockScenarioConfig
-	matchFunc func(ctx *DetectionContext) (bool, float64)
+	config   MockScenarioConfig
+	selector ScenarioSelector
 }
 
 func (s *configScenario) Name() string { return s.config.ScenarioName }
 func (s *configScenario) Match(ctx *DetectionContext) (bool, float64) {
-	return s.matchFunc(ctx)
+	return s.selector.Match(ctx)
 }
 func (s *configScenario) Metadata() ScenarioMetadata {
 	return ScenarioMetadata{
-		Name:        s.config.ScenarioName,
-		Description: s.config.RootCause,
+		Name:           s.config.ScenarioName,
+		Description:    s.config.RootCause,
+		SignalPatterns: append([]string(nil), s.selector.SignalPatterns...),
+		Keywords:       append([]string(nil), s.selector.Keywords...),
+		Caller:         s.selector.Scope.Caller,
+		Phase:          s.selector.Scope.Phase,
 	}
 }
 func (s *configScenario) DAG() *conversation.DAG { return nil }

@@ -379,8 +379,9 @@ remediationorchestrator:
 
 # -- WorkflowExecution controller
 # DD-PLATFORM-006 DA14: workflowNamespace ("kubernaut-workflows") / replicas (1)
-# / logging.level ("INFO") / config.execution.cooldownPeriod ("1m") all have
-# non-zero schema defaults -- omitted here, override only what you need.
+# / logging.level ("INFO") / config.execution.cooldownPeriod ("1m") /
+# config.execution.failedExecutionRetentionSeconds (600) all have schema
+# defaults -- omitted here, override only what you need.
 workflowexecution:
   # -- config.execution.cooldownPeriod has a non-zero schema default ("1m",
   # DD-PLATFORM-006 DA14) -- omitted here. config.tekton/config.ansible are

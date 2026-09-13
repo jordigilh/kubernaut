@@ -18,6 +18,7 @@ package adapters_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
@@ -51,10 +52,44 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 					WorkflowID:            "wf-123",
 					WorkflowName:          "restart-pod",
 					ActionType:            "RestartPod",
-					ExecutionEngine:       "tekton",
+					ExecutionEngine:       "ansible",
 					ExecutionBundle:       strPtr("ghcr.io/kubernaut/restart-pod:v1"),
 					ExecutionBundleDigest: strPtr("sha256:abc123"),
 					ServiceAccountName:    strPtr("remediation-sa"),
+					ExecutionClusterID:    strPtr("hub"),
+					EngineConfig:          rawJSON(`{"playbookPath":"site.yml"}`),
+					Content: `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: restart-pod
+spec:
+  version: v1.0.0
+  description:
+    what: restart a pod
+    whenToUse: when a pod is unhealthy
+    whenNotToUse: when the pod is healthy
+    preconditions: the pod exists
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: [v1/Pod]
+    priority: P1
+  execution:
+    engine: ansible
+    engineConfig:
+      playbookPath: site.yml
+    resources:
+      requests:
+        cpu: 100m
+      limits:
+        memory: 512Mi
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+`,
 				},
 			}
 
@@ -66,10 +101,16 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 			// Issue #1661 Change 12: ActionType closes the sibling gap next
 			// to WorkflowName, which was already wired here.
 			Expect(result.ActionType).To(Equal("RestartPod"))
-			Expect(result.ExecutionEngine).To(Equal("tekton"))
+			Expect(result.ExecutionEngine).To(Equal("ansible"))
 			Expect(result.ExecutionBundle).To(Equal("ghcr.io/kubernaut/restart-pod:v1"))
 			Expect(result.ExecutionBundleDigest).To(Equal("sha256:abc123"))
 			Expect(result.ServiceAccountName).To(Equal("remediation-sa"))
+			Expect(result.ExecutionClusterID).To(Equal("hub"))
+			Expect(result.EngineConfig).NotTo(BeNil())
+			Expect(result.Dependencies.Secrets).To(ConsistOf(models.ResourceDependency{Name: "gitea-repo-creds"}))
+			Expect(result.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true}))
+			Expect(result.Resources.Requests).NotTo(BeEmpty())
+			Expect(result.Resources.Limits).NotTo(BeEmpty())
 		})
 	})
 
@@ -90,6 +131,11 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 		})
 	})
 })
+
+func rawJSON(raw string) *json.RawMessage {
+	message := json.RawMessage(raw)
+	return &message
+}
 
 var _ = Describe("ExtractContent — QE-01", func() {
 

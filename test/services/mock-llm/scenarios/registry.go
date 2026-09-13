@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,14 +31,16 @@ type Scenario interface {
 
 // ScenarioMetadata describes a scenario for documentation and listing.
 type ScenarioMetadata struct {
-	Name          string
-	Description   string
-	WorkflowName  string
-	Environment   string
-	ActionType    string
-	IsProactive   bool
+	Name           string
+	Description    string
+	WorkflowName   string
+	Environment    string
+	ActionType     string
+	IsProactive    bool
 	SignalPatterns []string
-	Keywords      []string
+	Keywords       []string
+	Caller         Caller
+	Phase          Phase
 }
 
 // DetectionResult captures which scenario matched and how.
@@ -87,6 +89,9 @@ func (r *Registry) Detect(ctx *DetectionContext) *DetectionResult {
 	var best *DetectionResult
 
 	for _, s := range r.scenarios {
+		if !s.Metadata().Matches(ctx) {
+			continue
+		}
 		matched, confidence := s.Match(ctx)
 		if !matched {
 			continue

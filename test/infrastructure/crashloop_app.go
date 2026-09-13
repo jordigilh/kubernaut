@@ -116,9 +116,10 @@ spec:
       - name: %[3]s
         image: busybox:1.36
         imagePullPolicy: IfNotPresent
-        envFrom:
-        - configMapRef:
-            name: %[2]s
+        volumeMounts:
+        - name: app-config
+          mountPath: /run/crashloop-config
+          readOnly: true
         # BestEffort (no resources block) pods are the kernel OOM-killer's
         # first target under node memory pressure and can collaterally starve
         # or destabilize scheduling for unrelated pods sharing the node (CI
@@ -138,12 +139,17 @@ spec:
         command: ["sh", "-c"]
         args:
           - |
-            if [ "$%[4]s" != "%[6]s" ]; then
-              echo "FATAL: invalid %[4]s='$%[4]s' (expected '%[6]s')"
+            mode="$(cat /run/crashloop-config/%[4]s 2>/dev/null || true)"
+            if [ "$mode" != "%[6]s" ]; then
+              echo "FATAL: invalid %[4]s='$mode' (expected '%[6]s')"
               exit 1
             fi
             echo "%[4]s=%[6]s, running normally"
             sleep 3600
+      volumes:
+      - name: app-config
+        configMap:
+          name: %[2]s
 `, targetNamespace, CrashLoopAppConfigMapName, CrashLoopAppName, CrashLoopAppConfigKey, CrashLoopAppBadValue, CrashLoopAppGoodValue)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

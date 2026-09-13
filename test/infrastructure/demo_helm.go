@@ -209,6 +209,9 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 		"--set", "global.llmProfiles.primary.model=" + opts.LLMModel,
 		"--set", "global.llmProfiles.primary.credentialsSecretName=" + demoLLMSecretName,
 		"--set", fmt.Sprintf("gateway.enabled=%t", opts.Autonomous),
+		// Retain failed execution resources in demo environments so failure
+		// diagnostics remain available for investigation and must-gather.
+		"--set", "workflowexecution.config.execution.retainFailedExecutions=true",
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}

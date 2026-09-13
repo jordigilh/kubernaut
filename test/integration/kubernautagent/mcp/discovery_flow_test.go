@@ -47,7 +47,7 @@ import (
 
 // discoverySignalResolver returns a signal context that triggers the oomkilled
 // scenario in the real Mock LLM container. The Phase 3 prompt template emits
-// "Signal Name: OOMKilled" which the Mock LLM's signalScenario matcher detects.
+// "Signal Name: OOMKilled" which the Mock LLM's signal selector detects.
 type discoverySignalResolver struct{}
 
 func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
@@ -140,8 +140,8 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 		stack.Close()
 	})
 
-	Describe("IT-KA-DISC-001: start -> message -> discover_workflows -> select_workflow (auto-complete) (#1169)", func() {
-		It("should complete the full discovery flow with per-workflow parameters and auto-complete the HTTP session", func() {
+	Describe("IT-KA-2390-001/002/003: interactive workflow snapshot metadata parity", func() {
+		It("should complete the production discovery flow and preserve catalog metadata in the HTTP session", func() {
 			sess, err := connectMCP(stack.Server, "alice@acme.io")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = sess.Close() }()
@@ -235,6 +235,18 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("verifying TARGET_RESOURCE_API_VERSION is auto-resolved for non-ambiguous kinds [BR-WORKFLOW-004]")
 			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
 				"BR-WORKFLOW-004: TARGET_RESOURCE_API_VERSION must be auto-resolved via ScopeResolver for unambiguous Deployment kind")
+
+			By("verifying catalog-authoritative execution metadata reaches the interactive result")
+			Expect(cr.ExecutionEngine).To(Equal("tekton"), "IT-KA-2390-001: engine must come from the catalog")
+			Expect(cr.ExecutionBundle).To(Equal("quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:a663ba9ddf8a074025723a4fbbef5542f520deb4e5eaf9814e07775456ecd7e0"),
+				"IT-KA-2390-001: bundle must remain catalog-authoritative")
+			Expect(cr.DeclaredParameterNames).To(Equal(map[string]bool{
+				"TARGET_RESOURCE_NAME": true, "TARGET_RESOURCE_KIND": true,
+				"TARGET_RESOURCE_NAMESPACE": true, "MEMORY_LIMIT_NEW": true,
+			}), "IT-KA-2390-002: declared parameter names must survive interactive selection")
+			Expect(cr.ServiceAccountName).To(BeEmpty(), "IT-KA-2390-003: unset catalog service account must not be synthesized")
+			Expect(cr.Dependencies).To(BeNil(), "IT-KA-2390-003: absent catalog dependencies must remain absent")
+			Expect(cr.Resources).To(BeNil(), "IT-KA-2390-003: absent catalog resources must remain absent")
 		})
 	})
 

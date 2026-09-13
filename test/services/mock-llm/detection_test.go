@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -65,7 +65,102 @@ var _ = Describe("Scenario Detection Rules", func() {
 		Entry("UT-MOCK-022-003: NodeNotReady → node_not_ready", "- Signal Name: NodeNotReady\n- Node: worker-1", "node_not_ready"),
 		Entry("UT-MOCK-022-004: CertManagerCertNotReady → cert_not_ready", "- Signal Name: CertManagerCertNotReady\n- Namespace: cert-manager", "cert_not_ready"),
 		Entry("UT-MOCK-022-005: MemoryExceedsLimit → oomkilled", "- Signal Name: MemoryExceedsLimit\n- Namespace: prod", "oomkilled"),
+		Entry("UT-ML-2390-002: GitOpsDrift2390 → gitops_drift_2390", "- Signal Name: GitOpsDrift2390\n- Resource: production/Deployment/memory-eater", "gitops_drift_2390"),
 	)
+
+	Describe("UT-MOCK-2390-002: Request scope inference", func() {
+		It("should identify AF investigation requests from the declared tool", func() {
+			caller, phase := scenarios.InferRequestScope(
+				"start investigation",
+				"start investigation",
+				"start investigation",
+				[]string{"kubernaut_investigate"},
+			)
+			Expect(caller).To(Equal(scenarios.CallerAF))
+			Expect(phase).To(Equal(scenarios.PhaseInvestigation))
+		})
+
+		It("should identify KA RCA requests from the submit tool", func() {
+			caller, phase := scenarios.InferRequestScope(
+				"investigate the incident and submit the root cause",
+				"investigate the incident and submit the root cause",
+				"investigate the incident and submit the root cause",
+				[]string{"submit_result"},
+			)
+			Expect(caller).To(Equal(scenarios.CallerKA))
+			Expect(phase).To(Equal(scenarios.PhaseRCA))
+		})
+
+		It("should leave caller and phase unknown without positive scope evidence", func() {
+			caller, phase := scenarios.InferRequestScope("hello", "hello", "hello", nil)
+			Expect(caller).To(Equal(scenarios.CallerUnknown))
+			Expect(phase).To(Equal(scenarios.PhaseUnknown))
+		})
+
+		It("should use the current AF message instead of tool declaration order", func() {
+			caller, phase := scenarios.InferRequestScope(
+				"investigate, then select workflow",
+				"investigate, then select workflow",
+				"select workflow",
+				[]string{"kubernaut_investigate", "kubernaut_select_workflow", "kubernaut_remediate"},
+			)
+			Expect(caller).To(Equal(scenarios.CallerAF))
+			Expect(phase).To(Equal(scenarios.PhaseWorkflowSelection))
+		})
+	})
+
+	Describe("UT-ML-2390-004: Canonical scenario selectors", func() {
+		It("should match only the configured request surface", func() {
+			selector := scenarios.ScenarioSelector{
+				Keywords:          []string{"start investigation"},
+				MatchLastUserOnly: true,
+				Confidence:        0.91,
+			}
+
+			matched, confidence := selector.Match(&scenarios.DetectionContext{
+				Content:         "start investigation for pod nginx",
+				AllText:         "previous start investigation turn",
+				LastUserContent: "unrelated follow-up",
+			})
+			Expect(matched).To(BeFalse())
+			Expect(confidence).To(BeZero())
+
+			matched, confidence = selector.Match(&scenarios.DetectionContext{
+				Content:         "prior turn",
+				AllText:         "prior start investigation turn",
+				LastUserContent: "start investigation for pod nginx",
+			})
+			Expect(matched).To(BeTrue())
+			Expect(confidence).To(Equal(0.91))
+		})
+
+		It("should publish selector constraints in scenario metadata", func() {
+			metadataByName := make(map[string]scenarios.ScenarioMetadata)
+			for _, metadata := range registry.List() {
+				metadataByName[metadata.Name] = metadata
+			}
+
+			Expect(metadataByName["no_workflow_found"].Keywords).To(ContainElement("mock_no_workflow_found"))
+			Expect(metadataByName["oomkilled"].SignalPatterns).To(ContainElement("oomkilled"))
+		})
+	})
+
+	Describe("UT-MOCK-2387-001: OOM investigation tool dispatch", func() {
+		It("disables force-text so autonomous OOM investigations can dispatch tools", func() {
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: "- Signal Name: OOMKilled\n- Namespace: default",
+				AllText: "- Signal Name: OOMKilled\n- Namespace: default",
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("oomkilled"))
+
+			configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue(), "OOM scenario should expose its response configuration")
+			cfg := configured.Config()
+			Expect(cfg.ForceText).NotTo(BeNil(), "OOM scenario must override the global force-text setting")
+			Expect(*cfg.ForceText).To(BeFalse(), "OOM investigation must dispatch diagnostic tools")
+		})
+	})
 
 	// Issue #1542 follow-up: "BackOff" is Kubernetes' generic crash-loop
 	// reason and fires for ANY crash-looping container, regardless of root
@@ -149,12 +244,12 @@ var _ = Describe("Scenario Detection Rules", func() {
 				Expect(result.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"),
 					"cross-namespace remediation prompt must match the cross-NS scenario")
 
-			cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithContextConfig)
-			Expect(ok).To(BeTrue(), "scenario should implement ScenarioWithContextConfig")
-			cfg := cfgScenario.ConfigForContext(ctx)
-			Expect(cfg.ResourceNS).To(Equal(expectedNS),
-				"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
-			Expect(cfg.ResourceName).To(Equal(expectedName))
+				cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithContextConfig)
+				Expect(ok).To(BeTrue(), "scenario should implement ScenarioWithContextConfig")
+				cfg := cfgScenario.ConfigForContext(ctx)
+				Expect(cfg.ResourceNS).To(Equal(expectedNS),
+					"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
+				Expect(cfg.ResourceName).To(Equal(expectedName))
 			},
 			Entry("UT-MOCK-1292-001a: single-line prompt with spaces",
 				"cross-namespace remediation for deployment memory-eater in demo-workload namespace",
