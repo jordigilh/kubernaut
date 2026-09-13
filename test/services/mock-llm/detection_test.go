@@ -145,6 +145,23 @@ var _ = Describe("Scenario Detection Rules", func() {
 		})
 	})
 
+	Describe("UT-MOCK-2387-001: OOM investigation tool dispatch", func() {
+		It("disables force-text so autonomous OOM investigations can dispatch tools", func() {
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: "- Signal Name: OOMKilled\n- Namespace: default",
+				AllText: "- Signal Name: OOMKilled\n- Namespace: default",
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("oomkilled"))
+
+			configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue(), "OOM scenario should expose its response configuration")
+			cfg := configured.Config()
+			Expect(cfg.ForceText).NotTo(BeNil(), "OOM scenario must override the global force-text setting")
+			Expect(*cfg.ForceText).To(BeFalse(), "OOM investigation must dispatch diagnostic tools")
+		})
+	})
+
 	// Issue #1542 follow-up: "BackOff" is Kubernetes' generic crash-loop
 	// reason and fires for ANY crash-looping container, regardless of root
 	// cause (OOM-induced restarts vs. a genuine ConfigMap misconfiguration).

@@ -37,6 +37,7 @@ func oomkilledConfig() MockScenarioConfig {
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
+		ForceText:            BoolPtr(false),
 	}
 }
 
