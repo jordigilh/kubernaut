@@ -257,7 +257,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			"E2E-FP-2390-001: catalog resources must survive interactive selection")
 		jobs := &batchv1.JobList{}
 		Eventually(func() int {
-			if err := apiReader.List(ctx, jobs, client.InNamespace(namespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": we.Name}); err != nil {
+			if err := apiReader.List(ctx, jobs, client.InNamespace(infrastructure.ExecutionNamespace), client.MatchingLabels{"kubernaut.ai/workflow-execution": we.Name}); err != nil {
 				return 0
 			}
 			return len(jobs.Items)
