@@ -2838,7 +2838,8 @@ for d in docs:
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set console.enabled=true \
     --set console.auth.secretName=console-oauth-creds \
-    --set console.ingress.host=console.apps.example.com 2>&1)
+    --set console.ingress.host=console.apps.example.com \
+    --set-string apifrontend.config.auth.issuerURL= 2>&1)
   if grep -q "at '/apifrontend/config/auth/issuerURL'" <<< "$console_no_issuer" && \
      grep -q "missing property 'jwtProviders'" <<< "$console_no_issuer"; then
     tap_ok "ST-CHART-CONSOLE-001c: console.enabled=true without a resolvable OIDC issuer fails fast"
