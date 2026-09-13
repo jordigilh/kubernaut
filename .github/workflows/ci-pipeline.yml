@@ -1677,7 +1677,7 @@ jobs:
           kubectl create secret generic valkey-secret -n "$GITOPS_NAMESPACE" \
             --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
           kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
-            --from-literal=OPENAI_API_KEY=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
+            --from-literal=api_key=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
           # DD-PLATFORM-006 DA6/DA7 (PR #1790 round-7 RCA): datastorage-audit-hmac-key
           # is mandatory (AU-9) with no enabled gate, but secrets.yaml's fail() guard
           # only skips validation when tls.mode=hook (that mode's tls-cert-job
