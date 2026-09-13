@@ -1706,6 +1706,24 @@ jobs:
           REPO_URL: https://github.com/${{ github.repository }}.git
           TARGET_REVISION: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
         run: |
+          # ArgoCD renders Helm with `helm template`, so lookup-based API server
+          # discovery is unavailable. NetworkPolicy matches the real backend
+          # endpoint after Service DNAT, not the kubernetes Service ClusterIP.
+          mapfile -t api_server_ips < <(
+            kubectl get endpoints kubernetes -n default \
+              -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{"\n"}{end}'
+          )
+          api_server_port=$(kubectl get endpoints kubernetes -n default \
+            -o jsonpath='{.subsets[0].ports[0].port}')
+          if [[ "${#api_server_ips[@]}" -eq 0 || -z "$api_server_port" ]]; then
+            echo "FAIL: could not discover Kubernetes API server endpoint"
+            exit 1
+          fi
+          api_server_cidrs=""
+          for ip in "${api_server_ips[@]}"; do
+            printf -v cidr_line '                      - %s/32\n' "$ip"
+            api_server_cidrs+="$cidr_line"
+          done
           cat <<EOF | argocd app create -f -
           apiVersion: argoproj.io/v1alpha1
           kind: Application
@@ -1738,6 +1756,9 @@ jobs:
                     existingSecret: valkey-secret
                   kubernautAgent:
                     llmProfileRef: primary
+                  networkPolicies:
+                    apiServerCIDRs:
+          ${api_server_cidrs}                    apiServerPort: ${api_server_port}
                   signalprocessing:
                     policies:
                       content: |
