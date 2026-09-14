@@ -1758,7 +1758,7 @@ jobs:
                     llmProfileRef: primary
                   networkPolicies:
                     apiServerCIDRs:
-          ${api_server_cidrs}                    apiServerPort: ${api_server_port}
+          ${api_server_cidrs}          apiServerPort: ${api_server_port}
                   signalprocessing:
                     policies:
                       content: |
@@ -1787,6 +1787,10 @@ jobs:
               namespace: ${GITOPS_NAMESPACE}
           EOF
           argocd app list
+          # `argocd app create -f -` can silently accept malformed YAML and
+          # create no Application, so fail here instead of producing empty
+          # namespace checks later in the job.
+          argocd app get kubernaut-gitops-smoke >/dev/null
 
       # `argocd app sync` blocks until Synced AND Healthy, not just until
       # manifests are applied. This validates GitOps sync mechanics -- CRDs,
