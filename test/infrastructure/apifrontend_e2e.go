@@ -738,7 +738,7 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
         username: "email"
         groups: "groups"`
 
-	anchor := "rateLimitPerUser: 40" // keep in sync with test/infrastructure/kubernautagent.go
+	anchor := "rateLimitPerUser: 100" // keep in sync with test/infrastructure/kubernautagent.go
 	if !strings.Contains(currentConfig, anchor) {
 		return fmt.Errorf("cannot find anchor %q in KA config", anchor)
 	}

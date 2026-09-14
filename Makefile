@@ -41,6 +41,10 @@ COMMA := ,
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# KA E2E defaults to one process because several scenarios assert shared
+# cluster-wide state. Override with KA_E2E_PROCS=N for the shared-instance
+# capacity run after those scenarios are excluded or made concurrency-safe.
+KA_E2E_PROCS ?= 1
 # Independent service suites can run concurrently from the aggregate target.
 # Override this when local CPU/memory capacity is lower than the default.
 TEST_SUITE_PROCS ?= $(words $(SERVICES))
@@ -851,7 +855,7 @@ validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI -
 .PHONY: test-e2e-kubernautagent
 test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E tests (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity)"
+	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity, $(KA_E2E_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Validates: Same OpenAPI contract as retired Python KA (HAPI)"
 	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD)"
@@ -859,7 +863,7 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E 
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
-	@$(GINKGO) -v --race --timeout=25m $(GINKGO_FOCUS_ARGS) --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=25m --procs=$(KA_E2E_PROCS) $(GINKGO_FOCUS_ARGS) --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
 	@if [ -f coverage_e2e_kubernautagent_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
 		cp coverage_e2e_kubernautagent_binary.out coverage_e2e_kubernautagent.out; \

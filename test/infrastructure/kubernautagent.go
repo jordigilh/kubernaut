@@ -966,16 +966,13 @@ data:
       sessionTTL: "5m"
       inactivityTimeout: "2m"
       maxConcurrentSessions: 10
-      # #1737 bumped this 10->20 after full-suite E2E parallelism alone
-      # (no application-level concurrency) tripped the per-user token
-      # bucket. #1853's new full-pipeline interactive tests add further
-      # concurrent MCP session churn under the same shared e2e-user-sre
-      # identity (confirmed via must-gather RCA: concurrent
-      # discover_workflows/select_workflow calls rejected 429 "Too Many
-      # Requests" during MCP session (re)establishment) -- bumped again
-      # 20->40 for headroom. Keep in sync with the anchor string in
-      # afPatchKAJWTAudience (test/infrastructure/apifrontend_e2e.go).
-      rateLimitPerUser: 40
+      # The standalone KA E2E suite can opt into Ginkgo --procs against this
+      # single shared KA instance. Keep enough per-user burst headroom for
+      # concurrent MCP session setup, matching the full-pipeline E2E override.
+      # This is test infrastructure only; production defaults are unchanged.
+      # Keep in sync with the anchor string in afPatchKAJWTAudience
+      # (test/infrastructure/apifrontend_e2e.go).
+      rateLimitPerUser: 100
 %s
 ---
 apiVersion: v1
