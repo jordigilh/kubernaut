@@ -30,6 +30,7 @@ import (
 // E2E-FLEET-004: RO creates RR with clusterID and routes to fleet-aware workflow
 // Authority: Issue #54, ADR-068
 // FedRAMP: AC-6 (least privilege -- cluster-scoped workflow routing)
+// OWASP ASVS: V4.1.1 (trusted access-control enforcement), V4.1.3 (least privilege)
 var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes to fleet-aware workflow (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should route alert with cluster_id to a workflow that respects cluster scope", func() {
 		payload := buildPrometheusAlertWithCluster("FleetRouting", "critical",
