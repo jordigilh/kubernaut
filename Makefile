@@ -1252,6 +1252,10 @@ IMAGE_TAG ?= latest
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
+# The migration image has a dedicated Dockerfile because it bundles goose and
+# psql rather than a Kubernaut Go service binary.
+DB_MIGRATION_IMAGE ?= localhost/db-migration:latest
+
 # Version metadata for container image labels and Go ldflags
 # Read from VERSION file (single source of truth); override via env or CLI.
 APP_VERSION ?= v$(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
@@ -1332,6 +1336,23 @@ image-push: ## Push arch-suffixed images to registry
 	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)
 	@echo ""
 	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
+
+.PHONY: docker-build-db-migrate
+docker-build-db-migrate: ## Build the db-migrate image (override DB_MIGRATION_IMAGE or IMAGE_ARCH as needed)
+	@echo "🐳 Building db-migration image..."
+	@echo "   Image:    $(DB_MIGRATION_IMAGE)"
+	@echo "   Platform: linux/$(IMAGE_ARCH)"
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(DB_MIGRATION_IMAGE) -f docker/db-migrate.Dockerfile .
+
+.PHONY: docker-push-db-migrate
+docker-push-db-migrate: docker-build-db-migrate ## Build and push the db-migrate image
+	@echo "📤 Pushing $(DB_MIGRATION_IMAGE)..."
+	@$(CONTAINER_TOOL) push $(DB_MIGRATION_IMAGE)
+	@echo "✅ Pushed $(DB_MIGRATION_IMAGE)"
 
 .PHONY: image-manifest
 image-manifest: ## Create and push multi-arch manifests (run after both arches are pushed)
