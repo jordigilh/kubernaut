@@ -385,7 +385,19 @@ teardown() {
         assert_failure
 
         if [ -f "${ref_dir}/${pod}" ]; then
-            assert_file_contains "${collected_file}" "$(cat "${ref_dir}/${pod}")"
+            local reference_line
+            reference_line=$(cat "${ref_dir}/${pod}")
+            local previous_file="${collection_dir}/logs/${OPERATOR_NAMESPACE}/${pod}/previous.log"
+
+            # The operator may restart between the reference capture and log
+            # collection. In that case, logs.sh stores the reference line in
+            # previous.log instead of current.log.
+            if ! grep -qF "${reference_line}" "${collected_file}"; then
+                if [ ! -f "${previous_file}" ] || ! grep -qF "${reference_line}" "${previous_file}"; then
+                    echo "Neither current nor previous log contains the reference line for ${pod}: ${reference_line}"
+                    return 1
+                fi
+            fi
         fi
     done <<< "${live_pods}"
 }
