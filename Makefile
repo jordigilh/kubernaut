@@ -44,8 +44,6 @@ TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo
 # Independent service suites can run concurrently from the aggregate target.
 # Override this when local CPU/memory capacity is lower than the default.
 TEST_SUITE_PROCS ?= $(words $(SERVICES))
-# FullPipeline specs share one MCP test identity; avoid cross-worker rate-limit bursts.
-FULLPIPELINE_TEST_PROCS ?= 1
 TEST_TIMEOUT_UNIT ?= 8m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 18m
@@ -941,7 +939,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=50m --procs=$(FULLPIPELINE_TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)

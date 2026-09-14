@@ -20,7 +20,7 @@ import (
 // create a remediation request. The mock-LLM returns a kubernaut_remediate tool call,
 // the agent executes it, and the full downstream pipeline processes the RR.
 // Issue #1332: Autonomous flow must NOT create an InvestigationSession.
-var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp", "af", "a2a", "issue-1189", "issue-1332"), func() {
+var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp", "af", "a2a", "issue-1189", "issue-1332"), Serial, func() {
 
 	It("should create RR via A2A and trigger full pipeline execution without IS", FlakeAttempts(2), func() {
 		autoNS := fpRemediateNS["autonomous"]

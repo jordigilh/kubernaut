@@ -60,7 +60,7 @@ import (
 // forget attempt is blocked. This test is therefore the E2E happy-path
 // regression proof for full_remediation_autonomous under the consent gate,
 // complementing the negative-path proofs in 18_af_a2a_consent_gate_test.go.
-var _ = Describe("AF A2A Full Interactive Remediation Full Pipeline [E2E-FP-1853-002]", Label("fp", "af", "a2a", "interactive", "issue-1853"), func() {
+var _ = Describe("AF A2A Full Interactive Remediation Full Pipeline [E2E-FP-1853-002]", Label("fp", "af", "a2a", "interactive", "issue-1853"), Serial, func() {
 
 	It("should auto-chain investigate -> discover_workflows -> select_workflow -> watch from a single combined message, with no manual pause", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["full-interactive"]

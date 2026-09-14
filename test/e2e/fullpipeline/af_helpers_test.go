@@ -55,6 +55,10 @@ const (
 // JSON-RPC helpers (adapted from test/e2e/apifrontend/helpers_test.go)
 // ────────────────────────────────────────────────────────────────────────────
 
+// FullPipeline A2A specs use one shared SRE identity and are marked Serial to
+// avoid per-user MCP rate-limit contention. Direct service-account MCP specs
+// remain parallel.
+
 func fpBuildJSONRPC(id, method string, params map[string]interface{}) string {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
