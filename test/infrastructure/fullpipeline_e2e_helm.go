@@ -1011,6 +1011,10 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// Retain failed execution resources so CI must-gather can collect the
 		// Job/PipelineRun diagnostics after an E2E failure.
 		"--set", "workflowexecution.config.execution.retainFailedExecutions=true",
+		// Keep successful execution Jobs available long enough for full-pipeline
+		// assertions; the WorkflowExecution controller cleans them up after the
+		// cooldown period, not through the Job's native TTL when retention is on.
+		"--set", "workflowexecution.config.execution.cooldownPeriod=10m",
 		// kubernautAgent.llmProfileRef is deliberately NOT set here -- it defaults
 		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
 		// Addendum 2), so this install exercises that default instead of shadowing
