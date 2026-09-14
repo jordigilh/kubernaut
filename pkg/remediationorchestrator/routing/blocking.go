@@ -556,8 +556,9 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	}, nil
 }
 
-// CheckResourceBusy checks if another WorkflowExecution is running on the same target.
-// Blocks when an active (Running phase) WFE exists for the same TargetResource.
+// CheckResourceBusy checks if another WorkflowExecution is running on the same
+// target in the same target cluster. Blocks when an active WFE exists for the
+// same TargetResource and owning RemediationRequest.Spec.ClusterID.
 //
 // Issue #165: Accepts explicit targetResource parameter instead of reading
 // rr.Spec.TargetResource. The caller resolves the effective target from
@@ -566,7 +567,8 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 // BlockReason: "ResourceBusy"
 // RequeueAfter: 30 seconds (to check if WFE completes)
 //
-// Reference: DD-RO-002 (Centralized Routing), DD-WE-001 (Resource Locking)
+// Reference: DD-RO-002 (Centralized Routing), DD-WE-001 (Resource Locking),
+// Issue #2396 (fleet target-cluster scoping)
 func (r *RoutingEngine) CheckResourceBusy(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -575,7 +577,7 @@ func (r *RoutingEngine) CheckResourceBusy(
 	targetResourceStr := targetResource
 
 	// Find active WFE for the same target resource
-	activeWFE, err := r.FindActiveWFEForTarget(ctx, targetResourceStr)
+	activeWFE, err := r.FindActiveWFEForTarget(ctx, targetResourceStr, rr.Spec.ClusterID)
 	if err != nil && !errors.Is(err, ErrNoMatch) {
 		return nil, fmt.Errorf("failed to check resource lock: %w", err)
 	}
@@ -949,7 +951,10 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 	return nil, ErrNoMatch // No active duplicate found
 }
 
-// FindActiveWFEForTarget finds an active (Running phase) WFE for the given target resource.
+// FindActiveWFEForTarget finds an active WFE for the given target resource and
+// target cluster. The cluster is resolved from the owning RR rather than
+// WFE.Spec.ClusterID because that field can identify an execution-cluster
+// override instead of the cluster containing the target resource.
 // Returns the first running WFE found, or ErrNoMatch if none exist.
 //
 // Uses field index on spec.targetResource for O(1) lookup (configured in Day 1).
@@ -958,6 +963,7 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 func (r *RoutingEngine) FindActiveWFEForTarget(
 	ctx context.Context,
 	targetResource string,
+	clusterID string,
 ) (*workflowexecutionv1.WorkflowExecution, error) {
 	logger := log.FromContext(ctx)
 
@@ -989,14 +995,56 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 
 		// Check if phase is not terminal (Running, Pending, etc.)
 		// V1.0: Only Completed and Failed are terminal phases
-		if freshWFE.Status.Phase != workflowexecutionv1.PhaseCompleted &&
-			freshWFE.Status.Phase != workflowexecutionv1.PhaseFailed {
+		if freshWFE.Status.Phase == workflowexecutionv1.PhaseCompleted ||
+			freshWFE.Status.Phase == workflowexecutionv1.PhaseFailed {
+			continue
+		}
+
+		// An active WFE without a resolvable owner remains a blocker. This
+		// fail-safe behavior prevents an orphaned execution from allowing a
+		// concurrent remediation against the same target.
+		ownerRef := freshWFE.Spec.RemediationRequestRef
+		if ownerRef.Name == "" {
 			logger.V(1).Info("Found active WFE for target",
 				"wfe", freshWFE.Name,
 				"target", targetResource,
 				"phase", freshWFE.Status.Phase)
 			return freshWFE, nil
 		}
+
+		ownerNamespace := ownerRef.Namespace
+		if ownerNamespace == "" {
+			ownerNamespace = freshWFE.Namespace
+		}
+
+		ownerRR := &remediationv1.RemediationRequest{}
+		if err := r.apiReader.Get(ctx, client.ObjectKey{
+			Namespace: ownerNamespace,
+			Name:      ownerRef.Name,
+		}, ownerRR); err != nil {
+			logger.Error(err, "Failed to resolve WFE owner for resource lock",
+				"wfe", freshWFE.Name, "ownerRR", ownerRef.Name)
+			logger.V(1).Info("Found active WFE for target",
+				"wfe", freshWFE.Name,
+				"target", targetResource,
+				"phase", freshWFE.Status.Phase)
+			return freshWFE, nil
+		}
+
+		if ownerRR.Spec.ClusterID != clusterID {
+			logger.V(1).Info("Skipping active WFE for different target cluster",
+				"wfe", freshWFE.Name,
+				"target", targetResource,
+				"targetCluster", clusterID,
+				"ownerCluster", ownerRR.Spec.ClusterID)
+			continue
+		}
+
+		logger.V(1).Info("Found active WFE for target",
+			"wfe", freshWFE.Name,
+			"target", targetResource,
+			"phase", freshWFE.Status.Phase)
+		return freshWFE, nil
 	}
 
 	// Issue #1674: same ErrNoMatch idiom as FindActiveRRForFingerprint above.
