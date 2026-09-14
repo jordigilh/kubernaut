@@ -41,6 +41,24 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
+To deploy images from a development repository instead of the default
+`quay.io/kubernaut-ai/`, add `IMAGE_REPOSITORY` and `IMAGE_TAG`, for example:
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
+  IMAGE_REPOSITORY=quay.io/jordigilh \
+  IMAGE_TAG=dev
+```
+
+`IMAGE_REPOSITORY` is the common base path without the service name. For example,
+`localhost/kubernaut` makes the chart use `localhost/kubernaut/gateway` and the matching
+path for each chart-managed Kubernaut service. The Console image remains independently
+configured by the chart's `console.image.*` values.
+
 For Claude on Vertex AI instead, point the credential file at a GCP
 service-account key JSON and pass the Vertex project/location (required with
 `LLM_PROVIDER=vertex_ai`; the endpoint is the regional host — the Vertex
