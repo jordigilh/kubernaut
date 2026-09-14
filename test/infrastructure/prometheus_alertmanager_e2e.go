@@ -93,6 +93,48 @@ const (
 	SkipGatewayRouteLabelValue = "true"
 )
 
+// fleetInteractiveBridgeGroundingRule is loaded by the Go-managed Prometheus
+// that AF queries in the FullPipeline and Fleet E2E suites. The explicit
+// cluster label is required when severity triage handles the remote-cluster
+// RemediationRequest; Thanos/external labels are not involved on this path.
+func fleetInteractiveBridgeGroundingRule() string {
+	return `  fleet-interactive-bridge-grounding.yml: |
+    # CI RCA (run 30833443049, job 91756267907, E2E-FLEET-018): after Tier 3
+    # (pure-LLM severity invention) was removed, AF's kubernaut_remediate and
+    # kubernaut_investigate tool calls against the dedicated
+    # "ka-interactive-fleet-target" marker Deployment (kubernaut-system
+    # namespace, test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go)
+    # both failed closed with "no active alert or prometheus rule correlates
+    # to this resource" -- that fixture is intentionally its OWN dedicated
+    # Deployment (not the shared memory-eater fixture above, per the #1839
+    # "no fixtures in a shared namespace" precedent), so neither
+    # MemoryExceedsLimit (fp-am-.* namespace, memory-eater-.* pod) nor
+    # MemoryEaterResourcePressure (name="memory-eater") can ground it.
+    # Mirrors AFInvestigateGrounding (test/infrastructure/apifrontend_prometheus_e2e.go):
+    # a synthetic vector(1) > 0 expression has no underlying series, so it can
+    # never go Prometheus-stale and fires deterministically for the whole
+    # suite lifetime. labelsOverlap (pkg/apifrontend/severity/triage.go)
+    # explicitly skips the "namespace" label when correlating, matching
+    # kind+name here. The cluster label is also explicit because this local
+    # Prometheus is the endpoint used by AF in the fleet FullPipeline suite.
+    groups:
+    - name: fleet-interactive-bridge-grounding.rules
+      interval: 10s
+      rules:
+      - alert: KAInteractiveFleetBridgeGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: kubernaut-system
+          kind: Deployment
+          name: ka-interactive-fleet-target
+          cluster: remote-cluster
+        annotations:
+          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"`
+}
+
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
 //
 // Configuration:
@@ -233,40 +275,7 @@ data:
           severity: high
         annotations:
           summary: "memory-eater Deployment resource pressure (AF severity-triage grounding fixture)"
-  fleet-interactive-bridge-grounding.yml: |
-    # CI RCA (run 30833443049, job 91756267907, E2E-FLEET-018): after Tier 3
-    # (pure-LLM severity invention) was removed, AF's kubernaut_remediate and
-    # kubernaut_investigate tool calls against the dedicated
-    # "ka-interactive-fleet-target" marker Deployment (kubernaut-system
-    # namespace, test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go)
-    # both failed closed with "no active alert or prometheus rule correlates
-    # to this resource" -- that fixture is intentionally its OWN dedicated
-    # Deployment (not the shared memory-eater fixture above, per the #1839
-    # "no fixtures in a shared namespace" precedent), so neither
-    # MemoryExceedsLimit (fp-am-.* namespace, memory-eater-.* pod) nor
-    # MemoryEaterResourcePressure (name="memory-eater") can ground it.
-    # Mirrors AFInvestigateGrounding (test/infrastructure/apifrontend_prometheus_e2e.go):
-    # a synthetic vector(1) > 0 expression has no underlying series, so it can
-    # never go Prometheus-stale and fires deterministically for the whole
-    # suite lifetime. labelsOverlap (pkg/apifrontend/severity/triage.go)
-    # explicitly skips the "namespace" label when correlating, matching
-    # purely on kind+name here, so the namespace label below is carried for
-    # informational parity only.
-    groups:
-    - name: fleet-interactive-bridge-grounding.rules
-      interval: 10s
-      rules:
-      - alert: KAInteractiveFleetBridgeGrounding
-        expr: vector(1) > 0
-        for: 0s
-        labels:
-          severity: warning
-          source: prometheus
-          namespace: kubernaut-system
-          kind: Deployment
-          name: ka-interactive-fleet-target
-        annotations:
-          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"
+%[4]s
   fleet-alerts-cluster-scoped-2274.yml: |
     # CI RCA (PR #2286, E2E-FLEET-020): AF's kubernaut_list_alerts/
     # get_alert_details tools call pkg/apifrontend/prometheus.Client.GetAlerts,
@@ -468,7 +477,7 @@ spec:
     targetPort: 9090
     nodePort: %[3]d
     protocol: TCP
-`, namespace, PrometheusImage, PrometheusNodePort)
+`, namespace, PrometheusImage, PrometheusNodePort, fleetInteractiveBridgeGroundingRule())
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewBufferString(manifest)
