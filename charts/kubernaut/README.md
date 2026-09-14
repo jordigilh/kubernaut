@@ -833,6 +833,27 @@ every service falls back to `.Chart.AppVersion`. The `console` container
  defaults to the matching Kubernaut image tag and can still be overridden
  independently with `console.image.repository` and `console.image.tag`.
 
+### Overriding the image repository
+
+The demo entry point also accepts a complete common image base path, so locally built or
+development images can be tested without waiting for an RC or GA release:
+
+```bash
+make setup-local-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
+  IMAGE_REPOSITORY=quay.io/jordigilh \
+  IMAGE_TAG=dev
+```
+
+`IMAGE_REPOSITORY` is also available on `setup-fleet-demo-infra` and is passed to
+`setup-demo-infra -image-repository`. It is the path before the service name, with or
+without a trailing slash, such as `quay.io/jordigilh` or `localhost/kubernaut`.
+The Console image remains independently configured by `console.image.repository` and
+`console.image.tag`.
+
 ## Upgrading
 
 Helm does **not** upgrade CRDs on `helm upgrade`. Apply new CRDs first:

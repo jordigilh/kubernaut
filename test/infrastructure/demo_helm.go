@@ -140,6 +140,11 @@ type DemoHelmOptions struct {
 	// emitted and the chart's kubernaut.image helper falls back to
 	// .Chart.AppVersion (global.image.tag defaults to "").
 	ImageTag string
+	// ImageRepository optionally overrides the base repository for the demo
+	// chart's Kubernaut service images (global.image.registry with an empty
+	// global.image.namespace). For example, "quay.io/jordigilh" renders
+	// "quay.io/jordigilh/gateway". A trailing slash is ignored.
+	ImageRepository string
 	// VertexProject/VertexLocation feed global.llmProfiles.primary.vertexProject
 	// / vertexLocation -- required by the chart when LLMProvider is vertex_ai
 	// (the provider hosts Claude/Gemini models and derives its endpoint from
@@ -288,6 +293,16 @@ func appendDemoHelmOverrides(args []string, opts DemoHelmOptions) []string {
 		// buildFleetOAuth2HelmArgs below anyway (helm --set is last-wins),
 		// which is why a provided override previously never took effect.
 		args = append(args, "--set", "global.image.tag="+opts.ImageTag)
+	}
+
+	if opts.ImageRepository != "" {
+		// The chart normally joins registry + namespace + service. Treat this
+		// option as the complete base repository so callers can use arbitrary
+		// registry paths without inheriting the default kubernaut-ai namespace.
+		args = append(args,
+			"--set", "global.image.registry="+strings.TrimRight(opts.ImageRepository, "/"),
+			"--set", "global.image.namespace=",
+		)
 	}
 
 	if opts.VertexProject != "" {

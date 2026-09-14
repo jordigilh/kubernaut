@@ -329,6 +329,38 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		Expect(tags).To(Equal([]string{"global.image.tag=demo-v1.0"}))
 	})
 
+	It("UT-INFRA-FLEETDEMO-047 [BR-PLATFORM-014]: uses the image repository override for local and fleet demos", func() {
+		for _, mode := range []DemoMode{DemoModeLocal, DemoModeFleet} {
+			opts := baseOpts
+			opts.Mode = mode
+			opts.ImageRepository = "localhost/kubernaut"
+			fleetOpts := baseFleetOpts
+			if mode == DemoModeLocal {
+				fleetOpts = nil
+			}
+
+			args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", fleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+			Expect(args).To(ContainElements(
+				"--set", "global.image.registry=localhost/kubernaut",
+				"--set", "global.image.namespace=",
+			))
+		}
+	})
+
+	It("UT-INFRA-FLEETDEMO-048 [BR-PLATFORM-014]: normalizes a trailing slash in the image repository override", func() {
+		opts := baseOpts
+		opts.ImageRepository = "quay.io/jordigilh/"
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements("--set", "global.image.registry=quay.io/jordigilh"))
+		for i, arg := range args {
+			if arg == helmSetFlag && i+1 < len(args) {
+				Expect(args[i+1]).NotTo(HavePrefix("global.image.registry=quay.io/jordigilh/"))
+			}
+		}
+	})
+
 	It("UT-INFRA-FLEETDEMO-041: omits vertexProject/vertexLocation --set when empty (non-Vertex providers)", func() {
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		for i, a := range args {

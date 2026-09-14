@@ -122,6 +122,9 @@ This creates one Kind cluster, installs Keycloak, Traefik, Kubernaut, and the Co
 while leaving fleet disabled. The setup command prints the Console URL/login, kubeconfig,
 and the next commands for running scenarios from `kubernaut-demo-scenarios`.
 
+To test images built outside the release repository, pass their common image base path and
+tag, for example `IMAGE_REPOSITORY=quay.io/jordigilh IMAGE_TAG=dev`.
+
 ---
 
 ## Installation
