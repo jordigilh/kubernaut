@@ -215,32 +215,41 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			"watch remediation progress")
 		// E2E-FP-2390-001: the full GitOps workflow can exceed five minutes on
 		// a resource-constrained CI runner while the server continues processing.
-		resp4, err := fpA2AInvokeWithTimeout(body, 6*time.Minute)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp4.Body.Close() }()
-		Expect(resp4.StatusCode).To(Equal(http.StatusOK))
-		rpc, parseErr = fpParseRPC(resp4)
-		Expect(parseErr).NotTo(HaveOccurred())
-		Expect(rpc.Error).To(BeNil(), "Turn 4 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 4 — watch OK\n")
+		watchContext, cancelWatch := context.WithCancel(ctx)
+		defer cancelWatch()
+		watchResult := make(chan struct {
+			response *http.Response
+			err      error
+		}, 1)
+		go func() {
+			response, invokeErr := fpA2AInvokeWithContext(watchContext, body, 6*time.Minute)
+			watchResult <- struct {
+				response *http.Response
+				err      error
+			}{response: response, err: invokeErr}
+		}()
 
-		By("Verifying full pipeline completed")
+		By("Capturing the workflow execution and Job before terminal cleanup")
 		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
-		fpWaitForWEComplete(rrName, 60*time.Second)
-		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
 
 		By("[E2E-FP-1189-004] Verifying interactive WFE has TARGET_RESOURCE_* parameters")
-		weList := &workflowexecutionv1.WorkflowExecutionList{}
-		Expect(apiReader.List(ctx, weList, client.InNamespace(namespace))).To(Succeed())
 		var we *workflowexecutionv1.WorkflowExecution
-		for i := range weList.Items {
-			if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
-				we = &weList.Items[i]
-				break
+		Eventually(func() bool {
+			weList := &workflowexecutionv1.WorkflowExecutionList{}
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+				return false
 			}
-		}
-		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+			for i := range weList.Items {
+				if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+					we = &weList.Items[i]
+					return true
+				}
+			}
+			return false
+		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
+			"WorkflowExecution for RR %s must exist", rrName)
+
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(gitOpsWorkflowUUID),
 			"E2E-FP-2390-001: GitOps workflow must be selected")
 		Expect(we.Spec.WorkflowRef.Dependencies).NotTo(BeNil(),
@@ -280,6 +289,19 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			HaveField("MountPath", "/run/kubernaut/configmaps/gitea-repo-config"),
 			HaveField("ReadOnly", BeTrue()),
 		)), "E2E-FP-2390-003: ConfigMap dependency must be mounted read-only")
+
+		watch := <-watchResult
+		Expect(watch.err).NotTo(HaveOccurred())
+		defer func() { _ = watch.response.Body.Close() }()
+		Expect(watch.response.StatusCode).To(Equal(http.StatusOK))
+		rpc, parseErr = fpParseRPC(watch.response)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpc.Error).To(BeNil(), "Turn 4 should not return JSON-RPC error")
+		GinkgoWriter.Printf("  Turn 4 — watch OK\n")
+
+		By("Verifying full pipeline completed")
+		fpWaitForWEComplete(rrName, 60*time.Second)
+		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
 		params := we.Spec.Parameters
 		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),

@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -200,8 +201,15 @@ func fpA2AInvoke(body string) (*http.Response, error) {
 // be processing a prior turn's tool chain (AF → MCP → KA → mock-LLM).
 // A zero timeout uses the default afHTTPClient (30s).
 func fpA2AInvokeWithTimeout(body string, timeout time.Duration) (*http.Response, error) {
+	return fpA2AInvokeWithContext(context.Background(), body, timeout)
+}
+
+// fpA2AInvokeWithContext sends a JSON-RPC request with caller-controlled
+// cancellation. Long-running turns can be observed concurrently by the test
+// and cancelled if the test exits before the server reaches a terminal state.
+func fpA2AInvokeWithContext(requestContext context.Context, body string, timeout time.Duration) (*http.Response, error) {
 	token := getAFToken()
-	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
