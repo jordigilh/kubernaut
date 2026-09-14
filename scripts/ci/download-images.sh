@@ -5,14 +5,17 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  GITHUB_TOKEN=... download-images.sh [run-id] [output-dir] [--load] [--arch amd64|arm64]
+  download-images.sh [run-id] [output-dir] [--load] [--arch amd64|arm64]
 
   NOTE: The filename is historical; the script downloads images for the
   host architecture (amd64 or arm64), inferred via `uname -m`.
 
 Environment:
   REPOSITORY  GitHub repository, default: jordigilh/kubernaut
-  GH_TOKEN    Alternative to GITHUB_TOKEN
+  GITHUB_TOKEN / GH_TOKEN
+              Optional explicit GitHub token.
+              If neither token variable is set, an authenticated `gh` CLI
+              session is used as a fallback.
   ARCH / IMAGE_ARCH
               Override host architecture detection (amd64 or arm64).
               `--arch` takes precedence over these.
@@ -109,7 +112,21 @@ REPOSITORY="${REPOSITORY:-jordigilh/kubernaut}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 if [[ -z "$TOKEN" ]]; then
-  echo "error: set GITHUB_TOKEN or GH_TOKEN" >&2
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "error: set GITHUB_TOKEN or GH_TOKEN, or install and authenticate the GitHub CLI" >&2
+    usage >&2
+    exit 1
+  fi
+
+  if ! TOKEN="$(gh auth token --hostname github.com 2>/dev/null)"; then
+    echo "error: no GitHub token found; set GITHUB_TOKEN or GH_TOKEN, or run 'gh auth login'" >&2
+    usage >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "$TOKEN" ]]; then
+  echo "error: GitHub CLI returned an empty token; set GITHUB_TOKEN or GH_TOKEN, or run 'gh auth login'" >&2
   usage >&2
   exit 1
 fi
