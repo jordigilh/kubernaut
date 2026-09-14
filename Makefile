@@ -1254,7 +1254,7 @@ IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 # The migration image has a dedicated Dockerfile because it bundles goose and
 # psql rather than a Kubernaut Go service binary.
-DB_MIGRATION_IMAGE ?= localhost/db-migration:latest
+DB_MIGRATION_IMAGE ?= localhost/db-migrate:latest
 
 # Version metadata for container image labels and Go ldflags
 # Read from VERSION file (single source of truth); override via env or CLI.
