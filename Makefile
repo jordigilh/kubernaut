@@ -41,11 +41,16 @@ COMMA := ,
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# Independent service suites can run concurrently from the aggregate target.
+# Override this when local CPU/memory capacity is lower than the default.
+TEST_SUITE_PROCS ?= $(words $(SERVICES))
 # FullPipeline specs share one MCP test identity; avoid cross-worker rate-limit bursts.
 FULLPIPELINE_TEST_PROCS ?= 1
 TEST_TIMEOUT_UNIT ?= 8m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 18m
+# Optional Ginkgo focus filter shared by explicit integration and E2E recipes.
+GINKGO_FOCUS_ARGS = $(if $(GINKGO_FOCUS),--focus='$(GINKGO_FOCUS)')
 
 # Race detector: enabled by default for unit and integration tests (#83 100go.co).
 # E2E targets test against a deployed binary so --race is not applicable.
@@ -396,7 +401,7 @@ test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests fo
 	@echo "🧪 shared - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "   Packages: pkg/shared (TLS)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... ./test/integration/shared/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... $(GINKGO_FOCUS_ARGS) ./test/integration/shared/...
 	@if [ -f coverage_integration_shared.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_shared.out"; \
@@ -410,7 +415,12 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/integration/$*/...
+	@GINKGO_CMD="$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/..."; \
+	if [ -n "$(GINKGO_FOCUS)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; \
+		echo "🔍 Focusing on: $(GINKGO_FOCUS)"; \
+	fi; \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" eval "$$GINKGO_CMD ./test/integration/$*/..."
 	@if [ -f coverage_integration_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_$*.out"; \
@@ -437,8 +447,8 @@ test-integration-cel-immutability-regression: generate ginkgo setup-envtest ensu
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Issue #2284 CEL nullable-field regression guard (pinned K8s v1.31.0)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-AA-2284-001' ./test/integration/aianalysis/...
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-WFE-2284-001' ./test/integration/workflowexecution/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-AA-2284-001' $(GINKGO_FOCUS_ARGS) ./test/integration/aianalysis/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.31.0 -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --focus='IT-WFE-2284-001' $(GINKGO_FOCUS_ARGS) ./test/integration/workflowexecution/...
 
 # Kubernaut Agent integration tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
 .PHONY: test-integration-kubernautagent
@@ -447,7 +457,7 @@ test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-d
 	@echo "🧪 kubernautagent - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... $(GINKGO_FOCUS_ARGS) ./test/integration/kubernautagent/...
 	@if [ -f coverage_integration_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_kubernautagent.out"; \
@@ -460,7 +470,7 @@ test-integration-kubernautagent-interactive: ginkgo ensure-coverage-dirs ## Run 
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 kubernautagent-interactive - Integration Tests (label: interactive)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --label-filter="interactive" --coverprofile=coverage_integration_kubernautagent_interactive.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/...,github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools/... ./test/integration/kubernautagent/mcp/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --label-filter="interactive" --coverprofile=coverage_integration_kubernautagent_interactive.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/...,github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools/... $(GINKGO_FOCUS_ARGS) ./test/integration/kubernautagent/mcp/...
 	@if [ -f coverage_integration_kubernautagent_interactive.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_kubernautagent_interactive.out"; \
@@ -474,7 +484,7 @@ test-integration-datastorage: generate ginkgo setup-envtest ensure-coverage-dirs
 	@echo "🧪 datastorage - Integration Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_datastorage.out --covermode=atomic --keep-going --coverpkg=$(DATASTORAGE_COVERPKG) ./test/integration/datastorage/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_datastorage.out --covermode=atomic --keep-going --coverpkg=$(DATASTORAGE_COVERPKG) $(GINKGO_FOCUS_ARGS) ./test/integration/datastorage/...
 	@if [ -f coverage_integration_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_datastorage.out"; \
@@ -495,7 +505,7 @@ test-integration-fleetmetadatacache: generate ginkgo setup-envtest ensure-covera
 	@echo "🧪 fleetmetadatacache - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_fleetmetadatacache.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet,github.com/jordigilh/kubernaut/pkg/fleet/fmc/...,github.com/jordigilh/kubernaut/pkg/fleet/registry/...,github.com/jordigilh/kubernaut/pkg/fleet/scopecache/...,github.com/jordigilh/kubernaut/pkg/fleet/mcpclient/... ./test/integration/fleetmetadatacache/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_fleetmetadatacache.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet,github.com/jordigilh/kubernaut/pkg/fleet/fmc/...,github.com/jordigilh/kubernaut/pkg/fleet/registry/...,github.com/jordigilh/kubernaut/pkg/fleet/scopecache/...,github.com/jordigilh/kubernaut/pkg/fleet/mcpclient/... $(GINKGO_FOCUS_ARGS) ./test/integration/fleetmetadatacache/...
 	@if [ -f coverage_integration_fleetmetadatacache.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_fleetmetadatacache.out"; \
@@ -851,7 +861,7 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E 
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
-	@$(GINKGO) -v --race --timeout=25m --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=25m $(GINKGO_FOCUS_ARGS) --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
 	@if [ -f coverage_e2e_kubernautagent_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
 		cp coverage_e2e_kubernautagent_binary.out coverage_e2e_kubernautagent.out; \
@@ -885,7 +895,7 @@ test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/e2e/authwebhook/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... $(GINKGO_FOCUS_ARGS) ./test/e2e/authwebhook/...
 	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage over Ginkgo --coverprofile
 	@if [ -f coverage_e2e_authwebhook_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
@@ -931,7 +941,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=50m --procs=$(FULLPIPELINE_TEST_PROCS) ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --race --timeout=50m --procs=$(FULLPIPELINE_TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
@@ -944,7 +954,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@echo "   Full pipeline + EAIGW + K8s MCP Server (loopback pattern)"
 	@echo "   Alert → GW → SP(MCP enrich) → RO → WE(MCP dispatch) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
+	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
 # Fleet demo/QE environment (docs/requirements/BR-PLATFORM-014, Issue #2337):
@@ -1043,7 +1053,7 @@ test-e2e-fleetmetadatacache-kuadrant: ginkgo ensure-coverage-dirs ## Run Fleet M
 	@echo "🧪 Fleet Metadata Cache E2E Tests -- Kuadrant variant (Issue #54)"
 	@echo "   Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleetmetadatacache
 	@echo "✅ Fleet Metadata Cache E2E tests (Kuadrant) completed!"
 
 # Fleet Metadata Cache (FMC) E2E -- Envoy AI Gateway (EAIGW) variant (Issue #54, Spike S18)
@@ -1063,7 +1073,7 @@ test-e2e-fleetmetadatacache-eaigw: ginkgo ensure-coverage-dirs ## Run Fleet Meta
 	@echo "🧪 Fleet Metadata Cache E2E Tests -- Envoy AI Gateway variant (Issue #54)"
 	@echo "   Keycloak + Fleet Core (Envoy AI Gateway/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/eaigw/...
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fleetmetadatacache/eaigw/...
 	@echo "✅ Fleet Metadata Cache E2E tests (Envoy AI Gateway) completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)
@@ -1075,7 +1085,9 @@ test-gateway: test-integration-gateway ## Legacy alias for Gateway integration t
 test-e2e-fleetmetadatacache: test-e2e-fleetmetadatacache-kuadrant ## Legacy alias for the Kuadrant-variant FMC E2E suite (renamed for symmetry with test-e2e-fleetmetadatacache-eaigw)
 
 .PHONY: test
-test: test-tier-unit ## Legacy alias: Run all unit tests
+test: ## Run all unit test suites in parallel
+	@echo "🧪 Running all unit test suites in parallel ($(TEST_SUITE_PROCS) suites)"
+	@$(MAKE) -j$(TEST_SUITE_PROCS) test-tier-unit
 
 ##@ Coverage Analysis
 
@@ -1121,7 +1133,7 @@ OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.9.0
-GINKGO_VERSION ?= v2.32.0
+GINKGO_VERSION ?= v2.32.1
 CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize

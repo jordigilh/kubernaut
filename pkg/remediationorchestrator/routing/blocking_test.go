@@ -26,6 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -641,6 +642,101 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.BlockingWorkflowExecution).To(Equal("wfe-running"))
 			Expect(blocked.RequeueAfter).To(Equal(30 * time.Second))
+		})
+
+		// BR-WE-009-011, BR-FLEET-004; FedRAMP AC-4/AC-6; OWASP ASVS V4.1.1/V4.1.3.
+		It("UT-RO-2396-001: should block same target in the target cluster when execution is overridden", func() {
+			blockerRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-remote-cluster",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "remote-cluster",
+				},
+			}
+			Expect(fakeClient.Create(ctx, blockerRR)).To(Succeed())
+
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-remote-target-executed-on-prod-east",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      blockerRR.Name,
+						Namespace: blockerRR.Namespace,
+					},
+					TargetResource: "default/pod/nginx-12345",
+					ClusterID:      "prod-east", // execution cluster override
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1.PhaseRunning,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-remote-retry",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "remote-cluster",
+				},
+			}
+
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/nginx-12345")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).ToNot(BeNil())
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonResourceBusy)))
+			Expect(blocked.BlockingWorkflowExecution).To(Equal(wfe.Name))
+		})
+
+		// BR-WE-009-011, BR-FLEET-004; FedRAMP AC-4/AC-6; OWASP ASVS V4.1.1/V4.1.3.
+		It("UT-RO-2396-002: should not block same target on a different cluster", func() {
+			blockerRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-prod-west",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "prod-west",
+				},
+			}
+			Expect(fakeClient.Create(ctx, blockerRR)).To(Succeed())
+
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-prod-west",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      blockerRR.Name,
+						Namespace: blockerRR.Namespace,
+					},
+					TargetResource: "default/pod/nginx-12345",
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1.PhaseRunning,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-remote-cluster",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "remote-cluster",
+				},
+			}
+
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/nginx-12345")
+			Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue())
+			Expect(blocked).To(BeNil())
 		})
 
 		It("should not block when WFE is terminal", func() {

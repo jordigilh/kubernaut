@@ -383,7 +383,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			GinkgoWriter.Printf("E2E-WE-015-005 passed: Ansible secret dependency injection via AWX credential verified\n")
 		})
 
-		It("E2E-WE-015-006: should inject ConfigMap as extra_vars and complete", func() {
+		It("E2E-WE-2390-006: should inject Secret and ConfigMap dependencies and complete", func() {
 			depConfigMapAnsibleUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-configmap-ansible"]
 			Expect(depConfigMapAnsibleUUID).ToNot(BeEmpty(),
 				"test-dep-configmap-ansible UUID should have been captured during workflow registration")
@@ -419,6 +419,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
 							ExecutionEngine: "ansible",
 							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets:    []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
 								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
 							},
 						},
@@ -434,22 +435,21 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 
 			defer func() { _ = deleteWFE(wfe) }()
 
-			By("E2E-WE-015-006: Creating WFE with ansible engine and ConfigMap dependency")
+			By("E2E-WE-2390-006: Creating WFE with ansible engine and Secret + ConfigMap dependencies")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("E2E-WE-015-006: Verifying WFE transitions to Running")
+			By("E2E-WE-2390-006: Verifying WFE transitions to Running")
 			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
-					"WFE should reach Running — ConfigMap extra_vars injection must succeed")
+					"WFE should reach Running — Secret credential and ConfigMap extra_vars injection must succeed")
 
-			By("E2E-WE-015-006: Verifying NO ephemeral credential annotation (ConfigMaps use extra_vars)")
+			By("E2E-WE-2390-006: Verifying the Secret dependency creates an ephemeral AWX credential")
 			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			_, hasCredAnnotation := runningWFE.Annotations["kubernaut.ai/awx-ephemeral-credentials"]
-			Expect(hasCredAnnotation).To(BeFalse(),
-				"ConfigMap-only deps should NOT create ephemeral credentials")
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"E2E-WE-2390-006: Secret dependency must create an ephemeral AWX credential")
 
-			By("E2E-WE-015-006: Waiting for WFE to complete (playbook validates extra_var)")
+			By("E2E-WE-2390-006: Waiting for WFE to complete (playbook validates ConfigMap extra_var)")
 			Eventually(func() string {
 				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
 				if updated != nil {
@@ -459,7 +459,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			}, 180*time.Second, 5*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
 				"WFE should complete after playbook validates KUBERNAUT_CONFIGMAP_* extra_var")
 
-			GinkgoWriter.Printf("E2E-WE-015-006 passed: Ansible ConfigMap dependency injection via extra_vars verified\n")
+			GinkgoWriter.Printf("E2E-WE-2390-006 passed: Ansible Secret + ConfigMap dependency injection verified\n")
 		})
 	})
 

@@ -143,6 +143,13 @@ type WorkflowExecutionReconciler struct {
 	// Default: 5 minutes
 	CooldownPeriod time.Duration
 
+	// RetainFailedExecutions keeps failed execution resources available for
+	// bounded diagnosis (BR-WE-019, FedRAMP AU-11).
+	RetainFailedExecutions bool
+
+	// FailedExecutionRetention is the bounded failed-resource retention period.
+	FailedExecutionRetention time.Duration
+
 	// AuditStore for writing audit events (BR-WE-005, ADR-032)
 	// Uses pkg/audit buffered store via Data Storage Service
 	// Optional: nil disables audit (graceful degradation)
@@ -172,14 +179,16 @@ type WorkflowExecutionReconciler struct {
 // WorkflowExecution reconciler. Fields extracted from ctrl.Manager (Client,
 // APIReader, Scheme, Recorder) are populated automatically by NewReconciler.
 type ReconcilerOptions struct {
-	ExecutionNamespace string
-	CooldownPeriod     time.Duration
-	Metrics            *metrics.Metrics
-	StatusManager      *status.Manager
-	AuditStore         audit.AuditStore
-	PhaseManager       *wephase.Manager
-	AuditManager       *weaudit.Manager
-	ExecutorRegistry   *weexecutor.Registry
+	ExecutionNamespace       string
+	CooldownPeriod           time.Duration
+	RetainFailedExecutions   bool
+	FailedExecutionRetention time.Duration
+	Metrics                  *metrics.Metrics
+	StatusManager            *status.Manager
+	AuditStore               audit.AuditStore
+	PhaseManager             *wephase.Manager
+	AuditManager             *weaudit.Manager
+	ExecutorRegistry         *weexecutor.Registry
 }
 
 // NewReconciler creates a WorkflowExecutionReconciler, extracting
@@ -188,18 +197,20 @@ type ReconcilerOptions struct {
 // site from ~13 fields to 2 (mgr + opts).
 func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionReconciler {
 	return &WorkflowExecutionReconciler{
-		Client:             mgr.GetClient(),
-		APIReader:          mgr.GetAPIReader(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("workflowexecution-controller"),
-		Metrics:            opts.Metrics,
-		StatusManager:      opts.StatusManager,
-		ExecutionNamespace: opts.ExecutionNamespace,
-		CooldownPeriod:     opts.CooldownPeriod,
-		AuditStore:         opts.AuditStore,
-		PhaseManager:       opts.PhaseManager,
-		AuditManager:       opts.AuditManager,
-		ExecutorRegistry:   opts.ExecutorRegistry,
+		Client:                   mgr.GetClient(),
+		APIReader:                mgr.GetAPIReader(),
+		Scheme:                   mgr.GetScheme(),
+		Recorder:                 mgr.GetEventRecorderFor("workflowexecution-controller"),
+		Metrics:                  opts.Metrics,
+		StatusManager:            opts.StatusManager,
+		ExecutionNamespace:       opts.ExecutionNamespace,
+		CooldownPeriod:           opts.CooldownPeriod,
+		RetainFailedExecutions:   opts.RetainFailedExecutions,
+		FailedExecutionRetention: opts.FailedExecutionRetention,
+		AuditStore:               opts.AuditStore,
+		PhaseManager:             opts.PhaseManager,
+		AuditManager:             opts.AuditManager,
+		ExecutorRegistry:         opts.ExecutorRegistry,
 	}
 }
 

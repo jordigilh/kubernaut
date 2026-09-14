@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,6 +27,83 @@ import (
 )
 
 var _ = Describe("Keyword Scenarios YAML Override (issue #1160)", func() {
+
+	Describe("UT-MOCK-SEL-001: YAML parsing of scenario_selectors", func() {
+		It("should parse the canonical selector schema", func() {
+			yaml := `
+scenario_selectors:
+  - name: "af_investigate"
+    caller: "af"
+    phase: "investigation"
+    keywords: ["start investigation"]
+    match_last_only: true
+    tool_call:
+      name: "kubernaut_investigate"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.ScenarioSelectors).To(HaveLen(1))
+			Expect(overrides.ScenarioSelectors[0].Name).To(Equal("af_investigate"))
+			Expect(overrides.ScenarioSelectors[0].Caller).To(Equal("af"))
+			Expect(overrides.ScenarioSelectors[0].Phase).To(Equal("investigation"))
+		})
+
+		It("should retain support for the deprecated keyword_scenarios schema", func() {
+			yaml := `
+keyword_scenarios:
+  - name: "legacy"
+    keywords: ["legacy trigger"]
+    tool_call:
+      name: "legacy_tool"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.KeywordScenarios).To(HaveLen(1))
+			Expect(overrides.KeywordScenarios[0].Name).To(Equal("legacy"))
+		})
+
+		It("should register canonical selectors through the normal detection path", func() {
+			registry := scenarios.DefaultRegistryFull(&config.Overrides{
+				ScenarioSelectors: []config.ScenarioSelectorOverride{{
+					Name:     "canonical_selector",
+					Caller:   "af",
+					Phase:    "investigation",
+					Keywords: []string{"canonical trigger"},
+					ToolCall: config.ToolCallOverride{Name: "canonical_tool"},
+				}},
+			}, "")
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: "canonical trigger",
+				Caller:  scenarios.CallerAF,
+				Phase:   scenarios.PhaseInvestigation,
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("canonical_selector"))
+		})
+
+		It("should reject malformed canonical selectors before registration", func() {
+			yaml := `
+scenario_selectors:
+  - name: "broken"
+    caller: "frontend"
+    keywords: []
+    tool_call:
+      name: ""
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			_, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).To(MatchError("scenario selector caller must be one of: af, ka"))
+		})
+	})
 
 	Describe("UT-MOCK-KW-001: YAML parsing of keyword_scenarios", func() {
 		It("UT-MOCK-KW-001-001: should parse keyword_scenarios from YAML", func() {

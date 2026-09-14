@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -90,6 +90,29 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 			result := registry.Detect(detCtx)
 			Expect(result).NotTo(BeNil())
 			Expect(result.Scenario.Name()).To(Equal("af_select_workflow"))
+		})
+	})
+
+	Describe("UT-ML-2390-001: match_last_only keyword matching is case-insensitive", func() {
+		It("should match mixed-case keywords in the last user message", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_select_gitops_workflow_2390",
+						Keywords:      []string{"select the discovered GitOps workflow"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_select_workflow"},
+						MatchLastOnly: true,
+					},
+				},
+			}
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				LastUserContent: "select the discovered GitOps workflow",
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("af_select_gitops_workflow_2390"))
 		})
 	})
 

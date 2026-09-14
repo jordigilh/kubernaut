@@ -324,8 +324,8 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 		})
 	})
 
-	Context("E2E-WE-006-004: Tekton PipelineRun with secret workspace binding", func() {
-		It("should create PipelineRun with workspace binding for declared secret dependency", func() {
+	Context("E2E-WE-2390-005: Tekton PipelineRun with Secret + ConfigMap workspace bindings", func() {
+		It("E2E-WE-2390-005: should create one PipelineRun with both dependency workspace bindings", func() {
 			depSecretTektonUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-tekton"]
 			Expect(depSecretTektonUUID).ToNot(BeEmpty(),
 				"test-dep-secret-tekton UUID should have been captured during workflow registration")
@@ -354,7 +354,8 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
 							Dependencies: &sharedtypes.WorkflowDependencies{
-								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-tekton"}},
+								Secrets:    []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-tekton"}},
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-tekton"}},
 							},
 						},
 					},
@@ -404,7 +405,17 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			Expect(secretWs.Secret.SecretName).To(Equal("e2e-dep-secret-tekton"),
 				"Workspace should reference Secret e2e-dep-secret-tekton")
 
-			GinkgoWriter.Printf("E2E-WE-006-004: Tekton dependency injection validated\n")
+			By("E2E-WE-2390-005: Verifying the same PipelineRun has a ConfigMap workspace binding")
+			Expect(pr.Spec.Workspaces).To(ContainElement(And(
+				HaveField("Name", "configmap-e2e-dep-configmap-tekton"),
+				HaveField("ConfigMap", Not(BeNil())),
+			)), "E2E-WE-2390-005: PipelineRun should bind both dependency kinds")
+			configMapWs := findWorkspace(pr.Spec.Workspaces, "configmap-e2e-dep-configmap-tekton")
+			Expect(configMapWs).ToNot(BeNil())
+			Expect(configMapWs.ConfigMap.Name).To(Equal("e2e-dep-configmap-tekton"),
+				"E2E-WE-2390-005: ConfigMap workspace must reference the declared ConfigMap")
+
+			GinkgoWriter.Printf("E2E-WE-2390-005: Tekton Secret + ConfigMap dependency injection validated\n")
 			GinkgoWriter.Printf("   Workflow UUID: %s\n", depSecretTektonUUID)
 			GinkgoWriter.Printf("   PipelineRun name: %s\n", pr.Name)
 			GinkgoWriter.Printf("   Workspace count: %d\n", len(pr.Spec.Workspaces))

@@ -1497,7 +1497,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 				MCPClient: closedEventsMCP(),
 				Client:    tc,
 				Namespace: "kubernaut-system",
-				Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003"),
+				Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003", "cluster-fleet-it-003"),
 			}, tools.InvestigateMCPArgs{
 				APIVersion: "apps/v1",
 				Namespace:  "prod",

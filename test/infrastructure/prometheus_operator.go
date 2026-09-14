@@ -319,6 +319,18 @@ spec:
       annotations:
         summary: 'Container {{ $labels.container }} in pod {{ $labels.pod }} is restarting repeatedly ({{ $value | humanize }} restarts in 5m).'
         description: 'A container in namespace {{ $labels.namespace }} is failing to reach a stable running state. Elevated restart rate may indicate service degradation.'
+    - alert: KAInteractiveFleetBridgeGrounding
+      expr: vector(1) > 0
+      for: 0s
+      labels:
+        severity: warning
+        source: prometheus
+        cluster: %[4]s
+        namespace: kubernaut-system
+        kind: Deployment
+        name: ka-interactive-fleet-target
+      annotations:
+        summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: Prometheus

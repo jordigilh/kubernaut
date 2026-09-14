@@ -22,10 +22,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -178,6 +180,14 @@ func (a *WorkflowCatalogAdapter) GetWorkflowByID(ctx context.Context, workflowID
 		Version:         wf.Version,
 		ExecutionEngine: string(wf.ExecutionEngine),
 	}
+	meta := workflowcatalog.BuildWorkflowMeta(wf, logr.FromContextOrDiscard(ctx))
+	catalogWorkflow.ExecutionEngine = meta.ExecutionEngine
+	catalogWorkflow.Version = meta.Version
+	catalogWorkflow.ExecutionClusterID = meta.ClusterID
+	catalogWorkflow.EngineConfig = meta.EngineConfig
+	catalogWorkflow.Dependencies = meta.Dependencies
+	catalogWorkflow.Resources = meta.Resources
+	catalogWorkflow.DeclaredParameterNames = meta.DeclaredParameterNames
 	if wf.ExecutionBundle != nil {
 		catalogWorkflow.ExecutionBundle = *wf.ExecutionBundle
 	}

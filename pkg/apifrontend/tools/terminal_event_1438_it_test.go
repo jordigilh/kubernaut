@@ -144,6 +144,13 @@ var _ = Describe("IT #1438 — AF terminal event wiring through production path"
 		)
 		Expect(err).NotTo(HaveOccurred())
 
+		router := pool.RouterFor("rr-it-1438-030", "alice")
+		Expect(router).NotTo(BeNil(), "handoff must create the session event router")
+		unsubscribe := router.Subscribe(func(evt ka.InvestigationEvent) {
+			tools.EmitKAEventToA2A(ctx, evt)
+		})
+		defer unsubscribe()
+
 		time.Sleep(50 * time.Millisecond)
 
 		eventCh <- ka.InvestigationEvent{

@@ -31,13 +31,10 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-// emitToSink replicates the exact production emitToSink function from
-// investigator.go — non-blocking send to the context-carried event sink.
+// emitToSink mirrors the production investigator path through the session
+// package's event-sink API, preserving the same non-blocking behavior without
+// bypassing LazySink synchronization.
 func emitToSink(ctx context.Context, eventType string, turn int, data map[string]interface{}) bool {
-	sink := session.EventSinkFromContext(ctx)
-	if sink == nil {
-		return false
-	}
 	var raw json.RawMessage
 	if data != nil {
 		var err error
@@ -52,12 +49,7 @@ func emitToSink(ctx context.Context, eventType string, turn int, data map[string
 		Phase: "rca",
 		Data:  raw,
 	}
-	select {
-	case sink <- event:
-		return true
-	default:
-		return false
-	}
+	return session.EmitEvent(ctx, event)
 }
 
 var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() {
@@ -189,14 +181,16 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 	})
 
 	// H_TIMING_PROD: Tests the race where the investigation goroutine starts
-	// emitting BEFORE Subscribe activates the LazySink.
+	// emitting BEFORE Subscribe activates the LazySink. #1811 requires those
+	// events to be replayed when the subscriber joins.
 	Describe("H_TIMING_PROD: Investigation starts before Subscribe", func() {
 
-		It("early events are dropped but later events arrive after Subscribe", func() {
+		It("replays early events and delivers later events after Subscribe", func() {
 			investigationStarted := make(chan struct{})
 			subscribeReady := make(chan struct{})
 			investigationDone := make(chan struct{})
 			var earlyNilCount atomic.Int64
+			var earlyBufferedCount atomic.Int64
 			var lateSentCount atomic.Int64
 			var lateDropCount atomic.Int64
 
@@ -204,13 +198,16 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 				func(ctx context.Context) (*katypes.InvestigationResult, error) {
 					close(investigationStarted)
 
-					// Early phase: sink is nil before Subscribe
+					// Early phase: the sink is nil before Subscribe, so these
+					// events are buffered for replay by LazySink (#1811).
 					for i := 0; i < 3; i++ {
 						sink := session.EventSinkFromContext(ctx)
 						if sink == nil {
 							earlyNilCount.Add(1)
 						}
-						emitToSink(ctx, "token_delta", i, map[string]interface{}{"delta": "early"})
+						if !emitToSink(ctx, "token_delta", i, map[string]interface{}{"delta": "early"}) {
+							earlyBufferedCount.Add(1)
+						}
 					}
 
 					// Wait for Subscribe
@@ -247,15 +244,26 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 			close(subscribeReady)
 
 			var bridgeReceived atomic.Int64
+			var earlyReceived atomic.Int64
+			var lateReceived atomic.Int64
+			var completeReceived atomic.Int64
 			bridgeDone := make(chan struct{})
 			go func() {
 				defer close(bridgeDone)
 				for {
-					_, ok := <-eventCh
+					event, ok := <-eventCh
 					if !ok {
 						return
 					}
 					bridgeReceived.Add(1)
+					switch event.Type {
+					case session.EventTypeTokenDelta:
+						earlyReceived.Add(1)
+					case session.EventTypeReasoningDelta:
+						lateReceived.Add(1)
+					case session.EventTypeComplete:
+						completeReceived.Add(1)
+					}
 				}
 			}()
 
@@ -264,15 +272,21 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 			logger.Info("TIMING SPIKE RESULTS",
 				"early_nil", earlyNilCount.Load(),
+				"early_buffered", earlyBufferedCount.Load(),
 				"late_sent", lateSentCount.Load(),
 				"late_dropped", lateDropCount.Load(),
-				"bridge_received", bridgeReceived.Load())
+				"bridge_received", bridgeReceived.Load(),
+				"early_received", earlyReceived.Load(),
+				"late_received", lateReceived.Load(),
+				"complete_received", completeReceived.Load())
 
 			Expect(earlyNilCount.Load()).To(BeNumerically(">", 0), "early events should see nil sink")
+			Expect(earlyBufferedCount.Load()).To(Equal(int64(3)), "all early events should be buffered for replay")
+			Expect(earlyReceived.Load()).To(Equal(earlyBufferedCount.Load()), "all buffered early events should be replayed")
 			Expect(lateSentCount.Load()).To(BeNumerically(">", 0), "late events should succeed")
 			Expect(lateDropCount.Load()).To(BeNumerically("==", 0), "no late events should be dropped")
-			// +1 for EventTypeComplete from Manager.emitCompleteEvent
-			Expect(bridgeReceived.Load()).To(Equal(lateSentCount.Load()+1), "bridge should get late events + complete")
+			Expect(lateReceived.Load()).To(Equal(lateSentCount.Load()), "bridge should receive all late events")
+			Expect(completeReceived.Load()).To(Equal(int64(1)), "bridge should receive one complete event")
 		})
 	})
 
@@ -374,19 +388,27 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 			// Now drain
 			var drained int
-			for range eventCh {
-				drained++
+			var complete int
+			for event := range eventCh {
+				switch event.Type {
+				case session.EventTypeTokenDelta:
+					drained++
+				case session.EventTypeComplete:
+					complete++
+				}
 			}
 
 			logger.Info("BUFFER PRESSURE RESULTS",
 				"sent", sentCount.Load(),
 				"dropped", droppedCount.Load(),
-				"drained", drained)
+				"drained", drained,
+				"complete", complete)
 
 			// Buffer is 64, so at most 64 events should be sent, rest dropped
 			Expect(sentCount.Load()).To(BeNumerically("<=", 64))
 			Expect(sentCount.Load() + droppedCount.Load()).To(BeNumerically("==", 200))
 			Expect(int64(drained)).To(Equal(sentCount.Load()))
+			Expect(complete).To(BeNumerically("<=", 1), "the manager emits at most one terminal complete event")
 		})
 	})
 

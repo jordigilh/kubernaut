@@ -50,7 +50,7 @@ import (
 // fields yet -- this file must fail to compile.
 // ========================================
 var _ = Describe("enrichFromCatalog — Issue #1661 Change 11a", func() {
-	It("UT-KA-337-002: copies Dependencies/Resources/DeclaredParameterNames from WorkflowMeta onto the result", func() {
+	It("UT-KA-2390-001/002: copies Dependencies/Resources/DeclaredParameterNames from WorkflowMeta onto the result", func() {
 		v := parser.NewValidator([]string{"wf-with-schema"})
 		deps := &models.WorkflowDependencies{
 			Secrets: []models.ResourceDependency{{Name: "db-creds"}},
@@ -75,7 +75,7 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 11a", func() {
 		Expect(result.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
 	})
 
-	It("UT-KA-337-002b: leaves Dependencies/Resources/DeclaredParameterNames nil when the workflow has no catalog metadata", func() {
+	It("UT-KA-2390-005: leaves Dependencies/Resources/DeclaredParameterNames nil when the workflow has no catalog metadata", func() {
 		v := parser.NewValidator([]string{"wf-unknown"})
 		result := &katypes.InvestigationResult{WorkflowID: "wf-unknown"}
 
@@ -114,7 +114,7 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 12", func() {
 		Expect(result.WorkflowName).To(Equal("scale-memory-fix"))
 	})
 
-	It("UT-KA-1661-651-002: always overwrites a pre-populated ActionType/WorkflowName from the catalog (catalog-authoritative, not LLM-suppliable)", func() {
+	It("UT-KA-2390-004: always overwrites a pre-populated ActionType/WorkflowName from the catalog (catalog-authoritative, not LLM-suppliable)", func() {
 		v := parser.NewValidator([]string{"wf-with-schema"})
 		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{
 			ActionType:   "RestartPod",
@@ -218,7 +218,7 @@ var _ = Describe("enrichFromCatalog — Issue #2326 (workflow-declared execution
 // apiVersionGateExhaustion (this file).
 // ========================================
 var _ = Describe("enrichFromCatalog — Issue #1711 (unresolvable workflow_id must not survive)", func() {
-	It("UT-KA-1711-001: clears WorkflowID when the catalog lookup fails, even though HumanReviewNeeded is already true", func() {
+	It("UT-KA-2390-003: clears WorkflowID when the catalog lookup fails, even though HumanReviewNeeded is already true", func() {
 		v := parser.NewValidator([]string{"wf-known"}) // "wf-hallucinated" deliberately absent from the allowlist
 		result := &katypes.InvestigationResult{
 			WorkflowID: "wf-hallucinated",

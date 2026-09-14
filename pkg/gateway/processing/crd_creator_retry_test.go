@@ -75,7 +75,7 @@ func buildScheme() *runtime.Scheme {
 func newTestSignal(fingerprint, alertName string) *types.NormalizedSignal {
 	return &types.NormalizedSignal{
 		Fingerprint: fingerprint,
-		SignalName:   alertName,
+		SignalName:  alertName,
 		Severity:    "critical",
 		Namespace:   "production",
 		Resource: types.ResourceIdentifier{
@@ -105,8 +105,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 	// GAP 5: Test cleanup pattern
 	BeforeEach(func() {
-		// Create context with timeout for each test
-		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		// Keep the test context cancellable but without a wall-clock deadline.
+		// The aggregate unit target starts all service suites concurrently, so a
+		// deadline created during setup can expire before this spec is scheduled.
+		// Context deadline behavior is covered explicitly by the tests below.
+		ctx, cancel = context.WithCancel(context.Background())
 
 		// Create custom Prometheus registry per test (prevents duplicate registration)
 		metricsReg = prometheus.NewRegistry()
@@ -815,10 +818,10 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Execute: Validate config
 			err := invalidConfig.Validate()
 
-		// Verify: Validation fails with structured error (GAP-8)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("processing.retry.maxAttempts"))
-		Expect(err.Error()).To(ContainSubstring("must be >= 1"))
+			// Verify: Validation fails with structured error (GAP-8)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("processing.retry.maxAttempts"))
+			Expect(err.Error()).To(ContainSubstring("must be >= 1"))
 		})
 
 		It("should validate MaxBackoff >= InitialBackoff", func() {
@@ -835,9 +838,9 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Execute: Validate config
 			err := invalidConfig.Validate()
 
-		// Verify: Validation fails
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("retry.maxBackoff"))
+			// Verify: Validation fails
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("retry.maxBackoff"))
 		})
 	})
 
@@ -851,11 +854,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	Context("BR-GATEWAY-058: RetryObserver", func() {
 		var (
-			ctx        context.Context
-			logger     logr.Logger
+			ctx         context.Context
+			logger      logr.Logger
 			metricsInst *metrics.Metrics
 			retryConfig *config.RetrySettings
-			creator    *processing.CRDCreator
+			creator     *processing.CRDCreator
 		)
 
 		BeforeEach(func() {

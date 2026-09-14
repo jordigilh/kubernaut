@@ -20,7 +20,7 @@ var _ = Describe("Tool Constructors", func() {
 			return tools.NewApproveTool(newTypedFakeClient(), "test-ns")
 		}},
 		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil, "test-ns") }},
-		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil, "test-ns") }},
+		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil, "test-ns", nil) }},
 		{"kubernaut_investigate", func() (interface{ Name() string }, error) {
 			return tools.NewInvestigateMCPTool(&tools.InvestigateConfig{}, nil)
 		}},

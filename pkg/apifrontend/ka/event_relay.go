@@ -16,53 +16,71 @@ limitations under the License.
 
 package ka
 
-import (
-	"context"
-	"sync"
-)
+import "sync"
 
-// EventRelay lets a pooled session's background event-watcher goroutine
-// (see WatchTerminalEvents in pkg/apifrontend/tools) discover, for the
-// duration of a specific pooled MCP call, which A2A call's context (and
-// therefore EventBridge, via launcher.EventBridgeFromContext) should
-// receive KA events arriving mid-call — e.g. reasoning_content_delta
-// emitted while KA processes a synchronous kubernaut_message turn.
+// EventSink receives an event published by the single watcher attached to a
+// pooled KA session. Sinks own their delivery context and may route events to
+// an A2A EventBridge or another in-process consumer.
+type EventSink func(InvestigationEvent)
+
+// EventRouter fans events from one pooled KA session out to its active
+// subscribers. KASessionPool owns one router per (rr_id, username) entry,
+// preserving the pool's existing user-isolation boundary without storing
+// request contexts or allowing multiple goroutines to consume the KA channel.
 //
-// Idle (no in-flight call): Current() returns nil, and the watcher falls
-// back to its original terminal-event-only behavior, unchanged from #1438.
-//
-// See DD-AF-009 for the design rationale and rejected alternatives.
-//
-//nolint:containedctx // intentional: this ctx is a cross-goroutine handoff
-// pointer (the watcher goroutine reads what the pooled-call goroutine
-// attaches), not a ctx threaded through a call chain — the anti-pattern this
-// lint guards against does not apply. See DD-AF-009 Alternative D.
-type EventRelay struct {
-	mu  sync.Mutex
-	ctx context.Context
+// Delivery is best-effort and in-process. Publish snapshots subscribers under
+// the mutex and invokes sinks after unlocking so a sink cannot block router
+// lifecycle operations or deadlock Subscribe/Unsubscribe.
+type EventRouter struct {
+	mu          sync.RWMutex
+	nextID      uint64
+	subscribers map[uint64]EventSink
 }
 
-// Attach records ctx as the context of the pooled call currently in
-// flight. Returns a detach func that must be deferred by the caller; it
-// only clears the field if it still points at this exact ctx, so a stale
-// detach from an outer call can never clobber a more recent (inner) one.
-func (r *EventRelay) Attach(ctx context.Context) (detach func()) {
+// NewEventRouter creates an empty session event router.
+func NewEventRouter() *EventRouter {
+	return &EventRouter{subscribers: make(map[uint64]EventSink)}
+}
+
+// Subscribe registers a sink and returns a token-specific unsubscribe
+// function. Calling the returned function more than once is safe.
+func (r *EventRouter) Subscribe(sink EventSink) (unsubscribe func()) {
+	if r == nil || sink == nil {
+		return func() {}
+	}
+
 	r.mu.Lock()
-	r.ctx = ctx
+	r.nextID++
+	id := r.nextID
+	if r.subscribers == nil {
+		r.subscribers = make(map[uint64]EventSink)
+	}
+	r.subscribers[id] = sink
 	r.mu.Unlock()
+
 	return func() {
 		r.mu.Lock()
-		if r.ctx == ctx {
-			r.ctx = nil
-		}
+		delete(r.subscribers, id)
 		r.mu.Unlock()
 	}
 }
 
-// Current returns the ctx of the pooled call currently in flight, or nil
-// when idle.
-func (r *EventRelay) Current() context.Context {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.ctx
+// Publish delivers evt to all subscribers that were registered when the
+// publish began. It returns the number of sinks selected for delivery.
+func (r *EventRouter) Publish(evt InvestigationEvent) int {
+	if r == nil {
+		return 0
+	}
+
+	r.mu.RLock()
+	sinks := make([]EventSink, 0, len(r.subscribers))
+	for _, sink := range r.subscribers {
+		sinks = append(sinks, sink)
+	}
+	r.mu.RUnlock()
+
+	for _, sink := range sinks {
+		sink(evt)
+	}
+	return len(sinks)
 }

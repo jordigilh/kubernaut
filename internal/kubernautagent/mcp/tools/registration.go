@@ -19,11 +19,15 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // InvestigateRegistration returns a ToolRegistration that registers the
@@ -139,12 +143,14 @@ func simpleToolRegistration[TIn actingUserInput, TOut any](
 	name, description string,
 	handle func(ctx context.Context, input TIn, user mcpinternal.UserInfo) (TOut, error),
 	logger logr.Logger,
+	outputSchema *jsonschema.Schema,
 ) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
-		mcpsdk.AddTool(server, &mcpsdk.Tool{
-			Name:        name,
-			Description: description,
-		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input TIn) (*mcpsdk.CallToolResult, TOut, error) {
+		tool := &mcpsdk.Tool{Name: name, Description: description}
+		if outputSchema != nil {
+			tool.OutputSchema = outputSchema
+		}
+		mcpsdk.AddTool(server, tool, func(ctx context.Context, req *mcpsdk.CallToolRequest, input TIn) (*mcpsdk.CallToolResult, TOut, error) {
 			actingUser, actingUserGroups := input.actingUserOverride()
 			user := ResolveUser(userFromCtx(ctx), actingUser, actingUserGroups)
 			output, err := handle(ctx, input, user)
@@ -161,6 +167,7 @@ func SelectWorkflowRegistration(tool *SelectWorkflowTool, logger logr.Logger) mc
 		"Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
 		tool.Handle,
 		logger,
+		selectWorkflowOutputSchema(),
 	)
 }
 
@@ -172,7 +179,25 @@ func CompleteNoActionRegistration(tool *CompleteNoActionTool, logger logr.Logger
 		"Complete an interactive investigation without selecting a workflow. Use when no remediation action is needed.",
 		tool.Handle,
 		logger,
+		nil,
 	)
+}
+
+// selectWorkflowOutputSchema supplies the wire schema for select_workflow's
+// typed output. Kubernetes resource.Quantity marshals as a JSON string, while
+// jsonschema-go otherwise reflects its implementation struct as an object.
+// BR-INTERACTIVE-005: the MCP SDK validates marshaled output against this
+// schema before returning it to the caller.
+func selectWorkflowOutputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[SelectWorkflowOutput](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[resource.Quantity](): {Type: "string"},
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("build select_workflow output schema: %v", err))
+	}
+	return schema
 }
 
 // ListWorkflowsRegistration returns a ToolRegistration that registers the

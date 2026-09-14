@@ -555,7 +555,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-fleet-it-001"),
 			}, &tools.InvestigateAlertArgs{
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",

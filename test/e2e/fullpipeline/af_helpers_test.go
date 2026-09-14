@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -73,33 +74,6 @@ func fpA2ATasksSend(id, text string) string {
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
 			"contextId": "ctx-" + id,
-			"role":      "user",
-			"parts": []map[string]interface{}{
-				{"kind": "text", "text": text},
-			},
-		},
-	})
-}
-
-// fpA2ATasksSendWithTask continues an existing A2A task by including taskId.
-// Includes a contextId derived from the taskId to prevent the SessionInterceptor
-// from overriding to a stale session.
-//
-// This is safe for multi-turn tests whose driver-establishing kubernaut_investigate
-// call happens on Turn 2+ (e.g. 07/08/09/17): every fpA2ATasksSendWithTask call for
-// the same taskID derives the identical "ctx-"+taskID session, so ADK session state
-// (af_interactive_driver_active, etc.) set on Turn 2 is visible on Turn 3+. It is NOT
-// safe when Turn 1 itself (via fpA2ATasksSend, whose contextId is "ctx-"+id, NOT
-// "ctx-"+taskID) already ran kubernaut_investigate -- Turn 2's derived "ctx-"+taskID
-// session is a brand-new, empty ADK session that never saw that state, so a
-// driver-gated tool call on Turn 2 is wrongly hard-rejected with "no_active_driver"
-// (issue #1899 E2E tests: use fpA2ATasksSendWithContext instead in that case).
-func fpA2ATasksSendWithTask(id, taskID, text string) string {
-	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
-		"id": taskID,
-		"message": map[string]interface{}{
-			"messageId": "msg-" + id,
-			"contextId": "ctx-" + taskID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -227,8 +201,15 @@ func fpA2AInvoke(body string) (*http.Response, error) {
 // be processing a prior turn's tool chain (AF → MCP → KA → mock-LLM).
 // A zero timeout uses the default afHTTPClient (30s).
 func fpA2AInvokeWithTimeout(body string, timeout time.Duration) (*http.Response, error) {
+	return fpA2AInvokeWithContext(context.Background(), body, timeout)
+}
+
+// fpA2AInvokeWithContext sends a JSON-RPC request with caller-controlled
+// cancellation. Long-running turns can be observed concurrently by the test
+// and cancelled if the test exits before the server reaches a terminal state.
+func fpA2AInvokeWithContext(requestContext context.Context, body string, timeout time.Duration) (*http.Response, error) {
 	token := getAFToken()
-	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

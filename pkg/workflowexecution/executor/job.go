@@ -451,6 +451,10 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 	var backoffLimit int32 = 0
 	var ttlSeconds int32 = 600
 	activeDeadlineSeconds := activeDeadlineSecondsFor(wfe)
+	var ttlSecondsAfterFinished *int32
+	if !opts.RetainFailedExecutions {
+		ttlSecondsAfterFinished = &ttlSeconds
+	}
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -469,7 +473,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
-			TTLSecondsAfterFinished: &ttlSeconds,
+			TTLSecondsAfterFinished: ttlSecondsAfterFinished,
 			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
 			PodFailurePolicy:        jobPodFailurePolicy(),
 			Template: corev1.PodTemplateSpec{

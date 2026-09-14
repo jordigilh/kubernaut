@@ -118,7 +118,7 @@ var _ = Describe("WorkflowExecution Creator: workflow-declared execution cluster
 		return created
 	}
 
-	It("UT-RO-2326-001: a workflow-declared ExecutionClusterID overrides RemediationRequest.Spec.ClusterID", func() {
+	It("UT-RO-2390-001: a workflow-declared ExecutionClusterID overrides RemediationRequest.Spec.ClusterID", func() {
 		rr := buildRR("signal-origin-cluster")
 		ai := buildAI("job", "gitops-hub-cluster")
 
@@ -128,7 +128,7 @@ var _ = Describe("WorkflowExecution Creator: workflow-declared execution cluster
 			"BR-FLEET-004: the workflow's declared execution cluster must take precedence over the signal's origin cluster")
 	})
 
-	It("UT-RO-2326-002: falls back to RemediationRequest.Spec.ClusterID when the workflow declares no execution cluster (regression guard, unchanged default)", func() {
+	It("UT-RO-2390-002: falls back to RemediationRequest.Spec.ClusterID when the workflow declares no execution cluster (regression guard, unchanged default)", func() {
 		rr := buildRR("signal-origin-cluster")
 		ai := buildAI("job", "")
 

@@ -54,7 +54,7 @@ tests:
     asserts:
       - failedTemplate: {}
 
-  - it: "IT-HELM-1984-202 (Phase C, BR-PLATFORM-010): console.enabled=true without an OIDC issuer (neither apifrontend.config.auth.issuerURL nor jwtProviders[0].issuerURL) is schema-rejected, even when only NOTES.txt is rendered"
+  - it: "IT-HELM-1984-202 (Phase C, BR-PLATFORM-010): console.enabled=true with an explicitly empty OIDC issuer is schema-rejected, even when only NOTES.txt is rendered"
     template: templates/NOTES.txt
     set:
       console:
@@ -63,6 +63,10 @@ tests:
           secretName: console-auth
         ingress:
           host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: ""
     asserts:
       - failedTemplate: {}
 

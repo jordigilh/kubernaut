@@ -13,7 +13,6 @@
 - apifrontend.autoscaling.memoryTarget
 - apifrontend.autoscaling.minReplicas
 - apifrontend.config.auth.audience
-- apifrontend.config.auth.issuerURL
 - apifrontend.config.auth.replayCache.redisDB
 - apifrontend.config.rbac.personas
 - apifrontend.config.rbac.sarCacheTTL

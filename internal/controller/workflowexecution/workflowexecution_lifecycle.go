@@ -111,6 +111,7 @@ func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.C
 
 	case workflowexecutionv1alpha1.PhaseFailed:
 		logger.Info("Execution failed", "engine", wfe.Spec.WorkflowRef.ExecutionEngine, "reason", result.Reason)
+		r.cleanupEphemeralExecutionResources(ctx, wfe, logger)
 		pr := r.fetchTektonPipelineRunForMark(ctx, wfe)
 		res, err := r.MarkFailed(ctx, wfe, pr, result.Summary)
 		return res, err, true
@@ -122,6 +123,23 @@ func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.C
 			weconditions.ReasonExecutionStarted,
 			fmt.Sprintf("Execution running (%s: %s)", wfe.Spec.WorkflowRef.ExecutionEngine, result.Reason))
 		return ctrl.Result{}, nil, false
+	}
+}
+
+func (r *WorkflowExecutionReconciler) cleanupEphemeralExecutionResources(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) {
+	if r.ExecutorRegistry == nil {
+		return
+	}
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
+	if err != nil || exec == nil {
+		return
+	}
+	cleaner, ok := exec.(weexecutor.EphemeralResourceCleaner)
+	if !ok {
+		return
+	}
+	if err := cleaner.CleanupEphemeralResources(ctx, wfe, r.ExecutionNamespace); err != nil {
+		logger.Error(err, "Failed to cleanup ephemeral execution resources after terminal failure", "engine", exec.Engine())
 	}
 }
 
@@ -167,6 +185,14 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		wfe.Status.CompletionTime = &now
 	}
 
+	if remaining, retain := r.failedExecutionRetentionRemaining(wfe); retain && remaining > 0 {
+		logger.V(1).Info("Retaining failed execution resource",
+			"remaining", remaining,
+			"targetResource", wfe.Spec.TargetResource,
+		)
+		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
 	// Get cooldown period (use default if not set)
 	cooldown := r.CooldownPeriod
 	if cooldown == 0 {
@@ -197,6 +223,28 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		fmt.Sprintf("Lock released for %s after cooldown", wfe.Spec.TargetResource))
 
 	return ctrl.Result{}, nil
+}
+
+// failedExecutionRetentionRemaining reports whether a failed WFE is within the
+// configured retention window and how long remains (BR-WE-019, AU-11).
+func (r *WorkflowExecutionReconciler) failedExecutionRetentionRemaining(wfe *workflowexecutionv1alpha1.WorkflowExecution) (time.Duration, bool) {
+	if !r.RetainFailedExecutions || r.FailedExecutionRetention <= 0 || wfe.Status.Phase != workflowexecutionv1alpha1.PhaseFailed {
+		return 0, false
+	}
+	var anchor time.Time
+	switch {
+	case wfe.Status.CompletionTime != nil:
+		anchor = wfe.Status.CompletionTime.Time
+	case !wfe.DeletionTimestamp.IsZero():
+		anchor = wfe.DeletionTimestamp.Time
+	default:
+		return 0, false
+	}
+	remaining := r.FailedExecutionRetention - time.Since(anchor)
+	if remaining <= 0 {
+		return 0, true
+	}
+	return remaining, true
 }
 
 // releaseExecutionLock deletes the execution resource to release the
@@ -363,6 +411,10 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	// Check if finalizer is present
 	if !controllerutil.ContainsFinalizer(wfe, FinalizerName) {
 		return ctrl.Result{}, nil
+	}
+	if remaining, retain := r.failedExecutionRetentionRemaining(wfe); retain && remaining > 0 {
+		logger.V(1).Info("Deferring failed execution finalization until retention expires", "remaining", remaining)
+		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
 	// ========================================

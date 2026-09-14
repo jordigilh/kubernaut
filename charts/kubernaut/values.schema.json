@@ -2005,6 +2005,18 @@
                   ],
                   "default": "1m",
                   "description": "Cooldown between workflow executions"
+                },
+                "retainFailedExecutions": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Retain failed execution resources for bounded diagnosis"
+                },
+                "failedExecutionRetentionSeconds": {
+                  "type": "integer",
+                  "default": 600,
+                  "minimum": 0,
+                  "maximum": 604800,
+                  "description": "Maximum failed execution resource retention period in seconds"
                 }
               }
             },
@@ -3189,8 +3201,8 @@
               "properties": {
                 "issuerURL": {
                   "type": "string",
-                  "default": "",
-                  "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected."
+                  "default": "https://login.kubernaut.ai/realms/kubernaut",
+                  "description": "OIDC issuer URL for JWT validation. Defaults to the production kubernaut Keycloak realm. Override for an external IdP or explicitly selected demo/test realm. When empty, K8s TokenReview is auto-detected."
                 },
                 "jwksURL": {
                   "type": "string",

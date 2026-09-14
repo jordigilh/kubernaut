@@ -28,6 +28,7 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -303,6 +304,10 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 type InvestigateConfig struct {
 	MCPClient ka.MCPClient
 	Client    crclient.Client
+	// DynClient is used to ground a newly-created hub-local RR from Kubernetes
+	// Events. Fleet RRs use Prometheus/Thanos signal grounding instead; Events
+	// are not fetched through a direct hub-to-spoke Kubernetes connection.
+	DynClient dynamic.Interface
 	Namespace string
 	Auditor   audit.Emitter
 	Registry  *MonitorRegistry
@@ -571,7 +576,7 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	}
 
 	hooks, signaledISCRDName := buildPreCreateISHooks(cfg, identity)
-	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker, ClusterLister: cfg.ClusterLister}, createArgs, createUser, hooks)
+	result, err := HandleCreateRRWithHooks(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker, ClusterLister: cfg.ClusterLister}, createArgs, createUser, hooks)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("create RR for investigation: %w", err)
 	}
@@ -972,7 +977,7 @@ func handoffOrCloseSession(ctx context.Context, cfg *InvestigateConfig, rrID, us
 	}
 	watchDone := make(chan struct{})
 	onRelease := func() { close(watchDone) }
-	relay, injectErr := cfg.Pool.InjectVerified(ctx, rrID, username, result.Session, onRelease)
+	router, injectErr := cfg.Pool.InjectVerified(ctx, rrID, username, result.Session, onRelease)
 	if injectErr != nil {
 		logger.Info("investigation session dead on handoff, skipping pool inject",
 			"rr_id", rrID, "session_id", result.SessionID, "error", injectErr.Error())
@@ -985,7 +990,7 @@ func handoffOrCloseSession(ctx context.Context, cfg *InvestigateConfig, rrID, us
 		cfg.Registry.Deregister(result.SessionID)
 	}
 	watchCtx := context.WithoutCancel(ctx)
-	go WatchTerminalEvents(watchCtx, result.Events, rrID, watchDone, relay)
+	go WatchTerminalEvents(watchCtx, result.Events, rrID, watchDone, router)
 	logger.Info("investigation session handed off to pool",
 		"rr_id", rrID, "session_id", result.SessionID, "username", username)
 }

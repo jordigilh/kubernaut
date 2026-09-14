@@ -1,10 +1,15 @@
 # DD-AF-009: Live Event Relay for Pooled Interactive MCP Calls
 
-**Status**: ✅ Approved
+**Status**: Superseded by [DD-AF-015](DD-AF-015-session-scoped-event-router.md)
 **Priority**: P2
 **Owner**: API Frontend Team
 **Scope**: `pkg/apifrontend/ka/event_relay.go` (new), `pkg/apifrontend/ka/session_pool.go`, `pkg/apifrontend/ka/pooled_mcp_client.go`, `pkg/apifrontend/tools/ka_investigate_bridge.go`, `pkg/apifrontend/tools/ka_investigate_mcp.go`
 **Related**: [DD-LLM-009](./DD-LLM-009-reasoning-content-live-stream-event-type.md) (reasoning content live-stream event type), Issues #1634, #1635, #1637
+
+> **Superseded notice (2026-09-13)**: Alternative D remains the historical
+> origin of live pooled-call routing, but its single current-context pointer is
+> replaced by the session-scoped `EventRouter` in DD-AF-015. The one-consumer
+> channel and best-effort live-stream boundaries remain unchanged.
 
 ---
 

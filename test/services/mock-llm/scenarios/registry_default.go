@@ -122,6 +122,10 @@ func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, wo
 func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registry {
 	r := defaultRegistryWithGoldenDir(goldenDir)
 	if overrides != nil {
+		for _, ts := range overrides.TranscriptScenarios {
+			r.Register(newTranscriptScenario(ts))
+		}
+
 		for _, s := range r.scenarios {
 			switch ts := s.(type) {
 			case *configScenario:
@@ -142,13 +146,16 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 			}
 		}
 
-		// Register consumer-defined keyword scenarios from YAML (issue #1160).
-		// These use the same priority (1.0) as built-in keyword scenarios and
+		// Register consumer-defined selector scenarios from YAML (issue #1160).
+		// These use the same priority (1.0) as built-in keyword selectors and
 		// override the default fallback (0.01).
 		// When MatchLastOnly is true (issue #1189), matching uses only the last
 		// user message to prevent prior-turn keyword shadowing in multi-turn
 		// ADK agent conversations.
-		for _, ks := range overrides.KeywordScenarios {
+		selectorOverrides := make([]config.ScenarioSelectorOverride, 0, len(overrides.ScenarioSelectors)+len(overrides.KeywordScenarios))
+		selectorOverrides = append(selectorOverrides, overrides.ScenarioSelectors...)
+		selectorOverrides = append(selectorOverrides, overrides.KeywordScenarios...)
+		for _, ks := range selectorOverrides {
 			cfg := MockScenarioConfig{
 				ScenarioName:      ks.Name,
 				ToolCallName:      ks.ToolCall.Name,
@@ -159,11 +166,12 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ThoughtText:       ks.ThoughtText,
 			}
 			cfg.NextToolCall = convertToolCallChain(ks.NextToolCall)
-			if ks.MatchLastOnly {
-				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
-			} else {
-				r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
-			}
+			r.Register(newSelectorScenario(ks.Name, ScenarioSelector{
+				Scope:             ScenarioScope{Caller: Caller(ks.Caller), Phase: Phase(ks.Phase)},
+				Keywords:          ks.Keywords,
+				MatchLastUserOnly: ks.MatchLastOnly,
+				Confidence:        1.0,
+			}, cfg))
 		}
 	}
 	return r
@@ -190,19 +198,19 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 		}
 	}
 
-	// Mock keyword scenarios (highest priority = 1.0)
-	r.Register(mockKeywordScenario("no_workflow_found", "mock_no_workflow_found", noWorkflowFoundConfig()))
-	r.Register(mockKeywordScenario("low_confidence", "mock_low_confidence", lowConfidenceConfig()))
-	r.Register(mockKeywordScenario("problem_resolved_contradiction", "mock_problem_resolved_contradiction", problemResolvedContradictionConfig()))
-	r.Register(mockKeywordScenario("problem_resolved", "mock_problem_resolved", problemResolvedConfig()))
-	r.Register(mockKeywordScenarioMulti("problem_resolved", []string{"mock_not_reproducible", "mock not reproducible"}, problemResolvedConfig()))
-	r.Register(mockKeywordScenario("rca_incomplete", "mock_rca_incomplete", rcaIncompleteConfig()))
-	r.Register(mockKeywordScenario("max_retries_exhausted", "mock_max_retries_exhausted", maxRetriesExhaustedConfig()))
-	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
-	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
-	r.Register(mockKeywordScenario("alertmanager_node_tools", "mock_alertmanager_node_tools", alertmanagerNodeToolsConfig()))
-	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
-	r.Register(mockKeywordScenario("mock_reasoning_capture", "mock_reasoning_capture", reasoningCaptureConfig()))
+	// Selector-based keyword scenarios (highest priority = 1.0)
+	r.Register(newKeywordScenario("no_workflow_found", "mock_no_workflow_found", noWorkflowFoundConfig()))
+	r.Register(newKeywordScenario("low_confidence", "mock_low_confidence", lowConfidenceConfig()))
+	r.Register(newKeywordScenario("problem_resolved_contradiction", "mock_problem_resolved_contradiction", problemResolvedContradictionConfig()))
+	r.Register(newKeywordScenario("problem_resolved", "mock_problem_resolved", problemResolvedConfig()))
+	r.Register(newKeywordScenarioMulti("problem_resolved", []string{"mock_not_reproducible", "mock not reproducible"}, problemResolvedConfig()))
+	r.Register(newKeywordScenario("rca_incomplete", "mock_rca_incomplete", rcaIncompleteConfig()))
+	r.Register(newKeywordScenario("max_retries_exhausted", "mock_max_retries_exhausted", maxRetriesExhaustedConfig()))
+	r.Register(newKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
+	r.Register(newKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
+	r.Register(newKeywordScenario("alertmanager_node_tools", "mock_alertmanager_node_tools", alertmanagerNodeToolsConfig()))
+	r.Register(newKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
+	r.Register(newKeywordScenario("mock_reasoning_capture", "mock_reasoning_capture", reasoningCaptureConfig()))
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
@@ -212,29 +220,29 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(oomkilledPredictiveScenario())
 
 	// Signal name scenarios
-	r.Register(signalScenario("cert_not_ready", []string{"certmanagercertnotready", "cert_not_ready"}, certNotReadyConfig()))
-	r.Register(signalScenario("node_not_ready", []string{"nodenotready"}, nodeNotReadyConfig()))
+	r.Register(newSignalScenario("cert_not_ready", []string{"certmanagercertnotready", "cert_not_ready"}, certNotReadyConfig()))
+	r.Register(newSignalScenario("node_not_ready", []string{"nodenotready"}, nodeNotReadyConfig()))
 	r.Register(oomkilledScenario())
 	r.Register(crashloopScenario())
-	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
-	r.Register(signalScenario("istio_authz", []string{"istiohighdenyrate", "istio_high_deny"}, istioAuthzConfig()))
+	r.Register(newSignalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
+	r.Register(newSignalScenario("istio_authz", []string{"istiohighdenyrate", "istio_high_deny"}, istioAuthzConfig()))
 
 	// Issue #1189/#1282: AF-created RRs use "unknown" as signal name when
 	// deriveSignalName finds no grounded infrastructure signal.
-	r.Register(signalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
+	r.Register(newSignalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
 
 	// E2E-AF-1396-001 (issue #1818 Gap 3 regression): dedicated seed-only
 	// grounding scenario for structured_decision_e2e_test.go's
 	// groundSessionBeta call -- see scenario_af_structured_decision_ground.go's
 	// doc comment for why ToolCallArgs must hand-craft the RCA substituted
 	// into args["rca"] rather than relying on the typed config fields.
-	r.Register(signalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
+	r.Register(newSignalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
 
 	// E2E-AF-2387-002 (issue #2387): dedicated grounding scenario for
 	// structured_decision_e2e_test.go's groundSessionDelta call -- same
 	// single-turn submit_result shape as ground_3 above, for the
 	// StructuredDecisionGrounding4 alert/fixture.
-	r.Register(signalScenario("af_structured_decision_ground_4", []string{"structureddecisiongrounding4"}, structuredDecisionGrounding4Config()))
+	r.Register(newSignalScenario("af_structured_decision_ground_4", []string{"structureddecisiongrounding4"}, structuredDecisionGrounding4Config()))
 
 	// Issue #1918: grounded not-actionable signal for E2E-FP-1918-001, safe
 	// from the ctx.AllText leak that a broadly-matched keyword (like
@@ -242,22 +250,33 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// kubernaut_remediate response echoes the RR's derived SignalName back
 	// into its own tool-orchestration conversation (see
 	// notActionableGroundedConfig's doc comment for the full explanation).
-	r.Register(signalScenario("not_actionable_grounded_1918", []string{"e2efp1918notactionable"}, notActionableGroundedConfig()))
+	r.Register(newSignalScenario("not_actionable_grounded_1918", []string{"e2efp1918notactionable"}, notActionableGroundedConfig()))
 
 	// Issue #1912/#2265: grounded not-actionable signal for E2E-FP-1912-001,
 	// same rationale and safety properties as not_actionable_grounded_1918
 	// above (see notActionableGrounded1912Config's doc comment).
-	r.Register(signalScenario("not_actionable_grounded_1912", []string{"e2efp1912notactionable"}, notActionableGrounded1912Config()))
+	r.Register(newSignalScenario("not_actionable_grounded_1912", []string{"e2efp1912notactionable"}, notActionableGrounded1912Config()))
 
 	// E2E-FLEET-2326-001 (Issue #2326, DD-FLEET-008, BR-FLEET-004): dedicated
 	// isolated signal so this scenario can never be matched by another Fleet
 	// E2E test's alert traffic -- see fleetExecClusterOverrideConfig's doc
 	// comment.
-	r.Register(signalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
+	r.Register(newSignalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
 
 	// E2E-FP-2378-001: standalone execution must ignore a catalog-declared
 	// execution cluster while retaining the metadata in WorkflowExecution.
-	r.Register(signalScenario("standalone_exec_cluster_id_2378", []string{"standaloneexecutioncluster2378"}, standaloneExecClusterIDConfig()))
+	r.Register(newSignalScenario("standalone_exec_cluster_id_2378", []string{"standaloneexecutioncluster2378"}, standaloneExecClusterIDConfig()))
+
+	// E2E-FP-2390-001: interactive GitOps workflow snapshot parity.
+	// The A2A investigation targets a zero-replica Deployment, so the E2E
+	// fixture supplies a synthetic warning event to ground this signal.
+	r.Register(newSignalScenario("gitops_drift_2390", []string{"gitopsdrift2390"}, gitopsDrift2390Config()))
+	r.Register(newSelectorScenario("af_select_gitops_workflow_2390", ScenarioSelector{
+		Keywords:          []string{"select the discovered GitOps workflow"},
+		MatchLastUserOnly: true,
+		Confidence:        1.0,
+	}, gitopsSelectWorkflow2390Config()))
+	r.Register(newKeywordScenario("gitops_drift_2390", "gitops-drift-2390", gitopsDrift2390Config()))
 
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
@@ -277,12 +296,12 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 
 	// Slow investigation scenario for AA interactive watch ITs.
 	// Keeps KA session in "investigating" via a 30s second-turn delay.
-	r.Register(mockKeywordScenario("slow_investigation", "slow-investigation-test", slowInvestigationConfig()))
+	r.Register(newKeywordScenario("slow_investigation", "slow-investigation-test", slowInvestigationConfig()))
 
 	// Brief investigation scenario for IT tests that need a non-instant session
 	// but don't require the full 30s window. 5s delay is enough for IS creation
 	// and upgrade detection before the session completes naturally.
-	r.Register(mockKeywordScenario("brief_investigation", "brief-investigation-test", briefInvestigationConfig()))
+	r.Register(newKeywordScenario("brief_investigation", "brief-investigation-test", briefInvestigationConfig()))
 
 	// E2E-FLEET-016 (issue #1768, Gaps A+C): real AF binary calls
 	// list_clusters + kubectl_get(cluster_id) via a real A2A request.

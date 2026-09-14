@@ -190,12 +190,13 @@ func postWithFleetAuth(url string, body io.Reader) (*http.Response, error) {
 // full sync tick. Because syncAll() iterates every registered cluster
 // (remote-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
 // a single cycle can itself take non-trivial wall time, so worst-case
-// staleness exceeds the nominal 10s interval. 45s gives ~2 sync cycles of
-// margin; a 15s window (the previous value) was measured insufficient and
+// staleness exceeds the nominal 10s interval. 90s gives multiple sync cycles
+// of margin and allows the AF request itself to complete; a 15s window (the
+// previous value) was measured insufficient and
 // caused persistent "resource not managed by Kubernaut" rejections for the
 // full retry window. Rejected responses have no side effects (no RR is
 // created), so retrying the POST is safe.
-const fmcSyncTimeout = 45 * time.Second
+const fmcSyncTimeout = 90 * time.Second
 
 // postFleetAlertUntilAccepted posts a Prometheus alert payload to the Gateway and
 // retries while the response status is not one of acceptableStatus (defaults to

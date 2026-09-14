@@ -482,12 +482,12 @@ var _ = Describe("KASessionPool (G2 + G9: Pool + User Isolation)", func() {
 			injected := &mockPoolSession{id: 666}
 			pool.Inject("rr-inject-004", "charlie", injected)
 
-		err := pool.DrainAll(context.Background())
-		Expect(err).NotTo(HaveOccurred())
-		// #1995: DrainAll's Close() call is now bounded/async (closeSessionBounded).
-		Eventually(injected.IsClosed).Should(BeTrue(),
-			"DrainAll should close injected sessions")
-	})
+			err := pool.DrainAll(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			// #1995: DrainAll's Close() call is now bounded/async (closeSessionBounded).
+			Eventually(injected.IsClosed).Should(BeTrue(),
+				"DrainAll should close injected sessions")
+		})
 	})
 })
 
@@ -902,12 +902,12 @@ var _ = Describe("KASessionPool InjectVerified — BR-INTERACTIVE-001, #1442", L
 			},
 		}
 
-		relay, err := pool.InjectVerified(context.Background(), "rr-dead", "alice", deadSession)
+		router, err := pool.InjectVerified(context.Background(), "rr-dead", "alice", deadSession)
 		Expect(err).To(HaveOccurred(),
 			"InjectVerified must reject a session whose ping fails")
 		Expect(err.Error()).To(ContainSubstring("session dead on inject"))
-		Expect(relay).To(BeNil(),
-			"no EventRelay should be returned when inject fails")
+		Expect(router).To(BeNil(),
+			"no EventRouter should be returned when inject fails")
 		Expect(pool.Size()).To(Equal(0),
 			"pool must not contain the dead session")
 		Expect(deadSession.IsClosed()).To(BeTrue(),
@@ -925,18 +925,18 @@ var _ = Describe("KASessionPool InjectVerified — BR-INTERACTIVE-001, #1442", L
 
 		liveSession := &mockPoolSession{id: 200}
 
-		relay, err := pool.InjectVerified(context.Background(), "rr-live", "bob", liveSession)
+		router, err := pool.InjectVerified(context.Background(), "rr-live", "bob", liveSession)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pool.Size()).To(Equal(1),
 			"live session must be in the pool after InjectVerified")
-		Expect(relay).NotTo(BeNil(),
-			"UT-AF-1637-002: InjectVerified must create an EventRelay for the entry")
+		Expect(router).NotTo(BeNil(),
+			"UT-AF-1637-002: InjectVerified must create an EventRouter for the entry")
 	})
 })
 
-var _ = Describe("KASessionPool RelayFor — #1637", func() {
+var _ = Describe("KASessionPool RouterFor — #1637", func() {
 
-	It("UT-AF-1637-002: RelayFor returns the relay created by InjectVerified for the same key", func() {
+	It("UT-AF-1637-002: RouterFor returns the router created by InjectVerified for the same key", func() {
 		pool := ka.NewKASessionPool(ka.PoolConfig{
 			Factory: func(ctx context.Context) (ka.PoolSession, error) {
 				return &mockPoolSession{}, nil
@@ -945,14 +945,14 @@ var _ = Describe("KASessionPool RelayFor — #1637", func() {
 			Logger:     logr.Discard(),
 		})
 
-		relay, err := pool.InjectVerified(context.Background(), "rr-relay-001", "alice", &mockPoolSession{})
+		router, err := pool.InjectVerified(context.Background(), "rr-relay-001", "alice", &mockPoolSession{})
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(pool.RelayFor("rr-relay-001", "alice")).To(BeIdenticalTo(relay),
-			"RelayFor must return the exact relay instance created for this (rr_id, username)")
+		Expect(pool.RouterFor("rr-relay-001", "alice")).To(BeIdenticalTo(router),
+			"RouterFor must return the exact router instance created for this (rr_id, username)")
 	})
 
-	It("UT-AF-1637-002: RelayFor returns nil for an unknown (rr_id, username) key", func() {
+	It("UT-AF-1637-002: RouterFor returns nil for an unknown (rr_id, username) key", func() {
 		pool := ka.NewKASessionPool(ka.PoolConfig{
 			Factory: func(ctx context.Context) (ka.PoolSession, error) {
 				return &mockPoolSession{}, nil
@@ -961,10 +961,10 @@ var _ = Describe("KASessionPool RelayFor — #1637", func() {
 			Logger:     logr.Discard(),
 		})
 
-		Expect(pool.RelayFor("rr-unknown", "nobody")).To(BeNil())
+		Expect(pool.RouterFor("rr-unknown", "nobody")).To(BeNil())
 	})
 
-	It("UT-AF-1637-002: RelayFor returns nil for a session injected via Inject/InjectWithCleanup (no events channel, no relay)", func() {
+	It("UT-AF-1637-002: RouterFor returns nil for a session injected via Inject/InjectWithCleanup (no event router)", func() {
 		pool := ka.NewKASessionPool(ka.PoolConfig{
 			Factory: func(ctx context.Context) (ka.PoolSession, error) {
 				return &mockPoolSession{}, nil
@@ -974,11 +974,11 @@ var _ = Describe("KASessionPool RelayFor — #1637", func() {
 		})
 
 		pool.Inject("rr-plain-inject", "alice", &mockPoolSession{})
-		Expect(pool.RelayFor("rr-plain-inject", "alice")).To(BeNil(),
-			"plain Inject (no handoff, no events channel) must not have a relay")
+		Expect(pool.RouterFor("rr-plain-inject", "alice")).To(BeNil(),
+			"plain Inject (no handoff, no events channel) must not have an event router")
 
 		pool.InjectWithCleanup("rr-cleanup-inject", "bob", &mockPoolSession{}, func() {})
-		Expect(pool.RelayFor("rr-cleanup-inject", "bob")).To(BeNil(),
-			"InjectWithCleanup (used for non-handoff entries) must not have a relay")
+		Expect(pool.RouterFor("rr-cleanup-inject", "bob")).To(BeNil(),
+			"InjectWithCleanup (used for non-handoff entries) must not have an event router")
 	})
 })

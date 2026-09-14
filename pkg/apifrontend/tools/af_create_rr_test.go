@@ -111,17 +111,22 @@ func ambiguousTestTriager() *severity.Triager {
 // defaultTestTriager returns a Triager that resolves "warning" via a
 // resource-scoped alert with a verified relationship to the given
 // namespace/kind/name (namespace may be "" for cluster-scoped targets, e.g.
-// Node). Tests that don't care about the specific severity value but need
-// HandleCreateRR/HandleRemediate to succeed (e.g. to exercise dedup, audit,
-// cluster-ID plumbing) use this to get a confident, non-ambiguous result --
-// DD-AF-012/#2027/#2028's ambiguity gate is reserved for alerts with no such
-// relationship (see ambiguousTestTriager).
-func defaultTestTriager(namespace, kind, name string) *severity.Triager {
+// Node). An optional cluster ID adds the fleet attribution required when the
+// caller exercises a non-local target. Tests that don't care about the
+// specific severity value but need HandleCreateRR/HandleRemediate to succeed
+// (e.g. to exercise dedup, audit, cluster-ID plumbing) use this to get a
+// confident, non-ambiguous result -- DD-AF-012/#2027/#2028's ambiguity gate is
+// reserved for alerts with no such relationship (see ambiguousTestTriager).
+func defaultTestTriager(namespace, kind, name string, clusterID ...string) *severity.Triager {
+	labels := map[string]string{
+		"alertname": "TestDefaultAlert", "namespace": namespace, "kind": kind, "name": name, "severity": "warning",
+	}
+	if len(clusterID) > 0 {
+		labels["cluster"] = clusterID[0]
+	}
 	mockProm := &alertOverridePromClient{
 		alerts: []prom.Alert{
-			{State: "firing", Labels: map[string]string{
-				"alertname": "TestDefaultAlert", "namespace": namespace, "kind": kind, "name": name, "severity": "warning",
-			}},
+			{State: "firing", Labels: labels},
 		},
 	}
 	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
@@ -787,7 +792,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager("prod", "Deployment", "nginx"),
+				Triager:      defaultTestTriager("prod", "Deployment", "nginx", "prod-east-1"),
 			}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -828,7 +833,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result1, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-east"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "east", APIVersion: "apps/v1", ClusterID: "cluster-east",
@@ -839,7 +844,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result2, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-west"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "west", APIVersion: "apps/v1", ClusterID: "cluster-west",
@@ -857,7 +862,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
-				Triager:      defaultTestTriager("prod", "Deployment", "nginx"),
+				Triager:      defaultTestTriager("prod", "Deployment", "nginx", "cluster-east-1"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "nginx",
 				Description: "test", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
@@ -879,7 +884,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: "prod",
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-original"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "race", APIVersion: "apps/v1", ClusterID: "cluster-original",
@@ -966,7 +971,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-east-1"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "fleet audit", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
@@ -991,7 +996,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: "prod",
 				Auditor:      rec,
-				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-east-1"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "fleet audit dedup", APIVersion: "apps/v1", ClusterID: "cluster-east-1",

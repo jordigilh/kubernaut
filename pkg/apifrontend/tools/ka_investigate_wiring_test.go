@@ -40,7 +40,7 @@ import (
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
-var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/C03)", func() {
+var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/C02/C03)", func() {
 
 	Describe("WIRE-C01: investigate auto-RR path uses triager for severity", func() {
 		It("UT-AF-WIRE-C01: RR created by investigate uses triaged severity, not default medium", func() {
@@ -109,6 +109,186 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 
 			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
 			Expect(created.Spec.Severity).To(Equal("critical"), "investigate path should use triaged severity from Prometheus alert, not default 'medium'")
+		})
+
+		// BR-FLEET-054 / BR-INTEGRATION-065: FedRAMP AU-3/AC-4/SC-7/SI-4 and
+		// OWASP ASVS V4 require server-side cluster attribution at the AF entry point.
+		It("IT-AF-2394-006: investigate passes cluster_id into Prometheus triage before creating the RR", func() {
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Expect(args.RRID).NotTo(BeEmpty())
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-wire-c01-fleet",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			mockProm := &mockPromClientForWiring{
+				alerts: []prom.Alert{
+					{State: "firing", Labels: map[string]string{
+						"alertname": "OtherClusterAlert", "severity": "critical", "namespace": "prod",
+						"kind": "Deployment", "name": "fleet-web", "cluster": "other-cluster",
+					}},
+					{State: "firing", Labels: map[string]string{
+						"alertname": "TargetClusterAlert", "severity": "warning", "namespace": "prod",
+						"kind": "Deployment", "name": "fleet-web", "cluster": "remote-cluster",
+					}},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+
+			ctx, cancel := context.WithTimeout(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "alice",
+					Groups:   []string{"sre"},
+				}),
+				10*time.Second,
+			)
+			defer cancel()
+
+			tc := newTypedClientForInvestigate()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Triager:   triager,
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "fleet-web",
+					ClusterID:  "remote-cluster",
+				},
+				true, "alice",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
+			Expect(created.Spec.SignalName).To(Equal("TargetClusterAlert"))
+			Expect(created.Spec.Severity).To(Equal("warning"))
+		})
+	})
+
+	Describe("WIRE-C02: investigate preserves grounded Kubernetes event signals", func() {
+		It("UT-AF-2390-001: new-RR investigation passes the dynamic client to signal derivation (BR-AI-056)", func() {
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Expect(args.RRID).NotTo(BeEmpty())
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-wire-c02",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			ctx, cancel := context.WithTimeout(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "alice",
+					Groups:   []string{"sre"},
+				}),
+				10*time.Second,
+			)
+			defer cancel()
+
+			tc := newTypedClientForInvestigate()
+			dc := newDynEventClient(newUnstructuredEventWithType(
+				"prod", "ev-gitops-2390", "GitOpsDrift2390", "synthetic drift",
+				"Deployment", "web-app-2390", "Warning",
+			))
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					DynClient: dc,
+					Namespace: "kubernaut-system",
+					Triager:   unnamedAlertTestTriager("prod", "Deployment", "web-app-2390"),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app-2390",
+				},
+				true, "alice",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
+			Expect(created.Spec.SignalName).To(Equal("GitOpsDrift2390"),
+				"investigate-created RR must preserve the grounded Kubernetes event signal")
+		})
+
+		It("UT-AF-2390-002: fleet investigation does not use hub-local Kubernetes Events as its signal (BR-FLEET-054)", func() {
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Expect(args.RRID).NotTo(BeEmpty())
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-wire-c02-fleet",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			ctx, cancel := context.WithTimeout(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "alice",
+					Groups:   []string{"sre"},
+				}),
+				10*time.Second,
+			)
+			defer cancel()
+
+			tc := newTypedClientForInvestigate()
+			dc := newDynEventClient(newUnstructuredEventWithType(
+				"prod", "ev-gitops-2390-fleet", "GitOpsDrift2390", "synthetic drift",
+				"Deployment", "web-app-2390-fleet", "Warning",
+			))
+			triager := severity.NewTriager(&mockPromClientForWiring{
+				alerts: []prom.Alert{{
+					State: "firing",
+					Labels: map[string]string{
+						"severity": "warning", "namespace": "prod", "kind": "Deployment",
+						"name": "web-app-2390-fleet", "cluster": "remote-cluster",
+					},
+				}},
+			}, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					DynClient: dc,
+					Namespace: "kubernaut-system",
+					Triager:   triager,
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app-2390-fleet",
+					ClusterID:  "remote-cluster",
+				},
+				true, "alice",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
+			Expect(created.Spec.SignalName).To(Equal("unknown"),
+				"fleet-created RR must not attribute a hub-local Kubernetes Event to a remote cluster")
 		})
 	})
 

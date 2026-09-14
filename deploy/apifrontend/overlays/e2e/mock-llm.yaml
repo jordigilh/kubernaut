@@ -89,9 +89,9 @@ metadata:
     app.kubernetes.io/component: test-infrastructure
 data:
   config.yaml: |
-    # AF-specific keyword→tool_call mappings for E2E testing.
-    # mock-LLM matches prompt keywords and returns the corresponding tool call.
-    keyword_scenarios:
+    # AF-specific selector→tool_call mappings for E2E testing.
+    # mock-LLM matches selector constraints and returns the corresponding tool call.
+    scenario_selectors:
       - name: "af_progressive_investigate"
         keywords: ["progressive investigate", "investigate progressively"]
         match_last_only: true
@@ -110,6 +110,8 @@ data:
             kind: "Pod"
 
       - name: "af_investigate"
+        caller: "af"
+        phase: "investigation"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         tool_call:

@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -73,16 +74,18 @@ type ScenarioOverride struct {
 	Usage      *UsageOverride     `yaml:"usage,omitempty"`
 }
 
-// KeywordScenarioOverride defines a keyword-matched scenario injected via YAML.
+// ScenarioSelectorOverride defines a declarative scenario selector injected via YAML.
 // Consumers (e.g., AF E2E tests) use this to map prompt keywords to specific
 // tool call responses without modifying mock-LLM code.
 //
 // When MatchLastOnly is true, keyword matching uses only the last user message
 // instead of the full conversation history. This prevents prior-turn keywords
 // from shadowing later-turn keywords in multi-turn ADK agent conversations.
-type KeywordScenarioOverride struct {
+type ScenarioSelectorOverride struct {
 	Name           string            `yaml:"name"`
 	Keywords       []string          `yaml:"keywords"`
+	Caller         string            `yaml:"caller,omitempty"`
+	Phase          string            `yaml:"phase,omitempty"`
 	ToolCall       ToolCallOverride  `yaml:"tool_call"`
 	MatchLastOnly  bool              `yaml:"match_last_only,omitempty"`
 	RepeatToolCall bool              `yaml:"repeat_tool_call,omitempty"`
@@ -90,11 +93,37 @@ type KeywordScenarioOverride struct {
 	NextToolCall   *ToolCallOverride `yaml:"next_tool_call,omitempty"`
 }
 
+// KeywordScenarioOverride is retained for source compatibility with existing
+// test fixtures. New scenarios should use ScenarioSelectorOverride.
+//
+// Deprecated: use ScenarioSelectorOverride.
+type KeywordScenarioOverride = ScenarioSelectorOverride
+
+// TranscriptStepOverride defines one exact user-turn/tool-call pair in an
+// explicit A2A conversation transcript. Unlike ScenarioSelectorOverride, the
+// user message is matched as a complete, case-insensitive string.
+type TranscriptStepOverride struct {
+	User     string           `yaml:"user"`
+	ToolCall ToolCallOverride `yaml:"tool_call"`
+}
+
+// TranscriptScenarioOverride defines the ordered turns of one A2A journey.
+// Each step is selected from the current last user message, not accumulated
+// assistant text or prior tool-call arguments.
+type TranscriptScenarioOverride struct {
+	Name   string                   `yaml:"name"`
+	Caller string                   `yaml:"caller,omitempty"`
+	Phase  string                   `yaml:"phase,omitempty"`
+	Steps  []TranscriptStepOverride `yaml:"steps"`
+}
+
 // Overrides holds the parsed YAML override configuration.
 type Overrides struct {
-	Mode             string                      `yaml:"mode"`
-	Scenarios        map[string]ScenarioOverride `yaml:"scenarios"`
-	KeywordScenarios []KeywordScenarioOverride   `yaml:"keyword_scenarios,omitempty"`
+	Mode                string                       `yaml:"mode"`
+	Scenarios           map[string]ScenarioOverride  `yaml:"scenarios"`
+	ScenarioSelectors   []ScenarioSelectorOverride   `yaml:"scenario_selectors,omitempty"`
+	KeywordScenarios    []ScenarioSelectorOverride   `yaml:"keyword_scenarios,omitempty"` // Deprecated: use scenario_selectors.
+	TranscriptScenarios []TranscriptScenarioOverride `yaml:"transcript_scenarios,omitempty"`
 }
 
 // LoadYAMLOverrides reads a YAML overrides file. If the path is empty or the
@@ -121,6 +150,83 @@ func LoadYAMLOverrides(path string) (*Overrides, error) {
 	if o.Scenarios == nil {
 		o.Scenarios = map[string]ScenarioOverride{}
 	}
+	if err := validateScenarioSelectors(o.ScenarioSelectors); err != nil {
+		return nil, err
+	}
+	if err := validateScenarioSelectors(o.KeywordScenarios); err != nil {
+		return nil, err
+	}
+	if err := validateTranscriptScenarios(o.TranscriptScenarios); err != nil {
+		return nil, err
+	}
 
 	return &o, nil
+}
+
+func validateScenarioSelectors(selectors []ScenarioSelectorOverride) error {
+	seen := make(map[string]struct{}, len(selectors))
+	for _, selector := range selectors {
+		if strings.TrimSpace(selector.Name) == "" {
+			return errors.New("scenario selector name is required")
+		}
+		name := strings.ToLower(strings.TrimSpace(selector.Name))
+		if _, exists := seen[name]; exists {
+			return errors.New("scenario selector names must be unique")
+		}
+		seen[name] = struct{}{}
+
+		if selector.Caller != "" && selector.Caller != "af" && selector.Caller != "ka" {
+			return errors.New("scenario selector caller must be one of: af, ka")
+		}
+		if selector.Phase != "" && !validScenarioSelectorPhase(selector.Phase) {
+			return errors.New("scenario selector phase is invalid")
+		}
+		if len(selector.Keywords) == 0 {
+			return errors.New("scenario selector must define at least one keyword")
+		}
+		for _, keyword := range selector.Keywords {
+			if strings.TrimSpace(keyword) == "" {
+				return errors.New("scenario selector keyword must not be empty")
+			}
+		}
+		if strings.TrimSpace(selector.ToolCall.Name) == "" {
+			return errors.New("scenario selector tool call name is required")
+		}
+	}
+	return nil
+}
+
+func validScenarioSelectorPhase(phase string) bool {
+	switch phase {
+	case "rca", "investigation", "workflow_discovery", "workflow_selection", "remediation":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateTranscriptScenarios(transcripts []TranscriptScenarioOverride) error {
+	seen := make(map[string]struct{}, len(transcripts))
+	for _, transcript := range transcripts {
+		if strings.TrimSpace(transcript.Name) == "" {
+			return errors.New("transcript scenario name is required")
+		}
+		name := strings.ToLower(strings.TrimSpace(transcript.Name))
+		if _, exists := seen[name]; exists {
+			return errors.New("transcript scenario names must be unique")
+		}
+		seen[name] = struct{}{}
+		if len(transcript.Steps) == 0 {
+			return errors.New("transcript scenario must define at least one step")
+		}
+		for _, step := range transcript.Steps {
+			if strings.TrimSpace(step.User) == "" {
+				return errors.New("transcript step user message is required")
+			}
+			if strings.TrimSpace(step.ToolCall.Name) == "" {
+				return errors.New("transcript step tool call name is required")
+			}
+		}
+	}
+	return nil
 }

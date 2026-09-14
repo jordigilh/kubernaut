@@ -1677,7 +1677,7 @@ jobs:
           kubectl create secret generic valkey-secret -n "$GITOPS_NAMESPACE" \
             --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
           kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
-            --from-literal=OPENAI_API_KEY=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
+            --from-literal=api_key=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
           # DD-PLATFORM-006 DA6/DA7 (PR #1790 round-7 RCA): datastorage-audit-hmac-key
           # is mandatory (AU-9) with no enabled gate, but secrets.yaml's fail() guard
           # only skips validation when tls.mode=hook (that mode's tls-cert-job
@@ -1706,6 +1706,24 @@ jobs:
           REPO_URL: https://github.com/${{ github.repository }}.git
           TARGET_REVISION: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
         run: |
+          # ArgoCD renders Helm with `helm template`, so lookup-based API server
+          # discovery is unavailable. NetworkPolicy matches the real backend
+          # endpoint after Service DNAT, not the kubernetes Service ClusterIP.
+          mapfile -t api_server_ips < <(
+            kubectl get endpoints kubernetes -n default \
+              -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{"\n"}{end}'
+          )
+          api_server_port=$(kubectl get endpoints kubernetes -n default \
+            -o jsonpath='{.subsets[0].ports[0].port}')
+          if [[ "${#api_server_ips[@]}" -eq 0 || -z "$api_server_port" ]]; then
+            echo "FAIL: could not discover Kubernetes API server endpoint"
+            exit 1
+          fi
+          api_server_cidrs=""
+          for ip in "${api_server_ips[@]}"; do
+            printf -v cidr_line '                      - %s/32\n' "$ip"
+            api_server_cidrs+="$cidr_line"
+          done
           cat <<EOF | argocd app create -f -
           apiVersion: argoproj.io/v1alpha1
           kind: Application
@@ -1738,6 +1756,9 @@ jobs:
                     existingSecret: valkey-secret
                   kubernautAgent:
                     llmProfileRef: primary
+                  networkPolicies:
+                    apiServerCIDRs:
+          ${api_server_cidrs}          apiServerPort: ${api_server_port}
                   signalprocessing:
                     policies:
                       content: |
@@ -1766,6 +1787,10 @@ jobs:
               namespace: ${GITOPS_NAMESPACE}
           EOF
           argocd app list
+          # `argocd app create -f -` can silently accept malformed YAML and
+          # create no Application, so fail here instead of producing empty
+          # namespace checks later in the job.
+          argocd app get kubernaut-gitops-smoke >/dev/null
 
       # `argocd app sync` blocks until Synced AND Healthy, not just until
       # manifests are applied. This validates GitOps sync mechanics -- CRDs,
@@ -1926,20 +1951,29 @@ jobs:
             FAIL=1
           fi
 
-          echo "=== datastorage + gateway Ready (DD-PLATFORM-002 end-to-end proof) ==="
+          echo "=== All GitOps application Deployments Ready (DD-PLATFORM-002 end-to-end proof) ==="
           # 180s (not 120s): the "Recover pods" step above already absorbs most
           # of the CI resource-contention-driven restarts, but leaves some
           # margin here in case a pod's crash-loop backoff had grown past 45s
           # by the time this runs.
-          for dep in datastorage gateway; do
-            if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
-              echo "OK: ${dep} Available"
-            else
-              echo "FAIL: ${dep} not Available"
-              kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
-              FAIL=1
-            fi
-          done
+          mapfile -t deployments < <(
+            kubectl get deployments -n "$GITOPS_NAMESPACE" \
+              -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true
+          )
+          if [[ "${#deployments[@]}" -eq 0 ]]; then
+            echo "FAIL: no GitOps application Deployments found"
+            FAIL=1
+          else
+            for dep in "${deployments[@]}"; do
+              if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
+                echo "OK: ${dep} Available"
+              else
+                echo "FAIL: ${dep} not Available"
+                kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
+                FAIL=1
+              fi
+            done
+          fi
 
           echo "=== Pod status (informational) ==="
           kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
@@ -2178,6 +2212,7 @@ jobs:
             --set global.llmProfiles.primary.model=mock-model \
             --set global.llmProfiles.primary.endpoint="http://mock-llm.${RELEASE_NAMESPACE}.svc.cluster.local:8080" \
             --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
+            --set workflowexecution.config.execution.retainFailedExecutions=true \
             --timeout 180s
 
       - name: Wait for all chart-managed Deployments to become Available

@@ -148,6 +148,24 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(manifest).To(ContainSubstring("cluster: remote-cluster"))
 	})
 
+	It("UT-INFRA-FLEET-018-001 [BR-INTEGRATION-054, BR-FLEET-054]: grounds the interactive bridge target in the managed Prometheus rule", func() {
+		manifest := buildManagedPrometheusManifest("monitoring", "remote-cluster", "10.0.0.2:30193")
+
+		Expect(manifest).To(ContainSubstring("alert: KAInteractiveFleetBridgeGrounding"))
+		Expect(manifest).To(ContainSubstring("expr: vector(1) > 0"))
+		Expect(manifest).To(ContainSubstring("name: ka-interactive-fleet-target"))
+		Expect(manifest).To(ContainSubstring("cluster: remote-cluster"))
+	})
+
+	It("UT-INFRA-FLEET-018-002 [BR-INTEGRATION-054, BR-FLEET-054]: grounds the interactive bridge target in the local Prometheus fixture", func() {
+		rule := fleetInteractiveBridgeGroundingRule()
+
+		Expect(rule).To(ContainSubstring("alert: KAInteractiveFleetBridgeGrounding"))
+		Expect(rule).To(ContainSubstring("expr: vector(1) > 0"))
+		Expect(rule).To(ContainSubstring("name: ka-interactive-fleet-target"))
+		Expect(rule).To(ContainSubstring("cluster: remote-cluster"))
+	})
+
 	It("UT-INFRA-FLEETDEMO-PROMETHEUS-006: rejects an invalid Alertmanager bridge address", func() {
 		_, err := buildManagedPrometheusManifestChecked("monitoring", "remote-cluster", "not-an-address")
 

@@ -388,9 +388,9 @@ kubectl create secret generic console-oauth-creds \
   --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32 | base64)" \
   -n kubernaut-system
 
-# 2. Enable the console (requires apifrontend.config.auth.issuerURL or .jwtProviders to
-#    already be configured, since the console reuses APIFrontend's OIDC provider) and
-#    opt in to its Ingress for browser access
+# 2. Enable the console (the chart defaults to the production kubernaut issuer;
+#    override apifrontend.config.auth.issuerURL or .jwtProviders for another IdP)
+#    and opt in to its Ingress for browser access
 helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --reuse-values \
@@ -424,8 +424,9 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   continues to require `apifrontend.enabled` specifically (Console's UI proxies to APIFrontend
   only) — it has no dependency on `gateway.enabled`.
 - The chart fails fast at `helm template`/`helm install` time (before any resources are
-  applied) if `console.enabled=true` and `console.auth.secretName`, a resolvable OIDC issuer,
-  or `console.ingress.host` is missing.
+  applied) if `console.enabled=true` and `console.auth.secretName`, an explicitly empty OIDC
+  issuer, or `console.ingress.host` is missing. The default issuer is
+  `https://login.kubernaut.ai/realms/kubernaut`.
 
 ### Enable/Disable Gateway or APIFrontend (Issue #2162)
 

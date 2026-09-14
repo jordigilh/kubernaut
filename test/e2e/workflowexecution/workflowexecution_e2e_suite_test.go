@@ -114,7 +114,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • Tekton Pipelines (for workflow execution)")
 		logger.Info("  • WorkflowExecution CRD")
 		logger.Info("  • WorkflowExecution Controller")
-		logger.Info("  • Test pipeline for E2E validation")
+		logger.Info("  • Prebuilt OCI Tekton bundle for E2E validation")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Set cluster configuration
@@ -156,7 +156,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "WorkflowExecution Controller rollout did not complete")
 		logger.Info("✅ WorkflowExecution Controller rollout complete")
 
-		// Note: Test pipeline is already created by hybrid infrastructure setup
+		// Tekton workflows are registered from OCI bundle references during setup.
 
 		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
 		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")

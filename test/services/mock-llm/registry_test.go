@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
@@ -71,6 +72,75 @@ var _ = Describe("Scenario Registry", func() {
 		})
 	})
 
+	Describe("UT-MOCK-2390-001: Detect honors caller and phase scope", func() {
+		It("should select only the scenario scoped to the request caller", func() {
+			af := &fakeScenario{
+				name:       "af_investigate",
+				confidence: 1.0,
+				caller:     scenarios.CallerAF,
+				phase:      scenarios.PhaseInvestigation,
+			}
+			ka := &fakeScenario{
+				name:       "ka_investigate",
+				confidence: 1.0,
+				caller:     scenarios.CallerKA,
+				phase:      scenarios.PhaseRCA,
+			}
+			registry.Register(af)
+			registry.Register(ka)
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				Caller: scenarios.CallerKA,
+				Phase:  scenarios.PhaseRCA,
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("ka_investigate"))
+		})
+
+		It("should not apply a scoped scenario when the request scope is unknown", func() {
+			scoped := &fakeScenario{
+				name:       "af_investigate",
+				confidence: 1.0,
+				caller:     scenarios.CallerAF,
+				phase:      scenarios.PhaseInvestigation,
+			}
+			fallback := &fakeScenario{name: "legacy", confidence: 0.5}
+			registry.Register(scoped)
+			registry.Register(fallback)
+
+			result := registry.Detect(&scenarios.DetectionContext{Content: "investigate"})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("legacy"))
+		})
+	})
+
+	It("UT-MOCK-2390-003: should wire YAML caller and phase fields into detection", func() {
+		registry = scenarios.DefaultRegistryFull(&config.Overrides{
+			KeywordScenarios: []config.KeywordScenarioOverride{{
+				Name:     "af_scoped",
+				Caller:   "af",
+				Phase:    "investigation",
+				Keywords: []string{"same keyword"},
+			}},
+		}, "")
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "same keyword",
+			Caller:  scenarios.CallerAF,
+			Phase:   scenarios.PhaseInvestigation,
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("af_scoped"))
+
+		result = registry.Detect(&scenarios.DetectionContext{
+			Content: "same keyword",
+			Caller:  scenarios.CallerKA,
+			Phase:   scenarios.PhaseRCA,
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("default"))
+	})
+
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {
 		It("should return metadata entries for each registered scenario", func() {
 			s1 := &fakeScenario{name: "alpha", confidence: 0.5}
@@ -94,6 +164,8 @@ var _ = Describe("Scenario Registry", func() {
 type fakeScenario struct {
 	name       string
 	confidence float64
+	caller     scenarios.Caller
+	phase      scenarios.Phase
 }
 
 func (s *fakeScenario) Name() string { return s.name }
@@ -106,7 +178,7 @@ func (s *fakeScenario) Match(_ *scenarios.DetectionContext) (bool, float64) {
 }
 
 func (s *fakeScenario) Metadata() scenarios.ScenarioMetadata {
-	return scenarios.ScenarioMetadata{Name: s.name}
+	return scenarios.ScenarioMetadata{Name: s.name, Caller: s.caller, Phase: s.phase}
 }
 
 func (s *fakeScenario) DAG() *conversation.DAG { return nil }

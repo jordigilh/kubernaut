@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,10 +27,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -37,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // staticClusterRegistry implements registry.ClusterRegistry with a fixed set of clusters.
@@ -143,7 +147,7 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 
 		By("Creating routing engine with real federated scope checker")
 		engine = routing.NewRoutingEngine(
-			k8sClient,
+			k8sManager.GetClient(), // Cached client provides the WFE target field index.
 			k8sClient,
 			"",
 			routing.Config{
@@ -242,5 +246,74 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		Expect(condition).ToNot(BeNil(),
 			"AC-3: resource on unknown cluster must be blocked (FMC handler rejects unknown clusters)")
 		Expect(condition.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+	})
+
+	It("IT-RO-2396-001 [AC-4, AC-6; ASVS V4.1.1/V4.1.3]: should not block an identical target from another cluster", func() {
+		suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+		targetResource := "kubernaut-system/Deployment/memory-eater"
+		blockerRR := helpers.NewRemediationRequest(
+			"rr-prod-west-"+suffix,
+			ROControllerNamespace,
+			helpers.RemediationRequestOpts{
+				ClusterID:       "prod-west",
+				TargetKind:      "Deployment",
+				TargetName:      "memory-eater",
+				TargetNamespace: "kubernaut-system",
+			},
+		)
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-prod-west-" + suffix,
+				Namespace: ROControllerNamespace,
+			},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      blockerRR.Name,
+					Namespace: blockerRR.Namespace,
+				},
+				TargetResource: targetResource,
+				ClusterID:      "prod-east", // execution cluster override
+			},
+			Status: workflowexecutionv1.WorkflowExecutionStatus{
+				Phase: workflowexecutionv1.PhaseRunning,
+			},
+		}
+		requestingRR := helpers.NewRemediationRequest(
+			"rr-remote-cluster-"+suffix,
+			ROControllerNamespace,
+			helpers.RemediationRequestOpts{
+				ClusterID:       "remote-cluster",
+				TargetKind:      "Deployment",
+				TargetName:      "memory-eater",
+				TargetNamespace: "kubernaut-system",
+			},
+		)
+
+		Expect(k8sClient.Create(ctx, blockerRR)).To(Succeed())
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(context.Background(), wfe)).To(Succeed())
+			Expect(k8sClient.Delete(context.Background(), blockerRR)).To(Succeed())
+		})
+
+		Eventually(func() bool {
+			wfeList := &workflowexecutionv1.WorkflowExecutionList{}
+			if err := k8sManager.GetClient().List(ctx, wfeList, client.MatchingFields{
+				"spec.targetResource": targetResource,
+			}); err != nil {
+				return false
+			}
+			for i := range wfeList.Items {
+				if wfeList.Items[i].Name == wfe.Name {
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(), "blocking WFE should be visible through the target index")
+
+		blocked, err := engine.CheckResourceBusy(ctx, requestingRR, targetResource)
+		Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue(),
+			"different-cluster target must not be blocked: err=%v blocked=%+v", err, blocked)
+		Expect(blocked).To(BeNil())
 	})
 })

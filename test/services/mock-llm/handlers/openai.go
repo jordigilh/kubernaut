@@ -330,12 +330,15 @@ func buildDetectionContext(ctx *conversation.Context, tools []openai.Tool) *scen
 			availableTools[i] = t.Function.Name
 		}
 	}
+	caller, phase := scenarios.InferRequestScope(content, allText, lastUserContent, availableTools)
 
 	return &scenarios.DetectionContext{
 		Content:         content,
 		AllText:         allText,
 		IsProactive:     isProactive,
 		LastUserContent: lastUserContent,
+		Caller:          caller,
+		Phase:           phase,
 		AvailableTools:  availableTools,
 	}
 }

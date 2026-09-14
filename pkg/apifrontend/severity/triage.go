@@ -10,6 +10,8 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 )
 
+const fleetClusterLabelKey = "cluster"
+
 // ErrSeverityUndetermined is returned when no real Prometheus alert or rule
 // correlates to the investigated resource (Tier 1/1.5/2/2.5 all miss).
 //
@@ -254,7 +256,7 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		podNameSet[pn] = struct{}{}
 	}
 
-	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace)
+	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID)
 }
 
 // matchCandidate tracks the best alert match at a given priority tier.
@@ -345,10 +347,13 @@ func updateTierCandidate(firing bool, sev, name string, firingCand, pendingCand 
 	}
 }
 
-func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace string) (TriageResult, bool) {
+func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, clusterID string) (TriageResult, bool) {
 	var resourceFiring, resourcePending, nsFiring, nsPending, clusterFiring, clusterPending matchCandidate
 
 	for _, alert := range alerts {
+		if !matchesCluster(alert.Labels, clusterID) {
+			continue
+		}
 		tier, firing, sev, name := classifyAlertTier(alert, targetLabels, podNameSet, targetNamespace)
 		switch tier {
 		case tierResource:
@@ -389,6 +394,9 @@ func (t *Triager) runTier15(input TriageInput, ruleGroups []prom.RuleGroup) (Tri
 	for _, g := range ruleGroups {
 		for _, r := range g.Rules {
 			if r.State != "pending" {
+				continue
+			}
+			if !matchesCluster(r.Labels, input.ClusterID) {
 				continue
 			}
 			matchers, err := prom.ExtractLabelMatchers(r.Query)
@@ -451,6 +459,9 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	if err != nil {
 		return TriageResult{}, false, false
 	}
+	if !matchesCluster(r.Labels, input.ClusterID) {
+		return TriageResult{}, false, false
+	}
 	if !prom.MatchesResource(matchers, input.Labels) {
 		return TriageResult{}, false, false
 	}
@@ -474,6 +485,16 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 		Source:   SourceRuleEval,
 		RuleName: r.Name,
 	}, true, true
+}
+
+// matchesCluster enforces Thanos cluster attribution for fleet triage. An
+// empty target cluster preserves hub-local behavior; a fleet target requires
+// an explicit matching cluster label rather than accepting un-attributed data.
+func matchesCluster(labels map[string]string, clusterID string) bool {
+	if clusterID == "" {
+		return true
+	}
+	return labels[fleetClusterLabelKey] == clusterID
 }
 
 func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules []prom.Rule) (TriageResult, bool) {

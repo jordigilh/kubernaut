@@ -75,12 +75,17 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	isProactive := strings.Contains(content, "proactive mode") ||
 		strings.Contains(content, "proactive signal") ||
 		(strings.Contains(content, "predicted") && strings.Contains(content, "not yet occurred"))
+	availableTools := geminiToolNames(req.Tools)
+	caller, phase := scenarios.InferRequestScope(content, allTextLower, content, availableTools)
 
 	detCtx := &scenarios.DetectionContext{
 		Content:         content,
 		AllText:         allTextLower,
 		IsProactive:     isProactive,
 		LastUserContent: content,
+		Caller:          caller,
+		Phase:           phase,
+		AvailableTools:  availableTools,
 	}
 
 	if isPermanentError(detCtx) {
@@ -256,6 +261,18 @@ func firstDeclaredTool(tools []response.GeminiToolDecl) string {
 		}
 	}
 	return ""
+}
+
+func geminiToolNames(tools []response.GeminiToolDecl) []string {
+	var names []string
+	for _, t := range tools {
+		for _, fd := range t.FunctionDeclarations {
+			if fd.Name != "" {
+				names = append(names, fd.Name)
+			}
+		}
+	}
+	return names
 }
 
 // resolveGeminiTemplateArgs scans cfg.ToolCallArgs for template placeholders

@@ -690,6 +690,7 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	result.Dependencies = meta.Dependencies
 	result.Resources = meta.Resources
 	result.DeclaredParameterNames = meta.DeclaredParameterNames
+	result.EngineConfig = meta.EngineConfig
 
 	// Issue #1661 Change 12: ActionType/WorkflowName are likewise
 	// catalog-authoritative -- always overwrite, same pattern as

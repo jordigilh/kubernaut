@@ -463,24 +463,21 @@ func SetWatchTerminalEventsSafetyNetForTest(d time.Duration) (restore func()) {
 
 // WatchTerminalEvents watches a residual event channel for events arriving
 // on a pooled MCP session after handoff. When a session_ended event is
-// received, it emits a terminal TaskStatusUpdateEvent to the A2A queue via
-// the EventBridge in ctx and exits. Exits deterministically on:
+// received, it publishes a terminal event to the session's active subscribers
+// and exits. Exits deterministically on:
 // session_ended received, events closed, done closed (pool
 // Release/EvictIdle/DrainAll), or the safety-net timer
 // (watchTerminalEventsSafetyNetNs) elapsing (#2094, v1.6 clone #2095). The
 // safety-net timer is created once, before the loop, so a steady stream of
 // non-terminal events cannot indefinitely postpone the deadline.
 //
-// relay is non-nil only for entries handed off via KASessionPool.InjectVerified
-// (#1637/DD-AF-009). When a pooled call (kubernaut_message,
-// discover_workflows, select_workflow, complete_no_action) is in flight,
-// relay.Current() returns that call's ctx; every event — terminal or not —
-// is then relayed live to that ctx's EventBridge instead of (for
-// non-terminal events) being dropped, or (for the terminal event) landing
-// on the watcher's own detached ctx. When idle (relay is nil or
-// relay.Current() is nil), behavior is unchanged from #1438: non-terminal
-// events are dropped, and the terminal event uses the watcher's own ctx.
-func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEvent, rrID string, done <-chan struct{}, relay *ka.EventRelay) {
+// router is non-nil only for entries handed off via KASessionPool.InjectVerified
+// (#1637/DD-AF-015). Pooled calls and kubernaut_watch subscribe for their own
+// call lifetime. When the router has no subscribers, non-terminal events are
+// dropped and terminal events do not target the stale handoff context. A nil
+// router preserves #1438's direct-call fallback for legacy MCP wiring and
+// focused tests.
+func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEvent, rrID string, done <-chan struct{}, router *ka.EventRouter) {
 	safetyNetTimeout := time.Duration(watchTerminalEventsSafetyNetNs.Load())
 	safetyNet := time.NewTimer(safetyNetTimeout)
 	defer safetyNet.Stop()
@@ -492,12 +489,12 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 				return
 			}
 			if evt.Type == ka.EventTypeSessionEnded {
-				emitWatcherTerminal(relayCtxOrDefault(relay, ctx), evt)
+				publishTerminalEvent(ctx, router, evt)
 				return
 			}
-			relayLiveEvent(relay, evt) //nolint:contextcheck // relayLiveEvent deliberately ignores the watcher's own ctx and sources relay.Current() instead -- the whole point is to relay onto whichever pooled call's ctx is currently in flight, not the watcher's detached one
+			publishSessionEvent(router, evt)
 		case <-done:
-			drainBufferedTerminalEvent(relayCtxOrDefault(relay, ctx), events)
+			drainBufferedTerminalEvent(ctx, events, router)
 			return
 		case <-safetyNet.C:
 			logr.FromContextOrDiscard(ctx).Info(
@@ -508,45 +505,42 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 	}
 }
 
-// relayLiveEvent forwards a non-terminal event to whichever pooled call's
-// ctx is currently attached to relay. Only relays while a pooled call is
-// actually in flight (relay.Current() != nil); when idle, the event is
-// silently dropped — unchanged from #1438, since the watcher's own detached
-// ctx was never meant to receive live business content, only the terminal
-// session_ended signal.
-func relayLiveEvent(relay *ka.EventRelay, evt ka.InvestigationEvent) {
-	if relay == nil {
+// EmitKAEventToA2A adapts a KA session event to the current A2A EventBridge.
+// It is injected into KA's session router so the KA package remains unaware of
+// A2A presentation details.
+func EmitKAEventToA2A(ctx context.Context, evt ka.InvestigationEvent) {
+	if evt.Type == ka.EventTypeSessionEnded {
+		emitWatcherTerminal(ctx, evt)
 		return
 	}
-	if liveCtx := relay.Current(); liveCtx != nil {
-		emitEventToA2A(liveCtx, evt, FormatEventForUser(evt))
-	}
+	emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 }
 
 // drainBufferedTerminalEvent performs a non-blocking check for a
 // session_ended event that may already be buffered when the pool fires
-// onRelease, emitting it before the watcher exits (#1438).
-func drainBufferedTerminalEvent(ctx context.Context, events <-chan ka.InvestigationEvent) {
+// onRelease, publishing it before the watcher exits (#1438).
+func drainBufferedTerminalEvent(ctx context.Context, events <-chan ka.InvestigationEvent, router *ka.EventRouter) {
 	select {
 	case evt, ok := <-events:
 		if ok && evt.Type == ka.EventTypeSessionEnded {
-			emitWatcherTerminal(ctx, evt)
+			publishTerminalEvent(ctx, router, evt)
 		}
 	default:
 	}
 }
 
-// relayCtxOrDefault returns relay.Current() when a pooled call is currently
-// in flight, otherwise fallbackCtx (the watcher's own detached ctx). Safe to
-// call with a nil relay (#1637).
-func relayCtxOrDefault(relay *ka.EventRelay, fallbackCtx context.Context) context.Context {
-	if relay == nil {
-		return fallbackCtx
+func publishSessionEvent(router *ka.EventRouter, evt ka.InvestigationEvent) {
+	if router != nil {
+		router.Publish(evt)
 	}
-	if live := relay.Current(); live != nil {
-		return live
+}
+
+func publishTerminalEvent(ctx context.Context, router *ka.EventRouter, evt ka.InvestigationEvent) {
+	if router == nil {
+		emitWatcherTerminal(ctx, evt)
+		return
 	}
-	return fallbackCtx
+	router.Publish(evt)
 }
 
 func emitWatcherTerminal(ctx context.Context, evt ka.InvestigationEvent) {

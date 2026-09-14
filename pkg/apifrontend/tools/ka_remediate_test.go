@@ -218,7 +218,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
-				Triager:      defaultTestTriager("prod", "Deployment", "web-fleet"),
+				Triager:      defaultTestTriager("prod", "Deployment", "web-fleet", "cluster-fleet-it-002"),
 			}, &tools.RemediateArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",

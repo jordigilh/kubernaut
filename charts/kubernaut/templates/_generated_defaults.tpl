@@ -33,7 +33,7 @@ apifrontend:
         auth:
             allowInsecureIssuers: false
             audience: ""
-            issuerURL: ""
+            issuerURL: https://login.kubernaut.ai/realms/kubernaut
             jwksURL: ""
             oidcCaFile: ""
             replayCache:
@@ -590,6 +590,8 @@ workflowexecution:
                 namespace: ""
         execution:
             cooldownPeriod: 1m
+            failedExecutionRetentionSeconds: 600
+            retainFailedExecutions: false
     debug:
         pprofEnabled: false
     fleet:

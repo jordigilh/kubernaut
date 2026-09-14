@@ -52,7 +52,7 @@ import (
 // ctx.AllText for this marker to detect whether the remote tool has already
 // executed (i.e. which conversation turn it's building a response for),
 // without needing access to raw message internals — mirroring the technique
-// used by isPermanentError/mockKeywordScenario's own keyword-in-content
+// used by isPermanentError/the selector's own keyword-in-content
 // matching elsewhere in this test double.
 const fleetE2EMarker = "kubernaut-fleet-e2e-remote-marker-1732"
 

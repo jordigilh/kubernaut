@@ -252,6 +252,9 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 	if r.ServiceAccountName != "" {
 		sw["service_account_name"] = r.ServiceAccountName
 	}
+	if r.EngineConfig != nil {
+		sw["engine_config"] = r.EngineConfig
+	}
 	if r.WorkflowVersion != "" {
 		sw["version"] = r.WorkflowVersion
 	}

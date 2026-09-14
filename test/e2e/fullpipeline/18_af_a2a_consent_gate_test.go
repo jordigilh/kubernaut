@@ -578,13 +578,13 @@ var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Lab
 		//
 		// IMPORTANT: this must NOT be the built-in "not_actionable" scenario's own
 		// "MOCK_NOT_ACTIONABLE" keyword. That keyword is matched broadly (ctx.Content
-		// + ctx.AllText, see mockKeywordScenarioMulti), and HandleCreateRR echoes the
+		// + ctx.AllText, see the full-conversation selector), and HandleCreateRR echoes the
 		// derived SignalName back in kubernaut_remediate's own JSON response
 		// (CreateRRResult.SignalName) -- which folds into AF's OWN orchestration
 		// conversation's allText on the next turn, silently hijacking AF's own
 		// tool-selection into KA's scenario (empirically confirmed during this
 		// test's development). "E2EFP1918NotActionable" instead matches only via
-		// the dedicated not_actionable_grounded_1918 scenario (signalScenario,
+		// the dedicated not_actionable_grounded_1918 scenario (signal selector,
 		// registry_default.go), which inspects ctx.Content only -- safe from that
 		// leak. See notActionableGroundedConfig's doc comment for the full
 		// explanation.

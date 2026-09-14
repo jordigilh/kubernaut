@@ -653,7 +653,7 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 	// AF's `kubernaut_message` tool (PooledMCPClient.InvokeAction) never
 	// attached an EventBridge to the pooled session's residual event
 	// channel — only the initial `kubernaut_investigate` call did. #1637
-	// (DD-AF-009) closes that gap with an EventRelay attach/detach pointer
+	// (DD-AF-015) closes that gap with a session-scoped EventRouter
 	// consumed by WatchTerminalEvents, making this journey reachable.
 	It("E2E-AF-1637-001 (SI-4, AU-3): kubernaut_message turn relays live reasoning_content to SSE", func() {
 		rrName := "rr-reasoning-e2e-1637"
@@ -681,7 +681,7 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 		// turn 1's function-call result). The embedded "mock_reasoning_capture"
 		// keyword drives KA's own mock-LLM to return a captured reasoning
 		// block (BR-AI-086), which KA emits as reasoning_content_delta on the
-		// same pooled MCP session turn 1 handed off — #1637's EventRelay is
+		// same pooled MCP session turn 1 handed off — #1637's EventRouter is
 		// what makes this reach turn 2's SSE stream instead of being dropped.
 		resp2, err := a2aSSEPostReq(streamCtx, a2aMessageStreamWithContext("reasoning-e2e-1637-t2", sharedCtxID, "drive reasoning capture turn"))
 		Expect(err).NotTo(HaveOccurred())

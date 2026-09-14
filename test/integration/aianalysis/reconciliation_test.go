@@ -78,7 +78,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}
 		})
 
-		It("should transition through all phases successfully", func() {
+		It("IT-AA-2390-001: should transition through all phases and persist the selected workflow snapshot", func() {
 			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
 			defer func() {
 				_ = k8sClient.Delete(ctx, analysis)
@@ -111,6 +111,18 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
 			Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionEngine).To(Equal("job"),
+				"IT-AA-2390-001: selected workflow execution engine must persist in AA status")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionBundle).ToNot(BeEmpty(),
+				"IT-AA-2390-001: selected workflow execution bundle must persist in AA status")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowName).ToNot(BeEmpty(),
+				"IT-AA-2390-001: workflow name must persist in AA status")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ActionType).ToNot(BeEmpty(),
+				"IT-AA-2390-001: action type must persist in AA status")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Version).ToNot(BeEmpty(),
+				"IT-AA-2390-001: workflow version must persist in AA status")
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.SelectedAt).ToNot(BeNil(),
+				"IT-AA-2390-001: selected timestamp must persist in AA status")
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {
