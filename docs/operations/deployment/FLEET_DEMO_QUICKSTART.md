@@ -58,6 +58,16 @@ make setup-fleet-demo-infra \
 `localhost/kubernaut` makes the chart use `localhost/kubernaut/gateway` and the matching
 path for each chart-managed Kubernaut service. The Console image remains independently
 configured by the chart's `console.image.*` values.
+When `IMAGE_TAG` is provided, it is treated as a base tag and normalized to the host
+architecture (`<base>-amd64` or `<base>-arm64`); an existing architecture suffix is
+replaced rather than duplicated.
+
+For images loaded from this repository's CI artifacts, use `IMAGE_REPOSITORY=localhost`.
+`IMAGE_TAG` should be the base tag from the CI run (for example, `pr-123` or
+`main-<sha>`). `download-images.sh --load` and the fleet demo use the same normalized
+tag, then the setup transfers those local images into the hub Kind nodes before Helm
+runs. On ARM64, the CI artifact download omits `db-migrate`; build that one image locally with
+`IMAGE_TAG=<base> IMAGE_ARCH=arm64` so it receives the matching `<base>-arm64` tag.
 
 For Claude on Vertex AI instead, point the credential file at a GCP
 service-account key JSON and pass the Vertex project/location (required with
