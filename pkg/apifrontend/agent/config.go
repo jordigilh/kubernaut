@@ -113,9 +113,8 @@ type AgentConfig struct {
 	// ScopeChecker validates that a target resource is within Kubernaut's
 	// management scope (ADR-053) before kubernaut_remediate,
 	// kubernaut_investigate_alert, or kubernaut_investigate create an
-	// RR/InvestigationSession (#2025, main-tracking clone of #2022). When
-	// nil, scope validation is skipped at the tool layer (RO's
-	// CheckUnmanagedResource remains the fallback enforcement point).
+	// RR/InvestigationSession (#2025, main-tracking clone of #2022). When nil,
+	// those tools fail closed rather than creating an RR without scope proof.
 	ScopeChecker scope.ScopeChecker
 }
 
