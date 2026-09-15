@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -89,29 +90,11 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 		opts.EventStore = newAuditingEventStore(auditor)
 	}
 
-	// #2139: getServer is only invoked by the SDK when it's about to create a
-	// brand-new session (an existing session's requests carry a
-	// Mcp-Session-Id the SDK recognizes and routes directly to it, never
-	// calling back here) -- see mcp.StreamableHTTPHandler.serveStatefulPOST.
-	// So every invocation of this callback already corresponds to exactly one
-	// new session; no additional dedup is needed, and a previous dedup guard
-	// keyed on the (always-empty, pre-assignment) request header caused every
-	// session after the pod's first-ever one to go unaudited.
+	// The SDK may call getServer while validating a request before it routes the
+	// request to an existing or new session. Keep this callback side-effect-free;
+	// auditingEventStore.Open observes the actual session stream lifecycle.
 	h := mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server {
-			if auditor != nil {
-				username := ""
-				if user := auth.UserIdentityFromContext(r.Context()); user != nil {
-					username = user.Username
-				}
-				auditor.Emit(r.Context(), &audit.Event{
-					Type:   audit.EventMCPSessionInit,
-					UserID: username,
-					Detail: map[string]string{
-						"protocol_version": "2025-03-26",
-					},
-				})
-			}
+		func(_ *http.Request) *mcp.Server {
 			return srv
 		},
 		opts,
@@ -187,8 +170,9 @@ func DefaultMCPTools(interactiveEnabled bool) []MCPToolDef {
 // when a console-facing MCP session is closed (idle timeout or explicit close).
 // BR-OPS-013: session lifecycle events must be auditable.
 type auditingEventStore struct {
-	inner   *mcp.MemoryEventStore
-	auditor audit.Emitter
+	inner              *mcp.MemoryEventStore
+	auditor            audit.Emitter
+	initializedSession sync.Map
 }
 
 func newAuditingEventStore(auditor audit.Emitter) *auditingEventStore {
@@ -199,7 +183,32 @@ func newAuditingEventStore(auditor audit.Emitter) *auditingEventStore {
 }
 
 func (s *auditingEventStore) Open(ctx context.Context, sessionID, streamID string) error {
-	return s.inner.Open(ctx, sessionID, streamID)
+	if err := s.inner.Open(ctx, sessionID, streamID); err != nil {
+		return err
+	}
+
+	if s.auditor != nil {
+		shouldEmit := sessionID == ""
+		if sessionID != "" {
+			_, alreadyInitialized := s.initializedSession.LoadOrStore(sessionID, struct{}{})
+			shouldEmit = !alreadyInitialized
+		}
+		if shouldEmit {
+			username := ""
+			if user := auth.UserIdentityFromContext(ctx); user != nil {
+				username = user.Username
+			}
+			s.auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventMCPSessionInit,
+				UserID: username,
+				Detail: map[string]string{
+					"protocol_version": "2025-03-26",
+				},
+			})
+		}
+	}
+
+	return nil
 }
 
 func (s *auditingEventStore) Append(ctx context.Context, sessionID, streamID string, data []byte) error {
@@ -220,5 +229,9 @@ func (s *auditingEventStore) SessionClosed(ctx context.Context, sessionID string
 			},
 		})
 	}
-	return s.inner.SessionClosed(ctx, sessionID)
+	err := s.inner.SessionClosed(ctx, sessionID)
+	if err == nil && sessionID != "" {
+		s.initializedSession.Delete(sessionID)
+	}
+	return err
 }
