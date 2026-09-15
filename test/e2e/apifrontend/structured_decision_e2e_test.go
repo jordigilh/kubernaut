@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -135,6 +136,15 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		return "", nil
 	}
 
+	// Progressive early_rca events intentionally use metadata.type="decision",
+	// so scanDecisionEvent would return before the grounding tool's terminal
+	// result reaches phaseGuardAfter. Drain the stream itself to ensure the
+	// grounding state is persisted before the follow-up decision turn.
+	drainGroundingStream := func(resp *http.Response) {
+		_, err := io.Copy(io.Discard, resp.Body)
+		Expect(err).NotTo(HaveOccurred(), "grounding stream must reach EOF")
+	}
+
 	// groundSession establishes #2023's grounding-guard prerequisite: a
 	// successful kubernaut_investigate turn in the same A2A session
 	// (contextID), so the later present_decision turn's before-callback
@@ -160,7 +170,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			"seed grounding context for pod structured-decision-target in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
-		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+		drainGroundingStream(resp)
 	}
 
 	// groundSessionAlt is groundSession's twin for E2E-AF-1396-002 alone,
@@ -184,7 +194,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			"seed alt fixture context 1396 002 for pod structured-decision-target-2 in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
-		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+		drainGroundingStream(resp)
 	}
 
 	// groundSessionBeta is groundSession's/groundSessionAlt's third sibling,
@@ -208,7 +218,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			"seed third fixture context 1396 001 for pod structured-decision-target-3 in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
-		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+		drainGroundingStream(resp)
 	}
 
 	// groundSessionDelta is the fourth sibling, dedicated to E2E-AF-2387-002
@@ -222,7 +232,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			"seed fourth fixture context 2387 002 for pod structured-decision-target-4 in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
-		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+		drainGroundingStream(resp)
 	}
 
 	It("E2E-AF-1395-001: SI-10 — structured decision payload > 512 chars arrives intact via SSE", func() {
