@@ -385,6 +385,34 @@ than discards) the `ResilientClient`/`ClusterRegistry` object on initial connect
 `Gate` has something to keep probing/retrying instead of the client being silently lost with no path
 back to healthy short of a pod restart.
 
+## Operational Scope Semantics: Local-Only vs Federated
+
+The deployment mode determines which targets Kubernaut can evaluate. These modes
+are intentional product behavior and must not be treated as interchangeable
+forms of degraded operation.
+
+- **Local-only mode**: when Fleet is disabled or no Fleet endpoint is configured,
+  the scope factory returns the local scope checker and no remote dependency is
+  contacted. The local checker rejects a target with a non-empty cluster ID;
+  such a target is not interpreted as a local resource.
+- **Federated mode**: when Fleet is enabled with an endpoint, scope checks for
+  remote targets use the configured federated backend. Required scope, gateway,
+  and identity dependencies are part of service readiness.
+- **Configured dependency failure**: a federated dependency that is unavailable
+  at startup or during runtime fails closed through configuration validation or
+  the readiness gate. The service must not silently resume local-only behavior
+  for a federated target.
+- **Enrichment-only degradation**: an individual remote enrichment failure may
+  mark enrichment context as degraded where that operation supports degraded
+  context. It never authorizes a scope-dependent action or converts a remote
+  target into a local target.
+- **API Frontend RR creation**: a new RemediationRequest requires a successful
+  managed-resource decision. An unavailable checker, scope error, or unmanaged
+  result rejects creation before any RR is persisted (#2408, ADR-053).
+- **Existing RR takeover**: taking over an existing RR does not repeat the
+  creation-time check; the RR was required to pass scope validation when it was
+  created.
+
 **Related, narrower fail-closed fix (2026-08-30, issue #2312)**: this Gate is pod-wide and
 ticker-probed, so it protects against *sustained* Fleet-dependency unavailability but not
 necessarily a single investigation that hits a transient gateway failure between probe ticks. KA's
@@ -1399,16 +1427,18 @@ fleet:
 When `fleet.endpoint` is empty (default), SP operates in local-only mode with zero
 overhead — no MCP connection is attempted.
 
-### Degraded Mode Behavior
+### Enrichment Degradation Behavior
 
-SP gracefully degrades when remote enrichment fails:
+The following distinctions apply to enrichment, which is separate from scope
+authorization:
 
-| Failure | Behavior |
-|---------|----------|
-| MCP Gateway unreachable at boot | `fleetErr` logged, remote enrichment disabled, local enrichment works normally |
-| ReaderFactory.ReaderFor() fails | `DegradedMode=true` on KubernetesContext, enrichment continues |
-| Remote resource not found | `DegradedMode=true`, namespace context still populated if available |
-| MCP session drops mid-request | ResilientClient auto-reconnects on next call |
+| Condition | Behavior |
+|-----------|----------|
+| Fleet endpoint is empty | Local-only enrichment; no remote connection is attempted |
+| Configured Fleet dependency is unavailable | Readiness fails closed; the service does not silently switch to local-only behavior |
+| `ReaderFactory.ReaderFor()` fails for an individual request | `DegradedMode=true` may be set for enrichment context; scope-dependent actions still fail closed |
+| Remote resource is not found | `DegradedMode=true`; available local context may still be retained, without treating the remote target as local |
+| MCP session drops mid-request | The resilient client may reconnect; an action requiring an unverified remote scope is rejected |
 
 ## Per-Cluster Authorization: BYO (Bring Your Own)
 

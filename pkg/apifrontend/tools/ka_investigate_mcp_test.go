@@ -1494,11 +1494,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 
 		result, err := tools.HandleInvestigationMCPWithRegistry(
 			ctx, &tools.InvestigateConfig{
-				MCPClient: closedEventsMCP(),
-				Client:    tc,
-				Namespace: "kubernaut-system",
-				Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003", "cluster-fleet-it-003"),
-			}, tools.InvestigateMCPArgs{
+				MCPClient:    closedEventsMCP(),
+				Client:       tc,
+				Namespace:    "kubernaut-system",
+				Triager:      defaultTestTriager("prod", "Deployment", "web-1409-003", "cluster-fleet-it-003"),
+				ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 				APIVersion: "apps/v1",
 				Namespace:  "prod",
 				Kind:       "Deployment",
@@ -1669,6 +1669,20 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
 		})
 		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("UT-AF-2025-053: rejects a new-RR investigation when ScopeChecker is unavailable", func() {
+		tc := newTypedFakeClient()
+		_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), &tools.InvestigateConfig{
+			MCPClient: &ka.MockMCPClient{},
+			Client:    tc,
+			Namespace: "kubernaut-system",
+			Triager:   defaultTestTriager("prod", "Deployment", "web"),
+		}, tools.InvestigateMCPArgs{
+			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
+		}, false, "user")
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
 	})
 
 	It("UT-AF-2025-052: the rr_id (takeover) path is not scope-checked", func() {

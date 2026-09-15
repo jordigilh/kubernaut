@@ -113,6 +113,7 @@ const (
 	defaultPostgresPassword = "test_password"
 	defaultPostgresDB       = "action_history"
 	defaultMigrationsPath   = "migrations" // Always at project root
+	defaultLocalhost        = "localhost"
 )
 
 // generateInfrastructureImageTag generates DD-TEST-001 v1.3 compliant tag for shared infrastructure
@@ -623,8 +624,8 @@ func startDSBootstrapPostgreSQL(ctx context.Context, infra *DSBootstrapInfra, wr
 func runDSBootstrapMigrations(ctx context.Context, infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
-	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
-		infra.Config.PostgresPort, defaultPostgresUser, defaultPostgresPassword, defaultPostgresDB)
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		defaultLocalhost, infra.Config.PostgresPort, defaultPostgresUser, defaultPostgresPassword, defaultPostgresDB)
 
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
@@ -730,9 +731,9 @@ func startDSBootstrapService(ctx context.Context, infra *DSBootstrapInfra, image
 		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
 		// PostgreSQL exposes internal 5432 → external cfg.PostgresPort
 		// Redis exposes internal 6379 → external cfg.RedisPort
-		postgresHost = "localhost"
+		postgresHost = defaultLocalhost
 		postgresPort = cfg.PostgresPort // Use exposed port (e.g., 15437)
-		redisAddr = fmt.Sprintf("localhost:%d", cfg.RedisPort)
+		redisAddr = fmt.Sprintf("%s:%d", defaultLocalhost, cfg.RedisPort)
 
 		// CRITICAL: Host network - no port mapping, so listen on external port
 		// Test infrastructure expects DataStorage on cfg.DataStoragePort
@@ -846,7 +847,7 @@ func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string,
 	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       fmt.Sprintf("datastorage-signing-%s", serviceName),
 		Organization:     "Kubernaut Integration Tests",
-		DNSNames:         []string{"localhost", "host.containers.internal"},
+		DNSNames:         []string{defaultLocalhost, "host.containers.internal"},
 		ValidityDuration: 24 * time.Hour,
 		KeySize:          2048,
 	})

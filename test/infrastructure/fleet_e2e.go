@@ -637,6 +637,14 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if err := CreateTestNamespace(ctx, monitoringNamespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("failed to create spoke monitoring namespace: %w", err)
 	}
+	// The fleet AlertManager is hub-only and lives in monitoring. OIDC setup
+	// creates the shared CA in kubernaut-system; replicate it into the hub's
+	// monitoring namespace before AlertManager starts. This is also required
+	// for spoke Prometheus alerts, which forward to this hub AlertManager via
+	// its NodePort (Issue #2405).
+	if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, monitoringNamespace, writer); err != nil {
+		return nil, remoteKubeconfigPath, fmt.Errorf("failed to replicate hub inter-service CA to %s: %w", monitoringNamespace, err)
+	}
 
 	// AlertManager: single instance in the hub only (matches DD-EM-005's
 	// "AlertManager... aggregates alerts fleet-wide" -- one sink, not one

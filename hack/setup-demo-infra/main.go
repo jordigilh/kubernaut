@@ -30,7 +30,7 @@ func main() {
 	llmCredentialsFile := flag.String("llm-credentials-file", "", "required file containing the raw LLM credential")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional SignalProcessing Rego policy file")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional AIAnalysis Rego policy file")
-	imageTag := flag.String("image-tag", "", "optional Kubernaut image tag override")
+	imageTag := flag.String("image-tag", "", "optional base Kubernaut image tag override (normalized to the host architecture)")
 	imageRepository := flag.String("image-repository", "", "optional Kubernaut image repository override (for example, quay.io/jordigilh or localhost/kubernaut)")
 	vertexProject := flag.String("vertex-project", "", "required with -llm-provider=vertex_ai")
 	vertexLocation := flag.String("vertex-location", "", "required with -llm-provider=vertex_ai")
@@ -104,7 +104,7 @@ func main() {
 		fail(fmt.Sprintf("demo infrastructure setup failed: %v", err))
 	}
 
-	if err := infrastructure.InstallDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, fleetOpts, demoOpts, os.Stdout); err != nil {
+	if err := infrastructure.InstallDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, *clusterName, fleetOpts, demoOpts, os.Stdout); err != nil {
 		fail(fmt.Sprintf("helm install failed: %v", err))
 	}
 }

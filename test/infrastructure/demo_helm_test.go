@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"runtime"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -316,7 +317,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		}
 	})
 
-	It("UT-INFRA-FLEETDEMO-037: sets exactly one global.image.tag when ImageTag is provided (no trailing empty duplicate)", func() {
+	It("UT-INFRA-FLEETDEMO-037: sets exactly one normalized global.image.tag when ImageTag is provided", func() {
 		opts := baseOpts
 		opts.ImageTag = "demo-v1.0"
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
@@ -326,7 +327,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 				tags = append(tags, args[i+1])
 			}
 		}
-		Expect(tags).To(Equal([]string{"global.image.tag=demo-v1.0"}))
+		Expect(tags).To(Equal([]string{"global.image.tag=" + normalizeDemoImageTag("demo-v1.0", runtime.GOARCH)}))
 	})
 
 	It("UT-INFRA-FLEETDEMO-047 [BR-PLATFORM-014]: uses the image repository override for local and fleet demos", func() {
@@ -413,6 +414,41 @@ var _ = Describe("buildDemoHelmArgs", func() {
 	It("UT-INFRA-FLEETDEMO-019: installs into whatever --namespace the caller passes in", func() {
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "some-other-namespace", baseFleetOpts, baseOpts, "/tmp/sp.rego", "/tmp/aa.rego")
 		Expect(args).To(ContainElements("--namespace", "some-other-namespace"))
+	})
+})
+
+var _ = Describe("demo local image loading", func() {
+	It("UT-INFRA-FLEETDEMO-051 [BR-PLATFORM-014]: normalizes image tags to the target architecture", func() {
+		Expect(normalizeDemoImageTag("pr-123", "amd64")).To(Equal("pr-123-amd64"))
+		Expect(normalizeDemoImageTag("pr-123", "arm64")).To(Equal("pr-123-arm64"))
+		Expect(normalizeDemoImageTag("pr-123-arm64", "arm64")).To(Equal("pr-123-arm64"))
+		Expect(normalizeDemoImageTag("pr-123-amd64", "arm64")).To(Equal("pr-123-arm64"))
+	})
+
+	It("UT-INFRA-FLEETDEMO-049 [BR-PLATFORM-014]: builds all native local image references without mock-llm", func() {
+		expected := []string{
+			"localhost/datastorage:demo-tag",
+			"localhost/gateway:demo-tag",
+			"localhost/aianalysis:demo-tag",
+			"localhost/authwebhook:demo-tag",
+			"localhost/notification:demo-tag",
+			"localhost/remediationorchestrator:demo-tag",
+			"localhost/signalprocessing:demo-tag",
+			"localhost/workflowexecution:demo-tag",
+			"localhost/effectivenessmonitor:demo-tag",
+			"localhost/kubernautagent:demo-tag",
+			"localhost/apifrontend:demo-tag",
+			"localhost/fleetmetadatacache:demo-tag",
+			"localhost/db-migrate:demo-tag",
+		}
+
+		Expect(demoLocalImageReferences("localhost/", "demo-tag")).To(Equal(expected))
+	})
+
+	It("UT-INFRA-FLEETDEMO-050 [BR-PLATFORM-014]: recognizes localhost repositories for Kind loading", func() {
+		Expect(isLocalDemoImageRepository("localhost")).To(BeTrue())
+		Expect(isLocalDemoImageRepository("localhost/kubernaut")).To(BeTrue())
+		Expect(isLocalDemoImageRepository("quay.io/kubernaut-ai")).To(BeFalse())
 	})
 })
 

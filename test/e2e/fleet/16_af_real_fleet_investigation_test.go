@@ -38,12 +38,6 @@ import (
 //     E2E coverage in this suite.
 //   - 05_af_preflight_oauth2_test.go proves Keycloak + gateway OAuth2 works
 //     in isolation, but likewise never constructs AF's own client.
-//   - test/e2e/fullpipeline/10_af_fleet_cluster_id_test.go (Gap C) does call
-//     the real AF binary via real A2A with cluster_id, but fullpipeline is a
-//     SINGLE Kind cluster -- "remote" clusters there are a fiction backed by
-//     the same local cluster, so it can prove cluster_id survives AF's
-//     server-side plumbing (RRContext, artifacts) but can never prove a
-//     cross-cluster kubectl read against a genuinely separate control plane.
 //
 // This test closes both gaps at once by driving AF's real A2A endpoint in
 // THIS suite, where remote-cluster is a real second Kind cluster reached

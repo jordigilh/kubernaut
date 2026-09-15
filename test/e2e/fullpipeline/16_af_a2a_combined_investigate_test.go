@@ -47,7 +47,7 @@ import (
 // the mock-llm's NextToolCall $from_tool resolution fix (the actual #1853
 // root cause — the server-generated rr_id from kubernaut_remediate must
 // reach kubernaut_investigate's arguments without a hardcoded/pre-known ID).
-var _ = Describe("AF A2A Combined Remediate+Investigate Full Pipeline [E2E-FP-1853-001]", Label("fp", "af", "a2a", "interactive", "issue-1853"), func() {
+var _ = Describe("AF A2A Combined Remediate+Investigate Full Pipeline [E2E-FP-1853-001]", Label("fp", "af", "a2a", "interactive", "issue-1853"), Serial, func() {
 
 	It("should chain kubernaut_remediate into kubernaut_investigate from a single combined message, then stop at RCA", NodeTimeout(4*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["combined-investigate"]

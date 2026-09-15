@@ -2,6 +2,7 @@ package apifrontend_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,7 +25,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := defaultFixture
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w01")}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w01"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w01",
@@ -44,11 +45,28 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		})
 	})
 
+	It("IT-AF-2025-033: HandleRemediate rejects RR creation when ScopeChecker is unavailable", func() {
+		ctx := context.Background()
+		_, err := tools.HandleRemediate(ctx, &tools.ToolDeps{
+			Client:       k8sClient,
+			ControllerNS: defaultFixture,
+			Triager:      defaultTestTriagerIT(defaultFixture, "Deployment", "web-scope-unavailable"),
+		}, &tools.RemediateArgs{
+			Namespace:   defaultFixture,
+			Kind:        "Deployment",
+			Name:        "web-scope-unavailable",
+			Description: "scope checker integration rejection",
+			APIVersion:  "apps/v1",
+		}, "it-user")
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+	})
+
 	It("IT-AF-1332-W02: HandleRemediate does NOT create InvestigationSession", func() {
 		ctx := context.Background()
 		ns := defaultFixture
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w02")}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w02"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w02",
@@ -148,7 +166,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ns := defaultFixture
 		auditRecorder.Reset()
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w06")}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder, Triager: defaultTestTriagerIT(ns, "Deployment", "web-1332-w06"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w06",

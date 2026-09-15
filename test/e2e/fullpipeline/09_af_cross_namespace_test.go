@@ -42,7 +42,7 @@ import (
 //   - No InvestigationSession is created (autonomous flow, Issue #1332)
 //
 // This completes the Pyramid Invariant E2E tier for Issue #1292.
-var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057", "issue-1332"), func() {
+var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057", "issue-1332"), Serial, func() {
 
 	It("should create RR in kubernaut-system with targetResource in workload namespace", func() {
 		By("Verifying AF is reachable")
