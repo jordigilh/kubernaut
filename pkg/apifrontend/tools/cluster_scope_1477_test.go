@@ -23,11 +23,11 @@ type logCaptureSink struct {
 	kvPairs  []map[string]interface{}
 }
 
-func (s *logCaptureSink) Init(logr.RuntimeInfo)                    {}
-func (s *logCaptureSink) Enabled(int) bool                         { return true }
-func (s *logCaptureSink) WithValues(...interface{}) logr.LogSink   { return s }
-func (s *logCaptureSink) WithName(string) logr.LogSink             { return s }
-func (s *logCaptureSink) Error(error, string, ...interface{})      {}
+func (s *logCaptureSink) Init(logr.RuntimeInfo)                  {}
+func (s *logCaptureSink) Enabled(int) bool                       { return true }
+func (s *logCaptureSink) WithValues(...interface{}) logr.LogSink { return s }
+func (s *logCaptureSink) WithName(string) logr.LogSink           { return s }
+func (s *logCaptureSink) Error(error, string, ...interface{})    {}
 func (s *logCaptureSink) Info(_ int, msg string, keysAndValues ...interface{}) {
 	s.messages = append(s.messages, msg)
 	kv := make(map[string]interface{})
@@ -98,7 +98,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				ControllerNS: "kubernaut-system",
 				Mapper:       newScopeAwareMapper(),
 				Triager:      defaultTestTriager("", "Node", "worker-1"),
-			}
+				ScopeChecker: testAlwaysManagedScopeChecker()}
 			result, err := tools.HandleInvestigateAlert(ctx, cfg,
 				&tools.InvestigateAlertArgs{
 					AlertName:  "KubeNodeNotReady",
@@ -205,11 +205,11 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    cfg.Client,
-					Namespace: "kubernaut-system",
-					Triager:   defaultTestTriager("", "Node", "worker-1"),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       cfg.Client,
+					Namespace:    "kubernaut-system",
+					Triager:      defaultTestTriager("", "Node", "worker-1"),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "v1",
 					Kind:       "Node",
 					Name:       "worker-1",

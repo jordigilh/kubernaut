@@ -21,6 +21,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	gatewaytypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedscope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 type noopPromClientIT struct{}
@@ -84,6 +85,16 @@ func defaultTestTriagerIT(namespace, kind, name string, clusterID ...string) *se
 	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name, clusterID: alertClusterID}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }
 
+type alwaysManagedScopeCheckerIT struct{}
+
+func (alwaysManagedScopeCheckerIT) IsManagedResource(context.Context, sharedscope.ResourceIdentity) (bool, error) {
+	return true, nil
+}
+
+func alwaysManagedScopeChecker() sharedscope.ScopeChecker {
+	return alwaysManagedScopeCheckerIT{}
+}
+
 // unnamedAlertTestTriagerIT resolves a severity from a resource-matching
 // firing alert with no "alertname" label, so signalNameFromTriage() falls
 // through to "" -- for IT tests proving the signalName K8s-events/"unknown"
@@ -117,7 +128,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, nsObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-w01")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT(ns, "Deployment", "web-w01"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-w01",
@@ -141,10 +152,26 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		})
 	})
 
+	It("IT-AF-2025-001: HandleCreateRR rejects RR creation when ScopeChecker is unavailable", func() {
+		ctx := context.Background()
+		_, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{
+			Client:       k8sClient,
+			ControllerNS: defaultFixture,
+			Triager:      defaultTestTriagerIT(defaultFixture, "Deployment", "web-scope-unavailable"),
+		}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
+			Kind:        "Deployment",
+			Name:        "web-scope-unavailable",
+			Description: "scope checker integration rejection",
+		}, "it-user")
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+	})
+
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", "web-w02")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", "web-w02"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w02",
@@ -166,7 +193,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03",
@@ -214,7 +241,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = dynamicClient.Resource(eventsGVR).Namespace(defaultFixture).Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03b")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03b"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03b",
@@ -250,7 +277,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		}
 		triager := severity.NewTriager(promClient, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w04",
@@ -271,7 +298,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		cfg := severity.DefaultConfig()
 		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-1839-nogrounding",
@@ -307,7 +334,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, workloadNSObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: controllerNS, Triager: defaultTestTriagerIT(workloadNS, "Deployment", "web-1292-w01")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: controllerNS, Triager: defaultTestTriagerIT(workloadNS, "Deployment", "web-1292-w01"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   workloadNS,
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
@@ -364,7 +391,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		resourceName := "web-fleet-004-" + uuid.New().String()[:6]
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", resourceName, "prod-east-1")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", resourceName, "prod-east-1"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        resourceName,
@@ -393,7 +420,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		baseName := "web-fleet-005-" + uuid.New().String()[:6]
 
-		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-east")}, &tools.CreateRRArgs{
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-east"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
@@ -403,7 +430,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result1.AlreadyExists).To(BeFalse())
 
-		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-west")}, &tools.CreateRRArgs{
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", baseName, "cluster-west"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
@@ -426,7 +453,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Auditor: auditRecorder, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", "web-w06")}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Auditor: auditRecorder, Triager: defaultTestTriagerIT(defaultFixture, "Deployment", "web-w06"), ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w06",
