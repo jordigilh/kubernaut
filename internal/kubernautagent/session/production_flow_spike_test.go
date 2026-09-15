@@ -75,14 +75,25 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 		It("events emitted by the investigation goroutine reach the bridge channel", func() {
 			investigationDone := make(chan struct{})
-			var sentCount atomic.Int64
-			var droppedCount atomic.Int64
+			var attemptedCount atomic.Int64
+			var immediateSentCount atomic.Int64
+			var notImmediatelySentCount atomic.Int64
 			var nilSinkCount atomic.Int64
 
 			// Step 1: AA submits investigation → StartInteractiveSession
 			pendingID, err := mgr.StartInteractiveSession(context.Background(),
 				func(ctx context.Context) (*katypes.InvestigationResult, error) {
 					// Simulate investigation loop: emit events across 5 turns
+					emit := func(eventType string, turn int, data map[string]interface{}) {
+						attemptedCount.Add(1)
+						if emitToSink(ctx, eventType, turn, data) {
+							immediateSentCount.Add(1)
+						} else {
+							// LazySink returns false both when it buffers an event
+							// before Subscribe and when an attached channel is full.
+							notImmediatelySentCount.Add(1)
+						}
+					}
 					for turn := 0; turn < 5; turn++ {
 						sink := session.EventSinkFromContext(ctx)
 						if sink == nil {
@@ -90,32 +101,17 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 							logger.Info("investigation: sink nil", "turn", turn)
 						}
 
-						ok := emitToSink(ctx, "reasoning_delta", turn, map[string]interface{}{
+						emit("reasoning_delta", turn, map[string]interface{}{
 							"content_preview": fmt.Sprintf("Turn %d analysis...", turn),
 						})
-						if ok {
-							sentCount.Add(1)
-						} else {
-							droppedCount.Add(1)
-						}
 
-						ok = emitToSink(ctx, "tool_call_start", turn, map[string]interface{}{
+						emit("tool_call_start", turn, map[string]interface{}{
 							"tool_name": "kubectl_get",
 						})
-						if ok {
-							sentCount.Add(1)
-						} else {
-							droppedCount.Add(1)
-						}
 
-						ok = emitToSink(ctx, "tool_result", turn, map[string]interface{}{
+						emit("tool_result", turn, map[string]interface{}{
 							"result_preview": "pods listed",
 						})
-						if ok {
-							sentCount.Add(1)
-						} else {
-							droppedCount.Add(1)
-						}
 
 						time.Sleep(10 * time.Millisecond)
 					}
@@ -138,6 +134,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 			// Step 4: Start bridge goroutine (simulates EventLogBridge.Run)
 			var bridgeReceived atomic.Int64
+			var bridgeEvents []session.InvestigationEvent
 			bridgeDone := make(chan struct{})
 			go func() {
 				defer close(bridgeDone)
@@ -146,6 +143,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 					if !ok {
 						return
 					}
+					bridgeEvents = append(bridgeEvents, evt)
 					bridgeReceived.Add(1)
 					logger.Info("bridge received event",
 						"type", evt.Type,
@@ -162,21 +160,30 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 			// Verify
 			logger.Info("SPIKE RESULTS",
-				"sent", sentCount.Load(),
-				"dropped", droppedCount.Load(),
+				"attempted", attemptedCount.Load(),
+				"immediate_sent", immediateSentCount.Load(),
+				"not_immediately_sent", notImmediatelySentCount.Load(),
 				"nil_sink", nilSinkCount.Load(),
 				"bridge_received", bridgeReceived.Load())
 
-			Expect(sentCount.Load()).To(BeNumerically(">", 0), "emitToSink should have sent events")
-			// Events emitted before Subscribe activates the LazySink are
-			// intentionally dropped (sink is nil). This is the designed
-			// behavior — not a bug. The race between LaunchDeferredInvestigation
-			// and Subscribe means early-turn events may be dropped.
-			totalEmitted := sentCount.Load() + droppedCount.Load()
-			Expect(totalEmitted).To(BeNumerically("==", 15), "all 15 events (5 turns * 3) should be accounted for")
-			// Bridge receives sent events PLUS the EventTypeComplete emitted by
-			// the Manager's emitCompleteEvent when the investigation goroutine finishes.
-			Expect(bridgeReceived.Load()).To(Equal(sentCount.Load()+1), "bridge should receive all sent events + complete event")
+			Expect(attemptedCount.Load()).To(Equal(int64(15)), "investigation should attempt all 15 events (5 turns * 3)")
+			// The ordering of LaunchDeferredInvestigation and Subscribe is
+			// intentionally scheduler-dependent. A false Emit result may mean
+			// buffered-for-replay rather than lost; the bridge is the source of
+			// truth for delivery. With only 15 events and a 64-entry channel,
+			// every attempted event must arrive, followed by one completion event.
+			Expect(bridgeReceived.Load()).To(Equal(attemptedCount.Load()+1), "bridge should receive every attempted event plus complete event")
+			Expect(bridgeEvents).To(HaveLen(16))
+			for turn := 0; turn < 5; turn++ {
+				base := turn * 3
+				Expect(bridgeEvents[base].Type).To(Equal(session.EventTypeReasoningDelta))
+				Expect(bridgeEvents[base].Turn).To(Equal(turn))
+				Expect(bridgeEvents[base+1].Type).To(Equal(session.EventTypeToolCallStart))
+				Expect(bridgeEvents[base+1].Turn).To(Equal(turn))
+				Expect(bridgeEvents[base+2].Type).To(Equal(session.EventTypeToolResult))
+				Expect(bridgeEvents[base+2].Turn).To(Equal(turn))
+			}
+			Expect(bridgeEvents[15].Type).To(Equal(session.EventTypeComplete), "manager should emit exactly one terminal completion event")
 		})
 	})
 
