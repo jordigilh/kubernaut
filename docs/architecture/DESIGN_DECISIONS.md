@@ -126,6 +126,11 @@
 | DD-TEST-016 | Explicit Transcript Scenarios for A2A E2E Tests | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-016-a2a-transcript-scenario-harness.md](decisions/DD-TEST-016-a2a-transcript-scenario-harness.md) |
 | DD-TEST-017 | Structured Mock-LLM Scenario Selectors | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-017-structured-mock-llm-scenario-selectors.md](decisions/DD-TEST-017-structured-mock-llm-scenario-selectors.md) |
 | DD-AF-015 | Session-Scoped In-Process Event Router | ✅ Approved | 2026-09-13 | [DD-AF-015-session-scoped-event-router.md](decisions/DD-AF-015-session-scoped-event-router.md) |
+| ADR-075 | Multi-Pillar Data Contract Extensibility | 📋 Proposed | 2026-09-14 | [ADR-075-multi-pillar-data-contract-extensibility.md](decisions/ADR-075-multi-pillar-data-contract-extensibility.md) |
+| DD-CONTRACT-003 | Pillar Extension Envelope | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-003-pillar-extension-envelope.md](decisions/DD-CONTRACT-003-pillar-extension-envelope.md) |
+| DD-CONTRACT-004 | ProviderData Compatibility Boundary | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-004-provider-data-compatibility.md](decisions/DD-CONTRACT-004-provider-data-compatibility.md) |
+| DD-CONTRACT-005 | Multi-Pillar Propagation Boundaries | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-005-multi-pillar-propagation-boundaries.md](decisions/DD-CONTRACT-005-multi-pillar-propagation-boundaries.md) |
+| DD-CONTRACT-006 | Pillar Safety and Audit Governance | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-006-pillar-safety-audit-governance.md](decisions/DD-CONTRACT-006-pillar-safety-audit-governance.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
@@ -167,5 +172,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: May 23, 2026
+**Last Updated**: September 14, 2026
 **Maintained By**: Kubernaut Architecture Team

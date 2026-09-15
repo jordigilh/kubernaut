@@ -92,6 +92,8 @@ Comprehensive system architecture with 630+ business requirements coverage.
 - **[Workflow Engine & Orchestration Architecture](architecture/WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)** - Adaptive orchestration and step execution
 - **[Intelligence & Pattern Discovery Architecture](architecture/INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)** - ML analytics and anomaly detection
 - **[Storage & Data Management Architecture](architecture/STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md)** - Multi-modal storage and caching strategies
+- **[ADR-075: Multi-Pillar Data Contract Extensibility](architecture/decisions/ADR-075-multi-pillar-data-contract-extensibility.md)** - Proposed extensible contract for Threat, Supply Chain, Compliance, Cost, and future pillars
+- **[Multi-Pillar Contract DDs](architecture/DESIGN_DECISIONS.md)** - Proposed envelope, compatibility, propagation, and safety/audit decisions
 - **Technical Analysis**:
   - **[Vector Database Analysis](architecture/analysis/VECTOR_DATABASE_ANALYSIS.md)** - Storage architecture decisions
   - **[RAG Enhancement Analysis](architecture/analysis/RAG_ENHANCEMENT_ANALYSIS.md)** - AI decision enhancement
@@ -171,6 +173,7 @@ Comprehensive business requirements for Phase 2 development.
   - **[Workflow Engine Enhancement](requirements/enhancements/WORKFLOW_ENGINE.md)** - Resilient workflow engine capabilities
   - **[Investigation/Execution Separation](requirements/enhancements/HOLMESGPT_INVESTIGATION_SEPARATION.md)** - Historical Jan 2025 proposal; corrected under #1806 to confirm the core principle is implemented (AIAnalysis+KA for investigation, WorkflowExecution for execution), though the document's specific mechanisms are superseded
   - **[AI Context Orchestration](requirements/enhancements/AI_CONTEXT_ORCHESTRATION.md)** - 🗄️ Superseded (#1806) — standalone Context API service deprecated, see DD-CONTEXT-006
+  - **[Threat Remediation Product Discovery](requirements/enhancements/THREAT_REMEDIATION_PRODUCT_DISCOVERY.md)** - Persisted discovery analysis and candidate requirements for a future security response capability
 
 ### 📊 **Analysis & Research**
 Comprehensive analysis documents and research findings.
