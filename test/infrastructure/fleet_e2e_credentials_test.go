@@ -106,6 +106,13 @@ var _ = Describe("buildAlertManagerManifest", func() {
 		Expect(manifest).To(ContainSubstring("name: inter-service-ca"))
 	})
 
+	It("UT-INFRA-FLEET-TLS-004: AlertManager's required CA volume is namespace-local", func() {
+		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
+		Expect(manifest).To(ContainSubstring("name: alertmanager\n  namespace: monitoring"))
+		Expect(manifest).To(ContainSubstring("- name: inter-service-ca\n          mountPath: /etc/tls-ca"))
+		Expect(manifest).To(ContainSubstring("- name: inter-service-ca\n        configMap:\n          name: inter-service-ca"))
+	})
+
 	It("UT-INFRA-FLEET-TLS-003: AlertManager embedded configuration is valid YAML", func() {
 		manifest := buildAlertManagerManifest("monitoring", "kubernaut-system", "test-token")
 		config := strings.SplitN(manifest, "  alertmanager.yml: |\n", 2)

@@ -259,6 +259,12 @@ func SetupDemoMonitoringInfrastructure(ctx context.Context, kubeconfigPath strin
 	if err := CreateTestNamespace(ctx, monitoringNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create %s namespace: %w", monitoringNamespace, err)
 	}
+	// AlertManager mounts inter-service-ca from its own namespace. OIDC setup
+	// creates the shared CA in kubernaut-system, so replicate the trust bundle
+	// before applying the monitoring workload (Issue #2405).
+	if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, monitoringNamespace, writer); err != nil {
+		return fmt.Errorf("failed to replicate inter-service CA to %s: %w", monitoringNamespace, err)
+	}
 	const serviceAccountName = "demo-alertmanager-gateway"
 	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, kubernautSystem, kubeconfigPath, serviceAccountName, writer); err != nil {
 		return fmt.Errorf("failed to create AlertManager Gateway ServiceAccount: %w", err)
