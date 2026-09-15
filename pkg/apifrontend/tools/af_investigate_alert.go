@@ -34,11 +34,11 @@ type AlertISSignaler interface {
 }
 
 // InvestigateAlertConfig holds dependencies for kubernaut_investigate_alert.
-// All nil-safe: nil PromClient skips alert validation, nil Mapper skips
-// RESTMapper scope checks, nil ValidationFailures skips metric emission,
-// nil Signaler skips IS CRD co-creation (backward compat), nil ScopeChecker
-// skips management-scope validation (backward compat; ADR-053 Addendum
-// "Point 3", #2025/#2022).
+// All optional dependencies remain nil-safe except ScopeChecker: nil PromClient
+// skips alert validation, nil Mapper skips RESTMapper scope checks, nil
+// ValidationFailures skips metric emission, nil Signaler skips IS CRD
+// co-creation, while nil ScopeChecker rejects RR creation because management
+// scope must be verified (ADR-053 Addendum "Point 3", #2025/#2022).
 type InvestigateAlertConfig struct {
 	Client             crclient.Client
 	DynClient          dynamic.Interface

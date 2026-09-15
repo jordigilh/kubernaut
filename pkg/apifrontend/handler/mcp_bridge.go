@@ -88,7 +88,7 @@ type MCPBridgeConfig struct {
 	RESTMapper meta.RESTMapper
 	// ScopeChecker rejects kubernaut_investigate RR creation for resources
 	// outside Kubernaut's management scope (ADR-053; #2025, main-tracking
-	// clone of #2022). Nil skips scope validation (backward compat).
+	// clone of #2022). Nil fails closed because scope cannot be verified.
 	ScopeChecker scope.ScopeChecker
 	// ClusterLister names known fleet clusters for the unattributed-refusal
 	// message (#2362). Nil-safe: a nil lister preserves the legacy message.

@@ -34,11 +34,10 @@ type ToolDeps struct {
 	ControllerNS string
 	Triager      *severity.Triager
 	Auditor      audit.Emitter
-	// ScopeChecker, when non-nil, rejects RR creation for resources outside
-	// Kubernaut's management scope (ADR-053 Addendum "Point 3", #2025/#2022)
-	// before a Triager call or RR object is wastefully created. Nil is
-	// backward-compatible: scope validation is skipped (matches Triager's
-	// own nil-safe convention above).
+	// ScopeChecker rejects RR creation for resources outside Kubernaut's
+	// management scope (ADR-053 Addendum "Point 3", #2025/#2022) before a
+	// Triager call or RR object is wastefully created. A nil checker fails closed
+	// because management scope must be verified before an RR is created.
 	ScopeChecker scope.ScopeChecker
 	// ClusterLister names known fleet clusters for the unattributed-refusal
 	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
