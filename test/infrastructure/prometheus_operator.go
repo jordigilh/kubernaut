@@ -186,6 +186,24 @@ subsets:
 	if options.thanosEnabled {
 		thanosConfig = fmt.Sprintf("  thanos:\n    image: %s\n", ThanosImage)
 	}
+	fleetInteractiveBridgeRule := ""
+	if options.thanosEnabled {
+		// This is an E2E fleet grounding fixture, not part of local demo
+		// monitoring. Local Prometheus must not emit a fleet alert for a
+		// resource that only exists on the remote cluster.
+		fleetInteractiveBridgeRule = fmt.Sprintf(`    - alert: KAInteractiveFleetBridgeGrounding
+      expr: vector(1) > 0
+      for: 0s
+      labels:
+        severity: warning
+        source: prometheus
+        cluster: %s
+        namespace: kubernaut-system
+        kind: Deployment
+        name: ka-interactive-fleet-target
+      annotations:
+        summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"`, options.clusterLabel)
+	}
 
 	return fmt.Sprintf(`---
 apiVersion: v1
@@ -319,18 +337,7 @@ spec:
       annotations:
         summary: 'Container {{ $labels.container }} in pod {{ $labels.pod }} is restarting repeatedly ({{ $value | humanize }} restarts in 5m).'
         description: 'A container in namespace {{ $labels.namespace }} is failing to reach a stable running state. Elevated restart rate may indicate service degradation.'
-    - alert: KAInteractiveFleetBridgeGrounding
-      expr: vector(1) > 0
-      for: 0s
-      labels:
-        severity: warning
-        source: prometheus
-        cluster: %[4]s
-        namespace: kubernaut-system
-        kind: Deployment
-        name: ka-interactive-fleet-target
-      annotations:
-        summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"
+%[10]s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: Prometheus
@@ -367,5 +374,5 @@ spec:
     - name: %[7]s
       namespace: %[1]s
       port: %[9]s
-%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName), nil
+%[8]s`, namespace, alertManagerBridge, PrometheusNodePort, options.clusterLabel, options.prometheusName, PrometheusImage, alertManagerName, thanosConfig, alertManagerPortName, fleetInteractiveBridgeRule), nil
 }
