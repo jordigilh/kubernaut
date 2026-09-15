@@ -49,7 +49,7 @@ import (
 // Turn 2: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
 // Turn 3: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
 // Turn 4: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
-var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-2390"), func() {
+var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-2390"), Serial, func() {
 
 	It("should complete 4-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]

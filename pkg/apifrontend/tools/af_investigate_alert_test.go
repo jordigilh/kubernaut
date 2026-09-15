@@ -26,7 +26,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			Client:       newTypedFakeClient(),
 			ControllerNS: "kubernaut-system",
 			Triager:      defaultTestTriager("prod", "Deployment", "web"),
-		}
+			ScopeChecker: testAlwaysManagedScopeChecker()}
 	}
 
 	Describe("Input validation — resource scope (UT-AF-1372-010..019)", func() {
@@ -482,6 +482,21 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
+
+		It("UT-AF-2025-022: rejects RR creation when ScopeChecker is unavailable", func() {
+			cfg := baseCfg()
+			cfg.ScopeChecker = nil
+			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
+				&tools.InvestigateAlertArgs{
+					AlertName:  "KubePodCrashLooping",
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "web-unscoped",
+					Namespace:  "prod",
+				}, "user")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		})
 	})
 
 	Describe("Tool constructor", func() {
@@ -504,7 +519,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Triager:      defaultTestTriager("demo-gateway", "Deployment", "api-frontend"),
-			}, &tools.InvestigateAlertArgs{
+				ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.InvestigateAlertArgs{
 				AlertName:  "ScalingLimited",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",
@@ -556,7 +571,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
 				Triager:      defaultTestTriager("prod", "Deployment", "web", "cluster-fleet-it-001"),
-			}, &tools.InvestigateAlertArgs{
+				ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.InvestigateAlertArgs{
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",

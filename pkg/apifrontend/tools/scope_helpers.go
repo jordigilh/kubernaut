@@ -51,9 +51,9 @@ func RESTMapperFromContext(ctx context.Context) meta.RESTMapper {
 // package's argument-count convention (revive argument-limit) and because
 // it is exactly the shape checker.IsManagedResource already expects.
 //
-// nil checker = always managed (graceful degradation, matches the nil-safe
-// Mapper/PromClient convention elsewhere in this package) — returns
-// managed=true with an empty message.
+// A nil checker means management scope cannot be verified. RR creation fails
+// closed in that case; callers must never create a RemediationRequest without
+// proving that its target is managed by Kubernaut.
 //
 // On a scope-infrastructure error, fails closed (managed=false), mirroring
 // RO's CheckUnmanagedResource fail-closed behavior
@@ -71,13 +71,22 @@ func RESTMapperFromContext(ctx context.Context) meta.RESTMapper {
 // the legacy message byte-for-byte -- with no remotes, local is the only
 // possible cluster and there is nothing to disambiguate.
 func checkRRScope(ctx context.Context, checker scope.ScopeChecker, auditor audit.Emitter, username string, target scope.ResourceIdentity, lister ClusterLister) (managed bool, message string) {
-	if checker == nil {
-		return true, ""
-	}
-
 	clusterCtx := "local"
 	if target.ClusterID != "" {
 		clusterCtx = target.ClusterID
+	}
+
+	if checker == nil {
+		detail := map[string]string{
+			"namespace": target.Namespace,
+			"kind":      target.Kind,
+			"name":      target.Name,
+			"reason":    "scope checker unavailable",
+		}
+		logr.FromContextOrDiscard(ctx).Error(nil, "scope validation unavailable — rejecting RR creation (fail-closed)",
+			"cluster", clusterCtx, "namespace", target.Namespace, "kind", target.Kind, "name", target.Name)
+		emitScopeRejected(ctx, auditor, username, target, detail)
+		return false, "scope validation unavailable; refusing to create a remediation request"
 	}
 
 	managed, err := checker.IsManagedResource(ctx, target)

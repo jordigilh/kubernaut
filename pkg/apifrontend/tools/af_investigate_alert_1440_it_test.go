@@ -79,7 +79,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				ControllerNS: "kubernaut-system",
 				Signaler:     signaler,
 				Triager:      defaultTestTriager("prod", "Deployment", "web"),
-			}
+				ScopeChecker: testAlwaysManagedScopeChecker()}
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "sre-alice",
@@ -132,7 +132,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				ControllerNS: "kubernaut-system",
 				Signaler:     signaler,
 				Triager:      defaultTestTriager("prod", "Deployment", "web-2265-it"),
-			}
+				ScopeChecker: testAlwaysManagedScopeChecker()}
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "sre-alice",

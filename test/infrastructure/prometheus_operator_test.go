@@ -210,6 +210,7 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(manifest).To(ContainSubstring("name: alertmanager-svc"))
 		Expect(manifest).NotTo(ContainSubstring("thanos:"))
 		Expect(manifest).NotTo(ContainSubstring("image: " + ThanosImage))
+		Expect(manifest).NotTo(ContainSubstring("KAInteractiveFleetBridgeGrounding"))
 	})
 })
 

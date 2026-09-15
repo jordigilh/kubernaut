@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -36,9 +37,9 @@ import (
 //
 // hack/setup-demo-infra's counterpart to InstallFullPipelineHelmChart
 // (fullpipeline_e2e_helm.go): same exec.Command("helm", ...) pattern, but for
-// the demo/QE entry point rather than the E2E Ginkgo suite -- no mock-LLM, no
-// DEX test double, no locally-built/retagged images (this installs against
-// the chart's own default public images, same as a real user would).
+// the demo/QE entry point rather than the E2E Ginkgo suite -- no mock-LLM or
+// DEX test double. It installs against the chart's default public images unless
+// a local image repository and tag are explicitly provided.
 //
 // Default experience is Console-first (BR-PLATFORM-014): Gateway starts
 // disabled so a new user investigates/remediates the first demo scenario via
@@ -72,6 +73,25 @@ const (
 	demoPGSecretName     = "postgresql-secret"
 	demoValkeySecretName = "valkey-secret"
 )
+
+// demoLocalImageServices matches the Kubernaut-published images consumed by
+// the chart. Mock LLM is intentionally excluded: the demo uses the configured
+// real LLM backend.
+var demoLocalImageServices = []string{
+	"datastorage",
+	"gateway",
+	"aianalysis",
+	"authwebhook",
+	"notification",
+	"remediationorchestrator",
+	"signalprocessing",
+	"workflowexecution",
+	"effectivenessmonitor",
+	"kubernautagent",
+	"apifrontend",
+	"fleetmetadatacache",
+	"db-migrate",
+}
 
 // demoDefaultSPPolicyRego is the baked-in SignalProcessing default
 // (Issue #2337): a genuine catch-all -- classifies environment/severity/
@@ -135,9 +155,10 @@ type DemoHelmOptions struct {
 	// does not bundle default Rego policies").
 	SPPolicyFile string
 	AAPolicyFile string
-	// ImageTag optionally overrides the container image tag for the
-	// demo chart (global.image.tag). When empty (the default), no --set is
-	// emitted and the chart's kubernaut.image helper falls back to
+	// ImageTag optionally overrides the base container image tag for the demo
+	// chart (global.image.tag). Explicit tags are normalized to the host
+	// architecture suffix (-amd64 or -arm64). When empty (the default), no
+	// --set is emitted and the chart's kubernaut.image helper falls back to
 	// .Chart.AppVersion (global.image.tag defaults to "").
 	ImageTag string
 	// ImageRepository optionally overrides the base repository for the demo
@@ -286,13 +307,10 @@ func appendDemoHelmOverrides(args []string, opts DemoHelmOptions) []string {
 	}
 
 	if opts.ImageTag != "" {
-		// Optional tag override (global.image.tag, consumed by the chart's
-		// kubernaut.image helper). Deliberately omitted when empty so the
-		// helper falls back to .Chart.AppVersion -- an unconditional
-		// "--set global.image.tag=" here would be shadowed by
-		// buildFleetOAuth2HelmArgs below anyway (helm --set is last-wins),
-		// which is why a provided override previously never took effect.
-		args = append(args, "--set", "global.image.tag="+opts.ImageTag)
+		// The image build targets append the host architecture to explicit
+		// tags. Keep the chart reference aligned with those images while
+		// accepting either a base tag or an already-normalized tag.
+		args = append(args, "--set", "global.image.tag="+normalizeDemoImageTag(opts.ImageTag, runtime.GOARCH))
 	}
 
 	if opts.ImageRepository != "" {
@@ -324,6 +342,48 @@ func appendDemoHelmOverrides(args []string, opts DemoHelmOptions) []string {
 	// function InstallFullPipelineHelmChart calls for fleet E2E -- a
 	// regression here fails fleet E2E CI, not just this demo-only path.
 	return args
+}
+
+func isLocalDemoImageRepository(repository string) bool {
+	repository = strings.TrimRight(repository, "/")
+	return repository == "localhost" || strings.HasPrefix(repository, "localhost/")
+}
+
+func demoLocalImageReferences(repository, tag string) []string {
+	repository = strings.TrimRight(repository, "/")
+	images := make([]string, 0, len(demoLocalImageServices))
+	for _, service := range demoLocalImageServices {
+		images = append(images, fmt.Sprintf("%s/%s:%s", repository, service, tag))
+	}
+	return images
+}
+
+// normalizeDemoImageTag returns an explicit image tag with one architecture
+// suffix. Tags already carrying either supported suffix are rewritten for the
+// requested architecture so a demo never selects an image for the wrong host.
+func normalizeDemoImageTag(tag, arch string) string {
+	if arch != "amd64" && arch != "arm64" {
+		return tag
+	}
+	tag = strings.TrimSuffix(strings.TrimSuffix(tag, "-amd64"), "-arm64")
+	return tag + "-" + arch
+}
+
+func loadDemoImagesToKind(ctx context.Context, clusterName string, opts DemoHelmOptions, writer io.Writer) error {
+	if opts.ImageRepository == "" || opts.ImageTag == "" || !isLocalDemoImageRepository(opts.ImageRepository) {
+		return nil
+	}
+	if clusterName == "" {
+		return fmt.Errorf("kind cluster name is required when loading local demo images")
+	}
+
+	images := demoLocalImageReferences(opts.ImageRepository, normalizeDemoImageTag(opts.ImageTag, runtime.GOARCH))
+	for i, image := range images {
+		if err := LoadImageToKind(ctx, image, demoLocalImageServices[i], clusterName, writer); err != nil {
+			return fmt.Errorf("failed to load local demo image %s into Kind cluster %q: %w", image, clusterName, err)
+		}
+	}
+	return nil
 }
 
 // buildDemoHelmSecretsManifest renders the Secrets this tool can safely
@@ -413,8 +473,13 @@ func checkSecretExists(ctx context.Context, kubeconfigPath, namespace, secretNam
 //
 // fleetOpts comes from SetupFleetCoreInfrastructureWithGateway's return value
 // in fleet mode. It is nil for local mode, where no fleet values are rendered.
-func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigPath string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, writer io.Writer) error {
+// kindClusterName identifies the cluster whose nodes receive local images
+// before Helm starts; it is empty-safe for callers that use registry images.
+func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, writer io.Writer) error {
 	if err := opts.Validate(); err != nil {
+		return err
+	}
+	if err := loadDemoImagesToKind(ctx, kindClusterName, opts, writer); err != nil {
 		return err
 	}
 

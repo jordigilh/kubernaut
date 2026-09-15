@@ -458,11 +458,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	afRemediateNS = map[string]string{
 		"autonomous":  fmt.Sprintf("fp-auto-%s", uuid.New().String()[:8]),
 		"interactive": fmt.Sprintf("fp-int-%s", uuid.New().String()[:8]),
-		// fleet: dedicated namespace for E2E-AF-1409-001 (#1409 ADR-065), which
-		// exercises kubernaut_remediate with a fleet cluster_id argument chained
-		// into kubernaut_present_decision to prove cluster_id reaches the
-		// SSE-visible investigation_summary artifact end-to-end.
-		"fleet": fmt.Sprintf("fp-fleet-%s", uuid.New().String()[:8]),
 		// interactive-streaming: dedicated namespace for E2E-FP-1189-005, kept
 		// distinct from "interactive" above so its memory-eater Deployment's
 		// signal fingerprint never collides with E2E-FP-1189-003/-004's. This

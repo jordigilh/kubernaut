@@ -152,11 +152,11 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   defaultTestTriager("prod", "Deployment", "web-app"),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      defaultTestTriager("prod", "Deployment", "web-app"),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -584,11 +584,11 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: &ka.MockMCPClient{},
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   ambiguousTestTriager(),
-				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous"},
+					MCPClient:    &ka.MockMCPClient{},
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      ambiguousTestTriager(),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous"},
 				true, "sre-erin",
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -606,11 +606,11 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}
 			confirmed, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   ambiguousTestTriager(),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      ambiguousTestTriager(),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous",
 					ConfirmedSignalName: "TestDefaultAlert",
 				},
@@ -647,12 +647,12 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}})
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Signaler:  recorder,
-					Triager:   defaultTestTriager("prod", "Deployment", "web-2265"),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Signaler:     recorder,
+					Triager:      defaultTestTriager("prod", "Deployment", "web-2265"),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2265",
 				},
 				false, "sre-user",
@@ -680,12 +680,12 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}})
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Signaler:  recorder,
-					Triager:   defaultTestTriager("prod", "Deployment", "web-2265-b"),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Signaler:     recorder,
+					Triager:      defaultTestTriager("prod", "Deployment", "web-2265-b"),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2265-b",
 				},
 				false, "sre-user",
@@ -710,7 +710,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 			first, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), &tools.InvestigateConfig{
-					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager,
+					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager, ScopeChecker: testAlwaysManagedScopeChecker(),
 				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "dedup-2265"},
 				false, "sre-first",
 			)
@@ -719,7 +719,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			recorder := &recordingISSignaler{}
 			second, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), &tools.InvestigateConfig{
-					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager, Signaler: recorder,
+					MCPClient: mockMCP, Client: tc, Namespace: "kubernaut-system", Triager: triager, Signaler: recorder, ScopeChecker: testAlwaysManagedScopeChecker(),
 				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "dedup-2265"},
 				false, "sre-second",
 			)
