@@ -49,7 +49,7 @@ import (
 // once the user genuinely confirms each subsequent phase (interactive mode
 // gates every transition, mirroring E2E-FP-1189-003's turn-per-phase
 // design), the journey completes to a WorkflowExecution.
-var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-1899-001]", Label("fp", "af", "a2a", "interactive", "issue-1899"), func() {
+var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-1899-001]", Label("fp", "af", "a2a", "interactive", "issue-1899"), Serial, func() {
 
 	It("should block a same-turn fire-and-forget discover_workflows attempt, then complete once the user genuinely confirms each phase", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["consent-phase2"]
@@ -211,7 +211,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 // resource), so this is the sharper edge of the #1899 risk: the harness must
 // let the model auto-proceed exactly as far as the declared mode authorizes
 // (through discovery) and no further.
-var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-1899-002]", Label("fp", "af", "a2a", "interactive", "issue-1899"), func() {
+var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-1899-002]", Label("fp", "af", "a2a", "interactive", "issue-1899"), Serial, func() {
 
 	It("should auto-chain through discover_workflows but block a same-turn fire-and-forget select_workflow attempt, then complete once the user genuinely confirms", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["consent-phase3"]
@@ -364,7 +364,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 // #1912's actual claim (driverActive hygiene / no errant reinvocation) must
 // not depend on winning that unrelated, intentionally-non-deterministic race
 // to prove "no WorkflowExecution is ever created for it".
-var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-1912-001]", Label("fp", "af", "a2a", "interactive", "issue-1912"), func() {
+var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-1912-001]", Label("fp", "af", "a2a", "interactive", "issue-1912"), Serial, func() {
 
 	It("should complete the driver session cleanly and never reinvoke into a further workflow action", NodeTimeout(6*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["terminal-1912"]
@@ -500,7 +500,7 @@ var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-191
 // (actionable=false && no workflow) for the backend path -- the IT-level
 // test (actionability_gate_1918_test.go) is what isolates AF's own harness
 // gate specifically, with a controlled fake KA client.
-var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Label("fp", "af", "a2a", "autonomous", "issue-1918"), func() {
+var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Label("fp", "af", "a2a", "autonomous", "issue-1918"), Serial, func() {
 
 	It("should force phase2_blocked and hard-reject discover_workflows when KA's RCA is not actionable, even under full_remediation_autonomous", NodeTimeout(6*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["not-actionable-1918"]

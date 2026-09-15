@@ -319,7 +319,7 @@ type InvestigateConfig struct {
 	// "new investigation" (api_version/kind/name) path (#2025, main-tracking
 	// clone of #2022; ADR-053 Addendum "Point 3"). Not consulted on the
 	// existing-rr_id (takeover) path — that RR was already scope-checked at
-	// its own creation time. Nil skips scope validation (backward compat).
+	// its own creation time. Nil fails closed because scope cannot be verified.
 	ScopeChecker scope.ScopeChecker
 	// ClusterLister names known fleet clusters for the unattributed-refusal
 	// message (#2362). Nil-safe: a nil lister preserves the legacy message.

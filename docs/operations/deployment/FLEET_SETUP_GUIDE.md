@@ -7,6 +7,11 @@ try (or validate) Kubernaut's multi-cluster fleet mode, and contributors who wan
 understand each moving part instead of running it as a black box.
 **Authority**: Issue #54, [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md), `test/infrastructure/fleet_e2e.go` (source of truth for every step below).
 
+**Kind gateway policy**: Kind-based demos and E2E validation use Envoy AI Gateway
+(EAIGW) only. The Kuadrant broker path is retained below as a reference for future
+operator/integration work and must not be used for the v1.6 Kind release path while
+the Kuadrant dependencies in #2309 are being addressed.
+
 ---
 
 ## What you're building
@@ -18,7 +23,7 @@ understand each moving part instead of running it as a black box.
 │  GW · SP · RO · WE · AA · EM · KA · AF · DS  ──────────▲───────────────── │
 │         │ MCP tool calls (Bearer token)                │ OIDC issuer      │
 │         ▼                                               │                 │
-│  Kuadrant MCP Gateway ──registration "remote-cluster"───┘                 │
+│  Envoy AI Gateway ──Backend "remote-cluster"──────────────┘                 │
 │         │ tools/call                                                      │
 │         ▼                                                                 │
 │  bridge Service (kube-mcp-server-remote) ─────┐                           │
@@ -75,7 +80,7 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
-That path provisions the hub, spoke, Keycloak, MCP Gateway, kube-mcp-server,
+That path provisions the hub, spoke, Keycloak, Envoy AI Gateway (EAIGW), kube-mcp-server,
 monitoring, Helm installation, Console access, generated Secrets, default Rego
 policies, and fleet demo instructions. It is Console-first by default; set
 `AUTONOMOUS=true` to enable Gateway-driven remediation. Continue with Path A for
@@ -108,23 +113,27 @@ KUBECONFIG=$REMOTE_KUBECONFIG kubectl get ns kubernaut-workflows  # spoke: dispa
 
 | Endpoint | URL |
 |---|---|
-| Kuadrant MCP Gateway (hub) | `http://localhost:31975/mcp` |
+| Envoy AI Gateway (EAIGW, hub) | `http://localhost:31976/mcp` |
 | Keycloak (hub) | `https://localhost:30557/realms/kubernaut-demo` |
 | Remote cluster identity | `remote-cluster` (every fleet test targets this name) |
 
 To tear down: `kind delete cluster --name fleet-e2e && kind delete cluster --name fleet-e2e-remote`.
 
 This automation lives in `test/infrastructure/fleet_e2e.go`
-(`SetupFleetE2EInfrastructure`) and `fleetmetadatacache_remote_cluster.go`
+(`SetupFleetE2EInfrastructure`, using EAIGW) and `fleetmetadatacache_remote_cluster.go`
 (`SetupRemoteClusterForFMC`) if you want to read the real source instead of the
 condensed steps below.
 
-Skip to [Verify hub+spoke routing](#verify-hubspoke-routing) to start poking at it, or
+Skip to [Verify hub+spoke routing](#verify-hubspoke-routing-eaigw-kind-path) to start poking at it, or
 continue reading for the manual walkthrough.
 
 ---
 
-## Path B: Manual walkthrough
+## Path B: Manual walkthrough (Kuadrant reference only)
+
+The following Kuadrant steps are retained for future operator/integration work. They
+are not a supported Kind configuration for the v1.6 release. Use the automated EAIGW
+path above, or the EAIGW-specific manual variant in Path C, for Kind.
 
 ### B1. Create the hub cluster
 
@@ -486,20 +495,22 @@ propagate external labels to fired alert instances.
 
 ---
 
-## Verify hub+spoke routing
+## Verify hub+spoke routing (EAIGW Kind path)
 
 Send a fleet-scoped alert naming `remote-cluster` and confirm the resulting
 `RemediationRequest` actually routes through the spoke, not the hub:
 
+Set `FLEET_TOKEN` to a fresh Keycloak access token for the fleet client. EAIGW
+forwards this caller token; it does not use the Kuadrant broker credential.
+
 ```bash
-curl -s http://localhost:31975/mcp \
-  -H "Authorization: Bearer $BROKER_TOKEN" -H 'Content-Type: application/json' \
+curl -s http://localhost:31976/mcp \
+  -H "Authorization: Bearer $FLEET_TOKEN" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python3 -m json.tool
 ```
 
-Expect tool names prefixed `remote_cluster_` (e.g. `remote_cluster_resources_get`) —
-confirming the spoke's tools are discoverable, distinct from any `loopback_cluster_`
-tools you may also have registered. Once you post an alert with
+Expect tool names prefixed `remote-cluster__` (e.g. `remote-cluster__resources_get`) —
+confirming the spoke's tools are discoverable through EAIGW. Once you post an alert with
 `labels.cluster_id: remote-cluster` to the Gateway's `/api/v1/signals/prometheus`
 endpoint, check the target namespace on the **spoke**, not the hub:
 
@@ -537,7 +548,7 @@ kind delete cluster --name kubernaut-remote-cluster
 - [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
 - [Fleet Federation Guide](../../architecture/fleet-federation-guide.md) — production onboarding, not local dev
 - [fleet-mcp-gateway-keycloak-local-setup.md](../../development/getting-started/fleet-mcp-gateway-keycloak-local-setup.md) — single-cluster loopback variant this guide extends; B2-B5 are reused here unmodified
-- `test/infrastructure/fleet_e2e.go` (`SetupFleetE2EInfrastructure`, `deployKuadrantRegistrations`) — source of truth for Path A's automation and this guide's hub-side steps
+- `test/infrastructure/fleet_e2e.go` (`SetupFleetE2EInfrastructure`, EAIGW provisioning) — source of truth for Path A's automation and this guide's hub-side steps
 - `test/infrastructure/fleetmetadatacache_remote_cluster.go` (`SetupRemoteClusterForFMC`) — source of truth for this guide's spoke-side steps
 - `test/infrastructure/workflowexecution_e2e_hybrid.go` (`createWorkflowJobExecutorRBAC`) — source of truth for B4's RBAC
 - [charts/kubernaut/README.md](../../../charts/kubernaut/README.md) — full Helm chart install reference (Secrets, Rego policies, LLM provider config)

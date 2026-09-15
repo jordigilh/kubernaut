@@ -39,7 +39,7 @@ import (
 // assertions require the full pipeline to reach a real WorkflowExecution
 // Completed phase, proving the Console-facing experience and the underlying
 // remediation are the same code path end-to-end.
-var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]", Label("fp", "af", "a2a", "interactive", "streaming", "issue-1189"), func() {
+var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]", Label("fp", "af", "a2a", "interactive", "streaming", "issue-1189"), Serial, func() {
 
 	It("should stream 5 SSE turns with visible content and complete the full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive-streaming"]

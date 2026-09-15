@@ -92,11 +92,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   triager,
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -155,11 +155,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   triager,
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -209,12 +209,12 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			))
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					DynClient: dc,
-					Namespace: "kubernaut-system",
-					Triager:   unnamedAlertTestTriager("prod", "Deployment", "web-app-2390"),
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					DynClient:    dc,
+					Namespace:    "kubernaut-system",
+					Triager:      unnamedAlertTestTriager("prod", "Deployment", "web-app-2390"),
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -270,12 +270,12 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			}, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					DynClient: dc,
-					Namespace: "kubernaut-system",
-					Triager:   triager,
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					DynClient:    dc,
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -462,11 +462,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Triager:   triager,
-				}, tools.InvestigateMCPArgs{
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -581,11 +581,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 		tc := newTypedClientForInvestigate()
 		result, err := tools.HandleInvestigationMCPWithRegistry(
 			ctx, &tools.InvestigateConfig{
-				MCPClient: mockMCP,
-				Client:    tc,
-				Namespace: "kubernaut-system",
-				Triager:   triager,
-			}, tools.InvestigateMCPArgs{
+				MCPClient:    mockMCP,
+				Client:       tc,
+				Namespace:    "kubernaut-system",
+				Triager:      triager,
+				ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
 				APIVersion: "apps/v1",
 				Namespace:  "prod",
 				Kind:       "Deployment",

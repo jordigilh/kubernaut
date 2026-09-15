@@ -19,6 +19,7 @@ package apifrontend_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -279,6 +280,26 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			Expect(atomic.LoadInt32(&closerCalled)).To(Equal(int32(1)),
 				"cleanup (closer) must be called when pool is nil — MCP bridge path behavior")
 		})
+	})
+})
+
+var _ = Describe("investigation scope wiring (#2025)", func() {
+	It("IT-AF-2025-053: new RR investigation rejects unavailable ScopeChecker", func() {
+		_, err := tools.HandleInvestigationMCPWithRegistry(
+			context.Background(), &tools.InvestigateConfig{
+				MCPClient: &ka.MockMCPClient{},
+				Client:    k8sClient,
+				Namespace: defaultFixture,
+				Triager:   defaultTestTriagerIT(defaultFixture, "Deployment", "web-scope-unavailable"),
+			}, tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  defaultFixture,
+				Kind:       "Deployment",
+				Name:       "web-scope-unavailable",
+			}, false, "it-user",
+		)
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
 	})
 })
 

@@ -55,6 +55,10 @@ const (
 // JSON-RPC helpers (adapted from test/e2e/apifrontend/helpers_test.go)
 // ────────────────────────────────────────────────────────────────────────────
 
+// FullPipeline A2A specs use one shared SRE identity and are marked Serial to
+// avoid per-user MCP rate-limit contention. Direct service-account MCP specs
+// remain parallel.
+
 func fpBuildJSONRPC(id, method string, params map[string]interface{}) string {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -146,49 +150,6 @@ type fpA2ATaskResult struct {
 		State   string          `json:"state"`
 		Message json.RawMessage `json:"message,omitempty"`
 	} `json:"status"`
-	// Artifacts carries structured DataPart payloads (e.g. investigation_summary,
-	// execution_progress) accumulated on the Task during synchronous message/send
-	// invocation. Used by E2E-AF-1409-001 (#1409) to prove cluster_id reaches the
-	// SSE-visible artifact end-to-end without requiring a live SSE stream.
-	Artifacts []fpA2AArtifact `json:"artifacts,omitempty"`
-}
-
-type fpA2AArtifact struct {
-	ID       string              `json:"artifactId"`
-	Name     string              `json:"name,omitempty"`
-	Metadata map[string]any      `json:"metadata,omitempty"`
-	Parts    []fpA2AArtifactPart `json:"parts"`
-}
-
-type fpA2AArtifactPart struct {
-	Kind string         `json:"kind"`
-	Data map[string]any `json:"data,omitempty"`
-	Text string         `json:"text,omitempty"`
-}
-
-// fpFindArtifactBySchema returns the first artifact in the task whose metadata
-// "schema" field matches the given value (e.g. "investigation_summary"), or nil.
-func fpFindArtifactBySchema(task fpA2ATaskResult, schema string) *fpA2AArtifact {
-	for i := range task.Artifacts {
-		if s, _ := task.Artifacts[i].Metadata["schema"].(string); s == schema {
-			return &task.Artifacts[i]
-		}
-	}
-	return nil
-}
-
-// fpArtifactData returns the merged data map of the first DataPart in the
-// artifact, or nil if the artifact has no DataPart.
-func fpArtifactData(art *fpA2AArtifact) map[string]any {
-	if art == nil {
-		return nil
-	}
-	for _, p := range art.Parts {
-		if p.Kind == "data" && p.Data != nil {
-			return p.Data
-		}
-	}
-	return nil
 }
 
 // fpA2AInvoke sends a JSON-RPC request to POST /a2a/invoke.

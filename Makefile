@@ -41,11 +41,13 @@ COMMA := ,
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# KA E2E defaults to one process because several scenarios assert shared
+# cluster-wide state. Override with KA_E2E_PROCS=N for the shared-instance
+# capacity run after those scenarios are excluded or made concurrency-safe.
+KA_E2E_PROCS ?= 1
 # Independent service suites can run concurrently from the aggregate target.
 # Override this when local CPU/memory capacity is lower than the default.
 TEST_SUITE_PROCS ?= $(words $(SERVICES))
-# FullPipeline specs share one MCP test identity; avoid cross-worker rate-limit bursts.
-FULLPIPELINE_TEST_PROCS ?= 1
 TEST_TIMEOUT_UNIT ?= 8m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 18m
@@ -853,7 +855,7 @@ validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI -
 .PHONY: test-e2e-kubernautagent
 test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E tests (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity)"
+	@echo "🧪 Kubernaut Agent E2E Tests (#433 — API Contract Parity, $(KA_E2E_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Validates: Same OpenAPI contract as retired Python KA (HAPI)"
 	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD)"
@@ -861,7 +863,7 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs ## Run Kubernaut Agent E2E 
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
-	@$(GINKGO) -v --race --timeout=25m $(GINKGO_FOCUS_ARGS) --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=25m --procs=$(KA_E2E_PROCS) $(GINKGO_FOCUS_ARGS) --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
 	@if [ -f coverage_e2e_kubernautagent_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
 		cp coverage_e2e_kubernautagent_binary.out coverage_e2e_kubernautagent.out; \
@@ -941,7 +943,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=50m --procs=$(FULLPIPELINE_TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
@@ -1250,6 +1252,10 @@ IMAGE_TAG ?= latest
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
+# The migration image has a dedicated Dockerfile because it bundles goose and
+# psql rather than a Kubernaut Go service binary.
+DB_MIGRATION_IMAGE ?= localhost/db-migrate:latest
+
 # Version metadata for container image labels and Go ldflags
 # Read from VERSION file (single source of truth); override via env or CLI.
 APP_VERSION ?= v$(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
@@ -1330,6 +1336,23 @@ image-push: ## Push arch-suffixed images to registry
 	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)
 	@echo ""
 	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
+
+.PHONY: docker-build-db-migrate
+docker-build-db-migrate: ## Build the db-migrate image (override DB_MIGRATION_IMAGE or IMAGE_ARCH as needed)
+	@echo "🐳 Building db-migration image..."
+	@echo "   Image:    $(DB_MIGRATION_IMAGE)"
+	@echo "   Platform: linux/$(IMAGE_ARCH)"
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(DB_MIGRATION_IMAGE) -f docker/db-migrate.Dockerfile .
+
+.PHONY: docker-push-db-migrate
+docker-push-db-migrate: docker-build-db-migrate ## Build and push the db-migrate image
+	@echo "📤 Pushing $(DB_MIGRATION_IMAGE)..."
+	@$(CONTAINER_TOOL) push $(DB_MIGRATION_IMAGE)
+	@echo "✅ Pushed $(DB_MIGRATION_IMAGE)"
 
 .PHONY: image-manifest
 image-manifest: ## Create and push multi-arch manifests (run after both arches are pushed)

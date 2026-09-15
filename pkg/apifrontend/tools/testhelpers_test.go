@@ -18,7 +18,21 @@ import (
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
+
+// alwaysManagedScopeChecker keeps legacy behavior-focused tool fixtures
+// independent of Kubernetes label setup. Scope rejection itself is tested with
+// the explicit NeverManagedScopeChecker fixtures.
+type alwaysManagedScopeChecker struct{}
+
+func (alwaysManagedScopeChecker) IsManagedResource(context.Context, scope.ResourceIdentity) (bool, error) {
+	return true, nil
+}
+
+func testAlwaysManagedScopeChecker() scope.ScopeChecker {
+	return alwaysManagedScopeChecker{}
+}
 
 func objMeta(namespace, name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{

@@ -147,12 +147,12 @@ var _ = Describe("SignalInteractive bounded retry + fail-closed (#2289)", func()
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}})
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient: mockMCP,
-					Client:    tc,
-					Namespace: "kubernaut-system",
-					Signaler:  recorder,
-					Triager:   defaultTestTriager("prod", "Deployment", "web-2289"),
-					Auditor:   auditRec,
+					MCPClient:    mockMCP,
+					Client:       tc,
+					Namespace:    "kubernaut-system",
+					Signaler:     recorder,
+					Triager:      defaultTestTriager("prod", "Deployment", "web-2289"),
+					ScopeChecker: testAlwaysManagedScopeChecker(), Auditor: auditRec,
 				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2289",
 				},

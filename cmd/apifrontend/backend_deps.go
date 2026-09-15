@@ -194,12 +194,12 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 // buildFleetReaderDeps so cfg.Fleet is fully resolved; fleet.NewScopeChecker
 // itself returns the local-only checker unchanged when Fleet is disabled
 // (ADR-068), so this wiring is safe regardless of Fleet config.
-// Degrades to a nil ScopeChecker (scope validation skipped, matching the
-// tool layer's nil-safe convention) when the K8s typed client failed to
-// initialize — mirrors every other best-effort backendDeps field.
+// Leaves ScopeChecker nil when the K8s typed client failed to initialize. The
+// RR tool layer treats that state as unavailable scope infrastructure and
+// fails closed, so no RR can be created without a scope proof.
 func buildScopeCheckerDeps(cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
 	if deps.k8sTypedClient == nil {
-		logger.Info("K8s typed client unavailable, scope validation disabled (#2025)")
+		logger.Error(nil, "K8s typed client unavailable, RR scope validation will reject creation (#2025)")
 		return nil
 	}
 	scopeMgr := scope.NewManager(deps.k8sTypedClient)
@@ -623,8 +623,8 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 // readiness gate (ADR-068, BR-FLEET-054): once Fleet is enabled, AF's
 // pod-wide readyz must fail closed when the MCP Gateway or cluster
 // registry becomes unreachable, instead of the previous fail-open
-// behavior of only logging an error. AF has no scope-checker dependency
-// (unlike GW/RO), so its gate carries an MCPClientProber and, when
+// behavior of only logging an error. Scope validation is wired separately
+// by buildScopeCheckerDeps; this gate carries an MCPClientProber and, when
 // available, a ClusterRegistryProber. fleetClient is always non-nil when
 // called (buildFleetReaderDeps only calls this after Fleet.Enabled +
 // endpoint checks); clusterRegistry is nil only when the caller passes nil
