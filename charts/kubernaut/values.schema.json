@@ -3447,25 +3447,6 @@
             }
           }
         },
-        "image": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "kubernaut-console publishes release tags aligned with the Kubernaut image tag train; override this independently when required.",
-          "properties": {
-            "repository": {
-              "type": "string",
-              "default": "quay.io/kubernaut-ai/kubernaut-console"
-            },
-            "tag": {
-              "type": "string",
-              "default": "1.6.0-rc11"
-            },
-            "pullPolicy": {
-              "type": "string",
-              "default": "IfNotPresent"
-            }
-          }
-        },
         "oauth2Proxy": {
           "type": "object",
           "additionalProperties": false,

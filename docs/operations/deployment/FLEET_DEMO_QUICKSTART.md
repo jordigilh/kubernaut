@@ -56,8 +56,7 @@ make setup-fleet-demo-infra \
 
 `IMAGE_REPOSITORY` is the common base path without the service name. For example,
 `localhost/kubernaut` makes the chart use `localhost/kubernaut/gateway` and the matching
-path for each chart-managed Kubernaut service. The Console image remains independently
-configured by the chart's `console.image.*` values.
+path for each chart-managed Kubernaut service, including the `kubernaut-console` image.
 When `IMAGE_TAG` is provided, it is treated as a base tag and normalized to the host
 architecture (`<base>-amd64` or `<base>-arm64`); an existing architecture suffix is
 replaced rather than duplicated.

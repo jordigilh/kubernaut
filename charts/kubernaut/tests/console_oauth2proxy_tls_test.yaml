@@ -111,4 +111,4 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[1].image
-          value: quay.io/kubernaut-ai/kubernaut-console:1.6.0-rc11
+          value: quay.io/kubernaut-ai/kubernaut-console:1.6.0

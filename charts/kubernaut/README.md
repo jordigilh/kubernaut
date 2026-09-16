@@ -816,8 +816,10 @@ See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/
 Every chart-managed service renders its image via the `kubernaut.image` helper as
 `{registry}/{namespace}{separator}{service}:{tag}`, where `tag` is
 `global.image.tag` when set, otherwise the chart's `appVersion`
-(`charts/kubernaut/Chart.yaml`). To pin or test a published tag without changing
-the chart version:
+(`charts/kubernaut/Chart.yaml`). The Console uses the same helper with the
+`kubernaut-console` service name, so it follows the same registry, namespace,
+separator, tag, and digest settings. To pin or test a published tag without
+changing the chart version:
 
 ```bash
 helm upgrade kubernaut charts/kubernaut \
@@ -830,8 +832,7 @@ The fleet demo entry point wires this directly: `setup-fleet-demo-infra
 -image-tag 1.6.0-rc11 ...` (equivalently `make setup-fleet-demo-infra
 IMAGE_TAG=1.6.0-rc11 ...`). When the flag is omitted, no `--set` is emitted and
 every service falls back to `.Chart.AppVersion`. The `console` container
- defaults to the matching Kubernaut image tag and can still be overridden
- independently with `console.image.repository` and `console.image.tag`.
+defaults to the matching Kubernaut image tag as `kubernaut-console`.
 
 ### Overriding the image repository
 
@@ -851,8 +852,8 @@ make setup-local-demo-infra \
 `IMAGE_REPOSITORY` is also available on `setup-fleet-demo-infra` and is passed to
 `setup-demo-infra -image-repository`. It is the path before the service name, with or
 without a trailing slash, such as `quay.io/jordigilh` or `localhost/kubernaut`.
-The Console image remains independently configured by `console.image.repository` and
-`console.image.tag`.
+The Console follows the same base path as the other chart-managed services, using
+the `kubernaut-console` image name.
 
 ## Upgrading
 

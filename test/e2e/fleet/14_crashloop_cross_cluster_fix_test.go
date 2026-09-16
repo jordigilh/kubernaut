@@ -86,14 +86,14 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 				client.MatchingLabels{"app": infrastructure.CrashLoopAppName}); err != nil {
 				return false
 			}
-			for _, pod := range pods.Items {
-				for _, cs := range pod.Status.ContainerStatuses {
-					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == "CrashLoopBackOff" {
-						GinkgoWriter.Printf("  ✅ CrashLoopBackOff detected on remote cluster: restarts=%d\n", cs.RestartCount)
-						return true
-					}
-				}
+			events := &corev1.EventList{}
+			if err := remoteK8sClient.List(ctx, events, client.InNamespace(namespace)); err != nil {
+				GinkgoWriter.Printf("  ⚠️ CrashLoopBackOff event list failed on remote cluster: %v\n", err)
+				events = nil
+			}
+			if infrastructure.CrashLoopEvidenceDetected(pods, events, infrastructure.CrashLoopAppName) {
+				GinkgoWriter.Println("  ✅ CrashLoop evidence detected on remote cluster")
+				return true
 			}
 			return false
 		}, 7*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
