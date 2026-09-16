@@ -102,14 +102,14 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 				client.MatchingLabels{"app": infrastructure.CrashLoopAppName}); err != nil {
 				return false
 			}
-			for _, pod := range pods.Items {
-				for _, cs := range pod.Status.ContainerStatuses {
-					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == crashloopbackoff {
-						GinkgoWriter.Printf("  ✅ CrashLoopBackOff detected: restarts=%d\n", cs.RestartCount)
-						return true
-					}
-				}
+			events := &corev1.EventList{}
+			if err := apiReader.List(ctx, events, client.InNamespace(testNamespace)); err != nil {
+				GinkgoWriter.Printf("  ⚠️ CrashLoopBackOff event list failed: %v\n", err)
+				events = nil
+			}
+			if infrastructure.CrashLoopEvidenceDetected(pods, events, infrastructure.CrashLoopAppName) {
+				GinkgoWriter.Println("  ✅ CrashLoop evidence detected")
+				return true
 			}
 			return false
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff")

@@ -92,3 +92,47 @@ var _ = Describe("SummarizePodsForDiagnostics", func() {
 		Expect(out).To(ContainSubstring("exit=137"))
 	})
 })
+
+var _ = Describe("CrashLoopEvidenceDetected", func() {
+	It("UT-INFRA-DIAG-005 [E2E-FP-1542-001]: accepts the current CrashLoopBackOff waiting state", func() {
+		pods := &corev1.PodList{Items: []corev1.Pod{{
+			ObjectMeta: metav1.ObjectMeta{Name: "crashloop-app-abc"},
+			Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+				RestartCount: 1,
+				State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+			}}},
+		}}}
+
+		Expect(CrashLoopEvidenceDetected(pods, &corev1.EventList{}, "crashloop-app")).To(BeTrue())
+	})
+
+	It("UT-INFRA-DIAG-006 [E2E-FP-1542-001]: accepts a non-zero terminated state between restarts", func() {
+		pods := &corev1.PodList{Items: []corev1.Pod{{
+			ObjectMeta: metav1.ObjectMeta{Name: "crashloop-app-abc"},
+			Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+				RestartCount: 4,
+				State:        corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1}},
+			}}},
+		}}}
+
+		Expect(CrashLoopEvidenceDetected(pods, &corev1.EventList{}, "crashloop-app")).To(BeTrue())
+	})
+
+	It("UT-INFRA-DIAG-007 [E2E-FP-1542-001]: accepts a durable BackOff event for the target pod", func() {
+		events := &corev1.EventList{Items: []corev1.Event{{
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "crashloop-app-abc"},
+			Reason:         "BackOff",
+		}}}
+
+		Expect(CrashLoopEvidenceDetected(&corev1.PodList{}, events, "crashloop-app")).To(BeTrue())
+	})
+
+	It("UT-INFRA-DIAG-008 [E2E-FP-1542-001]: rejects an unrelated BackOff event", func() {
+		events := &corev1.EventList{Items: []corev1.Event{{
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "other-app-abc"},
+			Reason:         "BackOff",
+		}}}
+
+		Expect(CrashLoopEvidenceDetected(&corev1.PodList{}, events, "crashloop-app")).To(BeFalse())
+	})
+})
