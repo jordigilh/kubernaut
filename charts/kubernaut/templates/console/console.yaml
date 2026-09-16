@@ -87,18 +87,6 @@ Issue #1984 Phase C: console.enabled=true's dependency on apifrontend.enabled,
 console.auth.secretName, an OIDC issuer, and console.ingress.host all moved
 from fail() guards here to values.schema.json if/then blocks (BR-PLATFORM-010).
 */}}
-{{- /*
- console.image: kubernaut-console follows the Kubernaut image tag train by
- default, currently 1.6.0-rc11, while retaining an independent override for
- deployments that need a different Console image.
-Mirrors fleetmetadatacache's existing direct image.repository/image.tag
-schema block (the one per-service override in this chart the template
-actually reads -- apifrontend also declares an `image:` schema block, but
-its own template still calls kubernaut.image unconditionally and never
-consumes it, a separate pre-existing gap out of scope here) rather than
-apifrontend's dead pattern.
-*/}}
-{{- $cv := include "kubernaut.mergedValues" (dict "root" $ "service" "console") | fromYaml }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -245,8 +233,8 @@ spec:
           volumeMounts:
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
         - name: console
-          image: "{{ $cv.image.repository }}:{{ $cv.image.tag }}"
-          imagePullPolicy: {{ $cv.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           ports:
             - name: static
               containerPort: 8080

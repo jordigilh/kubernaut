@@ -1,0 +1,79 @@
+suite: "Console image uses the shared Kubernaut image pullspec (#2413)"
+templates:
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+tests:
+  - it: "IT-HELM-2413-001 (BR-PLATFORM-006): defaults to the shared registry, namespace, service name, and chart appVersion"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: quay.io/kubernaut-ai/kubernaut-console:1.6.0
+      - equal:
+          path: spec.template.spec.containers[1].imagePullPolicy
+          value: IfNotPresent
+
+  - it: "IT-HELM-2413-002 (BR-PLATFORM-006): applies shared registry, namespace, separator, tag, and pull policy overrides"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      global:
+        image:
+          registry: harbor.corp
+          namespace: platform
+          separator: "-"
+          tag: test-tag-1.2.3
+          pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: harbor.corp/platform-kubernaut-console:test-tag-1.2.3
+      - equal:
+          path: spec.template.spec.containers[1].imagePullPolicy
+          value: Always
+
+  - it: "IT-HELM-2413-003 (BR-PLATFORM-006): shared digest overrides the derived tag"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      global:
+        image:
+          registry: harbor.corp
+          namespace: platform
+          digest: sha256:0123456789abcdef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: harbor.corp/platform/kubernaut-console@sha256:0123456789abcdef

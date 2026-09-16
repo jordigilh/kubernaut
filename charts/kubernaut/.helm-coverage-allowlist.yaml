@@ -30,9 +30,6 @@
 - authwebhook.nodeSelector
 - authwebhook.pdb.enabled
 - authwebhook.replicas
-- console.image.pullPolicy
-- console.image.repository
-- console.image.tag
 - console.ingress.className
 - console.nodeSelector
 - console.oauth2Proxy.image

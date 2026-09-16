@@ -1089,7 +1089,8 @@ apifrontend:
 # .issuerURL or .jwtProviders[0].issuerURL) — the chart fails fast if either is missing
 # while console.enabled=true.
 # DD-PLATFORM-006 DA14: replicas(1)/oauth2Proxy.image both have non-zero
-# schema defaults -- omitted here, override only what you need.
+# schema defaults -- omitted here, override only what you need. The Console
+# image follows global.image with the service name kubernaut-console.
 # oauth2Proxy.skipDiscovery (default false): only needed when the OIDC
 # provider isn't reachable via the SAME hostname from both the browser and
 # in-cluster pods (e.g. IdP deployed in its own namespace/cluster, separate

@@ -131,10 +131,6 @@ console:
     auth:
         secretName: ""
     enabled: false
-    image:
-        pullPolicy: IfNotPresent
-        repository: quay.io/kubernaut-ai/kubernaut-console
-        tag: 1.6.0-rc11
     ingress:
         annotations: {}
         className: ""
