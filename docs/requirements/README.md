@@ -57,6 +57,14 @@
 
 **Total:** 20 detailed business requirements covering 32 stub implementations
 
+### **PROPOSED PRODUCT REQUIREMENTS**
+
+- **[BR-SECURITY-554: Threat Remediation](./BR-SECURITY-554-threat-remediation.md)**
+  - Proposed, discovery-stage requirement for Kubernetes-aware security
+    investigation, governed response, verification, and audit reconstruction.
+  - Not approved for implementation; child requirements require product,
+    security, compliance, platform, and SRE review.
+
 ### **[PHASE_2_IMPLEMENTATION_ROADMAP.md](./PHASE_2_IMPLEMENTATION_ROADMAP.md)**
 **Sprint-based implementation plan with team assignments and success metrics**
 
