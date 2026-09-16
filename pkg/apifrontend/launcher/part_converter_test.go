@@ -118,7 +118,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(statusEventTextAt(queue)).To(ContainSubstring("Watching remediation progress"))
 		})
 
-		It("UT-AF-1189-106: unknown tool -> generic fallback", func() {
+		It("UT-AF-1189-106: unknown tool -> no reasoning event", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
 					Name: "some_unknown_tool_xyz",
@@ -129,7 +129,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue)).To(Equal("...\n\n"))
+			Expect(queue.events).To(BeEmpty(),
+				"unknown tools must not emit visible reasoning or status text")
 		})
 
 		It("UT-AF-1189-107: FunctionCall with nil Args -> no panic, status without context", func() {
@@ -436,7 +437,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(len(statusEventTextAt(queue))).To(BeNumerically("<", 2048), "summary should be bounded")
 		})
 
-		It("UT-AF-1189-152: FunctionCall with special chars in tool name -> generic fallback", func() {
+		It("UT-AF-1189-152: FunctionCall with special chars in tool name -> no reasoning event", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
 					Name: "../../etc/passwd",
@@ -447,7 +448,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue)).To(Equal("...\n\n"))
+			Expect(queue.events).To(BeEmpty(),
+				"unknown tools must not emit visible reasoning or status text")
 		})
 	})
 

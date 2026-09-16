@@ -129,7 +129,7 @@ The user sees status indicators during tool execution, then LLM reasoning after 
 ### 4.1 Features to be Tested
 
 - **`buildPartConverter()`**: Factory returning `adka2a.GenAIPartConverter` function
-- **FunctionCall transformation**: 12 tool-name-to-status mappings + generic fallback
+- **FunctionCall transformation**: known tool-name-to-status mappings; unknown tools are suppressed
 - **FunctionCall context extraction**: Parse `Args` JSON for namespace, name, session_id, workflow_id
 - **FunctionResponse summarization**: 6 key tools with structured summary extraction
 - **FunctionResponse dropping**: Non-key tools return nil
@@ -200,7 +200,7 @@ Per ANTI_PATTERN_DETECTION.md:
 | UT-AF-1189-103 | `kubernaut_select_workflow` FunctionCall -> "Selecting remediation workflow {workflow_id}..." | BR-AF-1189 AC5 | Happy Path |
 | UT-AF-1189-104 | `kubernaut_watch` FunctionCall -> "Watching remediation progress..." | BR-AF-1189 AC5 | Happy Path |
 | UT-AF-1189-105 | `af_create_rr` FunctionCall -> "Creating remediation request..." | BR-AF-1189 AC5 | Happy Path |
-| UT-AF-1189-106 | Unknown tool FunctionCall -> "Processing..." (generic fallback) | BR-AF-1189 AC5 | Fallback |
+| UT-AF-1189-106 | Unknown tool FunctionCall -> no reasoning/status event | BR-AF-1189 AC5 | Suppression |
 | UT-AF-1189-107 | FunctionCall with nil Args -> status text without context (no panic) | BR-AF-1189 AC5 | Nil/Zero |
 | UT-AF-1189-108 | FunctionCall with malformed Args JSON -> status text without context (no panic) | BR-AF-1189 AC5 | Error |
 | UT-AF-1189-109 | `af_get_pods` FunctionCall -> "Fetching pod status..." | BR-AF-1189 AC5 | Happy Path |
@@ -242,7 +242,7 @@ Per ANTI_PATTERN_DETECTION.md:
 |---------|-------------|-----|----------|
 | UT-AF-1189-150 | FunctionCall with 10KB Args JSON -> no OOM, status text with truncated context | BR-AF-1189 AC5 | Adversarial |
 | UT-AF-1189-151 | FunctionResponse with 100KB Response map -> summary truncated to reasonable length | BR-AF-1189 AC10 | Adversarial |
-| UT-AF-1189-152 | FunctionCall with tool name containing special chars -> generic fallback (no panic) | BR-AF-1189 AC5 | Adversarial |
+| UT-AF-1189-152 | FunctionCall with tool name containing special chars -> no reasoning/status event (no panic) | BR-AF-1189 AC5 | Suppression |
 
 ---
 
@@ -624,7 +624,7 @@ Text (LLM reasoning) -> FunctionCall (tool invocation) -> FunctionResponse (tool
 | `kubernaut_get_remediation_history` | "Getting remediation history..." | — |
 | `kubernaut_get_effectiveness` | "Getting effectiveness data..." | — |
 | `kubernaut_get_audit_trail` | "Getting audit trail..." | — |
-| (unknown) | "Processing..." | — |
+| (unknown) | No event emitted | — |
 
 ## Appendix C: Key Tool Response Summarizers
 
