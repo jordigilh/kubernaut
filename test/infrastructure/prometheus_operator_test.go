@@ -148,13 +148,10 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(manifest).To(ContainSubstring("cluster: remote-cluster"))
 	})
 
-	It("UT-INFRA-FLEET-018-001 [BR-INTEGRATION-054, BR-FLEET-054]: grounds the interactive bridge target in the managed Prometheus rule", func() {
+	It("UT-INFRA-FLEET-018-003 [BR-INTEGRATION-054, BR-FLEET-054]: keeps the E2E-only interactive bridge fixture out of managed demo monitoring", func() {
 		manifest := buildManagedPrometheusManifest("monitoring", "remote-cluster", "10.0.0.2:30193")
 
-		Expect(manifest).To(ContainSubstring("alert: KAInteractiveFleetBridgeGrounding"))
-		Expect(manifest).To(ContainSubstring("expr: vector(1) > 0"))
-		Expect(manifest).To(ContainSubstring("name: ka-interactive-fleet-target"))
-		Expect(manifest).To(ContainSubstring("cluster: remote-cluster"))
+		Expect(manifest).NotTo(ContainSubstring("KAInteractiveFleetBridgeGrounding"))
 	})
 
 	It("UT-INFRA-FLEET-018-002 [BR-INTEGRATION-054, BR-FLEET-054]: grounds the interactive bridge target in the local Prometheus fixture", func() {

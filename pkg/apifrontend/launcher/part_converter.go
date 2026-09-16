@@ -91,7 +91,7 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return a2a.TextPart{Text: "...\n\n"}
+		return nil
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
