@@ -47,6 +47,7 @@ type KuadrantRegistry struct {
 	mu       sync.RWMutex
 	clusters map[string]ClusterInfo
 	ready    bool
+	started  bool
 
 	eventCh chan ClusterEvent
 	stopCh  chan struct{}
@@ -99,9 +100,36 @@ func (w *KuadrantRegistry) Ready() bool {
 	return w.ready
 }
 
+func (w *KuadrantRegistry) markWatchUnhealthy(err error) {
+	w.mu.Lock()
+	w.ready = false
+	w.mu.Unlock()
+	w.logger.Error(err, "fleet cluster registry watch failed")
+}
+
+// Probe refreshes the registry from the authoritative API and restores
+// readiness after a transient informer/watch failure.
+func (w *KuadrantRegistry) Probe(ctx context.Context) error {
+	w.mu.RLock()
+	started, stopped := w.started, w.stopped
+	w.mu.RUnlock()
+	refreshed, err := probeClusters(ctx, w.client, w.config.Namespace, MCPServerRegistrationGVR, started, stopped, w.trackableClusterInfo)
+	if err != nil {
+		w.markWatchUnhealthy(err)
+		return err
+	}
+	w.mu.Lock()
+	w.clusters = refreshed
+	w.ready = true
+	w.mu.Unlock()
+	return nil
+}
+
 // Start begins watching Kuadrant MCPServerRegistration CRDs.
 func (w *KuadrantRegistry) Start(ctx context.Context) error {
-	seeded, err := startInformerAndSeed(ctx, w.client, w.config, MCPServerRegistrationGVR,
+	config := w.config
+	config.onWatchError = w.markWatchUnhealthy
+	seeded, err := startInformerAndSeed(ctx, w.client, config, MCPServerRegistrationGVR,
 		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
 		w.stopCh, w.trackableClusterInfo)
 	if err != nil {
@@ -113,6 +141,7 @@ func (w *KuadrantRegistry) Start(ctx context.Context) error {
 		w.clusters[id] = info
 	}
 	w.ready = true
+	w.started = true
 	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 

@@ -142,7 +142,7 @@ func run() int {
 	defer stopCAWatcher()
 
 	// AUDIT MANAGER + DS QUERIER + CONTROLLER SETUP
-	fleetResilientClient, err := wireController(ctx, wireControllerDeps{
+	fleetResilientClient, fleetRegistry, err := wireController(ctx, wireControllerDeps{
 		Manager:    mgr,
 		Config:     cfg,
 		Metrics:    emMetrics,
@@ -168,7 +168,7 @@ func run() int {
 	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
 	// unreachability via readyz (pod-wide), instead of the previous
 	// fail-open behavior of only logging an error.
-	fleetGate := wireFleetReadinessGate(ctx, fleetResilientClient, cfg, setupLog)
+	fleetGate := wireFleetReadinessGate(ctx, fleetResilientClient, fleetRegistry, cfg, setupLog)
 	if fleetGate != nil {
 		defer fleetGate.Stop()
 	}
@@ -418,14 +418,14 @@ type wireControllerDeps struct {
 	Logger     logr.Logger
 }
 
-func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.ResilientClient, error) {
+func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.ResilientClient, readiness.ClusterRegistry, error) {
 	mgr, cfg, logger := deps.Manager, deps.Config, deps.Logger
 	auditManager := emaudit.NewManager(deps.AuditStore, ctrl.Log.WithName("em-audit"))
 	logger.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
 
 	dsQuerier, err := emclient.NewOgenDataStorageQuerier(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DataStorage querier (url=%s): %w", cfg.DataStorage.URL, err)
+		return nil, nil, fmt.Errorf("failed to create DataStorage querier (url=%s): %w", cfg.DataStorage.URL, err)
 	}
 	logger.Info("DataStorage querier initialized (DD-API-001: ogen, DD-AUTH-005: SA auth)",
 		"url", cfg.DataStorage.URL)
@@ -460,18 +460,18 @@ func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.Re
 	} else {
 		dynClient = dyn
 	}
-	readerFactory, fleetResilientClient, err := buildFleetReaderFactory(ctx, mgr.GetClient(), dynClient, cfg, logger)
+	readerFactory, fleetResilientClient, fleetRegistry, err := buildFleetReaderFactoryWithRegistry(ctx, mgr.GetClient(), dynClient, cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("fleet reader wiring: %w", err)
+		return nil, nil, fmt.Errorf("fleet reader wiring: %w", err)
 	}
 	if readerFactory != nil {
 		emReconciler.SetReaderFactory(readerFactory)
 	}
 
 	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil { //nolint:contextcheck // SetupWithManager is controller-runtime's reconciler-registration contract (no ctx param) called once at startup
-		return fleetResilientClient, fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
+		return fleetResilientClient, fleetRegistry, fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
 	}
-	return fleetResilientClient, nil
+	return fleetResilientClient, fleetRegistry, nil
 }
 
 // buildFleetReaderFactory wires BR-FLEET-054 multi-cluster target reads when
@@ -488,12 +488,17 @@ func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.Re
 // returned *mcpclient.ResilientClient is non-nil whenever the reader factory
 // is wired, so the caller can close it on graceful shutdown.
 func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dynClient dynamic.Interface, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, error) {
+	readerFactory, fleetClient, _, err := buildFleetReaderFactoryWithRegistry(ctx, localClient, dynClient, cfg, logger)
+	return readerFactory, fleetClient, err
+}
+
+func buildFleetReaderFactoryWithRegistry(ctx context.Context, localClient client.Client, dynClient dynamic.Interface, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, readiness.ClusterRegistry, error) {
 	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	if dynClient == nil {
 		logger.Info("K8s dynamic client unavailable, fleet cluster routing disabled")
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	fleetLog := logger.WithName("fleet-mcp")
@@ -515,10 +520,10 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 		fleetLog,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
+		return nil, nil, nil, fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
 	}
 	if err := clusterRegistry.Start(ctx); err != nil {
-		return nil, nil, fmt.Errorf("start fleet cluster registry: %w", err)
+		return nil, nil, nil, fmt.Errorf("start fleet cluster registry: %w", err)
 	}
 
 	connectCfg := mcpclient.ConnectConfig{
@@ -551,7 +556,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
 		localClient, mcpFleetClient.SessionProvider(), mcpFleetClient.Reconnect, registry.NewToolPrefixAdapter(clusterRegistry))
-	return readerFactory, mcpFleetClient, nil
+	return readerFactory, mcpFleetClient, clusterRegistry, nil
 }
 
 // waitForCAFile polls for caFile to exist and contain non-empty content,
@@ -666,7 +671,7 @@ const fleetReadinessProbeInterval = 15 * time.Second
 // pod-wide readyz must fail closed when the MCP Gateway becomes
 // unreachable, instead of the previous fail-open behavior of only logging
 // an error. EM has no scope-checker dependency (unlike GW/RO), so its gate
-// only ever carries an MCPClientProber. Returns nil when Fleet is disabled
+// carries MCPClientProber and ClusterRegistryProber. Returns nil when Fleet is disabled
 // or fleetResilientClient is nil (buildFleetReaderFactory only returns a
 // non-nil client when Fleet.Enabled and an endpoint is configured). The
 // caller registers the returned Gate's Check method via
@@ -674,15 +679,17 @@ const fleetReadinessProbeInterval = 15 * time.Second
 func wireFleetReadinessGate(
 	ctx context.Context,
 	fleetResilientClient *mcpclient.ResilientClient,
+	fleetRegistry readiness.ClusterRegistry,
 	cfg *config.Config,
 	logger logr.Logger,
 ) *readiness.Gate {
-	if !cfg.Fleet.Enabled || fleetResilientClient == nil {
+	if !cfg.Fleet.Enabled || fleetResilientClient == nil || fleetRegistry == nil {
 		return nil
 	}
 
-	prober := &readiness.MCPClientProber{Client: fleetResilientClient}
-	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), prober)
+	clientProber := &readiness.MCPClientProber{Client: fleetResilientClient}
+	registryProber := &readiness.ClusterRegistryProber{Registry: fleetRegistry}
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), clientProber, registryProber)
 	gate.Start(ctx)
 	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
 	return gate

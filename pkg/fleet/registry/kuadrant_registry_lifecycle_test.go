@@ -17,11 +17,17 @@ limitations under the License.
 package registry
 
 import (
+	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -62,6 +68,36 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	AfterEach(func() {
 		w.Stop()
+	})
+
+	Describe("Probe", func() {
+		It("UT-REG-KUA-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newMCPServerRegistrationUnstructured("prod-east", "prod_east_", map[string]interface{}{ManagedLabel: "true"}))
+			w = NewKuadrantRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))
+			w.started = true
+
+			Expect(w.Probe(context.Background())).To(Succeed())
+			Expect(w.Ready()).To(BeTrue())
+			info, found := w.Get("prod-east")
+			Expect(found).To(BeTrue())
+			Expect(info.ToolPrefix).To(Equal("prod_east_"))
+		})
+
+		It("UT-REG-KUA-011 [BR-INTEGRATION-065, SI-4]: marks readiness false when the authoritative API is unavailable", func() {
+			w.started = true
+			w.ready = true
+			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+				runtime.NewScheme(),
+				map[schema.GroupVersionResource]string{MCPServerRegistrationGVR: "MCPServerRegistrationList"},
+			)
+			client.PrependReactor("list", "mcpserverregistrations", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("api unavailable")
+			})
+			w.client = client
+
+			Expect(w.Probe(context.Background())).To(MatchError(ContainSubstring("refresh fleet cluster registry")))
+			Expect(w.Ready()).To(BeFalse())
+		})
 	})
 
 	Describe("extractKuadrantClusterInfo", func() {

@@ -125,6 +125,19 @@ type fakeClusterRegistry struct{ ready bool }
 
 func (f *fakeClusterRegistry) Ready() bool { return f.ready }
 
+type refreshingClusterRegistry struct {
+	ready      bool
+	probeErr   error
+	probeCalls int
+}
+
+func (f *refreshingClusterRegistry) Ready() bool { return f.ready }
+
+func (f *refreshingClusterRegistry) Probe(context.Context) error {
+	f.probeCalls++
+	return f.probeErr
+}
+
 var _ = Describe("ClusterRegistryProber", func() {
 	It("UT-FLEET-READY-014: Probe succeeds when the registry is ready", func() {
 		p := &readiness.ClusterRegistryProber{Registry: &fakeClusterRegistry{ready: true}}
@@ -134,6 +147,23 @@ var _ = Describe("ClusterRegistryProber", func() {
 	It("UT-FLEET-READY-015: Probe fails when the registry is not ready", func() {
 		p := &readiness.ClusterRegistryProber{Registry: &fakeClusterRegistry{ready: false}}
 		Expect(p.Probe(context.Background())).To(HaveOccurred())
+	})
+
+	It("UT-FLEET-READY-020 [BR-INTEGRATION-065, SI-4]: Probe refreshes a registry that supports authoritative health checks", func() {
+		registry := &refreshingClusterRegistry{}
+		p := &readiness.ClusterRegistryProber{Registry: registry}
+
+		Expect(p.Probe(context.Background())).To(Succeed())
+		Expect(registry.probeCalls).To(Equal(1))
+	})
+
+	It("UT-FLEET-READY-021 [BR-INTEGRATION-065, SI-4]: Probe propagates an authoritative registry refresh failure", func() {
+		registry := &refreshingClusterRegistry{probeErr: errors.New("registry api unavailable")}
+		p := &readiness.ClusterRegistryProber{Registry: registry}
+
+		err := p.Probe(context.Background())
+		Expect(err).To(MatchError("registry api unavailable"))
+		Expect(registry.probeCalls).To(Equal(1))
 	})
 })
 

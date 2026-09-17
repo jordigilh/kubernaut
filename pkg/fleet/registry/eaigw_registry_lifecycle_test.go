@@ -17,11 +17,17 @@ limitations under the License.
 package registry
 
 import (
+	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -71,6 +77,61 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 		It("UT-REG-EAIGW-002: should start with empty cluster list and not ready", func() {
 			Expect(w.List()).To(BeEmpty())
 			Expect(w.Ready()).To(BeFalse())
+		})
+	})
+
+	Describe("Probe", func() {
+		It("UT-REG-EAIGW-012 [BR-INTEGRATION-065, SI-4]: rejects a probe before initial sync", func() {
+			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry has not completed initial sync"))
+			Expect(w.Ready()).To(BeFalse())
+		})
+
+		It("UT-REG-EAIGW-013 [BR-INTEGRATION-065, SI-4]: rejects a probe after the registry stops", func() {
+			w.Stop()
+
+			Expect(w.Probe(context.Background())).To(MatchError("fleet cluster registry stopped"))
+		})
+
+		It("UT-REG-EAIGW-010 [SI-4]: refreshes from the authoritative API and restores readiness", func() {
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
+			w = NewEAIGWRegistry(client, EAIGWRegistryConfig{ResyncPeriod: time.Minute}, nil, zap.New(zap.UseDevMode(true)))
+			w.started = true
+
+			Expect(w.Probe(context.Background())).To(Succeed())
+			Expect(w.Ready()).To(BeTrue())
+			info, found := w.Get("prod-east")
+			Expect(found).To(BeTrue())
+			Expect(info.MCPEndpoint).To(Equal("https://mcp.example.com/prod-east"))
+		})
+
+		It("UT-REG-EAIGW-011 [SI-4]: marks readiness false when the authoritative API is unavailable", func() {
+			w.started = true
+			w.ready = true
+			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+				runtime.NewScheme(),
+				map[schema.GroupVersionResource]string{BackendGVR: "BackendList"},
+			)
+			client.PrependReactor("list", "backends", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("api unavailable")
+			})
+			w.client = client
+
+			Expect(w.Probe(context.Background())).To(MatchError(ContainSubstring("refresh fleet cluster registry")))
+			Expect(w.Ready()).To(BeFalse())
+		})
+
+		It("UT-REG-EAIGW-014 [SI-4]: installs the informer watch error handler during startup wiring", func() {
+			client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), newBackendUnstructured("prod-east", "https://mcp.example.com/prod-east"))
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := startInformerAndSeed(ctx, client, EAIGWRegistryConfig{
+				ResyncPeriod: time.Minute,
+				onWatchError: func(error) {},
+			}, BackendGVR, cache.ResourceEventHandlerFuncs{}, stopCh, w.trackableClusterInfo)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
