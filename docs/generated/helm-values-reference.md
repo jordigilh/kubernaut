@@ -491,7 +491,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `externalWebhooks.port` | integer | Port for external webhook endpoints | `443` | No |
 | `gateway.ingressCIDRs` | array of string | CIDR blocks allowed as ingress sources (ipBlock). Required for traffic not associated with any pod/namespace -- e.g. NodePort-sourced host traffic (SNAT'd to the node's own IP) or a hostNetwork-mode ingress controller/router -- since podSelector/namespaceSelector can never match non-pod-associated source IPs (Issue #1737). | `[]` | No |
 | `gateway.ingressNamespaceSelectors` | array of object | Raw namespaceSelector label selectors allowed as ingress sources, for cases the simple name-based ingressNamespaces list cannot express. | `[]` | No |
-| `gateway.ingressNamespaces` | array of string | Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager) | `[]` | No |
+| `gateway.ingressNamespaces` | array of string | Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager). When empty, an unambiguous in-cluster monitoring.alertManager.url can derive the AlertManager Service namespace; external or proxied AlertManager endpoints require an explicit ingressCIDR or namespace selector. | `[]` | No |
 | `idp.cidr` | string |  | `"0.0.0.0/0"` | No |
 | `idp.extraPorts` | array of integer | Additional IdP ports to open egress on against the same cidr, for deployments where one service must reach two different IdPs on two different ports. | `[]` | No |
 | `idp.port` | integer |  | `443` | No |

@@ -46,6 +46,184 @@ tests:
               - port: 8080
                 protocol: TCP
 
+  - it: "gateway NetworkPolicy derives the in-cluster AlertManager namespace when no explicit ingress source is configured (BR-PLATFORM-009, UT-NP-2432-003)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+
+  - it: "gateway NetworkPolicy does not duplicate the derived namespace when the metrics namespace is the same (BR-PLATFORM-005, UT-NP-2432-006)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+      networkPolicies:
+        monitoring:
+          namespace: monitoring
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
+  - it: "gateway NetworkPolicy preserves explicit ingressNamespaces over the derived AlertManager namespace (BR-PLATFORM-005, UT-NP-2432-001)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+      networkPolicies:
+        gateway:
+          ingressNamespaces:
+            - alerting
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: alerting
+      - notContains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+
+  - it: "gateway NetworkPolicy does not derive ingress when an explicit CIDR is configured (BR-PLATFORM-005, UT-NP-2432-002)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+      networkPolicies:
+        gateway:
+          ingressCIDRs:
+            - "10.0.0.0/8"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "10.0.0.0/8"
+      - notContains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+
+  - it: "gateway NetworkPolicy does not derive ingress when an explicit namespace selector is configured (BR-PLATFORM-005, UT-NP-2432-002)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+      networkPolicies:
+        gateway:
+          ingressNamespaceSelectors:
+            - matchLabels:
+                team: alerting
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    team: alerting
+      - notContains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+
+  - it: "gateway NetworkPolicy stays fail-closed for an external AlertManager URL without explicit ingress sources (BR-PLATFORM-005, UT-NP-2432-004)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "https://alerts.example.com"
+    asserts:
+      - equal:
+          path: spec.ingress
+          value: null
+
+  - it: "gateway NetworkPolicy does not derive ingress from Prometheus or Thanos URLs (BR-PLATFORM-005, UT-NP-2432-005)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus.monitoring.svc.cluster.local:9090"
+        alertManager:
+          enabled: false
+    asserts:
+      - equal:
+          path: spec.ingress
+          value: null
+
+  - it: "gateway NetworkPolicy supports the short in-cluster Service DNS form (BR-PLATFORM-009, UT-NP-2432-003)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      monitoring:
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc:9093"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+
   - it: "gateway NetworkPolicy renders an ipBlock ingress rule per ingressCIDRs entry (NodePort/hostNetwork traffic isn't pod/namespace-associated)"
     template: templates/gateway/networkpolicy.yaml
     set:

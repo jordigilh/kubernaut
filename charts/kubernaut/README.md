@@ -451,6 +451,52 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 `console.enabled=true` still requires `apifrontend.enabled=true` (see above) — disabling
 Gateway has no effect on Console's availability.
 
+### Enable Gateway after installation
+
+Gateway can be enabled independently after the Helm release is installed. Use
+`--reuse-values` so the upgrade preserves the existing release configuration:
+
+```bash
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set gateway.enabled=true
+```
+
+For a chart checkout, replace the OCI chart reference with `./charts/kubernaut`.
+For example, the local Kind hub kubeconfig can be selected with:
+
+```bash
+helm --kubeconfig "$HOME/.kube/kubernaut-hub-config" upgrade kubernaut ./charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set gateway.enabled=true
+```
+
+When `monitoring.alertManager.enabled=true` and
+`monitoring.alertManager.url` is an in-cluster Kubernetes Service URL such as
+`http://alertmanager.monitoring.svc.cluster.local:9093`, the chart derives
+`monitoring` as the Gateway NetworkPolicy ingress namespace. Prometheus and
+Thanos do not send webhook signals to Gateway and are not used for this
+derivation.
+
+For an external, proxied, or otherwise non-Service-DNS AlertManager endpoint,
+the Gateway NetworkPolicy remains fail-closed. Configure an explicit source,
+for example:
+
+```bash
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set gateway.enabled=true \
+  --set 'networkPolicies.gateway.ingressCIDRs[0]=10.0.0.0/8'
+```
+
+Explicit `networkPolicies.gateway.ingressNamespaces`,
+`networkPolicies.gateway.ingressNamespaceSelectors`, and
+`networkPolicies.gateway.ingressCIDRs` values take precedence over automatic
+AlertManager namespace derivation.
+
 ### OpenShift (OCP)
 
 This chart targets non-OpenShift (vanilla Kubernetes) deployments. For OpenShift, use the
