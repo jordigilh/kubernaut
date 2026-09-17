@@ -56,6 +56,7 @@ var _ = Describe("llm.RetryWithBackoff — #1612", func() {
 		It("aborts the sleep and does not make a further attempt", func() {
 			var calls atomic.Int64
 			ctx, cancel := context.WithCancel(context.Background())
+			firstAttempt := make(chan struct{})
 
 			slowBackoff := backoff.Config{
 				BasePeriod: 50 * time.Millisecond, MaxPeriod: 200 * time.Millisecond,
@@ -63,13 +64,15 @@ var _ = Describe("llm.RetryWithBackoff — #1612", func() {
 			}
 
 			go func() {
-				time.Sleep(10 * time.Millisecond)
+				<-firstAttempt
 				cancel()
 			}()
 
 			_, err := llm.RetryWithBackoff(ctx, 5, slowBackoff,
 				func(int) llm.AttemptResult[string] {
-					calls.Add(1)
+					if calls.Add(1) == 1 {
+						close(firstAttempt)
+					}
 					return llm.AttemptResult[string]{Err: errors.New("transient"), SafeToRetry: true}
 				})
 
