@@ -25,7 +25,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -155,11 +154,10 @@ type DemoHelmOptions struct {
 	// does not bundle default Rego policies").
 	SPPolicyFile string
 	AAPolicyFile string
-	// ImageTag optionally overrides the base container image tag for the demo
-	// chart (global.image.tag). Explicit tags are normalized to the host
-	// architecture suffix (-amd64 or -arm64). When empty (the default), no
-	// --set is emitted and the chart's kubernaut.image helper falls back to
-	// .Chart.AppVersion (global.image.tag defaults to "").
+	// ImageTag optionally overrides the shared container image tag for the demo
+	// chart (global.image.tag). When empty (the default), no --set is emitted
+	// and the chart's kubernaut.image helper falls back to .Chart.AppVersion
+	// (global.image.tag defaults to "").
 	ImageTag string
 	// ImageRepository optionally overrides the base repository for the demo
 	// chart's Kubernaut service images (global.image.registry with an empty
@@ -307,10 +305,9 @@ func appendDemoHelmOverrides(args []string, opts DemoHelmOptions) []string {
 	}
 
 	if opts.ImageTag != "" {
-		// The image build targets append the host architecture to explicit
-		// tags. Keep the chart reference aligned with those images while
-		// accepting either a base tag or an already-normalized tag.
-		args = append(args, "--set", "global.image.tag="+normalizeDemoImageTag(opts.ImageTag, runtime.GOARCH))
+		// Release images are published as multi-arch manifests under one shared
+		// tag. Architecture suffixes are only intermediate build references.
+		args = append(args, "--set", "global.image.tag="+opts.ImageTag)
 	}
 
 	if opts.ImageRepository != "" {
@@ -358,17 +355,6 @@ func demoLocalImageReferences(repository, tag string) []string {
 	return images
 }
 
-// normalizeDemoImageTag returns an explicit image tag with one architecture
-// suffix. Tags already carrying either supported suffix are rewritten for the
-// requested architecture so a demo never selects an image for the wrong host.
-func normalizeDemoImageTag(tag, arch string) string {
-	if arch != "amd64" && arch != "arm64" {
-		return tag
-	}
-	tag = strings.TrimSuffix(strings.TrimSuffix(tag, "-amd64"), "-arm64")
-	return tag + "-" + arch
-}
-
 func loadDemoImagesToKind(ctx context.Context, clusterName string, opts DemoHelmOptions, writer io.Writer) error {
 	if opts.ImageRepository == "" || opts.ImageTag == "" || !isLocalDemoImageRepository(opts.ImageRepository) {
 		return nil
@@ -377,7 +363,7 @@ func loadDemoImagesToKind(ctx context.Context, clusterName string, opts DemoHelm
 		return fmt.Errorf("kind cluster name is required when loading local demo images")
 	}
 
-	images := demoLocalImageReferences(opts.ImageRepository, normalizeDemoImageTag(opts.ImageTag, runtime.GOARCH))
+	images := demoLocalImageReferences(opts.ImageRepository, opts.ImageTag)
 	for i, image := range images {
 		if err := LoadImageToKind(ctx, image, demoLocalImageServices[i], clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load local demo image %s into Kind cluster %q: %w", image, clusterName, err)

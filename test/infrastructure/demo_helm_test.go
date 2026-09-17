@@ -17,7 +17,6 @@ limitations under the License.
 package infrastructure
 
 import (
-	"runtime"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -317,7 +316,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		}
 	})
 
-	It("UT-INFRA-FLEETDEMO-037: sets exactly one normalized global.image.tag when ImageTag is provided", func() {
+	It("UT-INFRA-FLEETDEMO-037: sets exactly one shared global.image.tag when ImageTag is provided", func() {
 		opts := baseOpts
 		opts.ImageTag = "demo-v1.0"
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
@@ -327,7 +326,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 				tags = append(tags, args[i+1])
 			}
 		}
-		Expect(tags).To(Equal([]string{"global.image.tag=" + normalizeDemoImageTag("demo-v1.0", runtime.GOARCH)}))
+		Expect(tags).To(Equal([]string{"global.image.tag=demo-v1.0"}))
 	})
 
 	It("UT-INFRA-FLEETDEMO-047 [BR-PLATFORM-014]: uses the image repository override for local and fleet demos", func() {
@@ -418,13 +417,6 @@ var _ = Describe("buildDemoHelmArgs", func() {
 })
 
 var _ = Describe("demo local image loading", func() {
-	It("UT-INFRA-FLEETDEMO-051 [BR-PLATFORM-014]: normalizes image tags to the target architecture", func() {
-		Expect(normalizeDemoImageTag("pr-123", "amd64")).To(Equal("pr-123-amd64"))
-		Expect(normalizeDemoImageTag("pr-123", "arm64")).To(Equal("pr-123-arm64"))
-		Expect(normalizeDemoImageTag("pr-123-arm64", "arm64")).To(Equal("pr-123-arm64"))
-		Expect(normalizeDemoImageTag("pr-123-amd64", "arm64")).To(Equal("pr-123-arm64"))
-	})
-
 	It("UT-INFRA-FLEETDEMO-049 [BR-PLATFORM-014]: builds all native local image references without mock-llm", func() {
 		expected := []string{
 			"localhost/datastorage:demo-tag",

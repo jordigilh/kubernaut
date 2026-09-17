@@ -9,8 +9,8 @@ Usage:
 
   NOTE: The filename is historical; the script downloads images for the
   host architecture (amd64 or arm64), inferred via `uname -m`.
-  With `--load`, imported image tags are normalized to `<base>-amd64` or
-  `<base>-arm64`.
+  With `--load`, imported image tags are normalized to the shared `<base>`
+  tag used by Helm deployments.
 
 Environment:
   REPOSITORY  GitHub repository, default: jordigilh/kubernaut
@@ -151,13 +151,13 @@ fi
 normalize_loaded_image_tags() {
   local image_tar="$1"
   local -a image_refs
-  mapfile -t image_refs < <(python3 - "$image_tar" "$ARCH" <<'PY'
+  mapfile -t image_refs < <(python3 - "$image_tar" <<'PY'
 import json
 import re
 import sys
 import tarfile
 
-archive_path, arch = sys.argv[1:]
+archive_path = sys.argv[1]
 with tarfile.open(archive_path) as archive:
     manifest_file = archive.extractfile("manifest.json")
     if manifest_file is None:
@@ -171,7 +171,7 @@ for image in manifest:
             continue
         repository, tag = source[:separator], source[separator + 1:]
         base_tag = re.sub(r"-(?:amd64|arm64)$", "", tag)
-        print(f"{source}\t{repository}:{base_tag}-{arch}")
+        print(f"{source}\t{repository}:{base_tag}")
 PY
   )
 
