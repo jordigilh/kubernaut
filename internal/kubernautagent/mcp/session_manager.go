@@ -32,6 +32,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var (
@@ -75,8 +77,8 @@ type LeaseSessionManager struct {
 	rrIndex           sync.Map // rrID -> sessionID
 	activeCount       atomic.Int32
 	logger            logr.Logger
-	onSessionExpired  func(sessionID, rrID, reason string) // called on TTL/inactivity auto-release
-	onReconnect       func(sessionID string)               // called when Takeover detects same-user reconnect
+	onSessionExpired  func(sessionID, rrID, reason string, signalContext *katypes.SignalContext) // called on TTL/inactivity auto-release
+	onReconnect       func(sessionID string)                                                     // called when Takeover detects same-user reconnect
 
 	// janitor is the #2100 backstop: every session Takeover creates is
 	// Tracked here and Untracked on Release, so a session that never gets
@@ -111,11 +113,11 @@ type SessionEndedMetrics interface {
 }
 
 type sessionEntry struct {
-	session      *InteractiveSession
-	rrID         string
-	metadataMu   sync.RWMutex
-	signalMeta   map[string]string
-	lastActivity atomic.Value // stores time.Time
+	session       *InteractiveSession
+	rrID          string
+	metadataMu    sync.RWMutex
+	signalContext *katypes.SignalContext
+	lastActivity  atomic.Value // stores time.Time
 }
 
 // LeaseOption configures optional parameters for LeaseSessionManager.
@@ -145,7 +147,7 @@ func WithMaxConcurrentSessions(maxSessions int) LeaseOption {
 // WithSessionExpiredCallback sets a callback invoked when GetDriver auto-releases
 // a session due to TTL or inactivity timeout. Enables audit emission (M1) for
 // expiry paths that bypass InvestigateTool's explicit complete/cancel handlers.
-func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string)) LeaseOption {
+func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string, signalContext *katypes.SignalContext)) LeaseOption {
 	return func(m *LeaseSessionManager) {
 		m.onSessionExpired = fn
 	}
@@ -203,9 +205,9 @@ func NewLeaseSessionManagerConcrete(c client.Client, namespace string, logger lo
 	return m
 }
 
-// StoreSignalMetadata attaches signal context metadata to an active session entry.
+// StoreSignalContext attaches a signal context to an active session entry.
 // Used by handleTakeover to persist autonomous session metadata for later reconstruction.
-func (m *LeaseSessionManager) StoreSignalMetadata(sessionID string, metadata map[string]string) {
+func (m *LeaseSessionManager) StoreSignalContext(sessionID string, signal *katypes.SignalContext) {
 	raw, ok := m.sessions.Load(sessionID)
 	if !ok {
 		return
@@ -215,13 +217,13 @@ func (m *LeaseSessionManager) StoreSignalMetadata(sessionID string, metadata map
 		return
 	}
 	entry.metadataMu.Lock()
-	entry.signalMeta = cloneSignalMetadata(metadata)
+	entry.signalContext = cloneSignalContext(signal)
 	entry.metadataMu.Unlock()
 }
 
-// GetSignalMetadata retrieves stored signal metadata for a session.
+// GetSignalContext retrieves the stored signal context for a session.
 // Returns nil if session not found or no metadata stored.
-func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]string {
+func (m *LeaseSessionManager) GetSignalContext(sessionID string) *katypes.SignalContext {
 	raw, ok := m.sessions.Load(sessionID)
 	if !ok {
 		return nil
@@ -232,13 +234,13 @@ func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]str
 	}
 	entry.metadataMu.RLock()
 	defer entry.metadataMu.RUnlock()
-	return cloneSignalMetadata(entry.signalMeta)
+	return cloneSignalContext(entry.signalContext)
 }
 
-// GetSessionInfo returns the correlationID (rrID) and signal metadata for a session.
+// GetSessionInfo returns the correlationID (rrID) and signal context for a session.
 // Must be called BEFORE Release, which deletes the session entry.
 // Returns empty values if session not found.
-func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, signalMeta map[string]string) {
+func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, signalContext *katypes.SignalContext) {
 	raw, ok := m.sessions.Load(sessionID)
 	if !ok {
 		return "", nil
@@ -249,15 +251,37 @@ func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, sig
 	}
 	entry.metadataMu.RLock()
 	defer entry.metadataMu.RUnlock()
-	return entry.rrID, cloneSignalMetadata(entry.signalMeta)
+	return entry.rrID, cloneSignalContext(entry.signalContext)
 }
 
-func cloneSignalMetadata(metadata map[string]string) map[string]string {
-	if metadata == nil {
+func cloneSignalContext(signal *katypes.SignalContext) *katypes.SignalContext {
+	if signal == nil {
 		return nil
 	}
-	clone := make(map[string]string, len(metadata))
-	for key, value := range metadata {
+	clone := *signal
+	if signal.IsDuplicate != nil {
+		value := *signal.IsDuplicate
+		clone.IsDuplicate = &value
+	}
+	if signal.OccurrenceCount != nil {
+		value := *signal.OccurrenceCount
+		clone.OccurrenceCount = &value
+	}
+	if signal.DeduplicationWindowMinutes != nil {
+		value := *signal.DeduplicationWindowMinutes
+		clone.DeduplicationWindowMinutes = &value
+	}
+	clone.SignalAnnotations = cloneStringMap(signal.SignalAnnotations)
+	clone.SignalLabels = cloneStringMap(signal.SignalLabels)
+	return &clone
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
 		clone[key] = value
 	}
 	return clone
@@ -513,9 +537,11 @@ func (m *LeaseSessionManager) isInactivityExpired(entry *sessionEntry) bool {
 // caller (GetDriver) to propagate.
 func (m *LeaseSessionManager) expireSession(sessionID, rrID, reason, logMsg string) error {
 	m.logger.Info(logMsg, "session_id", sessionID, "rr_id", rrID)
+	// Snapshot typed signal context before Release removes the session entry.
+	signalContext := m.GetSignalContext(sessionID)
 	_ = m.Release(sessionID, reason)
 	if m.onSessionExpired != nil {
-		m.onSessionExpired(sessionID, rrID, reason)
+		m.onSessionExpired(sessionID, rrID, reason, signalContext)
 	}
 	return ErrSessionExpired
 }

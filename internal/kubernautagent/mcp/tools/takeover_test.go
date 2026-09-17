@@ -158,9 +158,9 @@ func (m *takeoverSessMgr) IsDriverActive(_ string) bool {
 	return m.driverActive
 }
 
-func (m *takeoverSessMgr) TouchActivity(_ string)                            {}
-func (m *takeoverSessMgr) StoreSignalMetadata(_ string, _ map[string]string) {}
-func (m *takeoverSessMgr) GetSignalMetadata(_ string) map[string]string      { return nil }
+func (m *takeoverSessMgr) TouchActivity(_ string)                                {}
+func (m *takeoverSessMgr) StoreSignalContext(_ string, _ *katypes.SignalContext) {}
+func (m *takeoverSessMgr) GetSignalContext(_ string) *katypes.SignalContext      { return nil }
 
 // recordingToolMetrics captures metric calls for assertion.
 type recordingToolMetrics struct {

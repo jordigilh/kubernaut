@@ -205,7 +205,7 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 		return nil, err
 	}
 	if hasSignal {
-		t.storeSignalMetadata(sess, resolvedSignal)
+		t.storeSignalContext(sess, resolvedSignal)
 	}
 
 	if sess.Reconnected {
@@ -233,11 +233,11 @@ func (t *InvestigateTool) resolveSignalForSession(ctx context.Context, rrID stri
 	return resolved, resolved != nil, nil
 }
 
-func (t *InvestigateTool) storeSignalMetadata(sess *mcpinternal.InteractiveSession, signal *katypes.SignalContext) {
+func (t *InvestigateTool) storeSignalContext(sess *mcpinternal.InteractiveSession, signal *katypes.SignalContext) {
 	if sess == nil || signal == nil {
 		return
 	}
-	t.sessions.StoreSignalMetadata(sess.SessionID, mcpinternal.SignalContextToMetadata(*signal))
+	t.sessions.StoreSignalContext(sess.SessionID, signal)
 }
 
 // upgradeOrCreateInteractiveSession upgrades the running autonomous session

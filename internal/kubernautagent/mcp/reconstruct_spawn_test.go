@@ -59,8 +59,8 @@ func (r *reconSpawnRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinte
 
 var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", func() {
 
-	Describe("UT-KA-2417-002: signal metadata round-trip", func() {
-		It("should preserve fleet routing fields across lease metadata", func() {
+	Describe("UT-KA-2417-002: typed signal context survives reconstruction", func() {
+		It("should preserve the complete signal context", func() {
 			isDuplicate := true
 			occurrenceCount := 3
 			deduplicationWindow := 15
@@ -81,9 +81,16 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 				ClusterClassification: "production",
 			}
 
-			metadata := mcpinternal.SignalContextToMetadata(original)
-			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-001",
+				SessionID:     "session-typed-001",
+				SignalContext: &original,
+			})
 
+			Expect(err).NotTo(HaveOccurred())
+			restored, ok := katypes.SignalContextFromContext(runner.capturedCtx)
 			Expect(ok).To(BeTrue())
 			Expect(restored).To(Equal(original))
 		})
@@ -93,40 +100,35 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			occurrenceCount := 0
 			deduplicationWindow := 0
 			original := katypes.SignalContext{
-				Name: "Alert", ClusterID: "remote-cluster", IsDuplicate: &isDuplicate,
+				Name: "Alert", RemediationID: "rr-typed-002", ClusterID: "remote-cluster", IsDuplicate: &isDuplicate,
 				OccurrenceCount: &occurrenceCount, DeduplicationWindowMinutes: &deduplicationWindow,
 			}
 
-			metadata := mcpinternal.SignalContextToMetadata(original)
-			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-002",
+				SessionID:     "session-typed-002",
+				SignalContext: &original,
+			})
 
+			Expect(err).NotTo(HaveOccurred())
+			restored, ok := katypes.SignalContextFromContext(runner.capturedCtx)
 			Expect(ok).To(BeTrue())
 			Expect(restored).To(Equal(original))
 		})
 
-		It("should retain valid routing fields when optional metadata is malformed", func() {
-			metadata := map[string]string{
-				"cluster_id":                   "remote-cluster",
-				"is_duplicate":                 "not-a-bool",
-				"occurrence_count":             "not-an-int",
-				"signal_annotations":           "not-json",
-				"deduplication_window_minutes": "not-an-int",
-			}
+		It("should omit signal context when none was captured", func() {
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-003",
+				SessionID:     "session-typed-003",
+			})
 
-			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
-
-			Expect(ok).To(BeTrue())
-			Expect(restored.ClusterID).To(Equal("remote-cluster"))
-			Expect(restored.IsDuplicate).To(BeNil())
-			Expect(restored.OccurrenceCount).To(BeNil())
-			Expect(restored.SignalAnnotations).To(BeNil())
-		})
-
-		It("should reject metadata with no recognized signal fields", func() {
-			restored, ok := mcpinternal.SignalContextFromMetadata(map[string]string{"unrelated": "value"})
-
+			Expect(err).NotTo(HaveOccurred())
+			_, ok := katypes.SignalContextFromContext(runner.capturedCtx)
 			Expect(ok).To(BeFalse())
-			Expect(restored).To(BeZero())
 		})
 	})
 
@@ -145,10 +147,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-recon-001",
 				SessionID:     "old-sess-001",
-				SignalMeta: map[string]string{
-					"signal_name": "OOMKilled",
-					"severity":    "critical",
-				},
+				SignalContext: &katypes.SignalContext{Name: "OOMKilled", Severity: "critical"},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
@@ -180,11 +179,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-meta-001",
 				SessionID:     "old-sess-002",
-				SignalMeta: map[string]string{
-					"signal_name": "CrashLoopBackOff",
-					"severity":    "high",
-					"cluster_id":  "remote-cluster",
-				},
+				SignalContext: &katypes.SignalContext{Name: "CrashLoopBackOff", Severity: "high", ClusterID: "remote-cluster"},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
@@ -207,7 +202,6 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-empty-001",
 				SessionID:     "old-sess-003",
-				SignalMeta:    map[string]string{},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)

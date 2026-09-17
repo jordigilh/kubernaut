@@ -46,9 +46,9 @@ func (m *statusSessionMgr) IsDriverActive(_ string) bool {
 	return m.driverSession != nil
 }
 
-func (m *statusSessionMgr) TouchActivity(_ string)                            {}
-func (m *statusSessionMgr) StoreSignalMetadata(_ string, _ map[string]string) {}
-func (m *statusSessionMgr) GetSignalMetadata(_ string) map[string]string      { return nil }
+func (m *statusSessionMgr) TouchActivity(_ string)                                {}
+func (m *statusSessionMgr) StoreSignalContext(_ string, _ *katypes.SignalContext) {}
+func (m *statusSessionMgr) GetSignalContext(_ string) *katypes.SignalContext      { return nil }
 
 type statusAutoMgr struct {
 	found bool

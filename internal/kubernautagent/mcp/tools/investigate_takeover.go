@@ -43,7 +43,7 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		return InvestigateOutput{}, err
 	}
 	if hasSignal {
-		t.storeSignalMetadata(sess, resolvedSignal)
+		t.storeSignalContext(sess, resolvedSignal)
 	}
 
 	if sess.Reconnected {

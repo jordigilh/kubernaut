@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("integration", "lease"), func() {
@@ -198,10 +199,10 @@ var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("in
 			sess, err := mgr.Takeover(context.Background(), "rr-meta", user)
 			Expect(err).NotTo(HaveOccurred())
 
-			meta := map[string]string{"signal_id": "sig-001", "priority": "high"}
-			mgr.StoreSignalMetadata(sess.SessionID, meta)
+			meta := &katypes.SignalContext{Name: "sig-001", Priority: "high"}
+			mgr.StoreSignalContext(sess.SessionID, meta)
 
-			retrieved := mgr.GetSignalMetadata(sess.SessionID)
+			retrieved := mgr.GetSignalContext(sess.SessionID)
 			Expect(retrieved).To(Equal(meta))
 
 			rrID, sMeta := mgr.GetSessionInfo(sess.SessionID)

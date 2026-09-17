@@ -260,7 +260,11 @@ func (t *SelectWorkflowTool) clusterIDForSession(sessionID string) string {
 	if t.sessions == nil {
 		return ""
 	}
-	return t.sessions.GetSignalMetadata(sessionID)["cluster_id"]
+	signal := t.sessions.GetSignalContext(sessionID)
+	if signal == nil {
+		return ""
+	}
+	return signal.ClusterID
 }
 
 // SelectWorkflowTool handles the kubernaut_select_workflow MCP tool.

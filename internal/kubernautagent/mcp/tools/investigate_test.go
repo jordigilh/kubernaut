@@ -42,7 +42,7 @@ type mockSessionManager struct {
 	isActive        bool
 	releasedID      string
 	releasedReason  string
-	signalMetadata  map[string]string
+	signalContext   *katypes.SignalContext
 }
 
 func (m *mockSessionManager) Takeover(_ context.Context, _ string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
@@ -73,16 +73,16 @@ func (m *mockSessionManager) IsDriverActive(_ string) bool {
 
 func (m *mockSessionManager) TouchActivity(_ string) {}
 
-func (m *mockSessionManager) StoreSignalMetadata(_ string, metadata map[string]string) {
+func (m *mockSessionManager) StoreSignalContext(_ string, signal *katypes.SignalContext) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.signalMetadata = metadata
+	m.signalContext = signal
 }
 
-func (m *mockSessionManager) GetSignalMetadata(_ string) map[string]string {
+func (m *mockSessionManager) GetSignalContext(_ string) *katypes.SignalContext {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.signalMetadata
+	return m.signalContext
 }
 
 func (m *mockSessionManager) getReleased() (string, string) {
@@ -226,8 +226,9 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			}, mcpinternal.UserInfo{Username: "alice"})
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sessionMgr.signalMetadata).To(HaveKeyWithValue("signal_name", "OOMKilled"))
-			Expect(sessionMgr.signalMetadata).To(HaveKeyWithValue("cluster_id", "remote-cluster"))
+			Expect(sessionMgr.signalContext).NotTo(BeNil())
+			Expect(sessionMgr.signalContext.Name).To(Equal("OOMKilled"))
+			Expect(sessionMgr.signalContext.ClusterID).To(Equal("remote-cluster"))
 		})
 	})
 
