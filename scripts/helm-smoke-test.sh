@@ -2105,7 +2105,7 @@ run_template_tests() {
   np002_out=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=false 2>&1)
-  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$np002_out"; then
+  if [[ $? -ne 0 ]] && grep -Eq "(additional properties 'enabled' not allowed|Additional property enabled is not allowed)" <<< "$np002_out"; then
     tap_ok "ST-NP-002: networkPolicies.enabled is schema-rejected (dead field, NetworkPolicies are mandatory)"
   else
     tap_not_ok "ST-NP-002: networkPolicies.enabled should be schema-rejected" \
@@ -2151,7 +2151,7 @@ for d in docs:
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
-  if [[ $? -ne 0 ]] && grep -q "additional properties 'notification' not allowed" <<< "$np004_out"; then
+  if [[ $? -ne 0 ]] && grep -Eq "(additional properties 'notification' not allowed|Additional property notification is not allowed)" <<< "$np004_out"; then
     tap_ok "ST-NP-004: networkPolicies.notification.enabled is schema-rejected (dead field, no owning-service gate for this always-on service)"
   else
     tap_not_ok "ST-NP-004: networkPolicies.notification.enabled should be schema-rejected" \
@@ -2747,7 +2747,7 @@ for d in docs:
   af_np_disabled=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apifrontend.enabled=false 2>&1)
-  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$af_np_disabled"; then
+  if [[ $? -ne 0 ]] && grep -Eq "(additional properties 'enabled' not allowed|Additional property enabled is not allowed)" <<< "$af_np_disabled"; then
     tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled is schema-rejected (dead field; apifrontend.enabled is the only remaining gate)"
   else
     tap_not_ok "ST-CHART-AF-NP-001b: APIFrontend NetworkPolicy disable toggle" \
