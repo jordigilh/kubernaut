@@ -40,7 +40,7 @@ Issue #2417 consolidates fleet-routing gaps where a target-cluster investigation
 - `InvestigateTool` start, message, and discovery signal resolution.
 - `select_workflow` signal-aware enrichment and production wiring.
 - Interactive lease metadata capture and reconstruction context restoration.
-- All 13 `DetectedLabels` failure categories.
+- All 13 `DetectedLabels` categories through the remote fleet post-RCA discovery path.
 - Existing autonomous, interactive, discovery, reconstruction, and fleet gateway journeys.
 
 ### 4.2 Not Tested
@@ -57,7 +57,7 @@ Issue #2417 consolidates fleet-routing gaps where a target-cluster investigation
 | Selection cluster scoping | `kubernaut_select_workflow` | `cmd/kubernautagent/routes.go` and `mcp/tools/select_workflow.go` | `IT-KA-DISC-*`, `E2E-FLEET-018` |
 | RCA discovery prescoping | `Investigator.RunWorkflowDiscoveryFromRCA` | `investigator/investigator_discovery.go` | `IT-KA-FLEET-2417` |
 | Reconstruction signal context | disconnect callback to `RunReconTurn` | `cmd/kubernautagent/routes.go`, `mcp/reconstruct.go` | `IT-KA-TAKE-*`, `E2E-FLEET-018`, reconstruction E2E suite |
-| Complete label category set | enrichment failure handling | `enrichment/label_detector.go` | label detector UT/IT suites and fleet post-RCA E2E |
+| Complete label category set | enrichment failure handling | `enrichment/label_detector.go` | label detector UT/IT suites and `IT-KA-FLEET-LABELS` |
 
 ## 6. Scenario Matrix
 
@@ -71,6 +71,7 @@ Issue #2417 consolidates fleet-routing gaps where a target-cluster investigation
 | BR-INTERACTIVE-005 | Unit/Integration | Selection enrichment cluster propagation | `EnrichRequest.ClusterID` and signal incident ID are authoritative. |
 | BR-INTERACTIVE-008 | Integration/E2E | Existing reconstruction and disconnect journeys | Reconstructed turns retain target signal context and correlation. |
 | BR-AI-056 | Unit | `UT-KA-433-131` category enumeration | All 13 authoritative labels, including `gitOpsTool`, are tracked. |
+| BR-AI-056 / BR-INTEGRATION-1489 | Integration | `IT-KA-FLEET-LABELS` | Each authoritative label is detected from a category-specific remote fixture through post-RCA workflow discovery without failed detection fallback. |
 | BR-AUDIT-005 | Integration/E2E | Fleet failure and reconstruction audit traces | Events remain queryable by remediation correlation ID. |
 
 ## 7. Pass Criteria
