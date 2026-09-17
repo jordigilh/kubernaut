@@ -38,6 +38,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+const fleetLabelDeploymentKind = "Deployment"
+
 // fleetLabelCoverageTool is a deterministic remote-cluster stand-in for the
 // resources_get/resources_list overlay tools. It intentionally keys responses
 // by the requested kind so a test cannot pass by returning one canned object
@@ -102,7 +104,7 @@ func fleetLabelRoot(kind, apiVersion string, labels, annotations, podAnnotations
 		"kind":       kind,
 		"metadata":   metadata,
 	}
-	if kind == "Deployment" || kind == "StatefulSet" {
+	if kind == fleetLabelDeploymentKind || kind == "StatefulSet" {
 		object["spec"] = map[string]interface{}{
 			"template": map[string]interface{}{
 				"metadata": map[string]interface{}{
@@ -136,7 +138,7 @@ func fleetLabelCoverageMapper() meta.RESTMapper {
 		{Group: "kubevirt.io", Version: "v1"},
 		{Group: "storage.k8s.io", Version: "v1"},
 	})
-	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: fleetLabelDeploymentKind}, meta.RESTScopeNamespace)
 	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, meta.RESTScopeNamespace)
 	mapper.Add(schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, meta.RESTScopeNamespace)
 	mapper.Add(schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, meta.RESTScopeNamespace)
@@ -151,7 +153,7 @@ func fleetLabelCoverageMapper() meta.RESTMapper {
 
 func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 	deployment := func(labels, annotations, podAnnotations map[string]string) string {
-		return fleetLabelRoot("Deployment", "apps/v1", labels, annotations, podAnnotations)
+		return fleetLabelRoot(fleetLabelDeploymentKind, "apps/v1", labels, annotations, podAnnotations)
 	}
 	statefulSet := fleetLabelRoot("StatefulSet", "apps/v1", nil, nil, nil)
 	vm := func(liveMigrate bool) string {
@@ -172,17 +174,17 @@ func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 
 	return []fleetLabelCoverageCase{
 		{
-			name: "gitOpsManaged", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "gitOpsManaged", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root:        deployment(nil, map[string]string{"argocd.argoproj.io/tracking-id": "remote-app:apps/Deployment:remote-ns/remote-target"}, nil),
 			expectedKey: "gitOpsManaged", expectedVal: "true",
 		},
 		{
-			name: "gitOpsTool", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "gitOpsTool", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root:        deployment(nil, map[string]string{"argocd.argoproj.io/tracking-id": "remote-app:apps/Deployment:remote-ns/remote-target"}, nil),
 			expectedKey: "gitOpsTool", expectedVal: "argocd",
 		},
 		{
-			name: "helmManaged", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "helmManaged", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root:        deployment(map[string]string{"app.kubernetes.io/managed-by": "Helm"}, nil, nil),
 			expectedKey: "helmManaged", expectedVal: "true",
 		},
@@ -192,12 +194,12 @@ func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 			expectedKey: "stateful", expectedVal: "true",
 		},
 		{
-			name: "serviceMesh", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "serviceMesh", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root:        deployment(nil, nil, map[string]string{"sidecar.istio.io/status": "{}"}),
 			expectedKey: "serviceMesh", expectedVal: "istio",
 		},
 		{
-			name: "hpaEnabled", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "hpaEnabled", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root: deployment(nil, nil, nil),
 			listByKind: map[string]string{
 				"HorizontalPodAutoscaler": `{"apiVersion":"autoscaling/v2","kind":"HorizontalPodAutoscalerList","items":[{"spec":{"scaleTargetRef":{"kind":"Deployment","name":"remote-target"}}}]}`,
@@ -205,7 +207,7 @@ func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 			expectedKey: "hpaEnabled", expectedVal: "true",
 		},
 		{
-			name: "pdbProtected", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "pdbProtected", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root: deployment(nil, nil, nil),
 			listByKind: map[string]string{
 				"PodDisruptionBudget": `{"apiVersion":"policy/v1","kind":"PodDisruptionBudgetList","items":[{"spec":{"selector":{"matchLabels":{"app":"remote-target"}}}}]}`,
@@ -213,7 +215,7 @@ func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 			expectedKey: "pdbProtected", expectedVal: "true",
 		},
 		{
-			name: "networkIsolated", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "networkIsolated", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root: deployment(nil, nil, nil),
 			listByKind: map[string]string{
 				"NetworkPolicy": `{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicyList","items":[{"metadata":{"name":"remote-isolation"}}]}`,
@@ -221,7 +223,7 @@ func fleetLabelCoverageCases() []fleetLabelCoverageCase {
 			expectedKey: "networkIsolated", expectedVal: "true",
 		},
 		{
-			name: "resourceQuotaConstrained", targetKind: "Deployment", apiVersion: "apps/v1",
+			name: "resourceQuotaConstrained", targetKind: fleetLabelDeploymentKind, apiVersion: "apps/v1",
 			root: deployment(nil, nil, nil),
 			listByKind: map[string]string{
 				"ResourceQuota": `{"apiVersion":"v1","kind":"ResourceQuotaList","items":[{"metadata":{"name":"remote-quota"},"status":{"hard":{"pods":"10"},"used":{"pods":"1"}}}]}`,
@@ -277,7 +279,7 @@ var _ = DescribeTable("IT-KA-FLEET-LABELS: remote label detection through workfl
 		"resources_list": listTool,
 	}}
 	hubK8s := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
-		{Kind: "Deployment", Name: "hub-should-not-appear", Namespace: "remote-ns"},
+		{Kind: fleetLabelDeploymentKind, Name: "hub-should-not-appear", Namespace: "remote-ns"},
 	}}
 	hubDetector := enrichment.NewLabelDetector(nil, fleetLabelCoverageMapper(), logr.Discard())
 	enricher := enrichment.NewEnricher(hubK8s, suiteDSAdapter, auditStore, logr.Discard()).
