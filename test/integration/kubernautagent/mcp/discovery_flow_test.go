@@ -864,6 +864,7 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
 		mcptools.WithMutexProvider(investigateTool),
+		mcptools.WithSelectWorkflowSignalContextResolver(resolver),
 	)
 
 	completeNoActionTool := mcptools.NewCompleteNoActionTool(stack.SessionMgr,
@@ -965,6 +966,7 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
 		mcptools.WithMutexProvider(investigateTool),
+		mcptools.WithSelectWorkflowSignalContextResolver(resolver),
 	)
 
 	completeNoActionTool := mcptools.NewCompleteNoActionTool(stack.SessionMgr,

@@ -845,6 +845,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithMutexProvider(investigateTool),
 		mcptools.WithSelectWorkflowTimeoutTracker(d.timeoutMgr),
 		mcptools.WithSelectWorkflowAuditStore(d.auditStore),
+		mcptools.WithSelectWorkflowSignalContextResolver(d.signalResolver),
 	}
 	if d.enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(d.enricher))

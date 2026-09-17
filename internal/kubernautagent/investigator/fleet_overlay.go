@@ -89,11 +89,11 @@ func FleetOverlayFromContext(ctx context.Context) (map[string]tools.Tool, bool) 
 // different (wrong) cluster's access. A
 // fleet-target investigation (clusterID != "") whose overlay cannot be
 // resolved — either because no FleetOverlayResolver is configured on this KA
-// instance at all (EventTypeFleetOverlayUnavailable), or because a
-// configured resolver's Overlay() call itself fails, e.g. the MCP
-// gateway/kube-mcp-server is unreachable (EventTypeFleetOverlayFailed) —
-// now returns a non-nil error instead of silently continuing with the local
-// tool registry. Falling back to local tools is never correct here: the
+// instance at all (EventTypeFleetOverlayUnavailable), because a configured
+// resolver's Overlay() call itself fails, or because it returns no tools, e.g.
+// the MCP gateway/kube-mcp-server is unreachable or unusable
+// (EventTypeFleetOverlayFailed) — now returns a non-nil error instead of
+// silently continuing with the local tool registry. Falling back to local tools is never correct here: the
 // local/hub cluster is never the resource the operator or the firing signal
 // actually targeted, so any tool call the LLM makes without the overlay
 // queries a namespace/pod/deployment on the WRONG cluster. Confirmed live
@@ -123,6 +123,11 @@ func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, co
 	if clusterID == "" {
 		return ctx, nil
 	}
+	if scopedClusterID, ok := audit.ClusterIDFromContext(ctx); ok && scopedClusterID == clusterID {
+		if _, hasOverlay := FleetOverlayFromContext(ctx); hasOverlay {
+			return ctx, nil
+		}
+	}
 	if inv.fleetOverlayResolver == nil {
 		inv.logger.Error(nil, "fleet-target investigation reached prescopeFleetOverlay but no FleetOverlayResolver "+
 			"is configured on this KA instance; failing closed rather than falling back to local/hub tools",
@@ -140,14 +145,21 @@ func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, co
 		inv.emitFleetOverlayFailedAudit(ctx, clusterID, correlationID, err)
 		return ctx, fmt.Errorf("fleet tool overlay unavailable for cluster %q: %w", clusterID, err)
 	}
+	if len(overlay) == 0 {
+		err := fmt.Errorf("fleet tool overlay unavailable for cluster %q: resolver returned an empty overlay", clusterID)
+		inv.logger.Error(err, "fleet tool overlay resolution returned no tools; failing closed",
+			"cluster_id", clusterID,
+		)
+		inv.emitFleetOverlayFailedAudit(ctx, clusterID, correlationID, err)
+		return ctx, err
+	}
 	ctx = audit.WithClusterID(ctx, clusterID)
 	return WithFleetOverlay(ctx, overlay), nil
 }
 
 // emitFleetOverlayFailedAudit records the AU-3 audit event for a failed fleet
 // tool overlay resolution (see prescopeFleetOverlay). Best-effort: an audit
-// store failure must never turn an already-fail-open degradation into a
-// investigation-aborting error.
+// store failure must never hide the investigation-aborting resolution error.
 func (inv *Investigator) emitFleetOverlayFailedAudit(ctx context.Context, clusterID, correlationID string, resolveErr error) {
 	event := audit.NewEvent(audit.EventTypeFleetOverlayFailed, correlationID)
 	event.EventAction = audit.ActionFleetOverlayFailed

@@ -54,6 +54,11 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	preKind := signal.ResourceKind
 	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
 	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
+	var err error
+	ctx, err = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
+	if err != nil {
+		return nil, err
+	}
 
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
 		"rca_target_kind", rcaResult.RemediationTarget.Kind,

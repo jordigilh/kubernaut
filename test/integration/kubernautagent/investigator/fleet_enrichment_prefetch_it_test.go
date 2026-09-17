@@ -51,6 +51,15 @@ func (labelDetectorGetTool) Execute(_ context.Context, args json.RawMessage) (st
 	return `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"remote-target","namespace":"remote-ns","labels":{"app":"remote-target"}}}`, nil
 }
 
+type gitOpsLabelDetectorGetTool struct{}
+
+func (gitOpsLabelDetectorGetTool) Name() string                { return "resources_get" }
+func (gitOpsLabelDetectorGetTool) Description() string         { return "remote GitOps resource get" }
+func (gitOpsLabelDetectorGetTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
+func (gitOpsLabelDetectorGetTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	return `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"remote-target","namespace":"remote-ns","annotations":{"argocd.argoproj.io/tracking-id":"remote-app:apps/Deployment:remote-ns/remote-target"}}}`, nil
+}
+
 type labelDetectorListTool struct{}
 
 func (labelDetectorListTool) Name() string                { return "resources_list" }
@@ -247,6 +256,63 @@ var _ = Describe("Fleet-aware enrichment pre-fetch (BR-INTEGRATION-1489, Issue #
 				Expect(failed).NotTo(ContainElement("hpaEnabled"), "SI-10: valid remote list responses must not be treated as detection failures")
 				Expect(failed).NotTo(ContainElement("pdbProtected"), "SI-10: valid remote list responses must not be treated as detection failures")
 			}
+		})
+	})
+
+	Describe("IT-KA-FLEET-2417 [AC-4, AC-6, BR-AI-056]: RCA workflow discovery prescopes before post-RCA enrichment", func() {
+		It("detects remote GitOps labels and selects the GitOps workflow without an explicit context-tool call", func() {
+			hubK8s := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
+				{Kind: "Deployment", Name: "hub-should-not-appear", Namespace: "remote-ns"},
+			}}
+			hubDetector := enrichment.NewLabelDetector(nil, newItTestMapper(), invLogger)
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": gitOpsLabelDetectorGetTool{},
+			}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				wfToolResp(`{"root_cause_analysis":{"summary":"GitOps drift"},"selected_workflow":{"workflow_id":"git-revert-v2","confidence":0.95},"confidence":0.95}`),
+			}}
+
+			enricher := enrichment.NewEnricher(hubK8s, suiteDSAdapter, auditStore, invLogger).
+				WithK8sResolver(func(ctx context.Context) enrichment.K8sClient {
+					return custom.ResolveK8sClient(ctx, hubK8s, invLogger)
+				}).
+				WithLabelDetectorResolver(func(ctx context.Context) *enrichment.LabelDetector {
+					return custom.ResolveLabelDetector(ctx, hubDetector, newItTestMapper(), invLogger)
+				})
+			builder, berr := prompt.NewBuilder()
+			Expect(berr).ToNot(HaveOccurred())
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: parser.NewResultParser(),
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: spy,
+			})
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "remote-target", Namespace: "remote-ns", ResourceKind: "Deployment",
+				ResourceName: "remote-target", ClusterID: "remote-east", RemediationID: "rem-2417-001",
+			}, &katypes.InvestigationResult{
+				RCASummary: "GitOps drift detected",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "remote-target", Namespace: "remote-ns", APIVersion: "apps/v1",
+				},
+			}, nil, "corr-2417-001")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(spy.calls).To(ConsistOf("remote-east"),
+				"IT-KA-FLEET-2417: discovery must install the target cluster overlay before enrichment")
+			Expect(result.DetectedLabels["gitOpsManaged"]).To(BeTrue(),
+				"IT-KA-FLEET-2417: remote ArgoCD tracking metadata must be detected")
+			Expect(result.DetectedLabels["gitOpsTool"]).To(Equal("argocd"),
+				"IT-KA-FLEET-2417: the detected GitOps tool must be preserved")
+			Expect(result.WorkflowID).To(Equal("git-revert-v2"),
+				"IT-KA-FLEET-2417: workflow discovery must select the GitOps workflow")
+			promptContent := allMessageContent(mockClient.calls[0].Messages)
+			Expect(promptContent).To(ContainSubstring("gitOpsManaged"),
+				"IT-KA-FLEET-2417: workflow-selection context must include detected labels")
+			Expect(promptContent).To(ContainSubstring("argocd"),
+				"IT-KA-FLEET-2417: workflow-selection context must include the detected GitOps tool")
 		})
 	})
 })

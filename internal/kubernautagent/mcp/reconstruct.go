@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 const kaServiceAccount = "system:serviceaccount:kubernaut:kubernaut-agent"
@@ -45,6 +46,65 @@ type ReconstructionContext struct {
 	CorrelationID string
 	SessionID     string
 	SignalMeta    map[string]string
+}
+
+// SignalContextToMetadata preserves signal fields needed by interactive
+// disconnect reconstruction without coupling the lease manager to signal DTOs.
+func SignalContextToMetadata(signal katypes.SignalContext) map[string]string {
+	metadata := make(map[string]string, 23)
+	put := func(key, value string) {
+		if value != "" {
+			metadata[key] = value
+		}
+	}
+	put("signal_name", signal.Name)
+	put("namespace", signal.Namespace)
+	put("severity", signal.Severity)
+	put("message", signal.Message)
+	put("incident_id", signal.IncidentID)
+	put("remediation_id", signal.RemediationID)
+	put("resource_kind", signal.ResourceKind)
+	put("resource_name", signal.ResourceName)
+	put("resource_api_version", signal.ResourceAPIVersion)
+	put("cluster_id", signal.ClusterID)
+	put("cluster_name", signal.ClusterName)
+	put("environment", signal.Environment)
+	put("priority", signal.Priority)
+	put("risk_tolerance", signal.RiskTolerance)
+	put("signal_source", signal.SignalSource)
+	put("business_category", signal.BusinessCategory)
+	put("description", signal.Description)
+	put("signal_mode", signal.SignalMode)
+	put("firing_time", signal.FiringTime)
+	put("received_time", signal.ReceivedTime)
+	put("first_seen", signal.FirstSeen)
+	put("last_seen", signal.LastSeen)
+	put("cluster_classification", signal.ClusterClassification)
+	return metadata
+}
+
+// SignalContextFromMetadata restores signal context captured before an
+// interactive lease was released. It returns false when no signal fields exist.
+func SignalContextFromMetadata(metadata map[string]string) (katypes.SignalContext, bool) {
+	if len(metadata) == 0 {
+		return katypes.SignalContext{}, false
+	}
+	signal := katypes.SignalContext{
+		Name: metadata["signal_name"], Namespace: metadata["namespace"], Severity: metadata["severity"],
+		Message: metadata["message"], IncidentID: metadata["incident_id"], RemediationID: metadata["remediation_id"],
+		ResourceKind: metadata["resource_kind"], ResourceName: metadata["resource_name"], ResourceAPIVersion: metadata["resource_api_version"],
+		ClusterID: metadata["cluster_id"], ClusterName: metadata["cluster_name"], Environment: metadata["environment"],
+		Priority: metadata["priority"], RiskTolerance: metadata["risk_tolerance"], SignalSource: metadata["signal_source"],
+		BusinessCategory: metadata["business_category"], Description: metadata["description"], SignalMode: metadata["signal_mode"],
+		FiringTime: metadata["firing_time"], ReceivedTime: metadata["received_time"], FirstSeen: metadata["first_seen"],
+		LastSeen: metadata["last_seen"], ClusterClassification: metadata["cluster_classification"],
+	}
+	for _, value := range metadata {
+		if value != "" {
+			return signal, true
+		}
+	}
+	return katypes.SignalContext{}, false
 }
 
 // ReconstructionSpawner rebuilds the conversation context from DS audit events
@@ -102,6 +162,12 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 		s.logger.Info("context reconstruction returned error; proceeding with empty context",
 			"correlation_id", entry.CorrelationID,
 			"error", reconErr.Error())
+	}
+	if signal, ok := SignalContextFromMetadata(entry.SignalMeta); ok {
+		if signal.RemediationID == "" {
+			signal.RemediationID = entry.CorrelationID
+		}
+		ctx = katypes.WithSignalContext(ctx, signal)
 	}
 
 	messages := turnsToReconMessages(turns)

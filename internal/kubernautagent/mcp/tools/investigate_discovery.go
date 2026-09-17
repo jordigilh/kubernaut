@@ -22,8 +22,8 @@ import (
 	"errors"
 	"fmt"
 
-	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -64,7 +64,10 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	// Step 2: Resolve signal context for Phase 3. Enrichment is handled
 	// internally by the investigator's enrichment pipeline (F5 #1374), so we
 	// only resolve the signal here.
-	signal := t.resolveDiscoverySignal(ctx, input.RRID)
+	signal, err := t.resolveDiscoverySignal(ctx, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, err
+	}
 
 	// Step 3: Enrich context with the HTTP investigation session so that
 	// workflow discovery can emit audit events with session_id and stream
@@ -355,20 +358,21 @@ func (t *InvestigateTool) triggerFreshInvestigationForDiscovery(ctx context.Cont
 }
 
 // resolveDiscoverySignal resolves the signal context for Phase 3 workflow
-// discovery, logging (but not failing) on resolution errors.
-func (t *InvestigateTool) resolveDiscoverySignal(ctx context.Context, rrID string) katypes.SignalContext {
+// discovery and returns resolution failures to the MCP caller.
+func (t *InvestigateTool) resolveDiscoverySignal(ctx context.Context, rrID string) (katypes.SignalContext, error) {
 	var signal katypes.SignalContext
 	if t.signalResolver == nil {
-		return signal
+		return signal, nil
 	}
 	resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, rrID)
 	if resolveErr != nil {
-		t.logger.V(1).Info("signal context resolution failed, using empty context",
+		t.logger.Error(resolveErr, "signal context resolution failed",
 			"rr_id", rrID, "error", resolveErr)
+		return signal, fmt.Errorf("resolve signal context: %w", resolveErr)
 	} else if resolved != nil {
 		signal = *resolved
 	}
-	return signal
+	return signal, nil
 }
 
 // enrichLiveEventContext attaches the HTTP investigation session ID (and its

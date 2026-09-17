@@ -24,6 +24,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
@@ -190,9 +191,16 @@ func (t *InvestigateTool) acquireInteractiveLease(ctx context.Context, rrID stri
 // (lease held, max sessions reached, reconnect-in-progress, or a generic
 // takeover error).
 func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	resolvedSignal, hasSignal, err := t.resolveSignalForSession(ctx, input.RRID)
+	if err != nil {
+		return nil, err
+	}
 	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "start_failed", "start_failed", "start session")
 	if err != nil {
 		return nil, err
+	}
+	if hasSignal {
+		t.storeSignalMetadata(sess, resolvedSignal)
 	}
 
 	if sess.Reconnected {
@@ -207,6 +215,29 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 	}
 
 	return sess, nil
+}
+
+func (t *InvestigateTool) resolveSignalForSession(ctx context.Context, rrID string) (*katypes.SignalContext, bool, error) {
+	if t.signalResolver == nil {
+		return nil, false, nil
+	}
+	resolved, err := t.signalResolver.ResolveSignalContext(ctx, rrID)
+	if err != nil {
+		return nil, false, fmt.Errorf("resolve signal context: %w", err)
+	}
+	return resolved, resolved != nil, nil
+}
+
+func (t *InvestigateTool) storeSignalMetadata(sess *mcpinternal.InteractiveSession, signal *katypes.SignalContext) {
+	if sess == nil || signal == nil {
+		return
+	}
+	store, ok := t.sessions.(interface {
+		StoreSignalMetadata(string, map[string]string)
+	})
+	if ok {
+		store.StoreSignalMetadata(sess.SessionID, mcpinternal.SignalContextToMetadata(*signal))
+	}
 }
 
 // upgradeOrCreateInteractiveSession upgrades the running autonomous session

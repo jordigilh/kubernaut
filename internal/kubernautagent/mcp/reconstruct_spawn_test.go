@@ -26,15 +26,18 @@ import (
 	. "github.com/onsi/gomega"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type reconSpawnRunner struct {
 	receivedMessages []mcpinternal.ReconMessage
+	capturedCtx      context.Context
 	called           atomic.Int32
 }
 
-func (r *reconSpawnRunner) RunReconTurn(_ context.Context, msgs []mcpinternal.ReconMessage, _ string) (string, error) {
+func (r *reconSpawnRunner) RunReconTurn(ctx context.Context, msgs []mcpinternal.ReconMessage, _ string) (string, error) {
 	r.called.Add(1)
+	r.capturedCtx = ctx
 	r.receivedMessages = msgs
 	return "reconstructed-response", nil
 }
@@ -55,6 +58,27 @@ func (r *reconSpawnRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinte
 }
 
 var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", func() {
+
+	Describe("UT-KA-2417-002: signal metadata round-trip", func() {
+		It("should preserve fleet routing fields across lease metadata", func() {
+			original := katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", Severity: "critical", Message: "pod restarted",
+				IncidentID: "incident-1", RemediationID: "rr-1", ResourceKind: "Deployment", ResourceName: "api",
+				ResourceAPIVersion: "apps/v1", ClusterID: "remote-cluster", ClusterName: "remote",
+				Environment: "prod", Priority: "p1", RiskTolerance: "low", SignalSource: "prometheus",
+				BusinessCategory: "payments", Description: "description", SignalMode: "alert",
+				FiringTime: "2026-09-16T00:00:00Z", ReceivedTime: "2026-09-16T00:00:01Z",
+				FirstSeen: "2026-09-15T00:00:00Z", LastSeen: "2026-09-16T00:00:00Z",
+				ClusterClassification: "production",
+			}
+
+			metadata := mcpinternal.SignalContextToMetadata(original)
+			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
+
+			Expect(ok).To(BeTrue())
+			Expect(restored).To(Equal(original))
+		})
+	})
 
 	Describe("UT-KA-TAKE-006: Reconstruction calls RunInteractiveTurn with full prior messages", func() {
 		It("should convert conversation turns to LLM messages for the runner", func() {
@@ -109,12 +133,18 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 				SignalMeta: map[string]string{
 					"signal_name": "CrashLoopBackOff",
 					"severity":    "high",
+					"cluster_id":  "remote-cluster",
 				},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(runner.called.Load()).To(Equal(int32(1)))
+			signal, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue())
+			Expect(signal.Name).To(Equal("CrashLoopBackOff"))
+			Expect(signal.Severity).To(Equal("high"))
+			Expect(signal.ClusterID).To(Equal("remote-cluster"))
 		})
 	})
 

@@ -93,6 +93,15 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	})
 
 	Describe("UT-KA-433-131: DetectedLabels struct matches KA LabelDetector output", func() {
+		It("should enumerate every authoritative detection category", func() {
+			Expect(enrichment.AllDetectionCategories).To(ConsistOf(
+				"gitOpsManaged", "gitOpsTool", "helmManaged", "stateful", "serviceMesh",
+				"hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained",
+				"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend",
+			))
+			Expect(enrichment.AllDetectionCategories).To(HaveLen(13))
+		})
+
 		It("should round-trip serialize all 10 DetectedLabels fields", func() {
 			labels := enrichment.DetectedLabels{
 				FailedDetections:         []string{"hpaEnabled"},

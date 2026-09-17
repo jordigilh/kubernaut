@@ -128,6 +128,14 @@ type SelectWorkflowOutput struct {
 // SelectWorkflowOption configures optional dependencies on SelectWorkflowTool.
 type SelectWorkflowOption func(*SelectWorkflowTool)
 
+// WithSelectWorkflowSignalContextResolver supplies the authoritative signal
+// context used to scope interactive enrichment to the target fleet cluster.
+func WithSelectWorkflowSignalContextResolver(resolver SignalContextResolver) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		t.signalResolver = resolver
+	}
+}
+
 // WithEnrichmentRunner registers enrichment as the first pre-selection hook.
 // Enrichment runs before any Goose recipe prompt injection hooks so that
 // recipe parameters have access to the full enrichment context (#1012).
@@ -138,13 +146,14 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
 				return nil
 			}
-			// Issue #1802: SelectWorkflowInput has no ClusterID field (this
-			// interactive MCP tool path is independent of Investigate's
-			// fleet-aware SignalContext) -- enrichment stays unscoped here,
-			// matching this path's pre-existing behavior.
+			clusterID, incidentID, err := t.resolveSignalScope(ctx, input)
+			if err != nil {
+				return err
+			}
 			result, err := runner.Enrich(ctx, enrichment.EnrichRequest{
 				Kind: input.Kind, Name: input.Name, Namespace: input.Namespace,
-				APIVersion: input.APIVersion, SpecHash: input.SpecHash, IncidentID: input.IncidentID,
+				APIVersion: input.APIVersion, SpecHash: input.SpecHash,
+				ClusterID: clusterID, IncidentID: incidentID,
 			})
 			t.emitInteractiveK8sCall(input, user, pctx.SessionID, err) //nolint:contextcheck // emitInteractiveK8sCall uses audit.StoreBestEffort by design (ADR-038); see its doc comment
 			if err != nil {
@@ -159,6 +168,24 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 		}
 		t.preSelectionHooks = append(t.preSelectionHooks, hook)
 	}
+}
+
+func (t *SelectWorkflowTool) resolveSignalScope(ctx context.Context, input SelectWorkflowInput) (string, string, error) {
+	incidentID := input.IncidentID
+	if t.signalResolver == nil {
+		return "", incidentID, nil
+	}
+	signal, err := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve signal context: %w", err)
+	}
+	if signal == nil {
+		return "", incidentID, nil
+	}
+	if incidentID == "" {
+		incidentID = signal.IncidentID
+	}
+	return signal.ClusterID, incidentID, nil
 }
 
 // WithSelectWorkflowAuditStore enables aiagent.interactive.k8s_call audit
@@ -221,6 +248,7 @@ type SelectWorkflowTool struct {
 	preSelectionHooks []PreSelectionHook
 	auditStore        audit.AuditStore
 	logger            logr.Logger
+	signalResolver    SignalContextResolver
 }
 
 // WithHTTPSessionCompleter enables session completion (auto-complete) for the

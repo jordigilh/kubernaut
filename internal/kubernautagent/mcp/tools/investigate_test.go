@@ -42,6 +42,7 @@ type mockSessionManager struct {
 	isActive        bool
 	releasedID      string
 	releasedReason  string
+	signalMetadata  map[string]string
 }
 
 func (m *mockSessionManager) Takeover(_ context.Context, _ string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
@@ -71,6 +72,12 @@ func (m *mockSessionManager) IsDriverActive(_ string) bool {
 }
 
 func (m *mockSessionManager) TouchActivity(_ string) {}
+
+func (m *mockSessionManager) StoreSignalMetadata(_ string, metadata map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.signalMetadata = metadata
+}
 
 func (m *mockSessionManager) getReleased() (string, string) {
 	m.mu.Lock()
@@ -187,6 +194,34 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.SessionID).To(Equal("sess-001"))
 			Expect(out.Status).To(Equal("started"))
+		})
+
+		It("should retain resolved signal metadata for disconnect reconstruction", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-signal-meta",
+					CorrelationID: "rr-signal-meta",
+				},
+			}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				Name: "OOMKilled", Severity: "critical", ClusterID: "remote-cluster",
+			}}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				&mockInvestigatorRunner{},
+				&mockContextReconstructor{},
+				mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-signal-meta",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sessionMgr.signalMetadata).To(HaveKeyWithValue("signal_name", "OOMKilled"))
+			Expect(sessionMgr.signalMetadata).To(HaveKeyWithValue("cluster_id", "remote-cluster"))
 		})
 	})
 
@@ -644,6 +679,64 @@ func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (
 }
 
 var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
+
+	Describe("UT-KA-2417-001: signal resolution errors are not silently downgraded", func() {
+		It("should fail kubernaut_message when the signal resolver errors", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-signal-error-message",
+					CorrelationID: "rr-signal-error-message",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			resolver := &mockSignalResolver{signalErr: errors.New("signal store unavailable")}
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				&mockInvestigatorRunner{response: "should not run"},
+				&mockContextReconstructor{},
+				mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-signal-error-message",
+				Action:  mcptools.ActionMessage,
+				Message: "investigate this",
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("signal context"))
+		})
+
+		It("should fail discover_workflows when the signal resolver errors", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-signal-error-discovery",
+					CorrelationID: "rr-signal-error-discovery",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			resolver := &mockSignalResolver{signalErr: errors.New("signal store unavailable")}
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				&mockInvestigatorRunner{},
+				&mockContextReconstructor{turns: []mcpinternal.ConversationTurn{{Role: "user", Content: "context"}}},
+				mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: "wf-1"}}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-signal-error-discovery",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("signal context"))
+		})
+	})
 
 	Describe("UT-KA-DW-001: discover_workflows stores RCA + DiscoveryResult", func() {
 		It("should return recommendations and store both results on session", func() {

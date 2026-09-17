@@ -34,9 +34,16 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	// H4: Acquire the interactive Lease BEFORE suspending autonomous. This ensures
 	// that if Takeover fails (lease contention, max sessions), the autonomous
 	// investigation is NOT irreversibly cancelled.
+	resolvedSignal, hasSignal, err := t.resolveSignalForSession(ctx, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, err
+	}
 	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "takeover_race_lost", "takeover_failed", "takeover session")
 	if err != nil {
 		return InvestigateOutput{}, err
+	}
+	if hasSignal {
+		t.storeSignalMetadata(sess, resolvedSignal)
 	}
 
 	if sess.Reconnected {
@@ -126,7 +133,11 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	// F9 / #1374: Attach signal context for PhaseRCA tool parity with
 	// the autonomous path. Future tools may read SignalContextFromContext.
 	if t.signalResolver != nil {
-		if resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID); resolveErr == nil && resolved != nil {
+		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
+		if resolveErr != nil {
+			return InvestigateOutput{}, fmt.Errorf("resolve signal context: %w", resolveErr)
+		}
+		if resolved != nil {
 			ctx = katypes.WithSignalContext(ctx, *resolved)
 		}
 	}

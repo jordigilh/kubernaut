@@ -85,7 +85,7 @@ func NewLabelDetectorWithReader(reader client.Reader, mapper meta.RESTMapper, lo
 // AllDetectionCategories lists every label detection category. When the root
 // resource cannot be fetched, all categories are marked as failed.
 var AllDetectionCategories = []string{
-	"gitOpsManaged", "helmManaged", "stateful", "serviceMesh",
+	"gitOpsManaged", "gitOpsTool", "helmManaged", "stateful", "serviceMesh",
 	"hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained",
 	"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend",
 }

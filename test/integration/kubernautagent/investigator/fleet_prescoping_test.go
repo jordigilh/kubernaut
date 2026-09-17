@@ -72,7 +72,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 
 	Describe("IT-KA-FLEET-013 [AC-4/AC-6]: Investigate() pre-scopes via FleetOverlayResolver", func() {
 		It("calls Overlay with the investigation's target ClusterID for a fleet-target investigation", func() {
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+			}}
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				{
@@ -107,7 +109,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 
 		It("never calls Overlay for a hub-local investigation (empty ClusterID)", func() {
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+			}}
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				{
@@ -594,7 +598,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 	// ClusterID the same way Investigate() consumes signal.ClusterID.
 	Describe("IT-KA-FLEET-022 [AC-4]: RunInteractiveTurn pre-scopes via FleetOverlayResolver from ctx SignalContext", func() {
 		It("calls Overlay with the ClusterID carried on ctx for a fleet-target interactive turn", func() {
-			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+			}}
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
 			}}
@@ -880,16 +886,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
-	// QE readiness audit follow-up (PR #1799 Finding #2, tracked as #1834): UT-KA-FLEET-028
-	// (fleet_overlay_internal_test.go) proves prescopeFleetOverlay's own
-	// nil-resolver decision in isolation, calling it directly on a
-	// hand-built *Investigator. These IT specs close the remaining wiring
-	// gap: proving the SAME observability holds when a fleet-target
-	// investigation/interactive turn reaches a KA instance with
-	// FleetOverlayResolver simply never configured (the zero value,
-	// investigator.Config{} without the field set) via the actual
-	// production entry points (Investigate/RunInteractiveTurn), not a
-	// hand-constructed *Investigator struct literal.
+	// These IT specs prove the fail-closed overlay contract through the actual
+	// production entry points (Investigate/RunInteractiveTurn), not only the
+	// unit-level decision function.
 	Describe("IT-KA-FLEET-029 [AU-3, GA Readiness Dim. 12, Issue #2312]: an unconfigured FleetOverlayResolver fails closed and is observable through the production entry points", func() {
 		It("Investigate() fails closed and emits EventTypeFleetOverlayUnavailable for a fleet-target investigation when FleetOverlayResolver is unset", func() {
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
@@ -980,6 +979,35 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 					"reaching an unconfigured FleetOverlayResolver")
 			Expect(unavailableEvents[0].ClusterID).To(Equal("remote-east"))
 			Expect(unavailableEvents[0].CorrelationID).To(Equal("rem-interactive-fleet-unavailable-001"))
+		})
+
+		It("Investigate() fails closed and emits EventTypeFleetOverlayFailed when the resolver returns an empty overlay", func() {
+			mockClient := &mockLLMClient{}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}},
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ClusterID: "remote-east", RemediationID: "rem-fleet-overlay-empty-001",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("empty overlay"))
+
+			var failedEvents []*audit.AuditEvent
+			for _, ev := range auditStore.events {
+				if ev.EventType == audit.EventTypeFleetOverlayFailed {
+					failedEvents = append(failedEvents, ev)
+				}
+			}
+			Expect(failedEvents).To(HaveLen(1))
+			Expect(failedEvents[0].CorrelationID).To(Equal("rem-fleet-overlay-empty-001"))
+			Expect(failedEvents[0].ClusterID).To(Equal("remote-east"))
 		})
 
 		It("emits nothing for a hub-local investigation even when FleetOverlayResolver is unset (zero-regression no-op)", func() {
