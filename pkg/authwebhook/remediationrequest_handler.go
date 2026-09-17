@@ -108,6 +108,7 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	audit.SetResource(auditEvent, "RemediationRequest", rr.Name)
 	audit.SetCorrelationID(auditEvent, rr.Name) // DD-AUDIT-CORRELATION-001: RR name (human-readable, matches ADR-034 query pattern)
 	audit.SetNamespace(auditEvent, rr.Namespace)
+	audit.SetClusterID(auditEvent, rr.Spec.ClusterID)
 
 	// Set event data payload (RemediationRequestWebhookAuditPayload)
 	// Per Gap #8: Capture old and new TimeoutConfig for audit trail

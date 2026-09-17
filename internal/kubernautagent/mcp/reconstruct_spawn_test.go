@@ -61,6 +61,9 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 
 	Describe("UT-KA-2417-002: signal metadata round-trip", func() {
 		It("should preserve fleet routing fields across lease metadata", func() {
+			isDuplicate := true
+			occurrenceCount := 3
+			deduplicationWindow := 15
 			original := katypes.SignalContext{
 				Name: "OOMKilled", Namespace: "production", Severity: "critical", Message: "pod restarted",
 				IncidentID: "incident-1", RemediationID: "rr-1", ResourceKind: "Deployment", ResourceName: "api",
@@ -68,7 +71,13 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 				Environment: "prod", Priority: "p1", RiskTolerance: "low", SignalSource: "prometheus",
 				BusinessCategory: "payments", Description: "description", SignalMode: "alert",
 				FiringTime: "2026-09-16T00:00:00Z", ReceivedTime: "2026-09-16T00:00:01Z",
-				FirstSeen: "2026-09-15T00:00:00Z", LastSeen: "2026-09-16T00:00:00Z",
+				IsDuplicate: &isDuplicate, OccurrenceCount: &occurrenceCount,
+				SignalAnnotations:          map[string]string{"owner": "payments"},
+				SignalLabels:               map[string]string{"team": "payments"},
+				DetectedLabelsJSON:         `{"gitops_managed":true}`,
+				DeduplicationWindowMinutes: &deduplicationWindow,
+				FirstSeen:                  "2026-09-15T00:00:00Z", LastSeen: "2026-09-16T00:00:00Z",
+				Interactive:           true,
 				ClusterClassification: "production",
 			}
 
@@ -77,6 +86,47 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 
 			Expect(ok).To(BeTrue())
 			Expect(restored).To(Equal(original))
+		})
+
+		It("should preserve false and zero-valued optional fields", func() {
+			isDuplicate := false
+			occurrenceCount := 0
+			deduplicationWindow := 0
+			original := katypes.SignalContext{
+				Name: "Alert", ClusterID: "remote-cluster", IsDuplicate: &isDuplicate,
+				OccurrenceCount: &occurrenceCount, DeduplicationWindowMinutes: &deduplicationWindow,
+			}
+
+			metadata := mcpinternal.SignalContextToMetadata(original)
+			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
+
+			Expect(ok).To(BeTrue())
+			Expect(restored).To(Equal(original))
+		})
+
+		It("should retain valid routing fields when optional metadata is malformed", func() {
+			metadata := map[string]string{
+				"cluster_id":                   "remote-cluster",
+				"is_duplicate":                 "not-a-bool",
+				"occurrence_count":             "not-an-int",
+				"signal_annotations":           "not-json",
+				"deduplication_window_minutes": "not-an-int",
+			}
+
+			restored, ok := mcpinternal.SignalContextFromMetadata(metadata)
+
+			Expect(ok).To(BeTrue())
+			Expect(restored.ClusterID).To(Equal("remote-cluster"))
+			Expect(restored.IsDuplicate).To(BeNil())
+			Expect(restored.OccurrenceCount).To(BeNil())
+			Expect(restored.SignalAnnotations).To(BeNil())
+		})
+
+		It("should reject metadata with no recognized signal fields", func() {
+			restored, ok := mcpinternal.SignalContextFromMetadata(map[string]string{"unrelated": "value"})
+
+			Expect(ok).To(BeFalse())
+			Expect(restored).To(BeZero())
 		})
 	})
 

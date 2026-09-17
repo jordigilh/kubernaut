@@ -334,7 +334,13 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	// emitDisconnectAudit emits interactive.completed for non-tool session endings
 	// (disconnect, inactivity timeout, TTL expiry). M1: ensures all session-ending
 	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
-	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger) //nolint:contextcheck // disconnect audit emitter fires asynchronously on session disconnect events, not tied to any single request
+	var leaseMgr *mcpkg.LeaseSessionManager
+	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger, func(sessionID string) map[string]string { //nolint:contextcheck // metadata lookup is not request-scoped
+		if leaseMgr == nil {
+			return nil
+		}
+		return leaseMgr.GetSignalMetadata(sessionID)
+	})
 
 	// #2100 (v1.6 clone #2101): SessionJanitor is a backstop sweep for
 	// interactive sessions that never reach an explicit Release path (e.g.
@@ -348,7 +354,7 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	go sessionJanitor.Run(ctx)
 
 	// Session management via K8s Leases (single-driver guarantee).
-	leaseMgr := buildMCPLeaseManager(mcpLeaseManagerDeps{ //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
+	leaseMgr = buildMCPLeaseManager(mcpLeaseManagerDeps{ //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
 		ctrlCli:             ctrlCli,
 		namespace:           namespace,
 		cfg:                 cfg,
@@ -475,22 +481,23 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	autoCloseTombstone := mcpkg.NewAutoCloseTombstone(60 * time.Second)
 
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
-		leaseMgr:            core.leaseMgr,
-		investigatorRunner:  investigatorRunner,
-		recon:               core.recon,
-		autoMgr:             autoMgr,
-		agentMetrics:        agentMetrics,
-		sessionRateLimiter:  sessionRateLimiter,
-		timeoutMgr:          core.timeoutMgr,
-		sessionNotifier:     sessionNotifier,
-		rrChecker:           rrChecker,
-		agentSessionChecker: agentSessionChecker,
-		auditStore:          auditStore,
-		logger:              logger,
-		signalResolver:      signalResolver,
-		catalogAdapter:      catalogAdapter,
-		enricher:            enricher,
-		autoCloseTombstone:  autoCloseTombstone,
+		leaseMgr:             core.leaseMgr,
+		investigatorRunner:   investigatorRunner,
+		recon:                core.recon,
+		autoMgr:              autoMgr,
+		agentMetrics:         agentMetrics,
+		sessionRateLimiter:   sessionRateLimiter,
+		timeoutMgr:           core.timeoutMgr,
+		sessionNotifier:      sessionNotifier,
+		rrChecker:            rrChecker,
+		agentSessionChecker:  agentSessionChecker,
+		auditStore:           auditStore,
+		logger:               logger,
+		signalResolver:       signalResolver,
+		catalogAdapter:       catalogAdapter,
+		enricher:             enricher,
+		fleetOverlayResolver: p.inv.FleetOverlayResolver(),
+		autoCloseTombstone:   autoCloseTombstone,
 	})
 
 	// Register tools with the MCP SDK server.
@@ -605,13 +612,18 @@ func buildMCPControllerClient(infra *k8sInfra) (ctrlclient.Client, error) {
 // that reference it — lease-expiry, inactivity-timeout, and disconnect — can
 // each receive it as an explicit parameter instead of relying on lexical
 // capture across a helper-function boundary.
-func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger) func(sessionID, correlationID, reason string) {
+func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger, signalMetadata func(string) map[string]string) func(sessionID, correlationID, reason string) { //nolint:contextcheck // disconnect events are emitted asynchronously and have no request context
 	return func(sessionID, correlationID, reason string) {
 		event := audit.NewEvent(audit.EventTypeInteractiveCompleted, correlationID,
 			audit.WithSessionID(sessionID),
 		)
 		event.EventAction = audit.ActionInteractiveCompleted
 		event.EventOutcome = audit.OutcomeSuccess
+		if signalMetadata != nil {
+			if clusterID := signalMetadata(sessionID)["cluster_id"]; clusterID != "" {
+				event.ClusterID = clusterID
+			}
+		}
 		event.Data["reason"] = reason
 		audit.StoreBestEffort(context.Background(), auditStore, event, logger.WithName("mcp-audit"))
 	}
@@ -799,22 +811,23 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 // struct (rather than individual parameters) per the Go Anti-Pattern
 // Checklist's 8+-param rule.
 type mcpToolsDeps struct {
-	leaseMgr            *mcpkg.LeaseSessionManager
-	investigatorRunner  mcptools.InvestigatorRunner
-	recon               mcpkg.ContextReconstructor
-	autoMgr             *session.Manager
-	agentMetrics        *kametrics.Metrics
-	sessionRateLimiter  *mcpkg.SessionRateLimiter
-	timeoutMgr          *mcpkg.TimeoutManager
-	sessionNotifier     *mcpkg.SessionNotifier
-	rrChecker           *mcptools.K8sRRExistenceChecker
-	agentSessionChecker *mcptools.K8sAgentSessionExistenceChecker
-	auditStore          audit.AuditStore
-	logger              logr.Logger
-	signalResolver      *mcpadapters.SessionSignalContextResolver
-	catalogAdapter      *mcpadapters.WorkflowCatalogAdapter
-	enricher            *enrichment.Enricher
-	autoCloseTombstone  *mcpkg.AutoCloseTombstone
+	leaseMgr             *mcpkg.LeaseSessionManager
+	investigatorRunner   mcptools.InvestigatorRunner
+	recon                mcpkg.ContextReconstructor
+	autoMgr              *session.Manager
+	agentMetrics         *kametrics.Metrics
+	sessionRateLimiter   *mcpkg.SessionRateLimiter
+	timeoutMgr           *mcpkg.TimeoutManager
+	sessionNotifier      *mcpkg.SessionNotifier
+	rrChecker            *mcptools.K8sRRExistenceChecker
+	agentSessionChecker  *mcptools.K8sAgentSessionExistenceChecker
+	auditStore           audit.AuditStore
+	logger               logr.Logger
+	signalResolver       *mcpadapters.SessionSignalContextResolver
+	catalogAdapter       *mcpadapters.WorkflowCatalogAdapter
+	enricher             *enrichment.Enricher
+	fleetOverlayResolver investigator.FleetOverlayResolver
+	autoCloseTombstone   *mcpkg.AutoCloseTombstone
 }
 
 // buildMCPTools constructs the InvestigateTool, SelectWorkflowTool, and
@@ -846,6 +859,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithSelectWorkflowTimeoutTracker(d.timeoutMgr),
 		mcptools.WithSelectWorkflowAuditStore(d.auditStore),
 		mcptools.WithSelectWorkflowSignalContextResolver(d.signalResolver),
+		mcptools.WithSelectWorkflowFleetOverlayResolver(d.fleetOverlayResolver),
 	}
 	if d.enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(d.enricher))

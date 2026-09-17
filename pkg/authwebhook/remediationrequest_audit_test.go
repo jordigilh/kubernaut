@@ -66,6 +66,7 @@ var _ = Describe("RemediationRequest Webhook Correlation ID (DD-AUDIT-CORRELATIO
 				Namespace: "production",
 				UID:       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			},
+			Spec: remediationv1.RemediationRequestSpec{ClusterID: "remote-cluster-audit"},
 			Status: remediationv1.RemediationRequestStatus{
 				TimeoutConfig: &remediationv1.TimeoutConfig{
 					Global: &fiveMin,
@@ -81,6 +82,7 @@ var _ = Describe("RemediationRequest Webhook Correlation ID (DD-AUDIT-CORRELATIO
 				Namespace: "production",
 				UID:       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			},
+			Spec: remediationv1.RemediationRequestSpec{ClusterID: "remote-cluster-audit"},
 			Status: remediationv1.RemediationRequestStatus{
 				TimeoutConfig: &remediationv1.TimeoutConfig{
 					Global: &tenMin, // Changed from 5m to 10m
@@ -126,5 +128,9 @@ var _ = Describe("RemediationRequest Webhook Correlation ID (DD-AUDIT-CORRELATIO
 			"DD-AUDIT-CORRELATION-001: correlation_id must be RR.Name, not UID")
 		Expect(event.CorrelationID).ToNot(Equal("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
 			"correlation_id must NOT be the Kubernetes UID")
+		Expect(event.ClusterID.IsSet()).To(BeTrue())
+		clusterID, ok := event.ClusterID.Get()
+		Expect(ok).To(BeTrue())
+		Expect(clusterID).To(Equal("remote-cluster-audit"))
 	})
 })

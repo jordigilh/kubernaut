@@ -265,6 +265,42 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
+	Describe("UT-KA-2427-001: signal metadata is a race-safe session contract", func() {
+		It("should defensively copy metadata on store and read", func() {
+			user := mcpinternal.UserInfo{Username: "fleet-user@example.com"}
+			sess, err := mgr.Takeover(ctx, "rr-2427-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			metadata := map[string]string{
+				"cluster_id":  "remote-east",
+				"signal_name": "OOMKilled",
+			}
+			mgr.StoreSignalMetadata(sess.SessionID, metadata)
+			metadata["cluster_id"] = "mutated-after-store"
+
+			stored := mgr.GetSignalMetadata(sess.SessionID)
+			Expect(stored).To(HaveKeyWithValue("cluster_id", "remote-east"))
+
+			stored["cluster_id"] = "mutated-after-read"
+			Expect(mgr.GetSignalMetadata(sess.SessionID)).To(HaveKeyWithValue("cluster_id", "remote-east"))
+
+			Expect(mgr.GetSignalMetadata(sess.SessionID)).To(HaveKeyWithValue("cluster_id", "remote-east"))
+		})
+
+		It("should return a defensive snapshot to disconnect reconstruction", func() {
+			concrete := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger)
+			sess, err := concrete.Takeover(ctx, "rr-2427-002", mcpinternal.UserInfo{Username: "fleet-user@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+			concrete.StoreSignalMetadata(sess.SessionID, map[string]string{"cluster_id": "remote-west"})
+
+			_, snapshot := concrete.GetSessionInfo(sess.SessionID)
+			snapshot["cluster_id"] = "mutated-after-snapshot"
+
+			_, nextSnapshot := concrete.GetSessionInfo(sess.SessionID)
+			Expect(nextSnapshot).To(HaveKeyWithValue("cluster_id", "remote-west"))
+		})
+	})
+
 	// Regression test: M1 — WithSessionExpiredCallback must fire when GetDriver
 	// auto-releases a session due to TTL or inactivity expiry.
 	// Bug: TTL/inactivity paths never emitted interactive.completed audit because

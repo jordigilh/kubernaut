@@ -292,6 +292,7 @@ func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx conte
 		"remediationRequestRef", rar.Spec.RemediationRequestRef)
 	audit.SetCorrelationID(auditEvent, parentRRName)
 	audit.SetNamespace(auditEvent, rar.Namespace)
+	audit.SetClusterID(auditEvent, rar.Spec.ClusterID)
 
 	// REFACTOR-AW-003: Build audit payload using extracted helper
 	// Per DD-WEBHOOK-003: Business context ONLY (attribution in structured columns)

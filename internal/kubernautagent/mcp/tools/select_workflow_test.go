@@ -28,9 +28,11 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -92,10 +94,18 @@ type mockEnrichmentRunner struct {
 	result      *enrichment.EnrichmentResult
 	err         error
 	capturedReq enrichment.EnrichRequest
+	overlaySeen bool
 }
 
-func (m *mockEnrichmentRunner) Enrich(_ context.Context, req enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
+type selectFleetOverlayResolver struct{}
+
+func (selectFleetOverlayResolver) Overlay(context.Context, string) (map[string]katools.Tool, error) {
+	return map[string]katools.Tool{"resources_get": nil}, nil
+}
+
+func (m *mockEnrichmentRunner) Enrich(ctx context.Context, req enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
 	m.capturedReq = req
+	_, m.overlaySeen = investigator.FleetOverlayFromContext(ctx)
 	return m.result, m.err
 }
 
@@ -279,6 +289,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
 				mcptools.WithEnrichmentRunner(runner),
 				mcptools.WithSelectWorkflowSignalContextResolver(resolver),
+				mcptools.WithSelectWorkflowFleetOverlayResolver(selectFleetOverlayResolver{}),
 			)
 			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
 				RRID:       "rr-enrich-cluster",
@@ -291,6 +302,7 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			Expect(err).NotTo(HaveOccurred())
 			Expect(runner.capturedReq.ClusterID).To(Equal("remote-cluster"))
 			Expect(runner.capturedReq.IncidentID).To(Equal("incident-1"))
+			Expect(runner.overlaySeen).To(BeTrue())
 		})
 
 		It("should fail selection enrichment when signal resolution fails", func() {

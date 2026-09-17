@@ -167,6 +167,12 @@ type SessionQuerier interface {
 type SessionManager interface {
 	SessionLifecycle
 	SessionQuerier
+
+	// Signal metadata is part of the interactive session contract. It is
+	// captured before lease release so disconnect reconstruction can restore
+	// the authoritative signal context without an optional type assertion.
+	StoreSignalMetadata(sessionID string, metadata map[string]string)
+	GetSignalMetadata(sessionID string) map[string]string
 }
 
 // ConversationTurn represents a single LLM turn reconstructed from DS audit events.

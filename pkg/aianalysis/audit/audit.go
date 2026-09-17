@@ -113,6 +113,10 @@ func getCorrelationID(analysis *aianalysisv1.AIAnalysis) string {
 	return analysis.Spec.RemediationID
 }
 
+func setAnalysisClusterID(event *ogenclient.AuditEventRequest, analysis *aianalysisv1.AIAnalysis) {
+	audit.SetClusterID(event, analysis.Spec.ClusterID)
+}
+
 // RecordAnalysisComplete records analysis completion event
 // This is the primary audit event for AIAnalysis (per DD-AUDIT-003)
 //
@@ -140,6 +144,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(*payload)
 
@@ -239,6 +244,7 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(*payload)
 
@@ -269,6 +275,7 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisErrorPayloadAuditEventRequestEventData(*payload)
 
@@ -311,6 +318,7 @@ func (c *AuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysi
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	audit.SetDuration(event, durationMs)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData(*payload)
@@ -356,6 +364,7 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisApprovalDecisionPayloadAuditEventRequestEventData(*payload)
 
@@ -405,6 +414,7 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	audit.SetDuration(event, durationMs)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisRegoEvaluationPayloadAuditEventRequestEventData(*payload)
@@ -533,6 +543,7 @@ func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianaly
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
@@ -564,6 +575,7 @@ func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianaly
 	audit.SetResource(resultEvent, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(resultEvent, getCorrelationID(analysis))
 	audit.SetNamespace(resultEvent, analysis.Namespace)
+	setAnalysisClusterID(resultEvent, analysis)
 	audit.SetDuration(resultEvent, int(investigationTimeMs))
 	resultEvent.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData(payload)
 
@@ -614,6 +626,7 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event correlation
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	setAnalysisClusterID(event, analysis)
 
 	payload := buildAnalysisFailedPayload(analysis, errorDetails)
 

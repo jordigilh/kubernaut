@@ -81,7 +81,6 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	// Note: Kubernetes API server does NOT allow mutating objects during DELETE operations.
 	// However, we CAN write audit traces to capture attribution for SOC2 compliance.
 
-
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeNotifCancelled) // DD-WEBHOOK-001 line 349 - Must match payload EventType
@@ -92,6 +91,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	audit.SetResource(auditEvent, "NotificationRequest", string(nr.UID))
 	audit.SetCorrelationID(auditEvent, nr.Name) // Use NR name for correlation
 	audit.SetNamespace(auditEvent, nr.Namespace)
+	audit.SetClusterID(auditEvent, nr.Spec.ClusterID)
 
 	// Set event data payload
 	// Use structured audit payload (eliminates map[string]interface{})
@@ -125,4 +125,3 @@ func (h *NotificationRequestDeleteHandler) InjectDecoder(d admission.Decoder) er
 	h.decoder = d
 	return nil
 }
-

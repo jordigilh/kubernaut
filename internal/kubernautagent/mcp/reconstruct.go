@@ -18,7 +18,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -51,10 +53,29 @@ type ReconstructionContext struct {
 // SignalContextToMetadata preserves signal fields needed by interactive
 // disconnect reconstruction without coupling the lease manager to signal DTOs.
 func SignalContextToMetadata(signal katypes.SignalContext) map[string]string {
-	metadata := make(map[string]string, 23)
+	metadata := make(map[string]string, 30)
 	put := func(key, value string) {
 		if value != "" {
 			metadata[key] = value
+		}
+	}
+	putMap := func(key string, value map[string]string) {
+		if value == nil {
+			return
+		}
+		encoded, err := json.Marshal(value)
+		if err == nil {
+			metadata[key] = string(encoded)
+		}
+	}
+	putBool := func(key string, value *bool) {
+		if value != nil {
+			metadata[key] = strconv.FormatBool(*value)
+		}
+	}
+	putInt := func(key string, value *int) {
+		if value != nil {
+			metadata[key] = strconv.Itoa(*value)
 		}
 	}
 	put("signal_name", signal.Name)
@@ -77,8 +98,17 @@ func SignalContextToMetadata(signal katypes.SignalContext) map[string]string {
 	put("signal_mode", signal.SignalMode)
 	put("firing_time", signal.FiringTime)
 	put("received_time", signal.ReceivedTime)
+	putBool("is_duplicate", signal.IsDuplicate)
+	putInt("occurrence_count", signal.OccurrenceCount)
+	putMap("signal_annotations", signal.SignalAnnotations)
+	putMap("signal_labels", signal.SignalLabels)
+	put("detected_labels_json", signal.DetectedLabelsJSON)
+	putInt("deduplication_window_minutes", signal.DeduplicationWindowMinutes)
 	put("first_seen", signal.FirstSeen)
 	put("last_seen", signal.LastSeen)
+	if signal.Interactive {
+		metadata["interactive"] = strconv.FormatBool(signal.Interactive)
+	}
 	put("cluster_classification", signal.ClusterClassification)
 	return metadata
 }
@@ -97,14 +127,62 @@ func SignalContextFromMetadata(metadata map[string]string) (katypes.SignalContex
 		Priority: metadata["priority"], RiskTolerance: metadata["risk_tolerance"], SignalSource: metadata["signal_source"],
 		BusinessCategory: metadata["business_category"], Description: metadata["description"], SignalMode: metadata["signal_mode"],
 		FiringTime: metadata["firing_time"], ReceivedTime: metadata["received_time"], FirstSeen: metadata["first_seen"],
-		LastSeen: metadata["last_seen"], ClusterClassification: metadata["cluster_classification"],
+		LastSeen: metadata["last_seen"], DetectedLabelsJSON: metadata["detected_labels_json"],
+		ClusterClassification: metadata["cluster_classification"],
 	}
-	for _, value := range metadata {
-		if value != "" {
-			return signal, true
+	restoreOptionalSignalMetadata(&signal, metadata)
+	return signal, hasSignalMetadata(metadata)
+}
+
+func restoreOptionalSignalMetadata(signal *katypes.SignalContext, metadata map[string]string) {
+	if value, ok := metadata["is_duplicate"]; ok {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			signal.IsDuplicate = &parsed
 		}
 	}
-	return katypes.SignalContext{}, false
+	if value, ok := metadata["occurrence_count"]; ok {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			signal.OccurrenceCount = &parsed
+		}
+	}
+	if value, ok := metadata["signal_annotations"]; ok {
+		var parsed map[string]string
+		if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+			signal.SignalAnnotations = parsed
+		}
+	}
+	if value, ok := metadata["signal_labels"]; ok {
+		var parsed map[string]string
+		if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+			signal.SignalLabels = parsed
+		}
+	}
+	if value, ok := metadata["deduplication_window_minutes"]; ok {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			signal.DeduplicationWindowMinutes = &parsed
+		}
+	}
+	if value, ok := metadata["interactive"]; ok {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			signal.Interactive = parsed
+		}
+	}
+}
+
+func hasSignalMetadata(metadata map[string]string) bool {
+	for _, key := range []string{
+		"signal_name", "namespace", "severity", "message", "incident_id", "remediation_id",
+		"resource_kind", "resource_name", "resource_api_version", "cluster_id", "cluster_name",
+		"environment", "priority", "risk_tolerance", "signal_source", "business_category",
+		"description", "signal_mode", "firing_time", "received_time", "is_duplicate",
+		"occurrence_count", "signal_annotations", "signal_labels", "detected_labels_json",
+		"deduplication_window_minutes", "first_seen", "last_seen", "interactive", "cluster_classification",
+	} {
+		if _, ok := metadata[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // ReconstructionSpawner rebuilds the conversation context from DS audit events
@@ -201,6 +279,9 @@ func (s *ReconstructionSpawner) emitSessionResumed(entry *ReconstructionContext,
 	)
 	event.EventAction = audit.ActionSessionResumed
 	event.EventOutcome = audit.OutcomeSuccess
+	if clusterID := entry.SignalMeta["cluster_id"]; clusterID != "" {
+		event.ClusterID = clusterID
+	}
 	event.Data["reconstructed_turn_count"] = reconstructedTurnCount
 	audit.StoreBestEffort(context.Background(), s.auditStore, event, s.logger)
 }

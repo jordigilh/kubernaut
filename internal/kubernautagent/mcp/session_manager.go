@@ -113,6 +113,7 @@ type SessionEndedMetrics interface {
 type sessionEntry struct {
 	session      *InteractiveSession
 	rrID         string
+	metadataMu   sync.RWMutex
 	signalMeta   map[string]string
 	lastActivity atomic.Value // stores time.Time
 }
@@ -213,7 +214,9 @@ func (m *LeaseSessionManager) StoreSignalMetadata(sessionID string, metadata map
 	if !ok {
 		return
 	}
-	entry.signalMeta = metadata
+	entry.metadataMu.Lock()
+	entry.signalMeta = cloneSignalMetadata(metadata)
+	entry.metadataMu.Unlock()
 }
 
 // GetSignalMetadata retrieves stored signal metadata for a session.
@@ -227,7 +230,9 @@ func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]str
 	if !ok {
 		return nil
 	}
-	return entry.signalMeta
+	entry.metadataMu.RLock()
+	defer entry.metadataMu.RUnlock()
+	return cloneSignalMetadata(entry.signalMeta)
 }
 
 // GetSessionInfo returns the correlationID (rrID) and signal metadata for a session.
@@ -242,7 +247,20 @@ func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, sig
 	if !ok {
 		return "", nil
 	}
-	return entry.rrID, entry.signalMeta
+	entry.metadataMu.RLock()
+	defer entry.metadataMu.RUnlock()
+	return entry.rrID, cloneSignalMetadata(entry.signalMeta)
+}
+
+func cloneSignalMetadata(metadata map[string]string) map[string]string {
+	if metadata == nil {
+		return nil
+	}
+	clone := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		clone[key] = value
+	}
+	return clone
 }
 
 func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user UserInfo) (*InteractiveSession, error) {

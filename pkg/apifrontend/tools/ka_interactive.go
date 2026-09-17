@@ -64,9 +64,15 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 	}
 
 	if auditor != nil {
+		detail := interactiveAuditDetail(action, args.RRID, result, auditType)
+		clusterID := ClusterIDFromContext(ctx)
+		if clusterID != "" {
+			detail["cluster_id"] = clusterID
+		}
 		auditor.Emit(ctx, &audit.Event{
-			Type:   auditType,
-			Detail: interactiveAuditDetail(action, args.RRID, result, auditType),
+			Type:      auditType,
+			ClusterID: clusterID,
+			Detail:    detail,
 		})
 	}
 

@@ -322,6 +322,13 @@ type Investigator struct {
 	tokenScope *tokenScope
 }
 
+// FleetOverlayResolver returns the configured authoritative fleet overlay
+// resolver for interactive workflow-selection flows that run outside the main
+// Investigator pipeline.
+func (inv *Investigator) FleetOverlayResolver() FleetOverlayResolver {
+	return inv.fleetOverlayResolver
+}
+
 func (inv *Investigator) auditLog() logr.Logger {
 	return inv.logger
 }

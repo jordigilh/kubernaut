@@ -108,14 +108,20 @@ func (m *takeoverAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) e
 	return nil
 }
 
-func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
-func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
-func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool) { return "", false }
+func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error         { return nil }
+func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
 func (m *takeoverAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
-func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
-func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
+func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 func (m *takeoverAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *takeoverAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
 func (m *takeoverAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
@@ -152,16 +158,18 @@ func (m *takeoverSessMgr) IsDriverActive(_ string) bool {
 	return m.driverActive
 }
 
-func (m *takeoverSessMgr) TouchActivity(_ string) {}
+func (m *takeoverSessMgr) TouchActivity(_ string)                            {}
+func (m *takeoverSessMgr) StoreSignalMetadata(_ string, _ map[string]string) {}
+func (m *takeoverSessMgr) GetSignalMetadata(_ string) map[string]string      { return nil }
 
 // recordingToolMetrics captures metric calls for assertion.
 type recordingToolMetrics struct {
-	takeoverOutcomes   []string
-	sessionStarted     int
-	sessionEnded       int
-	leaseContentions   int
-	commandDurations   []float64
-	mu                 sync.Mutex
+	takeoverOutcomes []string
+	sessionStarted   int
+	sessionEnded     int
+	leaseContentions int
+	commandDurations []float64
+	mu               sync.Mutex
 }
 
 func (m *recordingToolMetrics) RecordInteractiveSessionStarted() {

@@ -38,13 +38,21 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		}
 	}
 
+	// BR-INTEGRATION-054: resolve the authoritative signal before launching
+	// deferred work. A failed resolution must not leave an investigation running
+	// without its fleet routing context.
+	resolvedSignal, hasSignal, err := t.resolveSignalForSession(ctx, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, err
+	}
+
 	// BR-INTERACTIVE-010: Check for pending interactive session and launch it.
 	// When launched, the investigation will self-transition to StatusUserDriving
 	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
 	// the RCA goroutine prematurely.
 	launchedPending, investigationSessionID := t.launchPendingInteractiveSession(input)
 
-	sess, startErr := t.startInteractiveSession(ctx, input, user)
+	sess, startErr := t.startInteractiveSession(ctx, input, user, resolvedSignal, hasSignal)
 	if startErr != nil {
 		return InvestigateOutput{}, startErr
 	}
@@ -190,11 +198,8 @@ func (t *InvestigateTool) acquireInteractiveLease(ctx context.Context, rrID stri
 // records the appropriate metrics/error mapping for each failure mode
 // (lease held, max sessions reached, reconnect-in-progress, or a generic
 // takeover error).
-func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
-	resolvedSignal, hasSignal, err := t.resolveSignalForSession(ctx, input.RRID)
-	if err != nil {
-		return nil, err
-	}
+
+func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo, resolvedSignal *katypes.SignalContext, hasSignal bool) (*mcpinternal.InteractiveSession, error) {
 	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "start_failed", "start_failed", "start session")
 	if err != nil {
 		return nil, err
@@ -232,12 +237,7 @@ func (t *InvestigateTool) storeSignalMetadata(sess *mcpinternal.InteractiveSessi
 	if sess == nil || signal == nil {
 		return
 	}
-	store, ok := t.sessions.(interface {
-		StoreSignalMetadata(string, map[string]string)
-	})
-	if ok {
-		store.StoreSignalMetadata(sess.SessionID, mcpinternal.SignalContextToMetadata(*signal))
-	}
+	t.sessions.StoreSignalMetadata(sess.SessionID, mcpinternal.SignalContextToMetadata(*signal))
 }
 
 // upgradeOrCreateInteractiveSession upgrades the running autonomous session

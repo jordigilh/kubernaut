@@ -136,38 +136,55 @@ func WithSelectWorkflowSignalContextResolver(resolver SignalContextResolver) Sel
 	}
 }
 
+// WithSelectWorkflowFleetOverlayResolver supplies the authoritative fleet
+// tool overlay resolver for interactive enrichment.
+func WithSelectWorkflowFleetOverlayResolver(resolver investigator.FleetOverlayResolver) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		t.fleetOverlayResolver = resolver
+	}
+}
+
 // WithEnrichmentRunner registers enrichment as the first pre-selection hook.
 // Enrichment runs before any Goose recipe prompt injection hooks so that
 // recipe parameters have access to the full enrichment context (#1012).
 func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 	return func(t *SelectWorkflowTool) {
-		hook := func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error {
-			if input.Kind == "" {
-				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
-				return nil
-			}
-			clusterID, incidentID, err := t.resolveSignalScope(ctx, input)
-			if err != nil {
-				return err
-			}
-			result, err := runner.Enrich(ctx, enrichment.EnrichRequest{
-				Kind: input.Kind, Name: input.Name, Namespace: input.Namespace,
-				APIVersion: input.APIVersion, SpecHash: input.SpecHash,
-				ClusterID: clusterID, IncidentID: incidentID,
-			})
-			t.emitInteractiveK8sCall(input, user, pctx.SessionID, err) //nolint:contextcheck // emitInteractiveK8sCall uses audit.StoreBestEffort by design (ADR-038); see its doc comment
-			if err != nil {
-				if errors.Is(err, enrichment.ErrRBACForbidden) {
-					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
-				}
-				t.logger.Error(err, "enrichment failed", "namespace", input.Namespace, "kind", input.Kind)
-				return ErrCodeInternalError.WithDetail("stage", "enrichment")
-			}
-			pctx.Enrichment = result
-			return nil
-		}
-		t.preSelectionHooks = append(t.preSelectionHooks, hook)
+		t.preSelectionHooks = append(t.preSelectionHooks, func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error {
+			return t.runEnrichment(ctx, input, user, pctx, runner)
+		})
 	}
+}
+
+func (t *SelectWorkflowTool) runEnrichment(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext, runner EnrichmentRunner) error {
+	if input.Kind == "" {
+		t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
+		return nil
+	}
+	clusterID, incidentID, err := t.resolveSignalScope(ctx, input)
+	if err != nil {
+		return err
+	}
+	if clusterID != "" {
+		if t.fleetOverlayResolver == nil {
+			return fmt.Errorf("resolve fleet overlay for cluster %q: resolver unavailable", clusterID)
+		}
+		overlay, overlayErr := t.fleetOverlayResolver.Overlay(ctx, clusterID)
+		if overlayErr != nil {
+			return fmt.Errorf("resolve fleet overlay for cluster %q: %w", clusterID, overlayErr)
+		}
+		ctx = investigator.WithFleetOverlay(ctx, overlay)
+	}
+	result, err := runner.Enrich(ctx, enrichment.EnrichRequest{Kind: input.Kind, Name: input.Name, Namespace: input.Namespace, APIVersion: input.APIVersion, SpecHash: input.SpecHash, ClusterID: clusterID, IncidentID: incidentID})
+	t.emitInteractiveK8sCall(input, user, pctx.SessionID, err) //nolint:contextcheck // emitInteractiveK8sCall uses audit.StoreBestEffort by design (ADR-038); see its doc comment
+	if err != nil {
+		if errors.Is(err, enrichment.ErrRBACForbidden) {
+			return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
+		}
+		t.logger.Error(err, "enrichment failed", "namespace", input.Namespace, "kind", input.Kind)
+		return ErrCodeInternalError.WithDetail("stage", "enrichment")
+	}
+	pctx.Enrichment = result
+	return nil
 }
 
 func (t *SelectWorkflowTool) resolveSignalScope(ctx context.Context, input SelectWorkflowInput) (string, string, error) {
@@ -217,6 +234,9 @@ func (t *SelectWorkflowTool) emitInteractiveK8sCall(input SelectWorkflowInput, u
 		audit.WithActingUser(user.Username),
 	)
 	event.EventAction = audit.ActionInteractiveK8sCall
+	if clusterID := t.clusterIDForSession(sessionID); clusterID != "" {
+		event.ClusterID = clusterID
+	}
 	event.Data["resource"] = input.Kind
 	event.Data["verb"] = "get"
 	event.Data["namespace"] = input.Namespace
@@ -236,19 +256,27 @@ func (t *SelectWorkflowTool) emitInteractiveK8sCall(input SelectWorkflowInput, u
 	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
 }
 
+func (t *SelectWorkflowTool) clusterIDForSession(sessionID string) string {
+	if t.sessions == nil {
+		return ""
+	}
+	return t.sessions.GetSignalMetadata(sessionID)["cluster_id"]
+}
+
 // SelectWorkflowTool handles the kubernaut_select_workflow MCP tool.
 // BR-INTERACTIVE-005: enables interactive workflow selection.
 // #1012: internalized enrichment via pre-selection pipeline.
 type SelectWorkflowTool struct {
-	catalog           WorkflowCatalog
-	sessions          mcpinternal.SessionManager
-	httpCompleter     HTTPSessionCompleter
-	mutexProvider     SessionMutexProvider
-	timeoutTracker    TimeoutTracker
-	preSelectionHooks []PreSelectionHook
-	auditStore        audit.AuditStore
-	logger            logr.Logger
-	signalResolver    SignalContextResolver
+	catalog              WorkflowCatalog
+	sessions             mcpinternal.SessionManager
+	httpCompleter        HTTPSessionCompleter
+	mutexProvider        SessionMutexProvider
+	timeoutTracker       TimeoutTracker
+	preSelectionHooks    []PreSelectionHook
+	auditStore           audit.AuditStore
+	logger               logr.Logger
+	signalResolver       SignalContextResolver
+	fleetOverlayResolver investigator.FleetOverlayResolver
 }
 
 // WithHTTPSessionCompleter enables session completion (auto-complete) for the

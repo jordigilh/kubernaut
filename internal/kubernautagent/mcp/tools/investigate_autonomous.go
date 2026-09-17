@@ -340,6 +340,9 @@ func (t *InvestigateTool) emitInteractiveStarted(sessionID, correlationID, actin
 	)
 	event.EventAction = audit.ActionInteractiveStarted
 	event.EventOutcome = audit.OutcomeSuccess
+	if clusterID := t.clusterIDForSession(sessionID); clusterID != "" {
+		event.ClusterID = clusterID
+	}
 	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
 }
 
@@ -355,7 +358,17 @@ func (t *InvestigateTool) emitInteractiveCompleted(sessionID, correlationID, act
 	event.EventAction = audit.ActionInteractiveCompleted
 	event.EventOutcome = audit.OutcomeSuccess
 	event.Data["reason"] = reason
+	if clusterID := t.clusterIDForSession(sessionID); clusterID != "" {
+		event.ClusterID = clusterID
+	}
 	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
+}
+
+func (t *InvestigateTool) clusterIDForSession(sessionID string) string {
+	if t.sessions == nil {
+		return ""
+	}
+	return t.sessions.GetSignalMetadata(sessionID)["cluster_id"]
 }
 
 // startTimeoutTracking begins inactivity tracking for a session if configured.

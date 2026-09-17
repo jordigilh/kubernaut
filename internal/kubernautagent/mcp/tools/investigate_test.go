@@ -79,6 +79,12 @@ func (m *mockSessionManager) StoreSignalMetadata(_ string, metadata map[string]s
 	m.signalMetadata = metadata
 }
 
+func (m *mockSessionManager) GetSignalMetadata(_ string) map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.signalMetadata
+}
+
 func (m *mockSessionManager) getReleased() (string, string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
