@@ -25,7 +25,9 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -52,6 +54,11 @@ const (
 	// produces a valid, strictly-positive K8s Job deadline instead of a
 	// zero/negative value.
 	minJobActiveDeadlineSeconds = 1
+
+	// jobDeletionPollInterval and jobDeletionTimeout cover asynchronous remote
+	// delete acknowledgements before a deterministic Job name is recreated.
+	jobDeletionPollInterval = 100 * time.Millisecond
+	jobDeletionTimeout      = 30 * time.Second
 )
 
 // podMountFailureReasons are the kubelet Event reasons that indicate a Pod
@@ -427,6 +434,22 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 		}
 		return fmt.Errorf("failed to delete Job %s/%s: %w", namespace, jobName, err)
 	}
+
+	if err := wait.PollUntilContextTimeout(ctx, jobDeletionPollInterval, jobDeletionTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			var deleted batchv1.Job
+			deleted.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+			err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &deleted)
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			if err != nil {
+				return false, fmt.Errorf("check deletion of Job %s/%s: %w", namespace, jobName, err)
+			}
+			return false, nil
+		}); err != nil {
+		return fmt.Errorf("wait for deletion of Job %s/%s: %w", namespace, jobName, err)
+	}
 	return nil
 }
 
@@ -476,6 +499,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 			TTLSecondsAfterFinished: ttlSecondsAfterFinished,
 			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
 			PodFailurePolicy:        jobPodFailurePolicy(),
+			PodReplacementPolicy:    ptr.To(batchv1.Failed),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{

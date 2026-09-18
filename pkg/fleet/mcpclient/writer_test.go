@@ -19,6 +19,7 @@ package mcpclient_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -251,6 +252,55 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			Expect(err).To(HaveOccurred(),
 				"Create must surface isError:true tool results as a Go error instead of silently succeeding")
 			Expect(err.Error()).To(ContainSubstring("missing argument resource"))
+		})
+
+		It("returns typed AlreadyExists for an immutable existing resource (BR-FLEET-054 collision regression)", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithTool(
+				mcpclient.ToolCreateOrUpdate,
+				"Create or update a Kubernetes resource",
+				json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: `Job.batch "wfe-immutable" is invalid: spec.template: field is immutable`}},
+						IsError: true,
+					}, nil
+				},
+			))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "wfe-immutable", Namespace: "kubernaut-workflows"}}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "")
+
+			err = writer.Create(ctx, job)
+			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(),
+				"Create must preserve remote immutable-field collisions as AlreadyExists")
+		})
+
+		It("returns typed AlreadyExists when the MCP call returns an immutable error", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithTool(
+				mcpclient.ToolCreateOrUpdate,
+				"Create or update a Kubernetes resource",
+				json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return nil, errors.New(`Job.batch "wfe-immutable-error" is invalid: spec.template: field is immutable`)
+				},
+			))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "wfe-immutable-error", Namespace: "kubernaut-workflows"}}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "")
+
+			err = writer.Create(ctx, job)
+			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(),
+				"Create must translate immutable MCP call errors to AlreadyExists")
 		})
 	})
 

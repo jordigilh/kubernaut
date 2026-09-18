@@ -135,18 +135,21 @@ func (a *PrometheusAdapter) SetReaderFactory(rf readerFactory) {
 // For local signals (empty clusterID) or when no readerFactory is configured,
 // it returns the local resolver. For remote signals, it constructs an
 // ownerchain.K8sOwnerResolver backed by a remote client.Reader from the factory.
-// On error, it falls back to the local resolver with a logged warning.
-func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) types.OwnerResolver {
-	if clusterID == "" || a.readerFactory == nil {
-		return a.ownerResolver
+// On error, it returns an error rather than selecting the local resolver.
+func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) (types.OwnerResolver, error) {
+	if clusterID == "" {
+		return a.ownerResolver, nil
+	}
+	if a.readerFactory == nil {
+		return nil, fmt.Errorf("remote owner resolver unavailable for cluster %q", clusterID)
 	}
 	reader, err := a.readerFactory.ReaderFor(ctx, clusterID)
 	if err != nil {
-		a.logger.Error(err, "Failed to obtain remote reader, falling back to local resolver",
+		a.logger.Error(err, "Failed to obtain remote reader; refusing local resolver fallback",
 			"cluster", clusterID)
-		return a.ownerResolver
+		return nil, fmt.Errorf("remote owner resolver for cluster %q: %w", clusterID, err)
 	}
-	return ownerchain.NewK8sOwnerResolver(reader, a.logger)
+	return ownerchain.NewK8sOwnerResolver(reader, a.logger), nil
 }
 
 // Name returns the adapter identifier
@@ -255,7 +258,11 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		if clusterID == "" {
 			clusterID = alert.Labels[types.ClusterLabelKey]
 		}
-		resolver := a.resolverForCluster(ctx, clusterID)
+		resolver, resolverErr := a.resolverForCluster(ctx, clusterID)
+		if resolverErr != nil {
+			lastErr = resolverErr
+			continue
+		}
 
 		fingerprint, resolvedResource, err := a.resolveAlertForParse(ctx, i, resource, clusterID, resolver)
 		if err != nil {
@@ -311,14 +318,22 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 	}
 
 	var signals []*types.NormalizedSignal
+	var lastErr error
 	for i, alert := range webhook.Alerts {
-		signal, ok := a.parseOneAlertInBatch(ctx, i, alert, webhook, rawData)
+		signal, ok, resolverErr := a.parseOneAlertInBatch(ctx, i, alert, webhook, rawData)
+		if resolverErr != nil {
+			lastErr = resolverErr
+			continue
+		}
 		if ok {
 			signals = append(signals, signal)
 		}
 	}
 
 	if len(signals) == 0 {
+		if lastErr != nil {
+			return nil, fmt.Errorf("all %d alert(s) in batch failed remote owner resolution: %w", len(webhook.Alerts), lastErr)
+		}
 		return nil, fmt.Errorf("all %d alert(s) in batch failed owner resolution", len(webhook.Alerts))
 	}
 
@@ -413,7 +428,7 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 	alert AlertManagerAlert,
 	webhook AlertManagerWebhook,
 	rawData []byte,
-) (*types.NormalizedSignal, bool) {
+) (*types.NormalizedSignal, bool, error) {
 	resource := a.extractAlertResource(ctx, alert)
 
 	// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation),
@@ -422,11 +437,14 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 	if clusterID == "" {
 		clusterID = alert.Labels[types.ClusterLabelKey]
 	}
-	resolver := a.resolverForCluster(ctx, clusterID)
+	resolver, resolverErr := a.resolverForCluster(ctx, clusterID)
+	if resolverErr != nil {
+		return nil, false, resolverErr
+	}
 
 	fingerprint, resolvedResource, ok := a.resolveAlertFingerprint(ctx, alertIndex, resource, clusterID, resolver)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 
 	labels := MergeLabels(alert.Labels, webhook.CommonLabels)
@@ -451,7 +469,7 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 		SourceType:   SourceTypePrometheusAlert,
 		Source:       a.GetSourceService(),
 		RawPayload:   rawData,
-	}, true
+	}, true, nil
 }
 
 // Validate checks if the parsed signal meets minimum requirements

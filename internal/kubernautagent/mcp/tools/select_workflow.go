@@ -172,6 +172,9 @@ func (t *SelectWorkflowTool) runEnrichment(ctx context.Context, input SelectWork
 		if overlayErr != nil {
 			return fmt.Errorf("resolve fleet overlay for cluster %q: %w", clusterID, overlayErr)
 		}
+		if len(overlay) == 0 {
+			return fmt.Errorf("resolve fleet overlay for cluster %q: overlay is empty", clusterID)
+		}
 		ctx = investigator.WithFleetOverlay(ctx, overlay)
 	}
 	result, err := runner.Enrich(ctx, enrichment.EnrichRequest{Kind: input.Kind, Name: input.Name, Namespace: input.Namespace, APIVersion: input.APIVersion, SpecHash: input.SpecHash, ClusterID: clusterID, IncidentID: incidentID})

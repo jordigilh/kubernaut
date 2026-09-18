@@ -103,6 +103,12 @@ func (selectFleetOverlayResolver) Overlay(context.Context, string) (map[string]k
 	return map[string]katools.Tool{"resources_get": nil}, nil
 }
 
+type emptySelectFleetOverlayResolver struct{}
+
+func (emptySelectFleetOverlayResolver) Overlay(context.Context, string) (map[string]katools.Tool, error) {
+	return map[string]katools.Tool{}, nil
+}
+
 func (m *mockEnrichmentRunner) Enrich(ctx context.Context, req enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
 	m.capturedReq = req
 	_, m.overlaySeen = investigator.FleetOverlayFromContext(ctx)
@@ -332,6 +338,43 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("signal context"))
+		})
+
+		It("UT-KA-2419-001 [AC-4, AC-6, SI-10, ASVS V4.1.5]: should reject an empty fleet overlay before enrichment can use hub state", func() {
+			wfID := "wf-empty-overlay-2419"
+			runner := &mockEnrichmentRunner{result: &enrichment.EnrichmentResult{ResourceKind: "Deployment"}}
+			catalog := &mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-empty-overlay-2419",
+					CorrelationID:   "rr-empty-overlay-2419",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				ClusterID:    "remote-cluster-2419",
+				IncidentID:   "incident-2419",
+				ResourceKind: "Deployment",
+			}}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowSignalContextResolver(resolver),
+				mcptools.WithSelectWorkflowFleetOverlayResolver(emptySelectFleetOverlayResolver{}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID: "rr-empty-overlay-2419", WorkflowID: wfID,
+				Kind: "Deployment", Name: "api-server", Namespace: "production",
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("empty"))
+			Expect(runner.capturedReq).To(BeZero(),
+				"enrichment must not run against an unscoped hub client")
 		})
 
 		It("should call enrichment before catalog lookup and include result in output", func() {

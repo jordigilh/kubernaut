@@ -139,7 +139,7 @@ func (w *WriterClient) callTool(ctx context.Context, toolName string, args map[s
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...client.CreateOption) error {
-	return w.createOrUpdate(ctx, obj, "Create")
+	return w.createOrUpdate(ctx, obj, "Create", true)
 }
 
 // Delete implements client.Writer. It sends a delete request to the remote
@@ -185,7 +185,7 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...client.UpdateOption) error {
-	return w.createOrUpdate(ctx, obj, "Update")
+	return w.createOrUpdate(ctx, obj, "Update", false)
 }
 
 // createOrUpdate implements the shared Create/Update logic: serialize obj,
@@ -193,8 +193,9 @@ func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...clien
 // object's metadata from the response. Issue #1530 (dupl): Create and Update
 // were byte-identical apart from the "Create"/"Update" wording in the
 // serialization error message (opName below).
-func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, opName string) error {
-	if _, err := ensureGVK(obj, w.scheme); err != nil {
+func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, opName string, createSemantics bool) error {
+	gvk, err := ensureGVK(obj, w.scheme)
+	if err != nil {
 		return err
 	}
 
@@ -208,10 +209,21 @@ func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, op
 		"resource": manifest,
 	})
 	if err != nil {
+		if createSemantics {
+			if alreadyExists := asRemoteAlreadyExists(err.Error(), gvk, obj.GetName()); alreadyExists != nil {
+				return alreadyExists
+			}
+		}
 		return err
 	}
 	if result.IsError {
-		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
+		errText := ExtractText(result)
+		if createSemantics {
+			if alreadyExists := asRemoteAlreadyExists(errText, gvk, obj.GetName()); alreadyExists != nil {
+				return alreadyExists
+			}
+		}
+		return fmt.Errorf("call %s returned error: %s", toolName, errText)
 	}
 
 	text := ExtractText(result)

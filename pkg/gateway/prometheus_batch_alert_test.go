@@ -23,7 +23,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/fleettest"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -311,6 +316,13 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
 			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{
+					"test-cluster": fake.NewClientBuilder().WithObjects(&corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{Name: validPod, Namespace: "demo-crashloop"},
+					}).Build(),
+				},
+			})
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "StaleAlert", Severity: "warning", Namespace: "ns-stale", Pod: stalePod,
