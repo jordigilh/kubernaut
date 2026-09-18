@@ -31,7 +31,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -106,7 +105,11 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 		jobName := weexecutor.ExecutionResourceName(targetResource)
 		wfeName := "e2e-remote-iscompleted-" + uuid.New().String()[:8]
 
-		newCollisionJob := func() *batchv1.Job {
+		newCollisionJob := func(suspend bool) *batchv1.Job {
+			command := []string{"sleep", "3600"}
+			if !suspend {
+				command = []string{"sh", "-c", "exit 0"}
+			}
 			return &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      jobName,
@@ -117,12 +120,12 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 				},
 				Spec: batchv1.JobSpec{
 					BackoffLimit: ptr.To[int32](0),
-					Suspend:      ptr.To(true),
+					Suspend:      ptr.To(suspend),
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
 							RestartPolicy: corev1.RestartPolicyNever,
 							Containers: []corev1.Container{{
-								Name: "workflow", Image: "busybox:1.36", Command: []string{"sleep", "3600"},
+								Name: "workflow", Image: "busybox:1.36", Command: command,
 							}},
 						},
 					},
@@ -130,25 +133,29 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			}
 		}
 
-		By("Creating a completed Job on the remote cluster and a non-terminal hub shadow")
-		remoteJob := newCollisionJob()
+		By("Creating a naturally completed Job on the remote cluster and a non-terminal hub shadow")
+		remoteJob := newCollisionJob(false)
 		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
-		Expect(retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		DeferCleanup(func() {
+			_ = remoteK8sClient.Delete(context.Background(), remoteJob)
+		})
+		Eventually(func(g Gomega) {
 			latest := &batchv1.Job{}
-			if err := remoteK8sClient.Get(ctx, client.ObjectKeyFromObject(remoteJob), latest); err != nil {
-				return err
+			g.Expect(remoteK8sClient.Get(ctx, client.ObjectKeyFromObject(remoteJob), latest)).To(Succeed())
+			completed := false
+			for _, condition := range latest.Status.Conditions {
+				if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
+					completed = true
+					break
+				}
 			}
-			latest.Status.Conditions = []batchv1.JobCondition{{
-				Type: batchv1.JobComplete, Status: corev1.ConditionTrue,
-			}}
-			return remoteK8sClient.Status().Update(ctx, latest)
-		})).To(Succeed())
+			g.Expect(completed).To(BeTrue(), "remote Job should be completed by the Kubernetes Job controller")
+		}, timeout, interval).Should(Succeed())
 
-		hubShadow := newCollisionJob()
+		hubShadow := newCollisionJob(true)
 		Expect(k8sClient.Create(ctx, hubShadow)).To(Succeed())
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(context.Background(), hubShadow)
-			_ = remoteK8sClient.Delete(context.Background(), remoteJob)
 		})
 
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
