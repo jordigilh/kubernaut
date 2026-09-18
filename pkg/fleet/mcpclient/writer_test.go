@@ -254,14 +254,23 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			Expect(err.Error()).To(ContainSubstring("missing argument resource"))
 		})
 
-		It("returns typed AlreadyExists for an immutable existing resource (BR-FLEET-054 collision regression)", func() {
+		It("returns typed AlreadyExists when a failed Create can read the existing resource (BR-FLEET-054 collision regression)", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithTool(
+				mcpclient.ToolGet,
+				"Get a Kubernetes resource",
+				json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"name":{"type":"string"}}}`),
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"wfe-immutable","namespace":"kubernaut-workflows"}}`}},
+					}, nil
+				},
+			), mockgw.WithTool(
 				mcpclient.ToolCreateOrUpdate,
 				"Create or update a Kubernetes resource",
 				json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
 				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 					return &mcp.CallToolResult{
-						Content: []mcp.Content{&mcp.TextContent{Text: `Job.batch "wfe-immutable" is invalid: spec.template: field is immutable`}},
+						Content: []mcp.Content{&mcp.TextContent{Text: "server-specific create failure"}},
 						IsError: true,
 					}, nil
 				},
@@ -277,16 +286,25 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 
 			err = writer.Create(ctx, job)
 			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(),
-				"Create must preserve remote immutable-field collisions as AlreadyExists")
+				"Create must classify an existing remote object without depending on the server error text")
 		})
 
-		It("returns typed AlreadyExists when the MCP call returns an immutable error", func() {
+		It("returns typed AlreadyExists when the MCP call fails and the existing resource is readable", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithTool(
+				mcpclient.ToolGet,
+				"Get a Kubernetes resource",
+				json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"name":{"type":"string"}}}`),
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"wfe-immutable-error","namespace":"kubernaut-workflows"}}`}},
+					}, nil
+				},
+			), mockgw.WithTool(
 				mcpclient.ToolCreateOrUpdate,
 				"Create or update a Kubernetes resource",
 				json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
 				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-					return nil, errors.New(`Job.batch "wfe-immutable-error" is invalid: spec.template: field is immutable`)
+					return nil, errors.New("server-specific create failure")
 				},
 			))
 

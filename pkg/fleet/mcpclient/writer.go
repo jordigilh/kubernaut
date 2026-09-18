@@ -20,10 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -209,19 +212,21 @@ func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, op
 		"resource": manifest,
 	})
 	if err != nil {
-		if createSemantics {
-			if alreadyExists := asRemoteAlreadyExists(err.Error(), gvk, obj.GetName()); alreadyExists != nil {
-				return alreadyExists
-			}
+		if createSemantics && w.remoteResourceExists(ctx, gvk, obj) {
+			return apierrors.NewAlreadyExists(
+				schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)},
+				obj.GetName(),
+			)
 		}
 		return err
 	}
 	if result.IsError {
 		errText := ExtractText(result)
-		if createSemantics {
-			if alreadyExists := asRemoteAlreadyExists(errText, gvk, obj.GetName()); alreadyExists != nil {
-				return alreadyExists
-			}
+		if createSemantics && w.remoteResourceExists(ctx, gvk, obj) {
+			return apierrors.NewAlreadyExists(
+				schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)},
+				obj.GetName(),
+			)
 		}
 		return fmt.Errorf("call %s returned error: %s", toolName, errText)
 	}
@@ -232,6 +237,50 @@ func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, op
 	}
 
 	return populateFromResponse(text, obj)
+}
+
+// remoteResourceExists confirms a failed Create by reading the requested object
+// through the standard MCP get tool. MCP tool errors do not carry a Kubernetes
+// reason code, so inspecting their text cannot distinguish an existing object
+// from any other server-side failure. A successful read of the requested object
+// is the portable signal that it exists; if the read is unavailable or
+// unsuccessful, the original Create error remains authoritative.
+func (w *WriterClient) remoteResourceExists(ctx context.Context, gvk schema.GroupVersionKind, obj client.Object) bool {
+	args := map[string]any{
+		"kind":       gvk.Kind,
+		"apiVersion": gvk.GroupVersion().String(),
+		"name":       obj.GetName(),
+	}
+	if namespace := obj.GetNamespace(); namespace != "" {
+		args["namespace"] = namespace
+	}
+
+	result, callErr := w.callTool(ctx, w.resolveToolName(ToolGet), args)
+	if callErr != nil || result == nil || result.IsError {
+		return false
+	}
+
+	var remote *unstructured.Unstructured
+	if structured := extractStructuredGet(result); structured != nil {
+		remote = &unstructured.Unstructured{Object: structured}
+	} else {
+		parsed, parseErr := ParseUnstructuredResponse(ExtractText(result))
+		if parseErr != nil {
+			return false
+		}
+		remote = parsed
+	}
+	if remote.GetName() != obj.GetName() {
+		return false
+	}
+	if remote.GetKind() != "" && remote.GetKind() != gvk.Kind {
+		return false
+	}
+	if remote.GetAPIVersion() != "" && remote.GetAPIVersion() != gvk.GroupVersion().String() {
+		return false
+	}
+
+	return true
 }
 
 // Close is a no-op for WriterClient since it shares the session with its
