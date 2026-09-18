@@ -369,14 +369,15 @@ func TestFleetE2E(t *testing.T) {
 	if os.Getenv("FLEET_E2E") != trueFixture {
 		t.Skip("FLEET_E2E=true required for fleet E2E tests")
 	}
+	// Configure controller-runtime logging before Ginkgo starts parallel
+	// workers. SynchronizedBeforeSuite's first closure runs only in process 1.
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Fleet E2E Suite (Issue #54)")
 }
 
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
-		logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
 		By("Setting up isolated kubeconfig path (per TESTING_GUIDELINES.md)")
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
