@@ -56,3 +56,16 @@ func asRemoteNotFound(errText string, gvk schema.GroupVersionKind, name string) 
 	}
 	return apierrors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)}, name)
 }
+
+// asRemoteAlreadyExists recognizes the immutable-field validation returned by
+// the remote create_or_update tool when a caller uses Create for an existing
+// resource. The MCP server exposes create and update through one tool, so a
+// Kubernetes Create collision arrives as plain text instead of a typed
+// AlreadyExists error. Translating this specific update-only failure preserves
+// controller-runtime's normal collision handling without changing Update.
+func asRemoteAlreadyExists(errText string, gvk schema.GroupVersionKind, name string) error {
+	if !strings.Contains(errText, "field is immutable") {
+		return nil
+	}
+	return apierrors.NewAlreadyExists(schema.GroupResource{Group: gvk.Group, Resource: strings.ToLower(gvk.Kind)}, name)
+}
