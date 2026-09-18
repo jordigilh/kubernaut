@@ -26,15 +26,18 @@ import (
 	. "github.com/onsi/gomega"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type reconSpawnRunner struct {
 	receivedMessages []mcpinternal.ReconMessage
+	capturedCtx      context.Context
 	called           atomic.Int32
 }
 
-func (r *reconSpawnRunner) RunReconTurn(_ context.Context, msgs []mcpinternal.ReconMessage, _ string) (string, error) {
+func (r *reconSpawnRunner) RunReconTurn(ctx context.Context, msgs []mcpinternal.ReconMessage, _ string) (string, error) {
 	r.called.Add(1)
+	r.capturedCtx = ctx
 	r.receivedMessages = msgs
 	return "reconstructed-response", nil
 }
@@ -56,6 +59,79 @@ func (r *reconSpawnRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinte
 
 var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", func() {
 
+	Describe("UT-KA-2417-002: typed signal context survives reconstruction", func() {
+		It("should preserve the complete signal context", func() {
+			isDuplicate := true
+			occurrenceCount := 3
+			deduplicationWindow := 15
+			original := katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", Severity: "critical", Message: "pod restarted",
+				IncidentID: "incident-1", RemediationID: "rr-1", ResourceKind: "Deployment", ResourceName: "api",
+				ResourceAPIVersion: "apps/v1", ClusterID: "remote-cluster", ClusterName: "remote",
+				Environment: "prod", Priority: "p1", RiskTolerance: "low", SignalSource: "prometheus",
+				BusinessCategory: "payments", Description: "description", SignalMode: "alert",
+				FiringTime: "2026-09-16T00:00:00Z", ReceivedTime: "2026-09-16T00:00:01Z",
+				IsDuplicate: &isDuplicate, OccurrenceCount: &occurrenceCount,
+				SignalAnnotations:          map[string]string{"owner": "payments"},
+				SignalLabels:               map[string]string{"team": "payments"},
+				DetectedLabelsJSON:         `{"gitops_managed":true}`,
+				DeduplicationWindowMinutes: &deduplicationWindow,
+				FirstSeen:                  "2026-09-15T00:00:00Z", LastSeen: "2026-09-16T00:00:00Z",
+				Interactive:           true,
+				ClusterClassification: "production",
+			}
+
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-001",
+				SessionID:     "session-typed-001",
+				SignalContext: &original,
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			restored, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue())
+			Expect(restored).To(Equal(original))
+		})
+
+		It("should preserve false and zero-valued optional fields", func() {
+			isDuplicate := false
+			occurrenceCount := 0
+			deduplicationWindow := 0
+			original := katypes.SignalContext{
+				Name: "Alert", RemediationID: "rr-typed-002", ClusterID: "remote-cluster", IsDuplicate: &isDuplicate,
+				OccurrenceCount: &occurrenceCount, DeduplicationWindowMinutes: &deduplicationWindow,
+			}
+
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-002",
+				SessionID:     "session-typed-002",
+				SignalContext: &original,
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			restored, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue())
+			Expect(restored).To(Equal(original))
+		})
+
+		It("should omit signal context when none was captured", func() {
+			runner := &reconSpawnRunner{}
+			spawner := mcpinternal.NewReconstructionSpawner(runner, &reconSpawnRecon{}, logr.Discard())
+			err := spawner.SpawnReconstruct(context.Background(), &mcpinternal.ReconstructionContext{
+				CorrelationID: "rr-typed-003",
+				SessionID:     "session-typed-003",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			_, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeFalse())
+		})
+	})
+
 	Describe("UT-KA-TAKE-006: Reconstruction calls RunInteractiveTurn with full prior messages", func() {
 		It("should convert conversation turns to LLM messages for the runner", func() {
 			runner := &reconSpawnRunner{}
@@ -71,10 +147,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-recon-001",
 				SessionID:     "old-sess-001",
-				SignalMeta: map[string]string{
-					"signal_name": "OOMKilled",
-					"severity":    "critical",
-				},
+				SignalContext: &katypes.SignalContext{Name: "OOMKilled", Severity: "critical"},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
@@ -106,15 +179,17 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-meta-001",
 				SessionID:     "old-sess-002",
-				SignalMeta: map[string]string{
-					"signal_name": "CrashLoopBackOff",
-					"severity":    "high",
-				},
+				SignalContext: &katypes.SignalContext{Name: "CrashLoopBackOff", Severity: "high", ClusterID: "remote-cluster"},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(runner.called.Load()).To(Equal(int32(1)))
+			signal, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue())
+			Expect(signal.Name).To(Equal("CrashLoopBackOff"))
+			Expect(signal.Severity).To(Equal("high"))
+			Expect(signal.ClusterID).To(Equal("remote-cluster"))
 		})
 	})
 
@@ -127,7 +202,6 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-empty-001",
 				SessionID:     "old-sess-003",
-				SignalMeta:    map[string]string{},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)

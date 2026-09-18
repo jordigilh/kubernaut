@@ -49,6 +49,7 @@ import (
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
@@ -334,7 +335,7 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	// emitDisconnectAudit emits interactive.completed for non-tool session endings
 	// (disconnect, inactivity timeout, TTL expiry). M1: ensures all session-ending
 	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
-	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger) //nolint:contextcheck // disconnect audit emitter fires asynchronously on session disconnect events, not tied to any single request
+	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger) //nolint:contextcheck // audit events are emitted asynchronously without a request context
 
 	// #2100 (v1.6 clone #2101): SessionJanitor is a backstop sweep for
 	// interactive sessions that never reach an explicit Release path (e.g.
@@ -475,22 +476,23 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	autoCloseTombstone := mcpkg.NewAutoCloseTombstone(60 * time.Second)
 
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
-		leaseMgr:            core.leaseMgr,
-		investigatorRunner:  investigatorRunner,
-		recon:               core.recon,
-		autoMgr:             autoMgr,
-		agentMetrics:        agentMetrics,
-		sessionRateLimiter:  sessionRateLimiter,
-		timeoutMgr:          core.timeoutMgr,
-		sessionNotifier:     sessionNotifier,
-		rrChecker:           rrChecker,
-		agentSessionChecker: agentSessionChecker,
-		auditStore:          auditStore,
-		logger:              logger,
-		signalResolver:      signalResolver,
-		catalogAdapter:      catalogAdapter,
-		enricher:            enricher,
-		autoCloseTombstone:  autoCloseTombstone,
+		leaseMgr:             core.leaseMgr,
+		investigatorRunner:   investigatorRunner,
+		recon:                core.recon,
+		autoMgr:              autoMgr,
+		agentMetrics:         agentMetrics,
+		sessionRateLimiter:   sessionRateLimiter,
+		timeoutMgr:           core.timeoutMgr,
+		sessionNotifier:      sessionNotifier,
+		rrChecker:            rrChecker,
+		agentSessionChecker:  agentSessionChecker,
+		auditStore:           auditStore,
+		logger:               logger,
+		signalResolver:       signalResolver,
+		catalogAdapter:       catalogAdapter,
+		enricher:             enricher,
+		fleetOverlayResolver: p.inv.FleetOverlayResolver(),
+		autoCloseTombstone:   autoCloseTombstone,
 	})
 
 	// Register tools with the MCP SDK server.
@@ -605,13 +607,16 @@ func buildMCPControllerClient(infra *k8sInfra) (ctrlclient.Client, error) {
 // that reference it — lease-expiry, inactivity-timeout, and disconnect — can
 // each receive it as an explicit parameter instead of relying on lexical
 // capture across a helper-function boundary.
-func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger) func(sessionID, correlationID, reason string) {
-	return func(sessionID, correlationID, reason string) {
+func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger) func(sessionID, correlationID, reason string, signalContext *katypes.SignalContext) { //nolint:contextcheck // disconnect events are emitted asynchronously and have no request context
+	return func(sessionID, correlationID, reason string, signalContext *katypes.SignalContext) {
 		event := audit.NewEvent(audit.EventTypeInteractiveCompleted, correlationID,
 			audit.WithSessionID(sessionID),
 		)
 		event.EventAction = audit.ActionInteractiveCompleted
 		event.EventOutcome = audit.OutcomeSuccess
+		if signalContext != nil && signalContext.ClusterID != "" {
+			event.ClusterID = signalContext.ClusterID
+		}
 		event.Data["reason"] = reason
 		audit.StoreBestEffort(context.Background(), auditStore, event, logger.WithName("mcp-audit"))
 	}
@@ -628,7 +633,7 @@ type mcpLeaseManagerDeps struct {
 	autoMgr             *session.Manager
 	agentMetrics        *kametrics.Metrics
 	logger              logr.Logger
-	emitDisconnectAudit func(string, string, string)
+	emitDisconnectAudit func(string, string, string, *katypes.SignalContext)
 	sessionJanitor      *mcpkg.SessionJanitor
 }
 
@@ -640,12 +645,12 @@ func buildMCPLeaseManager(d mcpLeaseManagerDeps) *mcpkg.LeaseSessionManager {
 		mcpkg.WithSessionTTL(d.cfg.Interactive.SessionTTL),
 		mcpkg.WithInactivityTimeout(d.cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(d.cfg.Interactive.MaxConcurrentSessions),
-		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string, signalContext *katypes.SignalContext) {
 			// #1438: Emit terminal event BEFORE completing the HTTP session so
 			// EventLogBridge can forward it to AF before the channel closes.
 			d.autoMgr.EmitSessionEndedByRR(rrID, reason)
 			mcptools.CompleteHTTPSession(d.autoMgr, rrID, nil, d.logger, reason)
-			d.emitDisconnectAudit(sessionID, rrID, reason)
+			d.emitDisconnectAudit(sessionID, rrID, reason, signalContext)
 			// #2103 (v1.6 clone #2104): aiagent_mcp_interactive_sessions_active
 			// decrement moved into LeaseSessionManager.Release() itself (called
 			// by GetDriver just before this callback fires) -- see
@@ -680,7 +685,7 @@ func buildMCPLeaseManager(d mcpLeaseManagerDeps) *mcpkg.LeaseSessionManager {
 // call explicitly moved into LeaseSessionManager.Release() itself (via
 // buildMCPLeaseManager's WithSessionEndedMetrics), which leaseMgr.Release
 // below already invokes.
-func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leaseMgr *mcpkg.LeaseSessionManager, logger logr.Logger, emitDisconnectAudit func(string, string, string)) *mcpkg.TimeoutManager {
+func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leaseMgr *mcpkg.LeaseSessionManager, logger logr.Logger, emitDisconnectAudit func(string, string, string, *katypes.SignalContext)) *mcpkg.TimeoutManager {
 	return mcpkg.NewTimeoutManager(
 		cfg.Interactive.InactivityTimeout,
 		[]time.Duration{cfg.Interactive.InactivityTimeout - 2*time.Minute, cfg.Interactive.InactivityTimeout - 30*time.Second},
@@ -688,7 +693,7 @@ func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leas
 			logger.Info("interactive session expired due to inactivity",
 				"session_id", sessionID)
 			// Snapshot correlationID before Release deletes the entry.
-			rrID, _ := leaseMgr.GetSessionInfo(sessionID)
+			rrID, signalContext := leaseMgr.GetSessionInfo(sessionID)
 			// #1438: Emit terminal event BEFORE closing the HTTP session so the
 			// EventLogBridge can forward it to AF before the channel closes.
 			autoMgr.EmitSessionEndedByRR(rrID, "inactivity_timeout")
@@ -699,7 +704,7 @@ func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leas
 			}
 			// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
 			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, "inactivity_timeout")
-			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout")
+			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout", signalContext)
 			// #2103 (v1.6 clone #2104): T1-4's gauge decrement moved into
 			// LeaseSessionManager.Release() itself (called by leaseMgr.Release
 			// just above) -- see WithSessionEndedMetrics. An explicit call
@@ -711,18 +716,18 @@ func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leas
 // spawnReconstruction runs the background context-reconstruction +
 // autonomous-investigation spawn (INT-06, BR-INTERACTIVE-008) after an
 // interactive session ends. All values that only exist at callback-runtime
-// (rrID, interactiveSessionID, signalMeta) are threaded in as explicit
+// (rrID, interactiveSessionID, signalContext) are threaded in as explicit
 // parameters rather than captured lexically, per the closure-capture map
 // produced during the Wave 5 preflight spike. Intended to be invoked via
 // `go spawnReconstruction(...)`; runs with its own bounded timeout,
 // independent of the caller's context.
-func spawnReconstruction(reconSpawner *mcpkg.ReconstructionSpawner, logger logr.Logger, rrID, interactiveSessionID string, signalMeta map[string]string) {
+func spawnReconstruction(reconSpawner *mcpkg.ReconstructionSpawner, logger logr.Logger, rrID, interactiveSessionID string, signalContext *katypes.SignalContext) {
 	reconCtx, reconCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer reconCancel()
 	if err := reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
 		CorrelationID: rrID,
 		SessionID:     interactiveSessionID,
-		SignalMeta:    signalMeta,
+		SignalContext: signalContext,
 	}); err != nil {
 		logger.Error(err, "background reconstruction failed",
 			"correlationID", rrID, "sessionID", interactiveSessionID)
@@ -741,7 +746,7 @@ type mcpDisconnectHandlerDeps struct {
 	reconSpawner        *mcpkg.ReconstructionSpawner
 	agentMetrics        *kametrics.Metrics
 	logger              logr.Logger
-	emitDisconnectAudit func(string, string, string)
+	emitDisconnectAudit func(string, string, string, *katypes.SignalContext)
 	gracePeriod         time.Duration
 }
 
@@ -766,7 +771,7 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 		d.timeoutMgr.StopTracking(interactiveSessionID)
 
 		// T1-1: Snapshot session info BEFORE Release deletes the entry.
-		rrID, signalMeta := d.leaseMgr.GetSessionInfo(interactiveSessionID)
+		rrID, signalContext := d.leaseMgr.GetSessionInfo(interactiveSessionID)
 
 		// #1438: Emit terminal event BEFORE closing the HTTP session so the
 		// EventLogBridge can forward it to AF before the channel closes.
@@ -782,7 +787,7 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 		// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
 		mcptools.CompleteHTTPSession(d.autoMgr, rrID, nil, d.logger, "disconnect")
 
-		d.emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")
+		d.emitDisconnectAudit(interactiveSessionID, rrID, "disconnect", signalContext)
 
 		// #2103 (v1.6 clone #2104): T1-4's gauge decrement moved into
 		// LeaseSessionManager.Release() itself (called above) -- see
@@ -790,7 +795,7 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 		// double-decrement.
 
 		// Spawn reconstruction in background (best-effort, BR-INTERACTIVE-008).
-		go spawnReconstruction(d.reconSpawner, d.logger, rrID, interactiveSessionID, signalMeta)
+		go spawnReconstruction(d.reconSpawner, d.logger, rrID, interactiveSessionID, signalContext)
 	}, d.gracePeriod, d.logger)
 }
 
@@ -799,22 +804,23 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 // struct (rather than individual parameters) per the Go Anti-Pattern
 // Checklist's 8+-param rule.
 type mcpToolsDeps struct {
-	leaseMgr            *mcpkg.LeaseSessionManager
-	investigatorRunner  mcptools.InvestigatorRunner
-	recon               mcpkg.ContextReconstructor
-	autoMgr             *session.Manager
-	agentMetrics        *kametrics.Metrics
-	sessionRateLimiter  *mcpkg.SessionRateLimiter
-	timeoutMgr          *mcpkg.TimeoutManager
-	sessionNotifier     *mcpkg.SessionNotifier
-	rrChecker           *mcptools.K8sRRExistenceChecker
-	agentSessionChecker *mcptools.K8sAgentSessionExistenceChecker
-	auditStore          audit.AuditStore
-	logger              logr.Logger
-	signalResolver      *mcpadapters.SessionSignalContextResolver
-	catalogAdapter      *mcpadapters.WorkflowCatalogAdapter
-	enricher            *enrichment.Enricher
-	autoCloseTombstone  *mcpkg.AutoCloseTombstone
+	leaseMgr             *mcpkg.LeaseSessionManager
+	investigatorRunner   mcptools.InvestigatorRunner
+	recon                mcpkg.ContextReconstructor
+	autoMgr              *session.Manager
+	agentMetrics         *kametrics.Metrics
+	sessionRateLimiter   *mcpkg.SessionRateLimiter
+	timeoutMgr           *mcpkg.TimeoutManager
+	sessionNotifier      *mcpkg.SessionNotifier
+	rrChecker            *mcptools.K8sRRExistenceChecker
+	agentSessionChecker  *mcptools.K8sAgentSessionExistenceChecker
+	auditStore           audit.AuditStore
+	logger               logr.Logger
+	signalResolver       *mcpadapters.SessionSignalContextResolver
+	catalogAdapter       *mcpadapters.WorkflowCatalogAdapter
+	enricher             *enrichment.Enricher
+	fleetOverlayResolver investigator.FleetOverlayResolver
+	autoCloseTombstone   *mcpkg.AutoCloseTombstone
 }
 
 // buildMCPTools constructs the InvestigateTool, SelectWorkflowTool, and
@@ -845,6 +851,8 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithMutexProvider(investigateTool),
 		mcptools.WithSelectWorkflowTimeoutTracker(d.timeoutMgr),
 		mcptools.WithSelectWorkflowAuditStore(d.auditStore),
+		mcptools.WithSelectWorkflowSignalContextResolver(d.signalResolver),
+		mcptools.WithSelectWorkflowFleetOverlayResolver(d.fleetOverlayResolver),
 	}
 	if d.enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(d.enricher))

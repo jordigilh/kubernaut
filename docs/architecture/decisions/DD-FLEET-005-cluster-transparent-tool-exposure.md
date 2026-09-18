@@ -341,9 +341,9 @@ materially worse outcome than an explicit failure, since a downstream
 automated remediation could act on it.
 
 **Fix**: `prescopeFleetOverlay()` now returns `(context.Context, error)` and
-fails closed — a `nil` `FleetOverlayResolver` or a resolver error both
-short-circuit `Investigate()`/`RunInteractiveTurn()` with a non-nil error
-instead of continuing with an unscoped context. Falling back to local/hub
+fails closed — a `nil` `FleetOverlayResolver`, a resolver error, or an empty
+overlay all short-circuit `Investigate()`/`RunInteractiveTurn()` with a
+non-nil error instead of continuing with an unscoped context. Falling back to local/hub
 tools is never correct for a fleet-target investigation: the hub is never
 the resource the firing signal or interactive operator actually targeted,
 so any tool call the LLM makes without the overlay queries the wrong

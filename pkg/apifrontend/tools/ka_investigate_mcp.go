@@ -167,7 +167,8 @@ func emitInteractiveSignalFailedAudit(ctx context.Context, auditor audit.Emitter
 		return
 	}
 	auditor.Emit(ctx, &audit.Event{
-		Type: audit.EventInteractiveSignalFailed,
+		Type:      audit.EventInteractiveSignalFailed,
+		ClusterID: ClusterIDFromContext(ctx),
 		Detail: map[string]string{
 			"rr_id": rrID,
 			"error": sigErr.Error(),
@@ -846,13 +847,16 @@ func finalizeInvestigationStart(ctx context.Context, cfg *InvestigateConfig, rrI
 	}
 
 	if cfg.Auditor != nil {
+		clusterID := ClusterIDFromContext(ctx)
 		cfg.Auditor.Emit(ctx, &audit.Event{
-			Type: audit.EventKADelegated,
+			Type:      audit.EventKADelegated,
+			ClusterID: clusterID,
 			Detail: map[string]string{
 				"rr_id":             rrID,
 				"session_id":        result.SessionID,
 				"ka_correlation_id": correlationSessionID,
 				"delegation_type":   "interactive",
+				"cluster_id":        clusterID,
 			},
 		})
 	}
@@ -911,14 +915,17 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 		"rr_id", rrID, "status", status, "exit_reason", exitReason, "summary_len", len(summary))
 
 	if exitReason == ExitReasonInactivityTimeout && cfg.Auditor != nil {
+		clusterID := ClusterIDFromContext(ctx)
 		cfg.Auditor.Emit(ctx, &audit.Event{
-			Type: audit.EventInvestigationTimeout,
+			Type:      audit.EventInvestigationTimeout,
+			ClusterID: clusterID,
 			Detail: map[string]string{
 				"rr_id":              rrID,
 				"session_id":         result.SessionID,
 				"exit_reason":        exitReason,
 				"inactivity_timeout": BridgeInactivityTimeout.String(),
 				"summary_len":        fmt.Sprintf("%d", len(summary)),
+				"cluster_id":         clusterID,
 			},
 		})
 	}

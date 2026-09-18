@@ -68,6 +68,10 @@ type EAIGWRegistryConfig struct {
 	ResyncPeriod time.Duration
 	// ChannelSize for subscriber event channels. Defaults to 64.
 	ChannelSize int
+
+	// onWatchError is installed by each registry instance to fail readiness
+	// closed when its informer loses the watch connection.
+	onWatchError func(error)
 }
 
 // EAIGWRegistry implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
@@ -81,6 +85,7 @@ type EAIGWRegistry struct {
 	mu       sync.RWMutex
 	clusters map[string]ClusterInfo
 	ready    bool
+	started  bool
 
 	eventCh chan ClusterEvent
 	stopCh  chan struct{}
@@ -137,9 +142,36 @@ func (w *EAIGWRegistry) Ready() bool {
 	return w.ready
 }
 
+func (w *EAIGWRegistry) markWatchUnhealthy(err error) {
+	w.mu.Lock()
+	w.ready = false
+	w.mu.Unlock()
+	w.logger.Error(err, "fleet cluster registry watch failed")
+}
+
+// Probe refreshes the registry from the authoritative API and restores
+// readiness after a transient informer/watch failure.
+func (w *EAIGWRegistry) Probe(ctx context.Context) error {
+	w.mu.RLock()
+	started, stopped := w.started, w.stopped
+	w.mu.RUnlock()
+	refreshed, err := probeClusters(ctx, w.client, w.config.Namespace, BackendGVR, started, stopped, w.trackableClusterInfo)
+	if err != nil {
+		w.markWatchUnhealthy(err)
+		return err
+	}
+	w.mu.Lock()
+	w.clusters = refreshed
+	w.ready = true
+	w.mu.Unlock()
+	return nil
+}
+
 // Start begins watching Envoy AI Gateway Backend CRDs.
 func (w *EAIGWRegistry) Start(ctx context.Context) error {
-	seeded, err := startInformerAndSeed(ctx, w.client, w.config, BackendGVR,
+	config := w.config
+	config.onWatchError = w.markWatchUnhealthy
+	seeded, err := startInformerAndSeed(ctx, w.client, config, BackendGVR,
 		cache.ResourceEventHandlerFuncs{AddFunc: w.onAdd, UpdateFunc: w.onUpdate, DeleteFunc: w.onDelete},
 		w.stopCh, w.trackableClusterInfo)
 	if err != nil {
@@ -151,6 +183,7 @@ func (w *EAIGWRegistry) Start(ctx context.Context) error {
 		w.clusters[id] = info
 	}
 	w.ready = true
+	w.started = true
 	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 
@@ -197,6 +230,13 @@ func startInformerAndSeed(
 
 	if _, err := informer.AddEventHandler(handlers); err != nil {
 		return nil, fmt.Errorf("failed to add event handler: %w", err)
+	}
+	if cfg.onWatchError != nil {
+		if err := informer.SetWatchErrorHandler(func(_ *cache.Reflector, watchErr error) {
+			cfg.onWatchError(watchErr)
+		}); err != nil {
+			return nil, fmt.Errorf("failed to set informer watch error handler: %w", err)
+		}
 	}
 
 	go func() {

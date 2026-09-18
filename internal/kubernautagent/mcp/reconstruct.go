@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 const kaServiceAccount = "system:serviceaccount:kubernaut:kubernaut-agent"
@@ -44,7 +45,7 @@ type ReconRunner interface {
 type ReconstructionContext struct {
 	CorrelationID string
 	SessionID     string
-	SignalMeta    map[string]string
+	SignalContext *katypes.SignalContext
 }
 
 // ReconstructionSpawner rebuilds the conversation context from DS audit events
@@ -103,6 +104,12 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 			"correlation_id", entry.CorrelationID,
 			"error", reconErr.Error())
 	}
+	if signal := cloneSignalContext(entry.SignalContext); signal != nil {
+		if signal.RemediationID == "" {
+			signal.RemediationID = entry.CorrelationID
+		}
+		ctx = katypes.WithSignalContext(ctx, *signal)
+	}
 
 	messages := turnsToReconMessages(turns)
 
@@ -135,6 +142,9 @@ func (s *ReconstructionSpawner) emitSessionResumed(entry *ReconstructionContext,
 	)
 	event.EventAction = audit.ActionSessionResumed
 	event.EventOutcome = audit.OutcomeSuccess
+	if entry.SignalContext != nil && entry.SignalContext.ClusterID != "" {
+		event.ClusterID = entry.SignalContext.ClusterID
+	}
 	event.Data["reconstructed_turn_count"] = reconstructedTurnCount
 	audit.StoreBestEffort(context.Background(), s.auditStore, event, s.logger)
 }

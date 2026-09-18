@@ -851,6 +851,26 @@ Resolved AlertManager URL.
 {{- end -}}
 
 {{/*
+Return the namespace from an in-cluster AlertManager Service URL.
+
+Only the unambiguous Kubernetes Service DNS forms are accepted. External,
+proxied, and otherwise unrecognized URLs return an empty value so Gateway
+ingress remains fail-closed. This derives the namespace of the Service that
+AlertManager uses; it does not attempt to infer a namespace from Prometheus or
+Thanos URLs because neither component sends webhook signals to Gateway.
+*/}}
+{{- define "kubernaut.monitoring.alertManager.inClusterNamespace" -}}
+{{- if include "kubernaut.monitoring.alertManager.enabled" . -}}
+{{- $url := include "kubernaut.monitoring.alertManager.url" . | trim -}}
+{{- $pattern := `^https?://[^./:]+\.([a-z0-9]([a-z0-9-]*[a-z0-9])?)\.svc(\.cluster\.local)?(:[0-9]+)?(/.*)?$` -}}
+{{- $namespace := regexReplaceAll $pattern $url "${1}" | trim -}}
+{{- if and (ne $url "") (ne $namespace $url) -}}
+{{- $namespace -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Resolved Prometheus TLS CA file path.
 */}}
 {{- define "kubernaut.monitoring.prometheus.tlsCaFile" -}}

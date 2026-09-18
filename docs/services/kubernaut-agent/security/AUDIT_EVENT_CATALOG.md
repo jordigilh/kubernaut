@@ -127,12 +127,12 @@ type AuditEvent struct {
 
 | Event Type | Constant | NIST/SOC2 Control | Trigger | Detail Fields (`Data`) |
 |-----------|----------|-------------|---------|---------------|
-| `aiagent.fleet.overlay_failed` | `EventTypeFleetOverlayFailed` | AU-3, AC-4 | A fleet-target investigation's `FleetOverlayResolver.Overlay` call fails (resolver configured but errored). Investigation fails open — proceeds without the remote cluster's tools, like a hub-local investigation minus remote access | `cluster_id`, `error_message` |
+| `aiagent.fleet.overlay_failed` | `EventTypeFleetOverlayFailed` | AU-3, AC-4 | A fleet-target investigation's `FleetOverlayResolver.Overlay` call fails or returns an empty overlay. Investigation fails closed rather than proceeding without the remote cluster's tools | `cluster_id`, `error_message` |
 | `aiagent.fleet.overlay_unavailable` | `EventTypeFleetOverlayUnavailable` | AU-3, AC-4 | A fleet-target investigation (non-empty `ClusterID`) reaches `prescopeFleetOverlay` on a KA instance with **no** `FleetOverlayResolver` configured at all (fleet mode not wired on this instance). Distinct from `overlay_failed`: nothing errored, fleet mode simply isn't wired here (Issue #1768 follow-up, QE audit #1799) | `cluster_id`, `reason` (`"no FleetOverlayResolver configured on this kubernaut-agent instance"`) |
 
 **Emitted from:** `internal/kubernautagent/investigator/fleet_overlay.go` (`emitFleetOverlayFailedAudit`, `emitFleetOverlayUnavailableAudit`, both called from `prescopeFleetOverlay`)
 
-**Test coverage:** UT-KA-FLEET-028 (unit, decision logic in isolation) + IT-KA-FLEET-020 (resolver error, wired) + IT-KA-FLEET-029 (unconfigured resolver, wired) — both entry points (`Investigate()`, `RunInteractiveTurn()`) proven for both degradation events. A third condition — resolver configured, succeeds, but resolves to an **empty** overlay — currently emits neither event (characterized by UT-KA-FLEET-028's "empty overlay on success" case as a tracked follow-up gap, not yet fixed).
+**Test coverage:** UT-KA-FLEET-028 (unit, decision logic in isolation) + IT-KA-FLEET-020 (resolver error, wired) + IT-KA-FLEET-029 (unconfigured and empty resolver results, wired) — both entry points (`Investigate()`, `RunInteractiveTurn()`) are covered for fail-closed fleet overlay resolution.
 
 ---
 

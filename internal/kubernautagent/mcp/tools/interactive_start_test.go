@@ -273,6 +273,58 @@ var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive sessi
 			Expect(out.Status).To(Equal("started"))
 		})
 	})
+
+	Describe("UT-KA-2428-001: signal resolution gates deferred launch", func() {
+		It("does not launch a pending investigation when signal resolution fails", func() {
+			autoMgr := &interactiveAutoMgr{
+				pendingResult: "investigation-sess-2428",
+				pendingOK:     true,
+			}
+			tool := mcptools.NewInvestigateTool(
+				&mockSessionManager{takeoverSession: &mcpinternal.InteractiveSession{SessionID: "lease-2428"}},
+				&mockInvestigatorRunner{},
+				&mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}},
+				autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{signalErr: errors.New("signal unavailable")}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-2428",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(MatchError(ContainSubstring("resolve signal context")))
+			Expect(autoMgr.launchCalled.Load()).To(Equal(int32(0)))
+		})
+	})
+
+	Describe("UT-KA-2428-002: successful signal resolution preserves deferred launch", func() {
+		It("resolves the fleet signal before launching the pending investigation", func() {
+			autoMgr := &interactiveAutoMgr{
+				pendingResult: "investigation-sess-2428-success",
+				pendingOK:     true,
+			}
+			tool := mcptools.NewInvestigateTool(
+				&mockSessionManager{takeoverSession: &mcpinternal.InteractiveSession{SessionID: "lease-2428-success"}},
+				&mockInvestigatorRunner{},
+				&mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}},
+				autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{signal: &katypes.SignalContext{
+					RemediationID: "rr-2428-success",
+					ClusterID:     "remote-cluster-2428",
+				}}),
+			)
+
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-2428-success",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.InvestigationSessionID).To(Equal("investigation-sess-2428-success"))
+			Expect(autoMgr.launchCalled.Load()).To(Equal(int32(1)))
+		})
+	})
 })
 
 var _ = Describe("Fix #1390: handleStart upgrade wiring — BR-INTERACTIVE-004", func() {
@@ -431,14 +483,14 @@ var _ = Describe("Fix #1452: handleStart prefers AF-provided session ID — BR-I
 // sessionIDTrackingAutoMgr tracks the session ID passed to LaunchDeferredInvestigation
 // and whether FindPendingByRemediationID was called.
 type sessionIDTrackingAutoMgr struct {
-	findResult         string
-	findOK             bool
-	pendingResult      string
-	pendingOK          bool
-	launchOK           bool
-	launchErr          error
-	launchedID         string
-	findPendingCalled  atomic.Int32
+	findResult        string
+	findOK            bool
+	pendingResult     string
+	pendingOK         bool
+	launchOK          bool
+	launchErr         error
+	launchedID        string
+	findPendingCalled atomic.Int32
 }
 
 func (m *sessionIDTrackingAutoMgr) FindByRemediationID(_ string) (string, bool) {

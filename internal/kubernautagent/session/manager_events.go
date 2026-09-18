@@ -188,6 +188,12 @@ func (m *Manager) emitSessionEvent(ctx context.Context, p sessionEventParams, fn
 	event := audit.NewEvent(p.EventType, p.CorrelationID, audit.WithSessionID(p.SessionID))
 	event.EventAction = p.Action
 	event.EventOutcome = p.Outcome
+	if sessionContext, err := m.GetSessionContext(p.SessionID); err == nil && sessionContext.Signal.ClusterID != "" {
+		clusterID := sessionContext.Signal.ClusterID
+		event.ClusterID = clusterID
+	} else if err != nil {
+		m.logger.V(1).Info("session audit cluster attribution unavailable", "session_id", p.SessionID, "error", err)
+	}
 	if fnErr != nil {
 		event.Data["error"] = fnErr.Error()
 	}

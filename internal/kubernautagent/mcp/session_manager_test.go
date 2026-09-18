@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
@@ -265,23 +266,76 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
+	Describe("UT-KA-2427-001: signal metadata is a race-safe session contract", func() {
+		It("should defensively deep-copy signal context on store and read", func() {
+			user := mcpinternal.UserInfo{Username: "fleet-user@example.com"}
+			sess, err := mgr.Takeover(ctx, "rr-2427-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			isDuplicate := true
+			occurrenceCount := 2
+			metadata := katypes.SignalContext{
+				ClusterID: "remote-east", Name: "OOMKilled", IsDuplicate: &isDuplicate,
+				OccurrenceCount:   &occurrenceCount,
+				SignalAnnotations: map[string]string{"owner": "payments"},
+				SignalLabels:      map[string]string{"team": "payments"},
+			}
+			mgr.StoreSignalContext(sess.SessionID, &metadata)
+			metadata.ClusterID = "mutated-after-store"
+
+			stored := mgr.GetSignalContext(sess.SessionID)
+			Expect(stored).NotTo(BeNil())
+			Expect(stored.ClusterID).To(Equal("remote-east"))
+			Expect(stored.SignalAnnotations).To(HaveKeyWithValue("owner", "payments"))
+
+			stored.ClusterID = "mutated-after-read"
+			stored.SignalAnnotations["owner"] = "mutated-after-read"
+			*stored.IsDuplicate = false
+			next := mgr.GetSignalContext(sess.SessionID)
+			Expect(next.ClusterID).To(Equal("remote-east"))
+			Expect(next.SignalAnnotations).To(HaveKeyWithValue("owner", "payments"))
+			Expect(*next.IsDuplicate).To(BeTrue())
+
+		})
+
+		It("should return a defensive snapshot to disconnect reconstruction", func() {
+			concrete := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger)
+			sess, err := concrete.Takeover(ctx, "rr-2427-002", mcpinternal.UserInfo{Username: "fleet-user@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+			concrete.StoreSignalContext(sess.SessionID, &katypes.SignalContext{ClusterID: "remote-west"})
+
+			_, snapshot := concrete.GetSessionInfo(sess.SessionID)
+			snapshot.ClusterID = "mutated-after-snapshot"
+
+			_, nextSnapshot := concrete.GetSessionInfo(sess.SessionID)
+			Expect(nextSnapshot.ClusterID).To(Equal("remote-west"))
+		})
+	})
+
 	// Regression test: M1 — WithSessionExpiredCallback must fire when GetDriver
 	// auto-releases a session due to TTL or inactivity expiry.
 	// Bug: TTL/inactivity paths never emitted interactive.completed audit because
 	// LeaseSessionManager had no callback mechanism to notify the audit system.
 	Describe("UT-KA-SEC04-M1: SessionExpiredCallback fires on TTL expiry (M1 regression)", func() {
 		It("should invoke the callback with sessionID, rrID, and reason on TTL expiry", func() {
-			callbackCh := make(chan [3]string, 1)
+			type expiredCallback struct {
+				sessionID     string
+				rrID          string
+				reason        string
+				signalContext *katypes.SignalContext
+			}
+			callbackCh := make(chan expiredCallback, 1)
 			mgrWithCallback := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
 				mcpinternal.WithSessionTTL(1*time.Millisecond),
-				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
-					callbackCh <- [3]string{sessionID, rrID, reason}
+				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string, signalContext *katypes.SignalContext) {
+					callbackCh <- expiredCallback{sessionID: sessionID, rrID: rrID, reason: reason, signalContext: signalContext}
 				}),
 			)
 
 			user := mcpinternal.UserInfo{Username: "audit-m1@example.com"}
-			_, err := mgrWithCallback.Takeover(ctx, "rr-m1-ttl-001", user)
+			session, err := mgrWithCallback.Takeover(ctx, "rr-m1-ttl-001", user)
 			Expect(err).NotTo(HaveOccurred())
+			mgrWithCallback.StoreSignalContext(session.SessionID, &katypes.SignalContext{ClusterID: "remote-east"})
 
 			time.Sleep(5 * time.Millisecond)
 
@@ -289,10 +343,12 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			Expect(err).To(MatchError(mcpinternal.ErrSessionExpired))
 			Expect(sess).To(BeNil())
 
-			Eventually(callbackCh).Should(Receive(SatisfyAll(
-				WithTransform(func(a [3]string) string { return a[1] }, Equal("rr-m1-ttl-001")),
-				WithTransform(func(a [3]string) string { return a[2] }, Equal("ttl_expired")),
-			)), "M1 fix: callback must fire with reason=ttl_expired")
+			var callback expiredCallback
+			Eventually(callbackCh).Should(Receive(&callback))
+			Expect(callback.rrID).To(Equal("rr-m1-ttl-001"))
+			Expect(callback.reason).To(Equal("ttl_expired"))
+			Expect(callback.signalContext).NotTo(BeNil())
+			Expect(callback.signalContext.ClusterID).To(Equal("remote-east"))
 		})
 
 		It("should invoke the callback with reason=inactivity_timeout on inactivity expiry", func() {
@@ -300,7 +356,7 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			mgrWithCallback := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
 				mcpinternal.WithSessionTTL(1*time.Hour),
 				mcpinternal.WithInactivityTimeout(1*time.Millisecond),
-				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string, _ *katypes.SignalContext) {
 					callbackCh <- [3]string{sessionID, rrID, reason}
 				}),
 			)

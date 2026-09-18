@@ -474,7 +474,7 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 			Type:          audit.EventRRDeduplicated,
 			CorrelationID: res.RRID,
 			UserID:        username,
-			ClusterID:     args.ClusterID,
+			ClusterID:     res.ClusterID,
 			Detail: map[string]string{
 				"rr_namespace":     d.ControllerNS,
 				"target_kind":      args.Kind,
@@ -491,7 +491,7 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 		Type:          audit.EventRRCreated,
 		CorrelationID: res.RRID,
 		UserID:        username,
-		ClusterID:     args.ClusterID,
+		ClusterID:     res.ClusterID,
 		Detail: map[string]string{
 			"rr_namespace": d.ControllerNS,
 			"target_kind":  args.Kind,

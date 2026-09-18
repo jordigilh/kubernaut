@@ -46,26 +46,34 @@ func (m *statusSessionMgr) IsDriverActive(_ string) bool {
 	return m.driverSession != nil
 }
 
-func (m *statusSessionMgr) TouchActivity(_ string) {}
+func (m *statusSessionMgr) TouchActivity(_ string)                                {}
+func (m *statusSessionMgr) StoreSignalContext(_ string, _ *katypes.SignalContext) {}
+func (m *statusSessionMgr) GetSignalContext(_ string) *katypes.SignalContext      { return nil }
 
 type statusAutoMgr struct {
 	found bool
 }
 
-func (m *statusAutoMgr) FindByRemediationID(_ string) (string, bool) { return "auto-sess", m.found }
-func (m *statusAutoMgr) CancelInvestigation(_ string) error                              { return nil }
-func (m *statusAutoMgr) SuspendInvestigation(_ string) error                             { return nil }
-func (m *statusAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error    { return nil }
-func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error { return nil }
-func (m *statusAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error         { return nil }
-func (m *statusAutoMgr) FindPendingByRemediationID(_ string) (string, bool)              { return "", false }
-func (m *statusAutoMgr) LaunchDeferredInvestigation(_ string) error                       { return nil }
-func (m *statusAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)       { return "", false }
+func (m *statusAutoMgr) FindByRemediationID(_ string) (string, bool)                  { return "auto-sess", m.found }
+func (m *statusAutoMgr) CancelInvestigation(_ string) error                           { return nil }
+func (m *statusAutoMgr) SuspendInvestigation(_ string) error                          { return nil }
+func (m *statusAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error { return nil }
+func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *statusAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error  { return nil }
+func (m *statusAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
+func (m *statusAutoMgr) LaunchDeferredInvestigation(_ string) error                 { return nil }
+func (m *statusAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) { return "", false }
 func (m *statusAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
-func (m *statusAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
-func (m *statusAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
+func (m *statusAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *statusAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 func (m *statusAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *statusAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
 func (m *statusAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {

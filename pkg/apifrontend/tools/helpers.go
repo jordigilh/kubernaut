@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,23 @@ import (
 // Fields returned by AuditFields are merged into the audit event detail map on success.
 type AuditableInput interface {
 	AuditFields() map[string]string
+}
+
+// ClusterIDFromContext returns the server-side cluster identity attached to
+// the active RR event bridge. Tool arguments may carry an ambient cluster hint
+// for schema compatibility, but that hint is not an audit authority.
+func ClusterIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	bridge := launcher.EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return ""
+	}
+	if rrContext := bridge.RRContext(); rrContext != nil {
+		return rrContext.ClusterID
+	}
+	return ""
 }
 
 // ErrNotFound indicates the requested resource was not found.

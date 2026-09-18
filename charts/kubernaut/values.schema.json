@@ -3773,7 +3773,7 @@
                 "type": "string"
               },
               "default": [],
-              "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager)"
+              "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager). When empty, an unambiguous in-cluster monitoring.alertManager.url can derive the AlertManager Service namespace; external or proxied AlertManager endpoints require an explicit ingressCIDR or namespace selector."
             },
             "ingressCIDRs": {
               "$ref": "#/definitions/ingressCIDRs"

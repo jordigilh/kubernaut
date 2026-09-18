@@ -314,14 +314,20 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 	}
 
 	if auditor != nil {
+		clusterID := ClusterIDFromContext(ctx)
+		detail := map[string]string{
+			"rr_id":       args.RRID,
+			"workflow_id": args.WorkflowID,
+			"decision":    "accept",
+			"status":      result.Status,
+		}
+		if clusterID != "" {
+			detail["cluster_id"] = clusterID
+		}
 		auditor.Emit(ctx, &audit.Event{
-			Type: audit.EventUserDecision,
-			Detail: map[string]string{
-				"rr_id":       args.RRID,
-				"workflow_id": args.WorkflowID,
-				"decision":    "accept",
-				"status":      result.Status,
-			},
+			Type:      audit.EventUserDecision,
+			ClusterID: clusterID,
+			Detail:    detail,
 		})
 	}
 
@@ -548,9 +554,14 @@ func HandleCompleteNoAction(ctx context.Context, mcpClient ka.MCPClient, args Co
 		if args.EscalationReason != "" {
 			detail["escalation_reason"] = args.EscalationReason
 		}
+		clusterID := ClusterIDFromContext(ctx)
+		if clusterID != "" {
+			detail["cluster_id"] = clusterID
+		}
 		auditor.Emit(ctx, &audit.Event{
-			Type:   audit.EventKAResultReceived,
-			Detail: detail,
+			Type:      audit.EventKAResultReceived,
+			ClusterID: clusterID,
+			Detail:    detail,
 		})
 	}
 

@@ -124,12 +124,12 @@ var _ = Describe("E2E-KA-1802-001: fleet cluster_id scoping isolates remediation
 				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
 				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
 				// This test's cluster-a/cluster-b IDs exist purely to prove
-				// Postgres-level remediation-history isolation (Issue #1802);
-				// they are not genuine fleet targets, so an empty-overlay
-				// resolver (no remote tools published) is enough to satisfy
-				// prescopeFleetOverlay's fail-closed gate (Issue #2312/#2314)
+				// Postgres-level remediation-history isolation (Issue #1802).
+				// A non-empty stand-in keeps the fleet overlay gate satisfied
 				// without pulling in a real MCP gateway.
-				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}},
+				FleetOverlayResolver: &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+					"resources_get": &fakeTool{name: "resources_get", result: "{}"},
+				}},
 			})
 			return inv, mockClient
 		}

@@ -46,6 +46,7 @@ type WebhookAuditOpts struct {
 	ResourceKind string
 	ResourceID   string
 	LoggerName   string
+	ClusterID    string
 }
 
 // buildAuditEnvelope creates a fully populated audit event envelope from an admission
@@ -60,6 +61,7 @@ func buildAuditEnvelope(req admission.Request, opts WebhookAuditOpts) *api.Audit
 	audit.SetResource(event, opts.ResourceKind, opts.ResourceID)
 	audit.SetCorrelationID(event, string(req.UID))
 	audit.SetNamespace(event, req.Namespace)
+	audit.SetClusterID(event, opts.ClusterID)
 	return event
 }
 

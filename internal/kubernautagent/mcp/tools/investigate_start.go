@@ -24,6 +24,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
@@ -37,13 +38,21 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		}
 	}
 
+	// BR-INTEGRATION-054: resolve the authoritative signal before launching
+	// deferred work. A failed resolution must not leave an investigation running
+	// without its fleet routing context.
+	resolvedSignal, hasSignal, err := t.resolveSignalForSession(ctx, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, err
+	}
+
 	// BR-INTERACTIVE-010: Check for pending interactive session and launch it.
 	// When launched, the investigation will self-transition to StatusUserDriving
 	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
 	// the RCA goroutine prematurely.
 	launchedPending, investigationSessionID := t.launchPendingInteractiveSession(input)
 
-	sess, startErr := t.startInteractiveSession(ctx, input, user)
+	sess, startErr := t.startInteractiveSession(ctx, input, user, resolvedSignal, hasSignal)
 	if startErr != nil {
 		return InvestigateOutput{}, startErr
 	}
@@ -189,10 +198,14 @@ func (t *InvestigateTool) acquireInteractiveLease(ctx context.Context, rrID stri
 // records the appropriate metrics/error mapping for each failure mode
 // (lease held, max sessions reached, reconnect-in-progress, or a generic
 // takeover error).
-func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+
+func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo, resolvedSignal *katypes.SignalContext, hasSignal bool) (*mcpinternal.InteractiveSession, error) {
 	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "start_failed", "start_failed", "start session")
 	if err != nil {
 		return nil, err
+	}
+	if hasSignal {
+		t.storeSignalContext(sess, resolvedSignal)
 	}
 
 	if sess.Reconnected {
@@ -207,6 +220,24 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 	}
 
 	return sess, nil
+}
+
+func (t *InvestigateTool) resolveSignalForSession(ctx context.Context, rrID string) (*katypes.SignalContext, bool, error) {
+	if t.signalResolver == nil {
+		return nil, false, nil
+	}
+	resolved, err := t.signalResolver.ResolveSignalContext(ctx, rrID)
+	if err != nil {
+		return nil, false, fmt.Errorf("resolve signal context: %w", err)
+	}
+	return resolved, resolved != nil, nil
+}
+
+func (t *InvestigateTool) storeSignalContext(sess *mcpinternal.InteractiveSession, signal *katypes.SignalContext) {
+	if sess == nil || signal == nil {
+		return
+	}
+	t.sessions.StoreSignalContext(sess.SessionID, signal)
 }
 
 // upgradeOrCreateInteractiveSession upgrades the running autonomous session

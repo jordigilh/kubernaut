@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("LeaseSessionManager Hardening — PR4 BR-INTERACTIVE-005", func() {
@@ -94,19 +95,17 @@ var _ = Describe("LeaseSessionManager Hardening — PR4 BR-INTERACTIVE-005", fun
 			sess, err := mgr.Takeover(context.Background(), "rr-meta-001", user)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Store signal metadata after takeover
-			metadata := map[string]string{
-				"signal_name": "OOMKilled",
-				"severity":    "critical",
-				"incident_id": "INC-789",
-			}
-			mgr.StoreSignalMetadata(sess.SessionID, metadata)
+			// Store signal context after takeover.
+			mgr.StoreSignalContext(sess.SessionID, &katypes.SignalContext{
+				Name: "OOMKilled", Severity: "critical", IncidentID: "INC-789",
+			})
 
-			// Verify metadata is retrievable
-			stored := mgr.GetSignalMetadata(sess.SessionID)
-			Expect(stored).To(HaveKeyWithValue("signal_name", "OOMKilled"))
-			Expect(stored).To(HaveKeyWithValue("severity", "critical"))
-			Expect(stored).To(HaveKeyWithValue("incident_id", "INC-789"))
+			// Verify signal context is retrievable.
+			stored := mgr.GetSignalContext(sess.SessionID)
+			Expect(stored).NotTo(BeNil())
+			Expect(stored.Name).To(Equal("OOMKilled"))
+			Expect(stored.Severity).To(Equal("critical"))
+			Expect(stored.IncidentID).To(Equal("INC-789"))
 		})
 	})
 

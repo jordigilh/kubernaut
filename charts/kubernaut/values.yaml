@@ -771,6 +771,11 @@ networkPolicies:
   # (zero default "") without going through kubernaut.mergedValues -- an absent
   # parent key would nil-pointer rather than resolve to "".
   monitoring: {}
+  # Gateway ingress source lists are fail-closed when empty. When
+  # monitoring.alertManager.enabled=true and its URL is an unambiguous
+  # in-cluster Service DNS name, the Gateway policy derives that Service's
+  # namespace automatically. External or proxied AlertManager endpoints still
+  # require an explicit ingressCIDR or namespace selector.
   gateway: {}
   datastorage: {}
   kubernautAgent: {}

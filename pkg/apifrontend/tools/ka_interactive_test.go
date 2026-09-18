@@ -8,6 +8,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -73,6 +74,40 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				Message: "test",
 			}, spy)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("UT-AF-2429-001 [AU-3/CC7.2]: uses authoritative RR cluster for interactive audit", func() {
+			ctx = launcher.WithEventBridge(ctx, nil, "task-2429", "context-2429", nil)
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-prod-001", ClusterID: "remote-east"})
+			mockMCP = &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					return &ka.InvokeActionResult{Status: "active", SessionID: "session-2429"}, nil
+				},
+			}
+
+			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
+				RRID: "rr-prod-001", ClusterID: "untrusted-ambient-hint", Message: "inspect logs",
+			}, spy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.events).To(HaveLen(1))
+			Expect(spy.events[0].ClusterID).To(Equal("remote-east"))
+		})
+
+		It("UT-AF-2429-002 [AU-3]: omits cluster attribution for hub-local RR", func() {
+			ctx = launcher.WithEventBridge(ctx, nil, "task-2429-local", "context-2429-local", nil)
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-local-001"})
+			mockMCP = &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					return &ka.InvokeActionResult{Status: "active"}, nil
+				},
+			}
+
+			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
+				RRID: "rr-local-001", ClusterID: "untrusted-ambient-hint", Message: "inspect logs",
+			}, spy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.events).To(HaveLen(1))
+			Expect(spy.events[0].ClusterID).To(BeEmpty())
 		})
 	})
 
@@ -208,7 +243,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				name string
 				fn   func() (interface{ Name() string }, error)
 			}{
-			{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
+				{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
 				{"kubernaut_complete", func() (interface{ Name() string }, error) { return tools.NewCompleteTool(nil, nil) }},
 				{"kubernaut_cancel", func() (interface{ Name() string }, error) { return tools.NewCancelInvestigationTool(nil, nil) }},
 				{"kubernaut_status", func() (interface{ Name() string }, error) { return tools.NewStatusTool(nil, nil) }},

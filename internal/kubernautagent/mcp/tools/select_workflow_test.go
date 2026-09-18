@@ -28,9 +28,11 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -89,11 +91,21 @@ func discoveryWithWorkflow(wfID string) *mcpinternal.WorkflowDiscoveryResult {
 }
 
 type mockEnrichmentRunner struct {
-	result *enrichment.EnrichmentResult
-	err    error
+	result      *enrichment.EnrichmentResult
+	err         error
+	capturedReq enrichment.EnrichRequest
+	overlaySeen bool
 }
 
-func (m *mockEnrichmentRunner) Enrich(_ context.Context, _ enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
+type selectFleetOverlayResolver struct{}
+
+func (selectFleetOverlayResolver) Overlay(context.Context, string) (map[string]katools.Tool, error) {
+	return map[string]katools.Tool{"resources_get": nil}, nil
+}
+
+func (m *mockEnrichmentRunner) Enrich(ctx context.Context, req enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
+	m.capturedReq = req
+	_, m.overlaySeen = investigator.FleetOverlayFromContext(ctx)
 	return m.result, m.err
 }
 
@@ -254,6 +266,74 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 	})
 
 	Describe("UT-KA-1012-001: Internalized enrichment (#1012)", func() {
+		It("should scope enrichment to the signal's fleet cluster", func() {
+			wfID := "wf-enrich-cluster"
+			runner := &mockEnrichmentRunner{result: &enrichment.EnrichmentResult{ResourceKind: "Deployment"}}
+			catalog := &mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-enrich-cluster",
+					CorrelationID:   "rr-enrich-cluster",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				ClusterID:    "remote-cluster",
+				IncidentID:   "incident-1",
+				ResourceKind: "Deployment",
+			}}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowSignalContextResolver(resolver),
+				mcptools.WithSelectWorkflowFleetOverlayResolver(selectFleetOverlayResolver{}),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-cluster",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(runner.capturedReq.ClusterID).To(Equal("remote-cluster"))
+			Expect(runner.capturedReq.IncidentID).To(Equal("incident-1"))
+			Expect(runner.overlaySeen).To(BeTrue())
+		})
+
+		It("should fail selection enrichment when signal resolution fails", func() {
+			wfID := "wf-enrich-signal-error"
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-enrich-signal-error",
+					CorrelationID:   "rr-enrich-signal-error",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RemediationTarget: katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+			tool := mcptools.NewSelectWorkflowTool(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}, sessions,
+				mcptools.WithEnrichmentRunner(&mockEnrichmentRunner{}),
+				mcptools.WithSelectWorkflowSignalContextResolver(&mockSignalResolver{signalErr: errors.New("signal store unavailable")}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-signal-error",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("signal context"))
+		})
+
 		It("should call enrichment before catalog lookup and include result in output", func() {
 			wfID := uuid.New().String()
 			enrichResult := &enrichment.EnrichmentResult{

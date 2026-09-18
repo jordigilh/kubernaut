@@ -29,6 +29,12 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+type testClusterRegistry struct {
+	ready bool
+}
+
+func (r *testClusterRegistry) Ready() bool { return r.ready }
+
 // IT-FLEET-READY-EM-001: cmd/effectivenessmonitor must wire a
 // readiness.Gate from Config.Fleet + the resilient client produced by
 // buildFleetReaderFactory into mgr.AddReadyzCheck("fleet", ...) — the
@@ -46,7 +52,7 @@ import (
 func TestWireFleetReadinessGate_EM_Disabled_NoGate(t *testing.T) {
 	cfg := config.DefaultConfig() // Fleet.Enabled defaults to false
 
-	gate := wireFleetReadinessGate(context.Background(), nil, cfg, logr.Discard())
+	gate := wireFleetReadinessGate(context.Background(), nil, nil, cfg, logr.Discard())
 	if gate != nil {
 		t.Fatal("IT-FLEET-READY-EM-001a: readiness.Gate must remain nil when Fleet is disabled")
 	}
@@ -71,7 +77,7 @@ func TestWireFleetReadinessGate_EM_EnabledReachable_ReadyImmediately(t *testing.
 	}
 	t.Cleanup(func() { _ = fleetClient.Close() })
 
-	gate := wireFleetReadinessGate(ctx, fleetClient, cfg, logr.Discard())
+	gate := wireFleetReadinessGate(ctx, fleetClient, &testClusterRegistry{ready: true}, cfg, logr.Discard())
 	if gate == nil {
 		t.Fatal("IT-FLEET-READY-EM-001b: readiness.Gate must be wired when Fleet is enabled and a resilient client is present")
 	}
@@ -80,6 +86,34 @@ func TestWireFleetReadinessGate_EM_EnabledReachable_ReadyImmediately(t *testing.
 	if err := gate.Check(httptest.NewRequest("GET", "/readyz", nil)); err != nil {
 		t.Fatalf("IT-FLEET-READY-EM-001b: gate must report ready immediately after Start when the MCP "+
 			"Gateway is reachable, got error: %v", err)
+	}
+}
+
+func TestWireFleetReadinessGate_EM_RegistryUnhealthy_NotReady(t *testing.T) {
+	gw := mockgw.NewMockGateway()
+	t.Cleanup(gw.Close)
+
+	cfg := config.DefaultConfig()
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = gw.URL()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	fleetClient, err := mcpclient.NewResilient(ctx, gw.URL(), resilienceCfg, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error connecting to mock MCP Gateway: %v", err)
+	}
+	t.Cleanup(func() { _ = fleetClient.Close() })
+
+	registry := &testClusterRegistry{ready: false}
+	gate := wireFleetReadinessGate(ctx, fleetClient, registry, cfg, logr.Discard())
+	if gate == nil {
+		t.Fatal("IT-FLEET-READY-EM-002: readiness gate must include the cluster registry")
+	}
+	t.Cleanup(gate.Stop)
+	if err := gate.Check(httptest.NewRequest("GET", "/readyz", nil)); err == nil {
+		t.Fatal("BR-FLEET-054 / #2431: gate must report NotReady when the cluster registry is unhealthy")
 	}
 }
 
@@ -100,7 +134,7 @@ func TestWireFleetReadinessGate_EM_EnabledUnreachable_NotReady(t *testing.T) {
 		t.Cleanup(func() { _ = fleetClient.Close() })
 	}
 
-	gate := wireFleetReadinessGate(ctx, fleetClient, cfg, logr.Discard())
+	gate := wireFleetReadinessGate(ctx, fleetClient, &testClusterRegistry{ready: true}, cfg, logr.Discard())
 	if gate == nil {
 		t.Fatal("IT-FLEET-READY-EM-001c: readiness.Gate must still be wired (and report NotReady) when " +
 			"Fleet is enabled but the MCP Gateway is currently unreachable")

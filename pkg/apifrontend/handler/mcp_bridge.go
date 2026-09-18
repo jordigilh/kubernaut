@@ -676,6 +676,10 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 	for _, opt := range opts {
 		opt(event)
 	}
+	if clusterID := tools.ClusterIDFromContext(ctx); clusterID != "" {
+		event.ClusterID = clusterID
+		detail["cluster_id"] = clusterID
+	}
 	cfg.Auditor.Emit(ctx, event)
 }
 

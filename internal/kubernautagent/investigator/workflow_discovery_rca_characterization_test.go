@@ -18,6 +18,7 @@ package investigator_test
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -56,6 +58,24 @@ type rcaDSClient struct{}
 
 func (f *rcaDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
+}
+
+type rcaFleetOverlayTool struct{}
+
+func (rcaFleetOverlayTool) Name() string                { return "resources_get" }
+func (rcaFleetOverlayTool) Description() string         { return "test remote resource reader" }
+func (rcaFleetOverlayTool) Parameters() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
+func (rcaFleetOverlayTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	return `{}`, nil
+}
+
+type rcaFleetOverlayResolver struct {
+	calls []string
+}
+
+func (r *rcaFleetOverlayResolver) Overlay(_ context.Context, clusterID string) (map[string]tools.Tool, error) {
+	r.calls = append(r.calls, clusterID)
+	return map[string]tools.Tool{"resources_get": rcaFleetOverlayTool{}}, nil
 }
 
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 4 §7l-1: characterization tests for
@@ -98,6 +118,30 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			Expect(result).To(BeNil())
 			Expect(client.calls).To(BeEmpty(),
 				"UT-KA-WAVE4-001: nil rcaResult must be rejected before any LLM call")
+		})
+	})
+
+	Describe("UT-KA-2417-003: post-RCA discovery prescopes fleet enrichment", func() {
+		It("should resolve the target overlay before workflow discovery enrichment", func() {
+			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
+			client.responses = []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"remote-safe-workflow","confidence":0.9}`),
+			}
+			resolver := &rcaFleetOverlayResolver{}
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: store, Logger: logger,
+				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+				FleetOverlayResolver: resolver,
+			})
+
+			_, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", ClusterID: "remote-cluster",
+				ResourceKind: "Deployment", ResourceName: "api-server",
+			}, &katypes.InvestigationResult{RCASummary: "remote target"}, nil, "corr-2417-003")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolver.calls).To(Equal([]string{"remote-cluster"}))
 		})
 	})
 

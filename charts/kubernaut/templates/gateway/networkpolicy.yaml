@@ -1,6 +1,14 @@
 {{- /* Issue #2162: mirrors apifrontend/networkpolicy.yaml's $v.enabled gate. */}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
 {{- if $v.enabled }}
+{{- $explicitIngressNamespaces := .Values.networkPolicies.gateway.ingressNamespaces | default list }}
+{{- $explicitIngressNamespaceSelectors := .Values.networkPolicies.gateway.ingressNamespaceSelectors | default list }}
+{{- $explicitIngressCIDRs := .Values.networkPolicies.gateway.ingressCIDRs | default list }}
+{{- $monitoringNamespace := .Values.networkPolicies.monitoring.namespace | default "" }}
+{{- $derivedAlertManagerNamespace := "" }}
+{{- if and (eq (len $explicitIngressNamespaces) 0) (eq (len $explicitIngressNamespaceSelectors) 0) (eq (len $explicitIngressCIDRs) 0) }}
+{{- $derivedAlertManagerNamespace = include "kubernaut.monitoring.alertManager.inClusterNamespace" . | trim }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "gateway" "appLabel" "gateway") }}
@@ -12,7 +20,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    {{- range .Values.networkPolicies.gateway.ingressNamespaces }}
+    {{- range $explicitIngressNamespaces }}
     - ports:
         - port: 8080
           protocol: TCP
@@ -21,8 +29,17 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
-    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.gateway.ingressCIDRs "port" 8080) | nindent 4 }}
-    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.gateway.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
+    {{- if and $derivedAlertManagerNamespace (ne $derivedAlertManagerNamespace $monitoringNamespace) }}
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $derivedAlertManagerNamespace }}
+    {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" $explicitIngressCIDRs "port" 8080) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" $explicitIngressNamespaceSelectors "port" 8080) | nindent 4 }}
     {{- if .Values.networkPolicies.monitoring.namespace }}
     # Issue #673 H-1: Gateway serves metrics on 8080 (not 9090 like controller-runtime services)
     - ports:

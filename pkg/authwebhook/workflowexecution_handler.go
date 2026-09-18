@@ -113,40 +113,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	wfe.Status.BlockClearance.ClearedBy = authCtx.Username
 	wfe.Status.BlockClearance.ClearedAt = metav1.Now()
 
-	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
-	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, EventTypeBlockCleared)
-	audit.SetEventCategory(auditEvent, EventCategoryWorkflowExec)
-	audit.SetEventAction(auditEvent, "block_cleared")
-	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
-	audit.SetActor(auditEvent, "user", authCtx.Username)
-	audit.SetResource(auditEvent, "WorkflowExecution", string(wfe.UID))
-	// DD-AUDIT-CORRELATION-001: parent RR name; fall back to WFE name when no parent RR exists
-	correlationID := wfe.Spec.RemediationRequestRef.Name
-	if correlationID == "" {
-		correlationID = wfe.Name
-	}
-	audit.SetCorrelationID(auditEvent, correlationID)
-	audit.SetNamespace(auditEvent, wfe.Namespace)
-
-	// Set event data payload
-	// Per DD-WEBHOOK-003 lines 290-295: Business context ONLY (attribution in structured columns)
-	// Use structured audit payload (eliminates map[string]interface{})
-	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := api.WorkflowExecutionWebhookAuditPayload{
-		EventType:     api.WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared,
-		WorkflowName:  wfe.Name,
-		ClearReason:   wfe.Status.BlockClearance.ClearReason,
-		ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time,
-		PreviousState: api.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked,
-		NewState:      api.WorkflowExecutionWebhookAuditPayloadNewStateRunning,
-	}
-	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
-	// - actor_id: authCtx.Username (via audit.SetActor)
-	// - resource_name: wfe.Name (via audit.SetResource)
-	// - namespace: wfe.Namespace (via audit.SetNamespace)
-	// - event_action: "block_cleared" (via audit.SetEventAction)
-	auditEvent.EventData = api.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(payload)
+	auditEvent := buildBlockClearedAuditEvent(wfe, authCtx.Username)
 
 	// Store audit event asynchronously (buffered write)
 	// Audit failures are non-blocking but logged for observability
@@ -167,10 +134,36 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledWFE)
 }
 
+func buildBlockClearedAuditEvent(wfe *workflowexecutionv1.WorkflowExecution, username string) *api.AuditEventRequest {
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventType(auditEvent, EventTypeBlockCleared)
+	audit.SetEventCategory(auditEvent, EventCategoryWorkflowExec)
+	audit.SetEventAction(auditEvent, "block_cleared")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "user", username)
+	audit.SetResource(auditEvent, "WorkflowExecution", string(wfe.UID))
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	if correlationID == "" {
+		correlationID = wfe.Name
+	}
+	audit.SetCorrelationID(auditEvent, correlationID)
+	audit.SetNamespace(auditEvent, wfe.Namespace)
+	audit.SetClusterID(auditEvent, wfe.Spec.ClusterID)
+	payload := api.WorkflowExecutionWebhookAuditPayload{
+		EventType:     api.WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared,
+		WorkflowName:  wfe.Name,
+		ClearReason:   wfe.Status.BlockClearance.ClearReason,
+		ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time,
+		PreviousState: api.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked,
+		NewState:      api.WorkflowExecutionWebhookAuditPayloadNewStateRunning,
+	}
+	auditEvent.EventData = api.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(payload)
+	return auditEvent
+}
+
 // InjectDecoder injects the decoder into the handler
 // Required by controller-runtime admission webhook framework
 func (h *WorkflowExecutionAuthHandler) InjectDecoder(d admission.Decoder) error {
 	h.decoder = d
 	return nil
 }
-
