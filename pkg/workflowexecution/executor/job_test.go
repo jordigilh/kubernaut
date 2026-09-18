@@ -79,6 +79,34 @@ func (g *gvkCapturingClient) Create(ctx context.Context, obj client.Object, opts
 	return g.ExecutorClient.Create(ctx, obj, opts...)
 }
 
+// delayedDeleteClient models remote deletion: Delete acknowledges before the
+// resource disappears, so the first subsequent Get still observes the object.
+type delayedDeleteClient struct {
+	executor.ExecutorClient
+	deletePending int
+	deletedObject client.Object
+}
+
+func (c *delayedDeleteClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	c.deletePending = 1
+	c.deletedObject = obj
+	return nil
+}
+
+func (c *delayedDeleteClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if c.deletePending > 0 {
+		c.deletePending--
+		return c.ExecutorClient.Get(ctx, key, obj, opts...)
+	}
+	if c.deletedObject != nil {
+		if err := c.ExecutorClient.Delete(ctx, c.deletedObject); err != nil {
+			return err
+		}
+		c.deletedObject = nil
+	}
+	return c.ExecutorClient.Get(ctx, key, obj, opts...)
+}
+
 func newTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
@@ -1047,6 +1075,31 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 
 			err := je.Cleanup(ctx, wfe, namespace)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-WE-054-JOB-014 [BR-FLEET-054]: should wait for remote Job deletion to complete", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/remote-cleanup")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jobName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": "wfe-remote-cleanup",
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+			remoteClient := &delayedDeleteClient{ExecutorClient: fakeClient}
+			factory := &mockClientFactory{client: remoteClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-remote-cleanup", "default/deployment/remote-cleanup", "remote-cluster")
+			Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed())
+
+			var deleted batchv1.Job
+			err := fakeClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &deleted)
+			Expect(err).To(HaveOccurred())
+			Expect(client.IgnoreNotFound(err)).ToNot(HaveOccurred())
 		})
 	})
 
