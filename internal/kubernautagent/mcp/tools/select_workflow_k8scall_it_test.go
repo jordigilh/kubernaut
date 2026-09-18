@@ -127,6 +127,40 @@ var _ = Describe("IT-KA-898-K8SCALL: Real enrichment.Enricher wired through sele
 		})
 	})
 
+	It("IT-KA-2419-002 [AC-4, AC-6, SI-10, ASVS V4.1.5]: rejects an empty fleet overlay before real enrichment runs", func() {
+		wfID := "wf-empty-overlay-it-2419"
+		fakeK8s := &k8sCallFakeK8sClient{
+			ownerChain: []enrichment.OwnerChainEntry{{Kind: "ReplicaSet", Name: "web-rs"}},
+			specHash:   "sha256:empty-overlay",
+		}
+		realEnricher := enrichment.NewEnricher(fakeK8s, k8sCallStubDSClient{}, audit.NopAuditStore{}, logr.Discard())
+		sessions := &mockSessionManager{
+			isActive: true,
+			getDriverResult: &mcpinternal.InteractiveSession{
+				SessionID:       "sess-empty-overlay-it-2419",
+				CorrelationID:   "rr-empty-overlay-it-2419",
+				ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca"},
+				DiscoveryResult: discoveryWithWorkflow(wfID),
+			},
+		}
+		tool := mcptools.NewSelectWorkflowTool(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}, sessions,
+			mcptools.WithEnrichmentRunner(realEnricher),
+			mcptools.WithSelectWorkflowSignalContextResolver(&mockSignalResolver{signal: &katypes.SignalContext{
+				ClusterID: "remote-cluster-2419", IncidentID: "incident-2419", ResourceKind: "Deployment",
+			}}),
+			mcptools.WithSelectWorkflowFleetOverlayResolver(emptySelectFleetOverlayResolver{}),
+		)
+
+		_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+			RRID: "rr-empty-overlay-it-2419", WorkflowID: wfID,
+			Kind: "Deployment", Name: "api-server", Namespace: "production",
+		}, mcpinternal.UserInfo{Username: "alice"})
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("empty"))
+	})
+
 	Describe("IT-KA-898-K8SCALL-002: RBAC-forbidden path", func() {
 		It("should emit a failure event (http_status_code=403) when the real Enricher's GetSpecHash hits a K8s Forbidden error", func() {
 			wfID := "wf-real-enricher-forbidden"
