@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -132,10 +133,16 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 		By("Creating a completed Job on the remote cluster and a non-terminal hub shadow")
 		remoteJob := newCollisionJob()
 		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
-		remoteJob.Status.Conditions = []batchv1.JobCondition{{
-			Type: batchv1.JobComplete, Status: corev1.ConditionTrue,
-		}}
-		Expect(remoteK8sClient.Status().Update(ctx, remoteJob)).To(Succeed())
+		Expect(retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			latest := &batchv1.Job{}
+			if err := remoteK8sClient.Get(ctx, client.ObjectKeyFromObject(remoteJob), latest); err != nil {
+				return err
+			}
+			latest.Status.Conditions = []batchv1.JobCondition{{
+				Type: batchv1.JobComplete, Status: corev1.ConditionTrue,
+			}}
+			return remoteK8sClient.Status().Update(ctx, latest)
+		})).To(Succeed())
 
 		hubShadow := newCollisionJob()
 		Expect(k8sClient.Create(ctx, hubShadow)).To(Succeed())
