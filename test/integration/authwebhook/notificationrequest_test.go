@@ -66,10 +66,11 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Namespace: namespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
-					Type:     notificationv1.NotificationTypeEscalation,
-					Priority: notificationv1.NotificationPriorityHigh,
-					Subject:  "Test escalation notification",
-					Body:     "This is a test notification that will be cancelled",
+					Type:      notificationv1.NotificationTypeEscalation,
+					Priority:  notificationv1.NotificationPriorityHigh,
+					Subject:   "Test escalation notification",
+					Body:      "This is a test notification that will be cancelled",
+					ClusterID: "remote-cluster-2422",
 				},
 			}
 
@@ -134,6 +135,10 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 				"namespace column should contain CRD namespace")
 			Expect(event.EventAction).To(Equal("deleted"),
 				"event_action column should be 'deleted' for DELETE operation")
+			Expect(event.ClusterID.IsSet()).To(BeTrue(),
+				"IT-AW-2422-002: DELETE audit must persist cluster attribution")
+			Expect(event.ClusterID.Value).To(Equal("remote-cluster-2422"),
+				"cluster_id must identify the NotificationRequest target cluster")
 
 			By("Validating event_data contains delivery_channels (IT-AW-276-001)")
 			validateEventData(event, map[string]interface{}{

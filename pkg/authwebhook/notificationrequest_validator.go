@@ -85,7 +85,6 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 		return nil, fmt.Errorf("expected NotificationRequest but got %T", obj)
 	}
 
-
 	// Extract authenticated user from admission request context
 	// Note: admission.RequestFromContext requires the request to be injected by controller-runtime
 	req, err := admission.RequestFromContext(ctx)
@@ -118,6 +117,7 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	audit.SetResource(auditEvent, "NotificationRequest", string(nr.UID))
 	audit.SetCorrelationID(auditEvent, nr.Name) // Use NR name for correlation
 	audit.SetNamespace(auditEvent, nr.Namespace)
+	audit.SetClusterID(auditEvent, nr.Spec.ClusterID)
 
 	// Set event data payload
 	// Per DD-WEBHOOK-003 lines 335-340: Business context ONLY (attribution in structured columns)
@@ -176,4 +176,3 @@ func ExtractDeliveryChannels(attempts []notificationv1.DeliveryAttempt) []string
 	sort.Strings(channels)
 	return channels
 }
-

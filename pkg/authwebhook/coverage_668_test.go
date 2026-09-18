@@ -102,10 +102,11 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 					Name: "nr-val-668", Namespace: "prod", UID: "nr-uid-val-668",
 				},
 				Spec: notificationv1.NotificationRequestSpec{
-					Type:     notificationv1.NotificationTypeManualReview,
-					Priority: notificationv1.NotificationPriorityCritical,
-					Subject:  "review",
-					Body:     "please review",
+					Type:      notificationv1.NotificationTypeManualReview,
+					Priority:  notificationv1.NotificationPriorityCritical,
+					Subject:   "review",
+					Body:      "please review",
+					ClusterID: "remote-cluster-2422",
 				},
 				Status: notificationv1.NotificationRequestStatus{
 					Phase: notificationv1.NotificationPhaseFailed,
@@ -142,6 +143,12 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 			fs, ok := payload.GetFinalStatus().Get()
 			Expect(ok).To(BeTrue())
 			Expect(fs).To(Equal(ogenclient.NotificationAuditPayloadFinalStatusFailed))
+
+			Expect(mockStore.StoredEvents[0].ClusterID.IsSet()).To(BeTrue(),
+				"DELETE audit must retain the NotificationRequest cluster identity")
+			clusterID, ok := mockStore.StoredEvents[0].ClusterID.Get()
+			Expect(ok).To(BeTrue())
+			Expect(clusterID).To(Equal("remote-cluster-2422"))
 		})
 	})
 
