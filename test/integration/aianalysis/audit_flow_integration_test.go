@@ -192,6 +192,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: rrID,
+					ClusterID:     "remote-cluster-2426",
 					// DD-AA-KA-001: AgentSessionCreator names the child
 					// AgentSession "as-<RemediationRequestRef.Name>".
 					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
@@ -335,6 +336,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Business Value: Complete audit trail enables compliance
 			By("Verifying audit trail is complete (all required event types present)")
 			Expect(events).ToNot(BeEmpty(), "Audit trail must not be empty")
+			for _, event := range events {
+				Expect(event.ClusterID.IsSet()).To(BeTrue(),
+					"IT-AA-2426-002: target-associated audit event must persist cluster_id")
+				Expect(event.ClusterID.Value).To(Equal("remote-cluster-2426"),
+					"IT-AA-2426-002: audit cluster_id must match AIAnalysis.Spec.ClusterID")
+			}
 
 			// Validate ALL required event types are present
 			Expect(hasPhaseTransition).To(BeTrue(), "REQUIRED: Phase transition audit events")
