@@ -18,16 +18,27 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // E2E-FLEET-005: WE dispatches remote Job via MCP gateway
@@ -84,5 +95,88 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			"AC-3: MCP gateway must support remote list operations")
 		Expect(podList.Items).ToNot(BeEmpty(),
 			"remote cluster must have pods in kube-system")
+	})
+
+	It("E2E-FLEET-012 [AC-3, AC-4, AC-6, ASVS V4.1.1, V4.1.5]: should classify a deterministic Job collision from the remote cluster", func() {
+		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
+
+		const oldOwner = "wfe-remote-collision-owner"
+		targetResource := fmt.Sprintf("default/deployment/e2e-remote-iscompleted-%s", uuid.New().String()[:8])
+		jobName := weexecutor.ExecutionResourceName(targetResource)
+		wfeName := "e2e-remote-iscompleted-" + uuid.New().String()[:8]
+
+		newCollisionJob := func() *batchv1.Job {
+			return &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jobName,
+					Namespace: infrastructure.ExecutionNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": oldOwner,
+					},
+				},
+				Spec: batchv1.JobSpec{
+					BackoffLimit: ptr.To[int32](0),
+					Suspend:      ptr.To(true),
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers: []corev1.Container{{
+								Name: "workflow", Image: "busybox:1.36", Command: []string{"sleep", "3600"},
+							}},
+						},
+					},
+				},
+			}
+		}
+
+		By("Creating a completed Job on the remote cluster and a non-terminal hub shadow")
+		remoteJob := newCollisionJob()
+		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
+		remoteJob.Status.Conditions = []batchv1.JobCondition{{
+			Type: batchv1.JobComplete, Status: corev1.ConditionTrue,
+		}}
+		Expect(remoteK8sClient.Status().Update(ctx, remoteJob)).To(Succeed())
+
+		hubShadow := newCollisionJob()
+		Expect(k8sClient.Create(ctx, hubShadow)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(context.Background(), hubShadow)
+			_ = remoteK8sClient.Delete(context.Background(), remoteJob)
+		})
+
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{Name: wfeName, Namespace: namespace},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-" + wfeName, Namespace: namespace},
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      workflowUUIDs["crashloop-config-fix-v1:production"],
+						WorkflowName:    "crashloop-config-fix-v1",
+						ActionType:      "remediate",
+						Version:         "v1.0.0",
+						ExecutionBundle: "busybox:1.36",
+						ExecutionEngine: "job",
+					},
+				},
+				TargetResource: targetResource,
+				ClusterID:      "remote-cluster",
+			},
+		}
+
+		By("Submitting a WorkflowExecution whose deterministic Job already exists remotely")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		DeferCleanup(func() {
+			if err := k8sClient.Delete(context.Background(), wfe); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("failed to clean up WFE %s: %v\n", wfe.Name, err)
+			}
+		})
+
+		By("Verifying the production collision path recreates the Job on the remote cluster")
+		Eventually(func(g Gomega) {
+			var recreated batchv1.Job
+			g.Expect(remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &recreated)).To(Succeed())
+			g.Expect(recreated.Labels["kubernaut.ai/workflow-execution"]).To(Equal(wfe.Name),
+				"remote IsCompleted must classify the completed remote Job as stale and permit recreation")
+		}, timeout, interval).Should(Succeed())
 	})
 })
