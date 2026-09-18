@@ -362,6 +362,9 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
 
 			Expect(job.Spec.PodFailurePolicy).ToNot(BeNil())
+			Expect(job.Spec.PodReplacementPolicy).ToNot(BeNil())
+			Expect(*job.Spec.PodReplacementPolicy).To(Equal(batchv1.Failed),
+				"BR-WE-019: PodFailurePolicy requires the Failed pod replacement policy")
 			Expect(job.Spec.PodFailurePolicy.Rules).To(ContainElement(
 				And(
 					HaveField("Action", batchv1.PodFailurePolicyActionIgnore),

@@ -476,6 +476,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 			TTLSecondsAfterFinished: ttlSecondsAfterFinished,
 			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
 			PodFailurePolicy:        jobPodFailurePolicy(),
+			PodReplacementPolicy:    ptr.To(batchv1.Failed),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
