@@ -77,7 +77,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				"remote signal must preserve ClusterID")
 		})
 
-		It("UT-GW-P1-003 [AC-3]: Parse falls back to local resolver when readerFactory is nil", func() {
+		It("UT-GW-2430-001 [AC-4, AC-6, ASVS V4.1.5]: Parse fails closed when a remote signal has no reader factory", func() {
 			localResolver := &stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
@@ -86,12 +86,12 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 
 			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(signal).ToNot(BeNil(),
-				"should fall back to local resolver when no readerFactory is set")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("remote owner resolver"))
+			Expect(signal).To(BeNil())
 		})
 
-		It("UT-GW-P1-004 [AC-3]: Parse uses resource-level fingerprint when readerFactory returns error", func() {
+		It("UT-GW-2430-002 [AC-4, AC-6, ASVS V4.1.5]: Parse fails closed when remote reader creation fails", func() {
 			localResolver := &stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
@@ -103,9 +103,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 
 			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(signal).ToNot(BeNil(),
-				"should gracefully degrade when remote resolver construction fails")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("remote owner resolver"))
+			Expect(signal).To(BeNil())
 		})
 
 		It("UT-GW-P1-005 [AC-3]: SetReaderFactory is optional and does not break existing behavior", func() {
@@ -129,6 +129,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"prod-east": nil},
+			})
 
 			payloadLocal := buildAlertPayload("")
 			signalLocal, err := adapter.Parse(ctx, payloadLocal)
@@ -148,6 +151,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"prod-east": nil},
+			})
 
 			payload := buildAlertPayload("prod-east")
 			signals, err := adapter.ParseBatch(ctx, payload)
@@ -168,6 +174,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"remote-cluster": nil},
+			})
 
 			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("", "remote-cluster"))
 			Expect(err).ToNot(HaveOccurred())
@@ -180,6 +189,9 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"hub": nil},
+			})
 
 			signal, err := adapter.Parse(ctx, buildAlertPayloadWithPerAlertCluster("hub", "remote-cluster"))
 			Expect(err).ToNot(HaveOccurred())

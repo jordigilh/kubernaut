@@ -78,7 +78,7 @@ var _ = Describe("GW Fleet Remote Owner Chain Resolution (BR-INTEGRATION-065)", 
 			"IT-GW-P1-001: ClusterID must propagate to the signal")
 	})
 
-	It("IT-GW-P1-002: Parse falls back to local resolver when MCP Gateway is unavailable", func() {
+	It("IT-GW-2430-002 [AC-4, AC-6, ASVS V4.1.5]: Parse fails closed when MCP Gateway is unavailable", func() {
 		scheme := runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -89,10 +89,9 @@ var _ = Describe("GW Fleet Remote Owner Chain Resolution (BR-INTEGRATION-065)", 
 
 		payload := buildWebhookPayload("prod-east-1", "prod", "Pod", "api-server-abc")
 		signal, err := adapter.Parse(ctx, payload)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(signal).ToNot(BeNil(),
-			"IT-GW-P1-002: should fall back to local resolver when readerFactory is nil")
-		Expect(signal.ClusterID).To(Equal("prod-east-1"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("remote owner resolver"))
+		Expect(signal).To(BeNil())
 	})
 })
 
