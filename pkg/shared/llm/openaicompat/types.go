@@ -89,7 +89,7 @@ type Request struct {
 	// mode, and never guessed per-call from business logic (DD-KA-019).
 	ReasoningMode ReasoningMode
 	// Effort is the canonical, provider-agnostic reasoning-depth value
-	// ("", "none", "minimal", "low", "medium", "high", "xhigh" — #1604).
+	// ("", "none", "minimal", "low", "medium", "high", "xhigh", "max" — #1604).
 	// Distinct from ReasoningMode/Message.Reasoning: this asks the
 	// provider to think harder or less; it never controls whether
 	// already-captured reasoning text is replayed.

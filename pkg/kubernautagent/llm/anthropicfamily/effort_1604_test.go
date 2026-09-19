@@ -101,6 +101,7 @@ var _ = Describe("anthropicfamily Effort knob wiring — #1604", func() {
 			Entry("medium", "medium", "medium"),
 			Entry("high", "high", "high"),
 			Entry("xhigh clamps to high (genai.ThinkingLevel has no tier above High)", "xhigh", "high"),
+			Entry("max clamps to high (genai.ThinkingLevel has no tier above High)", "max", "high"),
 		)
 
 		It("UT-KA-1604-101: Effort: minimal turns thinking off entirely (Anthropic has no minimal thinking tier)", func() {
@@ -160,6 +161,7 @@ var _ = Describe("anthropicfamily Effort knob wiring — #1604", func() {
 			Entry("medium", "medium", 5000),
 			Entry("high", "high", 10000),
 			Entry("xhigh clamps to high's budget", "xhigh", 10000),
+			Entry("max clamps to high's budget", "max", 10000),
 		)
 
 		It("UT-KA-1604-104: Effort: minimal turns thinking off entirely on a manual-only model too", func() {

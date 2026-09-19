@@ -85,7 +85,7 @@ type ChatOptions struct {
 type ReasoningRequest struct {
     Enabled      bool   `json:"enabled,omitempty"`
     BudgetTokens int    `json:"budget_tokens,omitempty"`
-    Effort       string `json:"effort,omitempty"` // "", none/minimal/low/medium/high/xhigh (#1604)
+    Effort       string `json:"effort,omitempty"` // "", none/minimal/low/medium/high/xhigh/max (#1604)
 }
 ```
 

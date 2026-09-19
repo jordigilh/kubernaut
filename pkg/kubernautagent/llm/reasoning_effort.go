@@ -51,7 +51,7 @@ func EffortToThinkingConfig(r *ReasoningRequest) *genai.ThinkingConfig {
 // enabled:true + effort:none contradiction is rejected earlier, at config
 // validation (shared/types.LLMConfig.Validate), for operator-facing
 // clarity — this mapping stays defensively correct even if that gate is
-// ever bypassed. "xhigh" clamps to High: genai.ThinkingLevel has no tier
+// ever bypassed. "xhigh" and "max" clamp to High: genai.ThinkingLevel has no tier
 // above High. The empty string (unset) is intentionally not handled here;
 // it is only reachable via EffortToThinkingConfig's default-High fallback.
 func EffortToThinkingLevel(effort string) (genai.ThinkingLevel, bool) {
@@ -64,7 +64,7 @@ func EffortToThinkingLevel(effort string) (genai.ThinkingLevel, bool) {
 		return genai.ThinkingLevelLow, true
 	case "medium":
 		return genai.ThinkingLevelMedium, true
-	case "high", "xhigh":
+	case "high", "xhigh", "max":
 		return genai.ThinkingLevelHigh, true
 	default:
 		return "", false

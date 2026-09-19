@@ -68,12 +68,12 @@ type LLMReasoningConfig struct {
 	// Effort is a unified, provider-agnostic reasoning-depth knob (#1604):
 	// one of "" (unset — no effort parameter sent, the provider's own
 	// vendor default applies), "none", "minimal", "low", "medium", "high",
-	// or "xhigh". The same value means the same thing regardless of which
+	// "xhigh", or "max". The same value means the same thing regardless of which
 	// provider is configured — switching providers never requires
 	// re-tuning this field — but each client maps/clamps it into its own
 	// wire dialect:
 	//   - Anthropic (native/Vertex): maps to genai.ThinkingLevel tiers.
-	//     "xhigh" clamps to "high" (Anthropic's ceiling — a range clamp,
+	//     "xhigh" and "max" clamp to "high" (Anthropic's ceiling — a range clamp,
 	//     not a contradiction). "none" while Enabled is a genuine
 	//     contradiction (Anthropic has no "thinking enabled with zero
 	//     effort" state) and is rejected by Validate rather than silently
@@ -110,6 +110,7 @@ var validReasoningEfforts = map[string]bool{
 	"medium":  true,
 	"high":    true,
 	"xhigh":   true,
+	"max":     true,
 }
 
 // anthropicFamilyProviders are the providers routed to the Anthropic
@@ -248,7 +249,7 @@ func ValidateReasoningConfig(prefix string, r *LLMReasoningConfig, effectiveProv
 		return nil
 	}
 	if !validReasoningEfforts[r.Effort] {
-		return fmt.Errorf("%s.reasoning.effort must be one of \"\", \"none\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\"; got %q",
+		return fmt.Errorf("%s.reasoning.effort must be one of \"\", \"none\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\", \"max\"; got %q",
 			prefix, r.Effort)
 	}
 	if r.Enabled && r.Effort == "none" && anthropicFamilyProviders[effectiveProvider] {

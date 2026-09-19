@@ -47,7 +47,7 @@ Add opt-in, model-aware reasoning/thinking token support across every LLM provid
 5. Self-hosted/custom models (served via the OpenAI-compatible client) support an explicit capability override (`auto` / `force_on` / `force_off`) since they cannot be reliably identified by vendor enum alone.
 6. Captured reasoning content is surfaced in the investigation audit trail per SOC2 CC7.2 / BR-AUDIT-005.
 7. No regression to current investigation behavior for any provider/model when reasoning is left at its default-disabled state.
-8. A single, provider-agnostic reasoning-depth knob (`LLMReasoningConfig.Effort`: `""`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`) controls how hard the model thinks, mapped into each client's own wire dialect (issue #1604):
+8. A single, provider-agnostic reasoning-depth knob (`LLMReasoningConfig.Effort`: `""`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) controls how hard the model thinks, mapped into each client's own wire dialect (issue #1604):
    - Anthropic (native/Vertex): maps onto `genai.ThinkingLevel` via the shared `adk-anthropic-go/converters` mapping (DD-LLM-005), surfacing the resulting `output_config.effort` hint on adaptive-capable models.
    - Real OpenAI/Azure o-series and gpt-5-family models: passed through verbatim as Chat Completions' `reasoning_effort` field.
    - DeepSeek (openai_compatible): downscaled to DeepSeek's own two-tier dialect (`high`/`max`) plus an explicit thinking-enabled/disabled toggle.

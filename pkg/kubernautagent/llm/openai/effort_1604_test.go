@@ -72,6 +72,18 @@ var _ = Describe("kubernautagent/llm/openai.Client Effort knob wiring — #1604"
 		Expect(receivedBody["reasoning_effort"]).To(Equal("high"))
 	})
 
+	It("UT-KA-1604-307: explicit capability override enables effort for a custom model", func() {
+		newTestServer()
+		client := kaopenai.New("custom-reasoning-model", server.URL, "test-key",
+			kaopenai.WithCapabilityOverride("force_on"),
+			kaopenai.WithReasoning(llm.ReasoningRequest{Enabled: true, Effort: "low"}))
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "hello"}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(receivedBody["reasoning_effort"]).To(Equal("low"))
+	})
+
 	It("UT-KA-1604-302: a per-call Options.Reasoning overrides the construction-time default", func() {
 		newTestServer()
 		client := kaopenai.New("gpt-5", server.URL, "test-key",

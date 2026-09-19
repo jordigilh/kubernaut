@@ -106,7 +106,7 @@ const (
 
 	// EffortDialectOpenAI: real OpenAI/Azure o-series and gpt-5-family
 	// reasoning models. The canonical effort vocabulary ("none", "minimal",
-	// "low", "medium", "high", "xhigh") is OpenAI's own and is passed
+	// "low", "medium", "high", "xhigh", "max") is OpenAI's own and is passed
 	// through verbatim as the wire "reasoning_effort" field.
 	EffortDialectOpenAI EffortDialect = "openai"
 
@@ -122,8 +122,22 @@ const (
 // a speculative dialect that could send an unsupported field to a
 // bare-bones OpenAI-compatible server.
 func DetectEffortDialect(model string) EffortDialect {
-	lower := strings.ToLower(model)
+	return DetectEffortDialectWithOverride(model, "")
+}
 
+// DetectEffortDialectWithOverride applies an explicit operator capability
+// override before model-name detection. force_on opts an unrecognized custom
+// endpoint into OpenAI's reasoning_effort field; force_off suppresses the field
+// even when the model name resembles a known reasoning family.
+func DetectEffortDialectWithOverride(model, override string) EffortDialect {
+	switch override {
+	case "force_on":
+		return EffortDialectOpenAI
+	case "force_off":
+		return EffortDialectNone
+	}
+
+	lower := strings.ToLower(model)
 	if strings.Contains(lower, "deepseek-reasoner") || strings.Contains(lower, "deepseek-r1") ||
 		strings.HasPrefix(lower, "deepseek-v4") {
 		return EffortDialectDeepSeek
