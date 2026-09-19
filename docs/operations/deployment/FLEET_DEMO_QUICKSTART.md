@@ -41,6 +41,60 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
+### OpenAI reasoning models
+
+For a first-party OpenAI reasoning model, use `LLM_PROVIDER=openai`. The demo infers
+conservative defaults for `gpt-5*` and `o1`/`o3`/`o4` models. `gpt-5.6-luna` defaults to
+`enabled: true` with `effort: none`:
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai \
+  LLM_MODEL=gpt-5.6-luna \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials
+```
+
+The equivalent explicit Helm values are:
+
+```yaml
+global:
+  llmProfiles:
+    primary:
+      provider: openai
+      model: gpt-5.6-luna
+      endpoint: https://api.openai.com/v1
+      credentialsSecretName: llm-credentials-primary
+      reasoning:
+        enabled: true
+        effort: none
+```
+
+Equivalent command-line Helm settings are:
+
+```bash
+helm upgrade --install kubernaut charts/kubernaut \
+  --namespace kubernaut-system \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-5.6-luna \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
+  --set global.llmProfiles.primary.reasoning.enabled=true \
+  --set global.llmProfiles.primary.reasoning.effort=none
+```
+
+To override the demo decision, set `LLM_REASONING_ENABLED=true|false` and/or
+`LLM_REASONING_EFFORT`. These are also rendered into the shared `primary` profile consumed
+by both API Frontend and Kubernaut Agent. For `openai_compatible`, reasoning is never inferred
+from a GPT-like model name; set the overrides explicitly only when the endpoint supports them.
+
+The OpenAI Chat Completions mapping is identity-based: `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh`, and `max` become the same `reasoning_effort` value. Model support is still
+specific to each model: base `gpt-5` documents `minimal` through `high`, while `gpt-5.6-luna`
+documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`. After changing Helm values,
+restart the API Frontend and Kubernaut Agent deployments because their LLM clients are
+constructed at startup.
+
 To deploy images from a development repository instead of the default
 `quay.io/kubernaut-ai/`, add `IMAGE_REPOSITORY` and `IMAGE_TAG`, for example:
 

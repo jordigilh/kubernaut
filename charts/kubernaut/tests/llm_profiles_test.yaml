@@ -121,6 +121,50 @@ tests:
           path: data['llm-runtime.yaml']
           pattern: "timeoutSeconds: 90"
 
+  - it: "IT-PLATFORM-LLM-2437-001 [BR-PLATFORM-014]: KA renders the resolved reasoning profile"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: openai
+            model: gpt-5.6-luna
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://api.example.com/v1"
+            reasoning:
+              enabled: true
+              effort: max
+              capabilityOverride: force_on
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'reasoning:\s*\n\s+enabled: true\s*\n\s+effort: "max"\s*\n\s+capabilityOverride: "force_on"'
+
+  - it: "IT-PLATFORM-LLM-2437-002 [BR-PLATFORM-014]: AF renders the resolved reasoning profile"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: openai
+            model: gpt-5.6-luna
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://api.example.com/v1"
+            reasoning:
+              enabled: true
+              effort: max
+              capabilityOverride: force_on
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'reasoning:\s*\n\s+enabled: true\s*\n\s+effort: "max"\s*\n\s+capabilityOverride: "force_on"'
+
   - it: "IT-PLATFORM-LLM-003 (#1749): temperature is omitted entirely when not set on the profile"
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     documentSelector:

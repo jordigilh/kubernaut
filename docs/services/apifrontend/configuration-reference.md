@@ -75,14 +75,13 @@ guard.
 
 Source: `charts/kubernaut/templates/apifrontend/apifrontend.yaml`.
 
-As of this writing, the chart renders `agent.kaBaseURL`, `agent.dsBearerTokenFile`,
-and `severityTriage.cacheTTLSeconds`/`.llmConfidence`, but does **not** render
-`agent.llm.*` or `severityTriage.llm.*` — AF's LLM configuration (when used) is
-not currently exposed via primary Helm values and must be supplied via a
-ConfigMap patch/overlay or chart fork. This is an accurate description of the
-current chart, not a statement that it should stay this way; if `agent.llm`
-gains first-class Helm support in the future, cross-reference this file and
-DD-LLM-008 when documenting it.
+The chart resolves AF's `agent.llm` profile from `global.llmProfiles` (falling back to
+Kubernaut Agent's resolved profile when `apifrontend.llmProfileRef` is empty) and renders
+`provider`, `model`, endpoint/authentication fields, and the full `reasoning` block.
+`severityTriage.llmProfileRef` can independently select another named profile when severity
+triage is enabled. Both profile paths are static configuration and require an AF restart after
+Helm changes. The shared profile is the recommended path when AF and KA should use identical
+LLM settings.
 
 ## 5. Deployment topology and restart triggers
 

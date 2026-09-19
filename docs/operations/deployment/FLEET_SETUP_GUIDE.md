@@ -89,6 +89,25 @@ the contributor E2E harness or Path B for the manual architecture walkthrough.
 The Quick Start is the canonical operator entry point for the throwaway demo;
 this guide remains the detailed topology and troubleshooting reference.
 
+The automated setup also supports model-aware reasoning configuration. For first-party
+OpenAI reasoning models, the demo infers conservative defaults from `LLM_PROVIDER=openai`
+and `LLM_MODEL`; for an `openai_compatible` endpoint, reasoning is never inferred from a
+GPT-like name. Override either behavior explicitly when the endpoint supports it:
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=custom-reasoning-model \
+  LLM_ENDPOINT=https://llm.example.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
+  LLM_REASONING_ENABLED=true \
+  LLM_REASONING_EFFORT=low
+```
+
+The flags are rendered into `global.llmProfiles.primary.reasoning`, the shared profile
+consumed by both API Frontend and Kubernaut Agent. After changing the profile, restart
+both deployments because their LLM clients are constructed at startup.
+
 ---
 
 ## Path A (recommended): use the existing automation
