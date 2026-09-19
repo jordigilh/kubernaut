@@ -136,6 +136,23 @@ var _ = Describe("buildLLMClientFromConfig — Effort knob wiring (#1604)", func
 				"operator config ai.llm.reasoning.effort must reach the outgoing OpenAI request")
 		})
 
+		It("IT-KA-1604-308: production builder wires capabilityOverride to a custom endpoint", func() {
+			cfg := types.LLMConfig{
+				Provider:  types.LLMProviderOpenAICompatible,
+				Model:     "custom-reasoning-model",
+				Endpoint:  server.URL,
+				APIKey:    "sk-fake-test-key",
+				Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "low", CapabilityOverride: "force_on"},
+			}
+
+			client, err := buildLLMClientFromConfig(context.Background(), cfg)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = client.Chat(context.Background(), helloChatRequest())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody["reasoning_effort"]).To(Equal("low"),
+				"operator config ai.llm.reasoning.capabilityOverride must enable the custom endpoint dialect")
+		})
+
 		It("omits reasoning_effort when the operator's config has no reasoning block (no regression)", func() {
 			cfg := types.LLMConfig{
 				Provider: types.LLMProviderOpenAI,
