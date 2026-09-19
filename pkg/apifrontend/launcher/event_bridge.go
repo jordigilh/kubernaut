@@ -69,6 +69,7 @@ const (
 	MetaTypeInvestigation = "investigation"
 	MetaTypeKeepalive     = "keepalive"
 	MetaTypeDecision      = "decision"
+	MetaTypeToolCallDelta = "tool_call_delta"
 
 	// MetaTypeReasoningContent tags KA's captured LLM reasoning/thinking
 	// content (BR-AI-086), kept distinct from MetaTypeReasoning (AF's own

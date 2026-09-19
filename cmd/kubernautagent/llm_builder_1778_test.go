@@ -109,7 +109,7 @@ var _ = Describe("buildLLMClientFromConfig — Gemini dispatch (#1778 #1792 BR-A
 				Provider:       types.LLMProviderVertexAI,
 				Model:          "gemini-2.5-pro",
 				VertexProject:  "my-project",
-				VertexLocation: "us-central1",
+				VertexLocation: "global",
 			}
 
 			client, err := buildLLMClientFromConfig(context.Background(), cfg)

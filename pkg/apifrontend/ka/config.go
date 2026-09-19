@@ -358,6 +358,7 @@ type CompleteNoActionResult struct {
 const (
 	EventTypeReasoningDelta   = "reasoning_delta"
 	EventTypeTokenDelta       = "token_delta"
+	EventTypeToolCallDelta    = "tool_call_delta"
 	EventTypeToolCallStart    = "tool_call_start"
 	EventTypeToolCall         = "tool_call"
 	EventTypeToolResult       = "tool_result"
