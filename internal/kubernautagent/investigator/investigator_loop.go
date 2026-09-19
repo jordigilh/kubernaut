@@ -448,12 +448,7 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 		// stream events (#1612).
 		var eventSent bool
 		resp, err := client.StreamChat(callCtx, req, func(evt llm.ChatStreamEvent) error {
-			if evt.Delta != "" {
-				eventSent = true
-				emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
-					"delta": evt.Delta,
-				})
-			}
+			eventSent = emitStreamEvent(ctx, turn, phase, evt) || eventSent
 			return nil
 		})
 
@@ -478,6 +473,28 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 	}
 
 	return resp, err
+}
+
+func emitStreamEvent(ctx context.Context, turn int, phase string, evt llm.ChatStreamEvent) bool {
+	if evt.Delta != "" {
+		emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
+			"delta": evt.Delta,
+		})
+	}
+	if evt.ToolCallDelta != nil {
+		data := map[string]interface{}{
+			"index":           evt.ToolCallDelta.Index,
+			"arguments_delta": evt.ToolCallDelta.ArgumentsDelta,
+		}
+		if evt.ToolCallDelta.ID != "" {
+			data["id"] = evt.ToolCallDelta.ID
+		}
+		if evt.ToolCallDelta.Name != "" {
+			data["name"] = evt.ToolCallDelta.Name
+		}
+		emitToSink(ctx, session.EventTypeToolCallDelta, turn, phase, data)
+	}
+	return evt.Delta != "" || evt.ToolCallDelta != nil
 }
 
 // emitToSink sends an InvestigationEvent to the context-carried event sink

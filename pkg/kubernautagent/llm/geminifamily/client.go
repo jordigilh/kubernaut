@@ -43,6 +43,7 @@ package geminifamily
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -54,6 +55,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	einojsonschema "github.com/eino-contrib/jsonschema"
 	"github.com/go-logr/logr"
 	"google.golang.org/genai"
 
@@ -238,8 +240,12 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("geminifamily: %w", err)
 	}
+	opts, err := c.callOptions(req)
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("geminifamily: %w", err)
+	}
 
-	msg, err := c.model.Generate(ctx, messages, c.callOptions(req)...)
+	msg, err := c.model.Generate(ctx, messages, opts...)
 	if err != nil {
 		return llm.ChatResponse{}, classifyErr(fmt.Errorf("geminifamily: %w", err))
 	}
@@ -256,8 +262,12 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("geminifamily: %w", err)
 	}
+	opts, err := c.callOptions(req)
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("geminifamily: %w", err)
+	}
 
-	sr, err := c.model.Stream(ctx, messages, c.callOptions(req)...)
+	sr, err := c.model.Stream(ctx, messages, opts...)
 	if err != nil {
 		return llm.ChatResponse{}, classifyErr(fmt.Errorf("geminifamily: stream error: %w", err))
 	}
@@ -273,10 +283,8 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 			return llm.ChatResponse{}, classifyErr(fmt.Errorf("geminifamily: stream recv: %w", recvErr))
 		}
 		chunks = append(chunks, chunk)
-		if delta := extractStreamTextDelta(chunk); delta != "" {
-			if cbErr := callback(llm.ChatStreamEvent{Delta: delta}); cbErr != nil {
-				return llm.ChatResponse{}, cbErr
-			}
+		if err := emitStreamChunk(chunk, callback); err != nil {
+			return llm.ChatResponse{}, err
 		}
 	}
 	_ = callback(llm.ChatStreamEvent{Done: true})
@@ -291,12 +299,40 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	return fromEinoMessage(final), nil
 }
 
-// callOptions builds the per-call eino model.Option list: tool definitions
-// (when present) and the resolved reasoning/thinking configuration. A
-// per-call req.Options.Reasoning always wins over the client's
-// construction-time default (mirrors anthropicfamily.buildParams).
-func (c *Client) callOptions(req llm.ChatRequest) []model.Option {
+func emitStreamChunk(chunk *schema.AgenticMessage, callback func(llm.ChatStreamEvent) error) error {
+	if delta := extractStreamTextDelta(chunk); delta != "" {
+		if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
+			return err
+		}
+	}
+	for _, toolCallDelta := range extractStreamToolCallDeltas(chunk) {
+		if err := callback(llm.ChatStreamEvent{ToolCallDelta: toolCallDelta}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// callOptions builds the per-call eino model.Option list: generation options,
+// output schema, tool definitions (when present), and the resolved
+// reasoning/thinking configuration. A per-call req.Options.Reasoning always
+// wins over the client's construction-time default (mirrors
+// anthropicfamily.buildParams).
+func (c *Client) callOptions(req llm.ChatRequest) ([]model.Option, error) {
 	var opts []model.Option
+	if req.Options.Temperature != nil {
+		opts = append(opts, model.WithTemperature(float32(*req.Options.Temperature)))
+	}
+	if req.Options.MaxTokens > 0 {
+		opts = append(opts, model.WithMaxTokens(req.Options.MaxTokens))
+	}
+	if len(req.Options.OutputSchema) > 0 {
+		outputSchema := &einojsonschema.Schema{}
+		if err := json.Unmarshal(req.Options.OutputSchema, outputSchema); err != nil {
+			return nil, fmt.Errorf("invalid output schema: %w", err)
+		}
+		opts = append(opts, agenticgemini.WithResponseJSONSchema(outputSchema))
+	}
 	if len(req.Tools) > 0 {
 		opts = append(opts, model.WithTools(toEinoTools(req.Tools, c.logger)))
 	}
@@ -308,7 +344,7 @@ func (c *Client) callOptions(req llm.ChatRequest) []model.Option {
 	if reasoning != nil && reasoning.Enabled {
 		opts = append(opts, agenticgemini.WithThinkingConfig(llm.EffortToThinkingConfig(reasoning)))
 	}
-	return opts
+	return opts, nil
 }
 
 // classifyErr marks err non-retryable (kubernaut#1585 parity) when it

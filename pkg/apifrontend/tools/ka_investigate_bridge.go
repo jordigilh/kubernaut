@@ -413,6 +413,17 @@ func isStatusEvent(evtType string) bool {
 // and must still emit a content-free live signal rather than no-op, so
 // Console can render a "reasoning hidden by provider" placeholder.
 func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string) {
+	if evt.Type == ka.EventTypeToolCallDelta {
+		// Tool-call fragments are structured observer data, not executable tool
+		// events. Preserve the raw payload so consumers can reconstruct the
+		// provider stream without parsing a lossy human-readable string.
+		_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), map[string]any{
+			"type":  launcher.MetaTypeToolCallDelta,
+			"turn":  evt.Turn,
+			"phase": evt.Phase,
+		})
+		return
+	}
 	if evt.Type == ka.EventTypeReasoningContentDelta {
 		redacted := extractJSONBool(evt.Data, "redacted")
 		if text == "" && !redacted {

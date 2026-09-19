@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -262,10 +263,122 @@ var _ = Describe("geminifamily.Client Chat/StreamChat — #1778 BR-AI-087", func
 		Expect(resp.Usage.TotalTokens).To(Equal(15))
 	})
 
+	It("UT-GM-1778-208: StreamChat delivers function-call deltas", func() {
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: "+`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"kubectl_get","args":{"kind":"Pod"}}}]},"finishReason":"STOP"}]}`+"\n\n")
+		})
+
+		var toolDeltas []*llm.PartialToolCall
+		resp, err := client.StreamChat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "inspect the pod"}},
+			Tools: []llm.ToolDefinition{{
+				Name:       "kubectl_get",
+				Parameters: json.RawMessage(`{"type":"object"}`),
+			}},
+		}, func(ev llm.ChatStreamEvent) error {
+			if ev.ToolCallDelta != nil {
+				toolDeltas = append(toolDeltas, ev.ToolCallDelta)
+			}
+			return nil
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(toolDeltas).To(HaveLen(1))
+		Expect(toolDeltas[0].Name).To(Equal("kubectl_get"))
+		Expect(toolDeltas[0].ArgumentsDelta).To(ContainSubstring(`"kind":"Pod"`))
+		Expect(resp.ToolCalls).To(HaveLen(1))
+		Expect(resp.ToolCalls[0].Name).To(Equal("kubectl_get"))
+	})
+
+	It("UT-GM-2439-001: StreamChat preserves ordered fragmented function-call deltas", func() {
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			chunks := []string{
+				`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"kubectl_get","args":{"kind":"Pod"}}}]}}]}`,
+				`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"args":{"name":"payments"}}}]},"finishReason":"STOP"}]}`,
+			}
+			for _, chunk := range chunks {
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+			}
+		})
+
+		var deltas []*llm.PartialToolCall
+		resp, err := client.StreamChat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "inspect the payment pod"}},
+			Tools:    []llm.ToolDefinition{{Name: "kubectl_get", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		}, func(event llm.ChatStreamEvent) error {
+			if event.ToolCallDelta != nil {
+				deltas = append(deltas, event.ToolCallDelta)
+			}
+			return nil
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deltas).To(HaveLen(2))
+		Expect(deltas[0].Name).To(Equal("kubectl_get"))
+		Expect(deltas[1].ArgumentsDelta).To(ContainSubstring("payments"))
+		Expect(resp.ToolCalls).NotTo(BeEmpty())
+	})
+
 	It("UT-GM-1778-206: Close is a no-op that never errors", func() {
 		makeClient(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(`{}`)) //nolint:errcheck // test stub server, unused in this case
 		})
 		Expect(client.Close()).To(Succeed())
+	})
+
+	It("UT-GM-1778-207: forwards generation options and output schema to Gemini", func() {
+		var request struct {
+			GenerationConfig struct {
+				MaxOutputTokens    int             `json:"maxOutputTokens"`
+				ResponseMIMEType   string          `json:"responseMimeType"`
+				ResponseJSONSchema json.RawMessage `json:"responseJsonSchema"`
+				Temperature        *float64        `json:"temperature"`
+			} `json:"generationConfig"`
+		}
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(json.Unmarshal(body, &request)).To(Succeed())
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"candidates": [{
+					"content": {"role": "model", "parts": [{"text": "{\"severity\":\"high\"}"}]},
+					"finishReason": "STOP"
+				}]
+			}`))
+		})
+
+		temperature := 0.25
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "classify the alert"}},
+			Options: llm.ChatOptions{
+				Temperature:  &temperature,
+				MaxTokens:    321,
+				JSONMode:     true,
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"severity":{"type":"string"}},"required":["severity"]}`),
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(request.GenerationConfig.MaxOutputTokens).To(Equal(321))
+		Expect(request.GenerationConfig.ResponseMIMEType).To(Equal("application/json"))
+		Expect(string(request.GenerationConfig.ResponseJSONSchema)).To(ContainSubstring(`"severity"`))
+		Expect(request.GenerationConfig.Temperature).NotTo(BeNil())
+		Expect(*request.GenerationConfig.Temperature).To(Equal(temperature))
+	})
+
+	It("UT-GM-1778-209: rejects malformed output schema before making a request", func() {
+		called := false
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "classify the alert"}},
+			Options:  llm.ChatOptions{OutputSchema: json.RawMessage(`{"type":`)},
+		})
+		Expect(err).To(MatchError(ContainSubstring("invalid output schema")))
+		Expect(called).To(BeFalse())
 	})
 })

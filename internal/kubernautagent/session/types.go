@@ -25,6 +25,7 @@ import "encoding/json"
 // Goose ACP mapping (future):
 //   - EventTypeReasoningDelta -> acp.StreamEvent with kind="reasoning"
 //   - EventTypeTokenDelta     -> acp.StreamEvent with kind="text_delta"
+//   - EventTypeToolCallDelta  -> acp.StreamEvent with kind="tool_use_delta"
 //   - EventTypeToolCallStart  -> acp.StreamEvent with kind="tool_use"
 //   - EventTypeToolResult     -> acp.StreamEvent with kind="tool_result"
 //   - EventTypeError          -> acp.StreamEvent with kind="error"
@@ -40,16 +41,17 @@ type InvestigationEvent struct {
 // Event type constants for investigation lifecycle events.
 // These are wire-format values sent over SSE to observers.
 const (
-	EventTypeReasoningDelta = "reasoning_delta"
-	EventTypeTokenDelta     = "token_delta"
-	EventTypeToolCallStart  = "tool_call_start"
-	EventTypeToolCall       = "tool_call"
-	EventTypeToolResult     = "tool_result"
+	EventTypeReasoningDelta   = "reasoning_delta"
+	EventTypeTokenDelta       = "token_delta"
+	EventTypeToolCallDelta    = "tool_call_delta"
+	EventTypeToolCallStart    = "tool_call_start"
+	EventTypeToolCall         = "tool_call"
+	EventTypeToolResult       = "tool_result"
 	EventTypeError            = "error"
 	EventTypeComplete         = "complete"
 	EventTypeCancelled        = "cancelled"
 	EventTypeAlignmentVerdict = "alignment_verdict"
-	EventTypeSessionEnded    = "session_ended"
+	EventTypeSessionEnded     = "session_ended"
 	// EventTypeReasoningContentDelta streams BR-AI-086's captured LLM
 	// reasoning/thinking content (llm.Message.Reasoning), distinct from
 	// EventTypeReasoningDelta's orchestration/progress narration so
