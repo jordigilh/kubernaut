@@ -2660,7 +2660,7 @@ components:
         component:
           type: string
           description: Service emitting the error
-          enum: [gateway, aianalysis, workflowexecution, remediationorchestrator, signalprocessing, authwebhook]
+          enum: [gateway, aianalysis, workflowexecution, remediationorchestrator, signalprocessing, authwebhook, kubernautagent, apifrontend]
           example: "gateway"
         retry_possible:
           type: boolean
@@ -4600,8 +4600,8 @@ components:
 
     AIAgentResponseFailedPayload:
       type: object
-      required: [event_type, event_id, incident_id, error_message, phase]
-      description: AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation fails (DD-AUDIT-005, SOC2 CC8.1)
+      required: [event_type, event_id, incident_id, error_message, phase, error_details]
+      description: "AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation fails (DD-AUDIT-005, BR-AUDIT-005 Gap #7)"
       properties:
         event_type:
           type: string
@@ -4623,6 +4623,8 @@ components:
           type: string
           description: Phase in which the failure occurred
           example: "llm_analysis"
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
         duration_seconds:
           type: number
           format: float
@@ -7268,8 +7270,8 @@ components:
 
     ApifrontendA2ATaskFailedPayload:
       type: object
-      required: [event_type, session_id, task_id, error]
-      description: A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed (SOC2 CC7.2, Issue #1156)
+      required: [event_type, session_id, task_id, error, error_details]
+      description: A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed (BR-AUDIT-005, SOC2 CC7.2, Issue #1156)
       properties:
         event_type:
           type: string
@@ -7284,6 +7286,8 @@ components:
         error:
           type: string
           description: Error message or classification
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
         rr_name:
           type: string
           description: Associated RemediationRequest CRD name (Issue #1199)
@@ -7347,8 +7351,8 @@ components:
 
     ApifrontendSeverityTriageFailedPayload:
       type: object
-      required: [event_type, error]
-      description: Severity triage failed event payload (apifrontend.severity_triage.failed) — multi-tier severity triage failed (SOC2 CC7.2, Issue #1156)
+      required: [event_type, error, error_details]
+      description: Severity triage failed event payload (apifrontend.severity_triage.failed) — multi-tier severity triage failed (BR-AUDIT-005, SOC2 CC7.2, Issue #1156)
       properties:
         event_type:
           type: string
@@ -7357,6 +7361,8 @@ components:
         error:
           type: string
           description: Error that caused triage failure
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
         failed_tier:
           type: string
           description: Tier where failure occurred
@@ -7410,4 +7416,3 @@ components:
         error:
           type: string
           description: Final error returned by SignalInteractive after exhausting retries
-

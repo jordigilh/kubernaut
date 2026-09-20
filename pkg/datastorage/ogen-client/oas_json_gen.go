@@ -3528,6 +3528,10 @@ func (s *AIAgentResponseFailedPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.Phase)
 	}
 	{
+		e.FieldStart("error_details")
+		s.ErrorDetails.Encode(e)
+	}
+	{
 		if s.DurationSeconds.Set {
 			e.FieldStart("duration_seconds")
 			s.DurationSeconds.Encode(e)
@@ -3535,13 +3539,14 @@ func (s *AIAgentResponseFailedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAgentResponseFailedPayload = [6]string{
+var jsonFieldsNameOfAIAgentResponseFailedPayload = [7]string{
 	0: "event_type",
 	1: "event_id",
 	2: "incident_id",
 	3: "error_message",
 	4: "phase",
-	5: "duration_seconds",
+	5: "error_details",
+	6: "duration_seconds",
 }
 
 // Decode decodes AIAgentResponseFailedPayload from json.
@@ -3611,6 +3616,16 @@ func (s *AIAgentResponseFailedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
+		case "error_details":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				if err := s.ErrorDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_details\"")
+			}
 		case "duration_seconds":
 			if err := func() error {
 				s.DurationSeconds.Reset()
@@ -3631,7 +3646,7 @@ func (s *AIAgentResponseFailedPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00111111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9223,6 +9238,10 @@ func (s *ApifrontendA2ATaskFailedPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.Error)
 	}
 	{
+		e.FieldStart("error_details")
+		s.ErrorDetails.Encode(e)
+	}
+	{
 		if s.RrName.Set {
 			e.FieldStart("rr_name")
 			s.RrName.Encode(e)
@@ -9236,13 +9255,14 @@ func (s *ApifrontendA2ATaskFailedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApifrontendA2ATaskFailedPayload = [6]string{
+var jsonFieldsNameOfApifrontendA2ATaskFailedPayload = [7]string{
 	0: "event_type",
 	1: "session_id",
 	2: "task_id",
 	3: "error",
-	4: "rr_name",
-	5: "rr_namespace",
+	4: "error_details",
+	5: "rr_name",
+	6: "rr_namespace",
 }
 
 // Decode decodes ApifrontendA2ATaskFailedPayload from json.
@@ -9300,6 +9320,16 @@ func (s *ApifrontendA2ATaskFailedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error\"")
 			}
+		case "error_details":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				if err := s.ErrorDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_details\"")
+			}
 		case "rr_name":
 			if err := func() error {
 				s.RrName.Reset()
@@ -9330,7 +9360,7 @@ func (s *ApifrontendA2ATaskFailedPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001111,
+		0b00011111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -14382,6 +14412,10 @@ func (s *ApifrontendSeverityTriageFailedPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.Error)
 	}
 	{
+		e.FieldStart("error_details")
+		s.ErrorDetails.Encode(e)
+	}
+	{
 		if s.FailedTier.Set {
 			e.FieldStart("failed_tier")
 			s.FailedTier.Encode(e)
@@ -14389,10 +14423,11 @@ func (s *ApifrontendSeverityTriageFailedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApifrontendSeverityTriageFailedPayload = [3]string{
+var jsonFieldsNameOfApifrontendSeverityTriageFailedPayload = [4]string{
 	0: "event_type",
 	1: "error",
-	2: "failed_tier",
+	2: "error_details",
+	3: "failed_tier",
 }
 
 // Decode decodes ApifrontendSeverityTriageFailedPayload from json.
@@ -14426,6 +14461,16 @@ func (s *ApifrontendSeverityTriageFailedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error\"")
 			}
+		case "error_details":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.ErrorDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_details\"")
+			}
 		case "failed_tier":
 			if err := func() error {
 				s.FailedTier.Reset()
@@ -14446,7 +14491,7 @@ func (s *ApifrontendSeverityTriageFailedPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000011,
+		0b00000111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -17930,6 +17975,10 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Phase)
 			}
 			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
+			}
+			{
 				if s.DurationSeconds.Set {
 					e.FieldStart("duration_seconds")
 					s.DurationSeconds.Encode(e)
@@ -20059,6 +20108,10 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Error)
 			}
 			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
+			}
+			{
 				if s.RrName.Set {
 					e.FieldStart("rr_name")
 					s.RrName.Encode(e)
@@ -20135,6 +20188,10 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("error")
 				e.Str(s.Error)
+			}
+			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
 			}
 			{
 				if s.FailedTier.Set {
@@ -23433,6 +23490,10 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Phase)
 			}
 			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
+			}
+			{
 				if s.DurationSeconds.Set {
 					e.FieldStart("duration_seconds")
 					s.DurationSeconds.Encode(e)
@@ -25562,6 +25623,10 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Error)
 			}
 			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
+			}
+			{
 				if s.RrName.Set {
 					e.FieldStart("rr_name")
 					s.RrName.Encode(e)
@@ -25638,6 +25703,10 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("error")
 				e.Str(s.Error)
+			}
+			{
+				e.FieldStart("error_details")
+				s.ErrorDetails.Encode(e)
 			}
 			{
 				if s.FailedTier.Set {
@@ -33010,6 +33079,10 @@ func (s *ErrorDetailsComponent) Decode(d *jx.Decoder) error {
 		*s = ErrorDetailsComponentSignalprocessing
 	case ErrorDetailsComponentAuthwebhook:
 		*s = ErrorDetailsComponentAuthwebhook
+	case ErrorDetailsComponentKubernautagent:
+		*s = ErrorDetailsComponentKubernautagent
+	case ErrorDetailsComponentApifrontend:
+		*s = ErrorDetailsComponentApifrontend
 	default:
 		*s = ErrorDetailsComponent(v)
 	}

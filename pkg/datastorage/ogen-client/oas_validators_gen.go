@@ -876,6 +876,17 @@ func (s *AIAgentResponseFailedPayload) Validate() error {
 		})
 	}
 	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.DurationSeconds.Get(); ok {
 			if err := func() error {
 				if err := (validate.Float{}).Validate(float64(value)); err != nil {
@@ -1881,6 +1892,17 @@ func (s *ApifrontendA2ATaskFailedPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
 			Error: err,
 		})
 	}
@@ -2909,6 +2931,17 @@ func (s *ApifrontendSeverityTriageFailedPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
 			Error: err,
 		})
 	}
@@ -6153,6 +6186,10 @@ func (s ErrorDetailsComponent) Validate() error {
 	case "signalprocessing":
 		return nil
 	case "authwebhook":
+		return nil
+	case "kubernautagent":
+		return nil
+	case "apifrontend":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

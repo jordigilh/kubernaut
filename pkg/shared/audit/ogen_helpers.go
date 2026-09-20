@@ -39,6 +39,8 @@ import (
 // - authwebhook
 // - remediationorchestrator
 // - signalprocessing
+// - kubernautagent
+// - apifrontend
 //
 // **Usage**: Services use this map directly or via ToOgenErrorDetailsComponent() helper.
 //
@@ -50,6 +52,8 @@ var ComponentMapping = map[string]ogenclient.ErrorDetailsComponent{
 	"authwebhook":             ogenclient.ErrorDetailsComponentAuthwebhook,
 	"remediationorchestrator": ogenclient.ErrorDetailsComponentRemediationorchestrator,
 	"signalprocessing":        ogenclient.ErrorDetailsComponentSignalprocessing,
+	"kubernautagent":          ogenclient.ErrorDetailsComponentKubernautagent,
+	"apifrontend":             ogenclient.ErrorDetailsComponentApifrontend,
 }
 
 // ToOgenErrorDetailsComponent converts a string component name to ogen ErrorDetailsComponent enum.

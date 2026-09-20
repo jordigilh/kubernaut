@@ -1813,7 +1813,7 @@ func (s *AIAgentRatelimitDeniedPayloadEventType) UnmarshalText(data []byte) erro
 }
 
 // AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation
-// fails (DD-AUDIT-005, SOC2 CC8.1).
+// fails (DD-AUDIT-005, BR-AUDIT-005 Gap #7).
 // Ref: #/components/schemas/AIAgentResponseFailedPayload
 type AIAgentResponseFailedPayload struct {
 	// Event type for discriminator.
@@ -1825,7 +1825,8 @@ type AIAgentResponseFailedPayload struct {
 	// Error message from the failed investigation.
 	ErrorMessage string `json:"error_message"`
 	// Phase in which the failure occurred.
-	Phase string `json:"phase"`
+	Phase        string       `json:"phase"`
+	ErrorDetails ErrorDetails `json:"error_details"`
 	// Duration of the investigation before failure (seconds).
 	DurationSeconds OptFloat32 `json:"duration_seconds"`
 }
@@ -1853,6 +1854,11 @@ func (s *AIAgentResponseFailedPayload) GetErrorMessage() string {
 // GetPhase returns the value of Phase.
 func (s *AIAgentResponseFailedPayload) GetPhase() string {
 	return s.Phase
+}
+
+// GetErrorDetails returns the value of ErrorDetails.
+func (s *AIAgentResponseFailedPayload) GetErrorDetails() ErrorDetails {
+	return s.ErrorDetails
 }
 
 // GetDurationSeconds returns the value of DurationSeconds.
@@ -1883,6 +1889,11 @@ func (s *AIAgentResponseFailedPayload) SetErrorMessage(val string) {
 // SetPhase sets the value of Phase.
 func (s *AIAgentResponseFailedPayload) SetPhase(val string) {
 	s.Phase = val
+}
+
+// SetErrorDetails sets the value of ErrorDetails.
+func (s *AIAgentResponseFailedPayload) SetErrorDetails(val ErrorDetails) {
+	s.ErrorDetails = val
 }
 
 // SetDurationSeconds sets the value of DurationSeconds.
@@ -4715,8 +4726,8 @@ func (s *ApifrontendA2ATaskCompletedPayloadEventType) UnmarshalText(data []byte)
 	}
 }
 
-// A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed (SOC2
-// CC7.2, Issue.
+// A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed
+// (BR-AUDIT-005, SOC2 CC7.2, Issue.
 // Ref: #/components/schemas/ApifrontendA2ATaskFailedPayload
 type ApifrontendA2ATaskFailedPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -4726,7 +4737,8 @@ type ApifrontendA2ATaskFailedPayload struct {
 	// A2A task identifier.
 	TaskID string `json:"task_id"`
 	// Error message or classification.
-	Error string `json:"error"`
+	Error        string       `json:"error"`
+	ErrorDetails ErrorDetails `json:"error_details"`
 	// Associated RemediationRequest CRD name (Issue.
 	RrName OptString `json:"rr_name"`
 	// Associated RemediationRequest K8s namespace (Issue.
@@ -4751,6 +4763,11 @@ func (s *ApifrontendA2ATaskFailedPayload) GetTaskID() string {
 // GetError returns the value of Error.
 func (s *ApifrontendA2ATaskFailedPayload) GetError() string {
 	return s.Error
+}
+
+// GetErrorDetails returns the value of ErrorDetails.
+func (s *ApifrontendA2ATaskFailedPayload) GetErrorDetails() ErrorDetails {
+	return s.ErrorDetails
 }
 
 // GetRrName returns the value of RrName.
@@ -4781,6 +4798,11 @@ func (s *ApifrontendA2ATaskFailedPayload) SetTaskID(val string) {
 // SetError sets the value of Error.
 func (s *ApifrontendA2ATaskFailedPayload) SetError(val string) {
 	s.Error = val
+}
+
+// SetErrorDetails sets the value of ErrorDetails.
+func (s *ApifrontendA2ATaskFailedPayload) SetErrorDetails(val ErrorDetails) {
+	s.ErrorDetails = val
 }
 
 // SetRrName sets the value of RrName.
@@ -7484,13 +7506,14 @@ func (s *ApifrontendSeverityTriageCompletedPayloadEventType) UnmarshalText(data 
 }
 
 // Severity triage failed event payload (apifrontend.severity_triage.failed) — multi-tier severity
-// triage failed (SOC2 CC7.2, Issue.
+// triage failed (BR-AUDIT-005, SOC2 CC7.2, Issue.
 // Ref: #/components/schemas/ApifrontendSeverityTriageFailedPayload
 type ApifrontendSeverityTriageFailedPayload struct {
 	// Event type for discriminator (matches parent event_type).
 	EventType ApifrontendSeverityTriageFailedPayloadEventType `json:"event_type"`
 	// Error that caused triage failure.
-	Error string `json:"error"`
+	Error        string       `json:"error"`
+	ErrorDetails ErrorDetails `json:"error_details"`
 	// Tier where failure occurred.
 	FailedTier OptString `json:"failed_tier"`
 }
@@ -7503,6 +7526,11 @@ func (s *ApifrontendSeverityTriageFailedPayload) GetEventType() ApifrontendSever
 // GetError returns the value of Error.
 func (s *ApifrontendSeverityTriageFailedPayload) GetError() string {
 	return s.Error
+}
+
+// GetErrorDetails returns the value of ErrorDetails.
+func (s *ApifrontendSeverityTriageFailedPayload) GetErrorDetails() ErrorDetails {
+	return s.ErrorDetails
 }
 
 // GetFailedTier returns the value of FailedTier.
@@ -7518,6 +7546,11 @@ func (s *ApifrontendSeverityTriageFailedPayload) SetEventType(val ApifrontendSev
 // SetError sets the value of Error.
 func (s *ApifrontendSeverityTriageFailedPayload) SetError(val string) {
 	s.Error = val
+}
+
+// SetErrorDetails sets the value of ErrorDetails.
+func (s *ApifrontendSeverityTriageFailedPayload) SetErrorDetails(val ErrorDetails) {
+	s.ErrorDetails = val
 }
 
 // SetFailedTier sets the value of FailedTier.
@@ -20205,6 +20238,8 @@ const (
 	ErrorDetailsComponentRemediationorchestrator ErrorDetailsComponent = "remediationorchestrator"
 	ErrorDetailsComponentSignalprocessing        ErrorDetailsComponent = "signalprocessing"
 	ErrorDetailsComponentAuthwebhook             ErrorDetailsComponent = "authwebhook"
+	ErrorDetailsComponentKubernautagent          ErrorDetailsComponent = "kubernautagent"
+	ErrorDetailsComponentApifrontend             ErrorDetailsComponent = "apifrontend"
 )
 
 // AllValues returns all ErrorDetailsComponent values.
@@ -20216,6 +20251,8 @@ func (ErrorDetailsComponent) AllValues() []ErrorDetailsComponent {
 		ErrorDetailsComponentRemediationorchestrator,
 		ErrorDetailsComponentSignalprocessing,
 		ErrorDetailsComponentAuthwebhook,
+		ErrorDetailsComponentKubernautagent,
+		ErrorDetailsComponentApifrontend,
 	}
 }
 
@@ -20233,6 +20270,10 @@ func (s ErrorDetailsComponent) MarshalText() ([]byte, error) {
 	case ErrorDetailsComponentSignalprocessing:
 		return []byte(s), nil
 	case ErrorDetailsComponentAuthwebhook:
+		return []byte(s), nil
+	case ErrorDetailsComponentKubernautagent:
+		return []byte(s), nil
+	case ErrorDetailsComponentApifrontend:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -20259,6 +20300,12 @@ func (s *ErrorDetailsComponent) UnmarshalText(data []byte) error {
 		return nil
 	case ErrorDetailsComponentAuthwebhook:
 		*s = ErrorDetailsComponentAuthwebhook
+		return nil
+	case ErrorDetailsComponentKubernautagent:
+		*s = ErrorDetailsComponentKubernautagent
+		return nil
+	case ErrorDetailsComponentApifrontend:
+		*s = ErrorDetailsComponentApifrontend
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
