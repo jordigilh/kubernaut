@@ -3,8 +3,8 @@
 **Date**: July 14, 2026
 **Status**: Approved
 **Deciders**: Architecture Team, KubernautAgent Team, Workflow Execution Team
-**Version**: 1.1
-**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd Single Source of Truth, Change 9), DD-WE-006 (Schema Declared Dependencies), Issue #241, Issue #243, Issue #529, Issue #1661, Issue #1711
+**Version**: 1.2
+**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd Single Source of Truth, Change 9), DD-WE-006 (Schema Declared Dependencies), Issue #241, Issue #243, Issue #529, Issue #1661, Issue #1711, Issue #2442
 **Supersedes**: DD-HAPI-002 (Workflow Response Validation Architecture) — in full; that document has been retired
 
 ---
@@ -91,7 +91,9 @@ against the same source-of-truth CRD KA already validated against would still no
 
 ### Step Details (Phase 3, unchanged from DD-HAPI-002 v1.3)
 
-1. **Workflow Existence**: `workflow_id` must exist in the DS catalog (hallucination detection)
+1. **Workflow Existence**: `workflow_id` must exist in the DS catalog (hallucination detection) and must have been
+   returned by `list_workflows` during the current workflow-selection context. The full catalog fetch supplies
+   authoritative metadata, but it does not expand the set of workflows the LLM may select (Issue #2442).
 2. **Container Image / Execution Bundle Consistency**: LLM-provided value (if any) must match the catalog
 3. **Parameter Schema Validation**: required/type/length/range/enum checks against the workflow's declared schema
 4. **Step 3b -- Undeclared Parameter Stripping** (Issue #241): any parameter key not declared in the workflow's
@@ -129,6 +131,15 @@ is not new validation logic; it is exposing data the validator already has, so t
 `AIAnalysis.Status.SelectedWorkflow` can persist the full execution snapshot KA already verified, for
 `RemediationOrchestrator`/`WorkflowExecution` to consume without a second fetch (see DD-WORKFLOW-018 Change 8 for
 the CRD-embedding design).
+
+### Workflow Discovery Membership (Issue #2442)
+
+During Phase 3, KA creates a per-selection `DiscoveredWorkflowState` carried through `context.Context`. Every
+successful `list_workflows` response adds its returned IDs to that state, including IDs from later pagination pages or
+self-correction retries. The validator holds the live state pointer and therefore accepts only IDs present in both the
+full catalog and the current discovery state. `get_workflow` is a read-only parameter-schema lookup and never grants
+selection membership. A selection that remains outside the discovery state is rejected and follows the existing
+self-correction/human-review path.
 
 ### What's Retired
 
@@ -212,5 +223,6 @@ the CRD-embedding design).
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.2 | 2026-09-20 | **SECURITY HARDENING (#2442)**: Require selected workflow IDs to be returned by `list_workflows` in the current workflow-selection context. Full-catalog metadata remains authoritative but no longer acts as the selection allowlist. |
 | 1.1 | 2026-07-23 | **CLARIFICATION**: Added explicit scope note that Step 1 (Workflow Existence) is unconditional, including when `needs_human_review` was already set true by an earlier signal (e.g. `investigation_outcome=inconclusive`). Closes a documentation gap discovered during Issue #1661 triage; the corresponding KA implementation gap (an unresolved `workflow_id` could survive un-cleared through that short-circuit) is tracked in Issue #1711. No change to the Decision or validation sequence. |
 | 1.0 | 2026-07-14 | Initial version. Supersedes DD-HAPI-002 in full (clean cut, Go-era terminology). Records the collapse from two parameter-validation layers to one (Issue #1661 / DD-WORKFLOW-018 Change 8-9) as a deliberate, documented trade-off. |

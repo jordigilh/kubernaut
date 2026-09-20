@@ -167,7 +167,10 @@ var _ = Describe("#1936: workflow-discovery retries must include real tool-call 
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 				Pipeline: investigator.Pipeline{
-					CatalogFetcher: &stubCatalogFetcher{validator: validator},
+					CatalogFetcher: &stubCatalogFetcher{
+						validator:             validator,
+						discoveredWorkflowIDs: []string{"valid-wf"},
+					},
 				},
 			})
 

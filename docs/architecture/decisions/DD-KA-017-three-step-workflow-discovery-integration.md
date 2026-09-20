@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 2.0 (Go rewrite)
+**Version**: 2.1 (Go rewrite)
 **Confidence**: 90%
 **Applies To**: Kubernaut Agent (KA), DataStorage Service (DS)
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0–1.5 | 2026-02-05 to 2026-03-24 | Architecture Team | Historical evolution under the Python-era implementation: introduced the three-step tools, moved label detection from signal source to RCA target (ADR-056), surfaced labels as read-only `cluster_context`, added one-shot reassessment via `detected_infrastructure`, and split resource-context tools by scope (Issue #524). Superseded by v2.0 below; see git history for the original entries. |
 | 2.0 | 2026-08-01 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). Replaced the Python "shared mutable `session_state` dict" mechanism with Go's actual mechanism: `SignalContext.DetectedLabelsJSON`, propagated via `context.Context`. Removed the dual incident/recovery-flow framing — Go KA has a single unified investigation flow, so the "recovery flow validation parity" rationale is historical only. Renamed `BR-HAPI-017-*` → `BR-KA-017-*`. Corrected the label count from 7 to the current 12 infrastructure characteristics (`internal/kubernautagent/enrichment/label_detector.go`). **Also corrected a factually wrong first draft**: the tools do not call DataStorage over REST — per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (Issue #1677, implemented), discovery/scoring ownership moved from DS into KA's own `workflowcatalog.Catalog` before this rewrite was even written; the DS REST surface this DD originally described is retired dead code. |
+| 2.1 | 2026-09-20 | — | Issue #2442: selected workflow IDs must be returned by `list_workflows` in the current selection context; pagination and self-correction accumulate IDs, while `get_workflow` remains read-only for membership. |
 
 ---
 
@@ -68,7 +69,13 @@ This replaces the Python-era design's per-investigation shared mutable `session_
 
 ### 2. Post-Selection Validation
 
-Selected workflows are validated against a parameter schema before execution (`internal/kubernautagent/parser/validator.go`), with undeclared parameters stripped except for `kaManagedParams` (see [DD-KA-006](DD-KA-006-remediation-target-in-rca.md)). If the investigation cannot converge on a valid selection within its turn budget, KA sets `needs_human_review=true` with `human_review_reason=investigation_inconclusive` (`internal/kubernautagent/investigator/investigator_gates.go`) rather than executing an unvalidated workflow.
+Selected workflows are first required to be present in the current `list_workflows` discovery results, then validated against the
+full catalog metadata and parameter schema before execution (`internal/kubernautagent/parser/validator.go`). Discovery IDs
+are accumulated across pagination and self-correction retries in a per-selection context state; `get_workflow` only retrieves
+the selected schema and does not grant membership. Undeclared parameters are stripped except for `kaManagedParams` (see
+[DD-KA-006](DD-KA-006-remediation-target-in-rca.md)). If the investigation cannot converge on a valid selection within
+its turn budget, KA sets `needs_human_review=true` with `human_review_reason=investigation_inconclusive`
+(`internal/kubernautagent/investigator/investigator_gates.go`) rather than executing an unvalidated workflow.
 
 ### 3. Remediation History Context (Causal Chains, Regression Detection)
 
@@ -121,6 +128,7 @@ The discovery/scoring logic and its informer-backed cache are owned by KA (`inte
 - **Priority**: P0
 - **Description**: MUST pass full signal context filters to `get_workflow` during post-selection validation, activating the DS security gate. A 404 response indicates the workflow does not match the signal context.
 - **Acceptance Criteria**:
+  - Selected `workflow_id` must be present in the current `list_workflows` discovery results; a catalog-valid but undiscovered ID is rejected
   - Validation calls `get_workflow` with all signal context filters
   - 404 from DS treated as a validation failure and drives self-correction
 
@@ -192,8 +200,8 @@ The discovery/scoring logic and its informer-backed cache are owned by KA (`inte
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: August 1, 2026
+**Document Version**: 2.1
+**Last Updated**: September 20, 2026
 **Status**: ✅ APPROVED
 **Authority**: KA workflow discovery integration (implements DD-WORKFLOW-016 protocol + ADR-056 label relocation)
 **Confidence**: 90%

@@ -49,7 +49,19 @@ type staticCatalogFetcher struct {
 	validator *parser.Validator
 }
 
-func (f *staticCatalogFetcher) FetchValidator(_ context.Context) (*parser.Validator, error) {
+// These integration fixtures exercise validation, enrichment, and audit
+// behavior rather than the discovery tool loop. Seed the context state with
+// the fixture catalog IDs so they continue to model a completed discovery
+// phase under the Issue #2442 contract.
+var staticFixtureWorkflowIDs = []string{
+	"drain-node", "increase-memory-limit", "oom-increase-memory", "restart", "restart-operator",
+	"restart-pod", "restart-sub", "scale-deployment", "scale-up",
+}
+
+func (f *staticCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
+		state.Add(staticFixtureWorkflowIDs...)
+	}
 	return f.validator, nil
 }
 

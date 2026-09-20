@@ -1,7 +1,7 @@
 # Test Plan: Three-Step Workflow Discovery Integration (DD-HAPI-017)
 
 **Feature**: Replace `search_workflow_catalog` with three-step discovery tools for incident and recovery flows
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-02-05
 **Author**: AI Assistant + Jordi Gil
 **Status**: Draft
@@ -98,6 +98,8 @@
 | BR-HAPI-017-003 | Validator treats 404 from DS as validation failure | P0 | Unit | UT-HAPI-017-003-002 | ⏸️ |
 | BR-HAPI-017-003 | Validator error message includes context mismatch detail | P1 | Unit | UT-HAPI-017-003-003 | ⏸️ |
 | BR-HAPI-017-003 | Validator happy path -- workflow matches context | P0 | Unit | UT-HAPI-017-003-004 | ⏸️ |
+| BR-KA-017-003 / BR-KA-191 | Catalog-valid but undiscovered workflow is rejected | P0 | Unit | UT-KA-2442-003 | ✅ |
+| BR-KA-017-003 / BR-KA-191 | Validator accepts workflow discovered on a later self-correction retry | P0 | Unit | UT-KA-2442-004 | ✅ |
 | BR-HAPI-017-003 | Security gate with real DS -- mismatched context returns 404 | P0 | Integration | IT-HAPI-017-003-001 | ⏸️ |
 | BR-HAPI-017-003 | Security gate with real DS -- matching context returns workflow | P0 | Integration | IT-HAPI-017-003-002 | ⏸️ |
 | BR-HAPI-017-004 | Recovery validation loop executes up to MAX_VALIDATION_ATTEMPTS | P0 | Unit | UT-HAPI-017-004-001 | ⏸️ |
@@ -107,6 +109,7 @@
 | BR-HAPI-017-004 | Recovery validation loop with real DS -- retry on invalid params | P0 | Integration | IT-HAPI-017-004-001 | ⏸️ |
 | BR-HAPI-017-004 | Recovery validation loop with real DS -- succeeds after correction | P0 | Integration | IT-HAPI-017-004-002 | ⏸️ |
 | BR-HAPI-017-004 | Recovery flow E2E -- validation loop with Mock LLM | P0 | E2E | E2E-HAPI-017-004-001 | ⏸️ |
+| BR-KA-017-002 / BR-KA-017-003 | `list_workflows` records every returned ID across pagination | P0 | Integration | IT-KA-2442-001 | ✅ |
 | BR-HAPI-017-005 | ListAvailableActionsTool passes remediationId as query param | P0 | Unit | UT-HAPI-017-005-001 | ⏸️ |
 | BR-HAPI-017-005 | ListWorkflowsTool passes remediationId as query param | P0 | Unit | UT-HAPI-017-005-002 | ⏸️ |
 | BR-HAPI-017-005 | GetWorkflowTool passes remediationId as query param | P0 | Unit | UT-HAPI-017-005-003 | ⏸️ |
@@ -143,6 +146,19 @@
 | BR-AUDIT-023 | workflow.catalog.workflow_retrieved audit event emitted | P0 | E2E | E2E-DS-017-AUDIT-003 | ⏸️ |
 | BR-AUDIT-023 | workflow.catalog.selection_validated audit event emitted | P0 | E2E | E2E-DS-017-AUDIT-004 | ⏸️ |
 | BR-HAPI-017-006 | POST /api/v1/workflows/search endpoint removed | P0 | E2E | E2E-DS-017-006-001 | ⏸️ |
+
+---
+
+### Issue #2442 Security Control Matrix
+
+| Control objective | Business behavior | Proving tests |
+|---|---|---|
+| FedRAMP AC-6 / OWASP ASVS V8 authorization boundary | A catalog-valid workflow is not selectable unless `list_workflows` returned it in the current selection context | UT-KA-2442-003, UT-KA-2442-006 |
+| FedRAMP SI-10 / OWASP ASVS V2 validation and business logic | Workflow IDs accumulate safely across concurrent tool calls, pagination, and rediscovery | UT-KA-2442-001, UT-KA-2442-002, UT-KA-2442-004, IT-KA-2442-001 |
+| OWASP ASVS V16 security logging | Existing validation-attempt and workflow-selection audit paths remain the terminal observability path after rejection | Existing `IT-KA-433-AP-004`, `E2E-HAPI-017-004-001` |
+
+The selection membership state is intentionally scoped to the workflow-selection context and is not persisted as global
+process state. `get_workflow` is read-only for this state, so parameter lookup cannot widen the authorization boundary.
 
 ---
 

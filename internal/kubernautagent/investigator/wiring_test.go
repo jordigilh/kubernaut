@@ -32,13 +32,17 @@ import (
 )
 
 type stubCatalogFetcher struct {
-	validator *parser.Validator
-	fetchErr  error
+	validator             *parser.Validator
+	discoveredWorkflowIDs []string
+	fetchErr              error
 }
 
-func (s *stubCatalogFetcher) FetchValidator(_ context.Context) (*parser.Validator, error) {
+func (s *stubCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
 	if s.fetchErr != nil {
 		return nil, s.fetchErr
+	}
+	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
+		state.Add(s.discoveredWorkflowIDs...)
 	}
 	return s.validator, nil
 }
