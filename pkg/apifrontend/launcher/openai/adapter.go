@@ -11,6 +11,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"net/http"
 	"strings"
@@ -122,9 +123,22 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 		compatReq := m.buildRequest(req)
 
 		if stream {
-			_ = m.client.StreamChat(ctx, compatReq, func(ev openaicompat.StreamEvent) bool {
-				return yieldStreamEvent(ev, yield)
+			var mappingErr error
+			streamErr := m.client.StreamChat(ctx, compatReq, func(ev openaicompat.StreamEvent) bool {
+				continueStream, err := yieldStreamEvent(ev, yield)
+				if err != nil {
+					mappingErr = err
+					return false
+				}
+				return continueStream
 			})
+			if mappingErr != nil {
+				yield(nil, mappingErr)
+				return
+			}
+			if streamErr != nil {
+				yield(nil, streamErr)
+			}
 			return
 		}
 
@@ -133,7 +147,12 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			yield(nil, err)
 			return
 		}
-		yield(convertResponse(resp), nil)
+		converted, err := convertResponse(resp)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		yield(converted, nil)
 	}
 }
 
@@ -233,10 +252,8 @@ func applyGenerationConfig(req *openaicompat.Request, cfg *genai.GenerateContent
 				Name:        fn.Name,
 				Description: fn.Description,
 			}
-			if fn.Parameters != nil {
-				if raw, err := json.Marshal(convertSchema(fn.Parameters)); err == nil {
-					td.Parameters = raw
-				}
+			if raw, err := marshalFunctionParameters(fn); err == nil {
+				td.Parameters = raw
 			}
 			req.Tools = append(req.Tools, td)
 		}
@@ -248,6 +265,17 @@ func applyGenerationConfig(req *openaicompat.Request, cfg *genai.GenerateContent
 			req.ResponseSchema = raw
 		}
 	}
+}
+
+func marshalFunctionParameters(fn *genai.FunctionDeclaration) ([]byte, error) {
+	if fn.Parameters != nil {
+		return json.Marshal(convertSchema(fn.Parameters))
+	}
+	if fn.ParametersJsonSchema != nil {
+		// ADK v2 functiontool declarations use the raw JSON Schema field.
+		return json.Marshal(fn.ParametersJsonSchema)
+	}
+	return nil, nil
 }
 
 func applyToolChoice(req *openaicompat.Request, config *genai.ToolConfig) {
@@ -291,7 +319,7 @@ func convertSchema(s *genai.Schema) map[string]any {
 }
 
 // convertResponse translates a shared Response into the ADK LLMResponse.
-func convertResponse(resp *openaicompat.Response) *model.LLMResponse {
+func convertResponse(resp *openaicompat.Response) (*model.LLMResponse, error) {
 	llmResp := &model.LLMResponse{
 		Content: &genai.Content{Role: "model"},
 	}
@@ -300,7 +328,11 @@ func convertResponse(resp *openaicompat.Response) *model.LLMResponse {
 		llmResp.Content.Parts = append(llmResp.Content.Parts, &genai.Part{Text: resp.Message.Content})
 	}
 	for _, tc := range resp.Message.ToolCalls {
-		llmResp.Content.Parts = append(llmResp.Content.Parts, parseFunctionCall(tc))
+		part, err := parseFunctionCall(tc)
+		if err != nil {
+			return nil, err
+		}
+		llmResp.Content.Parts = append(llmResp.Content.Parts, part)
 	}
 	llmResp.FinishReason = mapFinishReason(resp.FinishReason)
 
@@ -311,39 +343,47 @@ func convertResponse(resp *openaicompat.Response) *model.LLMResponse {
 			TotalTokenCount:      int32(resp.Usage.TotalTokens),
 		}
 	}
-	return llmResp
+	return llmResp, nil
 }
 
 // yieldStreamEvent maps one shared StreamEvent to the ADK per-chunk callback
 // contract: a partial LLMResponse for each text delta, plus the accumulated
 // final LLMResponse (tool calls, finish reason) on Done. Returns false if
 // the ADK-side yield requested the stream to stop.
-func yieldStreamEvent(ev openaicompat.StreamEvent, yield func(*model.LLMResponse, error) bool) bool {
+func yieldStreamEvent(ev openaicompat.StreamEvent, yield func(*model.LLMResponse, error) bool) (bool, error) {
 	if ev.Delta != "" {
 		if !yield(&model.LLMResponse{
 			Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: ev.Delta}}},
 		}, nil) {
-			return false
+			return false, nil
 		}
 	}
 	if ev.Done && ev.Final != nil {
-		resp := convertResponse(ev.Final)
+		resp, err := convertResponse(ev.Final)
+		if err != nil {
+			return false, err
+		}
 		resp.TurnComplete = true
-		return yield(resp, nil)
+		return yield(resp, nil), nil
 	}
-	return true
+	return true, nil
 }
 
-func parseFunctionCall(tc openaicompat.ToolCall) *genai.Part {
+func parseFunctionCall(tc openaicompat.ToolCall) (*genai.Part, error) {
 	var args map[string]any
-	_ = json.Unmarshal([]byte(tc.Arguments), &args)
+	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+		return nil, fmt.Errorf("decode tool call arguments: %w", err)
+	}
+	if args == nil {
+		return nil, fmt.Errorf("decode tool call arguments: expected JSON object")
+	}
 	return &genai.Part{
 		FunctionCall: &genai.FunctionCall{
 			ID:   tc.ID,
 			Name: tc.Name,
 			Args: args,
 		},
-	}
+	}, nil
 }
 
 func mapFinishReason(reason string) genai.FinishReason {

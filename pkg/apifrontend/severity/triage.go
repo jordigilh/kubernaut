@@ -8,6 +8,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 const fleetClusterLabelKey = "cluster"
@@ -138,11 +140,14 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		if t.auditor != nil {
 			t.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventSeverityTriageFailed,
+				ErrorDetails: sharedaudit.NewErrorDetails(
+					"apifrontend", "ERR_UPSTREAM_FAILURE", security.RedactError(err), true,
+				),
 				Detail: map[string]string{
 					"namespace": input.Namespace,
 					"kind":      input.Kind,
 					"name":      input.Name,
-					"error":     err.Error(),
+					"error":     security.RedactError(err),
 				},
 			})
 		}

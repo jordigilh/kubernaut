@@ -1,4 +1,4 @@
-package launcher_test
+package launcher
 
 import (
 	"testing"

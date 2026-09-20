@@ -19,6 +19,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // A2AConfig holds the configuration for the A2A JSON-RPC handler.
@@ -138,27 +139,37 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 		}
 
 		if auditor != nil {
+			ids := a2aAuditIdentityFromRequest(reqCtx)
 			detail := map[string]string{"method": resolveA2AMethod(ctx)}
-			if reqCtx != nil {
-				detail["task_id"] = string(reqCtx.TaskID)
+			if ids.TaskID != "" {
+				detail["task_id"] = ids.TaskID
+			}
+			if ids.SessionID != "" {
+				detail["session_id"] = ids.SessionID
 			}
 			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventA2ATaskStarted,
-				UserID: username,
-				Detail: detail,
+				Type:          audit.EventA2ATaskStarted,
+				CorrelationID: ids.CorrelationID,
+				RequestID:     ids.RequestID,
+				UserID:        username,
+				Detail:        detail,
 			})
 
 			triageDetail := map[string]string{
 				"persona": resolvePersona(user),
 			}
-			if reqCtx != nil {
-				triageDetail["task_id"] = string(reqCtx.TaskID)
-				triageDetail["session_id"] = reqCtx.ContextID
+			if ids.TaskID != "" {
+				triageDetail["task_id"] = ids.TaskID
+			}
+			if ids.SessionID != "" {
+				triageDetail["session_id"] = ids.SessionID
 			}
 			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventTriageStarted,
-				UserID: username,
-				Detail: triageDetail,
+				Type:          audit.EventTriageStarted,
+				CorrelationID: ids.CorrelationID,
+				RequestID:     ids.RequestID,
+				UserID:        username,
+				Detail:        triageDetail,
 			})
 		}
 
@@ -198,6 +209,7 @@ func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.Af
 		if finalEvent != nil {
 			taskID = string(finalEvent.TaskID)
 		}
+		ids := a2aAuditIdentityFromContext(ctx, taskID)
 
 		if err != nil {
 			log.Error(nil, "a2a task execution failed",
@@ -207,13 +219,19 @@ func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.Af
 			)
 			if auditor != nil {
 				detail := map[string]string{
-					"task_id": taskID,
-					"error":   security.RedactError(err),
+					"task_id":    ids.TaskID,
+					"session_id": ids.SessionID,
+					"error":      security.RedactError(err),
 				}
 				enrichRRDetail(ctx, detail)
 				auditor.Emit(ctx, &audit.Event{
-					Type:   audit.EventA2ATaskFailed,
-					UserID: username,
+					Type:          audit.EventA2ATaskFailed,
+					CorrelationID: ids.CorrelationID,
+					RequestID:     ids.RequestID,
+					UserID:        username,
+					ErrorDetails: sharedaudit.NewErrorDetails(
+						"apifrontend", "ERR_UPSTREAM_FAILURE", security.RedactError(err), true,
+					),
 					Detail: detail,
 				})
 			}
@@ -222,12 +240,17 @@ func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.Af
 			// written to the client queue (ARCH-3 verification).
 			return nil
 		} else if auditor != nil {
-			detail := map[string]string{"task_id": taskID}
+			detail := map[string]string{
+				"task_id":    ids.TaskID,
+				"session_id": ids.SessionID,
+			}
 			enrichRRDetail(ctx, detail)
 			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventA2ATaskCompleted,
-				UserID: username,
-				Detail: detail,
+				Type:          audit.EventA2ATaskCompleted,
+				CorrelationID: ids.CorrelationID,
+				RequestID:     ids.RequestID,
+				UserID:        username,
+				Detail:        detail,
 			})
 
 			triageOutcome := "no_issue_found"
@@ -235,16 +258,61 @@ func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.Af
 				triageOutcome = "rr_created"
 			}
 			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventTriageCompleted,
-				UserID: username,
+				Type:          audit.EventTriageCompleted,
+				CorrelationID: ids.CorrelationID,
+				RequestID:     ids.RequestID,
+				UserID:        username,
 				Detail: map[string]string{
-					"task_id":        taskID,
+					"task_id":        ids.TaskID,
+					"session_id":     ids.SessionID,
 					"triage_outcome": triageOutcome,
 				},
 			})
 		}
 		return nil
 	}
+}
+
+type a2aAuditIdentity struct {
+	CorrelationID string
+	RequestID     string
+	SessionID     string
+	TaskID        string
+}
+
+func a2aAuditIdentityFromRequest(reqCtx *a2asrv.RequestContext) a2aAuditIdentity {
+	if reqCtx == nil {
+		return a2aAuditIdentity{}
+	}
+	identity := a2aAuditIdentity{
+		CorrelationID: reqCtx.ContextID,
+		RequestID:     string(reqCtx.TaskID),
+		SessionID:     reqCtx.ContextID,
+		TaskID:        string(reqCtx.TaskID),
+	}
+	if identity.CorrelationID == "" {
+		identity.CorrelationID = identity.RequestID
+	}
+	return identity
+}
+
+func a2aAuditIdentityFromContext(ctx context.Context, taskID string) a2aAuditIdentity {
+	identity := a2aAuditIdentity{
+		CorrelationID: taskID,
+		RequestID:     taskID,
+		TaskID:        taskID,
+	}
+	if sc := session.CreateContextFromContext(ctx); sc != nil {
+		if sc.TaskID != "" {
+			identity.RequestID = sc.TaskID
+			identity.TaskID = sc.TaskID
+		}
+		identity.SessionID = sc.SessionID
+		if identity.SessionID != "" {
+			identity.CorrelationID = identity.SessionID
+		}
+	}
+	return identity
 }
 
 // enrichRRDetail adds rr_name and rr_namespace to the detail map if the

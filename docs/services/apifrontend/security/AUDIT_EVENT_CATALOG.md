@@ -13,7 +13,8 @@ type Event struct {
     RequestID     string            `json:"request_id,omitempty"`
     UserID        string            `json:"user_id,omitempty"`
     SourceIP      string            `json:"source_ip,omitempty"`
-    Detail        map[string]string `json:"detail,omitempty"`
+    Detail        map[string]string  `json:"detail,omitempty"`
+    ErrorDetails  *audit.ErrorDetails `json:"error_details,omitempty"`
 }
 ```
 
@@ -64,9 +65,9 @@ type Event struct {
 
 | Event Type | Constant | NIST Control | Trigger | Detail Fields |
 |-----------|----------|-------------|---------|---------------|
-| `a2a.task_started` | `EventA2ATaskStarted` | AU-2 | A2A `message/send` begins execution | `task_id`, `user`, `session_id` |
-| `a2a.task_completed` | `EventA2ATaskCompleted` | AU-2 | A2A task finishes successfully | `task_id`, `duration_ms` |
-| `a2a.task_failed` | `EventA2ATaskFailed` | AU-2 | A2A task fails with error | `task_id`, `error` |
+| `a2a.task_started` | `EventA2ATaskStarted` | AU-2 | A2A `message/send` begins execution | `task_id`, `user`, `session_id`; `correlation_id` is the A2A context/session ID and `request_id` is the task ID |
+| `a2a.task_completed` | `EventA2ATaskCompleted` | AU-2 | A2A task finishes successfully | `task_id`, `duration_ms`; same `correlation_id`/`request_id` identity as the started event |
+| `a2a.task_failed` | `EventA2ATaskFailed` | AU-2 | A2A task fails with error | `task_id`, `error`, `error_details`; same `correlation_id`/`request_id` identity as the started event |
 | `a2a.stream_opened` | `EventA2AStreamOpened` | AU-2 | SSE stream opened for `message/stream` | *(defined; not yet emitted — logged only, see `streaming_executor.go`)* |
 | `a2a.stream_closed` | `EventA2AStreamClosed` | AU-2 | SSE stream closed | *(defined; not yet emitted — logged only, see `streaming_executor.go`)* |
 
@@ -81,7 +82,7 @@ type Event struct {
 | `triage.started` | `EventTriageStarted` | AU-2, AU-12 | Triage pipeline begins for a session | `session_id`, `persona` |
 | `triage.completed` | `EventTriageCompleted` | AU-2, AU-12 | Triage pipeline completes | `session_id`, `triage_outcome`, `triage_duration_ms` |
 | `severity_triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Severity triage pipeline determines severity | `tier`, `severity`, `source`, `duration_ms`, `alert_name` (if Tier 1), `rule_name` (if Tier 1.5/2/2.5) |
-| `severity_triage.failed` | `EventSeverityTriageFailed` | AU-2 | All severity triage tiers fail or LLM error | `error` (redacted), `tier` (last attempted), `namespace`, `kind`, `name` |
+| `severity_triage.failed` | `EventSeverityTriageFailed` | AU-2 | All severity triage tiers fail or LLM error | `error` (redacted), `error_details` (`code`, `component`, `retry_possible`), `tier` (last attempted), `namespace`, `kind`, `name` |
 | `rr.created` | `EventRRCreated` | AU-2, CC8.1 | RemediationRequest CRD created -- sole reconstruction genesis event for AF-created RRs (Issue #2043: AF bypasses Gateway, never emits `gateway.signal.received`) | `session_id`, `rr_name`, `rr_namespace`, `target_kind`, `target_name`, `fingerprint`, `signal_name` |
 | `rr.deduplicated` | `EventRRDeduplicated` | AU-2 | Duplicate RemediationRequest detected, creation skipped | `session_id`, `rr_namespace`, `target_kind`, `target_name`, `fingerprint`, `existing_rr_name` |
 
@@ -149,7 +150,7 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 | Implementation | Package | Behavior |
 |---------------|---------|----------|
 | `LogEmitter` | `pkg/apifrontend/audit` | Writes structured log entries via `logr` (stdout/stderr) |
-| `StoreAdapter` | `pkg/apifrontend/audit` | Normalizes events to `apifrontend.<event_type>` format, classifies severity, and forwards to Data Store API with correlation-ID enrichment |
+| `StoreAdapter` | `pkg/apifrontend/audit` | Normalizes events to `apifrontend.<event_type>` format, classifies severity, converts typed `error_details`, and forwards to Data Store API with correlation-ID enrichment |
 
 **Buffering contract (ADR-019):** The shared `pkg/audit.BufferedAuditStore` (default capacity 10,000) buffers events in memory. If the buffer is full, newest events are dropped and the platform-standard `audit_events_dropped_total{service="apifrontend"}` metric increments. On graceful shutdown, `Close()` flushes remaining events with a context deadline.
 
@@ -164,4 +165,4 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 
 ---
 
-*Last updated: 2026-05-19 | Covers v1.5 milestone (issues #52, #56, #92, #1156, #1259, #1268)*
+*Last updated: 2026-09-20 | Covers v1.5 milestone and Issue #2444 audit-gap closure*

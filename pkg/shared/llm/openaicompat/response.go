@@ -198,6 +198,7 @@ func streamResponse(body io.Reader, yield func(StreamEvent) bool) error {
 	var reasoning strings.Builder
 	terminal := &streamTerminal{yield: yield}
 	scanner := bufio.NewScanner(body)
+	sawDone := false
 
 	for scanner.Scan() {
 		data, ok := sseDataLine(scanner.Text())
@@ -205,12 +206,13 @@ func streamResponse(body io.Reader, yield func(StreamEvent) bool) error {
 			continue
 		}
 		if data == "[DONE]" {
+			sawDone = true
 			break
 		}
 
 		var chunk chatCompletionChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+			return fmt.Errorf("openaicompat: decode SSE chunk: %w", err)
 		}
 		if !terminal.feed(&chunk, accumulators, &reasoning) {
 			return nil
@@ -219,6 +221,9 @@ func streamResponse(body io.Reader, yield func(StreamEvent) bool) error {
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("openaicompat: read SSE stream: %w", err)
+	}
+	if !sawDone {
+		return fmt.Errorf("openaicompat: stream ended before [DONE]")
 	}
 	if !terminal.flush() {
 		return nil

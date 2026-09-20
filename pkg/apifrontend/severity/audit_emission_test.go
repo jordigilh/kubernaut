@@ -109,4 +109,30 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 		Expect(events).To(HaveLen(1), "expected exactly one severity_triage.failed event")
 		Expect(events[0].Detail).To(HaveKey("error"))
 	})
+
+	It("UT-AF-2444-006: includes typed error details on severity triage failure", func() {
+		failingProm := &mockPromClient{
+			alertsErr: context.DeadlineExceeded,
+			rulesErr:  context.DeadlineExceeded,
+		}
+		failingLLM := &mockLLM{
+			ruleErr: context.DeadlineExceeded,
+		}
+
+		triager := severity.NewTriager(failingProm, failingLLM, cfg, logr.Discard(), severity.WithAuditor(spy))
+
+		_, err := triager.Triage(context.Background(), severity.TriageInput{
+			Namespace: "prod",
+			Kind:      "Deployment",
+			Name:      "web",
+		})
+		Expect(err).To(HaveOccurred())
+
+		events := spy.eventsByType(audit.EventSeverityTriageFailed)
+		Expect(events).To(HaveLen(1))
+		Expect(events[0].ErrorDetails).NotTo(BeNil())
+		Expect(events[0].ErrorDetails.Code).To(Equal("ERR_UPSTREAM_FAILURE"))
+		Expect(events[0].ErrorDetails.Component).To(Equal("apifrontend"))
+		Expect(events[0].ErrorDetails.RetryPossible).To(BeTrue())
+	})
 })

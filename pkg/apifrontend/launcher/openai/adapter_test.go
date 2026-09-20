@@ -74,6 +74,16 @@ func chatCompletionWithToolCalls() map[string]any {
 	}
 }
 
+func chatCompletionWithInvalidToolCall() map[string]any {
+	response := chatCompletionWithToolCalls()
+	choices := response["choices"].([]map[string]any)
+	message := choices[0]["message"].(map[string]any)
+	toolCalls := message["tool_calls"].([]map[string]any)
+	function := toolCalls[0]["function"].(map[string]any)
+	function["arguments"] = "{invalid"
+	return response
+}
+
 func streamingChunks(text string) []map[string]any {
 	chunks := make([]map[string]any, 0, len(text)+1)
 	for _, ch := range text {
@@ -295,12 +305,15 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 								{
 									Name:        "get_weather",
 									Description: "Get current weather for a location",
-									Parameters: &genai.Schema{
-										Type: genai.TypeObject,
-										Properties: map[string]*genai.Schema{
-											"location": {Type: genai.TypeString, Description: "City name"},
+									ParametersJsonSchema: map[string]any{
+										"type": "object",
+										"properties": map[string]any{
+											"location": map[string]any{
+												"type":        "string",
+												"description": "City name",
+											},
 										},
-										Required: []string{"location"},
+										"required": []string{"location"},
 									},
 								},
 							},
@@ -325,6 +338,16 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 			fn := tool["function"].(map[string]any)
 			Expect(fn["name"]).To(Equal("get_weather"))
 			Expect(fn["description"]).To(Equal("Get current weather for a location"))
+			Expect(fn["parameters"]).To(Equal(map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"location": map[string]any{
+						"type":        "string",
+						"description": "City name",
+					},
+				},
+				"required": []any{"location"},
+			}))
 		})
 	})
 
@@ -503,6 +526,54 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 			}
 			Expect(foundFunctionCall).To(BeTrue(),
 				"accumulated tool call chunks must produce a complete FunctionCall part")
+		})
+
+		// UT-AF-2444-003 [BR-AUDIT-005]: Provider stream failures must reach the ADK iterator.
+		It("UT-AF-2444-003 propagates malformed provider stream errors", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: {not-json}\n\n"))
+			}))
+
+			m := openaimodel.NewModel("gpt-4o", server.URL, "")
+			var streamErr error
+			for resp, err := range m.GenerateContent(context.Background(), &model.LLMRequest{}, true) {
+				if err != nil {
+					streamErr = err
+					Expect(resp).To(BeNil())
+				}
+			}
+
+			Expect(streamErr).To(MatchError(ContainSubstring("decode SSE chunk")))
+		})
+	})
+
+	Describe("Failure mapping", func() {
+		var server *httptest.Server
+
+		AfterEach(func() {
+			if server != nil {
+				server.Close()
+			}
+		})
+
+		// UT-AF-2444-004 [BR-AUDIT-005]: Invalid tool arguments must fail closed.
+		It("UT-AF-2444-004 rejects malformed tool-call arguments", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(chatCompletionWithInvalidToolCall())
+			}))
+
+			m := openaimodel.NewModel("gpt-4o", server.URL, "")
+			var responseErr error
+			for resp, err := range m.GenerateContent(context.Background(), &model.LLMRequest{}, false) {
+				if err != nil {
+					responseErr = err
+					Expect(resp).To(BeNil())
+				}
+			}
+
+			Expect(responseErr).To(MatchError(ContainSubstring("tool call arguments")))
 		})
 	})
 
