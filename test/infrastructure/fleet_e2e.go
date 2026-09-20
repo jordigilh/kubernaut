@@ -42,6 +42,7 @@ import (
 const (
 	kubeMcpServerRoute       = "kube-mcp-server-route"
 	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
+	fleetRemoteClusterID     = "remote-cluster"
 )
 
 // KubeMCPServerImage is the current Go-native K8s MCP server image.
@@ -202,6 +203,10 @@ type KubeMCPServerAuthConfig struct {
 	// behavior for every existing caller -- only the FMC E2E lanes
 	// (fleetmetadatacache_e2e.go) set this field.
 	RemoteBridge *RemoteClusterBridgeConfig
+
+	// HubClusterID names the hub-local registration for demo infrastructure.
+	// Empty preserves the existing loopback identity for non-demo callers.
+	HubClusterID string
 
 	// AllRegistrationsRemote, when true (requires RemoteBridge to be
 	// non-nil), makes ALL THREE registrations (the first one renamed
@@ -509,6 +514,10 @@ type FleetCoreDemoOptions struct {
 	// This is the `hack/setup-demo-infra -mode=fleet -spoke-workers=N` entry point's
 	// parameter.
 	SpokeWorkers int
+	// HubClusterID is the MCP Gateway registration identity for the local hub
+	// kube-mcp-server. The demo defaults this to "hub" because git-revert-v2
+	// declares execution.clusterId: hub.
+	HubClusterID string
 	// LLMCredentialsFile, when non-empty, overwrites the mock
 	// llm-credentials-primary placeholder createFullPipelineHelmSecrets
 	// creates with this file's raw bytes, right after the hub cluster and
@@ -542,6 +551,11 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	if gatewayType == "" {
 		gatewayType = registry.GatewayKuadrant
 	}
+	hubClusterID := opts.HubClusterID
+	if hubClusterID == "" {
+		hubClusterID = "hub"
+	}
+
 	gatewayLabel := gatewayLabelKuadrant
 	if gatewayType == registry.GatewayEAIGW {
 		gatewayLabel = gatewayLabelEAIGW
@@ -594,6 +608,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		Namespace:         namespace,
 		KeycloakNamespace: idpNamespace,
 		GatewayType:       gatewayType,
+		HubClusterID:      hubClusterID,
 		SpokeWorkers:      opts.SpokeWorkers,
 	}, writer)
 	if err != nil {
@@ -807,6 +822,10 @@ type FleetCoreInfraOptions struct {
 	// CreateTestNamespace before invoking provisionFleetCoreInfra).
 	Namespace string
 
+	// HubClusterID enables the demo's hub-local MCP registration. Empty keeps
+	// the full-pipeline fleet suite's remote-only topology unchanged.
+	HubClusterID string
+
 	// KeycloakNamespace is Namespace (kubernautSystem) for the "fleet"/
 	// "fullpipeline" Ginkgo suites' provisioner closure -- unchanged
 	// behavior -- and idpNamespace ("idp") for the demo-only entry point
@@ -875,19 +894,20 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	gatewayLabel := gatewayLabelKuadrant
 	// DD-TEST-001-allocated NodePorts: 31975 (Kuadrant) / 31976 (EAIGW).
 	mcpGatewayNodePort := 31975
-	// provisionFleetCoreInfra always sets AllRegistrationsRemote=true below
-	// (both its callers -- the "fleet" Ginkgo suite and the demo entry point
-	// -- back every registration with a genuinely remote cluster), so
-	// EAIGW's first Backend/MCPRoute registration is always renamed
-	// "remote-cluster" (mirroring Kuadrant's MCPServerRegistration renaming
-	// -- see loopbackClusterName in deployEnvoyAIGatewayRegistrations and
-	// deployKuadrantRegistrations), and its auto-derived tool-name prefix is
-	// "remote-cluster__" accordingly.
+	// The full-pipeline fleet suite keeps every registration remote. The demo
+	// additionally registers the hub-local server under its catalog identity.
 	remoteToolPrefix := "remote_cluster_"
+	hubToolPrefix := ""
 	if gatewayType == registry.GatewayEAIGW {
 		gatewayLabel = gatewayLabelEAIGW
 		mcpGatewayNodePort = eaigwGatewayNodePort
 		remoteToolPrefix = "remote-cluster__"
+	}
+	if opts.HubClusterID != "" {
+		_, hubToolPrefix = fleetHubRegistrationIdentity(KubeMCPServerAuthConfig{
+			GatewayType:  gatewayType,
+			HubClusterID: opts.HubClusterID,
+		})
 	}
 
 	// Demo callers share the persistent Keycloak and certificate lifecycle
@@ -918,6 +938,11 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, keycloakNamespace, writer); oidcErr != nil {
 		return nil, "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
+	}
+	if keycloakAliasManifest := buildKeycloakServiceAliasManifest(namespace, keycloakNamespace); keycloakAliasManifest != "" {
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, keycloakAliasManifest); err != nil {
+			return nil, "", fmt.Errorf("keycloak service alias creation failed: %w", err)
+		}
 	}
 
 	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
@@ -1026,6 +1051,9 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 
 	kubeMCPAuthConfig := sharedAuthConfig
 	kubeMCPAuthConfig.RemoteBridge = remoteBridge
+	kubeMCPAuthConfig.HubClusterID = opts.HubClusterID
+	// Keep the established remote fleet registrations unchanged and add the
+	// hub registration separately for the demo.
 	kubeMCPAuthConfig.AllRegistrationsRemote = true
 
 	// FMC's own client_credentials grant (and every other fleet-aware
@@ -1066,6 +1094,12 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
 		return nil, "", fmt.Errorf("fleet exchanged-identity RBAC creation failed: %w", err)
 	}
+	if opts.HubClusterID != "" {
+		_, _ = fmt.Fprintln(writer, "  🔐 Granting hub workflow Job write access to the exchanged identity...")
+		if err := applyExchangedIdentityWriteRBAC(ctx, kubeconfigPath, writer); err != nil {
+			return nil, "", fmt.Errorf("hub exchanged-identity Job write RBAC creation failed: %w", err)
+		}
+	}
 
 	// ── Gateway convergence gate (Issue #1737 regression) ────────────────
 	// Must run BEFORE `helm install` (below): deploying the Kuadrant MCP
@@ -1097,6 +1131,13 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, remoteToolPrefix, writer); readyErr != nil {
 		return nil, "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
+	if hubToolPrefix != "" {
+		_, _ = fmt.Fprintf(writer, "  ⏳ Verifying authenticated hub tools/call (%s)...\n", hubToolPrefix)
+		hubGatewayURL := fmt.Sprintf("http://localhost:%d/mcp", mcpGatewayNodePort)
+		if err := waitForAuthenticatedMCPGateway(ctx, keycloakFleetReadTokenFunc, hubGatewayURL, hubToolPrefix, writer); err != nil {
+			return nil, "", fmt.Errorf("hub MCP Gateway readiness check failed: %w", err)
+		}
+	}
 
 	// ── Shared OAuth2 credentials Secret for every fleet-aware service ───
 	// Must exist BEFORE `helm install` (DD-TEST-015): the chart's own
@@ -1113,6 +1154,9 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet infrastructure ready")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:        http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
+	if opts.HubClusterID != "" {
+		_, _ = fmt.Fprintf(writer, "  Hub cluster ID:     %s (%s)\n", opts.HubClusterID, hubToolPrefix)
+	}
 	_, _ = fmt.Fprintln(writer, "  Remote cluster ID:  remote-cluster (genuinely remote, DD-TEST-013)")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:  %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1167,6 +1211,29 @@ func keycloakFleetTokenURLFor(keycloakNamespace, appNamespace string) string {
 		return fleetKeycloakTokenURL
 	}
 	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token", keycloakNamespace)
+}
+
+// buildKeycloakServiceAliasManifest keeps the issuer hostname stable for
+// kube-mcp-server while allowing the demo to run Keycloak in its dedicated IdP
+// namespace. The TLS certificate intentionally includes the bare "keycloak"
+// name, so an ExternalName alias preserves both DNS resolution and SNI.
+func buildKeycloakServiceAliasManifest(appNamespace, keycloakNamespace string) string {
+	if appNamespace == keycloakNamespace {
+		return ""
+	}
+	return fmt.Sprintf(`---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: %s
+  labels:
+    kubernaut.ai/managed: "true"
+    component: identity
+spec:
+  type: ExternalName
+  externalName: keycloak.%s.svc.cluster.local
+`, appNamespace, keycloakNamespace)
 }
 
 // deployFleetOAuth2Secret creates the shared client_credentials Secret every
@@ -1676,15 +1743,47 @@ spec:
 	return svcFQDN, nil
 }
 
+// fleetClusterRegistrationIdentity returns the primary registration identity
+// for the selected topology. A remote-only fleet deliberately keeps its
+// historical remote-cluster name; the optional hub identity is handled by
+// fleetHubRegistrationIdentity.
+func fleetClusterRegistrationIdentity(authConfig KubeMCPServerAuthConfig) (string, string) {
+	if authConfig.AllRegistrationsRemote {
+		if authConfig.GatewayType == registry.GatewayEAIGW {
+			return fleetRemoteClusterID, fleetRemoteClusterID + "__"
+		}
+		return fleetRemoteClusterID, "remote_cluster_"
+	}
+
+	clusterID := authConfig.HubClusterID
+	if clusterID == "" {
+		clusterID = "loopback-cluster"
+	}
+	if authConfig.GatewayType == registry.GatewayEAIGW {
+		return clusterID, clusterID + "__"
+	}
+	return clusterID, strings.ReplaceAll(clusterID, "-", "_") + "_"
+}
+
+// fleetHubRegistrationIdentity returns the optional additional hub identity.
+// It is deliberately separate from fleetClusterRegistrationIdentity so the
+// existing remote-cluster registration remains unchanged in demo and CI.
+func fleetHubRegistrationIdentity(authConfig KubeMCPServerAuthConfig) (string, string) {
+	if authConfig.HubClusterID == "" {
+		return "", ""
+	}
+	if authConfig.GatewayType == registry.GatewayEAIGW {
+		return authConfig.HubClusterID, authConfig.HubClusterID + "__"
+	}
+	return authConfig.HubClusterID, strings.ReplaceAll(authConfig.HubClusterID, "-", "_") + "_"
+}
+
 // deployEnvoyAIGatewayRegistrations creates the three Backends
-// (loopback-cluster/remote-cluster, prod-east, prod-west) plus the single
-// shared MCPRoute that aggregates them -- EAIGW's equivalent of Kuadrant's
-// HTTPRoute + MCPServerRegistrations. EAIGW has no separate broker component:
-// MCPRoute.spec.backendRefs natively aggregates multiple Backends, and each
-// backend's tools are auto-prefixed "{backendRefs[].name}__{toolName}" with
-// zero extra config (Spike S18 mini-spike, confirmed for 3 simultaneous
-// backends). See loopbackClusterName below for why the first Backend is
-// renamed "remote-cluster" when AllRegistrationsRemote is set.
+// (hub/remote-cluster/prod-east/prod-west in the demo,
+// remote-cluster/prod-east/prod-west in the full-pipeline suite) plus the
+// shared MCPRoute that aggregates them.
+// EAIGW auto-prefixes each backend's tools with "{backend name}__".
+
 func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
 
@@ -1696,14 +1795,11 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", keycloakNamespace)
 	jwksURI := authConfig.AuthorizationURL + "/protocol/openid-connect/certs"
 
-	// prod-east's Backend targets a genuinely separate Kind cluster's
-	// kube-mcp-server via a Service+Endpoints bridge when RemoteBridge is
-	// set (DD-TEST-013, Spike S19); otherwise it shares the loopback
-	// hostname like every other Backend -- the original, unmodified
-	// behavior for any caller that leaves RemoteBridge nil. When
-	// AllRegistrationsRemote is also set (the "fleet" suite), loopback-cluster
-	// and prod-west also route through the remote bridge hostname -- see the
-	// matching comment in deployKuadrantRegistrations for why.
+	// The bridged Backend targets a genuinely separate Kind cluster's
+	// kube-mcp-server when RemoteBridge is set (DD-TEST-013, Spike S19).
+	// The first registration remains remote-cluster for the fleet topology;
+	// prod-east is the bridged secondary registration and the optional hub
+	// registration targets the local server.
 	loopbackHostname := kubeMCPHostname
 	prodEastHostname, prodEastPort := kubeMCPHostname, 8080
 	prodWestHostname := kubeMCPHostname
@@ -1715,10 +1811,8 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 	// deployKuadrantRegistrations' identical loopbackClusterName renaming --
 	// every fleet test hardcodes "remote-cluster" as its target identity, so
 	// both gateway implementations must expose that same cluster name.
-	loopbackClusterName := "loopback-cluster"
-	if authConfig.AllRegistrationsRemote {
-		loopbackClusterName = "remote-cluster"
-	}
+	loopbackClusterName, _ := fleetClusterRegistrationIdentity(authConfig)
+	hubClusterName, _ := fleetHubRegistrationIdentity(authConfig)
 	if rb := authConfig.RemoteBridge; rb != nil {
 		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
 		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
@@ -1731,8 +1825,33 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 			prodWestHostname = prodEastHostname
 		}
 	}
+	hubBackendManifest := ""
+	hubBackendRef := ""
+	if hubClusterName != "" {
+		hubBackendManifest = fmt.Sprintf(`---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    kubernaut.ai/managed: "true"
+    environment: "hub"
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %s
+      port: 8080
+`, hubClusterName, namespace, kubeMCPHostname)
+		hubBackendRef = fmt.Sprintf(`  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: %s
+    forwardHeaders:
+    - name: Authorization
+`, hubClusterName)
+	}
 
-	manifest := fmt.Sprintf(`---
+	manifest := strings.TrimSpace(fmt.Sprintf(`---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
@@ -1760,7 +1879,7 @@ spec:
       group: ""
       kind: ConfigMap
     hostname: keycloak
----
+%[13]s---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
@@ -1836,7 +1955,7 @@ spec:
     name: prod-west
     forwardHeaders:
     - name: Authorization
-  securityPolicy:
+%[14]s  securityPolicy:
     oauth:
       issuer: %[4]q
       audiences: [%[5]q]
@@ -1850,32 +1969,32 @@ spec:
             port: 8443
       protectedResourceMetadata:
         resource: %[7]q
-`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint, prodEastHostname, prodEastPort, loopbackHostname, prodWestHostname, loopbackClusterName)
+	`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint, prodEastHostname, prodEastPort, loopbackHostname, prodWestHostname, loopbackClusterName, hubBackendManifest, hubBackendRef))
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("backend/MCPRoute creation failed: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "    ✅ Backends + MCPRoute created (%s, prod-east, prod-west)\n", loopbackClusterName)
+	_, _ = fmt.Fprintf(writer, "    ✅ Backends + MCPRoute created (%s, prod-east, prod-west, %s)\n", loopbackClusterName, hubClusterName)
 	return nil
 }
 
 // deployKubeMCPServerAndRegister deploys kube-mcp-server (gateway-agnostic)
-// and then registers it as three managed clusters (loopback-cluster,
-// prod-east, prod-west) via the gateway-specific registration mechanism
-// selected by authConfig.GatewayType: Kuadrant's HTTPRoute+MCPServerRegistration
-// or EAIGW's Backend+MCPRoute (Spike S18).
+// and then registers the hub, bridged spoke, and secondary logical cluster
+// identities via the gateway-specific registration mechanism selected by
+// authConfig.GatewayType: Kuadrant's HTTPRoute+MCPServerRegistration or
+// EAIGW's Backend+MCPRoute (Spike S18).
 func deployKubeMCPServerAndRegister(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	// AllRegistrationsRemote means every registration targets the remote
 	// bridge (see registration deploy functions below), so a local
 	// kube-mcp-server would be deployed but never referenced by any
 	// registration -- skip it entirely (Issue #54: "remove the kube mcp
 	// for the local cluster").
-	if !authConfig.AllRegistrationsRemote {
+	if !authConfig.AllRegistrationsRemote || authConfig.HubClusterID != "" {
 		if err := deployKubeMCPServer(ctx, namespace, kubeconfigPath, authConfig, writer); err != nil {
 			return err
 		}
 	} else {
-		_, _ = fmt.Fprintln(writer, "    Skipping local kube-mcp-server (AllRegistrationsRemote: all registrations target the remote cluster)...")
+		_, _ = fmt.Fprintln(writer, "    Skipping local kube-mcp-server (no hub registration requested)...")
 	}
 
 	if authConfig.GatewayType == registry.GatewayEAIGW {
@@ -2076,17 +2195,13 @@ stringData:
 		brokerCredRefYAML = "  credentialRef:\n    name: kube-mcp-server-broker-cred\n"
 	}
 
-	// prod-east routes through a dedicated HTTPRoute bridged to a genuinely
-	// separate Kind cluster's kube-mcp-server when RemoteBridge is set
-	// (DD-TEST-013, Spike S19); otherwise it shares the loopback HTTPRoute
-	// like every other registration -- the original, unmodified behavior
-	// for any caller that leaves RemoteBridge nil. When AllRegistrationsRemote
-	// is also set (the "fleet" suite), the first registration (renamed
-	// "remote-cluster", see loopbackClusterName below) and prod-west route
-	// through the same remote HTTPRoute too, instead of only prod-east --
-	// every fleet test hardcodes "remote-cluster" as its target identity
-	// (not "prod-east"), so that name must be the one backed by the remote
-	// cluster for the suite to exercise genuinely remote reads end-to-end.
+	// The bridged registration routes through a dedicated HTTPRoute to a
+	// genuinely separate Kind cluster's kube-mcp-server when RemoteBridge is
+	// set (DD-TEST-013, Spike S19). Demo mode names it remote-cluster to match
+	// the spoke identity; existing callers retain prod-east. With
+	// AllRegistrationsRemote, the first registration (renamed remote-cluster)
+	// and prod-west also use that remote route so every fleet test exercises a
+	// genuinely remote control plane.
 	loopbackRouteName := kubeMcpServerRoute
 	prodEastRouteName := kubeMcpServerRoute
 	prodWestRouteName := kubeMcpServerRoute
@@ -2127,7 +2242,7 @@ spec:
 	// dangling route too -- no registration references it in that mode
 	// (loopbackRouteName/prodWestRouteName are both the remote route then).
 	var localRouteManifest string
-	if !authConfig.AllRegistrationsRemote {
+	if !authConfig.AllRegistrationsRemote || authConfig.HubClusterID != "" {
 		localRouteManifest = fmt.Sprintf(`---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -2155,14 +2270,30 @@ spec:
 	// "remote-cluster" / "remote_cluster_" to avoid implying it's the local
 	// loopback cluster it named for every other caller of this shared
 	// function (FMC E2E lanes).
-	loopbackClusterName := "loopback-cluster"
-	loopbackClusterPrefix := "loopback_cluster_"
-	if authConfig.AllRegistrationsRemote {
-		loopbackClusterName = "remote-cluster"
-		loopbackClusterPrefix = "remote_cluster_"
+	loopbackClusterName, loopbackClusterPrefix := fleetClusterRegistrationIdentity(authConfig)
+	hubClusterName, hubClusterPrefix := fleetHubRegistrationIdentity(authConfig)
+	hubRegistrationManifest := ""
+	if hubClusterName != "" {
+		hubRegistrationManifest = fmt.Sprintf(`---
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    kubernaut.ai/managed: "true"
+    environment: "hub"
+spec:
+  prefix: %q
+%s  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: %s
+    namespace: %s
+`, hubClusterName, namespace, hubClusterPrefix, brokerCredRefYAML, kubeMcpServerRoute, namespace)
 	}
 
-	routeManifest := fmt.Sprintf(`%[2]s%[5]s%[8]s---
+	routeManifest := strings.TrimSpace(fmt.Sprintf(`%[2]s%[5]s%[8]s%[11]s---
 apiVersion: mcp.kuadrant.io/v1alpha1
 kind: MCPServerRegistration
 metadata:
@@ -2184,12 +2315,12 @@ spec:
 apiVersion: mcp.kuadrant.io/v1alpha1
 kind: MCPServerRegistration
 metadata:
-  name: prod-east
+  name: %[12]s
   namespace: %[1]s
   labels:
     kubernaut.ai/managed: "true"
 spec:
-  prefix: "prod_east_"
+  prefix: %[13]q
 %[3]s  targetRef:
     group: gateway.networking.k8s.io
     kind: HTTPRoute
@@ -2210,7 +2341,7 @@ spec:
     kind: HTTPRoute
     name: %[7]s
     namespace: %[1]s
-`, namespace, brokerCredSecretManifest, brokerCredRefYAML, prodEastRouteName, remoteRouteManifest, loopbackRouteName, prodWestRouteName, localRouteManifest, loopbackClusterName, loopbackClusterPrefix)
+	`, namespace, brokerCredSecretManifest, brokerCredRefYAML, prodEastRouteName, remoteRouteManifest, loopbackRouteName, prodWestRouteName, localRouteManifest, loopbackClusterName, loopbackClusterPrefix, hubRegistrationManifest, "prod-east", "prod_east_"))
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
 		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)

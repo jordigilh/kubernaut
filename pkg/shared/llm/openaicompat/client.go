@@ -216,8 +216,13 @@ func buildRequestBody(model string, req Request, stream bool) map[string]any {
 	}
 	if len(req.ResponseSchema) > 0 {
 		body["response_format"] = map[string]any{
-			"type":        "json_schema",
-			"json_schema": req.ResponseSchema,
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				// OpenAI requires a stable name and a nested schema object for
+				// response_format.type=json_schema.
+				"name":   "kubernaut_response",
+				"schema": req.ResponseSchema,
+			},
 		}
 	}
 	applyEffort(body, req.Effort, req.EffortDialect)
@@ -259,6 +264,7 @@ var deepSeekEffortTiers = map[string]string{
 	"medium":  "high",
 	"high":    "high",
 	"xhigh":   "max",
+	"max":     "max",
 }
 
 func applyDeepSeekEffort(body map[string]any, effort string) {

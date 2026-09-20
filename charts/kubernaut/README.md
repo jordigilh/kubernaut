@@ -557,8 +557,30 @@ for the full `llmProfiles.<name>.*` field list (provider, model, credentials, re
 `openai_compatible`. `vertex_ai` hosts either Claude or Gemini models depending on `model` —
 both KA and AF auto-detect which client to construct from the model name prefix (`claude-*`
 vs `gemini-*`, #1778, #1792). Both Anthropic and Kubernaut Agent's Gemini-family client
-(BR-AI-087) have no `reasoning.effort` tier above `high`, so `xhigh` is accepted but clamped
-down to `high` on those two providers (not an error).
+(BR-AI-087) have no `reasoning.effort` tier above `high`, so `xhigh` and `max` are accepted but
+clamped down to `high` on those two providers (not an error).
+
+For OpenAI Chat Completions, the canonical effort values are `none`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max`, and the value is passed through as `reasoning_effort`.
+The supported subset is model-specific: base `gpt-5` documents `minimal`, `low`, `medium`,
+and `high`; `gpt-5.6-luna` documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
+Do not infer support for a custom `openai_compatible` endpoint from a GPT-like model name;
+use `reasoning.capabilityOverride` or an explicit demo override only after checking the endpoint.
+
+Example profile for OpenAI Luna:
+
+```yaml
+global:
+  llmProfiles:
+    primary:
+      provider: openai
+      model: gpt-5.6-luna
+      endpoint: https://api.openai.com/v1
+      credentialsSecretName: llm-credentials-primary
+      reasoning:
+        enabled: true
+        effort: none
+```
 
 ### Kubernaut Agent (LLM)
 

@@ -69,9 +69,9 @@ func WithHTTPTimeout(d time.Duration) Option {
 	}
 }
 
-// WithCapabilityOverride short-circuits model-name-based reasoning-mode
-// auto-detection (shared/types.LLMReasoningConfig.CapabilityOverride) — the
-// escape hatch for self-hosted/custom models that can't be reliably
+// WithCapabilityOverride short-circuits model-name-based reasoning and
+// effort-dialect auto-detection (shared/types.LLMReasoningConfig.CapabilityOverride)
+// — the escape hatch for self-hosted/custom models that can't be reliably
 // identified by name pattern alone (BR-AI-086 AC5).
 func WithCapabilityOverride(override string) Option {
 	return func(o *clientOpts) { o.capabilityOverride = override }
@@ -116,7 +116,7 @@ func New(model, endpoint, apiKey string, opts ...Option) *Client {
 	return &Client{
 		client:           openaicompat.New(model, endpoint, apiKey, compatOpts...),
 		reasoningMode:    openaicompat.DetectReasoningMode(model, o.capabilityOverride),
-		effortDialect:    openaicompat.DetectEffortDialect(model),
+		effortDialect:    openaicompat.DetectEffortDialectWithOverride(model, o.capabilityOverride),
 		defaultReasoning: o.defaultReasoning,
 	}
 }

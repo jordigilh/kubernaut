@@ -2,10 +2,16 @@ package launcher_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"google.golang.org/adk/v2/model"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -156,6 +162,38 @@ var _ = Describe("Model Factory", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(m).NotTo(BeNil())
 			Expect(m.Name()).To(Equal("gpt-4o"))
+		})
+
+		It("IT-AF-1604-308: production factory wires capabilityOverride to a custom endpoint", func() {
+			var receivedBody map[string]interface{}
+			var receiveErr error
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					receiveErr = err
+				} else {
+					receiveErr = json.Unmarshal(body, &receivedBody)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+			}))
+			DeferCleanup(server.Close)
+
+			m, err := launcher.NewModelFromConfig(context.Background(), types.LLMConfig{
+				Provider:  types.LLMProviderOpenAICompatible,
+				Model:     "custom-reasoning-model",
+				Endpoint:  server.URL,
+				APIKey:    "test-key",
+				Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "low", CapabilityOverride: "force_on"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(m).NotTo(BeNil())
+
+			for _, responseErr := range m.GenerateContent(context.Background(), &model.LLMRequest{}, false) {
+				Expect(responseErr).NotTo(HaveOccurred())
+			}
+			Expect(receiveErr).NotTo(HaveOccurred())
+			Expect(receivedBody["reasoning_effort"]).To(Equal("low"))
 		})
 
 		// UT-AF-1254-012: factory constructs openai_compatible without API key (keyless)

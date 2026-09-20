@@ -45,6 +45,7 @@ var _ = Describe("UT-KA-1778-001: EffortToThinkingLevel", func() {
 		Entry("medium maps to Medium", "medium", genai.ThinkingLevelMedium, true),
 		Entry("high maps to High", "high", genai.ThinkingLevelHigh, true),
 		Entry("xhigh clamps to High", "xhigh", genai.ThinkingLevelHigh, true),
+		Entry("max clamps to High", "max", genai.ThinkingLevelHigh, true),
 		Entry("unset (empty string) is unhandled here", "", genai.ThinkingLevel(""), false),
 	)
 })

@@ -104,6 +104,32 @@ var _ = Describe("kubernautagent/llm/openai.Client — #1581", func() {
 		Expect(messages).To(HaveLen(3))
 	})
 
+	It("UT-KA-1581-210 (BR-LLM-021): forwards output schemas through the shared OpenAI contract", func() {
+		client := newTestClient("gpt-4o", `{"choices":[{"index":0,"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}]}`)
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "respond"}},
+			Options: llm.ChatOptions{
+				JSONMode: true,
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"severity":{"type":"string"}},"required":["severity"]}`),
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		responseFormat, ok := receivedBody["response_format"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(responseFormat["type"]).To(Equal("json_schema"))
+		jsonSchema, ok := responseFormat["json_schema"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(jsonSchema["name"]).To(Equal("kubernaut_response"))
+		Expect(jsonSchema["schema"]).To(Equal(map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"severity": map[string]interface{}{"type": "string"},
+			},
+			"required": []interface{}{"severity"},
+		}))
+	})
+
 	Describe("reasoning capture and replay — BR-AI-086 AC3, model-aware auto-detection", func() {
 		It("UT-KA-1581-205: captures reasoning_content from a deepseek-reasoner response into Message.Reasoning", func() {
 			client := newTestClient("deepseek-reasoner", `{

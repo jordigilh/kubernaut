@@ -585,6 +585,16 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 			respFormat, ok := receivedBody["response_format"].(map[string]any)
 			Expect(ok).To(BeTrue(), "request body must contain response_format")
 			Expect(respFormat["type"]).To(Equal("json_schema"))
+			jsonSchema, ok := respFormat["json_schema"].(map[string]any)
+			Expect(ok).To(BeTrue(), "response_format must contain a json_schema object")
+			Expect(jsonSchema["name"]).To(Equal("kubernaut_response"))
+			Expect(jsonSchema["schema"]).To(Equal(map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"severity": map[string]any{"type": "string"},
+				},
+				"required": []any{"severity"},
+			}))
 		})
 	})
 })

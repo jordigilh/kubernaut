@@ -403,6 +403,7 @@ reasoning:
 		Entry("medium", "medium"),
 		Entry("high", "high"),
 		Entry("xhigh", "xhigh"),
+		Entry("max", "max"),
 	)
 
 	It("should reject an unrecognized effort value", func() {

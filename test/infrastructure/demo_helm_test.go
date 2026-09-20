@@ -98,6 +98,67 @@ var _ = Describe("DemoHelmOptions.Validate", func() {
 	)
 })
 
+func demoBoolPointer(value bool) *bool {
+	return &value
+}
+
+var _ = Describe("resolveDemoReasoning", func() {
+	DescribeTable("resolves model-family defaults and explicit overrides",
+		func(opts DemoHelmOptions, wantEnabled bool, wantEffort, wantOverride string) {
+			enabled, effort, capabilityOverride := resolveDemoReasoning(opts)
+			Expect(enabled).To(Equal(wantEnabled))
+			Expect(effort).To(Equal(wantEffort))
+			Expect(capabilityOverride).To(Equal(wantOverride))
+		},
+		Entry("UT-INFRA-FLEETDEMO-052 [BR-PLATFORM-014]: gpt-5.6-luna defaults to no reasoning tokens",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6-luna"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-053 [BR-PLATFORM-014]: gpt-5 defaults to minimal effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5"},
+			true, "minimal", ""),
+		Entry("UT-INFRA-FLEETDEMO-054 [BR-PLATFORM-014]: o1 defaults to low effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "o1"},
+			true, "low", ""),
+		Entry("UT-INFRA-FLEETDEMO-055 [BR-PLATFORM-014]: o3 defaults to low effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "o3-mini"},
+			true, "low", ""),
+		Entry("UT-INFRA-FLEETDEMO-056 [BR-PLATFORM-014]: o4 defaults to low effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "o4"},
+			true, "low", ""),
+		Entry("UT-INFRA-FLEETDEMO-057 [BR-PLATFORM-014]: gpt-4o remains disabled",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-4o"},
+			false, "", ""),
+		Entry("UT-INFRA-FLEETDEMO-058 [BR-PLATFORM-014]: custom OpenAI-compatible GPT-like names do not infer support",
+			DemoHelmOptions{LLMProvider: "openai_compatible", LLMModel: "gpt-5"},
+			false, "", ""),
+		Entry("UT-INFRA-FLEETDEMO-059 [BR-PLATFORM-014]: explicit custom enablement opts into the OpenAI effort dialect",
+			DemoHelmOptions{
+				LLMProvider:         "openai_compatible",
+				LLMModel:            "custom-reasoning-model",
+				LLMReasoningEnabled: demoBoolPointer(true),
+				LLMReasoningEffort:  "low",
+			},
+			true, "low", "force_on"),
+		Entry("UT-INFRA-FLEETDEMO-060 [BR-PLATFORM-014]: explicit disablement wins over a model default",
+			DemoHelmOptions{
+				LLMProvider:         "openai",
+				LLMModel:            "gpt-5",
+				LLMReasoningEnabled: demoBoolPointer(false),
+			},
+			false, "", "force_off"),
+	)
+
+	It("UT-INFRA-FLEETDEMO-061 [SI-10]: rejects an unsupported effort value", func() {
+		opts := DemoHelmOptions{
+			LLMProvider:        "openai",
+			LLMModel:           "gpt-5",
+			LLMEndpoint:        "https://api.openai.com/v1",
+			LLMReasoningEffort: "extreme",
+		}
+		Expect(opts.Validate()).To(MatchError(ContainSubstring("reasoning.effort")))
+	})
+})
+
 // buildFleetOAuth2HelmArgs lives in fullpipeline_e2e_helm.go (it's the
 // pre-existing fleet-OAuth2 `--set` block extracted out of
 // InstallFullPipelineHelmChart, Issue #2337 REFACTOR), but is exercised here
@@ -236,6 +297,31 @@ var _ = Describe("buildDemoHelmArgs", func() {
 			"--set", "global.llmProfiles.primary.provider=openai_compatible",
 			"--set", "global.llmProfiles.primary.model=gpt-4o",
 			"--set", "global.llmProfiles.primary.endpoint=https://api.openai.com/v1",
+		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-050 [BR-PLATFORM-014]: renders the inferred Luna reasoning profile", func() {
+		opts := baseOpts
+		opts.LLMProvider = "openai"
+		opts.LLMModel = "gpt-5.6-luna"
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements(
+			"--set", "global.llmProfiles.primary.reasoning.enabled=true",
+			"--set", "global.llmProfiles.primary.reasoning.effort=none",
+		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-051 [BR-PLATFORM-014]: renders explicit reasoning overrides for custom endpoints", func() {
+		opts := baseOpts
+		opts.LLMReasoningEnabled = demoBoolPointer(true)
+		opts.LLMReasoningEffort = "medium"
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements(
+			"--set", "global.llmProfiles.primary.reasoning.enabled=true",
+			"--set", "global.llmProfiles.primary.reasoning.effort=medium",
+			"--set", "global.llmProfiles.primary.reasoning.capabilityOverride=force_on",
 		))
 	})
 

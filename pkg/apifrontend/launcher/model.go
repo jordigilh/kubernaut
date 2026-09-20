@@ -423,8 +423,13 @@ func newOpenAICompatibleModel(cfg types.LLMConfig) (model.LLM, error) {
 	if cfg.AzureAPIVersion != "" {
 		opts = append(opts, openaimodel.WithAzureAPIVersion(cfg.AzureAPIVersion))
 	}
-	if cfg.Reasoning != nil && cfg.Reasoning.Enabled {
-		opts = append(opts, openaimodel.WithReasoningEffort(cfg.Reasoning.Effort))
+	if cfg.Reasoning != nil {
+		if cfg.Reasoning.Enabled {
+			opts = append(opts, openaimodel.WithReasoningEffort(cfg.Reasoning.Effort))
+		}
+		if cfg.Reasoning.CapabilityOverride != "" {
+			opts = append(opts, openaimodel.WithCapabilityOverride(cfg.Reasoning.CapabilityOverride))
+		}
 	}
 
 	return openaimodel.NewModel(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil

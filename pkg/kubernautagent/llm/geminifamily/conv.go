@@ -373,3 +373,30 @@ func extractStreamTextDelta(chunk *schema.AgenticMessage) string {
 	}
 	return sb.String()
 }
+
+// extractStreamToolCallDeltas maps streamed Gemini function-call blocks to
+// KA's provider-neutral partial tool-call event. Gemini does not provide a
+// tool-call ID on the wire, so the name and argument fragment are the fields
+// available for the caller's stream accumulator.
+func extractStreamToolCallDeltas(chunk *schema.AgenticMessage) []*llm.PartialToolCall {
+	if chunk == nil {
+		return nil
+	}
+
+	deltas := make([]*llm.PartialToolCall, 0)
+	for i, block := range chunk.ContentBlocks {
+		if block == nil || block.Type != schema.ContentBlockTypeFunctionToolCall || block.FunctionToolCall == nil {
+			continue
+		}
+		index := i
+		if block.StreamingMeta != nil {
+			index = block.StreamingMeta.Index
+		}
+		deltas = append(deltas, &llm.PartialToolCall{
+			Index:          index,
+			Name:           block.FunctionToolCall.Name,
+			ArgumentsDelta: block.FunctionToolCall.Arguments,
+		})
+	}
+	return deltas
+}

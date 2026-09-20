@@ -19,12 +19,17 @@ package infrastructure
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // Issue found 2026-09-01 (FLEET_DEMO_QUICKSTART.md): the docs told users to
@@ -188,3 +193,134 @@ var _ = Describe("kube-mcp-server E2E configuration", func() {
 		Expect(toml).NotTo(ContainSubstring("sts_audience"))
 	})
 })
+
+var _ = Describe("fleet gateway cluster registration identities", func() {
+	It("UT-INFRA-FLEET-2441-001: uses hub and EAIGW's hub__ tool prefix for the demo", func() {
+		clusterID, toolPrefix := fleetHubRegistrationIdentity(KubeMCPServerAuthConfig{
+			GatewayType:  registry.GatewayEAIGW,
+			HubClusterID: "hub",
+		})
+
+		Expect(clusterID).To(Equal("hub"))
+		Expect(toolPrefix).To(Equal("hub__"))
+	})
+
+	It("UT-INFRA-FLEET-2441-002: keeps the remote-only EAIGW identity unchanged", func() {
+		clusterID, toolPrefix := fleetClusterRegistrationIdentity(KubeMCPServerAuthConfig{
+			GatewayType:            registry.GatewayEAIGW,
+			AllRegistrationsRemote: true,
+			RemoteBridge:           &RemoteClusterBridgeConfig{},
+			HubClusterID:           "hub",
+		})
+
+		Expect(clusterID).To(Equal("remote-cluster"))
+		Expect(toolPrefix).To(Equal("remote-cluster__"))
+	})
+
+	It("UT-INFRA-FLEET-2441-003: preserves the Kuadrant prefix convention", func() {
+		clusterID, toolPrefix := fleetHubRegistrationIdentity(KubeMCPServerAuthConfig{
+			GatewayType:  registry.GatewayKuadrant,
+			HubClusterID: "hub",
+		})
+
+		Expect(clusterID).To(Equal("hub"))
+		Expect(toolPrefix).To(Equal("hub_"))
+	})
+
+	It("UT-INFRA-FLEET-2441-004: keeps the primary remote identity while adding hub separately", func() {
+		clusterID, toolPrefix := fleetClusterRegistrationIdentity(KubeMCPServerAuthConfig{
+			GatewayType:            registry.GatewayEAIGW,
+			HubClusterID:           "hub",
+			AllRegistrationsRemote: true,
+		})
+		Expect(clusterID).To(Equal("remote-cluster"))
+		Expect(toolPrefix).To(Equal("remote-cluster__"))
+	})
+
+	It("UT-INFRA-FLEET-2441-005: aliases the dedicated IdP namespace to the stable issuer hostname", func() {
+		manifest := buildKeycloakServiceAliasManifest("kubernaut-system", "idp")
+
+		Expect(manifest).To(ContainSubstring("type: ExternalName"))
+		Expect(manifest).To(ContainSubstring("namespace: kubernaut-system"))
+		Expect(manifest).To(ContainSubstring("externalName: keycloak.idp.svc.cluster.local"))
+	})
+
+	It("UT-INFRA-FLEET-2441-006: skips the alias when IdP and application share a namespace", func() {
+		Expect(buildKeycloakServiceAliasManifest("kubernaut-system", "kubernaut-system")).To(BeEmpty())
+	})
+
+	It("IT-INFRA-FLEET-2441-007: renders hub and remote EAIGW backends with authorization forwarding", func() {
+		manifest := captureKubectlManifest(func() error {
+			return deployEnvoyAIGatewayRegistrations(context.Background(), "kubernaut-system", "test-kubeconfig", "http://gateway/mcp", KubeMCPServerAuthConfig{
+				GatewayType:            registry.GatewayEAIGW,
+				AuthorizationURL:       "https://keycloak:8443/realms/kubernaut-demo",
+				OAuthAudience:          "kube-mcp-server",
+				HubClusterID:           "hub",
+				AllRegistrationsRemote: true,
+			}, io.Discard)
+		})
+
+		Expect(manifest).To(ContainSubstring("name: hub"))
+		Expect(manifest).To(ContainSubstring("name: remote-cluster"))
+		Expect(manifest).To(ContainSubstring("name: prod-east"))
+		Expect(manifest).To(ContainSubstring("name: prod-west"))
+		Expect(manifest).To(ContainSubstring("forwardHeaders:"))
+		expectValidYAMLDocuments(manifest)
+	})
+
+	It("IT-INFRA-FLEET-2441-008: renders hub and remote Kuadrant registrations", func() {
+		manifest := captureKubectlManifest(func() error {
+			return deployKuadrantRegistrations(context.Background(), "kubernaut-system", "test-kubeconfig", KubeMCPServerAuthConfig{
+				GatewayType:            registry.GatewayKuadrant,
+				HubClusterID:           "hub",
+				AllRegistrationsRemote: true,
+				BrokerCredentialToken:  "token",
+			}, io.Discard)
+		})
+
+		Expect(manifest).To(ContainSubstring("name: hub"))
+		Expect(manifest).To(ContainSubstring("prefix: \"hub_\""))
+		Expect(manifest).To(ContainSubstring("name: remote-cluster"))
+		Expect(manifest).To(ContainSubstring("prefix: \"remote_cluster_\""))
+		Expect(manifest).To(ContainSubstring("name: prod-east"))
+		Expect(manifest).To(ContainSubstring("name: prod-west"))
+		expectValidYAMLDocuments(manifest)
+	})
+})
+
+func captureKubectlManifest(run func() error) string {
+	dir, err := os.MkdirTemp("", "fleet-kubectl-test-")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { _ = os.RemoveAll(dir) })
+
+	manifestPath := filepath.Join(dir, "manifest.yaml")
+	kubectlPath := filepath.Join(dir, "kubectl")
+	script := "#!/bin/sh\ncat > \"$FLEET_TEST_MANIFEST\"\n"
+	Expect(os.WriteFile(kubectlPath, []byte(script), 0o755)).To(Succeed())
+
+	previousPath := os.Getenv("PATH")
+	previousManifest := os.Getenv("FLEET_TEST_MANIFEST")
+	Expect(os.Setenv("PATH", dir+string(os.PathListSeparator)+previousPath)).To(Succeed())
+	Expect(os.Setenv("FLEET_TEST_MANIFEST", manifestPath)).To(Succeed())
+	DeferCleanup(func() {
+		_ = os.Setenv("PATH", previousPath)
+		_ = os.Setenv("FLEET_TEST_MANIFEST", previousManifest)
+	})
+
+	Expect(run()).To(Succeed())
+	manifest, err := os.ReadFile(manifestPath)
+	Expect(err).NotTo(HaveOccurred())
+	return string(manifest)
+}
+
+func expectValidYAMLDocuments(manifest string) {
+	decoder := yaml.NewDecoder(strings.NewReader(manifest))
+	for {
+		var document yaml.Node
+		err := decoder.Decode(&document)
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		Expect(err).NotTo(HaveOccurred(), "rendered manifest:\n%s", manifest)
+	}
+}

@@ -73,6 +73,14 @@ var _ = Describe("openaicompat effort knob — #1604", func() {
 			Entry("llama3 (self-hosted)", "llama3"),
 			Entry("unrecognized future model", "some-future-model-9000"),
 		)
+
+		DescribeTable("explicit capability overrides take precedence over model-name detection",
+			func(model, override string, want openaicompat.EffortDialect) {
+				Expect(openaicompat.DetectEffortDialectWithOverride(model, override)).To(Equal(want))
+			},
+			Entry("force_on enables a custom model", "custom-reasoning-model", "force_on", openaicompat.EffortDialectOpenAI),
+			Entry("force_off disables a recognized model", "gpt-5", "force_off", openaicompat.EffortDialectNone),
+		)
 	})
 
 	Describe("wire-level effort mapping — real OpenAI dialect", func() {
@@ -116,6 +124,7 @@ var _ = Describe("openaicompat effort knob — #1604", func() {
 			Entry("medium", "medium"),
 			Entry("high", "high"),
 			Entry("xhigh", "xhigh"),
+			Entry("max", "max"),
 		)
 
 		It("UT-KA-1604-001: sends no reasoning_effort field when Effort is empty (vendor default applies)", func() {
@@ -194,6 +203,7 @@ var _ = Describe("openaicompat effort knob — #1604", func() {
 			Entry("medium maps up to DeepSeek's floor (high)", "medium", "high"),
 			Entry("high maps to high", "high", "high"),
 			Entry("xhigh maps to DeepSeek's ceiling (max)", "xhigh", "max"),
+			Entry("max maps to DeepSeek's ceiling (max)", "max", "max"),
 		)
 
 		It("UT-KA-1604-004: effort: none disables thinking entirely rather than mapping to a tier", func() {

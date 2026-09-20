@@ -457,8 +457,8 @@ subjects:
 // fails with "cannot patch resource jobs" (see CI runs 28718786969,
 // E2E-FLEET-014).
 //
-// This is a SEPARATE function (not a change to applyExchangedIdentityRBAC)
-// and is wired ONLY into the fleet suite's SetupFleetE2EInfrastructure so the
+// This is a SEPARATE function (not a change to applyExchangedIdentityRBAC).
+// It is wired into the full-pipeline fleet suite and the fleet demo; the
 // FMC-only E2E lane (test/e2e/fleetmetadatacache) remains read-only, matching
 // its BR-FLEET-0xx read-path scope.
 func applyExchangedIdentityWriteRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {

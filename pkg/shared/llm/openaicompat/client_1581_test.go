@@ -136,7 +136,54 @@ var _ = Describe("openaicompat.Client — #1581", func() {
 		})
 	})
 
+	Describe("structured output", func() {
+		It("UT-KA-1581-018 (BR-LLM-021): sends the OpenAI JSON schema response format contract", func() {
+			client := newTestClient("gpt-4o", `{"choices":[{"index":0,"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}]}`)
+			_, err := client.Chat(context.Background(), openaicompat.Request{
+				Messages:       []openaicompat.Message{{Role: "user", Content: "respond"}},
+				ResponseSchema: json.RawMessage(`{"type":"object","properties":{"severity":{"type":"string"}},"required":["severity"]}`),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			responseFormat, ok := receivedBody["response_format"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(responseFormat["type"]).To(Equal("json_schema"))
+			jsonSchema, ok := responseFormat["json_schema"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(jsonSchema["name"]).To(Equal("kubernaut_response"))
+			Expect(jsonSchema["schema"]).To(Equal(map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"severity": map[string]interface{}{"type": "string"},
+				},
+				"required": []interface{}{"severity"},
+			}))
+		})
+	})
+
 	Describe("streaming", func() {
+		It("UT-KA-1581-019: keeps the named nested schema envelope on streamed requests", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{}}]}\n\n"))
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			}))
+			client := openaicompat.New("gpt-5.6-luna", server.URL, "test-key")
+
+			err := client.StreamChat(context.Background(), openaicompat.Request{
+				Messages:       []openaicompat.Message{{Role: "user", Content: "respond"}},
+				ResponseSchema: json.RawMessage(`{"type":"object"}`),
+			}, func(openaicompat.StreamEvent) bool { return true })
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody["stream"]).To(BeTrue())
+			responseFormat := receivedBody["response_format"].(map[string]interface{})
+			Expect(responseFormat["type"]).To(Equal("json_schema"))
+			jsonSchema := responseFormat["json_schema"].(map[string]interface{})
+			Expect(jsonSchema["name"]).To(Equal("kubernaut_response"))
+			Expect(jsonSchema["schema"]).To(Equal(map[string]interface{}{"type": "object"}))
+		})
+
 		It("UT-KA-1581-005: streams text deltas and accumulates tool-call fragments", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")

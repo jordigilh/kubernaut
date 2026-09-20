@@ -142,6 +142,11 @@ type DemoHelmOptions struct {
 	LLMProvider string
 	LLMModel    string
 	LLMEndpoint string
+	// LLMReasoningEnabled and LLMReasoningEffort are optional demo overrides.
+	// A nil Enabled value and empty Effort value select the conservative
+	// provider/model default; explicit values win over that default.
+	LLMReasoningEnabled *bool
+	LLMReasoningEffort  string
 	// LLMCredentialsFile contains the raw provider credential material to write
 	// into the cluster after Kind exists and before Helm validates Secrets.
 	LLMCredentialsFile string
@@ -181,6 +186,51 @@ const (
 	DemoModeFleet DemoMode = "fleet"
 )
 
+// resolveDemoReasoning returns the effective demo reasoning settings and the
+// runtime capability override needed for explicitly configured custom endpoints.
+// The demo only infers support for the first-party OpenAI provider: a custom
+// OpenAI-compatible endpoint must opt in explicitly because a GPT-like model
+// name does not prove that the endpoint accepts reasoning_effort.
+func resolveDemoReasoning(o DemoHelmOptions) (enabled bool, effort, capabilityOverride string) {
+	model := strings.ToLower(o.LLMModel)
+	switch {
+	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && strings.HasPrefix(model, "gpt-5.6-luna"):
+		enabled, effort = true, "none"
+	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && strings.HasPrefix(model, "gpt-5"):
+		enabled, effort = true, "minimal"
+	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && isOpenAIReasoningModel(model):
+		enabled, effort = true, "low"
+	}
+
+	explicit := o.LLMReasoningEnabled != nil || o.LLMReasoningEffort != ""
+	if o.LLMReasoningEnabled != nil {
+		enabled = *o.LLMReasoningEnabled
+	}
+	if o.LLMReasoningEffort != "" {
+		effort = o.LLMReasoningEffort
+		if o.LLMReasoningEnabled == nil {
+			enabled = true
+		}
+	}
+	if !enabled {
+		effort = ""
+	}
+	if explicit && (o.LLMProvider == sharedtypes.LLMProviderOpenAI || o.LLMProvider == sharedtypes.LLMProviderOpenAICompatible) {
+		if enabled {
+			capabilityOverride = "force_on"
+		} else {
+			capabilityOverride = "force_off"
+		}
+	}
+	return enabled, effort, capabilityOverride
+}
+
+func isOpenAIReasoningModel(model string) bool {
+	return model == "o1" || strings.HasPrefix(model, "o1-") ||
+		model == "o3" || strings.HasPrefix(model, "o3-") ||
+		model == "o4" || strings.HasPrefix(model, "o4-")
+}
+
 // Validate reports every missing required flag in one error, so
 // hack/setup-demo-infra's caller can tell the user everything they need to
 // fix in a single run instead of one flag at a time.
@@ -211,6 +261,15 @@ func (o DemoHelmOptions) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
+	if o.LLMReasoningEffort != "" {
+		if err := sharedtypes.ValidateReasoningConfig("llm", &sharedtypes.LLMReasoningConfig{Effort: o.LLMReasoningEffort}, o.LLMProvider); err != nil {
+			return err
+		}
+	}
+	enabled, effort, _ := resolveDemoReasoning(o)
+	if err := sharedtypes.ValidateReasoningConfig("llm", &sharedtypes.LLMReasoningConfig{Enabled: enabled, Effort: effort}, o.LLMProvider); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -239,6 +298,7 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
 	}
+	args = appendDemoReasoningHelmArgs(args, opts)
 	args = appendDemoOIDCConsoleHelmArgs(args, idpNamespace)
 
 	if opts.Mode != DemoModeFleet {
@@ -292,6 +352,20 @@ func buildDemoHelmArgs(kubeconfigPath, chartPath, namespace string, fleetOpts *F
 
 	args = append(args, buildFleetOAuth2HelmArgs(fleetOpts)...)
 	return appendDemoHelmOverrides(args, opts)
+}
+
+func appendDemoReasoningHelmArgs(args []string, opts DemoHelmOptions) []string {
+	enabled, effort, capabilityOverride := resolveDemoReasoning(opts)
+	if enabled {
+		args = append(args, "--set", "global.llmProfiles.primary.reasoning.enabled=true")
+	}
+	if effort != "" {
+		args = append(args, "--set", "global.llmProfiles.primary.reasoning.effort="+effort)
+	}
+	if capabilityOverride != "" {
+		args = append(args, "--set", "global.llmProfiles.primary.reasoning.capabilityOverride="+capabilityOverride)
+	}
+	return args
 }
 
 func appendDemoHelmOverrides(args []string, opts DemoHelmOptions) []string {
@@ -465,6 +539,7 @@ func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigP
 	if err := opts.Validate(); err != nil {
 		return err
 	}
+	reasoningEnabled, reasoningEffort, reasoningCapabilityOverride := resolveDemoReasoning(opts)
 	if err := loadDemoImagesToKind(ctx, kindClusterName, opts, writer); err != nil {
 		return err
 	}
@@ -560,6 +635,15 @@ func InstallDemoHelmChart(ctx context.Context, kubeconfigPath, remoteKubeconfigP
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Kubernaut installed and ready")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "  LLM reasoning:     enabled=%t", reasoningEnabled)
+	if reasoningEffort == "" {
+		_, _ = fmt.Fprintln(writer, " effort=(provider default)")
+	} else {
+		_, _ = fmt.Fprintf(writer, " effort=%s\n", reasoningEffort)
+	}
+	if reasoningCapabilityOverride != "" {
+		_, _ = fmt.Fprintf(writer, "  Capability override: %s\n", reasoningCapabilityOverride)
+	}
 	_, _ = fmt.Fprintln(writer, "  Add this line to /etc/hosts yourself (never edited automatically):")
 	_, _ = fmt.Fprintf(writer, "    127.0.0.1 keycloak %s\n", demoConsoleHost)
 	_, _ = fmt.Fprintf(writer, "  Trust the demo CA before browser login: %s\n", InterServiceCAPath(kubeconfigPath))

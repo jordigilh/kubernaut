@@ -34,9 +34,10 @@ type Model struct {
 type Option func(*modelOpts)
 
 type modelOpts struct {
-	httpClient      *http.Client
-	azureAPIVersion string
-	effort          string
+	httpClient         *http.Client
+	azureAPIVersion    string
+	effort             string
+	capabilityOverride string
 }
 
 // WithHTTPClient injects a custom HTTP client for transport chain support.
@@ -59,7 +60,7 @@ func WithAzureAPIVersion(apiVersion string) Option {
 
 // WithReasoningEffort sets the construction-time reasoning-depth value
 // (#1604's unified Effort knob — one of "", "none", "minimal", "low",
-// "medium", "high", "xhigh"). Unlike KA's kaopenai.WithReasoning, there is
+// "medium", "high", "xhigh", "max"). Unlike KA's kaopenai.WithReasoning, there is
 // no per-call override here: ADK's model.LLMRequest carries no reasoning
 // field, so this is the only knob (DD-LLM-005 addendum). An empty value
 // (the default) sends no effort parameter at all — the provider's own
@@ -70,13 +71,21 @@ func WithReasoningEffort(effort string) Option {
 	}
 }
 
+// WithCapabilityOverride opts a custom OpenAI-compatible endpoint into or out
+// of model-name reasoning detection, including the request-side effort dialect.
+func WithCapabilityOverride(override string) Option {
+	return func(o *modelOpts) {
+		o.capabilityOverride = override
+	}
+}
+
 // NewModel creates a new OpenAI-compatible model adapter. The reasoning
 // round-trip mode is auto-detected from modelName (BR-AI-086, DD-LLM-005) —
 // unrecognized models default to no reasoning capture/replay, preserving
 // today's behavior exactly for every currently-configured model. The effort
 // wire dialect is likewise auto-detected (#1604); WithReasoningEffort's
-// value is only ever sent for a recognized dialect (see applyEffort in the
-// shared openaicompat package).
+// value is sent only for a recognized dialect or an explicit capability
+// override (see applyEffort in the shared openaicompat package).
 func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
 	o := &modelOpts{}
 	for _, opt := range opts {
@@ -94,8 +103,8 @@ func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
 	return &Model{
 		name:          modelName,
 		client:        openaicompat.New(modelName, endpoint, apiKey, clientOpts...),
-		reasoningMode: openaicompat.DetectReasoningMode(modelName, ""),
-		effortDialect: openaicompat.DetectEffortDialect(modelName),
+		reasoningMode: openaicompat.DetectReasoningMode(modelName, o.capabilityOverride),
+		effortDialect: openaicompat.DetectEffortDialectWithOverride(modelName, o.capabilityOverride),
 		effort:        o.effort,
 	}
 }

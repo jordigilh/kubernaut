@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -28,6 +29,8 @@ func main() {
 	llmModel := flag.String("llm-model", "", "required LLM model")
 	llmEndpoint := flag.String("llm-endpoint", "", "required except for vertex_ai")
 	llmCredentialsFile := flag.String("llm-credentials-file", "", "required file containing the raw LLM credential")
+	llmReasoningEnabled := flag.String("llm-reasoning-enabled", "", "optional reasoning enablement override: true or false")
+	llmReasoningEffort := flag.String("llm-reasoning-effort", "", "optional reasoning effort override")
 	spPolicyFile := flag.String("sp-policy-file", "", "optional SignalProcessing Rego policy file")
 	aaPolicyFile := flag.String("aa-policy-file", "", "optional AIAnalysis Rego policy file")
 	imageTag := flag.String("image-tag", "", "optional shared Kubernaut image tag override")
@@ -38,19 +41,21 @@ func main() {
 		flag.String("kubeconfig", "", "path to write the cluster kubeconfig")
 	}
 	flag.Parse()
+	reasoningValue, reasoningSet, parseErr := parseReasoningEnabled(*llmReasoningEnabled)
+	if parseErr != nil {
+		fail(parseErr.Error())
+	}
+	var reasoningEnabled *bool
+	if reasoningSet {
+		reasoningEnabled = &reasoningValue
+	}
 	mode := infrastructure.DemoMode(*modeFlag)
 	if mode != infrastructure.DemoModeLocal && mode != infrastructure.DemoModeFleet {
 		fail(fmt.Sprintf("invalid -mode %q; must be one of: local, fleet", *modeFlag))
 	}
 	fleet := mode == infrastructure.DemoModeFleet
 
-	if *clusterName == "" {
-		if fleet {
-			*clusterName = "kubernaut-hub"
-		} else {
-			*clusterName = "kubernaut-demo"
-		}
-	}
+	*clusterName = defaultClusterName(*clusterName, fleet)
 	kubeconfigPath := flag.Lookup("kubeconfig").Value.String()
 	if kubeconfigPath == "" {
 		homeDir, err := os.UserHomeDir()
@@ -66,18 +71,20 @@ func main() {
 	}
 
 	demoOpts := infrastructure.DemoHelmOptions{
-		Mode:               mode,
-		Autonomous:         *autonomous,
-		LLMProvider:        *llmProvider,
-		LLMModel:           *llmModel,
-		LLMEndpoint:        *llmEndpoint,
-		LLMCredentialsFile: *llmCredentialsFile,
-		SPPolicyFile:       *spPolicyFile,
-		AAPolicyFile:       *aaPolicyFile,
-		ImageTag:           *imageTag,
-		ImageRepository:    *imageRepository,
-		VertexProject:      *vertexProject,
-		VertexLocation:     *vertexLocation,
+		Mode:                mode,
+		Autonomous:          *autonomous,
+		LLMProvider:         *llmProvider,
+		LLMModel:            *llmModel,
+		LLMEndpoint:         *llmEndpoint,
+		LLMCredentialsFile:  *llmCredentialsFile,
+		LLMReasoningEnabled: reasoningEnabled,
+		LLMReasoningEffort:  *llmReasoningEffort,
+		SPPolicyFile:        *spPolicyFile,
+		AAPolicyFile:        *aaPolicyFile,
+		ImageTag:            *imageTag,
+		ImageRepository:     *imageRepository,
+		VertexProject:       *vertexProject,
+		VertexLocation:      *vertexLocation,
 	}
 	if err := demoOpts.Validate(); err != nil {
 		fail(err.Error())
@@ -107,6 +114,27 @@ func main() {
 	if err := infrastructure.InstallDemoHelmChart(ctx, kubeconfigPath, remoteKubeconfigPath, *clusterName, fleetOpts, demoOpts, os.Stdout); err != nil {
 		fail(fmt.Sprintf("helm install failed: %v", err))
 	}
+}
+
+func parseReasoningEnabled(raw string) (bool, bool, error) {
+	if raw == "" {
+		return false, false, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, false, fmt.Errorf("invalid -llm-reasoning-enabled %q; use true or false", raw)
+	}
+	return value, true, nil
+}
+
+func defaultClusterName(current string, fleet bool) string {
+	if current != "" {
+		return current
+	}
+	if fleet {
+		return "kubernaut-hub"
+	}
+	return "kubernaut-demo"
 }
 
 func setupLocalDemoInfrastructure(ctx context.Context, clusterName, kubeconfigPath string) error {

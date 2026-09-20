@@ -108,6 +108,18 @@ var _ = Describe("apifrontend/launcher/openai.Model Effort knob wiring — #1604
 
 	// UT-AF-1604-304 [BR-AI-086 AC8]: without WithReasoningEffort, no effort
 	// field is ever sent (zero-regression default).
+	It("UT-AF-1604-306: explicit capability override enables effort for a custom model", func() {
+		newTestServer()
+		m := openaimodel.NewModel("custom-reasoning-model", server.URL, "test-key",
+			openaimodel.WithReasoningEffort("low"),
+			openaimodel.WithCapabilityOverride("force_on"))
+		for resp, err := range m.GenerateContent(context.Background(), simpleRequest(), false) {
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+		}
+		Expect(receivedBody["reasoning_effort"]).To(Equal("low"))
+	})
+
 	It("UT-AF-1604-304: without WithReasoningEffort, no effort field is ever sent", func() {
 		newTestServer()
 		m := openaimodel.NewModel("gpt-5", server.URL, "test-key")
