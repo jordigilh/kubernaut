@@ -24,6 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -248,6 +249,9 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
 				event.Data["error_message"] = test
+				event.Data["error_details"] = sharedaudit.NewErrorDetails(
+					"kubernautagent", "ERR_UPSTREAM_FAILURE", test, true,
+				)
 				event.Data["cluster_id"] = remoteCluster
 				event.Data["phase"] = rca
 				event.Data["cancelled_phase"] = rca

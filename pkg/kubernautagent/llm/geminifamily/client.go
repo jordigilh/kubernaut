@@ -287,7 +287,9 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 			return llm.ChatResponse{}, err
 		}
 	}
-	_ = callback(llm.ChatStreamEvent{Done: true})
+	if err := callback(llm.ChatStreamEvent{Done: true}); err != nil {
+		return llm.ChatResponse{}, err
+	}
 
 	if len(chunks) == 0 {
 		return llm.ChatResponse{}, fmt.Errorf("geminifamily: empty stream response")

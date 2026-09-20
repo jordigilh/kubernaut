@@ -25,6 +25,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -399,7 +400,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 	// --- Phase 5: Response Failed ---
 
 	Describe("UT-KA-433-AP-011: buildEventData maps AIAgentResponseFailedPayload", func() {
-		It("should populate error_message, phase, duration_seconds", func() {
+		It("should populate error_message, phase, duration_seconds, and error_details", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
@@ -407,6 +408,9 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			event.Data["error_message"] = "LLM timeout after 30s"
 			event.Data["phase"] = rca
 			event.Data["duration_seconds"] = 30.5
+			event.Data["error_details"] = sharedaudit.NewErrorDetails(
+				"kubernautagent", "ERR_UPSTREAM_TIMEOUT", "LLM timeout after 30s", true,
+			)
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -417,6 +421,10 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(payload.ErrorMessage).To(Equal("LLM timeout after 30s"))
 			Expect(payload.Phase).To(Equal(rca))
 			Expect(payload.DurationSeconds.Value).To(BeNumerically("~", 30.5, 0.01))
+			Expect(payload.ErrorDetails.Message).To(Equal("LLM timeout after 30s"))
+			Expect(payload.ErrorDetails.Code).To(Equal("ERR_UPSTREAM_TIMEOUT"))
+			Expect(payload.ErrorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentKubernautagent))
+			Expect(payload.ErrorDetails.RetryPossible).To(BeTrue())
 		})
 	})
 

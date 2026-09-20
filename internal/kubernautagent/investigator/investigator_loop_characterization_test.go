@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // This file characterizes runLLMLoop branches left uncovered by the existing
@@ -149,6 +150,11 @@ var _ = Describe("Kubernaut Agent Investigator — runLLMLoop characterization (
 			Expect(failEvents[0].Data).To(HaveKeyWithValue("error_message", "upstream 500"))
 			Expect(failEvents[0].Data).To(HaveKeyWithValue("phase", string(katypes.PhaseRCA)))
 			Expect(failEvents[0].Data).To(HaveKey("duration_seconds"))
+			errorDetails, ok := failEvents[0].Data["error_details"].(*sharedaudit.ErrorDetails)
+			Expect(ok).To(BeTrue())
+			Expect(errorDetails.Code).To(Equal("ERR_UPSTREAM_FAILURE"))
+			Expect(errorDetails.Component).To(Equal("kubernautagent"))
+			Expect(errorDetails.RetryPossible).To(BeTrue())
 		})
 	})
 

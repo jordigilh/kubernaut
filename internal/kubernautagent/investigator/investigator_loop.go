@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -29,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
@@ -232,6 +234,15 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 	failEvent.EventAction = audit.ActionResponseFailed
 	failEvent.EventOutcome = audit.OutcomeFailure
 	failEvent.Data["error_message"] = err.Error()
+	errorCode := "ERR_UPSTREAM_FAILURE"
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		errorCode = "ERR_UPSTREAM_TIMEOUT"
+	}
+	// BR-AUDIT-005 Gap #7: retain machine-readable failure classification and
+	// retry guidance for SOC2 reconstruction of failed LLM turns.
+	failEvent.Data["error_details"] = sharedaudit.NewErrorDetails(
+		"kubernautagent", errorCode, err.Error(), llm.IsRetryable(err),
+	)
 	failEvent.Data["phase"] = p.phase
 	failEvent.Data["duration_seconds"] = time.Since(p.loopStart).Seconds()
 	audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())

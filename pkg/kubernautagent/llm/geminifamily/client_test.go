@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -261,6 +262,29 @@ var _ = Describe("geminifamily.Client Chat/StreamChat — #1778 BR-AI-087", func
 		Expect(deltas).To(ContainElement("The pod "))
 		Expect(resp.Message.Content).To(Equal("The pod is OOMKilled."))
 		Expect(resp.Usage.TotalTokens).To(Equal(15))
+	})
+
+	It("UT-GM-2445-001: StreamChat propagates a terminal callback error", func() {
+		makeClient(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: "+`{"candidates":[{"content":{"role":"model","parts":[{"text":"partial"}]}}]}`+"\n\n")
+		})
+
+		callbackErr := errors.New("observer disconnected")
+		var sawDone bool
+		resp, err := client.StreamChat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "Why is the pod crashing?"}},
+		}, func(event llm.ChatStreamEvent) error {
+			if event.Done {
+				sawDone = true
+				return callbackErr
+			}
+			return nil
+		})
+
+		Expect(sawDone).To(BeTrue())
+		Expect(err).To(MatchError(callbackErr))
+		Expect(resp).To(Equal(llm.ChatResponse{}))
 	})
 
 	It("UT-GM-1778-208: StreamChat delivers function-call deltas", func() {

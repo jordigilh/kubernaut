@@ -19,6 +19,7 @@ package audit
 import (
 	"github.com/go-faster/jx"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // buildConfigReloadedPayload builds the aiagent.config.reloaded payload
@@ -214,6 +215,11 @@ func buildResponseFailedPayload(event *AuditEvent) ogenclient.AuditEventRequestE
 		IncidentID:   event.CorrelationID,
 		ErrorMessage: dataString(event.Data, "error_message"),
 		Phase:        dataString(event.Data, "phase"),
+	}
+	if details, ok := event.Data["error_details"].(*sharedaudit.ErrorDetails); ok && details != nil {
+		if converted, ok := sharedaudit.ToOgenOptErrorDetails(details).Get(); ok {
+			payload.ErrorDetails = converted
+		}
 	}
 	if dur := dataFloat64(event.Data, "duration_seconds"); dur > 0 {
 		payload.DurationSeconds.SetTo(float32(dur))
