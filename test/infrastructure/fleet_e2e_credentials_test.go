@@ -313,6 +313,16 @@ func captureKubectlManifest(run func() error) string {
 	return string(manifest)
 }
 
+var _ = Describe("fleet external image preload policy", func() {
+	It("UT-INFRA-FLEETDEMO-026 [BR-PLATFORM-014]: skips archive preload in local mode", func() {
+		Expect(shouldPreloadFleetExternalImages("")).To(BeFalse())
+	})
+
+	It("UT-INFRA-FLEETDEMO-027 [BR-PLATFORM-014]: preloads external images in CI mode", func() {
+		Expect(shouldPreloadFleetExternalImages("quay.io/kubernaut-ai")).To(BeTrue())
+	})
+})
+
 func expectValidYAMLDocuments(manifest string) {
 	decoder := yaml.NewDecoder(strings.NewReader(manifest))
 	for {

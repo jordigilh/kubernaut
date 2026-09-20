@@ -859,6 +859,10 @@ type FleetCoreInfraOptions struct {
 	RemoteClusterName string
 }
 
+func shouldPreloadFleetExternalImages(imageRegistry string) bool {
+	return imageRegistry != ""
+}
+
 // provisionFleetCoreInfra deploys Keycloak (IdP), the genuinely separate
 // remote Kind cluster (DD-TEST-013), and the Kuadrant MCP Gateway +
 // kube-mcp-server -- the full fleet-core infrastructure sequence shared by:
@@ -1038,15 +1042,21 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
 	// EAIGW's controller/CRDs are installed separately (deployEnvoyAIGatewayInfra
 	// applies its own upstream manifests, not preloaded images here) --
-	// kube-mcp-server is the only image both gateways need preloaded.
-	preloadImages := []string{KubeMCPServerImage}
-	if gatewayType != registry.GatewayEAIGW {
-		preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
-	}
-	for _, img := range preloadImages {
-		if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
-			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+	// kube-mcp-server is the only image both gateways need preloaded. Keep the
+	// archive path for CI, where it avoids registry rate limits; local Podman
+	// Kind imports can leave containerd with an unusable temporary image alias.
+	if shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
+		preloadImages := []string{KubeMCPServerImage}
+		if gatewayType != registry.GatewayEAIGW {
+			preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
 		}
+		for _, img := range preloadImages {
+			if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+			}
+		}
+	} else {
+		_, _ = fmt.Fprintln(writer, "  ℹ️  Local mode: skipping external image archive preload; Kind will pull images on demand")
 	}
 
 	kubeMCPAuthConfig := sharedAuthConfig
