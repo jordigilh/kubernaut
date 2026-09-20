@@ -140,7 +140,8 @@ No `LLM_ENDPOINT`: every Vertex consumer derives the endpoint from
 project/location (or honors the SDK default), so the flag is not required
 with `LLM_PROVIDER=vertex_ai` (issue #2355).
 
-This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, kube-mcp-server,
+This creates the hub + spoke Kind clusters, Keycloak, MCP Gateway, hub-local and
+spoke `kube-mcp-server` instances, the `hub` and `remote-cluster` registrations,
 and fleet-wide monitoring; once the hub cluster exists, it writes
 `LLM_CREDENTIALS_FILE`'s contents into the `llm-credentials-primary` Secret (there's no
 way to do this before the cluster exists to hold it); then it runs

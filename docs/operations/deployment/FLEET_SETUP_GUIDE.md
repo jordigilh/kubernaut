@@ -17,36 +17,36 @@ the Kuadrant dependencies in #2309 are being addressed.
 ## What you're building
 
 ```
-┌─────────────────────────────── hub cluster ───────────────────────────────┐
-│                                                                             │
-│  Kubernaut (Helm, global.fleet.enabled=true)   Keycloak (kubernaut-demo) │
-│  GW · SP · RO · WE · AA · EM · KA · AF · DS  ──────────▲───────────────── │
-│         │ MCP tool calls (Bearer token)                │ OIDC issuer      │
-│         ▼                                               │                 │
-│  Envoy AI Gateway ──Backend "remote-cluster"──────────────┘                 │
-│         │ tools/call                                                      │
-│         ▼                                                                 │
-│  bridge Service (kube-mcp-server-remote) ─────┐                           │
-└────────────────────────────────────────────────┼──────────────────────────┘
-                                                   │ podman "kind" bridge network
-┌──────────────────────────────────────────────── ▼ ────── spoke cluster ───┐
-│  kube-mcp-server (passthrough + RFC 8693 token exchange)                  │
-│         │                                                                  │
-│         ▼                                                                  │
-│  Kubernetes API (OIDC-trusts the SAME Keycloak, via a bridged Service)    │
-│         │                                                                  │
-│         ▼                                                                  │
-│  kubernaut-workflows namespace (WorkflowExecution Job dispatch target)    │
-└─────────────────────────────────────────────────────────────────────────┘
++-------------------------------- hub cluster -------------------------------+
+| Kubernaut (Helm, global.fleet.enabled=true)       Keycloak                 |
+| GW · SP · RO · WE · AA · EM · KA · AF · DS         (kubernaut-demo)         |
+|          | MCP tool calls (Bearer token)             | OIDC issuer            |
+|          v                                           v                       |
+|   Envoy AI Gateway                                                        |
+|      |-- Backend "hub" ------------> kube-mcp-server --> hub Kubernetes API |
+|      |                                (hub-local, OAuth + TLS)              |
+|      |-- Backend "remote-cluster" -> bridge Service -----------------------+
++------------------------------------+----------------------------------------+
+                                     | podman "kind" bridge network
++------------------------------------v------ spoke cluster ------------------+
+| kube-mcp-server (passthrough + RFC 8693 token exchange)                    |
+|          |                                                                  |
+|          v                                                                  |
+| Kubernetes API (OIDC-trusts the SAME Keycloak, via a bridged Service)       |
+|          |                                                                  |
+|          v                                                                  |
+| demo-webui workload and GitOps-managed resources                            |
++-----------------------------------------------------------------------------+
 ```
 
 The **hub** runs the full Kubernaut stack and holds every CRD (`RemediationRequest`,
-`RemediationWorkflow`, `MCPServerRegistration`, etc.). The **spoke** is a genuinely
-separate Kubernetes control plane — no Kubernaut CRDs, just `kube-mcp-server` plus
-whatever target workloads and the `kubernaut-workflows` namespace where
-`WorkflowExecution`'s Job dispatch actually runs remediation Jobs
-(`pkg/workflowexecution/executor/client_factory.go`: an empty `ClusterID` routes to a
-local client, a non-empty one routes through the MCP Gateway to the spoke).
+`RemediationWorkflow`, `MCPServerRegistration`, etc.). The demo registers its
+hub-local `kube-mcp-server` as `hub`, so Gateway discovery exposes `hub__...` tools
+for workflows whose catalog declares `execution.clusterId: hub`. The spoke is a
+genuinely separate Kubernetes control plane with the `demo-webui` workload and its
+`remote-cluster` MCP registration. The GitOps workflow Job runs on the hub; ArgoCD
+then reconciles the commit onto the spoke. This explicit non-empty `ClusterID` uses
+the MCP Gateway dispatch path rather than the normal empty-ID local-client shortcut.
 
 Both clusters trust the **same** Keycloak realm (`kubernaut-demo`), reached from the
 spoke via a hand-authored Service+Endpoints bridge over the podman `kind` network — no
@@ -80,11 +80,29 @@ make setup-fleet-demo-infra \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
 
-That path provisions the hub, spoke, Keycloak, Envoy AI Gateway (EAIGW), kube-mcp-server,
+That path provisions the hub, spoke, Keycloak, Envoy AI Gateway (EAIGW), hub-local and
+spoke `kube-mcp-server` instances, the `hub` and `remote-cluster` Gateway backends,
 monitoring, Helm installation, Console access, generated Secrets, default Rego
 policies, and fleet demo instructions. It is Console-first by default; set
 `AUTONOMOUS=true` to enable Gateway-driven remediation. Continue with Path A for
 the contributor E2E harness or Path B for the manual architecture walkthrough.
+
+### Validate the registrations
+
+The setup output must report the hub identity as `hub` and the remote identity as
+`remote-cluster`. With the default EAIGW path, verify both Gateway backends and the
+local server from the hub kubeconfig:
+
+```bash
+kubectl --kubeconfig "$HUB_KUBECONFIG" -n kubernaut-system \
+  get deployment/kube-mcp-server backend.gateway.envoyproxy.io/hub \
+  backend.gateway.envoyproxy.io/remote-cluster
+```
+
+The authenticated readiness checks run during setup and probe both `hub__` and
+`remote-cluster__` tool prefixes. A GitOps demo should then produce a
+`WorkflowExecution` with `spec.clusterID: hub`; the resulting Job is created on the
+hub while the alert and `demo-webui` workload remain on the spoke.
 
 The Quick Start is the canonical operator entry point for the throwaway demo;
 this guide remains the detailed topology and troubleshooting reference.
