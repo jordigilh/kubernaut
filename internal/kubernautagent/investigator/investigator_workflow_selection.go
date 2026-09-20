@@ -35,6 +35,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	// (list_available_actions, list_workflows) filter by the correct component.
 	// Defense-in-depth for #1064/#1065: even if enrichment resolved a container
 	// kind (e.g. Namespace), the label override corrects it for tool context.
+	discoveredWorkflows := katypes.NewDiscoveredWorkflowState()
+	ctx = katypes.WithDiscoveredWorkflowState(ctx, discoveredWorkflows)
 	overriddenSignal := ApplySignalLabelOverrides(signal)
 	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
 	inv.logger.Info("runWorkflowSelection: post-override signal",
@@ -258,6 +260,9 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 		result.HumanReviewReason = "catalog_unavailable"
 		result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
 		return result, nil
+	}
+	if discoveredWorkflows, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
+		validator.SetDiscoveredWorkflowState(discoveredWorkflows)
 	}
 
 	state := &selfCorrectionState{content: content, messages: messages}

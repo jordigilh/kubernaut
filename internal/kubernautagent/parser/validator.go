@@ -151,8 +151,9 @@ func workflowComponentMatchesTargetKind(component, targetKind string) bool {
 
 // Validator checks InvestigationResult against session-specific constraints.
 type Validator struct {
-	allowedWorkflows map[string]struct{}
-	catalogMeta      map[string]WorkflowMeta
+	allowedWorkflows    map[string]struct{}
+	catalogMeta         map[string]WorkflowMeta
+	discoveredWorkflows *katypes.DiscoveredWorkflowState
 }
 
 // NewValidator creates a result validator with the given workflow allowlist.
@@ -174,6 +175,14 @@ func (v *Validator) SetWorkflowMeta(workflowID string, meta WorkflowMeta) {
 		meta.CompiledPatterns = compileParameterPatterns(meta.Parameters)
 	}
 	v.catalogMeta[workflowID] = meta
+}
+
+// SetDiscoveredWorkflowState attaches the live workflow-discovery membership
+// for the current selection context. The pointer is intentional: a
+// self-correction retry may call list_workflows and expand membership after
+// validation has started.
+func (v *Validator) SetDiscoveredWorkflowState(state *katypes.DiscoveredWorkflowState) {
+	v.discoveredWorkflows = state
 }
 
 // maxPatternLength caps regex pattern length to prevent ReDoS from excessively
@@ -206,8 +215,9 @@ func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
 	return m, ok
 }
 
-// IsAllowed reports whether workflowID is present in the session allowlist
-// (i.e. it resolves against the DS catalog fetched for this request). This
+// IsAllowed reports whether workflowID is present in the catalog allowlist and,
+// when discovery state is attached, was returned by list_workflows in the
+// current selection context. This
 // is the same membership test Validate applies to workflow_id, exposed here
 // so callers outside Validate (e.g. enrichFromCatalog's Issue #1711 guard)
 // can distinguish "unresolvable ID" from "resolvable ID with no registered
@@ -215,8 +225,10 @@ func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
 // allowlist without a matching SetWorkflowMeta call; production always sets
 // both from the same catalog-fetch loop (see dsCatalogFetcher.FetchValidator).
 func (v *Validator) IsAllowed(workflowID string) bool {
-	_, ok := v.allowedWorkflows[workflowID]
-	return ok
+	if _, ok := v.allowedWorkflows[workflowID]; !ok {
+		return false
+	}
+	return v.discoveredWorkflows == nil || v.discoveredWorkflows.Contains(workflowID)
 }
 
 // Validate checks the result against the allowlist, confidence bounds, and
@@ -229,10 +241,14 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 	}
 
 	if result.WorkflowID != "" {
-		if _, ok := v.allowedWorkflows[result.WorkflowID]; !ok {
+		if !v.IsAllowed(result.WorkflowID) {
+			message := fmt.Sprintf("workflow %q not in session allowlist", result.WorkflowID)
+			if _, catalogAllowed := v.allowedWorkflows[result.WorkflowID]; catalogAllowed && v.discoveredWorkflows != nil {
+				message = fmt.Sprintf("workflow %q not returned by workflow discovery in current session", result.WorkflowID)
+			}
 			return &ValidationError{
 				Field:   "workflow_id",
-				Message: fmt.Sprintf("workflow %q not in session allowlist", result.WorkflowID),
+				Message: message,
 			}
 		}
 	}

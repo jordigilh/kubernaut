@@ -547,8 +547,9 @@ func (f *workflowCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Va
 	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	// limit=-1: unfiltered, unbounded -- KA validates LLM-selected workflows
-	// against the FULL current catalog (DD-KA-001), not a paginated subset.
+	// limit=-1: unfiltered, unbounded -- this fetch supplies catalog metadata
+	// for validation. The workflow-selection context separately restricts
+	// membership to IDs returned by list_workflows (Issue #2442).
 	workflows, _, err := f.catalog.List(fetchCtx, nil, -1, 0)
 	if err != nil {
 		return nil, fmt.Errorf("workflow catalog list failed: %w", err)

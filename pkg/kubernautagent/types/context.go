@@ -16,9 +16,13 @@ limitations under the License.
 
 package types
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type signalContextKey struct{}
+type discoveredWorkflowStateKey struct{}
 
 // WithSignalContext returns a new context carrying the given SignalContext.
 func WithSignalContext(ctx context.Context, signal SignalContext) context.Context {
@@ -30,4 +34,56 @@ func WithSignalContext(ctx context.Context, signal SignalContext) context.Contex
 func SignalContextFromContext(ctx context.Context) (SignalContext, bool) {
 	signal, ok := ctx.Value(signalContextKey{}).(SignalContext)
 	return signal, ok
+}
+
+// DiscoveredWorkflowState tracks workflow IDs returned by list_workflows for
+// one workflow-selection context. The state is shared by concurrent tool calls
+// and by self-correction retries that may rediscover additional pages.
+type DiscoveredWorkflowState struct {
+	mu          sync.RWMutex
+	workflowIDs map[string]struct{}
+}
+
+// NewDiscoveredWorkflowState creates empty workflow-discovery state.
+func NewDiscoveredWorkflowState() *DiscoveredWorkflowState {
+	return &DiscoveredWorkflowState{workflowIDs: make(map[string]struct{})}
+}
+
+// Add records workflow IDs returned by list_workflows. Empty IDs are ignored.
+func (s *DiscoveredWorkflowState) Add(workflowIDs ...string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.workflowIDs == nil {
+		s.workflowIDs = make(map[string]struct{})
+	}
+	for _, workflowID := range workflowIDs {
+		if workflowID != "" {
+			s.workflowIDs[workflowID] = struct{}{}
+		}
+	}
+}
+
+// Contains reports whether workflowID was returned by list_workflows.
+func (s *DiscoveredWorkflowState) Contains(workflowID string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.workflowIDs[workflowID]
+	return ok
+}
+
+// WithDiscoveredWorkflowState returns a context carrying workflow-discovery state.
+func WithDiscoveredWorkflowState(ctx context.Context, state *DiscoveredWorkflowState) context.Context {
+	return context.WithValue(ctx, discoveredWorkflowStateKey{}, state)
+}
+
+// DiscoveredWorkflowStateFromContext extracts workflow-discovery state.
+func DiscoveredWorkflowStateFromContext(ctx context.Context) (*DiscoveredWorkflowState, bool) {
+	state, ok := ctx.Value(discoveredWorkflowStateKey{}).(*DiscoveredWorkflowState)
+	return state, ok && state != nil
 }

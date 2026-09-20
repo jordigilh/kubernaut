@@ -30,9 +30,9 @@ import (
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var listAvailableActionsSchema = json.RawMessage(`{
@@ -265,6 +265,11 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return "", fmt.Errorf("listing workflows: %w", err)
+	}
+	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
+		for i := range workflows {
+			state.Add(workflows[i].WorkflowID)
+		}
 	}
 
 	t.emitAuditEvent(ctx, a.ActionType, filters, totalCount, durationMs)
