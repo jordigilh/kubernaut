@@ -26,6 +26,15 @@ type ChatCompletionRequest struct {
 	// OpenAI-compatible streaming clients (pkg/shared/llm/openaicompat)
 	// parse the response as SSE regardless of what was actually sent.
 	Stream bool `json:"stream,omitempty"`
+	// StreamOptions controls optional metadata emitted in streaming responses.
+	// OpenAI-compatible providers use include_usage to opt into a trailing
+	// usage-only chunk.
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+}
+
+// StreamOptions contains optional controls for streamed Chat Completions.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
 // ChatCompletionResponse represents an OpenAI-compatible chat completion response.

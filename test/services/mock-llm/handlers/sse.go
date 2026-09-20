@@ -71,24 +71,28 @@ type sseUsageChunk struct {
 // BuildToolCallResponse, BuildMultiToolCallResponse, ...) constructs the
 // same openai.ChatCompletionResponse regardless of transport; this is the
 // single seam that picks how to put it on the wire.
-func writeChatCompletion(w http.ResponseWriter, stream bool, resp openai.ChatCompletionResponse) {
+func writeChatCompletion(w http.ResponseWriter, stream, includeUsage bool, resp openai.ChatCompletionResponse) {
 	if !stream {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	writeSSEChatCompletion(w, resp)
+	writeSSEChatCompletion(w, resp, includeUsage)
+}
+
+func streamUsageRequested(options *openai.StreamOptions) bool {
+	return options != nil && options.IncludeUsage
 }
 
 // writeSSEChatCompletion streams resp as a single OpenAI-compatible Chat
 // Completions chunk carrying the full delta (role, content,
-// reasoning_content, tool_calls) plus finish_reason, followed by a trailing
+// reasoning_content, tool_calls) plus finish_reason, followed by an optional
 // usage chunk and the terminal "[DONE]" sentinel. This is a compatibility
 // floor, not token-by-token fragmentation: real providers emit many small
 // deltas, but every field a spec-compliant SSE consumer reads is present
 // here, which is sufficient for the mock's purpose (deterministic,
 // fully-populated responses for E2E assertions) without reimplementing
 // incremental tokenization.
-func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionResponse) {
+func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionResponse, includeUsage bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -102,9 +106,11 @@ func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionRes
 		}
 	}
 
-	writeSSEData(w, sseUsageChunk{Usage: resp.Usage, Choices: []sseChunkChoice{}})
-	if canFlush {
-		flusher.Flush()
+	if includeUsage {
+		writeSSEData(w, sseUsageChunk{Usage: resp.Usage, Choices: []sseChunkChoice{}})
+		if canFlush {
+			flusher.Flush()
+		}
 	}
 
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")

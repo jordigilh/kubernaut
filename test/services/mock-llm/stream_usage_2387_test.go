@@ -42,11 +42,14 @@ import (
 // YAML `usage:` override (defaults = the builders' current hardcoded
 // values, so existing scenarios are unaffected).
 var _ = Describe("Streamed usage reporting (issue #2387)", func() {
-	postStream := func(ts *httptest.Server, text string) string {
+	postStream := func(ts *httptest.Server, text string, includeUsage bool) string {
 		reqBody := openai.ChatCompletionRequest{
 			Model:    "mock-model",
 			Stream:   true,
 			Messages: []openai.Message{{Role: "user", Content: strPtr(text)}},
+		}
+		if includeUsage {
+			reqBody.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 		}
 		body, err := json.Marshal(reqBody)
 		Expect(err).NotTo(HaveOccurred())
@@ -88,7 +91,7 @@ var _ = Describe("Streamed usage reporting (issue #2387)", func() {
 			ts := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeInteractive))
 			defer ts.Close()
 
-			usage := streamedUsage(postStream(ts, "gibberish that matches no scenario"))
+			usage := streamedUsage(postStream(ts, "gibberish that matches no scenario", true))
 			Expect(usage.PromptTokens).To(Equal(100))
 			Expect(usage.CompletionTokens).To(Equal(50))
 			Expect(usage.TotalTokens).To(Equal(150))
@@ -108,7 +111,7 @@ var _ = Describe("Streamed usage reporting (issue #2387)", func() {
 			ts := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeInteractive))
 			defer ts.Close()
 
-			usage := streamedUsage(postStream(ts, "- Signal Name: OOMKilled\n- Namespace: default"))
+			usage := streamedUsage(postStream(ts, "- Signal Name: OOMKilled\n- Namespace: default", true))
 			Expect(usage.PromptTokens).To(Equal(111))
 			Expect(usage.CompletionTokens).To(Equal(222))
 			Expect(usage.TotalTokens).To(Equal(333))
@@ -135,6 +138,16 @@ var _ = Describe("Streamed usage reporting (issue #2387)", func() {
 			Expect(usage.PromptTokens).To(Equal(111))
 			Expect(usage.CompletionTokens).To(Equal(222))
 			Expect(usage.TotalTokens).To(Equal(333))
+		})
+	})
+
+	Describe("UT-MOCK-2387-004: usage requires the client opt-in", func() {
+		It("should omit the trailing usage chunk when include_usage is false", func() {
+			registry := scenarios.DefaultRegistry()
+			ts := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeInteractive))
+			defer ts.Close()
+
+			Expect(streamedUsage(postStream(ts, "gibberish that matches no scenario", false))).To(Equal(openai.Usage{}))
 		})
 	})
 })
