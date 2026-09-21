@@ -17,8 +17,9 @@ limitations under the License.
 // Issue #453 Phase B: integration coverage for NotificationCreator typed NotificationContext
 // using envtest (real K8s API server with etcd).
 //
-// Business requirements:
-// - BR-ORCH-001, BR-ORCH-036, BR-ORCH-045, BR-ORCH-034, BR-NOT-058
+// Business requirements and control objectives:
+// - BR-FLEET-001, BR-ORCH-001, BR-ORCH-036, BR-ORCH-045, BR-ORCH-034, BR-NOT-058
+// - FedRAMP AU-3, SOC 2 CC7.2, OWASP ASVS V7.1.1/V7.2.1
 package remediationorchestrator
 
 import (
@@ -67,9 +68,9 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 		deleteTestNamespace(testNamespace)
 	})
 
-	// newRR creates a RemediationRequest in envtest via the real K8s API.
+	// newRRWithClusterID creates a RemediationRequest in envtest via the real K8s API.
 	// The UID is assigned by the API server, enabling real owner reference validation.
-	newRR := func(name string) *remediationv1.RemediationRequest {
+	newRRWithClusterID := func(name, clusterID string) *remediationv1.RemediationRequest {
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -86,6 +87,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind: "Deployment", Name: "test-app", Namespace: testNamespace,
 				},
+				ClusterID:    clusterID,
 				FiringTime:   now,
 				ReceivedTime: now,
 			},
@@ -95,6 +97,65 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		return rr
 	}
+	newRR := func(name string) *remediationv1.RemediationRequest {
+		return newRRWithClusterID(name, "")
+	}
+
+	newApprovalAI := func(name string) *aianalysisv1.AIAnalysis {
+		return &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ROControllerNamespace,
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase: aianalysisv1.PhaseCompleted,
+				Approval: &aianalysisv1.ApprovalStatus{
+					ApprovalReason: "policy_requires_human_gate",
+				},
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-approval-2449",
+							WorkflowName:    "wf-approval-2449",
+							ActionType:      "RestartPod",
+							Version:         "v1",
+							ExecutionBundle: "oci://test/bundle@sha256:2449",
+						},
+						Confidence: 0.85,
+						Rationale:  "test",
+					},
+				},
+			},
+		}
+	}
+
+	It("IT-NOT-2449-001 [BR-FLEET-001] should use the RR cluster ID in fleet notification content", func() {
+		rr := newRRWithClusterID("rr-it-2449-fleet", "remote-cluster")
+		ai := newApprovalAI("ai-it-2449-fleet")
+
+		name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+		Expect(err).NotTo(HaveOccurred())
+
+		nr := &notificationv1.NotificationRequest{}
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, nr)).To(Succeed())
+
+		Expect(nr.Spec.Body).To(HavePrefix("**Cluster**: remote-cluster\n\n"),
+			"FedRAMP AU-3 and SOC 2 CC7.2 require the notification trace to retain authoritative cluster provenance")
+	})
+
+	It("IT-NOT-2449-002 [BR-FLEET-001] should omit cluster content for local notification flow", func() {
+		rr := newRR("rr-it-2449-local")
+		ai := newApprovalAI("ai-it-2449-local")
+
+		name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+		Expect(err).NotTo(HaveOccurred())
+
+		nr := &notificationv1.NotificationRequest{}
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, nr)).To(Succeed())
+
+		Expect(nr.Spec.Body).NotTo(HavePrefix("**Cluster**:"),
+			"local mode must not invent or inherit a cluster identity")
+	})
 
 	It("IT-NOT-453B-003 [BR-ORCH-001] should populate typed Context on approval NotificationRequest", func() {
 		rr := newRR("rr-it-453b-003")

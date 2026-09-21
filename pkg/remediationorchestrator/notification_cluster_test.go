@@ -43,7 +43,7 @@ import (
 // validation and no test assertion depends on the enum being authoritative here.
 const outcomeSucceededFixture = "Succeeded"
 
-var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
+var _ = Describe("BR-FLEET-001: Cluster ID in Notifications", func() {
 	var (
 		scheme *runtime.Scheme
 	)
@@ -56,41 +56,30 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 		_ = eav1.AddToScheme(scheme)
 	})
 
-	Describe("UT-RO-615-001..004: FormatClusterLine", func() {
-		It("UT-RO-615-001: should format name and UUID", func() {
-			line := creator.FormatClusterLine("ocp-prod", "abc-123")
-			Expect(line).To(Equal("**Cluster**: ocp-prod (abc-123)\n\n"))
+	Describe("UT-RO-FLEET-001..002: FormatClusterLine", func() {
+		It("UT-RO-FLEET-001: should format the MCP Gateway cluster ID", func() {
+			line := creator.FormatClusterLine("remote-cluster")
+			Expect(line).To(Equal("**Cluster**: remote-cluster\n\n"))
 		})
 
-		It("UT-RO-615-002: should format name only (no UUID)", func() {
-			line := creator.FormatClusterLine("ocp-prod", "")
-			Expect(line).To(Equal("**Cluster**: ocp-prod\n\n"))
-		})
-
-		It("UT-RO-615-003: should format UUID only (no name)", func() {
-			line := creator.FormatClusterLine("", "abc-123")
-			Expect(line).To(Equal("**Cluster**: (abc-123)\n\n"))
-		})
-
-		It("UT-RO-615-004: should return empty when both are empty", func() {
-			line := creator.FormatClusterLine("", "")
+		It("UT-RO-FLEET-002: should return empty for a local RR without a cluster ID", func() {
+			line := creator.FormatClusterLine("")
 			Expect(line).To(BeEmpty())
 		})
 	})
 
-	Describe("UT-RO-615-005..009: Body builders prepend cluster line when SetClusterIdentity is called", func() {
+	Describe("UT-RO-FLEET-003..007: Body builders use RR cluster ID", func() {
 		const (
-			clusterName    = "ocp-prod"
-			clusterUUID    = "abc-123"
-			expectedPrefix = "**Cluster**: ocp-prod (abc-123)\n\n"
+			clusterID      = "remote-cluster"
+			expectedPrefix = "**Cluster**: remote-cluster\n\n"
 		)
 
-		It("UT-RO-615-005: Approval notification body starts with cluster line", func() {
+		It("UT-RO-FLEET-003: Approval notification body starts with RR cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-005", "default")
+			rr.Spec.ClusterID = clusterID
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-005", "default")
 
 			name, err := nc.CreateApprovalNotification(context.Background(), rr, ai)
@@ -101,12 +90,12 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			Expect(nr.Spec.Body).To(HavePrefix(expectedPrefix))
 		})
 
-		It("UT-RO-615-006: Completion notification body starts with cluster line", func() {
+		It("UT-RO-FLEET-004: Completion notification body starts with RR cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-006", "default")
+			rr.Spec.ClusterID = clusterID
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.EnsureCompletionStatus().Outcome = outcomeSucceededFixture
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-006", "default")
@@ -119,12 +108,12 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			Expect(nr.Spec.Body).To(HavePrefix(expectedPrefix))
 		})
 
-		It("UT-RO-615-007: Bulk duplicate notification body starts with cluster line", func() {
+		It("UT-RO-FLEET-005: Bulk duplicate notification body starts with RR cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-007", "default")
+			rr.Spec.ClusterID = clusterID
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.EnsureRoutingStatus().DuplicateCount = 3
 
@@ -136,12 +125,12 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			Expect(nr.Spec.Body).To(HavePrefix(expectedPrefix))
 		})
 
-		It("UT-RO-615-008: Manual review notification body starts with cluster line", func() {
+		It("UT-RO-FLEET-006: Manual review notification body starts with RR cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-008", "default")
+			rr.Spec.ClusterID = clusterID
 			reviewCtx := &creator.ManualReviewContext{
 				Source:  notificationv1.ReviewSourceAIAnalysis,
 				Reason:  "LowConfidence",
@@ -156,12 +145,12 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			Expect(nr.Spec.Body).To(HavePrefix(expectedPrefix))
 		})
 
-		It("UT-RO-615-009: Self-resolved notification body starts with cluster line", func() {
+		It("UT-RO-FLEET-007: Self-resolved notification body starts with RR cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-009", "default")
+			rr.Spec.ClusterID = clusterID
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-009", "default")
 
 			name, err := nc.CreateSelfResolvedNotification(context.Background(), rr, ai)
@@ -173,30 +162,28 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 		})
 	})
 
-	Describe("UT-RO-621-001..003: Timeout body builders include cluster line", func() {
-		It("UT-RO-621-001: Global timeout body includes cluster line when identity is set", func() {
+	Describe("UT-RO-FLEET-008..010: Timeout body builders use RR cluster ID", func() {
+		It("UT-RO-FLEET-008: Global timeout body includes the fleet cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity("ocp-prod", "uuid-123")
 
-			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
-			Expect(body).To(HavePrefix("**Cluster**: ocp-prod (uuid-123)\n\n"))
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "remote-cluster", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			Expect(body).To(HavePrefix("**Cluster**: remote-cluster\n\n"))
 		})
 
-		It("UT-RO-621-002: Phase timeout body includes cluster line when identity is set", func() {
+		It("UT-RO-FLEET-009: Phase timeout body includes the fleet cluster ID", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-			nc.SetClusterIdentity("ocp-prod", "uuid-123")
 
-			body := nc.BuildPhaseTimeoutBody("TestSignal", "test-rr", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
-			Expect(body).To(HavePrefix("**Cluster**: ocp-prod (uuid-123)\n\n"))
+			body := nc.BuildPhaseTimeoutBody("TestSignal", "test-rr", "remote-cluster", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
+			Expect(body).To(HavePrefix("**Cluster**: remote-cluster\n\n"))
 		})
 
-		It("UT-RO-621-003: Timeout body omits cluster line when identity is empty", func() {
+		It("UT-RO-FLEET-010: Timeout body omits cluster line for local mode", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "test-rr", "", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
 			Expect(strings.HasPrefix(body, "**Cluster**:")).To(BeFalse(),
 				"Timeout body should not start with cluster line when identity is empty")
 		})
@@ -207,7 +194,7 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-			body := nc.BuildGlobalTimeoutBody("TestSignal", "my-rr-name", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
+			body := nc.BuildGlobalTimeoutBody("TestSignal", "my-rr-name", "", "AIAnalysis", "30m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z")
 			Expect(body).To(ContainSubstring("**Remediation**: my-rr-name"))
 		})
 
@@ -215,13 +202,13 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-			body := nc.BuildPhaseTimeoutBody("TestSignal", "my-rr-name", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
+			body := nc.BuildPhaseTimeoutBody("TestSignal", "my-rr-name", "", "WorkflowExecution", "10m0s", "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
 			Expect(body).To(ContainSubstring("**Remediation**: my-rr-name"))
 		})
 	})
 
-	Describe("UT-RO-615-010: Body builders omit cluster line when SetClusterIdentity is NOT called", func() {
-		It("UT-RO-615-010: All body builders omit cluster line by default", func() {
+	Describe("UT-RO-FLEET-011: Body builders omit cluster line for local RRs", func() {
+		It("UT-RO-FLEET-011: All body builders omit cluster line when RR cluster ID is empty", func() {
 			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -238,21 +225,21 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			approvalNR := &notificationv1.NotificationRequest{}
 			Expect(cl.Get(ctx, types.NamespacedName{Name: approvalName, Namespace: "default"}, approvalNR)).To(Succeed())
 			Expect(strings.HasPrefix(approvalNR.Spec.Body, "**Cluster**:")).To(BeFalse(),
-				"Approval body should not start with cluster line when SetClusterIdentity is not called")
+				"Approval body should not start with cluster line when RR cluster ID is empty")
 
 			completionName, err := nc.CreateCompletionNotification(ctx, rr, ai, "argo", nil)
 			Expect(err).ToNot(HaveOccurred())
 			completionNR := &notificationv1.NotificationRequest{}
 			Expect(cl.Get(ctx, types.NamespacedName{Name: completionName, Namespace: "default"}, completionNR)).To(Succeed())
 			Expect(strings.HasPrefix(completionNR.Spec.Body, "**Cluster**:")).To(BeFalse(),
-				"Completion body should not start with cluster line when SetClusterIdentity is not called")
+				"Completion body should not start with cluster line when RR cluster ID is empty")
 
 			bulkName, err := nc.CreateBulkDuplicateNotification(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 			bulkNR := &notificationv1.NotificationRequest{}
 			Expect(cl.Get(ctx, types.NamespacedName{Name: bulkName, Namespace: "default"}, bulkNR)).To(Succeed())
 			Expect(strings.HasPrefix(bulkNR.Spec.Body, "**Cluster**:")).To(BeFalse(),
-				"Bulk duplicate body should not start with cluster line when SetClusterIdentity is not called")
+				"Bulk duplicate body should not start with cluster line when RR cluster ID is empty")
 
 			reviewCtx := &creator.ManualReviewContext{
 				Source:  notificationv1.ReviewSourceAIAnalysis,
@@ -264,14 +251,14 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			manualNR := &notificationv1.NotificationRequest{}
 			Expect(cl.Get(ctx, types.NamespacedName{Name: manualName, Namespace: "default"}, manualNR)).To(Succeed())
 			Expect(strings.HasPrefix(manualNR.Spec.Body, "**Cluster**:")).To(BeFalse(),
-				"Manual review body should not start with cluster line when SetClusterIdentity is not called")
+				"Manual review body should not start with cluster line when RR cluster ID is empty")
 
 			selfResolvedName, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
 			Expect(err).ToNot(HaveOccurred())
 			selfResolvedNR := &notificationv1.NotificationRequest{}
 			Expect(cl.Get(ctx, types.NamespacedName{Name: selfResolvedName, Namespace: "default"}, selfResolvedNR)).To(Succeed())
 			Expect(strings.HasPrefix(selfResolvedNR.Spec.Body, "**Cluster**:")).To(BeFalse(),
-				"Self-resolved body should not start with cluster line when SetClusterIdentity is not called")
+				"Self-resolved body should not start with cluster line when RR cluster ID is empty")
 		})
 	})
 })

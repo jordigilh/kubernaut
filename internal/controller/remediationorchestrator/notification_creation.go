@@ -241,6 +241,7 @@ func (r *Reconciler) buildPhaseTimeoutNotificationRequest(rr *remediationv1.Reme
 			Body: r.notificationCreator.BuildPhaseTimeoutBody(
 				rr.Spec.SignalName,
 				rr.Name,
+				rr.Spec.ClusterID,
 				string(phase),
 				timeout.String(),
 				safeFormatTime(rr.Status.StartTime),

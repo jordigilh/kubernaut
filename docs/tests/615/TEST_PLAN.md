@@ -2,12 +2,16 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
+> **Superseded by Issue #2449**: This historical plan describes RO boot-time
+> cluster discovery and name/UUID formatting. Current behavior uses the authoritative
+> `RemediationRequest.spec.clusterID` and is covered by [TP-2449](../2449/TEST_PLAN.md).
+
 **Test Plan Identifier**: TP-615-v2.1
-**Feature**: Add cluster name and UUID to all notification messages via boot-time auto-discovery
+**Feature**: Historical: add cluster name and UUID to all notification messages via boot-time auto-discovery
 **Version**: 2.1
 **Created**: 2026-03-04
 **Author**: AI Assistant
-**Status**: Draft
+**Status**: Superseded
 **Branch**: `fix/v1.2.0-rc3`
 
 ---

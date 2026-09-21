@@ -118,12 +118,6 @@ func (r *Reconciler) SetNotifySelfResolved(enabled bool) {
 	r.aiAnalysisHandler.SetNotifySelfResolved(enabled)
 }
 
-// SetClusterIdentity configures the cluster name and UUID for inclusion in notification bodies.
-// Issue #615: Called from cmd/remediationorchestrator/main.go after DiscoverIdentity.
-func (r *Reconciler) SetClusterIdentity(name, uuid string) {
-	r.notificationCreator.SetClusterIdentity(name, uuid)
-}
-
 // SetLockManager configures the distributed lock manager for WFE creation safety.
 // BR-ORCH-025: Called from cmd/remediationorchestrator/main.go.
 // nil = locking disabled (single-replica deployments).

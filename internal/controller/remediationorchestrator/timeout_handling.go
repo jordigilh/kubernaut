@@ -206,6 +206,7 @@ func (r *Reconciler) buildTimeoutNotificationRequest(rr *remediationv1.Remediati
 			Body: r.notificationCreator.BuildGlobalTimeoutBody(
 				rr.Spec.SignalName,
 				rr.Name,
+				rr.Spec.ClusterID,
 				string(timeoutPhase),
 				r.getEffectiveGlobalTimeout(rr).String(),
 				rr.Status.StartTime.Format(time.RFC3339),

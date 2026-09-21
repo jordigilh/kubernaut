@@ -40,9 +40,10 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// E2E-RO-045-001: Completion Notification on Successful Remediation
+// E2E-RO-2449-001: Completion Notification on Successful Local Remediation
 //
-// Business Requirement: BR-ORCH-045 (Completion Notification)
+// Business Requirements: BR-FLEET-001, BR-ORCH-045 (Completion Notification)
+// Controls: FedRAMP AU-3, SOC 2 CC7.2, OWASP ASVS V7.1.1/V7.2.1
 // Architecture: BR-ORCH-031 (Cascade Deletion), BR-ORCH-035 (Ref Tracking)
 //
 // Tests that RO creates a NotificationRequest CRD with type=completion
@@ -52,7 +53,7 @@ import (
 // Full lifecycle: RR → SP → AA → WE → Completed → NotificationRequest
 // Pattern: Manual child CRD status updates (no child controllers deployed)
 
-var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notification", "remediationorchestrator"), func() {
+var _ = Describe("E2E-RO-2449-001: Completion Notification", Label("e2e", "notification", "remediationorchestrator"), func() {
 	var (
 		testNS string
 	)
@@ -277,6 +278,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			"Body should contain root cause analysis")
 		Expect(notification.Spec.Body).To(ContainSubstring("restart-pod-v1"),
 			"Body should contain workflow ID")
+		Expect(notification.Spec.Body).NotTo(HavePrefix("**Cluster**:"),
+			"BR-FLEET-001/AU-3: local completion notification must not fabricate cluster provenance")
 		Expect(notification.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow),
 			"Completion notifications should be low priority (informational)")
 
@@ -294,6 +297,6 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Expect(notification.OwnerReferences[0].Name).To(Equal(rr.Name))
 		Expect(notification.OwnerReferences[0].Kind).To(Equal(kindRemediationRequestFixture))
 
-		GinkgoWriter.Println("E2E-RO-045-001: Completion notification validated in Kind cluster")
+		GinkgoWriter.Println("E2E-RO-2449-001: Completion notification validated in Kind cluster")
 	})
 })
