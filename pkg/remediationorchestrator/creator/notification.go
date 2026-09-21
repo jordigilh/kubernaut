@@ -72,11 +72,9 @@ func resolveNotificationTargetResource(rr *remediationv1.RemediationRequest, ai 
 // NotificationCreator creates NotificationRequest CRDs for the Remediation Orchestrator.
 // Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review), BR-ORCH-045 (completion)
 type NotificationCreator struct {
-	client      client.Client
-	scheme      *runtime.Scheme
-	metrics     *metrics.Metrics
-	clusterName string
-	clusterUUID string
+	client  client.Client
+	scheme  *runtime.Scheme
+	metrics *metrics.Metrics
 }
 
 // NewNotificationCreator creates a new NotificationCreator.
@@ -92,13 +90,6 @@ func NewNotificationCreator(c client.Client, s *runtime.Scheme, m *metrics.Metri
 		scheme:  s,
 		metrics: m,
 	}
-}
-
-// SetClusterIdentity sets the cluster name and UUID for inclusion in notification bodies.
-// Issue #615: Setter injection avoids modifying the NewNotificationCreator constructor signature.
-func (c *NotificationCreator) SetClusterIdentity(name, uuid string) {
-	c.clusterName = name
-	c.clusterUUID = uuid
 }
 
 // FormatRemediationLine returns a formatted remediation identification line for notification bodies.
@@ -119,18 +110,13 @@ func FormatStatusLine(status string) string {
 }
 
 // FormatClusterLine returns a formatted cluster identification line for notification bodies.
-// Returns empty string when both name and uuid are empty (graceful degradation).
-func FormatClusterLine(clusterName, clusterUUID string) string {
-	if clusterName == "" && clusterUUID == "" {
+// The cluster ID is the MCP Gateway identifier carried by RemediationRequest.Spec.ClusterID.
+// Empty cluster IDs represent local mode and intentionally omit the line.
+func FormatClusterLine(clusterID string) string {
+	if clusterID == "" {
 		return ""
 	}
-	if clusterUUID == "" {
-		return fmt.Sprintf("**Cluster**: %s\n\n", clusterName)
-	}
-	if clusterName == "" {
-		return fmt.Sprintf("**Cluster**: (%s)\n\n", clusterUUID)
-	}
-	return fmt.Sprintf("**Cluster**: %s (%s)\n\n", clusterName, clusterUUID)
+	return fmt.Sprintf("**Cluster**: %s\n\n", clusterID)
 }
 
 // existingNotification checks whether a NotificationRequest named `name` already exists
@@ -344,7 +330,7 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", sw.Rationale)
 	}
 
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+	return FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) + body
 }
 
 // CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
@@ -564,7 +550,7 @@ func (c *NotificationCreator) buildCompletionBody(rr *remediationv1.RemediationR
 	}
 
 	body += "\n\nThis incident was automatically detected and remediated by Kubernaut."
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+	return FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) + body
 }
 
 // CreateBulkDuplicateNotification creates a NotificationRequest for bulk duplicates (BR-ORCH-034).
@@ -638,7 +624,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 // buildBulkDuplicateBody builds the bulk duplicate notification body.
 func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.RemediationRequest) string {
 	// Deprecated: **Result** retained for one release (Issue #628). Use **Status** for canonical status.
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) +
+	return FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) +
 		"Remediation completed successfully.\n\n" +
 		FormatStatusLine("Duplicate Handled") +
 		fmt.Sprintf(`**Signal**: %s
@@ -1098,7 +1084,7 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 	body += renderWarningsSection(ctx)
 	body += renderRetryInfoSection(ctx)
 
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+	return FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) + body
 }
 
 // renderRootCauseSection renders the root cause analysis section of a manual review body.
@@ -1307,7 +1293,7 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 	}
 
 	body += "\n\nNo action was taken. This notification is for audit purposes only."
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+	return FormatClusterLine(rr.Spec.ClusterID) + FormatRemediationLine(rr.Name) + body
 }
 
 // ========================================
@@ -1319,7 +1305,7 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 // BuildGlobalTimeoutBody constructs the notification body for global timeout events.
 // Issue #621: Prepends cluster line and RR name for operator traceability.
 func (c *NotificationCreator) BuildGlobalTimeoutBody(
-	signalName, rrName, timeoutPhase, timeoutDuration, startTime, timeoutTime string,
+	signalName, rrName, clusterID, timeoutPhase, timeoutDuration, startTime, timeoutTime string,
 ) string {
 	body := "Remediation request has exceeded the global timeout and requires manual intervention.\n\n" +
 		FormatStatusLine("Timed Out") +
@@ -1332,13 +1318,13 @@ func (c *NotificationCreator) BuildGlobalTimeoutBody(
 The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
 			signalName, timeoutPhase, timeoutDuration, startTime, timeoutTime, timeoutPhase,
 		)
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
+	return FormatClusterLine(clusterID) + FormatRemediationLine(rrName) + body
 }
 
 // BuildPhaseTimeoutBody constructs the notification body for per-phase timeout events.
 // Issue #621: Prepends cluster line and RR name for operator traceability.
 func (c *NotificationCreator) BuildPhaseTimeoutBody(
-	signalName, rrName, phase, phaseTimeout, startTime, timeoutTime string,
+	signalName, rrName, clusterID, phase, phaseTimeout, startTime, timeoutTime string,
 ) string {
 	body := "Remediation phase has exceeded timeout and requires investigation.\n\n" +
 		FormatStatusLine("Timed Out") +
@@ -1351,7 +1337,7 @@ func (c *NotificationCreator) BuildPhaseTimeoutBody(
 The %s phase did not complete within the expected timeframe. Please investigate why this phase is taking longer than expected.`,
 			signalName, phase, phaseTimeout, startTime, timeoutTime, phase,
 		)
-	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
+	return FormatClusterLine(clusterID) + FormatRemediationLine(rrName) + body
 }
 
 // ========================================

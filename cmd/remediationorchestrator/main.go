@@ -58,7 +58,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
-	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -546,7 +545,6 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
 	roReconciler.SetNotifySelfResolved(cfg.Notifications.NotifySelfResolved)
 
-	wireClusterIdentity(roReconciler, mgr, logger) //nolint:contextcheck // wireClusterIdentity performs a one-time startup discovery call; no parent request context exists yet
 	wireDistributedLockManager(roReconciler, mgr, logger)
 
 	// ADR-068: Wire fleet config for federated scope fallback path
@@ -695,20 +693,6 @@ func wrapStopWithFleetCleanup(
 			}
 		}
 	}
-}
-
-// wireClusterIdentity discovers the local cluster identity (Issue #615) for
-// notification context and wires it into the reconciler. Degrades
-// gracefully to an empty identity on discovery failure (notifications will
-// simply omit cluster info).
-func wireClusterIdentity(roReconciler *controller.Reconciler, mgr ctrl.Manager, logger logr.Logger) {
-	clusterIdentity, clusterErr := clusterid.DiscoverIdentity(context.Background(), mgr.GetAPIReader())
-	if clusterErr != nil {
-		logger.Error(clusterErr, "Failed to discover cluster identity, notifications will omit cluster info")
-		clusterIdentity = &clusterid.Identity{}
-	}
-	logger.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
-	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
 }
 
 // wireDistributedLockManager configures the BR-ORCH-025 distributed lock
