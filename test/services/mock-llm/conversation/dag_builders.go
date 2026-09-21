@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,14 @@ func LegacyDAG() *DAG {
 	// toolResults == 0 → search_workflow_catalog
 	dag.AddTransition("dispatch", openai.ToolSearchWorkflowCatalog, &ToolResultCountEqual{N: 0}, 1)
 
+	return dag
+}
+
+// FinalAnalysisDAG returns a text-only response path for current tool sets
+// that do not expose the retired search_workflow_catalog tool.
+func FinalAnalysisDAG() *DAG {
+	dag := NewDAG("final_analysis")
+	dag.AddNode("final_analysis", &FinalAnalysisHandler{})
 	return dag
 }
 
@@ -75,5 +83,8 @@ func SelectDAG(tools []openai.Tool) *DAG {
 	if HasThreeStepTools(tools) {
 		return ThreeStepDAG(HasResourceContextTool(tools))
 	}
-	return LegacyDAG()
+	if HasTool(tools, openai.ToolSearchWorkflowCatalog) {
+		return LegacyDAG()
+	}
+	return FinalAnalysisDAG()
 }
