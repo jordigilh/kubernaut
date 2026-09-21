@@ -136,7 +136,18 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 
 	switch h.mode {
 	case config.ModeInteractive:
-		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
+		// Interactive RCA turns remain text-only, but workflow discovery still
+		// needs to execute the three-step protocol so session membership is
+		// populated before the selected workflow is submitted (#2442).
+		effectiveForceText := h.forceText
+		if cfg.ForceText != nil {
+			effectiveForceText = *cfg.ForceText
+		}
+		if geminiHasThreeStepTools(req.Tools) && !effectiveForceText {
+			h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
+		}
 
 	default: // config.ModeAutonomous, config.ModeFull, or unset
 		effectiveForceText := h.forceText
@@ -244,6 +255,20 @@ func geminiHasSubmitWithWorkflowTool(tools []response.GeminiToolDecl) bool {
 	for _, t := range tools {
 		for _, fd := range t.FunctionDeclarations {
 			if fd.Name == openai.ToolSubmitResultWithWorkflow || fd.Name == openai.ToolSubmitResultNoWorkflow {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// geminiHasThreeStepTools reports whether KA advertised the workflow catalog
+// discovery protocol to the Gemini client. The interactive mode exception is
+// needed for the same session-membership contract as the OpenAI handler.
+func geminiHasThreeStepTools(tools []response.GeminiToolDecl) bool {
+	for _, t := range tools {
+		for _, fd := range t.FunctionDeclarations {
+			if fd.Name == openai.ToolListAvailableActions {
 				return true
 			}
 		}

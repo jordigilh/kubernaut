@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -192,6 +192,36 @@ var _ = Describe("Gemini generateContent Endpoint (issue #1157)", func() {
 			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
 			Expect(result.Candidates[0].Content.Parts[0].Text).To(ContainSubstring("root_cause_analysis"))
 			Expect(result.Candidates[0].Content.Parts[0].FunctionCall).To(BeNil())
+		})
+	})
+
+	Describe("IT-MOCK-GEMINI-2442: interactive workflow discovery", func() {
+		It("executes the three-step discovery DAG when discovery tools are advertised", func() {
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "interactive")
+			interactiveServer := httptest.NewServer(router)
+			defer interactiveServer.Close()
+
+			tools := []response.GeminiToolDecl{
+				{FunctionDeclarations: []response.GeminiFunctionDecl{
+					{Name: "list_available_actions", Description: "List action types"},
+					{Name: "list_workflows", Description: "List workflows"},
+					{Name: "get_workflow", Description: "Get workflow"},
+					{Name: "submit_result_with_workflow", Description: "Submit workflow"},
+					{Name: "submit_result_no_workflow", Description: "Submit without workflow"},
+				}},
+			}
+			body := geminiRequestWithTools("- Signal Name: OOMKilled\n- Namespace: default", tools)
+			resp, err := http.Post(interactiveServer.URL+"/v1beta/models/gemini-2.0-flash:generateContent", "application/json", body)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
+			Expect(result.Candidates).To(HaveLen(1))
+			Expect(result.Candidates[0].Content.Parts).To(HaveLen(1))
+			Expect(result.Candidates[0].Content.Parts[0].FunctionCall.Name).To(Equal("list_available_actions"))
 		})
 	})
 

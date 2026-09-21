@@ -137,7 +137,18 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 
 	switch h.mode {
 	case config.ModeInteractive:
-		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		// Interactive RCA turns remain text-only, but workflow discovery still
+		// needs to execute the three-step protocol so session membership is
+		// populated before the selected workflow is submitted (#2442).
+		effectiveForceText := h.forceText
+		if cfg.ForceText != nil {
+			effectiveForceText = *cfg.ForceText
+		}
+		if conversation.HasThreeStepTools(req.Tools) && !effectiveForceText {
+			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
+		} else {
+			h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		}
 
 	case config.ModeAutonomous:
 		effectiveForceText := true

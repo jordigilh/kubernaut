@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -80,6 +80,34 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(500))
+		})
+	})
+
+	Describe("IT-MOCK-2442: interactive workflow discovery", func() {
+		It("executes the three-step discovery DAG when discovery tools are advertised", func() {
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "interactive")
+			interactiveServer := httptest.NewServer(router)
+			defer interactiveServer.Close()
+
+			body := chatRequest("- Signal Name: OOMKilled\n- Namespace: default", []string{
+				"list_available_actions",
+				"list_workflows",
+				"get_workflow",
+				"submit_result_with_workflow",
+				"submit_result_no_workflow",
+			})
+			resp, err := http.Post(interactiveServer.URL+"/v1/chat/completions", "application/json", body)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
+			Expect(result.Choices).To(HaveLen(1))
+			Expect(result.Choices[0].FinishReason).To(Equal("tool_calls"))
+			Expect(result.Choices[0].Message.ToolCalls).To(HaveLen(1))
+			Expect(result.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("list_available_actions"))
 		})
 	})
 
