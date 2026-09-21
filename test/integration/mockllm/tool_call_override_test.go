@@ -68,7 +68,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 		It("should return text when ForceText is not set and global forceText is true", func() {
 			overrides := &config.Overrides{
 				Scenarios: map[string]config.ScenarioOverride{
-					"oomkilled": {
+					"crashloop": {
 						WorkflowID: "custom-wf-id",
 					},
 				},
@@ -79,7 +79,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest(
+			body := toolCallChatRequestForSignal("- Signal Name: CrashLoopBackOff\n- Namespace: default",
 				[]string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -270,10 +270,14 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 })
 
 func toolCallChatRequest(toolNames []string) *bytes.Buffer {
+	return toolCallChatRequestForSignal("- Signal Name: OOMKilled\n- Namespace: default", toolNames)
+}
+
+func toolCallChatRequestForSignal(signal string, toolNames []string) *bytes.Buffer {
 	req := map[string]interface{}{
 		"model": "mock-model",
 		"messages": []map[string]string{
-			{"role": "user", "content": "- Signal Name: OOMKilled\n- Namespace: default"},
+			{"role": "user", "content": signal},
 		},
 	}
 	if len(toolNames) > 0 {

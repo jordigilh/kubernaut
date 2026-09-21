@@ -157,7 +157,7 @@ var _ = Describe("Gemini generateContent Endpoint (issue #1157)", func() {
 					{Name: "search_workflow_catalog", Description: "Search workflows"},
 				}},
 			}
-			body := geminiRequestWithTools("- Signal Name: OOMKilled", tools)
+			body := geminiRequestWithTools("- Signal Name: CrashLoopBackOff", tools)
 			resp, err := http.Post(ftServer.URL+"/v1beta/models/gemini-2.0-flash:generateContent", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()

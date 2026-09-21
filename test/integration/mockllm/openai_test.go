@@ -169,7 +169,7 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 			ftServer := httptest.NewServer(router)
 			defer ftServer.Close()
 
-			body := chatRequest("- Signal Name: OOMKilled", []string{"search_workflow_catalog"})
+			body := chatRequest("- Signal Name: CrashLoopBackOff", []string{"search_workflow_catalog"})
 			resp, err := http.Post(ftServer.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
