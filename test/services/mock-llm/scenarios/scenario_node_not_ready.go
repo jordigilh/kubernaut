@@ -21,6 +21,7 @@ func nodeNotReadyConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "node_not_ready", SignalName: "NodeNotReady", Severity: "critical",
 		WorkflowName: "node-drain-reboot-v1", WorkflowID: uuid.DeterministicUUID("node-drain-reboot-v1"),
+		ActionType:    "DrainNode",
 		WorkflowTitle: "NodeNotReady - Drain and Reboot", Confidence: 0.90,
 		Rationale:    "Node is experiencing persistent disk pressure that hasn't self-resolved; drain and reboot is the standard remediation",
 		RootCause:    "Node experiencing disk pressure causing NotReady condition",

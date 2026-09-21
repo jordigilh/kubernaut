@@ -32,6 +32,7 @@ func lowConfidenceConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "low_confidence", SignalName: "MOCK_LOW_CONFIDENCE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
+		ActionType:    "RestartPod",
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.35,
 		Rationale:    "Multiple possible root causes identified; generic restart is safest but requires human judgment to confirm",
 		RootCause:    "Multiple possible root causes identified, requires human judgment",
@@ -72,6 +73,7 @@ func reasoningCaptureConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "mock_reasoning_capture", SignalName: "MOCK_REASONING_CAPTURE", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.92,
 		Rationale:    "Sustained memory climb over 6h rules out a transient spike; increasing limits addresses the sustained leak",
 		RootCause:    "Container exceeded memory limits due to a sustained memory leak",
@@ -196,6 +198,7 @@ func parallelToolsConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "parallel_tools", SignalName: "MOCK_PARALLEL_TOOLS", Severity: "high",
 		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.9,
 		RootCause:    "Container OOMKilled due to memory limits below steady-state usage",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
@@ -217,6 +220,7 @@ func alertmanagerNodeToolsConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "alertmanager_node_tools", SignalName: "MOCK_ALERTMANAGER_NODE_TOOLS", Severity: "high",
 		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.88,
 		RootCause:    "Node resource exhaustion correlated with active alerts",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
@@ -236,6 +240,7 @@ func rcaIncompleteConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "rca_incomplete", SignalName: "MOCK_RCA_INCOMPLETE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
+		ActionType:    "RestartPod",
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.88,
 		RootCause:    "Root cause identified but affected resource could not be determined from signal context",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",

@@ -21,6 +21,7 @@ func defaultConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "default", SignalName: "Unknown", Severity: "warning",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
+		ActionType:    "RestartPod",
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.75,
 		RootCause:    "Unable to determine specific root cause",
 		ResourceKind: "Pod", ResourceNS: "default", ResourceName: "test-pod",

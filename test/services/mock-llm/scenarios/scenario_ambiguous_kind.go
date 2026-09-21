@@ -28,6 +28,7 @@ func ambiguousKindConfig() MockScenarioConfig {
 		SignalName:           "AmbiguousKindTestSignal",
 		Severity:             "high",
 		WorkflowName:         "ambiguous-kind-fix-v1",
+		ActionType:           "ReconfigureResource",
 		WorkflowID:           uuid.DeterministicUUID("ambiguous-kind-fix-v1"),
 		Confidence:           0.85,
 		Rationale:            "TestWidget misconfiguration requires reconfiguration of the resource spec",

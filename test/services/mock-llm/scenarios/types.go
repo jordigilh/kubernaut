@@ -58,6 +58,7 @@ type MockScenarioConfig struct {
 	SignalName       string
 	Severity         string
 	WorkflowName     string
+	ActionType       string
 	WorkflowID       string
 	WorkflowTitle    string
 	Confidence       float64

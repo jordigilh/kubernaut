@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -172,7 +172,11 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case openai.ToolListAvailableActions:
 		return map[string]interface{}{"limit": 100}
 	case openai.ToolListWorkflows:
-		return map[string]interface{}{"action_type": "remediation"}
+		actionType := cfg.ActionType
+		if actionType == "" {
+			actionType = "remediation"
+		}
+		return map[string]interface{}{"action_type": actionType}
 	case openai.ToolGetWorkflow:
 		return map[string]interface{}{"workflow_id": cfg.WorkflowID}
 	case openai.ToolGetResourceContext:
@@ -314,10 +318,10 @@ func rcaOnlyJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	}
 
 	obj := map[string]interface{}{
-		"root_cause_analysis":    rca,
-		"severity":               cfg.Severity,
-		"confidence":             cfg.Confidence,
-		"investigation_outcome":  "actionable",
+		"root_cause_analysis":   rca,
+		"severity":              cfg.Severity,
+		"confidence":            cfg.Confidence,
+		"investigation_outcome": "actionable",
 	}
 	if cfg.InvestigationOutcome != "" {
 		obj["investigation_outcome"] = cfg.InvestigationOutcome

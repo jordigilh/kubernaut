@@ -25,6 +25,7 @@ func crashloopConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "crashloop", SignalName: "CrashLoopBackOff", Severity: "high",
 		WorkflowName: "crashloop-config-fix-v1", WorkflowID: uuid.DeterministicUUID("crashloop-config-fix-v1"),
+		ActionType:    "RestartDeployment",
 		WorkflowTitle: "CrashLoopBackOff - Configuration Fix", Confidence: 0.95,
 		Rationale:    "Configuration regression introduced in recent deployment revision; rollback to last known good revision is the safest approach with medium risk tolerance",
 		RootCause:    "Container failing due to invalid configuration directive introduced in recent deployment update",

@@ -25,6 +25,7 @@ func oomkilledConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "oomkilled", SignalName: "OOMKilled", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.95,
 		Rationale:    "Container exceeded memory limits under traffic spike; increasing limits is the safest remediation with medium risk tolerance",
 		RootCause:    "Container exceeded memory limits due to traffic spike",

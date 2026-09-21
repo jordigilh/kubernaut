@@ -39,6 +39,7 @@ func gitopsDrift2390Config() MockScenarioConfig {
 		SignalName:           "GitOpsDrift2390",
 		Severity:             "critical",
 		WorkflowName:         "gitops-drift-2390-v1",
+		ActionType:           "IncreaseMemoryLimits",
 		WorkflowID:           uuid.DeterministicUUID("gitops-drift-2390-v1"),
 		WorkflowTitle:        "GitOps Drift Remediation",
 		Confidence:           0.95,
