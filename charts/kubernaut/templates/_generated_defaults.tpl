@@ -140,6 +140,7 @@ console:
         tls:
             secretName: ""
     oauth2Proxy:
+        backendLogoutURL: ""
         image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
         jwksURL: ""
         loginURL: ""

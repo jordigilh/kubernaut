@@ -1103,6 +1103,13 @@ apifrontend:
 # and jwksURL (in-cluster, dialed server-side by oauth2-proxy) -- all three
 # are required together; oauth2-proxy skips OIDC discovery entirely and uses
 # these directly instead.
+# oauth2Proxy.backendLogoutURL (default empty): optional provider-discovered
+# OIDC end_session_endpoint used by oauth2-proxy during /oauth2/sign_out.
+# Set the provider URL explicitly and preserve the literal {id_token}
+# placeholder where the provider requires an ID token hint. Do not set a
+# universal Keycloak/Dex default; local providers expose different endpoints.
+# Use HTTPS in production. HTTP is only for an explicitly configured local/dev
+# provider and is validated as an absolute URL by the chart schema.
 console:
   enabled: false
   auth: {}

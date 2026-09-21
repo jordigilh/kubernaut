@@ -63,4 +63,5 @@ tests:
         oauth2Proxy:
           backendLogoutURL: "not-a-provider-url"
     asserts:
-      - failedTemplate: {}
+      - failedTemplate:
+          errorMessage: "values don't meet the specifications of the schema(s) in the following chart(s):\nkubernaut:\n- at '/console/oauth2Proxy/backendLogoutURL': 'not-a-provider-url' does not match pattern '^$|^https?://[^\\\\s]+$'\n"
