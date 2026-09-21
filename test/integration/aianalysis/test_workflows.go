@@ -228,12 +228,13 @@ func SeedTestWorkflowsViaDirectCRDCreation(ctx context.Context, k8sClient client
 func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n📝 Writing Mock LLM configuration file: %s\n", configPath)
 
-	// Build YAML content with deterministic key order
-	// Format must match config.Overrides: map[string]ScenarioOverride{workflow_id: "..."}
+	// Build YAML content with deterministic key order. AIAnalysis must exercise
+	// workflow discovery so the selected workflow is registered in the session
+	// before submit_result_with_workflow is returned.
 	var yamlContent strings.Builder
 	yamlContent.WriteString("scenarios:\n")
 	for _, key := range infrastructure.SortedWorkflowUUIDKeys(workflowUUIDs) {
-		yamlContent.WriteString(fmt.Sprintf("  %s:\n    workflow_id: %s\n", key, workflowUUIDs[key]))
+		yamlContent.WriteString(fmt.Sprintf("  %s:\n    workflow_id: %s\n    force_text: false\n", key, workflowUUIDs[key]))
 	}
 
 	// Write to file

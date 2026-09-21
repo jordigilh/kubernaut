@@ -64,6 +64,46 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 		})
 	})
 
+	Describe("IT-MOCK-2442-001: ForceText=false enables workflow discovery", func() {
+		It("should start the three-step discovery DAG despite global forceText=true", func() {
+			forceTextFalse := false
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{
+					"crashloop": {
+						ForceText: &forceTextFalse,
+					},
+				},
+			}
+
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, true, "")
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			body := toolCallChatRequestForSignal(
+				"- Signal Name: CrashLoopBackOff\n- Namespace: default",
+				[]string{
+					"list_available_actions",
+					"list_workflows",
+					"get_workflow",
+					"submit_result_with_workflow",
+				},
+			)
+			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
+			Expect(result.Choices).To(HaveLen(1))
+			Expect(result.Choices[0].FinishReason).To(Equal("tool_calls"))
+			Expect(result.Choices[0].Message.ToolCalls).To(HaveLen(1))
+			Expect(result.Choices[0].Message.ToolCalls[0].Function.Name).
+				To(Equal("list_available_actions"))
+		})
+	})
+
 	Describe("IT-MOCK-657-002: ForceText=nil falls through to global forceText=true (backward compat)", func() {
 		It("should return text when ForceText is not set and global forceText is true", func() {
 			overrides := &config.Overrides{
