@@ -3429,6 +3429,10 @@
           "type": "boolean",
           "default": false
         },
+        "imageOverride": {
+          "type": "string",
+          "description": "Optional full container image pullspec for the console. When empty, the console derives its image from global.image using the kubernaut-console service name."
+        },
         "replicas": {
           "type": "integer",
           "default": 1,

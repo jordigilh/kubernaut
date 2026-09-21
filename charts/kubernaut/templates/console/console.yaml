@@ -112,6 +112,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "console") | fromYaml }}
+  {{- $consoleImage := .Values.console.imageOverride | default (include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion)) }}
   replicas: {{ $v.replicas }}
   selector:
     matchLabels:
@@ -241,7 +242,7 @@ spec:
           volumeMounts:
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
         - name: console
-          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion) }}
+          image: {{ $consoleImage }}
           imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           ports:
             - name: static

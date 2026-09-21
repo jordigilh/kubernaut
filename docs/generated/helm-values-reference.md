@@ -145,6 +145,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `auth.secretName` | string | Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true. | `""` | No |
 | `enabled` | boolean |  | `false` | No |
+| `imageOverride` | string | Optional full container image pullspec for the console. When empty, the console derives its image from global.image using the kubernaut-console service name. | `` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
 | `ingress.enabled` | boolean |  | `false` | No |

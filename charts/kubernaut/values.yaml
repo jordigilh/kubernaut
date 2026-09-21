@@ -1096,6 +1096,9 @@ apifrontend:
 # DD-PLATFORM-006 DA14: replicas(1)/oauth2Proxy.image both have non-zero
 # schema defaults -- omitted here, override only what you need. The Console
 # image follows global.image with the service name kubernaut-console.
+# console.imageOverride (default empty): optional full pullspec override for
+# environments that need a separately published console image; the shared
+# global.image pullspec remains the default.
 # oauth2Proxy.skipDiscovery (default false): only needed when the OIDC
 # provider isn't reachable via the SAME hostname from both the browser and
 # in-cluster pods (e.g. IdP deployed in its own namespace/cluster, separate
