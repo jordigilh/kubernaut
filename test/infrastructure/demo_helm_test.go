@@ -362,6 +362,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 			"--set", "console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
 			"--set", "console.oauth2Proxy.redeemURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			"--set", "console.oauth2Proxy.jwksURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
+			"--set-string", "console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 		))
 	})
 
@@ -557,6 +558,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 		Expect(opts.LoginURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/auth"))
 		Expect(opts.RedeemURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/token"))
 		Expect(opts.ConsoleJWKSURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/certs"))
+		Expect(opts.BackendLogoutURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"))
 	})
 
 	It("UT-INFRA-OIDC-001: preserves Dex-only full-pipeline configuration", func() {
@@ -590,6 +592,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 			LoginURL:         "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
 			RedeemURL:        "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			ConsoleJWKSURL:   "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
+			BackendLogoutURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 		})
 		Expect(args).To(ContainElements(
 			"--set", "console.enabled=true",
@@ -597,6 +600,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 			"--set", "console.auth.secretName=console-oauth-creds",
 			"--set", "console.ingress.host=kubernaut-console.local",
 			"--set", "console.oauth2Proxy.skipDiscovery=true",
+			"--set-string", "console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
 		))
 	})

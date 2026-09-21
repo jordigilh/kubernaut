@@ -3475,9 +3475,16 @@
               "type": "string",
               "default": "",
               "description": "Server-side (in-cluster) JWKS endpoint oauth2-proxy dials to verify ID tokens. Required when skipDiscovery=true; ignored otherwise."
+            },
+            "backendLogoutURL": {
+              "type": "string",
+              "default": "",
+              "pattern": "^$|^https?://[^\\s]+$",
+              "description": "Optional provider-discovered OIDC end_session_endpoint for OAuth2 Proxy logout. Use the literal {id_token} placeholder where the provider requires an ID token hint. HTTPS is required for production; HTTP is intended only for explicitly configured local/dev providers."
             }
           },
           "if": {
+            "required": ["skipDiscovery"],
             "properties": { "skipDiscovery": { "const": true } }
           },
           "then": {

@@ -1190,6 +1190,59 @@ run_console_live_001() {
   fi
 }
 
+# BR-PLATFORM-006 / Issue #2448: prove the provider logout URL reaches the live
+# OAuth2 Proxy Deployment and survives a second Helm upgrade with reused values.
+run_console_live_002() {
+  local desc="ST-CHART-CONSOLE-LIVE-002: BR-PLATFORM-006 — provider logout URL persists through Helm upgrades"
+  local logout_url="${DEX_ISSUER_URL}/end-session?id_token_hint={id_token}"
+  local expected="--backend-logout-url=${logout_url}"
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set-string "console.oauth2Proxy.backendLogoutURL=${logout_url}" \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade with provider logout URL failed"
+    return 1
+  fi
+
+  if ! kubectl rollout status deployment/console -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "console Deployment did not roll out after configuring provider logout URL"
+    return 1
+  fi
+
+  local args
+  args=$(kubectl get deployment console -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="oauth2-proxy")].args[*]}' \
+    2>/dev/null || echo "")
+  if [[ "$args" != *"$expected"* ]]; then
+    tap_not_ok "$desc" "live oauth2-proxy args omitted configured provider logout URL"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set-string "console.oauth2Proxy.backendLogoutURL=${logout_url}" \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "second Helm upgrade with reused values failed"
+    return 1
+  fi
+
+  if ! kubectl rollout status deployment/console -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "console Deployment did not roll out after second upgrade"
+    return 1
+  fi
+
+  args=$(kubectl get deployment console -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="oauth2-proxy")].args[*]}' \
+    2>/dev/null || echo "")
+  if [[ "$args" != *"$expected"* ]]; then
+    tap_not_ok "$desc" "second upgrade removed configured provider logout URL"
+    return 1
+  fi
+
+  tap_ok "$desc"
+}
+
 # BR-PLATFORM-003: the ST-CHART-HPA-* template tests only prove the chart *renders* a
 # correct HorizontalPodAutoscaler manifest — they never observe a live object. Since
 # autoscaling/v2 is a stable core API already present in every Kind node (unlike
@@ -1714,6 +1767,7 @@ flow_a_production() {
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_console_live_001 || flow_failed=true
+    run_console_live_002 || flow_failed=true
   fi
 
   run_rbac_prune_003 || flow_failed=true
