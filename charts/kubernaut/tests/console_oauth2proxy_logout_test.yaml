@@ -1,0 +1,66 @@
+suite: "Issue #2448: Console OAuth2 Proxy provider logout configuration"
+templates:
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+  apifrontend:
+    config:
+      auth:
+        issuerURL: https://keycloak:8443/realms/kubernaut-demo
+tests:
+  - it: "IT-HELM-2448-001: unset backend logout URL omits the provider logout argument for existing deployments"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--backend-logout-url="
+
+  - it: "IT-HELM-2448-002: configured provider end_session_endpoint renders the server-side logout argument and literal id token placeholder"
+    set:
+      console:
+        oauth2Proxy:
+          backendLogoutURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--backend-logout-url=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"
+      - notContains:
+          path: spec.template.spec.containers[1].args
+          content: "id_token"
+
+  - it: "IT-HELM-2448-003: malformed provider logout URL fails closed at chart render time"
+    set:
+      console:
+        oauth2Proxy:
+          backendLogoutURL: "not-a-provider-url"
+    asserts:
+      - failedTemplate: {}
