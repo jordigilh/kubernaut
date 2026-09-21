@@ -29,6 +29,12 @@ TIMEOUT_PODS="300s"
 # script does not need to pass --set tls.certManager.issuerRef.name explicitly.
 TLS_MODE="hook"
 
+# The console is published from the sibling kubernaut-console repository. Kind
+# still needs a locally addressable image when the smoke test overrides the
+# shared Kubernaut registry to localhost.
+CONSOLE_IMAGE_OVERRIDE=""
+CONSOLE_IMAGE_ARGS=()
+
 # TAP state
 TAP_COUNT=0
 TAP_PASS=0
@@ -453,6 +459,56 @@ common_install_flags() {
     flags+=" --set global.image.pullPolicy=IfNotPresent"
   fi
   echo "$flags"
+}
+
+# Resolve the newest published console image in the chart's major/minor line.
+# PR builds do not publish a matching console image, while released console
+# images are intentionally versioned in lockstep with Kubernaut.
+resolve_console_image() {
+  local app_version="" line major_minor="" payload matching_tags tag
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "Console image resolution requires curl and jq" >&2
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^appVersion:[[:space:]]*\"?([^\"[:space:]]+) ]]; then
+      app_version="${BASH_REMATCH[1]}"
+      break
+    fi
+  done < "${CHART_PATH}/Chart.yaml"
+
+  if [[ ! "$app_version" =~ ^v?([0-9]+\.[0-9]+)\.[0-9]+ ]]; then
+    echo "Unable to derive chart major/minor from appVersion '${app_version:-unknown}'" >&2
+    return 1
+  fi
+  major_minor="${BASH_REMATCH[1]}"
+
+  if ! payload=$(curl -fsSL --retry 3 --retry-delay 1 \
+    "https://quay.io/v2/kubernaut-ai/kubernaut-console/tags/list"); then
+    echo "Unable to list published kubernaut-console tags from Quay.io" >&2
+    return 1
+  fi
+
+  if ! matching_tags=$(jq -r --arg prefix "${major_minor}." \
+    '.tags[]? | select(startswith($prefix))' <<< "$payload" | sort -V); then
+    echo "Unable to parse kubernaut-console tags from Quay.io" >&2
+    return 1
+  fi
+
+  CONSOLE_IMAGE_OVERRIDE=""
+  while IFS= read -r tag; do
+    [[ -n "$tag" ]] && CONSOLE_IMAGE_OVERRIDE="quay.io/kubernaut-ai/kubernaut-console:${tag}"
+  done <<< "$matching_tags"
+
+  if [[ -z "$CONSOLE_IMAGE_OVERRIDE" ]]; then
+    echo "No kubernaut-console image found for major/minor ${major_minor}" >&2
+    return 1
+  fi
+
+  CONSOLE_IMAGE_ARGS=(--set-string "console.imageOverride=${CONSOLE_IMAGE_OVERRIDE}")
+  echo "# Console image: ${CONSOLE_IMAGE_OVERRIDE} (latest Quay tag in ${major_minor}.x)"
 }
 
 tls_flags() {
@@ -1154,6 +1210,7 @@ run_console_live_001() {
     --set console.ingress.host=console.smoke-test.local \
     --set apifrontend.config.auth.issuerURL="$DEX_ISSUER_URL" \
     --set apifrontend.config.auth.audience="$DEX_ISSUER_URL" \
+    "${CONSOLE_IMAGE_ARGS[@]}" \
     --timeout 2m >/dev/null 2>&1; then
     tap_not_ok "$desc" "helm upgrade to enable console failed"
     return 1
@@ -1200,6 +1257,7 @@ run_console_live_002() {
   if ! helm upgrade kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --reuse-values \
     --set-string "console.oauth2Proxy.backendLogoutURL=${logout_url}" \
+    "${CONSOLE_IMAGE_ARGS[@]}" \
     --timeout 2m >/dev/null 2>&1; then
     tap_not_ok "$desc" "helm upgrade with provider logout URL failed"
     return 1
@@ -1222,6 +1280,7 @@ run_console_live_002() {
   if ! helm upgrade kubernaut "$CHART_PATH" \
     --namespace "$NAMESPACE" --reuse-values \
     --set-string "console.oauth2Proxy.backendLogoutURL=${logout_url}" \
+    "${CONSOLE_IMAGE_ARGS[@]}" \
     --timeout 2m >/dev/null 2>&1; then
     tap_not_ok "$desc" "second Helm upgrade with reused values failed"
     return 1
@@ -2994,6 +3053,15 @@ main() {
   setup_policy_files
 
   tap_header
+
+  if [[ "$PLATFORM" == "kind" && "$TLS_MODE" == "hook" ]]; then
+    if ! resolve_console_image; then
+      tap_not_ok "ST-CHART-CONSOLE-IMAGE-001: resolve published console image for the chart major/minor line" \
+        "failed to resolve a kubernaut-console image from Quay.io"
+      tap_footer
+      exit 1
+    fi
+  fi
 
   # Template tests run first (no cluster required)
   run_template_tests
