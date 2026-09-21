@@ -67,6 +67,39 @@ func (c *ToolResultCountGE) Evaluate(ctx *Context) bool {
 	return ctx.CountToolResults() >= c.N
 }
 
+// WorkflowDiscoveryNeedsNextPage evaluates whether the mock model should
+// continue list_workflows pagination before selecting the workflow.
+type WorkflowDiscoveryNeedsNextPage struct{}
+
+func (c *WorkflowDiscoveryNeedsNextPage) Evaluate(ctx *Context) bool {
+	return ctx.LastToolCallName() == openai.ToolListWorkflows &&
+		!ctx.WorkflowDiscoveryTargetFound() &&
+		ctx.WorkflowDiscoveryNextCursor() != ""
+}
+
+// WorkflowDiscoveryNeedsGet evaluates whether the selected workflow has been
+// found and the next response should request its full definition.
+type WorkflowDiscoveryNeedsGet struct{}
+
+func (c *WorkflowDiscoveryNeedsGet) Evaluate(ctx *Context) bool {
+	return ctx.LastToolCallName() == openai.ToolListWorkflows && ctx.WorkflowDiscoveryTargetFound()
+}
+
+// WorkflowDiscoveryComplete evaluates the terminal transition after the
+// selected workflow's full definition has been returned. Contexts without an
+// expected workflow retain the original count-based DAG behavior.
+type WorkflowDiscoveryComplete struct {
+	MinimumResults int
+}
+
+func (c *WorkflowDiscoveryComplete) Evaluate(ctx *Context) bool {
+	if ctx.workflowID() == "" {
+		return ctx.CountToolResults() >= c.MinimumResults
+	}
+	return ctx.CountToolResults() >= c.MinimumResults &&
+		ctx.LastToolCallName() == openai.ToolGetWorkflow
+}
+
 // HasSubmitWithWorkflowTool checks whether the tools list includes
 // submit_result_with_workflow, indicating the split-submit protocol (#760).
 func HasSubmitWithWorkflowTool(tools []openai.Tool) bool {

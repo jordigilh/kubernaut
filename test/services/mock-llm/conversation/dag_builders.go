@@ -66,8 +66,14 @@ func ThreeStepDAG(hasResourceContext bool) *DAG {
 	}
 	dag.AddNode("final_analysis", &FinalAnalysisHandler{})
 
-	// Final analysis when all tool steps are done (highest priority = 0)
-	dag.AddTransition("dispatch", "final_analysis", &ToolResultCountGE{N: len(steps)}, 0)
+	// Final analysis follows get_workflow. With a configured scenario workflow,
+	// the completion condition prevents a paginated list_workflows result from
+	// being mistaken for the end of discovery.
+	dag.AddTransition("dispatch", "final_analysis", &WorkflowDiscoveryComplete{MinimumResults: len(steps)}, 0)
+
+	// Continue pagination until the scenario's workflow appears.
+	dag.AddTransition("dispatch", openai.ToolListWorkflows, &WorkflowDiscoveryNeedsNextPage{}, 1)
+	dag.AddTransition("dispatch", openai.ToolGetWorkflow, &WorkflowDiscoveryNeedsGet{}, 2)
 
 	// Each tool step keyed on exact tool result count (priority increases = lower precedence)
 	for i, name := range steps {

@@ -222,6 +222,14 @@ func (h *handler) handleGeminiToolResponse(
 		return
 	}
 
+	if geminiHasThreeStepTools(tools) {
+		if toolName, nextCfg, ok := geminiDiscoveryToolCall(cfg, tools, contents); ok {
+			h.trackToolCall(toolName)
+			writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(toolName, nextCfg))
+			return
+		}
+	}
+
 	// When no explicit tool call is configured but tools are declared and no
 	// function results have come back yet, call the first declared tool.
 	// This mirrors the DAG engine's initial step behavior for the OpenAI path.
@@ -238,6 +246,41 @@ func (h *handler) handleGeminiToolResponse(
 	} else {
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
 	}
+}
+
+func geminiDiscoveryToolCall(
+	cfg scenarios.MockScenarioConfig,
+	tools []response.GeminiToolDecl,
+	contents []response.GeminiContent,
+) (string, scenarios.MockScenarioConfig, bool) {
+	if response.CountFunctionResponses(contents) == 0 {
+		if firstTool := firstDeclaredTool(tools); firstTool != "" {
+			return firstTool, cfg, true
+		}
+		return "", cfg, false
+	}
+
+	switch response.LastFunctionResponseName(contents) {
+	case openai.ToolListAvailableActions:
+		return openai.ToolListWorkflows, cfg, true
+	case openai.ToolListWorkflows:
+		if response.WorkflowDiscoveryContains(contents, cfg.WorkflowID) {
+			return openai.ToolGetWorkflow, cfg, true
+		}
+		if cursor := response.WorkflowDiscoveryNextCursor(contents); cursor != "" {
+			actionType := cfg.ActionType
+			if actionType == "" {
+				actionType = "remediation"
+			}
+			cfg.ToolCallArgs = map[string]interface{}{
+				"action_type": actionType,
+				"page":        "next",
+				"cursor":      cursor,
+			}
+			return openai.ToolListWorkflows, cfg, true
+		}
+	}
+	return "", cfg, false
 }
 
 // respondGeminiWithSubmitToolCall writes the appropriate submit_result tool call in Gemini format.

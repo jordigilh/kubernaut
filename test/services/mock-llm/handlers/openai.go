@@ -99,6 +99,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 			cfg.ResourceNS = res.Namespace
 		}
 	}
+	ctx.SetWorkflowID(cfg.WorkflowID)
 
 	resolveOpenAITemplateArgs(req.Messages, &cfg)
 
@@ -275,7 +276,11 @@ func (h *handler) handleFullDAG(
 	switch hr.ResponseType {
 	case conversation.StepToolCall:
 		h.trackToolCall(hr.ToolName)
-		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, hr.ToolName, cfg))
+		responseCfg := cfg
+		if hr.ToolName == openai.ToolListWorkflows {
+			responseCfg = workflowPaginationConfig(ctx, cfg)
+		}
+		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, hr.ToolName, responseCfg))
 	default:
 		if hasSplit && !resolved {
 			h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
@@ -284,6 +289,23 @@ func (h *handler) handleFullDAG(
 			writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildTextResponse(model, cfg))
 		}
 	}
+}
+
+func workflowPaginationConfig(ctx *conversation.Context, cfg scenarios.MockScenarioConfig) scenarios.MockScenarioConfig {
+	cursor := ctx.WorkflowDiscoveryNextCursor()
+	if cursor == "" {
+		return cfg
+	}
+	actionType := cfg.ActionType
+	if actionType == "" {
+		actionType = "remediation"
+	}
+	cfg.ToolCallArgs = map[string]interface{}{
+		"action_type": actionType,
+		"page":        "next",
+		"cursor":      cursor,
+	}
+	return cfg
 }
 
 func (h *handler) trackToolCall(name string) {

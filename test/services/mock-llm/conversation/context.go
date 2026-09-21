@@ -30,6 +30,11 @@ type Context struct {
 	Metadata    map[string]interface{}
 }
 
+const (
+	workflowIDMetadataKey = "workflow_id"
+	toolRole              = "tool"
+)
+
 // NewContext creates a new conversation context from the provided messages.
 func NewContext(messages []openai.Message) *Context {
 	return &Context{
@@ -42,11 +47,109 @@ func NewContext(messages []openai.Message) *Context {
 func (c *Context) CountToolResults() int {
 	count := 0
 	for _, m := range c.Messages {
-		if m.Role == "tool" {
+		if m.Role == toolRole {
 			count++
 		}
 	}
 	return count
+}
+
+// SetWorkflowID records the scenario's expected workflow for discovery
+// pagination decisions.
+func (c *Context) SetWorkflowID(workflowID string) {
+	if c.Metadata == nil {
+		c.Metadata = make(map[string]interface{})
+	}
+	c.Metadata[workflowIDMetadataKey] = workflowID
+}
+
+func (c *Context) workflowID() string {
+	workflowID, _ := c.Metadata[workflowIDMetadataKey].(string)
+	return workflowID
+}
+
+// WorkflowDiscoveryTargetFound reports whether a list_workflows result in the
+// conversation contains the workflow configured for the current scenario.
+func (c *Context) WorkflowDiscoveryTargetFound() bool {
+	workflowID := c.workflowID()
+	if workflowID == "" {
+		return false
+	}
+	for i, message := range c.Messages {
+		if message.Role != toolRole || c.toolCallNameBefore(i) != openai.ToolListWorkflows || message.Content == nil {
+			continue
+		}
+		result := decodeWorkflowDiscoveryResult(*message.Content)
+		for _, workflow := range result.Workflows {
+			if workflow.WorkflowID == workflowID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// WorkflowDiscoveryNextCursor returns the next cursor from the most recent
+// list_workflows result when another page is available.
+func (c *Context) WorkflowDiscoveryNextCursor() string {
+	for i := len(c.Messages) - 1; i >= 0; i-- {
+		message := c.Messages[i]
+		if message.Role != toolRole || c.toolCallNameBefore(i) != openai.ToolListWorkflows || message.Content == nil {
+			continue
+		}
+		result := decodeWorkflowDiscoveryResult(*message.Content)
+		if result.Pagination.HasNext {
+			return result.Pagination.NextCursor
+		}
+		return ""
+	}
+	return ""
+}
+
+// LastToolCallName returns the tool call associated with the latest tool
+// result. It is used to distinguish a paginated discovery result from the
+// get_workflow result that completes the discovery sequence.
+func (c *Context) LastToolCallName() string {
+	for i := len(c.Messages) - 1; i >= 0; i-- {
+		if c.Messages[i].Role != toolRole {
+			continue
+		}
+		return c.toolCallNameBefore(i)
+	}
+	return ""
+}
+
+func (c *Context) toolCallNameBefore(index int) string {
+	for i := index - 1; i >= 0; i-- {
+		message := c.Messages[i]
+		if message.Role != "assistant" || len(message.ToolCalls) == 0 {
+			continue
+		}
+		return message.ToolCalls[len(message.ToolCalls)-1].Function.Name
+	}
+	return ""
+}
+
+type workflowDiscoveryResult struct {
+	Workflows  []workflowDiscoveryEntry `json:"workflows"`
+	Pagination workflowDiscoveryPage    `json:"pagination"`
+}
+
+type workflowDiscoveryEntry struct {
+	WorkflowID string `json:"workflowId"`
+}
+
+type workflowDiscoveryPage struct {
+	HasNext    bool   `json:"hasNext"`
+	NextCursor string `json:"nextCursor"`
+}
+
+func decodeWorkflowDiscoveryResult(content string) workflowDiscoveryResult {
+	var result workflowDiscoveryResult
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return workflowDiscoveryResult{}
+	}
+	return result
 }
 
 // Phase 3 markers that KA injects into the enriched prompt.
