@@ -351,13 +351,7 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	var filters *models.WorkflowDiscoveryFilters
 	signal, ok := katypes.SignalContextFromContext(ctx)
 	if ok && signal.RemediationID != "" {
-		filters = &models.WorkflowDiscoveryFilters{
-			Severity:      signal.Severity,
-			Component:     componentFromSignal(signal),
-			Environment:   signal.Environment,
-			Priority:      signal.Priority,
-			RemediationID: signal.RemediationID,
-		}
+		filters = filtersFromSignal(signal)
 	}
 
 	if t.catalog == nil {
