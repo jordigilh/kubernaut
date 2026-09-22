@@ -54,6 +54,7 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 
 	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
 	defer cancel()
+	toolCtx = ka.WithEventLifetime(toolCtx, ctx)
 	result, err := mcpClient.InvokeAction(toolCtx, ka.InvokeActionArgs{
 		RRID:    args.RRID,
 		Action:  action,

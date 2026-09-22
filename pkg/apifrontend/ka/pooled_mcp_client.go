@@ -207,10 +207,7 @@ func (c *PooledMCPClient) StartInvestigation(_ context.Context, _ StartInvestiga
 // router (RouterFor returns nil) and this is a no-op, matching prior behavior.
 func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any, rrID, username string) (json.RawMessage, error) {
 	if c.emitEvent != nil {
-		if router := c.pool.RouterFor(rrID, username); router != nil {
-			unsubscribe := router.Subscribe(func(evt InvestigationEvent) {
-				c.emitEvent(ctx, evt)
-			})
+		if unsubscribe := c.attachPooledEventSubscription(ctx, rrID, username); unsubscribe != nil {
 			defer unsubscribe()
 		}
 	}
@@ -226,6 +223,58 @@ func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSessio
 		raw, err = c.doCallTool(ctx, newSession, name, args)
 	}
 	return raw, err
+}
+
+// attachPooledEventSubscription returns call-scoped cleanup when no enclosing
+// event lifetime was supplied. With a live event lifetime, cleanup is owned by
+// that context and happens asynchronously after the MCP call returns.
+func (c *PooledMCPClient) attachPooledEventSubscription(ctx context.Context, rrID, username string) func() {
+	router := c.pool.RouterFor(rrID, username)
+	if router == nil {
+		return nil
+	}
+
+	eventCtx := ctx
+	lifetimeCtx := EventLifetimeFromContext(ctx)
+	persistentSubscription := lifetimeCtx != nil && lifetimeCtx.Done() != nil
+	if persistentSubscription {
+		eventCtx = lifetimeCtx
+	}
+
+	unsubscribe := router.Subscribe(func(evt InvestigationEvent) {
+		if evt.Type == EventTypeReasoningContentDelta {
+			c.logger.V(1).Info("pooled event delivered to active caller",
+				"rr_id", rrID,
+				"username", username,
+				"event_type", evt.Type,
+				"turn", evt.Turn,
+				"phase", evt.Phase)
+		}
+		c.emitEvent(eventCtx, evt)
+	})
+	c.logger.Info("pooled event subscription attached",
+		"rr_id", rrID,
+		"username", username)
+
+	if persistentSubscription {
+		go func() {
+			<-eventCtx.Done()
+			unsubscribe()
+			c.logger.Info("pooled event subscription detached",
+				"rr_id", rrID,
+				"username", username,
+				"reason", "event_lifetime_done")
+		}()
+		return nil
+	}
+
+	return func() {
+		unsubscribe()
+		c.logger.Info("pooled event subscription detached",
+			"rr_id", rrID,
+			"username", username,
+			"reason", "call_returned")
+	}
 }
 
 func (c *PooledMCPClient) doCallTool(ctx context.Context, session PoolSession, name string, args map[string]any) (json.RawMessage, error) {
