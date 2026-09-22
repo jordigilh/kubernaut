@@ -227,6 +227,46 @@ var _ = Describe("Mock LLM discovery planner wiring", func() {
 		Expect(result.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolListAvailableActions))
 	})
 
+	It("IT-MOCK-2442-027 [BR-MOCK-012, AC-4, AC-6, ASVS V4.1.3/V4.1.5]: OpenAI fails closed on an undeclared discovery tool", func() {
+		registry := scenarios.NewRegistry()
+		registry.Register(&configuredTestScenario{config: scenarios.MockScenarioConfig{
+			ScenarioName: "partial-openai-discovery",
+			WorkflowID:   "workflow-target",
+		}})
+		testServer := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+		defer testServer.Close()
+
+		messages := []openai.Message{{Role: "user", Content: stringPtr("partial OpenAI discovery")}}
+		tools := []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolListAvailableActions}}}
+		first := postOpenAI(testServer.URL, openai.ChatCompletionRequest{Model: "mock", Messages: messages, Tools: tools})
+		Expect(first.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolListAvailableActions))
+		appendOpenAIToolResult(&messages, first, `{}`)
+
+		second := postOpenAI(testServer.URL, openai.ChatCompletionRequest{Model: "mock", Messages: messages, Tools: tools})
+		Expect(second.Choices[0].Message.ToolCalls).To(BeEmpty())
+		Expect(second.Choices[0].Message.Content).NotTo(BeNil())
+	})
+
+	It("IT-MOCK-2442-028 [BR-MOCK-012, AC-4, AC-6, ASVS V4.1.3/V4.1.5]: Gemini fails closed on an undeclared discovery tool", func() {
+		registry := scenarios.NewRegistry()
+		registry.Register(&configuredTestScenario{config: scenarios.MockScenarioConfig{
+			ScenarioName: "partial-gemini-discovery",
+			WorkflowID:   "workflow-target",
+		}})
+		testServer := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+		defer testServer.Close()
+
+		contents := []response.GeminiContent{{Role: "user", Parts: []response.GeminiPart{{Text: "partial Gemini discovery"}}}}
+		tools := []response.GeminiToolDecl{{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: openai.ToolListAvailableActions}}}}
+		first := postGemini(testServer.URL, response.GeminiRequest{Contents: contents, Tools: tools})
+		Expect(first.Candidates[0].Content.Parts[0].FunctionCall.Name).To(Equal(openai.ToolListAvailableActions))
+		appendGeminiFunctionResult(&contents, first, openai.ToolListAvailableActions, map[string]interface{}{})
+
+		second := postGemini(testServer.URL, response.GeminiRequest{Contents: contents, Tools: tools})
+		Expect(second.Candidates[0].Content.Parts[0].FunctionCall).To(BeNil())
+		Expect(second.Candidates[0].Content.Parts[0].Text).NotTo(BeEmpty())
+	})
+
 	It("IT-MOCK-2442-025: multi-tool and chained discovery overrides cannot bypass membership planning", func() {
 		for _, overrideConfig := range []scenarios.MockScenarioConfig{
 			{

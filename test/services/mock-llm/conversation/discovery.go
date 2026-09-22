@@ -76,20 +76,23 @@ type DiscoveryPlan struct {
 // Membership is derived only from list_workflows results. The get_workflow result
 // is intentionally read-only and cannot expand the membership set.
 func PlanDiscovery(input DiscoveryPlannerInput) DiscoveryPlan {
+	if !advertisedTool(input.Transcript, "list_available_actions") {
+		return unresolvedDiscovery("list_available_actions is not advertised")
+	}
 	if hasToolResult(input.Transcript, "get_workflow") &&
 		!workflowWasListed(input.Transcript, input.ExpectedWorkflowID) {
 		return unresolvedDiscovery("get_workflow cannot establish discovery membership")
 	}
 	if !hasToolResult(input.Transcript, "list_available_actions") {
 		if input.HasResourceContext && !hasToolResult(input.Transcript, "get_resource_context") {
-			return callDiscoveryTool("get_resource_context", nil)
+			return planDiscoveryTool(input.Transcript, "get_resource_context", nil)
 		}
-		return callDiscoveryTool("list_available_actions", nil)
+		return planDiscoveryTool(input.Transcript, "list_available_actions", nil)
 	}
 
 	listResult, hasListResult := latestToolResult(input.Transcript, "list_workflows")
 	if !hasListResult {
-		return callDiscoveryTool("list_workflows", map[string]interface{}{
+		return planDiscoveryTool(input.Transcript, "list_workflows", map[string]interface{}{
 			"action_type": normalizedActionType(input.ActionType),
 		})
 	}
@@ -103,7 +106,7 @@ func PlanDiscovery(input DiscoveryPlannerInput) DiscoveryPlan {
 		if hasToolResult(input.Transcript, "get_workflow") {
 			return DiscoveryPlan{Kind: DiscoveryComplete}
 		}
-		return callDiscoveryTool("get_workflow", map[string]interface{}{
+		return planDiscoveryTool(input.Transcript, "get_workflow", map[string]interface{}{
 			"workflow_id": input.ExpectedWorkflowID,
 		})
 	}
@@ -113,7 +116,7 @@ func PlanDiscovery(input DiscoveryPlannerInput) DiscoveryPlan {
 		return unresolvedDiscovery("invalid list_workflows result")
 	}
 	if result.Pagination.HasNext && result.Pagination.NextCursor != "" {
-		return callDiscoveryTool("list_workflows", map[string]interface{}{
+		return planDiscoveryTool(input.Transcript, "list_workflows", map[string]interface{}{
 			"action_type": normalizedActionType(input.ActionType),
 			"page":        "next",
 			"cursor":      result.Pagination.NextCursor,
@@ -124,6 +127,22 @@ func PlanDiscovery(input DiscoveryPlannerInput) DiscoveryPlan {
 
 func callDiscoveryTool(name string, args map[string]interface{}) DiscoveryPlan {
 	return DiscoveryPlan{Kind: DiscoveryCallTool, ToolName: name, Arguments: args}
+}
+
+func planDiscoveryTool(transcript DiscoveryTranscript, name string, args map[string]interface{}) DiscoveryPlan {
+	if !advertisedTool(transcript, name) {
+		return unresolvedDiscovery(name + " is not advertised")
+	}
+	return callDiscoveryTool(name, args)
+}
+
+func advertisedTool(transcript DiscoveryTranscript, name string) bool {
+	for _, advertised := range transcript.AdvertisedTools {
+		if advertised == name {
+			return true
+		}
+	}
+	return false
 }
 
 func unresolvedDiscovery(reason string) DiscoveryPlan {

@@ -86,6 +86,24 @@ var _ = Describe("Provider-neutral workflow discovery planner", func() {
 		})
 	})
 
+	Describe("UT-MOCK-2442-027 [BR-MOCK-012, AC-4, AC-6, ASVS V4.1.3/V4.1.5]: advertised-tool enforcement", func() {
+		It("fails closed instead of authorizing list_workflows when only list_available_actions is advertised", func() {
+			plan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
+				Transcript: conversation.DiscoveryTranscript{
+					AdvertisedTools: []string{listActionsTool},
+					Events: []conversation.DiscoveryEvent{
+						result(listActionsTool, `{}`),
+					},
+				},
+				ExpectedWorkflowID: workflowID,
+			})
+
+			Expect(plan.Kind).To(Equal(conversation.DiscoveryUnresolved))
+			Expect(plan.ToolName).NotTo(Equal(listWorkflowsTool))
+			Expect(plan.Reason).To(ContainSubstring("not advertised"))
+		})
+	})
+
 	Describe("UT-MOCK-2442-003: pagination", func() {
 		It("requests the next page when the target is absent and a cursor exists", func() {
 			plan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
