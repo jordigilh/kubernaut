@@ -2,13 +2,18 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-1254-v1.0
+**Test Plan Identifier**: TP-1254-v1.1
 **Feature**: Enable API Frontend to use OpenAI-compatible LLM endpoints (LlamaStack, vLLM, Ollama)
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-06-24
 **Author**: AI Agent
-**Status**: Draft
+**Status**: Draft (revised acceptance scope)
 **Branch**: `feat/af-openai-llm-1254`
+
+**Scope decision**: Provider-specific acceptance is covered by unit and
+integration tests. The existing provider-agnostic AF E2E suite remains the
+full-journey evidence; this plan does not add a duplicate mock-backed Kind
+journey for `openai_compatible`.
 
 ---
 
@@ -41,7 +46,7 @@ on-premises models to use Kubernaut without a cloud LLM subscription.
 |--------|--------|-------------|
 | Unit test pass rate | 100% | `go test ./pkg/apifrontend/...` |
 | Integration test pass rate | 100% | `go test ./test/integration/apifrontend/...` |
-| E2E test pass rate | 100% | `go test ./test/e2e/apifrontend/... -ginkgo.focus="1254"` |
+| Provider-specific E2E lane | Not required | Existing provider-agnostic AF E2E suite validates the full journey; UT/IT validate OpenAI-compatible behavior |
 | Unit-testable code coverage | >=80% | `go test -coverprofile` on adapter + config |
 | Integration-testable code coverage | >=80% | `go test -coverprofile` on factory wiring |
 | Backward compatibility | 0 regressions | Existing provider tests pass unchanged |
@@ -106,8 +111,12 @@ on-premises models to use Kubernaut without a cloud LLM subscription.
   test plans; regression verified by unchanged test pass rate
 - **KA OpenAI support**: KA already uses langchaingo for OpenAI; this plan
   covers AF only
-- **E2E with real LLM endpoint**: E2E uses the existing mock-LLM OpenAI
-  handler (`/v1/chat/completions`) in the Kind cluster, not a real LLM
+- **Real provider compatibility**: A mock HTTP endpoint cannot validate
+  compatibility with a real vLLM, Ollama, or LlamaStack deployment; real
+  provider contract testing is outside this plan
+- **Provider-specific AF E2E**: Not required. The protocol and production
+  factory wiring are validated by UT/IT; a mock-backed Kind journey would not
+  prove compatibility with a real vLLM, Ollama, or LlamaStack endpoint.
 
 ### 4.3 Design Decisions
 
@@ -129,9 +138,9 @@ on-premises models to use Kubernaut without a cloud LLM subscription.
   validation branches, factory dispatch)
 - **Integration**: >=80% of integration-testable code (factory -> adapter ->
   httptest.NewServer round-trip, transport chain injection)
-- **E2E**: >=80% of full service code — happy-path A2A conversation through
-  AF configured with `openai_compatible` provider using mock-LLM's existing
-  OpenAI handler in Kind cluster
+- **Provider-specific E2E**: Not required. The existing provider-agnostic AF
+  E2E suite validates a deployed full-service journey; this plan focuses on
+  OpenAI-compatible protocol behavior and production wiring.
 
 ### 5.2 Two-Tier Minimum
 
@@ -140,6 +149,10 @@ Every business requirement is covered by at least UT + IT:
   config validation rules
 - **Integration tests**: Factory wiring through production code path, transport
   chain injection, `httptest.NewServer` round-trip
+
+The provider-specific acceptance boundary deliberately stops at UT + IT. A
+mock-backed Kind journey would exercise deployment plumbing but would not
+validate compatibility with a real external provider.
 
 ### 5.3 Business Outcome Quality Bar
 
@@ -150,7 +163,7 @@ LlamaStack endpoint and get working AI analysis?" — not just code path coverag
 
 **PASS** — all of the following must be true:
 
-1. All P0 tests pass (0 failures)
+1. All P0 unit and integration tests pass (0 failures)
 2. All P1 tests pass or have documented exceptions
 3. Per-tier code coverage meets >=80% threshold
 4. No regressions in existing LLM provider tests
@@ -225,7 +238,6 @@ LlamaStack endpoint and get working AI analysis?" — not just code path coverag
 | BR-INTEGRATION-1254 | Factory wiring works without API key (keyless) | P0 | Integration | IT-AF-1254-002 | Pending |
 | BR-INTEGRATION-1254 | Transport chain injected into adapter | P0 | Integration | IT-AF-1254-003 | Pending |
 | BR-INTEGRATION-1254 | Adapter round-trips chat completion via httptest | P0 | Integration | IT-AF-1254-004 | Pending |
-| BR-INTEGRATION-1254 | Full A2A journey with openai_compatible in Kind | P0 | E2E | E2E-AF-1254-001 | Pending |
 
 ---
 
@@ -337,15 +349,12 @@ transport chain injection, `httptest.NewServer` round-trip
 | IT-AF-1254-003 [SC-8] | `NewModelFromConfig` with TLS config injects transport chain into adapter HTTP client — encrypted LLM traffic | SC-8 | Pending |
 | IT-AF-1254-004 [AC-4] | Adapter round-trips a chat completion request through `httptest.NewServer` — OpenAI API contract is honored end-to-end | AC-4 | Pending |
 
-### Tier 3: E2E Tests
+### Full-Journey Coverage
 
-**Testable code scope**: Full A2A journey through AF configured with
-`openai_compatible` provider, using mock-LLM's existing OpenAI handler
-(`/v1/chat/completions`) in Kind cluster
-
-| ID | Business Outcome Under Test | FedRAMP | Phase |
-|----|----------------------------|---------|-------|
-| E2E-AF-1254-001 [AC-4, CM-6] | Operator configures AF with `provider: openai_compatible` pointing at mock-LLM; user sends A2A message; AF routes through in-house adapter to mock-LLM OpenAI endpoint; mock-LLM returns response with tool calls; A2A conversation completes successfully end-to-end | AC-4, CM-6 | Pending |
+The existing provider-agnostic AF E2E suite supplies full deployed-journey
+coverage. TP-1254 does not duplicate that journey for `openai_compatible`,
+because the mock-LLM endpoint validates only the simulated protocol contract,
+not compatibility with a real external provider.
 
 ---
 
@@ -410,32 +419,6 @@ transport chain injection, `httptest.NewServer` round-trip
   and tool calls are correctly mapped to genai types
 - **Accuracy**: Usage metadata (token counts) preserved in response
 
-### E2E-AF-1254-001: A2A conversation with openai_compatible provider
-
-**BR**: BR-INTEGRATION-1254
-**Priority**: P0
-**Type**: E2E
-**File**: `test/e2e/apifrontend/openai_provider_test.go`
-**FedRAMP**: AC-4, CM-6
-
-**Test Steps**:
-1. **Given**: AF deployed in Kind cluster with `provider: openai_compatible`,
-   `endpoint: http://mock-llm:18080/v1`, `model: gpt-4o`; mock-LLM already
-   deployed with OpenAI handler
-2. **When**: User sends A2A `message/send` with text prompt triggering a known
-   mock-LLM keyword scenario
-3. **Then**: AF routes through in-house adapter to mock-LLM's OpenAI endpoint;
-   response contains expected investigation analysis text
-
-**Acceptance Criteria**:
-- **Behavior**: A2A conversation completes (HTTP 200, valid JSON-RPC response)
-- **Correctness**: Response contains expected text from mock-LLM scenario
-- **Accuracy**: No 501 ("unsupported provider"), no 500, no connection errors
-
-**Dependencies**: mock-LLM deployed in Kind cluster (existing E2E infrastructure)
-
----
-
 ## 11. Environmental Needs
 
 ### 11.1 Unit Tests
@@ -452,13 +435,11 @@ transport chain injection, `httptest.NewServer` round-trip
   `NewModelFromConfig` factory; real transport chain
 - **Location**: `test/integration/apifrontend/openai_adapter_test.go`
 
-### 11.3 E2E Tests
+### 11.3 Full-Journey Evidence
 
-- **Framework**: Ginkgo/Gomega BDD (mandatory)
-- **Infrastructure**: Kind cluster with AF + mock-LLM deployed; AF ConfigMap
-  updated with `openai_compatible` provider pointing to mock-LLM's OpenAI
-  endpoint
-- **Location**: `test/e2e/apifrontend/openai_provider_test.go`
+- The existing provider-agnostic AF E2E suite provides deployed full-journey
+  coverage.
+- No provider-specific Kind deployment or E2E lane is required by TP-1254.
 
 ### 11.4 Tools & Versions
 
@@ -487,29 +468,28 @@ transport chain injection, `httptest.NewServer` round-trip
    (UT-AF-1254-020 through -029)
 3. **Phase 3 (RED — Wiring)**: Integration tests for factory dispatch and
    round-trip (IT-AF-1254-001 through -004)
-4. **Phase 4 (RED — E2E)**: E2E test for full A2A journey
-   (E2E-AF-1254-001)
-5. **Phase 5 (GREEN — Config)**: Add provider constants and update
+4. **Phase 4 (GREEN — Config)**: Add provider constants and update
    `validateLLMConfig`
-6. **Phase 6 (GREEN — Adapter)**: Implement in-house adapter in
+5. **Phase 5 (GREEN — Adapter)**: Implement in-house adapter in
    `pkg/apifrontend/launcher/openai/`
-7. **Phase 7 (GREEN — Factory)**: Wire `newOpenAICompatibleModel` into
+6. **Phase 6 (GREEN — Factory)**: Wire `newOpenAICompatibleModel` into
    `NewModelFromConfig`; `go get openai/openai-go`
-8. **Phase 8 (CHECKPOINT W)**: Verify all wiring manifest rows
-9. **Phase 9 (REFACTOR)**: Clean up, deduplicate conversion helpers
+7. **Phase 7 (CHECKPOINT W)**: Verify all wiring manifest rows
+8. **Phase 8 (REFACTOR)**: Clean up, deduplicate conversion helpers
 
 ---
 
 ## 13. Wiring Manifest (Pyramid Invariant)
 
-> UT proves logic. IT proves wiring. E2E proves the journey.
+> UT proves protocol logic. IT proves production wiring. The existing AF E2E
+> suite proves the provider-agnostic deployed journey.
 
-| Component | Production Entry Point | Wiring Location | UT (logic) | IT (wiring) | E2E (journey) |
-|-----------|----------------------|-----------------|------------|-------------|---------------|
-| `openai.NewModel()` | `newOpenAICompatibleModel()` | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-029 | IT-AF-1254-001 | E2E-AF-1254-001 |
-| `newOpenAICompatibleModel()` | `NewModelFromConfig()` switch | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-020..028 | IT-AF-1254-004 | E2E-AF-1254-001 |
-| `LLMProviderOpenAI` constant | `validateLLMConfig()` switch | `pkg/apifrontend/config/config.go` | UT-AF-1254-001..006 | IT-AF-1254-001 | E2E-AF-1254-001 |
-| Transport chain injection | `buildLLMHTTPClient()` -> adapter | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-029 | IT-AF-1254-003 | — |
+| Component | Production Entry Point | Wiring Location | UT (logic) | IT (wiring) |
+|-----------|----------------------|-----------------|------------|-------------|
+| `openai.NewModel()` | `newOpenAICompatibleModel()` | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-029 | IT-AF-1254-001 |
+| `newOpenAICompatibleModel()` | `NewModelFromConfig()` switch | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-020..028 | IT-AF-1254-004 |
+| `LLMProviderOpenAI` constant | `validateLLMConfig()` switch | `pkg/apifrontend/config/config.go` | UT-AF-1254-001..006 | IT-AF-1254-001 |
+| Transport chain injection | `buildLLMHTTPClient()` -> adapter | `pkg/apifrontend/launcher/model.go` | UT-AF-1254-029 | IT-AF-1254-003 |
 
 ---
 
@@ -521,7 +501,6 @@ transport chain injection, `httptest.NewServer` round-trip
 | Keyless config -> Factory -> Adapter | YAML without apiKeyFile | `model.LLM.GenerateContent()` | IT-AF-1254-002 | Pending |
 | TLS config -> Transport chain -> Adapter | `buildLLMHTTPClient()` | HTTPS request via custom transport | IT-AF-1254-003 | Pending |
 | Full round-trip | `GenerateContent()` | `*model.LLMResponse` with content + tool calls | IT-AF-1254-004 | Pending |
-| Full A2A journey (E2E) | A2A `message/send` | JSON-RPC response with analysis | E2E-AF-1254-001 | Pending |
 
 **Unit tests do NOT count as wiring proof.** Only integration tests that
 traverse the real factory/transport/adapter stack qualify.
@@ -536,7 +515,6 @@ traverse the real factory/transport/adapter stack qualify.
 | Config unit tests | `pkg/apifrontend/config/config_test.go` | New test cases in existing file |
 | Adapter unit tests | `pkg/apifrontend/launcher/openai/adapter_test.go` | New file |
 | Integration tests | `test/integration/apifrontend/openai_adapter_test.go` | New file |
-| E2E tests | `test/e2e/apifrontend/openai_provider_test.go` | New file |
 | Coverage report | CI artifact | Per-tier coverage percentages |
 
 ---
@@ -550,9 +528,6 @@ go test ./pkg/apifrontend/launcher/openai/... -ginkgo.v
 
 # Integration tests
 go test ./test/integration/apifrontend/... -ginkgo.v -ginkgo.focus="1254"
-
-# E2E tests (requires Kind cluster with mock-LLM)
-go test ./test/e2e/apifrontend/... -ginkgo.v -ginkgo.focus="1254"
 
 # Coverage
 go test ./pkg/apifrontend/launcher/openai/... -coverprofile=adapter_coverage.out
@@ -575,3 +550,4 @@ go tool cover -func=adapter_coverage.out
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-06-24 | Initial test plan |
+| 1.1 | 2026-09-22 | Removed provider-specific mock-backed E2E acceptance; UT/IT cover OpenAI-compatible behavior and the existing AF E2E suite covers the provider-agnostic journey |

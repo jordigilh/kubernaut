@@ -27,7 +27,10 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "E2E Suite — AF + KA + DS Integration")
 }
 
-const e2eNamespace = "kubernaut-system"
+const (
+	e2eNamespace = "kubernaut-system"
+	trueFixture  = "true"
+)
 
 var (
 	e2eClusterName = getEnvOrDefault("AF_E2E_CLUSTER_NAME", kinfra.AFDefaultClusterName)
