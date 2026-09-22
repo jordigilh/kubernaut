@@ -75,7 +75,7 @@ func hasDiscoveryOverride(scenario scenarios.MockScenarioConfig) bool {
 
 func isDiscoveryToolName(name string) bool {
 	switch name {
-	case openai.ToolListAvailableActions, openai.ToolGetResourceContext, openai.ToolListWorkflows, openai.ToolGetWorkflow:
+	case openai.ToolListAvailableActions, openai.ToolGetResourceContext, openai.ToolListWorkflows, openai.ToolGetWorkflow, openai.ToolSubmitResultWithWorkflow:
 		return true
 	default:
 		return false

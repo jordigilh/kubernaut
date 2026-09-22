@@ -206,6 +206,27 @@ var _ = Describe("Mock LLM discovery planner wiring", func() {
 		Expect(result.Candidates[0].Content.Parts[0].FunctionCall.Name).To(Equal(openai.ToolListAvailableActions))
 	})
 
+	It("IT-MOCK-2442-026: workflow submission overrides cannot bypass membership planning", func() {
+		registry := scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkilled": {
+					ToolCall: &config.ToolCallOverride{Name: openai.ToolSubmitResultWithWorkflow},
+				},
+			},
+		})
+		testServer := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+		defer testServer.Close()
+
+		result := postOpenAI(testServer.URL, openai.ChatCompletionRequest{
+			Model:    "mock",
+			Messages: []openai.Message{{Role: "user", Content: stringPtr("Signal Name: OOMKilled")}},
+			Tools:    openAIDiscoveryToolsWithSubmit(),
+		})
+
+		Expect(result.Choices[0].Message.ToolCalls).To(HaveLen(1))
+		Expect(result.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolListAvailableActions))
+	})
+
 	It("IT-MOCK-2442-025: multi-tool and chained discovery overrides cannot bypass membership planning", func() {
 		for _, overrideConfig := range []scenarios.MockScenarioConfig{
 			{

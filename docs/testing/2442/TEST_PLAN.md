@@ -247,6 +247,7 @@ after the cause is identified and the affected test can run deterministically.
 | IT-MOCK-2442-023 | Explicit scenario force-text suppresses unresolved submission | Implemented |
 | IT-MOCK-2442-024 | Gemini discovery overrides cannot bypass membership planning | Implemented |
 | IT-MOCK-2442-025 | Multi-tool and chained discovery overrides cannot bypass membership planning | Implemented |
+| IT-MOCK-2442-026 | Workflow submission overrides cannot bypass membership planning | Implemented |
 
 ### Tier 3: E2E Tests
 
@@ -460,7 +461,7 @@ make test
 
 | Code Path | Entry Point | Exit Point | Wiring IT | Status |
 |---|---|---|---|---|
-| Discovery planner | OpenAI `/v1/chat/completions` | OpenAI tool/text response | IT-MOCK-2442-011, IT-MOCK-2442-013, IT-MOCK-2442-021..023, IT-MOCK-2442-025 | Implemented |
+| Discovery planner | OpenAI `/v1/chat/completions` | OpenAI tool/text response | IT-MOCK-2442-011, IT-MOCK-2442-013, IT-MOCK-2442-021..023, IT-MOCK-2442-025..026 | Implemented |
 | Discovery planner | Gemini `/v1beta/models/*:generateContent` | Gemini function/text response | IT-MOCK-2442-012, IT-MOCK-2442-014, IT-MOCK-2442-024 | Implemented |
 | OpenAI adapter | OpenAI route registration | Canonical planner action | IT-MOCK-2442-011, IT-MOCK-2442-013 | Implemented |
 | Gemini adapter | Gemini route registration | Canonical planner action | IT-MOCK-2442-012, IT-MOCK-2442-014, IT-MOCK-2442-024 | Implemented |
