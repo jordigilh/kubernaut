@@ -140,7 +140,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case useToolProtocol:
 		h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
-	case h.mode != config.ModeInteractive && hasSplit && !resolved:
+	case h.mode != config.ModeInteractive && hasSplit && !resolved && !scenarioForcesText(cfg):
 		h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
 		notifySubmit()
 	default:
@@ -185,8 +185,9 @@ func (h *handler) handleFullDAG(
 	// enabled but the last message is already a tool result (meaning we just
 	// executed the tool in this iteration), fall through to DAG/text response.
 	repeatAllowed := cfg.RepeatToolCall && !lastMessageIsToolResult(req.Messages)
+	discoveryOverride := conversation.HasThreeStepTools(req.Tools) && hasDiscoveryOverride(cfg)
 
-	if len(cfg.MultiToolCalls) > 0 && (!hasToolResults(req.Messages) || repeatAllowed) {
+	if !discoveryOverride && len(cfg.MultiToolCalls) > 0 && (!hasToolResults(req.Messages) || repeatAllowed) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -194,7 +195,7 @@ func (h *handler) handleFullDAG(
 		return
 	}
 
-	if cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || repeatAllowed) {
+	if !discoveryOverride && cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || repeatAllowed) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		return
@@ -208,23 +209,25 @@ func (h *handler) handleFullDAG(
 	// preserving the original "fire at most once per link" guard: once
 	// CountToolResults() exceeds the chain length, nextChainCallByCount
 	// returns nil and this falls through to the DAG/text path below.
-	if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
-		if next := nextChainCallByCount(chain, ctx.CountToolResults()); next != nil {
-			args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
-				return response.ExtractFieldFromToolResult(req.Messages, toolName, field)
-			})
-			h.trackToolCall(next.Name)
-			writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, next.Name, scenarios.MockScenarioConfig{
-				ToolCallName: next.Name,
-				ToolCallArgs: args,
-			}))
-			return
+	if !discoveryOverride {
+		if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
+			if next := nextChainCallByCount(chain, ctx.CountToolResults()); next != nil {
+				args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
+					return response.ExtractFieldFromToolResult(req.Messages, toolName, field)
+				})
+				h.trackToolCall(next.Name)
+				writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, next.Name, scenarios.MockScenarioConfig{
+					ToolCallName: next.Name,
+					ToolCallArgs: args,
+				}))
+				return
+			}
 		}
 	}
 
 	// DD-TEST-018: discovery membership is planned from the transcript, not result counts.
 	if cfg.WorkflowID != "" && conversation.HasThreeStepTools(req.Tools) {
-		if h.handleOpenAIDiscoveryPlan(w, model, cfg, req) {
+		if h.handleOpenAIDiscoveryPlan(w, model, cfg, req, hasSplit, resolved, notifySubmit) {
 			return
 		}
 	}
@@ -266,6 +269,8 @@ func (h *handler) handleOpenAIDiscoveryPlan(
 	model string,
 	cfg scenarios.MockScenarioConfig,
 	req openai.ChatCompletionRequest,
+	hasSplit, resolved bool,
+	notifySubmit func(),
 ) bool {
 	transcript := NormalizeOpenAITranscript(req)
 	plan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
@@ -285,7 +290,15 @@ func (h *handler) handleOpenAIDiscoveryPlan(
 		return true
 	case conversation.DiscoveryUnresolved:
 		log.Printf("[mock-llm] workflow discovery unresolved: %s", plan.Reason)
-		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, withoutWorkflowSelection(cfg))
+		return true
+	case conversation.DiscoveryComplete:
+		if hasSplit && !resolved {
+			h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+			notifySubmit()
+		} else {
+			h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		}
 		return true
 	default:
 		return false
@@ -344,7 +357,7 @@ func buildDetectionContext(ctx *conversation.Context, tools []openai.Tool) *scen
 	for _, m := range ctx.Messages {
 		if m.Content != nil {
 			contentParts = append(contentParts, *m.Content)
-			if m.Role == "user" {
+			if m.Role == userMessageRole {
 				lastUserContent = *m.Content
 			}
 		}

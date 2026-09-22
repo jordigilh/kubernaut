@@ -16,7 +16,6 @@ limitations under the License.
 package scenarios
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
@@ -30,7 +29,7 @@ import (
 // (populated by test infrastructure from DataStorage UUIDs). The lookup checks:
 //  1. Exact match by ScenarioName (backward compatibility)
 //  2. Fallback match by WorkflowName prefix (strips ":environment" suffix),
-//     preferring ":production" when multiple environments exist
+//     rejecting ambiguous environment matches
 func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
 	return DefaultRegistryFull(overrides, "")
 }
@@ -96,9 +95,8 @@ func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.S
 }
 
 // findOverrideByWorkflowName searches override keys for entries matching the
-// given workflow name. Keys have format "workflow_name:environment". When
-// multiple environments match, ":production" is preferred since the E2E
-// tests assert against production workflows.
+// given workflow name. Keys have format "workflow_name:environment". A
+// name-only lookup must resolve exactly one environment.
 func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, workflowName string) (config.ScenarioOverride, bool) {
 	keys := make([]string, 0, len(overrides))
 	for key := range overrides {
@@ -113,22 +111,8 @@ func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, wo
 	if len(keys) == 0 {
 		return config.ScenarioOverride{}, false
 	}
-	sort.Strings(keys)
-
-	productionKey := ""
-	for _, key := range keys {
-		if strings.HasSuffix(key, ":production") {
-			if productionKey != "" {
-				return config.ScenarioOverride{}, false
-			}
-			productionKey = key
-		}
-	}
-	if productionKey != "" {
-		return overrides[productionKey], true
-	}
 	if len(keys) != 1 {
-		// Do not select a non-production environment from randomized map order.
+		// Do not select an environment from a name-only ambiguous lookup.
 		return config.ScenarioOverride{}, false
 	}
 	return overrides[keys[0]], true

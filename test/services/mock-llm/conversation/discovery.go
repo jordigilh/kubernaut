@@ -24,12 +24,15 @@ import (
 type DiscoveryEventKind string
 
 const (
-	DiscoveryToolCallEvent   DiscoveryEventKind = "tool_call"
-	DiscoveryToolResultEvent DiscoveryEventKind = "tool_result"
+	DiscoverySystemContentEvent    DiscoveryEventKind = "system_content"
+	DiscoveryUserContentEvent      DiscoveryEventKind = "user_content"
+	DiscoveryAssistantContentEvent DiscoveryEventKind = "assistant_content"
+	DiscoveryToolCallEvent         DiscoveryEventKind = "tool_call"
+	DiscoveryToolResultEvent       DiscoveryEventKind = "tool_result"
 )
 
-// DiscoveryEvent is the provider-neutral representation of a tool call or result.
-// Payload contains the serialized tool result for result events.
+// DiscoveryEvent is the provider-neutral representation of conversation content,
+// tool calls, and tool results. Payload contains text or serialized tool data.
 type DiscoveryEvent struct {
 	Kind       DiscoveryEventKind
 	ToolName   string

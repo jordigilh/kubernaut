@@ -137,8 +137,8 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	useToolProtocol := shouldUseToolProtocol(h.mode, h.forceText, cfg, geminiHasThreeStepTools(req.Tools), len(req.Tools))
 	switch {
 	case useToolProtocol:
-		h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
-	case h.mode != config.ModeInteractive && hasSplit && !resolved:
+		h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, req.SystemInstruction, hasFunctionResults, hasSplit, resolved)
+	case h.mode != config.ModeInteractive && hasSplit && !resolved && !scenarioForcesText(cfg):
 		h.respondGeminiWithSubmitToolCall(w, cfg)
 	default:
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
@@ -153,6 +153,7 @@ func (h *handler) handleGeminiToolResponse(
 	cfg scenarios.MockScenarioConfig,
 	tools []response.GeminiToolDecl,
 	contents []response.GeminiContent,
+	systemInstruction *response.GeminiContent,
 	hasFunctionResults, hasSplit, resolved bool,
 ) {
 	// Guard against infinite tool-call loops (#1189): if RepeatToolCall is
@@ -160,6 +161,7 @@ func (h *handler) handleGeminiToolResponse(
 	// FunctionResponse (meaning we just executed the tool in this iteration),
 	// fall through to text response instead of re-emitting the tool call.
 	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
+	discoveryOverride := geminiHasThreeStepTools(tools) && hasDiscoveryOverride(cfg)
 
 	// NextToolCall chain: once N tool/function responses exist, fire the Nth
 	// chained call (1-indexed), resolving any $from_tool templates in its
@@ -169,21 +171,23 @@ func (h *handler) handleGeminiToolResponse(
 	// preserving the #1409 "fire at most once per link" guard: once
 	// priorResponseCount exceeds the chain length, nextChainCallByCount
 	// returns nil and this falls through to the normal DAG/text path.
-	if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
-		if next := nextChainCallByCount(chain, response.CountFunctionResponses(contents)); next != nil {
-			args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
-				return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
-			})
-			h.trackToolCall(next.Name)
-			writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(next.Name, scenarios.MockScenarioConfig{
-				ToolCallName: next.Name,
-				ToolCallArgs: args,
-			}))
-			return
+	if !discoveryOverride {
+		if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
+			if next := nextChainCallByCount(chain, response.CountFunctionResponses(contents)); next != nil {
+				args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
+					return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
+				})
+				h.trackToolCall(next.Name)
+				writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(next.Name, scenarios.MockScenarioConfig{
+					ToolCallName: next.Name,
+					ToolCallArgs: args,
+				}))
+				return
+			}
 		}
 	}
 
-	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
+	if !discoveryOverride && len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -191,7 +195,7 @@ func (h *handler) handleGeminiToolResponse(
 		return
 	}
 
-	if cfg.ToolCallName != "" && (!hasFunctionResults || repeatAllowed) {
+	if !discoveryOverride && cfg.ToolCallName != "" && (!hasFunctionResults || repeatAllowed) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.ToolCallName, cfg))
 		return
@@ -199,7 +203,7 @@ func (h *handler) handleGeminiToolResponse(
 
 	// DD-TEST-018: discovery membership is planned from the transcript, not result counts.
 	if cfg.WorkflowID != "" && geminiHasThreeStepTools(tools) {
-		handled, err := h.handleGeminiDiscoveryPlan(w, cfg, tools, contents)
+		handled, err := h.handleGeminiDiscoveryPlan(w, cfg, tools, contents, systemInstruction, hasSplit, resolved)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, response.BuildGeminiErrorResponse(err.Error()))
 			return
@@ -232,8 +236,14 @@ func (h *handler) handleGeminiDiscoveryPlan(
 	cfg scenarios.MockScenarioConfig,
 	tools []response.GeminiToolDecl,
 	contents []response.GeminiContent,
+	systemInstruction *response.GeminiContent,
+	hasSplit, resolved bool,
 ) (bool, error) {
-	transcript, err := NormalizeGeminiTranscript(contents, tools)
+	var systemInstructions []response.GeminiContent
+	if systemInstruction != nil {
+		systemInstructions = append(systemInstructions, *systemInstruction)
+	}
+	transcript, err := NormalizeGeminiTranscript(contents, tools, systemInstructions...)
 	if err != nil {
 		return false, err
 	}
@@ -254,7 +264,14 @@ func (h *handler) handleGeminiDiscoveryPlan(
 		return true, nil
 	case conversation.DiscoveryUnresolved:
 		log.Printf("[mock-llm/gemini] workflow discovery unresolved: %s", plan.Reason)
-		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
+		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(withoutWorkflowSelection(cfg)))
+		return true, nil
+	case conversation.DiscoveryComplete:
+		if hasSplit && !resolved {
+			h.respondGeminiWithSubmitToolCall(w, cfg)
+		} else {
+			writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
+		}
 		return true, nil
 	default:
 		return false, nil

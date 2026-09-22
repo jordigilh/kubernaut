@@ -24,7 +24,10 @@ import (
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/response"
 )
 
-const openAIToolMessageRole = "tool"
+const (
+	openAIToolMessageRole = "tool"
+	userMessageRole       = "user"
+)
 
 // NormalizeOpenAITranscript converts an OpenAI Chat Completions request into the
 // provider-neutral transcript consumed by the discovery planner.
@@ -34,6 +37,14 @@ func NormalizeOpenAITranscript(req openai.ChatCompletionRequest) conversation.Di
 	pendingNames := make([]string, 0)
 
 	for _, message := range req.Messages {
+		if message.Role != openAIToolMessageRole && message.Content != nil && *message.Content != "" {
+			if kind, ok := discoveryContentEventKind(message.Role); ok {
+				transcript.Events = append(transcript.Events, conversation.DiscoveryEvent{
+					Kind:    kind,
+					Payload: *message.Content,
+				})
+			}
+		}
 		if message.Role == "assistant" && len(message.ToolCalls) > 0 {
 			pendingNames = pendingNames[:0]
 			for _, toolCall := range message.ToolCalls {
@@ -76,9 +87,13 @@ func NormalizeOpenAITranscript(req openai.ChatCompletionRequest) conversation.Di
 
 // NormalizeGeminiTranscript converts Gemini function-call content into the
 // provider-neutral transcript consumed by the discovery planner.
-func NormalizeGeminiTranscript(contents []response.GeminiContent, tools []response.GeminiToolDecl) (conversation.DiscoveryTranscript, error) {
+func NormalizeGeminiTranscript(contents []response.GeminiContent, tools []response.GeminiToolDecl, systemInstructions ...response.GeminiContent) (conversation.DiscoveryTranscript, error) {
 	transcript := conversation.DiscoveryTranscript{AdvertisedTools: geminiToolNames(tools)}
+	for _, content := range systemInstructions {
+		appendGeminiTextEvents(&transcript, content)
+	}
 	for _, content := range contents {
+		appendGeminiTextEvents(&transcript, content)
 		for _, part := range content.Parts {
 			if part.FunctionCall != nil {
 				transcript.Events = append(transcript.Events, conversation.DiscoveryEvent{
@@ -101,6 +116,35 @@ func NormalizeGeminiTranscript(contents []response.GeminiContent, tools []respon
 		}
 	}
 	return transcript, nil
+}
+
+func appendGeminiTextEvents(transcript *conversation.DiscoveryTranscript, content response.GeminiContent) {
+	kind, ok := discoveryContentEventKind(content.Role)
+	if !ok {
+		return
+	}
+	for _, part := range content.Parts {
+		if part.Text == "" {
+			continue
+		}
+		transcript.Events = append(transcript.Events, conversation.DiscoveryEvent{
+			Kind:    kind,
+			Payload: part.Text,
+		})
+	}
+}
+
+func discoveryContentEventKind(role string) (conversation.DiscoveryEventKind, bool) {
+	switch role {
+	case "system", "developer":
+		return conversation.DiscoverySystemContentEvent, true
+	case userMessageRole:
+		return conversation.DiscoveryUserContentEvent, true
+	case "assistant", "model":
+		return conversation.DiscoveryAssistantContentEvent, true
+	default:
+		return "", false
+	}
 }
 
 func openAIToolNames(tools []openai.Tool) []string {

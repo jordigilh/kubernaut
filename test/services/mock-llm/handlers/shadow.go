@@ -85,7 +85,7 @@ func handleShadowOpenAI(w http.ResponseWriter, r *http.Request) {
 
 func extractLastUserContent(messages []openai.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" && messages[i].Content != nil {
+		if messages[i].Role == userMessageRole && messages[i].Content != nil {
 			return *messages[i].Content
 		}
 	}

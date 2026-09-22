@@ -16,6 +16,7 @@ limitations under the License.
 package handlers
 
 import (
+	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
@@ -43,5 +44,40 @@ func shouldUseToolProtocol(mode string, globalForceText bool, scenario scenarios
 		return false
 	default:
 		return !globalForceText
+	}
+}
+
+func scenarioForcesText(scenario scenarios.MockScenarioConfig) bool {
+	return scenario.ForceText != nil && *scenario.ForceText
+}
+
+func withoutWorkflowSelection(scenario scenarios.MockScenarioConfig) scenarios.MockScenarioConfig {
+	scenario.WorkflowID = ""
+	return scenario
+}
+
+func hasDiscoveryOverride(scenario scenarios.MockScenarioConfig) bool {
+	if isDiscoveryToolName(scenario.ToolCallName) {
+		return true
+	}
+	for _, toolCall := range scenario.MultiToolCalls {
+		if isDiscoveryToolName(toolCall.Name) {
+			return true
+		}
+	}
+	for toolCall := scenario.NextToolCall; toolCall != nil; toolCall = toolCall.NextToolCall {
+		if isDiscoveryToolName(toolCall.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDiscoveryToolName(name string) bool {
+	switch name {
+	case openai.ToolListAvailableActions, openai.ToolGetResourceContext, openai.ToolListWorkflows, openai.ToolGetWorkflow:
+		return true
+	default:
+		return false
 	}
 }
