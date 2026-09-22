@@ -49,6 +49,14 @@ func lowConfidenceConfig() MockScenarioConfig {
 	}
 }
 
+func approvalRequiredConfig() MockScenarioConfig {
+	cfg := crashloopConfig()
+	cfg.ScenarioName = "approval_required"
+	cfg.SignalName = "MOCK_APPROVAL_TEST"
+	cfg.Confidence = 0.75
+	return cfg
+}
+
 func problemResolvedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "problem_resolved", SignalName: "MOCK_PROBLEM_RESOLVED", Severity: "info",
@@ -106,11 +114,13 @@ func problemResolvedContradictionConfig() MockScenarioConfig {
 func maxRetriesExhaustedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "max_retries_exhausted", SignalName: "MOCK_MAX_RETRIES_EXHAUSTED", Severity: "high",
-		WorkflowName: "nonexistent-invalid-workflow-xyz", WorkflowID: uuid.DeterministicUUID("nonexistent-invalid-workflow-xyz"),
-		WorkflowTitle: "Invalid Workflow", Confidence: 0.6,
-		RootCause:    "LLM analysis completed but selected an invalid workflow not present in the catalog.",
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
+		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.6,
+		RootCause:    "LLM analysis selected a valid workflow with invalid parameters on every correction attempt.",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
 		APIVersion:           "v1",
+		RawParameters:        map[string]interface{}{"MEMORY_LIMIT_NEW": float64(123)},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}

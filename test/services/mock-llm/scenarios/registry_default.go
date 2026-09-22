@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
@@ -96,7 +97,8 @@ func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.S
 
 // findOverrideByWorkflowName searches override keys for entries matching the
 // given workflow name. Keys have format "workflow_name:environment". A
-// name-only lookup must resolve exactly one environment.
+// name-only lookup may resolve multiple environments only when every matching
+// environment carries the same override value.
 func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, workflowName string) (config.ScenarioOverride, bool) {
 	keys := make([]string, 0, len(overrides))
 	for key := range overrides {
@@ -111,11 +113,14 @@ func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, wo
 	if len(keys) == 0 {
 		return config.ScenarioOverride{}, false
 	}
-	if len(keys) != 1 {
-		// Do not select an environment from a name-only ambiguous lookup.
-		return config.ScenarioOverride{}, false
+	selected := overrides[keys[0]]
+	for _, key := range keys[1:] {
+		if !reflect.DeepEqual(selected, overrides[key]) {
+			// Do not select an environment from a conflicting name-only lookup.
+			return config.ScenarioOverride{}, false
+		}
 	}
-	return overrides[keys[0]], true
+	return selected, true
 }
 
 // DefaultRegistryFull returns a registry with optional overrides and golden
@@ -202,6 +207,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Selector-based keyword scenarios (highest priority = 1.0)
 	r.Register(newKeywordScenario("no_workflow_found", "mock_no_workflow_found", noWorkflowFoundConfig()))
 	r.Register(newKeywordScenario("low_confidence", "mock_low_confidence", lowConfidenceConfig()))
+	r.Register(newKeywordScenario("approval_required", "mock_approval_test", approvalRequiredConfig()))
 	r.Register(newKeywordScenario("problem_resolved_contradiction", "mock_problem_resolved_contradiction", problemResolvedContradictionConfig()))
 	r.Register(newKeywordScenario("problem_resolved", "mock_problem_resolved", problemResolvedConfig()))
 	r.Register(newKeywordScenarioMulti("problem_resolved", []string{"mock_not_reproducible", "mock not reproducible"}, problemResolvedConfig()))
@@ -215,6 +221,9 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
+	for _, scenario := range aiAnalysisFixtureScenarios() {
+		r.Register(scenario)
+	}
 
 	// Proactive scenarios (checked before signal-name)
 	r.Register(predictiveNoActionScenario())

@@ -158,6 +158,80 @@ var _ = Describe("Scenario Registry", func() {
 		Expect(configured.Config().WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
 	})
 
+	It("UT-MOCK-2442-019: applies identical workflow overrides across environments", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-v1:production": {WorkflowID: "catalog-id"},
+				"oomkill-increase-memory-v1:staging":    {WorkflowID: "catalog-id"},
+				"oomkill-increase-memory-v1:test":       {WorkflowID: "catalog-id"},
+			},
+		})
+
+		scenario, ok := registry.Get("oomkilled")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-020: keeps max-retry workflow discoverable while forcing validation failures", func() {
+		registry = scenarios.DefaultRegistry()
+
+		scenario, ok := registry.Get("max_retries_exhausted")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+
+		cfg := configured.Config()
+		Expect(cfg.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
+		Expect(cfg.RawParameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", BeNumerically("==", 123)))
+	})
+
+	It("UT-MOCK-2442-021: selects isolated AIAnalysis fixture scenarios by fingerprint", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-aa-staging-v1:staging": {WorkflowID: "catalog-id"},
+			},
+		})
+
+		result := registry.Detect(&scenarios.DetectionContext{Content: "e2e-fingerprint-002"})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_staging_oom"))
+
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-022: selects isolated AIAnalysis fixtures from prompt-visible fields", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"crashloop-config-fix-aa-approval-v1:production": {WorkflowID: "catalog-id"},
+			},
+		})
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "- Signal Name: CrashLoopBackOff\n- Severity: critical\n- Resource: payments/Deployment/payment-service",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_approval_crashloop"))
+
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-023: does not confuse the warning audit fixture with the critical approval fixture", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Namespace: payments Resource Name: payment-service",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).NotTo(Equal("aa_e2e_approval_crashloop"))
+	})
+
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {
 		It("should return metadata entries for each registered scenario", func() {
 			s1 := &fakeScenario{name: "alpha", confidence: 0.5}
