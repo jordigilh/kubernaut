@@ -224,7 +224,7 @@ after the cause is identified and the affected test can run deterministically.
 | UT-MOCK-2442-006 | Membership accumulates across pages and retries | Covered by UT-MOCK-2442-003 |
 | UT-MOCK-2442-007 | OpenAI and Gemini equivalent transcripts yield equal semantic plans | Implemented |
 | UT-MOCK-2442-008 | Parallel non-discovery results are ignored by discovery state | Covered by UT-MOCK-2442-005 and IT-MOCK-2442-021 |
-| UT-MOCK-2442-009 | Prior-turn results do not satisfy a new selection context | Not implemented in this change |
+| UT-MOCK-2442-009 | Prior-turn results do not satisfy a new selection context | Implemented |
 | UT-MOCK-2442-010 | Malformed discovery results fail closed with diagnostics | Covered by UT-MOCK-2442-004 |
 | UT-MOCK-2442-015 | Global and per-scenario `force_text` precedence is correct | Implemented |
 | UT-MOCK-2442-018 | Ambiguous workflow/environment overrides are rejected | Implemented |
@@ -319,6 +319,25 @@ currently expose that provider protocol and no active #2442 path requires it.
 
 - Only the response serialization differs between providers.
 - Tool names, membership decisions, pagination, and unresolved behavior are identical.
+
+### UT-MOCK-2442-009: Selection context isolation
+
+**BR**: BR-MOCK-014
+**Priority**: P0
+**Type**: Unit
+**File**: `test/services/mock-llm/discovery_planner_test.go`
+
+**Test Steps**:
+
+1. Given one transcript that completes discovery for `workflow-first`.
+2. When the planner is called again with a fresh transcript for `workflow-second`.
+3. Then the second selection starts at `list_available_actions`.
+4. Then no membership or completion state from the first selection is reused.
+
+**Acceptance Criteria**:
+
+- A completed selection cannot satisfy a later selection with a fresh transcript.
+- Discovery state is derived only from the transcript supplied to the current planner call.
 
 ### IT-MOCK-2442-013: OpenAI refuses undiscovered workflow
 

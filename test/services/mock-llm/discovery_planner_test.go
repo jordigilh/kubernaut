@@ -176,6 +176,27 @@ var _ = Describe("Provider-neutral workflow discovery planner", func() {
 			Expect(plan.ToolName).To(Equal(getWorkflowTool))
 		})
 	})
+
+	Describe("UT-MOCK-2442-009: selection context isolation", func() {
+		It("does not carry discovery membership into a fresh transcript", func() {
+			firstPlan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
+				Transcript: transcript(
+					call(listActionsTool), result(listActionsTool, `{}`),
+					call(listWorkflowsTool), result(listWorkflowsTool, `{"workflows":[{"workflowId":"workflow-first"}]}`),
+					call(getWorkflowTool), result(getWorkflowTool, `{"workflowId":"workflow-first"}`),
+				),
+				ExpectedWorkflowID: "workflow-first",
+			})
+			Expect(firstPlan.Kind).To(Equal(conversation.DiscoveryComplete))
+
+			secondPlan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
+				Transcript:         transcript(),
+				ExpectedWorkflowID: "workflow-second",
+			})
+			Expect(secondPlan.Kind).To(Equal(conversation.DiscoveryCallTool))
+			Expect(secondPlan.ToolName).To(Equal(listActionsTool))
+		})
+	})
 })
 
 func transcript(events ...conversation.DiscoveryEvent) conversation.DiscoveryTranscript {
