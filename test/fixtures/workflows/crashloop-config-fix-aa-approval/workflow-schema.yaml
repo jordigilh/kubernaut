@@ -13,10 +13,10 @@ spec:
   actionType: RestartDeployment
 
   labels:
-    severity: [critical]
+    severity: [high]
     environment: [production]
     component: [apps/v1/Deployment]
-    priority: P0
+    priority: P1
 
   execution:
     engine: tekton

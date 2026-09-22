@@ -48,21 +48,24 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 	})
 
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",
-		func(fixture string, severity []string, environment string, component []string, priority string) {
+		func(fixture, actionType string, severity []string, environment string, component []string, priority string) {
 			content, err := readWorkflowFixtureContent(fixture)
 			Expect(err).NotTo(HaveOccurred())
 
 			workflow := &rwv1alpha1.RemediationWorkflow{}
 			Expect(yaml.Unmarshal([]byte(content), workflow)).To(Succeed())
+			Expect(workflow.Spec.ActionType).To(Equal(actionType))
 			Expect(workflow.Spec.Labels.Severity).To(Equal(severity))
 			Expect(workflow.Spec.Labels.Environment).To(Equal([]string{environment}))
 			Expect(workflow.Spec.Labels.Component).To(Equal(component))
 			Expect(workflow.Spec.Labels.Priority).To(Equal(priority))
 		},
-		Entry("staging OOM", "oomkill-increase-memory-aa-staging", []string{"warning"}, "staging", []string{"*"}, "P2"),
-		Entry("production approval CrashLoop", "crashloop-config-fix-aa-approval", []string{"critical"}, "production", []string{"apps/v1/Deployment"}, "P0"),
-		Entry("staging session CrashLoop", "crashloop-config-fix-aa-session", []string{"warning"}, "staging", []string{"*"}, "P2"),
-		Entry("production detected-labels CrashLoop", "crashloop-config-fix-aa-detected-labels", []string{"critical"}, "production", []string{"apps/v1/Deployment"}, "P0"),
-		Entry("production data-quality CrashLoop", "crashloop-config-fix-aa-data-quality", []string{"warning"}, "production", []string{"*"}, "P2"),
+		Entry("staging OOM", "oomkill-increase-memory-aa-staging", "IncreaseMemoryLimits", []string{"warning"}, "staging", []string{"*"}, "P2"),
+		Entry("production approval CrashLoop", "crashloop-config-fix-aa-approval", "RestartDeployment", []string{"high"}, "production", []string{"apps/v1/Deployment"}, "P1"),
+		Entry("production audit CrashLoop", "crashloop-config-fix-aa-audit", "RestartDeployment", []string{"warning"}, "production", []string{"apps/v1/Deployment"}, "P1"),
+		Entry("staging Rego CrashLoop", "crashloop-config-fix-aa-rego", "RestartDeployment", []string{"warning"}, "staging", []string{"apps/v1/Deployment"}, "P1"),
+		Entry("staging session CrashLoop", "crashloop-config-fix-aa-session", "RestartDeployment", []string{"warning"}, "staging", []string{"*"}, "P2"),
+		Entry("production detected-labels CrashLoop", "crashloop-config-fix-aa-detected-labels", "RestartDeployment", []string{"critical"}, "production", []string{"apps/v1/Deployment"}, "P0"),
+		Entry("production data-quality CrashLoop", "crashloop-config-fix-aa-data-quality", "RestartDeployment", []string{"warning"}, "production", []string{"*"}, "P2"),
 	)
 })

@@ -201,7 +201,10 @@ var _ = Describe("Scenario Registry", func() {
 
 		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
 		Expect(ok).To(BeTrue())
-		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("oomkill-increase-memory-aa-staging-v1"))
+		Expect(cfg.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(cfg.WorkflowID).To(Equal("catalog-id"))
 	})
 
 	It("UT-MOCK-2442-022: selects isolated AIAnalysis fixtures from prompt-visible fields", func() {
@@ -212,14 +215,19 @@ var _ = Describe("Scenario Registry", func() {
 		})
 
 		result := registry.Detect(&scenarios.DetectionContext{
-			Content: "- Signal Name: CrashLoopBackOff\n- Severity: critical\n- Resource: payments/Deployment/payment-service",
+			Content: "- Signal Name: CrashLoopBackOff\n- Severity: high\n- Resource: payments/Deployment/payment-service",
+			AllText: "Signal Name: CrashLoopBackOff Severity: high Resource: payments/Deployment/payment-service\nRCA Summary: configuration failure\nPhase 1 Assessment: Severity: critical",
 		})
 		Expect(result).NotTo(BeNil())
 		Expect(result.Scenario.Name()).To(Equal("aa_e2e_approval_crashloop"))
 
 		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
 		Expect(ok).To(BeTrue())
-		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-approval-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.Severity).To(Equal("critical"))
+		Expect(cfg.WorkflowID).To(Equal("catalog-id"))
 	})
 
 	It("UT-MOCK-2442-023: selects the warning production audit fixture", func() {
@@ -230,6 +238,12 @@ var _ = Describe("Scenario Registry", func() {
 		})
 		Expect(result).NotTo(BeNil())
 		Expect(result.Scenario.Name()).To(Equal("aa_e2e_audit_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-audit-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
 	})
 
 	It("UT-MOCK-2442-024: selects the warning staging Rego fixture", func() {
@@ -240,6 +254,58 @@ var _ = Describe("Scenario Registry", func() {
 		})
 		Expect(result).NotTo(BeNil())
 		Expect(result.Scenario.Name()).To(Equal("aa_e2e_rego_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-rego-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-028: selects the staging session fixture with the catalog workflow identity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Resource: staging/Pod/session-test-pod",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_session_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-session-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-029: selects the production data-quality fixture with the catalog workflow identity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Resource: production/Pod/test-app",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_data_quality_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-data-quality-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-030: ignores RCA severity and schema enum when routing by signal severity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: warning\n- Resource: payments/Deployment/payment-service",
+			AllText: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: warning\n- Resource: payments/Deployment/payment-service\nPhase 1 Assessment: - Severity: critical\nResponse schema: {\"severity\": \"critical|high|warning|info|unknown\"}",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_audit_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowName).To(Equal("crashloop-config-fix-aa-audit-v1"))
 	})
 
 	It("UT-MOCK-2442-025: matches detected-label fixtures in dynamic namespaces", func() {

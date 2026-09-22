@@ -17,27 +17,30 @@ limitations under the License.
 package scenarios
 
 import (
+	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
 
+var rePromptSeverity = regexp.MustCompile(`(?i)(?:^|[^a-z0-9_])["']?severity["']?\s*[:=]\s*["']?([a-z0-9_-]+)`)
+
 type aiAnalysisFixtureSpec struct {
-	ScenarioName string
-	Fingerprint  string
-	SignalName   string
-	Severity     string
-	WorkflowName string
-	ActionType   string
-	Title        string
-	Rationale    string
-	RootCause    string
-	ResourceKind string
-	ResourceNS   string
-	ResourceName string
-	APIVersion   string
-	Parameters   map[string]string
+	ScenarioName  string
+	Fingerprint   string
+	SignalName    string
+	Severity      string
+	MatchSeverity string
+	WorkflowName  string
+	ActionType    string
+	Title         string
+	Rationale     string
+	RootCause     string
+	ResourceKind  string
+	ResourceNS    string
+	ResourceName  string
+	APIVersion    string
+	Parameters    map[string]string
 }
 
 // aiAnalysisFixtureScenarios keeps E2E workflows isolated by test context. The
@@ -62,19 +65,20 @@ func aiAnalysisFixtureScenarios() []*configScenario {
 			Parameters:   map[string]string{"MEMORY_LIMIT_NEW": "512Mi"},
 		},
 		{
-			ScenarioName: "aa_e2e_approval_crashloop",
-			Fingerprint:  "e2e-audit-approval",
-			SignalName:   "CrashLoopBackOff",
-			Severity:     "critical",
-			WorkflowName: "crashloop-config-fix-aa-approval-v1",
-			ActionType:   "RestartDeployment",
-			Title:        "CrashLoopBackOff - Configuration Fix",
-			Rationale:    "A production configuration regression requires an explicitly approved restart",
-			RootCause:    "Deployment configuration is invalid",
-			ResourceKind: "Deployment",
-			ResourceNS:   "payments",
-			ResourceName: "payment-service",
-			APIVersion:   "apps/v1",
+			ScenarioName:  "aa_e2e_approval_crashloop",
+			Fingerprint:   "e2e-audit-approval",
+			SignalName:    "CrashLoopBackOff",
+			Severity:      "critical",
+			MatchSeverity: "high",
+			WorkflowName:  "crashloop-config-fix-aa-approval-v1",
+			ActionType:    "RestartDeployment",
+			Title:         "CrashLoopBackOff - Configuration Fix",
+			Rationale:     "A production configuration regression requires an explicitly approved restart",
+			RootCause:     "Deployment configuration is invalid",
+			ResourceKind:  "Deployment",
+			ResourceNS:    "payments",
+			ResourceName:  "payment-service",
+			APIVersion:    "apps/v1",
 			Parameters: map[string]string{
 				"NAMESPACE":       "payments",
 				"DEPLOYMENT_NAME": "payment-service",
@@ -216,24 +220,28 @@ func matchAIAnalysisFixture(ctx *DetectionContext, spec aiAnalysisFixtureSpec) (
 	if resourceNamespace != "" && !strings.Contains(combined, resourceNamespace) {
 		return false, 0
 	}
-	severity := strings.ToLower(strings.TrimSpace(spec.Severity))
-	if severity != "" && !containsFieldValue(combined, "severity", severity) {
+	severity := strings.ToLower(strings.TrimSpace(spec.MatchSeverity))
+	if severity == "" {
+		severity = strings.ToLower(strings.TrimSpace(spec.Severity))
+	}
+	if severity != "" && promptSeverity(ctx) != severity {
 		return false, 0
 	}
 
 	return true, 1.0
 }
 
-func containsFieldValue(text, field, value string) bool {
-	compact := strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || strings.ContainsRune("\"'`*", r) {
-			return -1
+// promptSeverity uses the first severity field: workflow-selection prompts
+// carry the original signal severity before the later Phase 1 RCA assessment,
+// which may classify the incident differently.
+func promptSeverity(ctx *DetectionContext) string {
+	for _, text := range []string{ctx.Content, ctx.AllText} {
+		match := rePromptSeverity.FindStringSubmatch(text)
+		if len(match) > 1 {
+			return strings.ToLower(strings.TrimSpace(match[1]))
 		}
-		return unicode.ToLower(r)
-	}, text)
-	field = strings.ToLower(strings.TrimSpace(field))
-	value = strings.ToLower(strings.TrimSpace(value))
-	return strings.Contains(compact, field+":"+value) || strings.Contains(compact, field+"="+value)
+	}
+	return ""
 }
 
 func aiAnalysisFixtureConfig(spec aiAnalysisFixtureSpec) MockScenarioConfig {

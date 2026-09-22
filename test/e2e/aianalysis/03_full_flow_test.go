@@ -144,7 +144,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(analysis.Status.RCAResult.RootCauseAnalysis.Summary).NotTo(BeEmpty())
 			Expect(analysis.Status.RCAResult.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "warning", "info", "unknown"))
 			Expect(analysis.Status.RCAResult.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
-			Expect(analysis.Status.RCAResult.RootCauseAnalysis.ContributingFactors).To(ContainElement("invalid_configuration_directive"))
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.ContributingFactors).To(ContainElement("configuration_regression"))
 
 			// E2E-AA-163-001: RemediationTarget populated from mock LLM (crashloop scenario returns Deployment)
 			Expect(analysis.Status.RCAResult.RootCauseAnalysis.RemediationTarget).NotTo(BeNil())
