@@ -1514,50 +1514,6 @@ func (s *AIAgentEnrichmentCompletedPayload) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode implements json.Marshaler.
-func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) encodeFields(e *jx.Encoder) {
-}
-
-var jsonFieldsNameOfAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary = [0]string{}
-
-// Decode decodes AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary from json.
-func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary to nil")
-	}
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		default:
-			return d.Skip()
-		}
-	}); err != nil {
-		return errors.Wrap(err, "decode AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes AIAgentEnrichmentCompletedPayloadEventType as json.
 func (s AIAgentEnrichmentCompletedPayloadEventType) Encode(e *jx.Encoder) {
 	e.Str(string(s))
@@ -18095,6 +18051,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.PromptPreview)
 			}
 			{
+				if s.Phase.Set {
+					e.FieldStart("phase")
+					s.Phase.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowDiscoveryContext.Set {
+					e.FieldStart("workflow_discovery_context")
+					s.WorkflowDiscoveryContext.Encode(e)
+				}
+			}
+			{
 				if s.MaxTokens.Set {
 					e.FieldStart("max_tokens")
 					s.MaxTokens.Encode(e)
@@ -23608,6 +23576,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("prompt_preview")
 				e.Str(s.PromptPreview)
+			}
+			{
+				if s.Phase.Set {
+					e.FieldStart("phase")
+					s.Phase.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowDiscoveryContext.Set {
+					e.FieldStart("workflow_discovery_context")
+					s.WorkflowDiscoveryContext.Encode(e)
+				}
 			}
 			{
 				if s.MaxTokens.Set {
@@ -35667,6 +35647,18 @@ func (s *LLMRequestPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.PromptPreview)
 	}
 	{
+		if s.Phase.Set {
+			e.FieldStart("phase")
+			s.Phase.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowDiscoveryContext.Set {
+			e.FieldStart("workflow_discovery_context")
+			s.WorkflowDiscoveryContext.Encode(e)
+		}
+	}
+	{
 		if s.MaxTokens.Set {
 			e.FieldStart("max_tokens")
 			s.MaxTokens.Encode(e)
@@ -35712,19 +35704,21 @@ func (s *LLMRequestPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfLLMRequestPayload = [12]string{
+var jsonFieldsNameOfLLMRequestPayload = [14]string{
 	0:  "event_type",
 	1:  "event_id",
 	2:  "incident_id",
 	3:  "model",
 	4:  "prompt_length",
 	5:  "prompt_preview",
-	6:  "max_tokens",
-	7:  "toolsets_enabled",
-	8:  "mcp_servers",
-	9:  "retry_outcome",
-	10: "ambiguous_kind",
-	11: "conflicting_groups",
+	6:  "phase",
+	7:  "workflow_discovery_context",
+	8:  "max_tokens",
+	9:  "toolsets_enabled",
+	10: "mcp_servers",
+	11: "retry_outcome",
+	12: "ambiguous_kind",
+	13: "conflicting_groups",
 }
 
 // Decode decodes LLMRequestPayload from json.
@@ -35805,6 +35799,26 @@ func (s *LLMRequestPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"prompt_preview\"")
+			}
+		case "phase":
+			if err := func() error {
+				s.Phase.Reset()
+				if err := s.Phase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
+		case "workflow_discovery_context":
+			if err := func() error {
+				s.WorkflowDiscoveryContext.Reset()
+				if err := s.WorkflowDiscoveryContext.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_discovery_context\"")
 			}
 		case "max_tokens":
 			if err := func() error {
@@ -39389,40 +39403,6 @@ func (s *NotificationMessageSentPayloadMetadata) UnmarshalJSON(data []byte) erro
 	return s.Decode(d)
 }
 
-// Encode encodes *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary as json.
-func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary from json.
-func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary to nil")
-	}
-	o.Set = true
-	o.Value = new(AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary)
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes ApifrontendSessionCompletedPayloadUserDecision as json.
 func (o OptApifrontendSessionCompletedPayloadUserDecision) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -42215,6 +42195,39 @@ func (s OptWorkflowCatalogCreatedPayloadLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptWorkflowCatalogCreatedPayloadLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowDiscoveryAuditContext as json.
+func (o OptWorkflowDiscoveryAuditContext) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes WorkflowDiscoveryAuditContext from json.
+func (o *OptWorkflowDiscoveryAuditContext) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptWorkflowDiscoveryAuditContext to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptWorkflowDiscoveryAuditContext) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptWorkflowDiscoveryAuditContext) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -52842,6 +52855,153 @@ func (s *WorkflowCatalogUpdatedPayload) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowCatalogUpdatedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowDiscoveryAuditContext) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowDiscoveryAuditContext) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("enrichment_labels_present")
+		e.Bool(s.EnrichmentLabelsPresent)
+	}
+	{
+		e.FieldStart("signal_labels_present")
+		e.Bool(s.SignalLabelsPresent)
+	}
+	{
+		e.FieldStart("prompt_labels_present")
+		e.Bool(s.PromptLabelsPresent)
+	}
+	{
+		if s.DetectedLabels.Set {
+			e.FieldStart("detected_labels")
+			s.DetectedLabels.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowDiscoveryAuditContext = [4]string{
+	0: "enrichment_labels_present",
+	1: "signal_labels_present",
+	2: "prompt_labels_present",
+	3: "detected_labels",
+}
+
+// Decode decodes WorkflowDiscoveryAuditContext from json.
+func (s *WorkflowDiscoveryAuditContext) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowDiscoveryAuditContext to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "enrichment_labels_present":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Bool()
+				s.EnrichmentLabelsPresent = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"enrichment_labels_present\"")
+			}
+		case "signal_labels_present":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Bool()
+				s.SignalLabelsPresent = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_labels_present\"")
+			}
+		case "prompt_labels_present":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Bool()
+				s.PromptLabelsPresent = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt_labels_present\"")
+			}
+		case "detected_labels":
+			if err := func() error {
+				s.DetectedLabels.Reset()
+				if err := s.DetectedLabels.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detected_labels\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowDiscoveryAuditContext")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowDiscoveryAuditContext) {
+					name = jsonFieldsNameOfWorkflowDiscoveryAuditContext[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowDiscoveryAuditContext) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowDiscoveryAuditContext) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -959,9 +959,20 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 // phase, and runtime params. Extracted per AGENTS.md's 8+-param
 // Options-pattern rule.
 type LLMInvocationContext struct {
-	Tokens        *TokenAccumulator
-	CorrelationID string
-	Client        llm.Client
-	ModelName     string
-	RuntimeParams llm.RuntimeParams
+	Tokens            *TokenAccumulator
+	CorrelationID     string
+	Client            llm.Client
+	ModelName         string
+	RuntimeParams     llm.RuntimeParams
+	WorkflowDiscovery *workflowDiscoveryAuditContext
+}
+
+// workflowDiscoveryAuditContext is the safe provenance summary persisted on
+// LLM request events for Phase 3. It records only structured label context and
+// handoff presence, never the full prompt or arbitrary resource labels.
+type workflowDiscoveryAuditContext struct {
+	EnrichmentLabelsPresent bool
+	SignalLabelsPresent     bool
+	PromptLabelsPresent     bool
+	DetectedLabels          map[string]string
 }

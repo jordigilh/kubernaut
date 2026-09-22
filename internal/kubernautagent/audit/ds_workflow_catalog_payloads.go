@@ -16,9 +16,7 @@ limitations under the License.
 
 package audit
 
-import (
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-)
+import ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
 // ========================================
 // WORKFLOW CATALOG DISCOVERY AUDIT PAYLOADS (Issue #1677 Phase 2c)
@@ -75,6 +73,9 @@ func buildWorkflowDiscoveryPayload(event *AuditEvent, eventType ogenclient.Workf
 			Environment: dataString(event.Data, "environment"),
 			Priority:    ogenclient.WorkflowSearchFiltersPriority(dataString(event.Data, "priority")),
 		}
+		if labels, ok := detectedLabelsFromJSON(event.Data); ok {
+			wsf.DetectedLabels.SetTo(labels)
+		}
 		searchFilters.SetTo(wsf)
 	}
 
@@ -94,6 +95,14 @@ func buildWorkflowDiscoveryPayload(event *AuditEvent, eventType ogenclient.Workf
 	}
 }
 
+func detectedLabelsFromJSON(data map[string]interface{}) (ogenclient.DetectedLabels, bool) {
+	raw := dataString(data, "detected_labels_json")
+	if raw == "" {
+		return ogenclient.DetectedLabels{}, false
+	}
+	return detectedLabelsFromJSONText(raw)
+}
+
 // hasDiscoveryFilters reports whether any signal-context filter dimension
 // was recorded on the event, matching the `if filters != nil` gate DS's
 // buildDiscoveryPayload used against its typed *models.WorkflowDiscoveryFilters.
@@ -101,5 +110,6 @@ func hasDiscoveryFilters(data map[string]interface{}) bool {
 	return dataString(data, "severity") != "" ||
 		dataString(data, "component") != "" ||
 		dataString(data, "environment") != "" ||
-		dataString(data, "priority") != ""
+		dataString(data, "priority") != "" ||
+		dataBool(data, "detected_labels_present")
 }

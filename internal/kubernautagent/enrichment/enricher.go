@@ -511,6 +511,10 @@ func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAud
 	event.Data["root_owner_namespace"] = rootNS
 	event.Data["owner_chain_length"] = len(result.OwnerChain)
 	event.Data["remediation_history_fetched"] = histErr == nil
+	if result.DetectedLabels != nil {
+		event.Data["detected_labels_summary"] = result.DetectedLabels
+		event.Data["failed_detections"] = result.DetectedLabels.FailedDetections
+	}
 
 	if ownerErr != nil {
 		event.Data["owner_error"] = ownerErr.Error()

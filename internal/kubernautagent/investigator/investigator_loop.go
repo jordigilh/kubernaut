@@ -78,7 +78,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
 	}
 
-	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, messages, toolDefs)
+	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, phase, messages, toolDefs, llmCtx.WorkflowDiscovery)
 
 	resp, cancelled, callErr := inv.doLLMCall(ctx, state, messages, phase, llmCtx, turn, toolDefs)
 	if callErr != nil {
@@ -260,15 +260,22 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 
 // emitLLMRequestAudit records the per-turn LLM request audit event (AU-3:
 // model, prompt length/preview, enabled toolsets, full message history).
-func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, messages []llm.Message, toolDefs []llm.ToolDefinition) {
+func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, phase katypes.Phase, messages []llm.Message, toolDefs []llm.ToolDefinition, workflowContext *workflowDiscoveryAuditContext) {
 	reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 	reqEvent.EventAction = audit.ActionLLMRequest
 	reqEvent.EventOutcome = audit.OutcomeSuccess
 	reqEvent.Data["model"] = modelName
+	reqEvent.Data["phase"] = string(phase)
 	reqEvent.Data["prompt_length"] = totalPromptLength(messages)
 	reqEvent.Data["prompt_preview"] = lastUserMessage(messages)
 	reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 	reqEvent.Data["messages"] = messagesToAuditFormat(messages)
+	if workflowContext != nil {
+		reqEvent.Data["workflow_discovery_enrichment_labels_present"] = workflowContext.EnrichmentLabelsPresent
+		reqEvent.Data["workflow_discovery_signal_labels_present"] = workflowContext.SignalLabelsPresent
+		reqEvent.Data["workflow_discovery_prompt_labels_present"] = workflowContext.PromptLabelsPresent
+		reqEvent.Data["workflow_discovery_detected_labels"] = workflowContext.DetectedLabels
+	}
 	audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
 }
 

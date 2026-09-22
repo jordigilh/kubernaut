@@ -18,6 +18,7 @@ package custom
 
 import (
 	"context"
+	"fmt"
 
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -39,14 +40,23 @@ import (
 // applyDiscoveryFilterData records the signal-context filter dimensions
 // used for this query onto the audit event's Data map -- read back by
 // ds_workflow_catalog_payloads.go's hasDiscoveryFilters/buildWorkflowDiscoveryPayload.
-func applyDiscoveryFilterData(data map[string]interface{}, filters *models.WorkflowDiscoveryFilters) {
+func applyDiscoveryFilterData(data map[string]interface{}, filters *models.WorkflowDiscoveryFilters) error {
 	if filters == nil {
-		return
+		return nil
 	}
 	data["severity"] = filters.Severity
 	data["component"] = filters.Component
 	data["environment"] = filters.Environment
 	data["priority"] = filters.Priority
+	if filters.DetectedLabels != nil {
+		serialized, err := filters.DetectedLabels.SerializeLabels()
+		if err != nil {
+			return fmt.Errorf("serializing detected labels for audit: %w", err)
+		}
+		data["detected_labels_present"] = true
+		data["detected_labels_json"] = string(serialized)
+	}
+	return nil
 }
 
 // correlationIDFromFilters mirrors DS's setCorrelationIDFromFilters:
@@ -70,7 +80,9 @@ func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.Wo
 	ev.EventOutcome = kaaudit.OutcomeSuccess
 	ev.Data["total_count"] = totalCount
 	ev.Data["duration_ms"] = durationMs
-	applyDiscoveryFilterData(ev.Data, filters)
+	if err := applyDiscoveryFilterData(ev.Data, filters); err != nil {
+		t.logger.Error(err, "workflow discovery audit context unavailable")
+	}
 	kaaudit.StoreBestEffort(ctx, t.auditStore, ev, t.logger)
 }
 
@@ -86,7 +98,9 @@ func (t *listWorkflowsTool) emitAuditEvent(ctx context.Context, actionType strin
 	ev.Data["total_count"] = totalCount
 	ev.Data["duration_ms"] = durationMs
 	ev.Data["action_type"] = actionType
-	applyDiscoveryFilterData(ev.Data, filters)
+	if err := applyDiscoveryFilterData(ev.Data, filters); err != nil {
+		t.logger.Error(err, "workflow discovery audit context unavailable")
+	}
 	kaaudit.StoreBestEffort(ctx, t.auditStore, ev, t.logger)
 }
 
@@ -109,7 +123,9 @@ func (t *getWorkflowTool) emitAuditEvents(ctx context.Context, workflowID string
 	retrieved.EventOutcome = kaaudit.OutcomeSuccess
 	retrieved.Data["total_count"] = 1
 	retrieved.Data["duration_ms"] = durationMs
-	applyDiscoveryFilterData(retrieved.Data, filters)
+	if err := applyDiscoveryFilterData(retrieved.Data, filters); err != nil {
+		t.logger.Error(err, "workflow discovery audit context unavailable")
+	}
 	kaaudit.StoreBestEffort(ctx, t.auditStore, retrieved, t.logger)
 
 	validated := kaaudit.NewEvent(kaaudit.EventTypeSelectionValidated, correlationIDFromFilters(filters, workflowID),
@@ -119,6 +135,8 @@ func (t *getWorkflowTool) emitAuditEvents(ctx context.Context, workflowID string
 	validated.EventOutcome = kaaudit.OutcomeSuccess
 	validated.Data["total_count"] = 1
 	validated.Data["duration_ms"] = durationMs
-	applyDiscoveryFilterData(validated.Data, filters)
+	if err := applyDiscoveryFilterData(validated.Data, filters); err != nil {
+		t.logger.Error(err, "workflow discovery audit context unavailable")
+	}
 	kaaudit.StoreBestEffort(ctx, t.auditStore, validated, t.logger)
 }

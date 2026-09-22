@@ -2400,6 +2400,27 @@ components:
           enum: [odf-ceph, lvms, local, "*"]
           example: "odf-ceph"
 
+    WorkflowDiscoveryAuditContext:
+      type: object
+      required: [enrichment_labels_present, signal_labels_present, prompt_labels_present]
+      description: |
+        Safe, structured provenance for the detected-label context used during
+        workflow discovery. This deliberately records presence and structured
+        labels instead of persisting the complete prompt or arbitrary resource
+        labels (BR-AUDIT-005, BR-AI-2459).
+      properties:
+        enrichment_labels_present:
+          type: boolean
+          description: Whether enrichment produced detected labels for this workflow-discovery turn
+        signal_labels_present:
+          type: boolean
+          description: Whether detected labels were attached to the signal context used by catalog tools
+        prompt_labels_present:
+          type: boolean
+          description: Whether the rendered workflow-selection prompt contains the detected-label context
+        detected_labels:
+          $ref: '#/components/schemas/DetectedLabels'
+
     WorkflowSearchResponse:
       type: object
       properties:
@@ -4665,10 +4686,7 @@ components:
           description: Number of resources in the K8s owner chain (1 = no parent)
           example: 3
         detected_labels_summary:
-          type: object
-          nullable: true
-          description: Infrastructure labels detected by LabelDetector (null when detector unavailable)
-          example: {"gitOpsManaged": true, "pdbProtected": false, "hpaEnabled": true}
+          $ref: '#/components/schemas/DetectedLabels'
         failed_detections:
           type: array
           nullable: true
@@ -4913,6 +4931,11 @@ components:
         prompt_preview:
           type: string
           description: First 500 characters of prompt for audit
+        phase:
+          type: string
+          description: Investigation phase for this LLM request (e.g. rca or workflow_discovery)
+        workflow_discovery_context:
+          $ref: '#/components/schemas/WorkflowDiscoveryAuditContext'
         max_tokens:
           type: integer
           minimum: 0

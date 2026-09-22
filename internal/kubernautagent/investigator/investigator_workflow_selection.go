@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -58,6 +59,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
+	llmCtx.WorkflowDiscovery = newWorkflowDiscoveryAuditContext(enrichData, overriddenSignal, systemPrompt)
 
 	messages := []llm.Message{
 		{Role: "system", Content: systemPrompt},
@@ -129,6 +131,34 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return result, nil
 	}
 	return inv.selfCorrectWorkflowSelection(ctx, result, content, messages, rcaSummary, correlationID, llmCtx)
+}
+
+func newWorkflowDiscoveryAuditContext(enrichData *prompt.EnrichmentData, signal katypes.SignalContext, renderedPrompt string) *workflowDiscoveryAuditContext {
+	trace := &workflowDiscoveryAuditContext{
+		SignalLabelsPresent: signal.DetectedLabelsJSON != "",
+	}
+	if enrichData == nil || len(enrichData.DetectedLabels) == 0 {
+		return trace
+	}
+	trace.EnrichmentLabelsPresent = true
+	trace.DetectedLabels = make(map[string]string, len(enrichData.DetectedLabels))
+	for key, value := range enrichData.DetectedLabels {
+		trace.DetectedLabels[key] = value
+	}
+	trace.PromptLabelsPresent = promptContainsDetectedLabels(renderedPrompt, trace.DetectedLabels)
+	return trace
+}
+
+func promptContainsDetectedLabels(renderedPrompt string, labels map[string]string) bool {
+	if len(labels) == 0 {
+		return false
+	}
+	for key, value := range labels {
+		if !strings.Contains(renderedPrompt, key+"="+value) {
+			return false
+		}
+	}
+	return true
 }
 
 // handleWorkflowSelectionLoopResult classifies the runLLMLoop outcome for

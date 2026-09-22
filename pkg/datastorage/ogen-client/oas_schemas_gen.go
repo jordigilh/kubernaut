@@ -679,9 +679,8 @@ type AIAgentEnrichmentCompletedPayload struct {
 	// Resolved root owner namespace (empty for cluster-scoped resources).
 	RootOwnerNamespace OptString `json:"root_owner_namespace"`
 	// Number of resources in the K8s owner chain (1 = no parent).
-	OwnerChainLength int `json:"owner_chain_length"`
-	// Infrastructure labels detected by LabelDetector (null when detector unavailable).
-	DetectedLabelsSummary OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary `json:"detected_labels_summary"`
+	OwnerChainLength      int               `json:"owner_chain_length"`
+	DetectedLabelsSummary OptDetectedLabels `json:"detected_labels_summary"`
 	// Labels that could not be detected (null when all succeeded or detector unavailable).
 	FailedDetections OptNilStringArray `json:"failed_detections"`
 	// Whether remediation history was successfully fetched from DataStorage.
@@ -724,7 +723,7 @@ func (s *AIAgentEnrichmentCompletedPayload) GetOwnerChainLength() int {
 }
 
 // GetDetectedLabelsSummary returns the value of DetectedLabelsSummary.
-func (s *AIAgentEnrichmentCompletedPayload) GetDetectedLabelsSummary() OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
+func (s *AIAgentEnrichmentCompletedPayload) GetDetectedLabelsSummary() OptDetectedLabels {
 	return s.DetectedLabelsSummary
 }
 
@@ -774,7 +773,7 @@ func (s *AIAgentEnrichmentCompletedPayload) SetOwnerChainLength(val int) {
 }
 
 // SetDetectedLabelsSummary sets the value of DetectedLabelsSummary.
-func (s *AIAgentEnrichmentCompletedPayload) SetDetectedLabelsSummary(val OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) {
+func (s *AIAgentEnrichmentCompletedPayload) SetDetectedLabelsSummary(val OptDetectedLabels) {
 	s.DetectedLabelsSummary = val
 }
 
@@ -787,9 +786,6 @@ func (s *AIAgentEnrichmentCompletedPayload) SetFailedDetections(val OptNilString
 func (s *AIAgentEnrichmentCompletedPayload) SetRemediationHistoryFetched(val bool) {
 	s.RemediationHistoryFetched = val
 }
-
-// Infrastructure labels detected by LabelDetector (null when detector unavailable).
-type AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary struct{}
 
 // Event type for discriminator (matches parent event_type).
 type AIAgentEnrichmentCompletedPayloadEventType string
@@ -21616,6 +21612,9 @@ type LLMRequestPayload struct {
 	PromptLength int `json:"prompt_length"`
 	// First 500 characters of prompt for audit.
 	PromptPreview string `json:"prompt_preview"`
+	// Investigation phase for this LLM request (e.g. rca or workflow_discovery).
+	Phase                    OptString                        `json:"phase"`
+	WorkflowDiscoveryContext OptWorkflowDiscoveryAuditContext `json:"workflow_discovery_context"`
 	// Maximum tokens requested.
 	MaxTokens OptInt `json:"max_tokens"`
 	// List of enabled toolsets.
@@ -21663,6 +21662,16 @@ func (s *LLMRequestPayload) GetPromptLength() int {
 // GetPromptPreview returns the value of PromptPreview.
 func (s *LLMRequestPayload) GetPromptPreview() string {
 	return s.PromptPreview
+}
+
+// GetPhase returns the value of Phase.
+func (s *LLMRequestPayload) GetPhase() OptString {
+	return s.Phase
+}
+
+// GetWorkflowDiscoveryContext returns the value of WorkflowDiscoveryContext.
+func (s *LLMRequestPayload) GetWorkflowDiscoveryContext() OptWorkflowDiscoveryAuditContext {
+	return s.WorkflowDiscoveryContext
 }
 
 // GetMaxTokens returns the value of MaxTokens.
@@ -21723,6 +21732,16 @@ func (s *LLMRequestPayload) SetPromptLength(val int) {
 // SetPromptPreview sets the value of PromptPreview.
 func (s *LLMRequestPayload) SetPromptPreview(val string) {
 	s.PromptPreview = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *LLMRequestPayload) SetPhase(val OptString) {
+	s.Phase = val
+}
+
+// SetWorkflowDiscoveryContext sets the value of WorkflowDiscoveryContext.
+func (s *LLMRequestPayload) SetWorkflowDiscoveryContext(val OptWorkflowDiscoveryAuditContext) {
+	s.WorkflowDiscoveryContext = val
 }
 
 // SetMaxTokens sets the value of MaxTokens.
@@ -23712,52 +23731,6 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 		*s = m
 	}
 	return m
-}
-
-// NewOptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary returns new OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary with value set to v.
-func NewOptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary(v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
-	return OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary is optional *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary.
-type OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary struct {
-	Value *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary
-	Set   bool
-}
-
-// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary was set.
-func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Reset() {
-	var v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) SetTo(v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Get() (v *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Or(d *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) *AIAgentEnrichmentCompletedPayloadDetectedLabelsSummary {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
 }
 
 // NewOptApifrontendSessionCompletedPayloadUserDecision returns new OptApifrontendSessionCompletedPayloadUserDecision with value set to v.
@@ -27604,6 +27577,52 @@ func (o OptWorkflowCatalogCreatedPayloadLabels) Get() (v WorkflowCatalogCreatedP
 
 // Or returns value if set, or given parameter if does not.
 func (o OptWorkflowCatalogCreatedPayloadLabels) Or(d WorkflowCatalogCreatedPayloadLabels) WorkflowCatalogCreatedPayloadLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptWorkflowDiscoveryAuditContext returns new OptWorkflowDiscoveryAuditContext with value set to v.
+func NewOptWorkflowDiscoveryAuditContext(v WorkflowDiscoveryAuditContext) OptWorkflowDiscoveryAuditContext {
+	return OptWorkflowDiscoveryAuditContext{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkflowDiscoveryAuditContext is optional WorkflowDiscoveryAuditContext.
+type OptWorkflowDiscoveryAuditContext struct {
+	Value WorkflowDiscoveryAuditContext
+	Set   bool
+}
+
+// IsSet returns true if OptWorkflowDiscoveryAuditContext was set.
+func (o OptWorkflowDiscoveryAuditContext) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkflowDiscoveryAuditContext) Reset() {
+	var v WorkflowDiscoveryAuditContext
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkflowDiscoveryAuditContext) SetTo(v WorkflowDiscoveryAuditContext) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkflowDiscoveryAuditContext) Get() (v WorkflowDiscoveryAuditContext, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkflowDiscoveryAuditContext) Or(d WorkflowDiscoveryAuditContext) WorkflowDiscoveryAuditContext {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -33553,6 +33572,61 @@ func (s *WorkflowCatalogUpdatedPayload) SetWorkflowID(val uuid.UUID) {
 // SetUpdatedFields sets the value of UpdatedFields.
 func (s *WorkflowCatalogUpdatedPayload) SetUpdatedFields(val WorkflowCatalogUpdatedFields) {
 	s.UpdatedFields = val
+}
+
+// Safe, structured provenance for the detected-label context used during
+// workflow discovery. This deliberately records presence and structured
+// labels instead of persisting the complete prompt or arbitrary resource
+// labels (BR-AUDIT-005, BR-AI-2459).
+// Ref: #/components/schemas/WorkflowDiscoveryAuditContext
+type WorkflowDiscoveryAuditContext struct {
+	// Whether enrichment produced detected labels for this workflow-discovery turn.
+	EnrichmentLabelsPresent bool `json:"enrichment_labels_present"`
+	// Whether detected labels were attached to the signal context used by catalog tools.
+	SignalLabelsPresent bool `json:"signal_labels_present"`
+	// Whether the rendered workflow-selection prompt contains the detected-label context.
+	PromptLabelsPresent bool              `json:"prompt_labels_present"`
+	DetectedLabels      OptDetectedLabels `json:"detected_labels"`
+}
+
+// GetEnrichmentLabelsPresent returns the value of EnrichmentLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) GetEnrichmentLabelsPresent() bool {
+	return s.EnrichmentLabelsPresent
+}
+
+// GetSignalLabelsPresent returns the value of SignalLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) GetSignalLabelsPresent() bool {
+	return s.SignalLabelsPresent
+}
+
+// GetPromptLabelsPresent returns the value of PromptLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) GetPromptLabelsPresent() bool {
+	return s.PromptLabelsPresent
+}
+
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *WorkflowDiscoveryAuditContext) GetDetectedLabels() OptDetectedLabels {
+	return s.DetectedLabels
+}
+
+// SetEnrichmentLabelsPresent sets the value of EnrichmentLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) SetEnrichmentLabelsPresent(val bool) {
+	s.EnrichmentLabelsPresent = val
+}
+
+// SetSignalLabelsPresent sets the value of SignalLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) SetSignalLabelsPresent(val bool) {
+	s.SignalLabelsPresent = val
+}
+
+// SetPromptLabelsPresent sets the value of PromptLabelsPresent.
+func (s *WorkflowDiscoveryAuditContext) SetPromptLabelsPresent(val bool) {
+	s.PromptLabelsPresent = val
+}
+
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *WorkflowDiscoveryAuditContext) SetDetectedLabels(val OptDetectedLabels) {
+	s.DetectedLabels = val
 }
 
 // Audit event payload for three-step workflow discovery operations.
