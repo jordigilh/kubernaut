@@ -210,10 +210,11 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			// resolver and the resulting RR's spec.clusterID stays empty.
 			By("Creating a hub-only (non-fleet) target resource on the local/hub cluster")
 			const targetName = "hub-only-reconstruction-target"
+			targetNS := fleetWorkloadNamespace("fleet-reconstruction")
 			dep := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      targetName,
-					Namespace: namespace,
+					Namespace: targetNS,
 					Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 				},
 				Spec: appsv1.DeploymentSpec{
@@ -233,8 +234,8 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
 
 			By("Submitting a signal with no cluster label to create a hub-only RR")
-			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", "warning",
-				targetName, "")
+			payload := buildPrometheusAlertWithClusterInNamespace("HubOnlyReconstruction", "warning",
+				targetName, targetNS, "")
 			gatewayURL := urlLocalhost30080
 			body := postFleetAlertUntilAccepted(gatewayURL, payload)
 

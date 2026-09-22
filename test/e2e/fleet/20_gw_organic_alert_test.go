@@ -65,12 +65,13 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			targetName    = "fleet-organic-gw-target"
 			ruleName      = "FleetOrganicGatewayAlert"
 		)
+		targetNS := fleetWorkloadNamespace("fleet-organic-gateway")
 
 		By("Creating the real target Deployment BEFORE the alert can fire (Gateway owner-resolution requires it to exist)")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -94,7 +95,7 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			{
 				Name: "fleet_organic_gw_signal",
 				Labels: map[string]string{
-					"namespace": namespace,
+					"namespace": targetNS,
 					// Must match the rule's expr label matcher AND the label-key
 					// convention Gateway's extractTargetResource expects (the
 					// lowercase Kind as the label KEY, e.g. "deployment", not a

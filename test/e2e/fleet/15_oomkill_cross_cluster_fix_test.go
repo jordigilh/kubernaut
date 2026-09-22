@@ -34,11 +34,8 @@ import (
 )
 
 // oomkillCrossClusterAppName is a dedicated memory-eater instance for this
-// test, distinct from the suite-level "memory-eater" fixture that
-// 01_signal_ingestion_test.go and 03_ro_clusterid_routing_test.go already
-// depend on existing (unmanipulated) in kubernaut-system for the duration of
-// the suite. Reusing that shared name here would race those tests across
-// Ginkgo's parallel processes.
+// test. Its workload namespace is also unique to this test so it cannot race
+// other fleet E2E targets under parallel Ginkgo execution.
 const oomkillCrossClusterAppName = "memory-eater-oom-cc"
 
 // E2E-FLEET-015: oomkill-increase-memory-v1 performs a real, verifiable
@@ -59,19 +56,20 @@ const oomkillCrossClusterAppName = "memory-eater-oom-cc"
 var _ = Describe("E2E-FLEET-015 [AC-3, AC-4, SI-4]: OOMKill increase-memory fix performs a real cross-cluster fix (BR-INTEGRATION-054)", Label("fleet", "oomkill"), func() {
 	It("should patch the offending Deployment's memory limit and let it recover on the remote cluster [E2E-FLEET-015]", func() {
 		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		targetNS := fleetWorkloadNamespace("fleet-oomkill")
 
 		By("Step 1: Deploying a dedicated memory-eater on the REMOTE cluster (real OOMKill)")
-		Expect(infrastructure.DeployMemoryEaterNamed(ctx, oomkillCrossClusterAppName, namespace,
+		Expect(infrastructure.DeployMemoryEaterNamed(ctx, oomkillCrossClusterAppName, targetNS,
 			remoteKubeconfigPath, "50Mi", "20Mi", GinkgoWriter)).To(Succeed())
 		DeferCleanup(func() {
-			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: oomkillCrossClusterAppName, Namespace: namespace}}
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: oomkillCrossClusterAppName, Namespace: targetNS}}
 			_ = remoteK8sClient.Delete(context.Background(), dep)
 		})
 
 		By("Step 1b: Waiting for the real OOMKill on the remote cluster...")
 		Eventually(func() bool {
 			pods := &corev1.PodList{}
-			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(namespace),
+			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(targetNS),
 				client.MatchingLabels{"app": oomkillCrossClusterAppName}); err != nil {
 				return false
 			}
@@ -101,8 +99,8 @@ var _ = Describe("E2E-FLEET-015 [AC-3, AC-4, SI-4]: OOMKill increase-memory fix 
 		// directly (test/services/mock-llm/scenarios/scenario_oomkilled.go),
 		// avoiding the ambiguous generic "BackOff" fallback path that could
 		// also match crashloopScenario.
-		payload := buildPrometheusAlertWithCluster("OOMKilled", "critical",
-			oomkillCrossClusterAppName, "remote-cluster")
+		payload := buildPrometheusAlertWithClusterInNamespace("OOMKilled", "critical",
+			oomkillCrossClusterAppName, targetNS, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -120,7 +118,7 @@ var _ = Describe("E2E-FLEET-015 [AC-3, AC-4, SI-4]: OOMKill increase-memory fix 
 			TargetClient:           remoteK8sClient,
 			JobClient:              remoteK8sClient,
 			CRDNamespace:           namespace,
-			TargetNamespace:        namespace,
+			TargetNamespace:        targetNS,
 			TargetDeploymentName:   oomkillCrossClusterAppName,
 			JobNamespace:           infrastructure.ExecutionNamespace,
 			RemediationRequestName: rrName,

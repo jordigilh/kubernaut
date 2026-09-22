@@ -111,10 +111,11 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 		// path is shared with the all-alerts-failed-owner-resolution path). Create the
 		// target as a real (zero-replica) Deployment so resolution succeeds.
 		const targetName = "validation-test-app"
+		targetNS := fleetWorkloadNamespace("fleet-input-validation")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				// BR-SCOPE-001/ADR-053: label the resource directly (see the detailed
 				// note in 01_signal_ingestion_test.go for why the namespace-level
 				// fallback alone was not sufficient).
@@ -138,8 +139,8 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetSI10Valid", "warning",
-			targetName, "prod-west")
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetSI10Valid", "warning",
+			targetName, targetNS, "prod-west")
 
 		postFleetAlertUntilAccepted(gatewayURL, payload, http.StatusCreated, http.StatusAccepted)
 	})

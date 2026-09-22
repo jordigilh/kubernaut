@@ -28,10 +28,10 @@ import (
 // issue #1768 Track 2 Gap D) deploys on the REMOTE cluster only. Deliberately
 // distinct from kaToolE2ETargetName (scenario_ka_fleet_investigation.go,
 // E2E-FLEET-017) so both scenarios' fixtures never collide under parallel
-// Ginkgo execution in the same "kubernaut-system" namespace.
+// Ginkgo execution in the dedicated fleet workload namespace.
 const (
 	kaInteractiveFleetTargetName      = "ka-interactive-fleet-target"
-	kaInteractiveFleetTargetNamespace = "kubernaut-system"
+	kaInteractiveFleetTargetNamespace = "fleet-ka-interactive"
 )
 
 // kaInteractiveFleetKeyword selects this scenario. Embedded verbatim in the

@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -390,6 +391,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	if err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("fullpipeline base setup (fleet-enabled) failed: %w", err)
 	}
+	addFleetWorkloadNamespaces(afRemediateNS)
 
 	// DD-FLEET-008 (BR-FLEET-004, Issue #2326): seed one dedicated,
 	// fully-isolated workflow fixture that declares
@@ -423,6 +425,31 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, nil
+}
+
+// addFleetWorkloadNamespaces allocates isolated namespaces for fleet tests that
+// create remediation targets. The namespaces are returned through the existing
+// synchronized E2E namespace map and are created on both clusters by the suite.
+func addFleetWorkloadNamespaces(namespaces map[string]string) {
+	for key, prefix := range map[string]string{
+		"fleet-signal-ingestion": "fleet-signal",
+		"fleet-dedup":            "fleet-dedup",
+		"fleet-routing":          "fleet-routing",
+		"fleet-journey":          "fleet-journey",
+		"fleet-input-validation": "fleet-input",
+		"fleet-reconstruction":   "fleet-reconstruction",
+		"fleet-cluster-scoped":   "fleet-cluster",
+		"fleet-crashloop":        "fleet-crashloop",
+		"fleet-oomkill":          "fleet-oomkill",
+		"fleet-exec-override":    "fleet-exec",
+		"fleet-ka-local":         "fleet-ka-local",
+		"fleet-ka-remote":        "fleet-ka-remote",
+		"fleet-ka-remote-labels": "fleet-ka-labels",
+		"fleet-organic-gateway":  "fleet-organic-gw",
+	} {
+		namespaces[key] = fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
+	}
+	namespaces["fleet-ka-interactive"] = "fleet-ka-interactive"
 }
 
 // buildLLMCredentialsSecretManifest renders the llm-credentials-primary

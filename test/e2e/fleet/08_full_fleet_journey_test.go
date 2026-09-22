@@ -59,10 +59,11 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		// signal with a 400/500 when it is not found (see the equivalent note
 		// in 01_signal_ingestion_test.go for the full explanation).
 		const targetName = "memory-eater-journey"
+		targetNS := fleetWorkloadNamespace("fleet-journey")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				// BR-SCOPE-001/ADR-053: label the resource directly (see the detailed
 				// note in 01_signal_ingestion_test.go for why the namespace-level
 				// fallback alone was not sufficient).
@@ -86,8 +87,8 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetJourney", "critical",
-			targetName, "remote-cluster")
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetJourney", "critical",
+			targetName, targetNS, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)

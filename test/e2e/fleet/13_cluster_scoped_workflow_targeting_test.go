@@ -122,10 +122,11 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		// dedup fingerprint race (see 08_full_fleet_journey_test.go's note on
 		// the identical issue for "memory-eater").
 		const targetName = "memory-eater-cluster-scoped"
+		targetNS := fleetWorkloadNamespace("fleet-cluster-scoped")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -146,8 +147,8 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", "critical",
-			targetName, remoteCluster)
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetClusterScoped", "critical",
+			targetName, targetNS, remoteCluster)
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)

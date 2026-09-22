@@ -19,6 +19,7 @@ spec:
     environment: [production]
     component: [v1/Pod]
     priority: P0
+    cluster: ["*"]
   
   execution:
     engine: job

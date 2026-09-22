@@ -37,7 +37,7 @@ import (
 // -- duplicated as literals since E2E tests don't import mock-llm packages
 // (same convention as kaToolE2ETargetName in 17_ka_real_fleet_investigation_test.go).
 const kaInteractiveFleetTargetName = "ka-interactive-fleet-target"
-const kaInteractiveFleetTargetNamespace = "kubernaut-system"
+const kaInteractiveFleetTargetNamespace = "fleet-ka-interactive"
 
 // kaInteractiveFleetRemoteClusterID is the cluster_id Turn 1's
 // kubernaut_remediate call targets (mirrors the raw "remote-cluster"

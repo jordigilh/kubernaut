@@ -33,8 +33,10 @@ import (
 // OWASP ASVS: V4.1.1 (trusted access-control enforcement), V4.1.3 (least privilege)
 var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes to fleet-aware workflow (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should route alert with cluster_id to a workflow that respects cluster scope", func() {
-		payload := buildPrometheusAlertWithCluster("FleetRouting", "critical",
-			"memory-eater", "remote-cluster")
+		targetNS := fleetWorkloadNamespace("fleet-routing")
+		deployFleetMemoryEater("memory-eater", targetNS, remoteKubeconfigPath, remoteK8sClient, "64Mi", "20Mi")
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetRouting", "critical",
+			"memory-eater", targetNS, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)

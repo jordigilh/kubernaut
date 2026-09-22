@@ -15,6 +15,7 @@ spec:
     environment: [production, staging, test]
     component: [apps/v1/Deployment]
     priority: "*"
+    cluster: ["*"]
   dependencies:
     secrets:
       - name: gitea-repo-creds

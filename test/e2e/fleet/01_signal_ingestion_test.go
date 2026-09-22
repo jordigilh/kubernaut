@@ -33,6 +33,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -58,15 +59,16 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		// found. It does NOT fall through gracefully like the separate scope/managed
 		// check (pkg/shared/scope/manager.go) does.
 		const targetName = "memory-eater-signalingest"
+		targetNS := fleetWorkloadNamespace("fleet-signal-ingestion")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				// BR-SCOPE-001/ADR-053: the resource-level label is required. The
 				// namespace is also labeled kubernaut.ai/managed=true (SynchronizedBeforeSuite),
 				// but relying on that fallback alone was observed to still return
 				// "resource not managed by Kubernaut" for unlabeled fixtures, so label
-				// the resource directly like the shared memory-eater fixture does
+				// the resource directly like the other isolated fleet fixtures do
 				// (test/infrastructure/fullpipeline_e2e.go DeployMemoryEaterWithLimits).
 				Labels: map[string]string{"kubernaut.ai/managed": "true"},
 			},
@@ -90,8 +92,8 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", "critical",
-			targetName, "prod-east")
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetSignalIngestion", "critical",
+			targetName, targetNS, "prod-east")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -122,10 +124,18 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 // FedRAMP: AC-3 (access enforcement -- distinct cluster identities)
 var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct fingerprints (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should produce different RRs for same resource on different clusters", func() {
-		payloadEast := buildPrometheusAlertWithCluster("FleetDedup", "warning",
-			"memory-eater", "prod-east")
-		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", "warning",
-			"memory-eater", "prod-west")
+		targetNS := fleetWorkloadNamespace("fleet-dedup")
+		Expect(infrastructure.DeployMemoryEaterNamed(ctx, "memory-eater", targetNS,
+			remoteKubeconfigPath, "64Mi", "20Mi", GinkgoWriter)).To(Succeed())
+		DeferCleanup(func() {
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "memory-eater", Namespace: targetNS}}
+			_ = remoteK8sClient.Delete(context.Background(), dep)
+		})
+
+		payloadEast := buildPrometheusAlertWithClusterInNamespace("FleetDedup", "warning",
+			"memory-eater", targetNS, "prod-east")
+		payloadWest := buildPrometheusAlertWithClusterInNamespace("FleetDedup", "warning",
+			"memory-eater", targetNS, "prod-west")
 
 		gatewayURL := urlLocalhost30080
 		bodyEast := postFleetAlertUntilAccepted(gatewayURL, payloadEast)
@@ -143,12 +153,10 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 	})
 })
 
-// buildPrometheusAlertWithCluster builds a Prometheus alert payload targeting a
-// "Deployment" (the only resource kind used across all e2e/fleet tests), in the
-// package-level test namespace (the only namespace used across all e2e/fleet tests).
-func buildPrometheusAlertWithCluster(alertName, severity, name, clusterID string) []byte {
+// buildPrometheusAlertWithClusterInNamespace builds a Prometheus alert payload
+// targeting a Deployment in an explicitly isolated workload namespace.
+func buildPrometheusAlertWithClusterInNamespace(alertName, severity, name, targetNamespace, clusterID string) []byte {
 	const kind = "Deployment"
-	ns := namespace
 	payload := map[string]interface{}{
 		"version":  "4",
 		"groupKey": fmt.Sprintf("{}:{alertname=\"%s\"}", alertName),
@@ -161,12 +169,12 @@ func buildPrometheusAlertWithCluster(alertName, severity, name, clusterID string
 				"status": "firing",
 				"labels": map[string]string{
 					"alertname":           alertName,
-					"namespace":           ns,
+					"namespace":           targetNamespace,
 					"severity":            severity,
 					strings.ToLower(kind): name,
 				},
 				"annotations": map[string]string{
-					"description": fmt.Sprintf("Fleet E2E test: %s/%s on %s", ns, name, clusterID),
+					"description": fmt.Sprintf("Fleet E2E test: %s/%s on %s", targetNamespace, name, clusterID),
 				},
 				"startsAt": time.Now().Format(time.RFC3339),
 			},

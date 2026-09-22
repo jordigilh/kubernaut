@@ -39,7 +39,7 @@ limitations under the License.
 //
 // Because every fleet cluster identity is now remote, any K8s object a test
 // wants Gateway/SP/RO/WE to discover, scope-check, or dispatch against via
-// MCP (the memory-eater fixture, per-test target Deployments, CoreDNS pod
+// MCP (per-test target Deployments, CoreDNS pod
 // discovery for enrichment) must be created against remoteK8sClient, NOT
 // k8sClient. Kubernaut's own CRDs (RemediationRequest, SignalProcessing,
 // AIAnalysis, WorkflowExecution, ...) are reconciled by controllers running
@@ -73,6 +73,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -220,6 +222,22 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 			"Gateway should accept the alert (body: %s)", string(body))
 	}, fmcSyncTimeout, 1*time.Second).Should(Succeed())
 	return respBody
+}
+
+func fleetWorkloadNamespace(key string) string {
+	ns, ok := fpRemediateNS[key]
+	ExpectWithOffset(1, ok).To(BeTrue(), "fleet workload namespace %q must be provisioned", key)
+	ExpectWithOffset(1, ns).NotTo(BeEmpty(), "fleet workload namespace %q must not be empty", key)
+	return ns
+}
+
+func deployFleetMemoryEater(targetName, targetNamespace, targetKubeconfig string, targetClient client.Client, memoryLimit, growthLimit string) {
+	Expect(infrastructure.DeployMemoryEaterNamed(ctx, targetName, targetNamespace,
+		targetKubeconfig, memoryLimit, growthLimit, GinkgoWriter)).To(Succeed())
+	DeferCleanup(func() {
+		dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: targetNamespace}}
+		_ = targetClient.Delete(context.Background(), dep)
+	})
 }
 
 // fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
@@ -441,31 +459,23 @@ var _ = SynchronizedBeforeSuite(
 			Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace on %s: %s", kc, string(labelOut))
 		}
 
-		By("Creating per-test remediate namespaces (dynamic, UUID-based; primary cluster -- Kubernaut CRDs)")
+		By("Creating per-test workload namespaces (dynamic, UUID-based; primary and remote clusters)")
 		for key, ns := range remediateNS {
-			GinkgoWriter.Printf("  Creating namespace %s (scenario: %s)\n", ns, key)
-			createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-				"create", "namespace", ns)
-			createNSOut, createNSErr := createNSCmd.CombinedOutput()
-			if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
-				Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create namespace %s: %s", ns, string(createNSOut))
+			for _, kc := range []string{tempKubeconfigPath, remoteKcPath} {
+				GinkgoWriter.Printf("  Creating namespace %s on %s (scenario: %s)\n", ns, kc, key)
+				createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kc,
+					"create", "namespace", ns)
+				createNSOut, createNSErr := createNSCmd.CombinedOutput()
+				if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
+					Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create namespace %s: %s", ns, string(createNSOut))
+				}
+				labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kc,
+					"label", "namespace", ns,
+					"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
+				labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
+				Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 			}
-			labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-				"label", "namespace", ns,
-				"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
-			labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
-			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
-
-		// The shared "memory-eater" fixture (referenced by clusterID=remote-cluster/
-		// prod-east/prod-west across 01_signal_ingestion_test.go and
-		// 03_ro_clusterid_routing_test.go) must live on the REMOTE cluster now that
-		// AllRegistrationsRemote backs every registered cluster identity with the
-		// same remote bridge -- kube-mcp-server reads it from there, not the
-		// primary cluster.
-		By("Deploying memory-eater in remote cluster's kubernaut-system for fleet E2E tests")
-		err = infrastructure.DeployMemoryEater(ctx, namespace, remoteKcPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
 
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)

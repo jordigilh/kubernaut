@@ -66,6 +66,25 @@ var _ = Describe("buildLLMCredentialsSecretManifest", func() {
 	})
 })
 
+var _ = Describe("addFleetWorkloadNamespaces", func() {
+	It("UT-INFRA-FLEET-026: allocates isolated workload namespaces outside kubernaut-system", func() {
+		namespaces := map[string]string{}
+		addFleetWorkloadNamespaces(namespaces)
+
+		Expect(namespaces).To(HaveKey("fleet-crashloop"))
+		Expect(namespaces).To(HaveKey("fleet-oomkill"))
+		Expect(namespaces).To(HaveKey("fleet-organic-gateway"))
+		Expect(namespaces).To(HaveKey("fleet-ka-interactive"))
+
+		seen := map[string]struct{}{}
+		for key, namespace := range namespaces {
+			Expect(namespace).NotTo(Equal("kubernaut-system"), "workload %s must not use the control-plane namespace", key)
+			Expect(seen).NotTo(HaveKey(namespace), "workload namespace %s must be isolated", namespace)
+			seen[namespace] = struct{}{}
+		}
+	})
+})
+
 // Issue found 2026-09-02 (demo team report): the fleet demo's AlertManager
 // runs in a dedicated "monitoring" namespace (DD-EM-005's fleet-wide
 // platform-monitoring instance), but Gateway's Service lives in

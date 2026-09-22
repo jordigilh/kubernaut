@@ -51,13 +51,14 @@ import (
 var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix performs a real cross-cluster fix (BR-INTEGRATION-054)", Label("fleet", "crashloop"), func() {
 	It("should patch the offending ConfigMap and restart the deployment on the remote cluster [E2E-FLEET-014]", func() {
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
+		targetNS := fleetWorkloadNamespace("fleet-crashloop")
 
 		By("Step 1: Deploying crashloop-app on the REMOTE cluster (bad ConfigMap, real CrashLoopBackOff)")
-		Expect(infrastructure.DeployCrashLoopConfigApp(ctx, namespace, remoteKubeconfigPath, GinkgoWriter)).To(Succeed())
+		Expect(infrastructure.DeployCrashLoopConfigApp(ctx, targetNS, remoteKubeconfigPath, GinkgoWriter)).To(Succeed())
 		DeferCleanup(func() {
-			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: infrastructure.CrashLoopAppName, Namespace: namespace}}
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: infrastructure.CrashLoopAppName, Namespace: targetNS}}
 			_ = remoteK8sClient.Delete(context.Background(), dep)
-			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: infrastructure.CrashLoopAppConfigMapName, Namespace: namespace}}
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: infrastructure.CrashLoopAppConfigMapName, Namespace: targetNS}}
 			_ = remoteK8sClient.Delete(context.Background(), cm)
 		})
 
@@ -66,7 +67,7 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		// events on the shared single-node "fleet-e2e-remote" Kind cluster show a
 		// node-wide ~90-100s gap between image-pull-complete and the kubelet's first
 		// container Started event under concurrent parallel-spec load (this test races
-		// E2E-FLEET-015's OOMKill deployment and the suite-wide memory-eater fixture for
+		// E2E-FLEET-015's OOMKill deployment and other isolated fleet fixtures for
 		// the same node's CPU). Reaching CrashLoopBackOff needs a full start->crash->
 		// backoff cycle after that delay, which left near-zero margin in a fixed 2m
 		// budget. E2E-FLEET-015 tolerates the same delay because it also accepts an
@@ -82,12 +83,12 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		// accounted for the backoff curve's own scaling.
 		Eventually(func() bool {
 			pods := &corev1.PodList{}
-			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(namespace),
+			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(targetNS),
 				client.MatchingLabels{"app": infrastructure.CrashLoopAppName}); err != nil {
 				return false
 			}
 			events := &corev1.EventList{}
-			if err := remoteK8sClient.List(ctx, events, client.InNamespace(namespace)); err != nil {
+			if err := remoteK8sClient.List(ctx, events, client.InNamespace(targetNS)); err != nil {
 				GinkgoWriter.Printf("  ⚠️ CrashLoopBackOff event list failed on remote cluster: %v\n", err)
 				events = nil
 			}
@@ -99,8 +100,8 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		}, 7*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
 
 		By("Step 2: Sending synthetic cluster-tagged alert to Gateway (AC-4, no real event-exporter bridge)")
-		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", "high",
-			infrastructure.CrashLoopAppName, "remote-cluster")
+		payload := buildPrometheusAlertWithClusterInNamespace("KubePodCrashLooping", "high",
+			infrastructure.CrashLoopAppName, targetNS, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -118,7 +119,7 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 			TargetClient:           remoteK8sClient,
 			JobClient:              remoteK8sClient,
 			CRDNamespace:           namespace,
-			TargetNamespace:        namespace,
+			TargetNamespace:        targetNS,
 			JobNamespace:           infrastructure.ExecutionNamespace,
 			RemediationRequestName: rrName,
 			ExpectClusterID:        "remote-cluster",

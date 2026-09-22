@@ -217,8 +217,8 @@ subjects:
 //
 // Deliberately unconditional since the fleet suite always deploys
 // the dedicated kaInteractiveFleetTargetName marker
-// (scenario_ka_interactive_fleet_bridge.go) in the fixed "kubernaut-system"
-// namespace on the remote cluster.
+// (scenario_ka_interactive_fleet_bridge.go) in its isolated workload namespace
+// on the remote cluster.
 //
 // Turn 1's keyword deliberately avoids the substring "investigate" so it
 // can never tie with the generic "af_investigate" scenario registered
@@ -244,14 +244,14 @@ subjects:
 // message is the user's text prompt, not a tool result) but naturally
 // self-disables on the very next completion once kubernaut_message's own
 // result becomes the last message.
-func kaInteractiveFleetBridgeScenarioYAML() string {
-	return `      - name: "af_ka_interactive_fleet_bridge_remediate_1768"
+func kaInteractiveFleetBridgeScenarioYAML(targetNamespace string) string {
+	return fmt.Sprintf(`      - name: "af_ka_interactive_fleet_bridge_remediate_1768"
         keywords: ["ka-interactive-fleet-bridge-start"]
         match_last_only: true
         tool_call:
           name: "kubernaut_remediate"
           arguments:
-            namespace: "kubernaut-system"
+            namespace: "%s"
             kind: "Deployment"
             name: "ka-interactive-fleet-target"
             api_version: "apps/v1"
@@ -266,7 +266,7 @@ func kaInteractiveFleetBridgeScenarioYAML() string {
           arguments:
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
             message: "ka-interactive-fleet-e2e-test: what is the current memory limit configured on the target deployment?"
-`
+`, targetNamespace)
 }
 
 // combinedRemediateInvestigateScenarioYAML returns a keyword scenario for
@@ -868,7 +868,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_watch"
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
-` + kaInteractiveFleetBridgeScenarioYAML()
+	` + kaInteractiveFleetBridgeScenarioYAML(kaInteractiveFleetNamespace(afRemediateNS))
 	afTranscriptYAML := gitOpsInteractiveInvestigationScenarioYAML(afRemediateNS["interactive"], afGitOpsWorkflowID)
 
 	configMap := fmt.Sprintf(`apiVersion: v1
@@ -1034,6 +1034,13 @@ spec:
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM ready\n")
 
 	return nil
+}
+
+func kaInteractiveFleetNamespace(namespaces map[string]string) string {
+	if namespace := namespaces["fleet-ka-interactive"]; namespace != "" {
+		return namespace
+	}
+	return "kubernaut-system"
 }
 
 // DeployMockLLMShadowInNamespace deploys a second instance of the mock-llm
