@@ -33,7 +33,7 @@ Out of scope: provider-specific model quality benchmarking and the OpenAI Respon
 
 | Tier | Test IDs | Proof |
 |---|---|---|
-| Unit | `UT-INFRA-FLEETDEMO-052` through `UT-INFRA-FLEETDEMO-066` | Resolver, CLI parsing, topology defaults, and validation behavior for Luna, GPT-5, o1/o3/o4, non-reasoning models, custom endpoints, overrides, and SI-10 invalid input |
+| Unit | `UT-INFRA-FLEETDEMO-052` through `UT-INFRA-FLEETDEMO-066` | Resolver, CLI parsing, topology defaults, and validation behavior for GPT 5.6+ version-based defaults across variants, older GPT-5, o1/o3/o4, non-reasoning models, custom endpoints, overrides, and SI-10 invalid input |
 | Integration | `IT-PLATFORM-LLM-2437-001`, `IT-PLATFORM-LLM-2437-002` | Helm renders the resolved reasoning block into KA and AF production ConfigMaps |
 | E2E | `E2E-PLATFORM-2437-001` | `make setup-fleet-demo-infra` installs the configured fleet demo; a crashloop scenario is investigated and remediated through the real fleet path |
 

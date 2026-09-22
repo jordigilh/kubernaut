@@ -595,6 +595,10 @@ For OpenAI Chat Completions, the canonical effort values are `none`, `minimal`, 
 `medium`, `high`, `xhigh`, and `max`, and the value is passed through as `reasoning_effort`.
 The supported subset is model-specific: base `gpt-5` documents `minimal`, `low`, `medium`,
 and `high`; `gpt-5.6-luna` documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
+The local/fleet demo installer applies version defaults rather than pinning one model release:
+GPT model IDs at version 5.6 or newer use `none`, independent of the variant suffix. GPT-6
+Astra is not compatible with Chat Completions function calling, which the current agent tool path
+requires.
 Do not infer support for a custom `openai_compatible` endpoint from a GPT-like model name;
 use `reasoning.capabilityOverride` or an explicit demo override only after checking the endpoint.
 
