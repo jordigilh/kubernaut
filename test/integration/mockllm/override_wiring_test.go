@@ -174,7 +174,7 @@ var _ = Describe("Override Wiring Integration", func() {
 				"override keyed by WorkflowName:environment should apply to matching scenario")
 		})
 
-		It("should prefer :production override when multiple environments exist", func() {
+		It("should reject an ambiguous override when multiple environments exist", func() {
 			tmpDir := GinkgoT().TempDir()
 			overridePath := filepath.Join(tmpDir, "overrides.yaml")
 			Expect(os.WriteFile(overridePath, []byte(`scenarios:
@@ -194,8 +194,8 @@ var _ = Describe("Override Wiring Integration", func() {
 
 			withCfg, ok := crashScenario.(scenarios.ScenarioWithConfig)
 			Expect(ok).To(BeTrue())
-			Expect(withCfg.Config().WorkflowID).To(Equal("uuid-production"),
-				":production override should take precedence over other environments")
+			Expect(withCfg.Config().WorkflowID).To(Equal(uuid.DeterministicUUID("crashloop-config-fix-v1")),
+				"ambiguous environment overrides must not select an arbitrary environment")
 		})
 	})
 

@@ -7,7 +7,7 @@
 **Version**: 1.0
 **Created**: 2026-09-21
 **Author**: AI Assistant + Jordi Gil
-**Status**: Approved & Implemented
+**Status**: Implemented; E2E pending
 **Branch**: `fix/2442-workflow-discovery-membership`
 
 ---
@@ -197,16 +197,16 @@ after the cause is identified and the affected test can run deterministically.
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |---|---|---|---|---|---|
-| BR-MOCK-010 | Typed discovery state replaces count-only discovery routing | P0 | Unit | UT-MOCK-2442-001..006 | Pending |
-| BR-MOCK-012 | Three-step discovery enforces workflow membership | P0 | Unit | UT-MOCK-2442-001..006 | Pending |
-| BR-MOCK-012 | OpenAI path is wired to the planner | P0 | Integration | IT-MOCK-2442-011, IT-MOCK-2442-013 | Pending |
-| BR-MOCK-012 | Gemini path is wired to the planner | P0 | Integration | IT-MOCK-2442-012, IT-MOCK-2442-014 | Pending |
-| BR-MOCK-012 | Seeded E2E workflow is discovered before selection | P0 | E2E | E2E-MOCK-2442-001 | Pending |
-| BR-MOCK-014 | Request state is transcript-derived and isolated | P0 | Unit | UT-MOCK-2442-008..010 | Pending |
-| BR-MOCK-014 | Concurrent provider requests do not leak state | P0 | Integration | IT-MOCK-2442-017 | Pending |
-| BR-TESTING-001 | Scenario and environment overrides are deterministic | P0 | Unit | UT-MOCK-2442-018 | Pending |
-| BR-TESTING-001 | E2E configuration wires deterministic overrides | P0 | Integration | IT-MOCK-2442-016 | Pending |
-| BR-MOCK-010 | Legacy and custom non-discovery flows remain compatible | P0 | Integration | IT-MOCK-2442-019 | Pending |
+| BR-MOCK-010 | Typed discovery state replaces count-only discovery routing | P0 | Unit | UT-MOCK-2442-001..005, UT-MOCK-2442-007 | Implemented |
+| BR-MOCK-012 | Three-step discovery enforces workflow membership | P0 | Unit | UT-MOCK-2442-001..005 | Implemented |
+| BR-MOCK-012 | OpenAI path is wired to the planner | P0 | Integration | IT-MOCK-2442-011, IT-MOCK-2442-013, IT-MOCK-2442-021..023 | Implemented |
+| BR-MOCK-012 | Gemini path is wired to the planner | P0 | Integration | IT-MOCK-2442-012, IT-MOCK-2442-014 | Implemented |
+| BR-MOCK-012 | Seeded E2E workflow is discovered before selection | P0 | E2E | E2E-MOCK-2442-001 | Pending: environment not run |
+| BR-MOCK-014 | Request state is transcript-derived and isolated | P0 | Unit | UT-MOCK-2442-005, UT-MOCK-2442-007 | Implemented |
+| BR-MOCK-014 | Concurrent provider requests do not leak state | P0 | Integration | Existing integration coverage | Implemented |
+| BR-TESTING-001 | Scenario and environment overrides are deterministic | P0 | Unit | UT-MOCK-2442-018 | Implemented |
+| BR-TESTING-001 | E2E configuration wires deterministic overrides | P0 | Integration | Existing config-generator coverage | Implemented |
+| BR-MOCK-010 | Legacy and custom non-discovery flows remain compatible | P0 | Integration | Existing Mock LLM suite | Implemented |
 
 ---
 
@@ -216,37 +216,43 @@ after the cause is identified and the affected test can run deterministically.
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| UT-MOCK-2442-001 | Initial DD-KA-017 request calls the first discovery tool | Pending |
-| UT-MOCK-2442-002 | Listed target permits `get_workflow` | Pending |
-| UT-MOCK-2442-003 | Unlisted target with a next cursor requests another page | Pending |
-| UT-MOCK-2442-004 | Unlisted target without a cursor becomes unresolved | Pending |
-| UT-MOCK-2442-005 | `get_workflow` never grants membership | Pending |
-| UT-MOCK-2442-006 | Membership accumulates across pages and retries | Pending |
-| UT-MOCK-2442-007 | OpenAI and Gemini equivalent transcripts yield equal semantic plans | Pending |
-| UT-MOCK-2442-008 | Parallel non-discovery results are ignored by discovery state | Pending |
-| UT-MOCK-2442-009 | Prior-turn results do not satisfy a new selection context | Pending |
-| UT-MOCK-2442-010 | Malformed discovery results fail closed with diagnostics | Pending |
-| UT-MOCK-2442-015 | Global and per-scenario `force_text` precedence is correct | Pending |
-| UT-MOCK-2442-018 | Ambiguous workflow/environment overrides are rejected | Pending |
+| UT-MOCK-2442-001 | Initial DD-KA-017 request calls the first discovery tool | Implemented |
+| UT-MOCK-2442-002 | Listed target permits `get_workflow` | Implemented |
+| UT-MOCK-2442-003 | Unlisted target with a next cursor requests another page | Implemented |
+| UT-MOCK-2442-004 | Unlisted target without a cursor becomes unresolved | Implemented |
+| UT-MOCK-2442-005 | `get_workflow` never grants membership | Implemented |
+| UT-MOCK-2442-006 | Membership accumulates across pages and retries | Covered by UT-MOCK-2442-003 |
+| UT-MOCK-2442-007 | OpenAI and Gemini equivalent transcripts yield equal semantic plans | Implemented |
+| UT-MOCK-2442-008 | Parallel non-discovery results are ignored by discovery state | Covered by UT-MOCK-2442-005 and IT-MOCK-2442-021 |
+| UT-MOCK-2442-009 | Prior-turn results do not satisfy a new selection context | Not implemented in this change |
+| UT-MOCK-2442-010 | Malformed discovery results fail closed with diagnostics | Covered by UT-MOCK-2442-004 |
+| UT-MOCK-2442-015 | Global and per-scenario `force_text` precedence is correct | Implemented |
+| UT-MOCK-2442-018 | Ambiguous workflow/environment overrides are rejected | Implemented |
+| UT-MOCK-2442-020 | Canonical transcript retains provider message content | Implemented |
 
 ### Tier 2: Integration Tests
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| IT-MOCK-2442-011 | OpenAI HTTP flow completes valid three-step discovery | Pending |
-| IT-MOCK-2442-012 | Gemini HTTP flow completes valid three-step discovery | Pending |
-| IT-MOCK-2442-013 | OpenAI HTTP flow refuses an undiscovered workflow | Pending |
-| IT-MOCK-2442-014 | Gemini HTTP flow refuses an undiscovered workflow | Pending |
-| IT-MOCK-2442-015 | Global force-text default does not suppress advertised discovery | Pending |
-| IT-MOCK-2442-016 | E2E and integration config generators emit deterministic bindings | Pending |
-| IT-MOCK-2442-017 | Concurrent OpenAI and Gemini requests remain isolated | Pending |
-| IT-MOCK-2442-019 | Legacy, replay, custom-chain, and text-only paths remain compatible | Pending |
+| IT-MOCK-2442-011 | OpenAI HTTP flow completes valid three-step discovery | Implemented |
+| IT-MOCK-2442-012 | Gemini HTTP flow completes valid three-step discovery | Implemented |
+| IT-MOCK-2442-013 | OpenAI HTTP flow refuses an undiscovered workflow | Implemented |
+| IT-MOCK-2442-014 | Gemini HTTP flow refuses an undiscovered workflow | Implemented |
+| IT-MOCK-2442-015 | Global force-text default does not suppress advertised discovery | Implemented |
+| IT-MOCK-2442-016 | E2E and integration config generators emit deterministic bindings | Covered by existing tests |
+| IT-MOCK-2442-017 | Concurrent OpenAI and Gemini requests remain isolated | Covered by existing tests |
+| IT-MOCK-2442-019 | Legacy, replay, custom-chain, and text-only paths remain compatible | Covered by existing suite |
+| IT-MOCK-2442-021 | OpenAI completion ignores parallel non-discovery results | Implemented |
+| IT-MOCK-2442-022 | OpenAI discovery overrides cannot bypass membership planning | Implemented |
+| IT-MOCK-2442-023 | Explicit scenario force-text suppresses unresolved submission | Implemented |
+| IT-MOCK-2442-024 | Gemini discovery overrides cannot bypass membership planning | Implemented |
+| IT-MOCK-2442-025 | Multi-tool and chained discovery overrides cannot bypass membership planning | Implemented |
 
 ### Tier 3: E2E Tests
 
 | ID | Business outcome | Phase |
 |---|---|---|
-| E2E-MOCK-2442-001 | Kind-based AIA/KA journey discovers the seeded workflow before selection | Pending |
+| E2E-MOCK-2442-001 | Kind-based AIA/KA journey discovers the seeded workflow before selection | Pending: environment not run |
 
 ### Tier Skip Rationale
 
@@ -454,13 +460,13 @@ make test
 
 | Code Path | Entry Point | Exit Point | Wiring IT | Status |
 |---|---|---|---|---|
-| Discovery planner | OpenAI `/v1/chat/completions` | OpenAI tool/text response | IT-MOCK-2442-011, IT-MOCK-2442-013 | Pending |
-| Discovery planner | Gemini `/v1beta/models/*:generateContent` | Gemini function/text response | IT-MOCK-2442-012, IT-MOCK-2442-014 | Pending |
-| OpenAI adapter | OpenAI route registration | Canonical planner action | IT-MOCK-2442-013 | Pending |
-| Gemini adapter | Gemini route registration | Canonical planner action | IT-MOCK-2442-014 | Pending |
-| Mode policy | Handler dispatch | Tool or text response | IT-MOCK-2442-015 | Pending |
-| E2E config generation | `DeployMockLLMInNamespace` | Running container behavior | IT-MOCK-2442-016, E2E-MOCK-2442-001 | Pending |
-| Integration config generation | `WriteMockLLMConfigFile` | Running Mock LLM behavior | IT-MOCK-2442-016 | Pending |
+| Discovery planner | OpenAI `/v1/chat/completions` | OpenAI tool/text response | IT-MOCK-2442-011, IT-MOCK-2442-013, IT-MOCK-2442-021..023, IT-MOCK-2442-025 | Implemented |
+| Discovery planner | Gemini `/v1beta/models/*:generateContent` | Gemini function/text response | IT-MOCK-2442-012, IT-MOCK-2442-014, IT-MOCK-2442-024 | Implemented |
+| OpenAI adapter | OpenAI route registration | Canonical planner action | IT-MOCK-2442-011, IT-MOCK-2442-013 | Implemented |
+| Gemini adapter | Gemini route registration | Canonical planner action | IT-MOCK-2442-012, IT-MOCK-2442-014, IT-MOCK-2442-024 | Implemented |
+| Mode policy | Handler dispatch | Tool or text response | IT-MOCK-2442-015, IT-MOCK-2442-023 | Implemented |
+| E2E config generation | `DeployMockLLMInNamespace` | Running container behavior | IT-MOCK-2442-016, E2E-MOCK-2442-001 | Pending: E2E not run |
+| Integration config generation | `WriteMockLLMConfigFile` | Running Mock LLM behavior | IT-MOCK-2442-016 | Covered by existing tests |
 
 Unit tests do not count as wiring proof.
 

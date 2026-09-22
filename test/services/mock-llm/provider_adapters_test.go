@@ -62,6 +62,22 @@ var _ = Describe("Mock LLM provider adapters", func() {
 			Expect(transcript.Events[0].Kind).To(Equal(conversation.DiscoveryToolCallEvent))
 		})
 
+		It("UT-MOCK-2442-020: retains OpenAI user, system, and assistant content in the canonical transcript", func() {
+			transcript := handlers.NormalizeOpenAITranscript(openai.ChatCompletionRequest{
+				Messages: []openai.Message{
+					{Role: "system", Content: stringPtr("system instruction")},
+					{Role: "user", Content: stringPtr("user request")},
+					{Role: "assistant", Content: stringPtr("assistant reasoning")},
+				},
+			})
+
+			Expect(transcript.Events).To(HaveLen(3))
+			Expect(transcript.Events[0].Kind).To(Equal(conversation.DiscoverySystemContentEvent))
+			Expect(transcript.Events[0].Payload).To(Equal("system instruction"))
+			Expect(transcript.Events[1].Kind).To(Equal(conversation.DiscoveryUserContentEvent))
+			Expect(transcript.Events[2].Kind).To(Equal(conversation.DiscoveryAssistantContentEvent))
+		})
+
 		It("normalizes equivalent Gemini function calls and responses", func() {
 			transcript, err := handlers.NormalizeGeminiTranscript(
 				[]response.GeminiContent{
@@ -79,6 +95,23 @@ var _ = Describe("Mock LLM provider adapters", func() {
 			Expect(transcript.Events[0].Kind).To(Equal(conversation.DiscoveryToolCallEvent))
 			Expect(transcript.Events[1].ToolName).To(Equal("list_workflows"))
 			Expect(transcript.Events[1].Payload).To(ContainSubstring("workflows"))
+		})
+
+		It("UT-MOCK-2442-020: retains Gemini system, user, and assistant text in the canonical transcript", func() {
+			transcript, err := handlers.NormalizeGeminiTranscript(
+				[]response.GeminiContent{
+					{Role: "user", Parts: []response.GeminiPart{{Text: "user request"}}},
+					{Role: "model", Parts: []response.GeminiPart{{Text: "assistant reasoning"}}},
+				},
+				[]response.GeminiToolDecl{},
+				response.GeminiContent{Role: "system", Parts: []response.GeminiPart{{Text: "system instruction"}}},
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(transcript.Events).To(HaveLen(3))
+			Expect(transcript.Events[0].Kind).To(Equal(conversation.DiscoverySystemContentEvent))
+			Expect(transcript.Events[1].Kind).To(Equal(conversation.DiscoveryUserContentEvent))
+			Expect(transcript.Events[2].Kind).To(Equal(conversation.DiscoveryAssistantContentEvent))
 		})
 	})
 })

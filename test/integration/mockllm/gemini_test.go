@@ -197,7 +197,7 @@ var _ = Describe("Gemini generateContent Endpoint (issue #1157)", func() {
 	})
 
 	Describe("IT-MOCK-GEMINI-2442: interactive workflow discovery", func() {
-		It("executes the three-step discovery DAG when discovery tools are advertised", func() {
+		It("executes the three-step discovery planner when discovery tools are advertised", func() {
 			registry := scenarios.DefaultRegistry()
 			router := handlers.NewRouter(registry, false, "interactive")
 			interactiveServer := httptest.NewServer(router)
@@ -225,7 +225,7 @@ var _ = Describe("Gemini generateContent Endpoint (issue #1157)", func() {
 			Expect(result.Candidates[0].Content.Parts[0].FunctionCall.Name).To(Equal("list_available_actions"))
 		})
 
-		It("paginates list_workflows until the selected workflow is returned", func() {
+		It("paginates list_workflows until membership permits get_workflow", func() {
 			registry := scenarios.DefaultRegistry()
 			router := handlers.NewRouter(registry, false, "interactive")
 			interactiveServer := httptest.NewServer(router)
@@ -285,6 +285,8 @@ var _ = Describe("Gemini generateContent Endpoint (issue #1157)", func() {
 
 			result = call()
 			Expect(result.Candidates[0].Content.Parts[0].FunctionCall.Name).To(Equal("get_workflow"))
+			Expect(result.Candidates[0].Content.Parts[0].FunctionCall.Args).
+				To(HaveKeyWithValue("workflow_id", workflowID))
 			appendToolTurn(result, "get_workflow", map[string]interface{}{"workflowId": workflowID})
 
 			result = call()

@@ -83,7 +83,7 @@ var _ = Describe("Full Conversation Flows", func() {
 	})
 
 	Describe("IT-MOCK-012: Three-step conversation flow", func() {
-		It("should paginate list_workflows until the selected workflow is returned", func() {
+		It("should paginate list_workflows until membership permits get_workflow", func() {
 			threeStepTools := []map[string]interface{}{
 				{"type": "function", "function": map[string]interface{}{"name": "list_available_actions", "parameters": map[string]interface{}{}}},
 				{"type": "function", "function": map[string]interface{}{"name": "list_workflows", "parameters": map[string]interface{}{}}},
@@ -116,6 +116,11 @@ var _ = Describe("Full Conversation Flows", func() {
 					Expect(args).To(HaveKeyWithValue("page", "next"))
 					Expect(args).To(HaveKeyWithValue("cursor", "cursor-1"))
 				}
+				if i == 3 {
+					var args map[string]interface{}
+					Expect(json.Unmarshal([]byte(result.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+					Expect(args).To(HaveKeyWithValue("workflow_id", workflowID))
+				}
 
 				// Append assistant + tool result for next turn
 				toolResult := `{"result": "ok"}`
@@ -127,7 +132,11 @@ var _ = Describe("Full Conversation Flows", func() {
 				}
 				messages = append(messages,
 					map[string]interface{}{"role": "assistant", "content": nil, "tool_calls": result.Choices[0].Message.ToolCalls},
-					map[string]string{"role": "tool", "content": toolResult},
+					map[string]string{
+						"role":         "tool",
+						"tool_call_id": result.Choices[0].Message.ToolCalls[0].ID,
+						"content":      toolResult,
+					},
 				)
 			}
 

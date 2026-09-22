@@ -142,11 +142,12 @@ var _ = Describe("Scenario Registry", func() {
 		Expect(result.Scenario.Name()).To(Equal("default"))
 	})
 
-	It("UT-MOCK-2442-018: rejects ambiguous non-production workflow overrides", func() {
+	It("UT-MOCK-2442-018: rejects ambiguous workflow overrides", func() {
 		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
 			Scenarios: map[string]config.ScenarioOverride{
-				"oomkill-increase-memory-v1:staging": {WorkflowID: "staging-id"},
-				"oomkill-increase-memory-v1:test":    {WorkflowID: "test-id"},
+				"oomkill-increase-memory-v1:production": {WorkflowID: "production-id"},
+				"oomkill-increase-memory-v1:staging":    {WorkflowID: "staging-id"},
+				"oomkill-increase-memory-v1:test":       {WorkflowID: "test-id"},
 			},
 		})
 
