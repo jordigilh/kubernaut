@@ -262,6 +262,27 @@ var _ = Describe("Scenario Registry", func() {
 		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
 	})
 
+	It("UT-MOCK-2442-026: matches AIAnalysis fixtures when structured fields are only in accumulated prompt text", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "RCA findings: configuration regression. Select the appropriate remediation workflow.",
+			AllText: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: critical\n- Resource: adr056-e2e-1234/Deployment/app-e2e-001",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
+	})
+
+	It("UT-MOCK-2442-027: matches AIAnalysis fixtures when prompt fields are serialized", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			AllText: `{"signal_name":"CrashLoopBackOff","severity":"critical","resource":"adr056-e2e-1234/Deployment/app-e2e-001"}`,
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
+	})
+
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {
 		It("should return metadata entries for each registered scenario", func() {
 			s1 := &fakeScenario{name: "alpha", confidence: 0.5}

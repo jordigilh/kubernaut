@@ -18,6 +18,7 @@ package scenarios
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
@@ -216,11 +217,23 @@ func matchAIAnalysisFixture(ctx *DetectionContext, spec aiAnalysisFixtureSpec) (
 		return false, 0
 	}
 	severity := strings.ToLower(strings.TrimSpace(spec.Severity))
-	if severity != "" && !strings.Contains(combined, "severity: "+severity) {
+	if severity != "" && !containsFieldValue(combined, "severity", severity) {
 		return false, 0
 	}
 
 	return true, 1.0
+}
+
+func containsFieldValue(text, field, value string) bool {
+	compact := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune("\"'`*", r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, text)
+	field = strings.ToLower(strings.TrimSpace(field))
+	value = strings.ToLower(strings.TrimSpace(value))
+	return strings.Contains(compact, field+":"+value) || strings.Contains(compact, field+"="+value)
 }
 
 func aiAnalysisFixtureConfig(spec aiAnalysisFixtureSpec) MockScenarioConfig {

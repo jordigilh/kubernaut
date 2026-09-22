@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-var reSignalName = regexp.MustCompile(`(?i)signal name:\s*(\S+)`)
+var reSignalName = regexp.MustCompile(`(?i)(?:signal[\s_]+name|["']signal_name["'])\s*[:=]\s*["']?([[:alnum:]_.-]+)`)
 
 func isProactive(ctx *DetectionContext) bool {
 	if ctx.IsProactive {
@@ -32,12 +32,20 @@ func isProactive(ctx *DetectionContext) bool {
 }
 
 func extractSignal(ctx *DetectionContext) string {
+	if ctx == nil {
+		return ""
+	}
 	if ctx.SignalName != "" {
 		return strings.ToLower(ctx.SignalName)
 	}
-	m := reSignalName.FindStringSubmatch(ctx.Content)
-	if len(m) > 1 {
-		return strings.ToLower(strings.TrimSpace(m[1]))
+	// Gemini keeps the structured system prompt in AllText while Content is
+	// only the latest user turn. Prefer the request content, then fall back to
+	// the accumulated prompt so both provider shapes expose the signal.
+	for _, text := range []string{ctx.Content, ctx.AllText} {
+		m := reSignalName.FindStringSubmatch(text)
+		if len(m) > 1 {
+			return strings.ToLower(strings.TrimSpace(m[1]))
+		}
 	}
 	return ""
 }
