@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -192,14 +193,9 @@ const (
 // OpenAI-compatible endpoint must opt in explicitly because a GPT-like model
 // name does not prove that the endpoint accepts reasoning_effort.
 func resolveDemoReasoning(o DemoHelmOptions) (enabled bool, effort, capabilityOverride string) {
-	model := strings.ToLower(o.LLMModel)
-	switch {
-	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && strings.HasPrefix(model, "gpt-5.6-luna"):
-		enabled, effort = true, "none"
-	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && strings.HasPrefix(model, "gpt-5"):
-		enabled, effort = true, "minimal"
-	case o.LLMProvider == sharedtypes.LLMProviderOpenAI && isOpenAIReasoningModel(model):
-		enabled, effort = true, "low"
+	if o.LLMProvider == sharedtypes.LLMProviderOpenAI {
+		effort = openaicompat.DefaultOpenAIReasoningEffort(o.LLMModel)
+		enabled = effort != ""
 	}
 
 	explicit := o.LLMReasoningEnabled != nil || o.LLMReasoningEffort != ""
@@ -223,12 +219,6 @@ func resolveDemoReasoning(o DemoHelmOptions) (enabled bool, effort, capabilityOv
 		}
 	}
 	return enabled, effort, capabilityOverride
-}
-
-func isOpenAIReasoningModel(model string) bool {
-	return model == "o1" || strings.HasPrefix(model, "o1-") ||
-		model == "o3" || strings.HasPrefix(model, "o3-") ||
-		model == "o4" || strings.HasPrefix(model, "o4-")
 }
 
 // Validate reports every missing required flag in one error, so

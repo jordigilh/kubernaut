@@ -113,6 +113,18 @@ var _ = Describe("resolveDemoReasoning", func() {
 		Entry("UT-INFRA-FLEETDEMO-052 [BR-PLATFORM-014]: gpt-5.6-luna defaults to no reasoning tokens",
 			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6-luna"},
 			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-062 [BR-PLATFORM-014]: GPT Luna model versions default to no reasoning effort for function-tool compatibility",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-6-luna"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-063 [BR-PLATFORM-014]: newer GPT versions use the same default across model variants",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "GPT-7.2-SOL-preview"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-065 [BR-PLATFORM-014]: GPT 5.6 Terra defaults to no reasoning effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6-terra"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-066 [BR-PLATFORM-014]: GPT 5.6 base alias defaults to no reasoning effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6"},
+			true, "none", ""),
 		Entry("UT-INFRA-FLEETDEMO-053 [BR-PLATFORM-014]: gpt-5 defaults to minimal effort",
 			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5"},
 			true, "minimal", ""),
@@ -304,6 +316,18 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		opts := baseOpts
 		opts.LLMProvider = "openai"
 		opts.LLMModel = "gpt-5.6-luna"
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements(
+			"--set", "global.llmProfiles.primary.reasoning.enabled=true",
+			"--set", "global.llmProfiles.primary.reasoning.effort=none",
+		))
+	})
+
+	It("UT-INFRA-FLEETDEMO-064 [BR-PLATFORM-014]: renders the GPT 5.6+ function-tool-compatible effort independent of variant", func() {
+		opts := baseOpts
+		opts.LLMProvider = "openai"
+		opts.LLMModel = "gpt-6-sol"
 		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
 
 		Expect(args).To(ContainElements(

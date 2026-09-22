@@ -83,7 +83,7 @@ type LLMReasoningConfig struct {
 	//     (shared llm.EffortToThinkingConfig/EffortToThinkingLevel), so
 	//     "xhigh" clamps to "high" here too, for the same reason —
 	//     Gemini's ThinkingLevel has no tier above High either.
-	//   - Real OpenAI/Azure o-series & gpt-5 models: passed through
+	//   - Real OpenAI/Azure o-series and GPT-5 models: passed through
 	//     verbatim as the wire "reasoning_effort" value.
 	//   - DeepSeek (openai_compatible): downscaled to DeepSeek's own
 	//     two-tier dialect ("high"/"max" plus a separate thinking-enabled

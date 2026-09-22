@@ -72,6 +72,40 @@ var _ = Describe("kubernautagent/llm/openai.Client Effort knob wiring — #1604"
 		Expect(receivedBody["reasoning_effort"]).To(Equal("high"))
 	})
 
+	It("UT-KA-1604-308 [BR-AI-086]: sends reasoning_effort none with function tools for a new GPT Luna version", func() {
+		newTestServer()
+		client := kaopenai.New("gpt-6-luna", server.URL, "test-key",
+			kaopenai.WithReasoning(llm.ReasoningRequest{Enabled: true, Effort: "none"}))
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "Investigate this alert"}},
+			Tools: []llm.ToolDefinition{{
+				Name:        "kubernaut_investigate_alert",
+				Description: "Investigate an alert",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{}}`),
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(receivedBody["reasoning_effort"]).To(Equal("none"))
+		Expect(receivedBody).To(HaveKey("tools"))
+	})
+
+	It("UT-KA-1604-309 [BR-AI-086]: sends reasoning_effort none with function tools for other GPT-6 variants", func() {
+		newTestServer()
+		client := kaopenai.New("gpt-6-sol", server.URL, "test-key",
+			kaopenai.WithReasoning(llm.ReasoningRequest{Enabled: true, Effort: "none"}))
+		_, err := client.Chat(context.Background(), llm.ChatRequest{
+			Messages: []llm.Message{{Role: "user", Content: "Investigate this alert"}},
+			Tools: []llm.ToolDefinition{{
+				Name:        "kubernaut_investigate_alert",
+				Description: "Investigate an alert",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{}}`),
+			}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(receivedBody["reasoning_effort"]).To(Equal("none"))
+		Expect(receivedBody).To(HaveKey("tools"))
+	})
+
 	It("UT-KA-1604-307: explicit capability override enables effort for a custom model", func() {
 		newTestServer()
 		client := kaopenai.New("custom-reasoning-model", server.URL, "test-key",
