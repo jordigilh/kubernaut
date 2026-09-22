@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
@@ -99,22 +100,38 @@ func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.S
 // multiple environments match, ":production" is preferred since the E2E
 // tests assert against production workflows.
 func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, workflowName string) (config.ScenarioOverride, bool) {
-	var best config.ScenarioOverride
-	found := false
-	for key, ov := range overrides {
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
 		name := key
 		if idx := strings.Index(key, ":"); idx != -1 {
 			name = key[:idx]
 		}
 		if name == workflowName {
-			best = ov
-			found = true
-			if strings.HasSuffix(key, ":production") {
-				return ov, true
-			}
+			keys = append(keys, key)
 		}
 	}
-	return best, found
+	if len(keys) == 0 {
+		return config.ScenarioOverride{}, false
+	}
+	sort.Strings(keys)
+
+	productionKey := ""
+	for _, key := range keys {
+		if strings.HasSuffix(key, ":production") {
+			if productionKey != "" {
+				return config.ScenarioOverride{}, false
+			}
+			productionKey = key
+		}
+	}
+	if productionKey != "" {
+		return overrides[productionKey], true
+	}
+	if len(keys) != 1 {
+		// Do not select a non-production environment from randomized map order.
+		return config.ScenarioOverride{}, false
+	}
+	return overrides[keys[0]], true
 }
 
 // DefaultRegistryFull returns a registry with optional overrides and golden

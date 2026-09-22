@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -139,6 +140,21 @@ var _ = Describe("Scenario Registry", func() {
 		})
 		Expect(result).NotTo(BeNil())
 		Expect(result.Scenario.Name()).To(Equal("default"))
+	})
+
+	It("UT-MOCK-2442-018: rejects ambiguous non-production workflow overrides", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-v1:staging": {WorkflowID: "staging-id"},
+				"oomkill-increase-memory-v1:test":    {WorkflowID: "test-id"},
+			},
+		})
+
+		scenario, ok := registry.Get("oomkilled")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
 	})
 
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {
