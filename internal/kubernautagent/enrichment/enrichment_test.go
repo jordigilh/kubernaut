@@ -28,6 +28,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
 var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
@@ -357,6 +361,44 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 	})
 
 	Describe("UT-KA-433-013: Enricher emits enrichment audit events", func() {
+		It("should include detected labels and failed detections in enrichment.completed", func() {
+			scheme := newFullScheme()
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "api-server",
+					Namespace:   "production",
+					Annotations: map[string]string{"argocd.argoproj.io/managed-by": "argocd"},
+				},
+			}
+			detector := enrichment.NewLabelDetector(
+				dynamicfake.NewSimpleDynamicClient(scheme, deploy),
+				newTestMapper(),
+				logger,
+			)
+			e := enrichment.NewEnricher(
+				&fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "api-server", Namespace: "production"}}},
+				&fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}},
+				auditStore,
+				logger,
+			).WithLabelDetector(detector)
+
+			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{
+				Kind: "Deployment", Name: "api-server", Namespace: "production", IncidentID: "test-incident-labels",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(auditStore.events).To(HaveLen(1))
+
+			ev := auditStore.events[0]
+			Expect(ev.Data["detected_labels_summary"]).NotTo(BeNil())
+			Expect(ev.Data["failed_detections"]).To(BeEmpty())
+			labelsJSON, err := json.Marshal(ev.Data["detected_labels_summary"])
+			Expect(err).NotTo(HaveOccurred())
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels["gitOpsManaged"]).To(BeTrue())
+			Expect(labels["gitOpsTool"]).To(Equal("argocd"))
+		})
+
 		It("should emit enrichment.completed with structured EventData on success", func() {
 			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},

@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -220,6 +221,51 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 				"UT-KA-WAVE4-003: unambiguous Deployment kind must auto-resolve apiVersion")
 			Expect(client.calls).To(HaveLen(1),
 				"UT-KA-WAVE4-003: auto-resolve must not consume an extra LLM turn")
+		})
+	})
+
+	Describe("IT-KA-2459-001: workflow discovery audit captures label handoffs", func() {
+		It("should record enrichment, signal, and rendered-prompt label presence on the workflow LLM request", func() {
+			client.responses = []llm.ChatResponse{
+				gateWfToolResp(`{"workflow_id":"restart-cache","confidence":0.9}`),
+			}
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				AuditStore: store, Logger: logger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(),
+			})
+
+			_, err := inv.RunWorkflowDiscoveryFromRCA(
+				context.Background(),
+				katypes.SignalContext{
+					Name: "OOMKilled", Namespace: "production", Severity: "critical",
+					ResourceKind: "Deployment", ResourceName: "api-server",
+					DetectedLabelsJSON: `{"gitOpsManaged":true,"gitOpsTool":"argocd"}`,
+				},
+				&katypes.InvestigationResult{RCASummary: "deployment is unhealthy"},
+				&prompt.EnrichmentData{DetectedLabels: map[string]string{
+					"gitOpsManaged": "true",
+					"gitOpsTool":    "argocd",
+				}},
+				"corr-2459-label-trace",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			var workflowRequest *kaaudit.AuditEvent
+			for _, event := range store.events {
+				if event.EventType == kaaudit.EventTypeLLMRequest && event.Data["phase"] == string(katypes.PhaseWorkflowDiscovery) {
+					workflowRequest = event
+					break
+				}
+			}
+			Expect(workflowRequest).NotTo(BeNil())
+			Expect(workflowRequest.Data["workflow_discovery_enrichment_labels_present"]).To(BeTrue())
+			Expect(workflowRequest.Data["workflow_discovery_signal_labels_present"]).To(BeTrue())
+			Expect(workflowRequest.Data["workflow_discovery_prompt_labels_present"]).To(BeTrue())
+			Expect(workflowRequest.Data["workflow_discovery_detected_labels"]).To(Equal(map[string]string{
+				"gitOpsManaged": "true",
+				"gitOpsTool":    "argocd",
+			}))
 		})
 	})
 
