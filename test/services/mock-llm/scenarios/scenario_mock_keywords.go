@@ -70,6 +70,8 @@ func problemResolvedConfig() MockScenarioConfig {
 // audit trail -> DataStorage, correlation_id-reconstructable per SOC2
 // CC8.1) without requiring a real reasoning-capable provider.
 func reasoningCaptureConfig() MockScenarioConfig {
+	const reasoningText = "Weighed a transient traffic spike against a sustained leak: memory climbed steadily over 6h with no correlated traffic increase, which rules out a spike and points to a leak. Increasing the memory limit is the safe immediate mitigation while the leak itself would need a code-level fix."
+
 	return MockScenarioConfig{
 		ScenarioName: "mock_reasoning_capture", SignalName: "MOCK_REASONING_CAPTURE", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
@@ -83,7 +85,8 @@ func reasoningCaptureConfig() MockScenarioConfig {
 		Contributing:         []string{"memory_leak", "insufficient_memory_limits"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
-		ReasoningText:        "Weighed a transient traffic spike against a sustained leak: memory climbed steadily over 6h with no correlated traffic increase, which rules out a spike and points to a leak. Increasing the memory limit is the safe immediate mitigation while the leak itself would need a code-level fix.",
+		ThoughtText:          reasoningText,
+		ReasoningText:        reasoningText,
 	}
 }
 
@@ -197,7 +200,7 @@ func parallelToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
 		ScenarioName: "parallel_tools", SignalName: "MOCK_PARALLEL_TOOLS", Severity: "high",
-		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
 		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.9,
 		RootCause:    "Container OOMKilled due to memory limits below steady-state usage",
@@ -219,7 +222,7 @@ func alertmanagerNodeToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
 		ScenarioName: "alertmanager_node_tools", SignalName: "MOCK_ALERTMANAGER_NODE_TOOLS", Severity: "high",
-		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
 		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.88,
 		RootCause:    "Node resource exhaustion correlated with active alerts",
