@@ -136,52 +136,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch h.mode {
-	case config.ModeInteractive:
-		// Interactive RCA turns remain text-only, but workflow discovery still
-		// needs to execute the three-step protocol so session membership is
-		// populated before the selected workflow is submitted (#2442).
-		effectiveForceText := h.forceText
-		if cfg.ForceText != nil {
-			effectiveForceText = *cfg.ForceText
-		}
-		if conversation.HasThreeStepTools(req.Tools) && !effectiveForceText {
-			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
-		} else {
-			h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
-		}
-
-	case config.ModeAutonomous:
-		effectiveForceText := true
-		if cfg.ForceText != nil {
-			effectiveForceText = *cfg.ForceText
-		}
-		if effectiveForceText || len(req.Tools) == 0 {
-			if hasSplit && !resolved {
-				h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
-				notifySubmit()
-			} else {
-				h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
-			}
-		} else {
-			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
-		}
-
-	default: // config.ModeFull
-		effectiveForceText := h.forceText
-		if cfg.ForceText != nil {
-			effectiveForceText = *cfg.ForceText
-		}
-		if effectiveForceText || len(req.Tools) == 0 {
-			if hasSplit && !resolved {
-				h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
-				notifySubmit()
-			} else {
-				h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
-			}
-		} else {
-			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
-		}
+	useToolProtocol := shouldUseToolProtocol(h.mode, h.forceText, cfg, conversation.HasThreeStepTools(req.Tools), len(req.Tools))
+	switch {
+	case useToolProtocol:
+		h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
+	case h.mode != config.ModeInteractive && hasSplit && !resolved:
+		h.respondWithSubmitToolCall(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		notifySubmit()
+	default:
+		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
 	}
 
 	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
@@ -259,6 +222,13 @@ func (h *handler) handleFullDAG(
 		}
 	}
 
+	// DD-TEST-018: discovery membership is planned from the transcript, not result counts.
+	if cfg.WorkflowID != "" && conversation.HasThreeStepTools(req.Tools) {
+		if h.handleOpenAIDiscoveryPlan(w, model, cfg, req) {
+			return
+		}
+	}
+
 	dag := conversation.SelectDAG(req.Tools)
 	execResult, err := dag.Execute(ctx)
 	if err != nil {
@@ -288,6 +258,37 @@ func (h *handler) handleFullDAG(
 		} else {
 			writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildTextResponse(model, cfg))
 		}
+	}
+}
+
+func (h *handler) handleOpenAIDiscoveryPlan(
+	w http.ResponseWriter,
+	model string,
+	cfg scenarios.MockScenarioConfig,
+	req openai.ChatCompletionRequest,
+) bool {
+	transcript := NormalizeOpenAITranscript(req)
+	plan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
+		Transcript:         transcript,
+		ExpectedWorkflowID: cfg.WorkflowID,
+		ActionType:         cfg.ActionType,
+		HasResourceContext: conversation.HasResourceContextTool(req.Tools),
+	})
+
+	switch plan.Kind {
+	case conversation.DiscoveryCallTool:
+		responseCfg := cfg
+		responseCfg.ToolCallName = plan.ToolName
+		responseCfg.ToolCallArgs = plan.Arguments
+		h.trackToolCall(plan.ToolName)
+		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, plan.ToolName, responseCfg))
+		return true
+	case conversation.DiscoveryUnresolved:
+		log.Printf("[mock-llm] workflow discovery unresolved: %s", plan.Reason)
+		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, cfg)
+		return true
+	default:
+		return false
 	}
 }
 

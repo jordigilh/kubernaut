@@ -120,6 +120,20 @@ func (c *Context) LastToolCallName() string {
 }
 
 func (c *Context) toolCallNameBefore(index int) string {
+	toolCallID := c.Messages[index].ToolCallID
+	if toolCallID != "" {
+		for i := index - 1; i >= 0; i-- {
+			message := c.Messages[i]
+			if message.Role != "assistant" {
+				continue
+			}
+			for _, toolCall := range message.ToolCalls {
+				if toolCall.ID == toolCallID {
+					return toolCall.Function.Name
+				}
+			}
+		}
+	}
 	for i := index - 1; i >= 0; i-- {
 		message := c.Messages[i]
 		if message.Role != "assistant" || len(message.ToolCalls) == 0 {

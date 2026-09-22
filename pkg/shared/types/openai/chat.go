@@ -59,6 +59,9 @@ type Message struct {
 	Role      string     `json:"role"`
 	Content   *string    `json:"content"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolCallID identifies the assistant tool call for a role=tool result.
+	// It is optional for legacy callers that relied on message ordering.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 	// ReasoningContent simulates the DeepSeek/vLLM-style extended-thinking
 	// field returned by OpenAI-compatible reasoning models, for KA's
 	// openaicompat reasoning-capture E2E tests (BR-AI-086 AC6, #1578).

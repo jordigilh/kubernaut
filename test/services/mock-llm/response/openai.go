@@ -382,17 +382,25 @@ func randomHex(n int) string {
 // names via the preceding assistant message's ToolCalls ordering.
 func ExtractFieldFromToolResult(messages []openai.Message, toolName, field string) string {
 	var pendingCalls []string
+	callNamesByID := make(map[string]string)
 	for _, m := range messages {
 		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
 			pendingCalls = pendingCalls[:0]
 			for _, tc := range m.ToolCalls {
+				callNamesByID[tc.ID] = tc.Function.Name
 				pendingCalls = append(pendingCalls, tc.Function.Name)
 			}
 			continue
 		}
-		if m.Role == "tool" && m.Content != nil && len(pendingCalls) > 0 {
-			callName := pendingCalls[0]
-			pendingCalls = pendingCalls[1:]
+		if m.Role == "tool" && m.Content != nil && (m.ToolCallID != "" || len(pendingCalls) > 0) {
+			callName := callNamesByID[m.ToolCallID]
+			if m.ToolCallID == "" {
+				if len(pendingCalls) == 0 {
+					continue
+				}
+				callName = pendingCalls[0]
+				pendingCalls = pendingCalls[1:]
+			}
 			if callName != toolName {
 				continue
 			}

@@ -24,6 +24,7 @@ import (
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/response"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
@@ -118,7 +119,6 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
-	hasTools := len(req.Tools) > 0
 	hasSplit := geminiHasSubmitWithWorkflowTool(req.Tools)
 	resolved := isResolvedOutcome(cfg)
 
@@ -134,39 +134,14 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	switch h.mode {
-	case config.ModeInteractive:
-		// Interactive RCA turns remain text-only, but workflow discovery still
-		// needs to execute the three-step protocol so session membership is
-		// populated before the selected workflow is submitted (#2442).
-		effectiveForceText := h.forceText
-		if cfg.ForceText != nil {
-			effectiveForceText = *cfg.ForceText
-		}
-		if geminiHasThreeStepTools(req.Tools) && !effectiveForceText {
-			h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
-		} else {
-			writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
-		}
-
-	default: // config.ModeAutonomous, config.ModeFull, or unset
-		effectiveForceText := h.forceText
-		if h.mode == config.ModeAutonomous {
-			effectiveForceText = true
-		}
-		if cfg.ForceText != nil {
-			effectiveForceText = *cfg.ForceText
-		}
-
-		if effectiveForceText || !hasTools {
-			if hasSplit && !resolved {
-				h.respondGeminiWithSubmitToolCall(w, cfg)
-			} else {
-				writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
-			}
-		} else {
-			h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
-		}
+	useToolProtocol := shouldUseToolProtocol(h.mode, h.forceText, cfg, geminiHasThreeStepTools(req.Tools), len(req.Tools))
+	switch {
+	case useToolProtocol:
+		h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
+	case h.mode != config.ModeInteractive && hasSplit && !resolved:
+		h.respondGeminiWithSubmitToolCall(w, cfg)
+	default:
+		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
 	}
 
 	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
@@ -222,10 +197,14 @@ func (h *handler) handleGeminiToolResponse(
 		return
 	}
 
-	if geminiHasThreeStepTools(tools) {
-		if toolName, nextCfg, ok := geminiDiscoveryToolCall(cfg, tools, contents); ok {
-			h.trackToolCall(toolName)
-			writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(toolName, nextCfg))
+	// DD-TEST-018: discovery membership is planned from the transcript, not result counts.
+	if cfg.WorkflowID != "" && geminiHasThreeStepTools(tools) {
+		handled, err := h.handleGeminiDiscoveryPlan(w, cfg, tools, contents)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, response.BuildGeminiErrorResponse(err.Error()))
+			return
+		}
+		if handled {
 			return
 		}
 	}
@@ -248,39 +227,38 @@ func (h *handler) handleGeminiToolResponse(
 	}
 }
 
-func geminiDiscoveryToolCall(
+func (h *handler) handleGeminiDiscoveryPlan(
+	w http.ResponseWriter,
 	cfg scenarios.MockScenarioConfig,
 	tools []response.GeminiToolDecl,
 	contents []response.GeminiContent,
-) (string, scenarios.MockScenarioConfig, bool) {
-	if response.CountFunctionResponses(contents) == 0 {
-		if firstTool := firstDeclaredTool(tools); firstTool != "" {
-			return firstTool, cfg, true
-		}
-		return "", cfg, false
+) (bool, error) {
+	transcript, err := NormalizeGeminiTranscript(contents, tools)
+	if err != nil {
+		return false, err
 	}
+	plan := conversation.PlanDiscovery(conversation.DiscoveryPlannerInput{
+		Transcript:         transcript,
+		ExpectedWorkflowID: cfg.WorkflowID,
+		ActionType:         cfg.ActionType,
+		HasResourceContext: geminiHasResourceContextTool(tools),
+	})
 
-	switch response.LastFunctionResponseName(contents) {
-	case openai.ToolListAvailableActions:
-		return openai.ToolListWorkflows, cfg, true
-	case openai.ToolListWorkflows:
-		if response.WorkflowDiscoveryContains(contents, cfg.WorkflowID) {
-			return openai.ToolGetWorkflow, cfg, true
-		}
-		if cursor := response.WorkflowDiscoveryNextCursor(contents); cursor != "" {
-			actionType := cfg.ActionType
-			if actionType == "" {
-				actionType = "remediation"
-			}
-			cfg.ToolCallArgs = map[string]interface{}{
-				"action_type": actionType,
-				"page":        "next",
-				"cursor":      cursor,
-			}
-			return openai.ToolListWorkflows, cfg, true
-		}
+	switch plan.Kind {
+	case conversation.DiscoveryCallTool:
+		responseCfg := cfg
+		responseCfg.ToolCallName = plan.ToolName
+		responseCfg.ToolCallArgs = plan.Arguments
+		h.trackToolCall(plan.ToolName)
+		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(plan.ToolName, responseCfg))
+		return true, nil
+	case conversation.DiscoveryUnresolved:
+		log.Printf("[mock-llm/gemini] workflow discovery unresolved: %s", plan.Reason)
+		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
+		return true, nil
+	default:
+		return false, nil
 	}
-	return "", cfg, false
 }
 
 // respondGeminiWithSubmitToolCall writes the appropriate submit_result tool call in Gemini format.
@@ -312,6 +290,17 @@ func geminiHasThreeStepTools(tools []response.GeminiToolDecl) bool {
 	for _, t := range tools {
 		for _, fd := range t.FunctionDeclarations {
 			if fd.Name == openai.ToolListAvailableActions {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func geminiHasResourceContextTool(tools []response.GeminiToolDecl) bool {
+	for _, tool := range tools {
+		for _, declaration := range tool.FunctionDeclarations {
+			if declaration.Name == openai.ToolGetResourceContext {
 				return true
 			}
 		}
