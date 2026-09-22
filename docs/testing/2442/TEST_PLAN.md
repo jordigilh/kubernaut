@@ -54,6 +54,7 @@ selection context.
 - [BR-MOCK-010: Conversation Engine](../../services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md)
 - [BR-MOCK-012: Three-Step Discovery](../../services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md)
 - [BR-MOCK-014: Conversation Context Tracking](../../services/test-infrastructure/mock-llm/BUSINESS_REQUIREMENTS.md)
+- [BR-KA-OBSERVABILITY-001: Kubernaut Agent observability](../../requirements/BR-KA-OBSERVABILITY-001-agent-prometheus-metrics.md)
 - Issue #2442
 
 ### 2.2 Cross-References
@@ -82,6 +83,13 @@ selection context.
 All High risks have P0 unit and integration coverage. E2E-MOCK-2442-001 is the release
 confidence test for R1, R5, and R6. Any unmitigated High risk blocks implementation
 completion.
+
+### 3.2 Security and Observability Control Mapping
+
+| Business behavior | Control objective | Test evidence | Boundary |
+|---|---|---|---|
+| A discovery adapter must not request a tool the caller did not advertise, and must return an unresolved response instead of bypassing the tool contract. | FedRAMP AC-4 (information-flow enforcement), AC-6 (least privilege); OWASP ASVS 4.0.3 V4.1.3 (least privilege) and V4.1.5 (fail securely); BR-MOCK-012 | UT-MOCK-2442-027, IT-MOCK-2442-027, IT-MOCK-2442-028 | Proves the mock provider boundary. Production authorization and audit persistence remain covered by their owning service suites. |
+| Streamed multi-tool and chained responses preserve provider-reported token usage, so downstream monitoring does not undercount LLM consumption. | FedRAMP AU-3 (content of records), SOC2 CC7.2 (monitoring/investigation evidence); BR-KA-OBSERVABILITY-001, issue #2387 | UT-MOCK-2387-005, UT-MOCK-2387-006 | Proves mock wire-level data fidelity. Durable KA audit storage and end-to-end reconstruction are not replaced by these tests. |
 
 ---
 
@@ -201,12 +209,14 @@ after the cause is identified and the affected test can run deterministically.
 | BR-MOCK-012 | Three-step discovery enforces workflow membership | P0 | Unit | UT-MOCK-2442-001..005 | Implemented |
 | BR-MOCK-012 | OpenAI path is wired to the planner | P0 | Integration | IT-MOCK-2442-011, IT-MOCK-2442-013, IT-MOCK-2442-021..023 | Implemented |
 | BR-MOCK-012 | Gemini path is wired to the planner | P0 | Integration | IT-MOCK-2442-012, IT-MOCK-2442-014 | Implemented |
+| BR-MOCK-012 | OpenAI/Gemini reject discovery actions outside the advertised tool set | P0 | Unit + Integration | UT-MOCK-2442-027, IT-MOCK-2442-027..028 | Implemented |
 | BR-MOCK-012 | Seeded E2E workflow is discovered before selection | P0 | E2E | E2E-MOCK-2442-001 | Pending: environment not run |
 | BR-MOCK-014 | Request state is transcript-derived and isolated | P0 | Unit | UT-MOCK-2442-005, UT-MOCK-2442-007 | Implemented |
 | BR-MOCK-014 | Concurrent provider requests do not leak state | P0 | Integration | Existing integration coverage | Implemented |
 | BR-TESTING-001 | Scenario and environment overrides are deterministic | P0 | Unit | UT-MOCK-2442-018 | Implemented |
 | BR-TESTING-001 | E2E configuration wires deterministic overrides | P0 | Integration | Existing config-generator coverage | Implemented |
 | BR-MOCK-010 | Legacy and custom non-discovery flows remain compatible | P0 | Integration | Existing Mock LLM suite | Implemented |
+| BR-KA-OBSERVABILITY-001 | Streamed multi-tool and chained responses preserve exact scripted usage | P1 | Unit | UT-MOCK-2387-005..006 | Implemented |
 
 ---
 
@@ -229,6 +239,7 @@ after the cause is identified and the affected test can run deterministically.
 | UT-MOCK-2442-015 | Global and per-scenario `force_text` precedence is correct | Implemented |
 | UT-MOCK-2442-018 | Ambiguous workflow/environment overrides are rejected | Implemented |
 | UT-MOCK-2442-020 | Canonical transcript retains provider message content | Implemented |
+| UT-MOCK-2442-027 | An undeclared discovery tool is rejected instead of being requested | Implemented |
 
 ### Tier 2: Integration Tests
 
@@ -238,6 +249,8 @@ after the cause is identified and the affected test can run deterministically.
 | IT-MOCK-2442-012 | Gemini HTTP flow completes valid three-step discovery | Implemented |
 | IT-MOCK-2442-013 | OpenAI HTTP flow refuses an undiscovered workflow | Implemented |
 | IT-MOCK-2442-014 | Gemini HTTP flow refuses an undiscovered workflow | Implemented |
+| IT-MOCK-2442-027 | OpenAI HTTP flow fails closed when `list_workflows` is not advertised | Implemented |
+| IT-MOCK-2442-028 | Gemini HTTP flow fails closed when `list_workflows` is not advertised | Implemented |
 | IT-MOCK-2442-015 | Global force-text default does not suppress advertised discovery | Implemented |
 | IT-MOCK-2442-016 | E2E and integration config generators emit deterministic bindings | Covered by existing tests |
 | IT-MOCK-2442-017 | Concurrent OpenAI and Gemini requests remain isolated | Covered by existing tests |
