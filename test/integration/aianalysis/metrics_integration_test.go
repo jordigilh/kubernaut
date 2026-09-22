@@ -151,11 +151,11 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			// #2204: bumped 60s->90s. A per-process KA container serves every
-			// spec run against it; when several specs' AgentSessions land on
-			// it in a short burst, KA legitimately runs multiple real
-			// LLM-tool-loop investigations concurrently, and any one of them
-			// can take longer than a short fixed timeout waits for.
+				// #2204: bumped 60s->90s. A per-process KA container serves every
+				// spec run against it; when several specs' AgentSessions land on
+				// it in a short burst, KA legitimately runs multiple real
+				// LLM-tool-loop investigations concurrently, and any one of them
+				// can take longer than a short fixed timeout waits for.
 			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
 		})
@@ -210,7 +210,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"AIAnalysis should complete successfully with mock returning success")
 
@@ -248,10 +248,10 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-003",
-							Severity:         "critical",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production should require approval
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "prod-pod",
@@ -273,7 +273,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.Phase == "AwaitingApproval" || updated.Status.Phase == "Completed"
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify approval decision metrics were emitted
@@ -336,7 +336,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.GetRCAResult().SelectedWorkflow != nil
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify confidence score histogram was populated
@@ -356,6 +356,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Create AIAnalysis that will trigger policy evaluation
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-rego-%s", testID)
+			targetName := fmt.Sprintf("rego-target-%s", testID)
+			createITAAAnalysisPodFixture(k8sClient, namespace, targetName)
 			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-rego-%s", testID),
@@ -376,7 +378,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
-								Name:      "rego-pod",
+								Name:      targetName,
 								Namespace: namespace,
 							},
 						},
@@ -393,7 +395,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
 
 			// 3. Verify Rego evaluation metrics were emitted

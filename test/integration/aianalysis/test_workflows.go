@@ -131,8 +131,8 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Generic pod restart for unknown issues",
 			SignalType:  "Unknown",
 			Severity:    "warning",
-			Component:   []string{"apps/v1/Deployment"},
-			Priority:    "P2",
+			Component:   []string{"v1/Pod"},
+			Priority:    "*",
 			// Mock LLM "low_confidence" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
@@ -155,12 +155,13 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 		},
 	}
 
-	// Create workflows for staging, production, AND test environments
+	// Create workflows for staging, production, test, AND development environments
 	// Pattern: Environment-specific workflow instances
 	// - Most tests use staging (metrics_integration_test.go)
 	// - Some tests use production (approval decision tests)
 	// - Graceful shutdown tests use test (graceful_shutdown_test.go)
-	// - DataStorage filters by environment, so we need all three
+	// - Audit and metrics tests use development
+	// - DataStorage filters by environment, so we need all four
 	var allWorkflows []TestWorkflow
 	for _, wf := range baseWorkflows {
 		// Staging version
@@ -177,6 +178,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 		testWf := wf
 		testWf.Environment = "test"
 		allWorkflows = append(allWorkflows, testWf)
+
+		// Development version (for audit and metrics tests)
+		developmentWf := wf
+		developmentWf.Environment = "development"
+		allWorkflows = append(allWorkflows, developmentWf)
 	}
 
 	return allWorkflows

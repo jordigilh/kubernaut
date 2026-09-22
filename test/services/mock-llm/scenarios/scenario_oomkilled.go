@@ -66,7 +66,7 @@ func oomkilledScenario() *configScenario {
 						return true, 0.8
 					}
 				}
-				if strings.Contains(signal, "backoff") {
+				if signal == "backoff" {
 					return true, 0.5
 				}
 				return false, 0

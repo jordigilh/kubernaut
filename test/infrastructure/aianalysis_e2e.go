@@ -149,7 +149,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	} else {
 		// Local mode: export and prune to save disk space
 		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2-3: Exporting images to .tar and pruning Podman cache...")
-		tarFiles, err = ExportImagesAndPrune(builtImages, "/tmp", writer)
+		tarDir, tempErr := os.MkdirTemp("", "kubernaut-aianalysis-e2e-")
+		if tempErr != nil {
+			return fmt.Errorf("failed to create image archive directory: %w", tempErr)
+		}
+		defer func() {
+			if removeErr := os.RemoveAll(tarDir); removeErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove image archive directory %s: %v\n", tarDir, removeErr)
+			}
+		}()
+		tarFiles, err = ExportImagesAndPrune(builtImages, tarDir, writer)
 		if err != nil {
 			return fmt.Errorf("failed to export images and prune: %w", err)
 		}
@@ -369,12 +378,19 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"apps/v1/Deployment"}, Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
 		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"apps/v1/Deployment"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
 		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"apps/v1/Deployment"}, Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Environment: "staging", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Environment: "production", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Environment: "test", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"v1/Pod"}, Environment: "staging", Priority: "*", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"v1/Pod"}, Environment: "production", Priority: "*", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "warning", Component: []string{"v1/Pod"}, Environment: "test", Priority: "*", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
+		{WorkflowID: "oomkill-increase-memory-aa-staging-v1", Name: "OOMKill Recovery - AIAnalysis Staging", Description: "Isolated OOMKill workflow for the staging auto-approval test", Severity: "warning", Component: []string{"*"}, Environment: "staging", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory-aa-staging:v1.0.0", SchemaParameters: oomkillParams},
+		{WorkflowID: "crashloop-config-fix-aa-approval-v1", Name: "CrashLoopBackOff - AIAnalysis Approval", Description: "Isolated CrashLoop workflow for the production approval test", Severity: "critical", Component: []string{"apps/v1/Deployment"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-approval:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-aa-audit-v1", Name: "CrashLoopBackOff - AIAnalysis Audit", Description: "Isolated warning CrashLoop workflow for the production audit tests", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-audit:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-aa-rego-v1", Name: "CrashLoopBackOff - AIAnalysis Rego", Description: "Isolated warning CrashLoop workflow for the staging Rego audit test", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-rego:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-aa-session-v1", Name: "CrashLoopBackOff - AIAnalysis Session", Description: "Isolated CrashLoop workflow for the async session test", Severity: "warning", Component: []string{"*"}, Environment: "staging", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-session:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-aa-detected-labels-v1", Name: "CrashLoopBackOff - AIAnalysis Detected Labels", Description: "Isolated CrashLoop workflow for the detected labels test", Severity: "critical", Component: []string{"apps/v1/Deployment"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-detected-labels:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-aa-data-quality-v1", Name: "CrashLoopBackOff - AIAnalysis Data Quality", Description: "Isolated CrashLoop workflow for the data quality test", Severity: "warning", Component: []string{"*"}, Environment: "production", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix-aa-data-quality:v1.0.0", SchemaParameters: crashloopParams},
 	}
 
 	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
@@ -484,10 +500,14 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 
 func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+	kindConfigPath := os.Getenv("AIANALYSIS_E2E_KIND_CONFIG")
+	if kindConfigPath == "" {
+		kindConfigPath = "test/infrastructure/kind-aianalysis-config.yaml"
+	}
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
-		ConfigPath:                "test/infrastructure/kind-aianalysis-config.yaml",
+		ConfigPath:                kindConfigPath,
 		WaitTimeout:               "60s",
 		DeleteExisting:            false,
 		ReuseExisting:             true, // Original behavior: reuse if exists

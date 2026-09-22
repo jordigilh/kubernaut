@@ -222,14 +222,44 @@ var _ = Describe("Scenario Registry", func() {
 		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
 	})
 
-	It("UT-MOCK-2442-023: does not confuse the warning audit fixture with the critical approval fixture", func() {
+	It("UT-MOCK-2442-023: selects the warning production audit fixture", func() {
 		registry = scenarios.DefaultRegistry()
 
 		result := registry.Detect(&scenarios.DetectionContext{
 			Content: "Signal Name: CrashLoopBackOff Severity: warning Namespace: payments Resource Name: payment-service",
 		})
 		Expect(result).NotTo(BeNil())
-		Expect(result.Scenario.Name()).NotTo(Equal("aa_e2e_approval_crashloop"))
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_audit_crashloop"))
+	})
+
+	It("UT-MOCK-2442-024: selects the warning staging Rego fixture", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Namespace: default Resource Name: frontend",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_rego_crashloop"))
+	})
+
+	It("UT-MOCK-2442-025: matches detected-label fixtures in dynamic namespaces", func() {
+		registry = scenarios.DefaultRegistry()
+
+		ctx := &scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: critical Resource: adr056-e2e-1234/Deployment/app-e2e-001",
+		}
+		fixture, ok := registry.Get("aa_e2e_detected_labels_crashloop")
+		Expect(ok).To(BeTrue())
+		configured, ok := fixture.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().ResourceName).To(Equal("app-e2e-001"))
+		Expect(configured.Config().ResourceNS).To(BeEmpty())
+		matched, confidence := fixture.Match(ctx)
+		Expect(matched).To(BeTrue(), "detected-label fixture confidence=%v", confidence)
+
+		result := registry.Detect(ctx)
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
 	})
 
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {

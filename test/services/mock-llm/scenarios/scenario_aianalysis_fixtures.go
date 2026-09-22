@@ -80,6 +80,44 @@ func aiAnalysisFixtureScenarios() []*configScenario {
 			},
 		},
 		{
+			ScenarioName: "aa_e2e_audit_crashloop",
+			Fingerprint:  "e2e-audit-fingerprint",
+			SignalName:   "CrashLoopBackOff",
+			Severity:     "warning",
+			WorkflowName: "crashloop-config-fix-aa-audit-v1",
+			ActionType:   "RestartDeployment",
+			Title:        "CrashLoopBackOff - Audit Configuration Fix",
+			Rationale:    "A production configuration regression requires a controlled restart",
+			RootCause:    "Deployment configuration is invalid",
+			ResourceKind: "Deployment",
+			ResourceNS:   "payments",
+			ResourceName: "payment-service",
+			APIVersion:   "apps/v1",
+			Parameters: map[string]string{
+				"NAMESPACE":       "payments",
+				"DEPLOYMENT_NAME": "payment-service",
+			},
+		},
+		{
+			ScenarioName: "aa_e2e_rego_crashloop",
+			Fingerprint:  "e2e-audit-rego",
+			SignalName:   "CrashLoopBackOff",
+			Severity:     "warning",
+			WorkflowName: "crashloop-config-fix-aa-rego-v1",
+			ActionType:   "RestartDeployment",
+			Title:        "CrashLoopBackOff - Rego Configuration Fix",
+			Rationale:    "A staging configuration regression requires a controlled restart",
+			RootCause:    "Deployment configuration is invalid",
+			ResourceKind: "Deployment",
+			ResourceNS:   "default",
+			ResourceName: "frontend",
+			APIVersion:   "apps/v1",
+			Parameters: map[string]string{
+				"NAMESPACE":       "default",
+				"DEPLOYMENT_NAME": "frontend",
+			},
+		},
+		{
 			ScenarioName: "aa_e2e_session_crashloop",
 			Fingerprint:  "e2e-fingerprint-session-001",
 			SignalName:   "CrashLoopBackOff",
@@ -109,7 +147,8 @@ func aiAnalysisFixtureScenarios() []*configScenario {
 			Rationale:    "The production deployment has a configuration regression that requires a restart",
 			RootCause:    "Deployment configuration is invalid",
 			ResourceKind: "Deployment",
-			ResourceNS:   "default",
+			// ADR-056 creates the deployment in a random namespace per spec.
+			ResourceNS:   "",
 			ResourceName: "app-e2e-001",
 			APIVersion:   "apps/v1",
 			Parameters: map[string]string{
@@ -160,20 +199,24 @@ func matchAIAnalysisFixture(ctx *DetectionContext, spec aiAnalysisFixtureSpec) (
 	}
 
 	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-	if strings.Contains(combined, strings.ToLower(spec.Fingerprint)) {
+	if spec.Fingerprint != "" && strings.Contains(combined, strings.ToLower(spec.Fingerprint)) {
 		return true, 1.0
 	}
 
-	if spec.SignalName != "" && !strings.Contains(extractSignal(ctx), strings.ToLower(spec.SignalName)) {
+	signal := strings.ToLower(strings.TrimSpace(extractSignal(ctx)))
+	if spec.SignalName != "" && !strings.Contains(signal, strings.ToLower(strings.TrimSpace(spec.SignalName))) {
 		return false, 0
 	}
-	if spec.ResourceName == "" || !strings.Contains(combined, strings.ToLower(spec.ResourceName)) {
+	resourceName := strings.ToLower(strings.TrimSpace(spec.ResourceName))
+	if resourceName == "" || !strings.Contains(combined, resourceName) {
 		return false, 0
 	}
-	if spec.ResourceNS == "" || !strings.Contains(combined, strings.ToLower(spec.ResourceNS)) {
+	resourceNamespace := strings.ToLower(strings.TrimSpace(spec.ResourceNS))
+	if resourceNamespace != "" && !strings.Contains(combined, resourceNamespace) {
 		return false, 0
 	}
-	if spec.Severity != "" && !strings.Contains(combined, "severity: "+strings.ToLower(spec.Severity)) {
+	severity := strings.ToLower(strings.TrimSpace(spec.Severity))
+	if severity != "" && !strings.Contains(combined, "severity: "+severity) {
 		return false, 0
 	}
 

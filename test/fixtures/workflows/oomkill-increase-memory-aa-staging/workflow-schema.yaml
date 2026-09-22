@@ -1,0 +1,41 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: oomkill-increase-memory-aa-staging-v1
+spec:
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for pods experiencing OOMKill events in the AIAnalysis staging flow"
+    whenToUse: "When a staging pod is OOMKilled due to insufficient memory limits"
+    whenNotToUse: "When OOM is caused by a memory leak requiring a code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+
+  actionType: IncreaseMemoryLimits
+
+  labels:
+    severity: [warning]
+    environment: [staging]
+    component: ["*"]
+    priority: P2
+
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:a663ba9ddf8a074025723a4fbbef5542f520deb4e5eaf9814e07775456ecd7e0
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource"
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
+      description: "New memory limit to apply"

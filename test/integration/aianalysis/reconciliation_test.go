@@ -61,10 +61,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-001",
-							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
@@ -132,9 +132,8 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}()
 
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
-			// Use a signal that returns confidence < 0.8 (Rego default threshold).
-			// Unrecognized signals hit the mock LLM default scenario (confidence 0.75),
-			// ensuring the production catch-all rule fires: is_production + not is_high_confidence.
+			// Use the registered 0.75-confidence scenario, ensuring the
+			// production catch-all rule fires: is_production + not is_high_confidence.
 			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "MOCK_APPROVAL_TEST"
 
 			By("Creating production AIAnalysis")
@@ -171,10 +170,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-002",
-							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
@@ -295,10 +294,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-462-002",
-							Severity:         "warning",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",

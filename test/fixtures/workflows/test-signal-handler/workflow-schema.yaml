@@ -15,10 +15,10 @@ spec:
   actionType: DeletePod
   
   labels:
-    severity: [info]
+    severity: [critical, high, warning, info]
     environment: [test]
     component: [v1/Pod]
-    priority: P3
+    priority: "*"
   
   execution:
     engine: tekton

@@ -105,8 +105,11 @@ var (
 	e2eAuthToken string
 
 	// Service URLs (per DD-TEST-001)
-	healthURL  string
-	metricsURL string
+	healthURL            string
+	metricsURL           string
+	dataStorageURL       string
+	kaHealthURL          string
+	dataStorageHealthURL string
 
 	// Track failures for cleanup decision
 	anyTestFailed bool
@@ -133,10 +136,13 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Set cluster configuration
-		clusterName = "aianalysis-e2e"
+		clusterName = envOrDefault("AIANALYSIS_E2E_CLUSTER_NAME", "aianalysis-e2e")
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		kubeconfigPath = fmt.Sprintf("%s/.kube/aianalysis-e2e-config", homeDir)
+		kubeconfigPath = envOrDefault(
+			"AIANALYSIS_E2E_KUBECONFIG",
+			fmt.Sprintf("%s/.kube/aianalysis-e2e-config", homeDir),
+		)
 
 		// Create KIND cluster with full dependency chain (ONCE for all processes)
 		// Per DD-TEST-002: Use hybrid parallel setup (build images FIRST, then cluster)
@@ -198,7 +204,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 
 		// Set cluster name
-		clusterName = "aianalysis-e2e"
+		clusterName = envOrDefault("AIANALYSIS_E2E_CLUSTER_NAME", "aianalysis-e2e")
 
 		// Set KUBECONFIG environment variable
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
@@ -222,8 +228,10 @@ var _ = SynchronizedBeforeSuite(
 
 		// Set service URLs (per DD-TEST-001 port allocation)
 		// AIAnalysis ports: API=8084/30084, Metrics=9184/30184, Health=8184/30284
-		healthURL = "http://localhost:8184"  // AIAnalysis health via NodePort 30284
-		metricsURL = "http://localhost:9184" // AIAnalysis metrics via NodePort 30184
+		healthURL = "http://localhost:" + envOrDefault("AIANALYSIS_E2E_HEALTH_PORT", "8184")
+		metricsURL = "http://localhost:" + envOrDefault("AIANALYSIS_E2E_METRICS_PORT", "9184")
+		kaHealthURL = "http://localhost:" + envOrDefault("AIANALYSIS_E2E_KA_HEALTH_PORT", "28088")
+		dataStorageHealthURL = "http://localhost:" + envOrDefault("AIANALYSIS_E2E_DATASTORAGE_HEALTH_PORT", "30281")
 
 		// Wait for all services to be ready
 		// Per DD-TEST-002: Coverage-instrumented binaries take longer to start
@@ -249,7 +257,7 @@ var _ = SynchronizedBeforeSuite(
 		// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN
 		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 		// All queries MUST use generated OpenAPI client for type safety
-		dataStorageURL := "https://localhost:8091" // DataStorage NodePort 30081 (Issue #785: HTTPS)
+		dataStorageURL = "https://localhost:" + envOrDefault("AIANALYSIS_E2E_DATASTORAGE_PORT", "8091")
 
 		// Create authenticated HTTP client with ServiceAccount token + inter-service CA trust
 		tlsBase, tlsErr2 := infrastructure.NewTLSAwareTransport(kubeconfigPath)
@@ -363,7 +371,7 @@ var _ = SynchronizedAfterSuite(
 			if buildErr != nil {
 				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
 			} else {
-				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "aianalysis", clusterName)
+				mustGatherOutputDir := filepath.Join(os.TempDir(), "kubernaut-must-gather-"+clusterName)
 				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
 					ClusterName: clusterName,
 					Image:       mustGatherImage,
@@ -449,6 +457,13 @@ func checkServicesReady() bool {
 	defer func() { _ = metricsResp.Body.Close() }()
 
 	return true
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 // randomSuffix generates a unique suffix for test resource names

@@ -97,10 +97,10 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-001",
-							Severity:         "warning",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
@@ -307,10 +307,10 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-session-created",
-							Severity:         "warning",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod-session",

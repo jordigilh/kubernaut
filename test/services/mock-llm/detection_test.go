@@ -193,6 +193,17 @@ var _ = Describe("Scenario Detection Rules", func() {
 			Expect(result.Scenario.Name()).To(Equal("crashloop"),
 				"a BackOff signal on the crashloop-app fixture (which has the required ConfigMap) must still select crashloop-config-fix-v1")
 		})
+
+		It("UT-MOCK-026-003: ImagePullBackOff does not route to the OOM workflow", func() {
+			ctx := &scenarios.DetectionContext{
+				Content: "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Resource: default/Pod/image-pull-pod",
+				AllText: "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Resource: default/Pod/image-pull-pod",
+			}
+			result := registry.Detect(ctx)
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("default"),
+				"ImagePullBackOff must not select oomkill-increase-memory-v1")
+		})
 	})
 
 	Describe("UT-MOCK-023: Test signal detection", func() {

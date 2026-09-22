@@ -91,15 +91,15 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 		By("Verifying DataStorage connectivity before test")
 		Eventually(func() error {
-		resp, err := http.Get(datastorageHealthURL + "/readyz")
-		if err != nil {
-			return fmt.Errorf("health check failed: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("health check returned status %d", resp.StatusCode)
-		}
-		return nil
+			resp, err := http.Get(datastorageHealthURL + "/readyz")
+			if err != nil {
+				return fmt.Errorf("health check failed: %w", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("health check returned status %d", resp.StatusCode)
+			}
+			return nil
 		}, 30*time.Second, 2*time.Second).Should(Succeed(),
 			"DataStorage must be healthy before test starts (CI resource contention mitigation)")
 		GinkgoWriter.Println("✅ DataStorage health check passed")
@@ -191,6 +191,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			By("Creating AIAnalysis resource for hybrid audit validation")
 			testID := uuid.New().String()[:8]
+			targetName := fmt.Sprintf("hybrid-target-%s", testID)
+			createITAAAnalysisPodAndDeploymentFixtures(k8sClient, namespace, targetName)
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-hybrid-audit-%s", testID),
@@ -207,13 +209,13 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-hybrid-%s", uuid.New().String()[:8]),
-							Severity:         "critical",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff", // KA mock will return deterministic response
 							Environment:      "production",
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
-								Name:      "payment-service",
+								Name:      targetName,
 								Namespace: namespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
@@ -241,8 +243,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				"Controller should complete analysis within 90 seconds")
 
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
-		// This matches the correlation_id that AIAnalysis audit client records
-		correlationID := analysis.Spec.RemediationRequestRef.Name
+			// This matches the correlation_id that AIAnalysis audit client records
+			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("📋 Testing hybrid audit for correlation_id: %s\n", correlationID)
 
 			// ========================================
@@ -253,16 +255,16 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			kaEvents := waitForAuditEvents(correlationID, string(ogenclient.AIAgentResponsePayloadAuditEventEventData), 1)
 			kaEvent := kaEvents[0]
 
-		By("Validating KA event metadata with testutil")
-		validators.ValidateAuditEvent(kaEvent, validators.ExpectedAuditEvent{
-			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
-			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: KA uses "aiagent" category
-			EventAction:   "response_sent",
-			EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
-			CorrelationID: correlationID,
-			// #998: ActorID is now the authenticated user (SA identity), not the
-			// hardcoded default. Validated separately by UT-KA-998-* unit tests.
-		})
+			By("Validating KA event metadata with testutil")
+			validators.ValidateAuditEvent(kaEvent, validators.ExpectedAuditEvent{
+				EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
+				EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: KA uses "aiagent" category
+				EventAction:   "response_sent",
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				CorrelationID: correlationID,
+				// #998: ActorID is now the authenticated user (SA identity), not the
+				// hardcoded default. Validated separately by UT-KA-998-* unit tests.
+			})
 
 			By("Validating KA event_data structure (provider perspective - full response)")
 			validators.ValidateAuditEventHasRequiredFields(kaEvent)
@@ -359,6 +361,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			By("Creating AIAnalysis resource for RR reconstruction validation")
 			testID := uuid.New().String()[:8]
+			targetName := fmt.Sprintf("reconstruction-target-%s", testID)
+			createITAAAnalysisPodAndDeploymentFixtures(k8sClient, namespace, targetName)
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-rr-recon-%s", testID),
@@ -381,7 +385,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
-								Name:      "data-processor",
+								Name:      targetName,
 								Namespace: namespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
@@ -401,8 +405,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
-		// This matches the correlation_id that AIAnalysis audit client records
-		correlationID := analysis.Spec.RemediationRequestRef.Name
+			// This matches the correlation_id that AIAnalysis audit client records
+			correlationID := analysis.Spec.RemediationRequestRef.Name
 
 			// FIX: AA-INT-HAPI-001 - Use standardized waitForAuditEvents pattern
 			// ROOT CAUSE: Inline Eventually() used stricter query params (EventCategory="analysis")
@@ -470,6 +474,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// to enable audit trail reconstruction and defense-in-depth validation.
 			// ========================================
 
+			targetName := fmt.Sprintf("correlation-target-%s", uuid.New().String()[:8])
+			createITAAAnalysisPodFixture(k8sClient, namespace, targetName)
 			By("Creating AIAnalysis resource for correlation validation")
 			// DD-AUDIT-CORRELATION-001: RemediationID must match RemediationRequestRef.Name
 			// for KA and AA audit events to use same correlation_id
@@ -496,7 +502,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
-								Name:      "test-pod",
+								Name:      targetName,
 								Namespace: namespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
@@ -516,8 +522,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
-		// This matches the correlation_id that AIAnalysis audit client records
-		correlationID := analysis.Spec.RemediationRequestRef.Name
+			// This matches the correlation_id that AIAnalysis audit client records
+			correlationID := analysis.Spec.RemediationRequestRef.Name
 
 			// NT Pattern: Use Eventually() with Flush() to wait for KA events to be written
 			By("Querying ALL events by correlation_id and waiting for KA events")
@@ -537,7 +543,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 					return 0
 				}
 				allEvents = allResp.Data
-				
+
 				// Count KA events specifically - don't exit until we have at least 1
 				kaEventType := ogenclient.AIAgentResponsePayloadAuditEventEventData
 				kaCount := 0

@@ -78,7 +78,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
-							Severity:         "warning",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
