@@ -67,9 +67,10 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			ResourceName:          "test-pod-adv",
 			ErrorMessage:          signalName + " triggered for adversarial test",
 			Environment:           "production",
-			Priority:              "high",
-			RiskTolerance:         "medium",
-			BusinessCategory:      "test",
+			// generic-restart-v1 is cataloged at P2; OOM workflows use a wildcard.
+			Priority:         "P2",
+			RiskTolerance:    "medium",
+			BusinessCategory: "test",
 		}
 	}
 
@@ -322,7 +323,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		// mock LLM returns generic-restart-v1 workflow.
 		// Replaces E2E-KA-433-ADV-016 which asserted rca_incomplete.
 		It("E2E-KA-1039-001: deleted resource proceeds to workflow selection", func() {
-			spec := buildRequest("1039-001", "mock_rca_incomplete", "critical")
+			spec := buildRequest("1039-001", "mock_rca_incomplete", "high")
 			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -350,7 +351,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		// Verifies observability: when enrichment detects a deleted target,
 		// a warning is added to the investigation response.
 		It("E2E-KA-1039-002: deleted resource warning in response", func() {
-			spec := buildRequest("1039-002", "mock_rca_incomplete", "critical")
+			spec := buildRequest("1039-002", "mock_rca_incomplete", "high")
 			result, err := investigate(spec)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())

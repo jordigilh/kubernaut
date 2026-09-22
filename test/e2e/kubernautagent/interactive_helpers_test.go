@@ -43,6 +43,13 @@ func withSignalName(name string) rrOption {
 	}
 }
 
+// withSeverity overrides the default warning severity on the RR.
+func withSeverity(severity string) rrOption {
+	return func(spec *remediationv1.RemediationRequestSpec) {
+		spec.Severity = severity
+	}
+}
+
 // createTestRemediationRequest provisions a minimal RemediationRequest CRD in the
 // Kind cluster so that the RRExistenceChecker (HARM-004) allows the session to start.
 // The RR is created with the bare minimum fields required by the CRD validation schema.

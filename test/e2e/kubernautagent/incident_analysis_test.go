@@ -78,7 +78,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 				ResourceName:          "test-pod",
 				ErrorMessage:          "No automation available",
 				Environment:           "production",
-				Priority:              "P1",
+				Priority:              "P2",
 				RiskTolerance:         "medium",
 				BusinessCategory:      "standard",
 			}
