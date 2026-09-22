@@ -868,7 +868,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_watch"
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
-	` + kaInteractiveFleetBridgeScenarioYAML(kaInteractiveFleetNamespace(afRemediateNS))
+` + kaInteractiveFleetBridgeScenarioYAML(kaInteractiveFleetNamespace(afRemediateNS))
 	afTranscriptYAML := gitOpsInteractiveInvestigationScenarioYAML(afRemediateNS["interactive"], afGitOpsWorkflowID)
 
 	configMap := fmt.Sprintf(`apiVersion: v1
