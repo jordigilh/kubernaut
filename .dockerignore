@@ -22,6 +22,10 @@ bin/
 *.test
 *.prof
 
+# Local analysis and CI image artifacts
+.codegraph/
+ci-images-*/
+
 # Logs
 *.log
 logs/

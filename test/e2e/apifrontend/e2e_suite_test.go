@@ -27,12 +27,10 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "E2E Suite — AF + KA + DS Integration")
 }
 
-const (
-	e2eClusterName = "apifrontend-e2e"
-	e2eNamespace   = "kubernaut-system"
-)
+const e2eNamespace = "kubernaut-system"
 
 var (
+	e2eClusterName = getEnvOrDefault("AF_E2E_CLUSTER_NAME", kinfra.AFDefaultClusterName)
 	setupSucceeded bool
 	anyTestFailed  bool
 	kubeconfigPath string
@@ -51,7 +49,7 @@ var _ = SynchronizedBeforeSuite(
 	func() []byte {
 		homeDir, err := os.UserHomeDir()
 		Expect(err).NotTo(HaveOccurred())
-		kubeconfigPath = fmt.Sprintf("%s/.kube/apifrontend-e2e-config", homeDir)
+		kubeconfigPath = getEnvOrDefault("AF_E2E_KUBECONFIG", filepath.Join(homeDir, ".kube", e2eClusterName+"-config"))
 
 		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
@@ -70,7 +68,7 @@ var _ = SynchronizedBeforeSuite(
 			err = kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred(), "Prometheus deployment must succeed for severity triage tests")
 
-			promURL := "http://localhost:9190"
+			promURL := e2eHostURL("http", 9190)
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for Prometheus readiness...")
 			Expect(kinfra.WaitForPrometheusReady(ctx, promURL, 90*time.Second, GinkgoWriter)).
@@ -103,9 +101,9 @@ var _ = SynchronizedBeforeSuite(
 	},
 	func(data []byte) {
 		kubeconfigPath = string(data)
-		baseURL = "https://localhost:18443"
-		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
-		dexURL = "https://localhost:5556/dex"
+		baseURL = e2eHostURL("https", 18443)
+		caCertPath = filepath.Join(getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName)), "ca.crt")
+		dexURL = e2eHostURL("https", 5556) + "/dex"
 		clientID = "kubernaut-apifrontend"
 		clientSecret = "e2e-client-secret"
 		username = "e2e-user@kubernaut.ai"
@@ -149,7 +147,7 @@ var _ = SynchronizedBeforeSuite(
 			"structured-decision-target", "structured-decision-target-2",
 			"structured-decision-target-3", "structured-decision-target-4")
 
-		healthURL := "http://localhost:18081"
+		healthURL := e2eHostURL("http", 18081)
 		Eventually(func() error {
 			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec,noctx // E2E health probe
 			if err != nil {
@@ -172,7 +170,7 @@ var _ = SynchronizedBeforeSuite(
 				return fmt.Errorf("TLS healthz returned %d", resp.StatusCode)
 			}
 			return nil
-		}, 30*time.Second, 2*time.Second).Should(Succeed(), "AF should be reachable over TLS (https://localhost:18443)")
+		}, 30*time.Second, 2*time.Second).Should(Succeed(), "AF should be reachable over TLS ("+baseURL+")")
 	},
 )
 

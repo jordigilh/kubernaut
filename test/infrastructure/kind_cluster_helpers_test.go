@@ -103,6 +103,43 @@ nodes:
 	})
 })
 
+// BR-TEST-005 / DD-TEST-001: isolated E2E runs may need a separate host-port
+// block while retaining the service's in-cluster NodePorts.
+var _ = Describe("offsetKindHostPorts", func() {
+	const sampleConfig = `kind: Cluster
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30556
+    hostPort: 5556
+    protocol: TCP
+  - containerPort: 30443
+    hostPort: 18443 # AF HTTPS
+    protocol: TCP
+`
+
+	It("UT-INFRA-KIND-012: offsets host ports without changing container ports", func() {
+		result, err := offsetKindHostPorts(sampleConfig, 30000)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("containerPort: 30556"))
+		Expect(result).To(ContainSubstring("hostPort: 35556"))
+		Expect(result).To(ContainSubstring("containerPort: 30443"))
+		Expect(result).To(ContainSubstring("hostPort: 48443 # AF HTTPS"))
+	})
+
+	It("UT-INFRA-KIND-013: offset zero preserves the original config", func() {
+		result, err := offsetKindHostPorts(sampleConfig, 0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(sampleConfig))
+	})
+
+	It("UT-INFRA-KIND-014: rejects host-port overflow", func() {
+		_, err := offsetKindHostPorts("hostPort: 60000\n", 5536)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("host port 65536 is outside"))
+	})
+})
+
 // Issue #2327/#2326 helios08 fleet E2E triage: an earlier version of
 // clusterHasLiveNode checked only `err == nil && output != ""`, which is
 // always true for `kind get nodes` -- it exits 0 and prints diagnostic

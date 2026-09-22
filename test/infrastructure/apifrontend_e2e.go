@@ -39,6 +39,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,32 @@ const (
 	// AFDefaultNamespace is the Kubernetes namespace for AF E2E workloads.
 	AFDefaultNamespace = kubernautSystem
 )
+
+// afE2EHostPortOffset returns the optional host-port offset used for isolated
+// AF E2E runs. The offset changes only Kind's host bindings; service and
+// NodePort values inside the cluster remain at their established defaults.
+func afE2EHostPortOffset() (int, error) {
+	raw := strings.TrimSpace(os.Getenv("AF_E2E_HOST_PORT_OFFSET"))
+	if raw == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid AF_E2E_HOST_PORT_OFFSET %q: %w", raw, err)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("AF_E2E_HOST_PORT_OFFSET must be non-negative")
+	}
+	return offset, nil
+}
+
+func afE2EHostPort(defaultPort int) int {
+	offset, err := afE2EHostPortOffset()
+	if err != nil {
+		return defaultPort
+	}
+	return defaultPort + offset
+}
 
 // SetupAPIFrontendE2EInfrastructure is the top-level orchestrator for AF E2E tests.
 // It deploys the full kubernaut stack (KA+DS+PostgreSQL+Redis+mock-LLM+DEX+CRDs)
@@ -68,6 +95,10 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	projectRoot := getProjectRoot()
+	hostPortOffset, err := afE2EHostPortOffset()
+	if err != nil {
+		return err
+	}
 
 	coverdataDir := filepath.Join(projectRoot, "coverdata")
 	if err := os.MkdirAll(coverdataDir, 0o777); err != nil { //nolint:gosec // G301: world-readable dir needed for Kind volume mount
@@ -145,6 +176,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		CleanupOrphanedContainers: true,
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
+		HostPortOffset:            hostPortOffset,
 	}
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -210,7 +242,10 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
 
-	certDir := filepath.Join(os.TempDir(), "apifrontend-e2e-certs")
+	certDir := os.Getenv("AF_E2E_CERT_DIR")
+	if certDir == "" {
+		certDir = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", clusterName)
+	}
 	if err := AFGenerateCerts(ctx, certDir, writer); err != nil {
 		return fmt.Errorf("failed to generate AF certs: %w", err)
 	}
@@ -220,7 +255,9 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	_ = os.Setenv("AF_E2E_CERT_DIR", certDir)
 	_ = os.Setenv("CERT_DIR", certDir)
 	_ = os.Setenv("AF_E2E_CA_CERT", filepath.Join(certDir, "ca.crt"))
-	_ = os.Setenv("AF_E2E_DEX_URL", "https://localhost:5556/dex")
+	if os.Getenv("AF_E2E_DEX_URL") == "" {
+		_ = os.Setenv("AF_E2E_DEX_URL", fmt.Sprintf("https://localhost:%d/dex", afE2EHostPort(5556)))
+	}
 	_ = os.Setenv("KUBECONFIG", kubeconfigPath)
 
 	_, _ = fmt.Fprintln(writer, "Phase 5: Deploy AF (programmatic)")

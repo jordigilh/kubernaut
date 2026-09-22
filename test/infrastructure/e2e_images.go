@@ -83,7 +83,7 @@ func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer i
 		return "", false
 	}
 
-	localImageName := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
+	localImageName := prebuiltCIArtifactImageName(serviceName, artifactTag)
 
 	const maxAttempts = 2
 	var output []byte
@@ -106,6 +106,14 @@ func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer i
 		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s after %d attempts (falling back): %v\n", serviceName, maxAttempts, err)
 	}
 	return "", false
+}
+
+func prebuiltCIArtifactImageName(serviceName, artifactTag string) string {
+	imageName := serviceName
+	if serviceName == "datastorage" {
+		imageName = "kubernaut/datastorage"
+	}
+	return fmt.Sprintf("localhost/%s:%s", imageName, artifactTag)
 }
 
 // ShouldSkipImageExportAndPrune returns true if image export and Podman prune should be skipped.

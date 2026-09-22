@@ -173,6 +173,18 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func e2eHostPort(defaultPort int) int {
+	offset, err := strconv.Atoi(getEnvOrDefault("AF_E2E_HOST_PORT_OFFSET", "0"))
+	if err != nil {
+		return defaultPort
+	}
+	return defaultPort + offset
+}
+
+func e2eHostURL(scheme string, defaultPort int) string {
+	return fmt.Sprintf("%s://localhost:%d", scheme, e2eHostPort(defaultPort))
+}
+
 func newTLSClient(caCertPath string) *http.Client {
 	base := newTLSTransport(caCertPath)
 	return &http.Client{
