@@ -346,7 +346,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-004: select alternative workflow propagates parameters through real KA (#1169)", func() {
 		It("should discover alternatives with parameters and successfully select one", func() {
 			rrID := fmt.Sprintf("rr-disc004-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"), withSeverity("critical"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
