@@ -191,7 +191,7 @@ func (h *handler) handleFullDAG(
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
-		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
+		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls, cfg))
 		return
 	}
 
@@ -216,10 +216,10 @@ func (h *handler) handleFullDAG(
 					return response.ExtractFieldFromToolResult(req.Messages, toolName, field)
 				})
 				h.trackToolCall(next.Name)
-				writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, next.Name, scenarios.MockScenarioConfig{
-					ToolCallName: next.Name,
-					ToolCallArgs: args,
-				}))
+				responseCfg := cfg
+				responseCfg.ToolCallName = next.Name
+				responseCfg.ToolCallArgs = args
+				writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, next.Name, responseCfg))
 				return
 			}
 		}

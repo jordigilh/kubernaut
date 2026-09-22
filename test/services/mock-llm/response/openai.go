@@ -28,8 +28,7 @@ import (
 
 // usageFor returns the scenario-scripted Usage when cfg carries a Usage
 // override (issue #2387), falling back to the builder's deterministic
-// default otherwise. BuildMultiToolCallResponse takes no scenario config
-// and always reports its default.
+// default otherwise.
 func usageFor(cfg scenarios.MockScenarioConfig, def openai.Usage) openai.Usage {
 	if cfg.Usage != nil {
 		return openai.Usage{
@@ -79,7 +78,7 @@ func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioCon
 
 // BuildMultiToolCallResponse creates a ChatCompletionResponse with multiple
 // tool calls in a single assistant message, enabling parallel tool execution.
-func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolCallEntry) openai.ChatCompletionResponse {
+func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolCallEntry, cfg scenarios.MockScenarioConfig) openai.ChatCompletionResponse {
 	calls := make([]openai.ToolCall, len(toolEntries))
 	for i, entry := range toolEntries {
 		argsJSON, _ := json.Marshal(entry.Arguments)
@@ -110,7 +109,7 @@ func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolC
 				FinishReason: "tool_calls",
 			},
 		},
-		Usage: openai.Usage{PromptTokens: 500, CompletionTokens: 80, TotalTokens: 580},
+		Usage: usageFor(cfg, openai.Usage{PromptTokens: 500, CompletionTokens: 80, TotalTokens: 580}),
 	}
 }
 

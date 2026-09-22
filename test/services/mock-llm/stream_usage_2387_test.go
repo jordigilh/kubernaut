@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,18 +39,13 @@ import (
 // tokens. The SSE transport must emit the response Usage as a trailing
 // usage chunk (OpenAI stream_options.include_usage convention), and
 // scenarios must be able to script distinctive per-scenario values via the
-// YAML `usage:` override (defaults = the builders' current hardcoded
-// values, so existing scenarios are unaffected).
-var _ = Describe("Streamed usage reporting (issue #2387)", func() {
-	postStream := func(ts *httptest.Server, text string, includeUsage bool) string {
-		reqBody := openai.ChatCompletionRequest{
-			Model:    "mock-model",
-			Stream:   true,
-			Messages: []openai.Message{{Role: "user", Content: strPtr(text)}},
-		}
-		if includeUsage {
-			reqBody.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
-		}
+// YAML `usage:` override (defaults = the builders' current hardcoded values,
+// so existing scenarios are unaffected). These assertions are
+// control-supporting evidence: exact provider usage preserves the content
+// needed for FedRAMP AU-3 records and SOC2 CC7.2 investigation monitoring;
+// durable audit persistence is tested separately in the KA audit suites.
+var _ = Describe("Streamed usage reporting (issue #2387) [BR-KA-OBSERVABILITY-001, AU-3, SOC2 CC7.2]", func() {
+	postStreamRequest := func(ts *httptest.Server, reqBody openai.ChatCompletionRequest) string {
 		body, err := json.Marshal(reqBody)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -62,6 +57,18 @@ var _ = Describe("Streamed usage reporting (issue #2387)", func() {
 		raw, err := io.ReadAll(resp.Body)
 		Expect(err).NotTo(HaveOccurred())
 		return string(raw)
+	}
+
+	postStream := func(ts *httptest.Server, text string, includeUsage bool) string {
+		reqBody := openai.ChatCompletionRequest{
+			Model:    "mock-model",
+			Stream:   true,
+			Messages: []openai.Message{{Role: "user", Content: strPtr(text)}},
+		}
+		if includeUsage {
+			reqBody.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+		}
+		return postStreamRequest(ts, reqBody)
 	}
 
 	streamedUsage := func(raw string) openai.Usage {
@@ -148,6 +155,67 @@ var _ = Describe("Streamed usage reporting (issue #2387)", func() {
 			defer ts.Close()
 
 			Expect(streamedUsage(postStream(ts, "gibberish that matches no scenario", false))).To(Equal(openai.Usage{}))
+		})
+	})
+
+	Describe("UT-MOCK-2387-005: multi-tool usage override", func() {
+		It("emits the scripted usage for a streamed multi-tool response", func() {
+			registry := scenarios.NewRegistry()
+			registry.Register(&configuredTestScenario{config: scenarios.MockScenarioConfig{
+				ScenarioName: "multi-tool-usage",
+				MultiToolCalls: []scenarios.MultiToolCallEntry{
+					{Name: "kubectl_get_yaml"},
+					{Name: "kubectl_get_by_name"},
+				},
+				Usage: &scenarios.MockUsage{PromptTokens: 111, CompletionTokens: 222, TotalTokens: 333},
+			}})
+			ts := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+			defer ts.Close()
+
+			usage := streamedUsage(postStreamRequest(ts, openai.ChatCompletionRequest{
+				Model:         "mock-model",
+				Stream:        true,
+				StreamOptions: &openai.StreamOptions{IncludeUsage: true},
+				Messages:      []openai.Message{{Role: "user", Content: strPtr("multi-tool usage")}},
+				Tools: []openai.Tool{
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_yaml"}},
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_by_name"}},
+				},
+			}))
+
+			Expect(usage).To(Equal(openai.Usage{PromptTokens: 111, CompletionTokens: 222, TotalTokens: 333}))
+		})
+	})
+
+	Describe("UT-MOCK-2387-006: chained usage override", func() {
+		It("emits the scripted usage for a streamed chained tool response", func() {
+			registry := scenarios.NewRegistry()
+			registry.Register(&configuredTestScenario{config: scenarios.MockScenarioConfig{
+				ScenarioName: "chained-usage",
+				ToolCallName: "kubectl_get_yaml",
+				NextToolCall: &scenarios.MultiToolCallEntry{Name: "kubectl_get_by_name"},
+				Usage:        &scenarios.MockUsage{PromptTokens: 444, CompletionTokens: 555, TotalTokens: 999},
+			}})
+			ts := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+			defer ts.Close()
+
+			messages := []openai.Message{{Role: "user", Content: strPtr("chained usage")}}
+			tools := []openai.Tool{
+				{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_yaml"}},
+				{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_by_name"}},
+			}
+			first := postOpenAI(ts.URL, openai.ChatCompletionRequest{Model: "mock-model", Messages: messages, Tools: tools})
+			appendOpenAIToolResult(&messages, first, `{"ok":true}`)
+
+			usage := streamedUsage(postStreamRequest(ts, openai.ChatCompletionRequest{
+				Model:         "mock-model",
+				Stream:        true,
+				StreamOptions: &openai.StreamOptions{IncludeUsage: true},
+				Messages:      messages,
+				Tools:         tools,
+			}))
+
+			Expect(usage).To(Equal(openai.Usage{PromptTokens: 444, CompletionTokens: 555, TotalTokens: 999}))
 		})
 	})
 })
