@@ -101,10 +101,32 @@ func fleetSendTurnWithBody(body string, timeout time.Duration) afA2ATaskResult {
 }
 
 func fleetDeployConsentTarget(targetNS string) {
-	Expect(infrastructure.DeployMemoryEaterNamed(ctx, "memory-eater", targetNS, kubeconfigPath, "64Mi", "20Mi", GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.DeployMemoryEaterNamed(ctx, "memory-eater", targetNS, remoteKubeconfigPath, "64Mi", "20Mi", GinkgoWriter)).To(Succeed())
 	DeferCleanup(func() {
 		dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "memory-eater", Namespace: targetNS}}
-		_ = k8sClient.Delete(context.Background(), dep)
+		_ = remoteK8sClient.Delete(context.Background(), dep)
+	})
+
+	// The fleet investigations target remote-cluster. Ground the severity
+	// triager with the suite's real PrometheusRule using a uniquely labeled
+	// resource metric; an Alertmanager-only injection is invisible to AF's
+	// Prometheus-backed triager.
+	const prometheusURL = "http://localhost:9190"
+	metric := infrastructure.TestMetric{
+		Name: "memory_eater_grounding_signal",
+		Labels: map[string]string{
+			"namespace": targetNS,
+			"kind":      "Deployment",
+			"name":      "memory-eater",
+			"cluster":   "remote-cluster",
+		},
+		Value: 1,
+	}
+	Expect(infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{metric})).To(Succeed())
+	Expect(infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, "MemoryEaterResourcePressure", infrastructure.RuleStateFiring, 60*time.Second)).To(Succeed())
+	DeferCleanup(func() {
+		metric.Value = 0
+		Expect(infrastructure.InjectMetrics(context.Background(), prometheusURL, []infrastructure.TestMetric{metric})).To(Succeed())
 	})
 }
 

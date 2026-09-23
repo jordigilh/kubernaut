@@ -35,6 +35,8 @@ spec:
               value: "false"
             - name: MOCK_LLM_CONFIG_PATH
               value: "/etc/mock-llm/config.yaml"
+            - name: MOCK_LLM_HUB_CLUSTER_ID
+              value: "__HUB_CLUSTER_ID__"
           volumeMounts:
             - name: mock-llm-config
               mountPath: /etc/mock-llm
@@ -108,6 +110,7 @@ data:
             namespace: "af-investigate-e2e"
             name: "af-investigate-target"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_investigate"
         caller: "af"
@@ -133,6 +136,7 @@ data:
             namespace: "af-investigate-e2e"
             name: "af-investigate-target"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_investigate_resume"
         keywords: ["stream the investigation", "resume investigation", "check investigation status"]
@@ -197,6 +201,7 @@ data:
             namespace: "af-structured-decision-e2e"
             name: "structured-decision-target"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_structured_decision_ground_2"
         # Dedicated grounding call for structured_decision_e2e_test.go's
@@ -224,6 +229,7 @@ data:
             namespace: "af-structured-decision-e2e"
             name: "structured-decision-target-2"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_structured_decision_ground_3"
         # Dedicated grounding call for structured_decision_e2e_test.go's
@@ -247,6 +253,7 @@ data:
             namespace: "af-structured-decision-e2e"
             name: "structured-decision-target-3"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_structured_decision_ground_4"
         # Dedicated grounding call for structured_decision_e2e_test.go's
@@ -267,6 +274,7 @@ data:
             namespace: "af-structured-decision-e2e"
             name: "structured-decision-target-4"
             kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
@@ -457,6 +465,7 @@ data:
             kind: "Deployment"
             name: "web-frontend"
             api_version: "apps/v1"
+            cluster_id: "__HUB_CLUSTER_ID__"
 
       # #1637: two-step interactive flow proving live event relay for pooled
       # kubernaut_message calls. Turn 1 opens the interactive session (via

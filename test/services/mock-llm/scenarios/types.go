@@ -67,6 +67,10 @@ type MockScenarioConfig struct {
 	ResourceKind     string
 	ResourceNS       string
 	ResourceName     string
+	// ClusterID is the registered MCP Gateway cluster name for AF create-RR
+	// scenarios. It is forwarded as cluster_id so hub and spoke targets are
+	// both explicitly attributed.
+	ClusterID        string
 	APIVersion       string
 	APIGroup         string // optional; when set, included in kubectl tool call args for disambiguation (#1311)
 	IncludeAffected  bool

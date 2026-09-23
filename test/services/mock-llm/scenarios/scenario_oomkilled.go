@@ -42,6 +42,20 @@ func oomkilledConfig() MockScenarioConfig {
 	}
 }
 
+// fleetRoutingConfig backs E2E-FLEET-004 with the catalog-backed OOM workflow
+// for its remote memory-eater Deployment. The dedicated signal avoids the
+// generic fallback's stale Pod target and low-confidence manual-review path.
+func fleetRoutingConfig() MockScenarioConfig {
+	cfg := oomkilledConfig()
+	cfg.ScenarioName = "fleet_routing"
+	cfg.SignalName = "FleetRouting"
+	cfg.WorkflowTitle = "Fleet Routing - Increase Memory Limits"
+	cfg.Rationale = "E2E-FLEET-004 routes the remote memory-eater Deployment through a catalog-backed fleet workflow"
+	cfg.RootCause = "The remote Deployment is experiencing memory pressure"
+	cfg.ResourceName = "memory-eater"
+	return cfg
+}
+
 // oomkilledScenario matches explicit OOM signal names at high confidence and
 // falls back to the generic Kubernetes "BackOff" crash-loop reason at lower
 // confidence. "BackOff" alone is ambiguous -- it fires for ANY crash-looping

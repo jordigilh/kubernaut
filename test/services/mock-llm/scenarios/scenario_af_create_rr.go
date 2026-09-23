@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ func afCreateRRConfig() MockScenarioConfig {
 		ResourceKind:         "Deployment",
 		ResourceNS:           "kubernaut-system",
 		ResourceName:         "memory-eater",
+		ClusterID:            os.Getenv("MOCK_LLM_HUB_CLUSTER_ID"),
 		APIVersion:           "apps/v1",
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),

@@ -37,6 +37,7 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -69,7 +70,10 @@ import (
 // concurrently.
 //
 // Ref: Prometheus OTLP receiver -- https://prometheus.io/docs/guides/opentelemetry/
-func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, hubClusterID, kubeconfigPath string, writer io.Writer) error {
+	if hubClusterID == "" {
+		return fmt.Errorf("hub cluster ID is required for severity triage fixtures")
+	}
 	_, _ = fmt.Fprintln(writer, "Deploying Prometheus for severity triage testing...")
 
 	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -82,7 +86,7 @@ func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfi
 
 	_, _ = fmt.Fprintln(writer, "Seeding AF severity triage alert rules...")
 
-	if err := SeedTriageAlertRules(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := SeedTriageAlertRules(ctx, namespace, hubClusterID, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("seed triage alert rules: %w", err)
 	}
 
@@ -119,8 +123,15 @@ func waitForPrometheusRollout(ctx context.Context, namespace, kubeconfigPath str
 // SeedTriageAlertRules patches the Prometheus rules ConfigMap with AF-specific
 // alert rules for the 5-tier severity triage pipeline. After patching, it
 // triggers a Prometheus config reload.
-func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	rulesYAML := strings.TrimSpace(SeverityTriageAlertRulesYAML)
+func SeedTriageAlertRules(ctx context.Context, namespace, hubClusterID, kubeconfigPath string, writer io.Writer) error {
+	if hubClusterID == "" {
+		return fmt.Errorf("hub cluster ID is required for severity triage rules")
+	}
+	rulesYAML := strings.TrimSpace(strings.ReplaceAll(
+		SeverityTriageAlertRulesYAML,
+		"\"__HUB_CLUSTER_ID__\"",
+		strconv.Quote(hubClusterID),
+	))
 
 	patchJSON := fmt.Sprintf(`{"data":{"af-severity-triage.yml":%q}}`, rulesYAML)
 
@@ -385,6 +396,7 @@ groups:
         labels:
           severity: critical
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
         annotations:
           summary: "CPU usage is critically high"
       - alert: HighMemory
@@ -393,6 +405,7 @@ groups:
         labels:
           severity: high
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
         annotations:
           summary: "Memory usage is high"
       - alert: DiskPressure
@@ -401,6 +414,7 @@ groups:
         labels:
           severity: medium
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
         annotations:
           summary: "Disk usage is elevated"
       - alert: NetworkLatency
@@ -409,6 +423,7 @@ groups:
         labels:
           severity: high
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
         annotations:
           summary: "Network latency is high"
       - alert: AFInvestigateGrounding
@@ -417,6 +432,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: af-investigate-e2e
           kind: Pod
           name: af-investigate-target
@@ -428,6 +444,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: sev-userhint-ns
           kind: Deployment
           name: test-user-severity-bypass
@@ -439,6 +456,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target
@@ -450,6 +468,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-2
@@ -461,6 +480,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-3
@@ -472,6 +492,7 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-4

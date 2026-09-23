@@ -213,6 +213,9 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"name":        cfg.ResourceName,
 			"description": "Auto-remediation triggered by AI analysis",
 		}
+		if cfg.ClusterID != "" {
+			args["cluster_id"] = cfg.ClusterID
+		}
 		if cfg.APIVersion != "" {
 			args["api_version"] = cfg.APIVersion
 		}

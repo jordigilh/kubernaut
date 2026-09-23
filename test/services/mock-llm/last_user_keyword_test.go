@@ -116,6 +116,35 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 		})
 	})
 
+	Describe("UT-ML-2326-001: catalog keywords do not shadow an isolated signal scenario", func() {
+		It("should ignore a workflow keyword found only in earlier conversation context", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(nil)
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content:         "FleetExecClusterOverride2326 workflow catalog includes gitops-drift-2390-v1",
+				AllText:         "user FleetExecClusterOverride2326 assistant catalog lists gitops-drift-2390-v1",
+				SignalName:      "FleetExecClusterOverride2326",
+				LastUserContent: "continue this investigation",
+			})
+
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("fleet_exec_cluster_override_2326"))
+		})
+	})
+
+	Describe("UT-ML-004-001: FleetRouting resolves to a supported fleet workflow", func() {
+		It("should select the fleet routing scenario instead of the generic fallback", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(nil)
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				SignalName: "FleetRouting",
+			})
+
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("fleet_routing"))
+		})
+	})
+
 	Describe("UT-ML-1189-005: match_last_only=false matches full conversation (backward compat)", func() {
 		It("should match keyword present in any prior message", func() {
 			overrides := &config.Overrides{

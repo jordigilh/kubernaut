@@ -272,6 +272,9 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// E2E test's alert traffic -- see fleetExecClusterOverrideConfig's doc
 	// comment.
 	r.Register(newSignalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
+	// E2E-FLEET-004 (BR-INTEGRATION-054): resolve the isolated FleetRouting
+	// signal to the existing catalog-backed Deployment remediation workflow.
+	r.Register(newSignalScenario("fleet_routing", []string{"fleetrouting"}, fleetRoutingConfig()))
 
 	// E2E-FP-2378-001: standalone execution must ignore a catalog-declared
 	// execution cluster while retaining the metadata in WorkflowExecution.
@@ -281,12 +284,15 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// The A2A investigation targets a zero-replica Deployment, so the E2E
 	// fixture supplies a synthetic warning event to ground this signal.
 	r.Register(newSignalScenario("gitops_drift_2390", []string{"gitopsdrift2390"}, gitopsDrift2390Config()))
+	r.Register(newSelectorScenario("gitops_drift_2390", ScenarioSelector{
+		Keywords:          []string{"gitops-drift-2390", "gitops drift 2390"},
+		MatchLastUserOnly: true,
+	}, gitopsDrift2390Config()))
 	r.Register(newSelectorScenario("af_select_gitops_workflow_2390", ScenarioSelector{
 		Keywords:          []string{"select the discovered GitOps workflow"},
 		MatchLastUserOnly: true,
 		Confidence:        1.0,
 	}, gitopsSelectWorkflow2390Config()))
-	r.Register(newKeywordScenario("gitops_drift_2390", "gitops-drift-2390", gitopsDrift2390Config()))
 
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.

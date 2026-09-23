@@ -68,7 +68,7 @@ var _ = SynchronizedBeforeSuite(
 
 		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nDeploying Prometheus for severity triage testing...")
-			err = kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
+			err = kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kinfra.AFHubClusterID, kubeconfigPath, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred(), "Prometheus deployment must succeed for severity triage tests")
 
 			promURL := e2eHostURL("http", 9190)
