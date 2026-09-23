@@ -30,10 +30,11 @@ import (
 
 const fullPipelineA2AGroundingRulePrefix = "FullPipelineA2ASeverityGrounding_"
 
-// SeedFullPipelineA2AGroundingRules installs resource-correlated Prometheus
-// alerts for the FullPipeline A2A RR-creation scenarios. The alerts provide
-// real severity-triage evidence while route_skip_gateway prevents the fixture
-// from creating a second RR through AlertManager's Gateway receiver.
+// SeedFullPipelineA2AGroundingRules installs namespace-scoped Prometheus alerts
+// for the FullPipeline A2A RR-creation scenarios. Each scenario uses a unique
+// workload namespace; omitting the shared Deployment/name labels prevents one
+// scenario's alert from grounding another scenario's target. The route-skip
+// label prevents the fixture from creating a second RR through Gateway.
 func SeedFullPipelineA2AGroundingRules(ctx context.Context, namespace, kubeconfigPath string, targetNamespaces map[string]string, writer io.Writer) error {
 	rulesYAML, ruleNames := fullPipelineA2AGroundingRuleFile(targetNamespaces)
 	if len(ruleNames) == 0 {
@@ -107,8 +108,6 @@ func fullPipelineA2AGroundingRuleFile(targetNamespaces map[string]string) (strin
           severity: warning
           source: prometheus
           namespace: %s
-          kind: Deployment
-          name: memory-eater
           %s: %q
         annotations:
           summary: FullPipeline A2A severity grounding for %s`,

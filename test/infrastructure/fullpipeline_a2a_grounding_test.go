@@ -23,7 +23,7 @@ import (
 )
 
 var _ = Describe("FullPipeline A2A severity grounding rules [BR-SEVERITY-001, BR-INTERACTIVE-010, BR-TESTING-001]", func() {
-	It("UT-FP-2443-001: scopes firing triage evidence to each A2A target and suppresses Gateway relay", func() {
+	It("UT-FP-2443-001: scopes firing triage evidence to each A2A namespace and suppresses Gateway relay", func() {
 		rulesYAML, ruleNames := fullPipelineA2AGroundingRuleFile(map[string]string{
 			"combined-investigate": "fp-combined-1234",
 			"interactive":          "fp-interactive-abcd",
@@ -74,9 +74,10 @@ var _ = Describe("FullPipeline A2A severity grounding rules [BR-SEVERITY-001, BR
 			Expect(rule.Alert).To(Equal(alertName))
 			Expect(rule.Expr).To(Equal("vector(1) > 0"))
 			Expect(rule.For).To(Equal("0s"))
+			Expect(rule.Labels).To(HaveKeyWithValue("namespace", namespace))
 			Expect(rule.Labels).To(HaveKeyWithValue("severity", "warning"))
-			Expect(rule.Labels).To(HaveKeyWithValue("kind", "Deployment"))
-			Expect(rule.Labels).To(HaveKeyWithValue("name", "memory-eater"))
+			Expect(rule.Labels).NotTo(HaveKey("kind"))
+			Expect(rule.Labels).NotTo(HaveKey("name"))
 			Expect(rule.Labels).To(HaveKeyWithValue(SkipGatewayRouteLabelKey, SkipGatewayRouteLabelValue))
 		}
 	})
