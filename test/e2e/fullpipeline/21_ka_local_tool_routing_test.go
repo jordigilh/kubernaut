@@ -39,7 +39,7 @@ const fpLocalToolCallKeyword = "ka-tool-e2e-test"
 // from Fleet mode. The default Mock LLM scenario chooses kubectl_get_by_name
 // when no fleet-overlay tools are advertised and echoes live resource evidence.
 var _ = Describe("Local KA tool routing [issue #1729]", Label("fullpipeline", "ka", "local-tool"), func() {
-	It("E2E-FP-1729-001: an unattributed local alert uses kubectl_get_by_name", NodeTimeout(timeout), func() {
+	It("E2E-FP-1729-001: an unattributed local alert uses kubectl_get_by_name", NodeTimeout(timeout), func(_ SpecContext) {
 		targetName := fmt.Sprintf("ka-tool-e2e-target-%08x", uint32(time.Now().UnixNano()))
 
 		By("Creating a managed local Deployment with unique live evidence")
