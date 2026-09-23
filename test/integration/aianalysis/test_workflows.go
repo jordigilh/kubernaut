@@ -153,6 +153,19 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to delete"},
 			},
 		},
+		{
+			WorkflowID:  "imagepullbackoff-metrics-v1",
+			Name:        "ImagePullBackOff Confidence Metrics Fixture",
+			Description: "Test-only Pod restart workflow for confidence histogram integration coverage",
+			SignalType:  "ImagePullBackOff",
+			Severity:    "critical",
+			Component:   []string{"v1/Pod"},
+			Priority:    "P2",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
+			},
+		},
 	}
 
 	// Create workflows for staging, production, test, AND development environments

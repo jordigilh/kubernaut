@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	prometheusTestutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -89,13 +90,15 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		return prometheusTestutil.ToFloat64(counter.WithLabelValues(labelValues...))
 	}
 
-	// Helper to check if histogram has observations (WorkflowExecution pattern)
-	// Returns 1 if histogram exists and can be accessed (validates metrics recording)
-	getHistogramCount := func(histVec *prometheus.HistogramVec, labelValues ...string) int {
-		// Just accessing WithLabelValues validates the metric exists and is usable
-		// Integration tests verify metrics don't panic; E2E tests verify actual values
-		_ = histVec.WithLabelValues(labelValues...)
-		return 1 // Histogram exists and is accessible
+	// Read the actual histogram sample count for one label combination.
+	getHistogramSampleCount := func(histVec *prometheus.HistogramVec, labelValues ...string) uint64 {
+		observer := histVec.WithLabelValues(labelValues...)
+		metric := &dto.Metric{}
+		metricObserver, ok := observer.(prometheus.Metric)
+		Expect(ok).To(BeTrue(), "histogram observer must expose its metric")
+		Expect(metricObserver.Write(metric)).To(Succeed())
+		Expect(metric.GetHistogram()).NotTo(BeNil())
+		return metric.GetHistogram().GetSampleCount()
 	}
 
 	// ========================================
@@ -294,10 +297,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 	// ========================================
 	Context("Confidence Score Metrics via Workflow Selection", func() {
 		// NOTE: Running serially due to metrics registry state interference
-		It("should emit confidence score histogram during workflow selection - BR-AI-022", FlakeAttempts(3), func() {
+		It("IT-AA-004-001: emits confidence histogram after completed workflow selection - BR-AI-OBSERVABILITY-004", FlakeAttempts(3), func() {
 			// 1. Create AIAnalysis that will select a workflow
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-confidence-%s", testID)
+			baselineSampleCount := getHistogramSampleCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
+			createITAAAnalysisPodFixture(k8sClient, "staging", "confidence-pod")
 			aianalysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("metrics-test-confidence-%s", testID),
@@ -319,7 +324,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "confidence-pod",
-								Namespace: namespace,
+								Namespace: "staging",
 							},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
@@ -329,21 +334,21 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			}
 			Expect(k8sClient.Create(ctx, aianalysis)).To(Succeed())
 
-			// 2. Wait for workflow selection to complete
+			// 2. Wait for the successful business outcome that records this metric.
 			Eventually(func() bool {
 				var updated aianalysisv1.AIAnalysis
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return false
 				}
-				return updated.Status.GetRCAResult().SelectedWorkflow != nil
+				return updated.Status.Phase == aianalysisv1.PhaseCompleted && updated.Status.GetRCAResult().SelectedWorkflow != nil
 				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			// 3. Verify confidence score histogram was populated
-			Eventually(func() int {
-				return getHistogramCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
-			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Confidence score histogram should be populated during workflow selection")
+			// 3. Verify successful analysis emitted a new confidence score observation.
+			Eventually(func() uint64 {
+				return getHistogramSampleCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", baselineSampleCount),
+				"Confidence score histogram should gain a sample for a completed workflow selection")
 		})
 	})
 

@@ -180,6 +180,24 @@ func aiAnalysisFixtureScenarios() []*configScenario {
 				"DEPLOYMENT_NAME": "test-app",
 			},
 		},
+		{
+			ScenarioName: "aa_metrics_imagepullbackoff",
+			SignalName:   "ImagePullBackOff",
+			Severity:     "critical",
+			WorkflowName: "imagepullbackoff-metrics-v1",
+			ActionType:   "RestartPod",
+			Title:        "ImagePullBackOff - Confidence Metrics Fixture",
+			Rationale:    "Restart the Pod after the matching remediation workflow is discovered",
+			RootCause:    "The test Pod is intentionally configured to validate confidence metric recording",
+			ResourceKind: "Pod",
+			ResourceNS:   "staging",
+			ResourceName: "confidence-pod",
+			APIVersion:   "v1",
+			Parameters: map[string]string{
+				"NAMESPACE": "staging",
+				"POD_NAME":  "confidence-pod",
+			},
+		},
 	}
 
 	result := make([]*configScenario, 0, len(specs))

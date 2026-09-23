@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
@@ -204,6 +205,31 @@ var _ = Describe("Scenario Detection Rules", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.Scenario.Name()).To(Equal("default"),
 				"ImagePullBackOff must not select oomkill-increase-memory-v1")
+		})
+
+		It("UT-MOCK-004-001 / BR-AI-OBSERVABILITY-004: selects the seeded confidence-metrics workflow for the matching ImagePullBackOff fixture", func() {
+			const seededWorkflowID = "cf45df95-0bc0-4daa-9bd7-4fd3d11e9374"
+			registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{
+					"imagepullbackoff-metrics-v1:staging": {WorkflowID: seededWorkflowID},
+				},
+			})
+
+			prompt := "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Severity: critical\n- Resource: staging/Pod/confidence-pod"
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content:    prompt,
+				AllText:    prompt,
+				SignalName: "ImagePullBackOff",
+			})
+
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("aa_metrics_imagepullbackoff")) // BR-AI-OBSERVABILITY-004
+
+			configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			Expect(configured.Config().WorkflowName).To(Equal("imagepullbackoff-metrics-v1")) // BR-AI-OBSERVABILITY-004
+			Expect(configured.Config().ActionType).To(Equal("RestartPod")) // BR-AI-OBSERVABILITY-004
+			Expect(configured.Config().WorkflowID).To(Equal(seededWorkflowID))
 		})
 	})
 
