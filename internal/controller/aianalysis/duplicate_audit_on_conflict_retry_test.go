@@ -145,7 +145,7 @@ func conflictOnceOnStatusUpdate() interceptor.Funcs {
 	var calls int32
 	return interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if subResourceName == "status" && atomic.AddInt32(&calls, 1) == 1 {
+			if subResourceName == statusSubresourceName && atomic.AddInt32(&calls, 1) == 1 {
 				return apierrors.NewConflict(
 					schema.GroupResource{Group: "kubernaut.ai", Resource: "aianalyses"},
 					obj.GetName(),
@@ -165,7 +165,7 @@ func concurrentCommitOnceOnStatusUpdate(onConcurrentCommit func(client.Object)) 
 	var calls int32
 	return interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if subResourceName == "status" && atomic.AddInt32(&calls, 1) == 1 {
+			if subResourceName == statusSubresourceName && atomic.AddInt32(&calls, 1) == 1 {
 				committed := obj.DeepCopyObject().(client.Object)
 				if err := c.SubResource(subResourceName).Update(ctx, committed, opts...); err != nil {
 					return err
