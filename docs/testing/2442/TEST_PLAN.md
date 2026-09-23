@@ -7,7 +7,7 @@
 **Version**: 1.0
 **Created**: 2026-09-21
 **Author**: AI Assistant + Jordi Gil
-**Status**: Implemented; E2E pending
+**Status**: Implemented; fullpipeline E2E follow-up active
 **Branch**: `fix/2442-workflow-discovery-membership`
 
 ---
@@ -77,6 +77,8 @@ selection context.
 | R6 | Workflow/environment UUID binding selects the wrong candidate | `get_workflow` or submission uses a catalog-invalid ID | Medium | UT-MOCK-2442-018, IT-MOCK-2442-016, E2E-MOCK-2442-001 | Exact binding, deterministic fallback, and ambiguity rejection |
 | R7 | Legacy scenarios regress during migration | Broad Mock LLM and E2E failures | Medium | IT-MOCK-2442-019, existing suite | Retain legacy DAG paths and run the full affected suite |
 | R8 | Future provider is coupled to OpenAI types | Costly Anthropic or other adapter addition | Low | UT-MOCK-2442-007, design review | Canonical planner package has no provider response imports |
+| R9 | Mock-selected workflow is excluded by the real signal-context catalog filters | AIAnalysis becomes unresolved/Failed and downstream workflow tests time out | High | E2E-FP-118-001, E2E-FP-1542-001, E2E-MOCK-2442-001 | Assert emitted severity/component/environment/priority against seeded workflow labels before selection |
+| R10 | A2A RR-creation fixtures lack correlating Prometheus evidence | Severity triage fails before RR creation; chained calls receive no RR ID | High | E2E-FP-1853-001/002 and affected A2A FP cases | Seed and await a matching Prometheus alert/rule before RR-creating tools; retain negative fail-closed coverage |
 
 ### 3.1 Risk-to-Test Traceability
 
@@ -215,6 +217,8 @@ after the cause is identified and the affected test can run deterministically.
 | BR-MOCK-014 | Concurrent provider requests do not leak state | P0 | Integration | Existing integration coverage | Implemented |
 | BR-TESTING-001 | Scenario and environment overrides are deterministic | P0 | Unit | UT-MOCK-2442-018 | Implemented |
 | BR-TESTING-001 | E2E configuration wires deterministic overrides | P0 | Integration | Existing config-generator coverage | Implemented |
+| BR-KA-017-003 / BR-WORKFLOW-004 | Filtered discovery returns the expected workflow only when its labels match signal context | P0 | E2E | E2E-FP-118-001, E2E-FP-1542-001 | RCA follow-up planned |
+| BR-SEVERITY-001 / BR-INTERACTIVE-010 | A2A RR creation proceeds with correlated alert/rule evidence and remains fail-closed without it | P0 | E2E | E2E-FP-1853-001/002, E2E-FP-1918-001 | RCA follow-up planned |
 | BR-MOCK-010 | Legacy and custom non-discovery flows remain compatible | P0 | Integration | Existing Mock LLM suite | Implemented |
 | BR-KA-OBSERVABILITY-001 | Streamed multi-tool and chained responses preserve exact scripted usage | P1 | Unit | UT-MOCK-2387-005..006 | Implemented |
 
@@ -267,6 +271,24 @@ after the cause is identified and the affected test can run deterministically.
 | ID | Business outcome | Phase |
 |---|---|---|
 | E2E-MOCK-2442-001 | Kind-based AIA/KA journey discovers the seeded workflow before selection | Pending: environment not run |
+| E2E-FP-118-001 | Signal-context filters return the OOM workflow expected by the seeded Mock LLM scenario | RCA follow-up planned |
+| E2E-FP-1542-001 | BackOff/CrashLoop context discovers the real ConfigMap-fix workflow and completes the fix | RCA follow-up planned |
+| E2E-FP-1853-001/002 | A2A-created RR uses grounded severity evidence and passes a valid RR ID through the tool chain | RCA follow-up planned |
+| E2E-FP-1918-001, E2E-FP-1899-001/002 | A2A actionability/consent contracts remain covered after RR-creation fixtures are grounded | RCA follow-up planned |
+
+### Fullpipeline RCA Follow-Up — Run 35823531457
+
+The approved follow-up keeps production discovery-membership and severity gates
+fail-closed. Fullpipeline test namespaces and test-only workflow labels must make the
+intended workflow eligible under the actual `SignalProcessing` context. A2A specs that
+exercise RR creation must provide active, resource-correlated Prometheus evidence; a
+Kubernetes Warning Event alone is not severity-triage evidence for these tools.
+
+For each workflow-selection E2E, capture/assert the actual signal filters
+(`severity`, `component`, `environment`, `priority`) and prove the expected seeded
+workflow UUID appears in `list_workflows` before the mock requests `get_workflow` or
+returns a selection. Existing negative membership tests must remain green so the fix
+does not bypass the catalog contract.
 
 ### Tier Skip Rationale
 
@@ -500,6 +522,8 @@ make test
 | Mode policy | Handler dispatch | Tool or text response | IT-MOCK-2442-015, IT-MOCK-2442-023 | Implemented |
 | E2E config generation | `DeployMockLLMInNamespace` | Running container behavior | IT-MOCK-2442-016, E2E-MOCK-2442-001 | Pending: E2E not run |
 | Integration config generation | `WriteMockLLMConfigFile` | Running Mock LLM behavior | IT-MOCK-2442-016 | Covered by existing tests |
+| Fullpipeline signal-to-workflow path | Gateway → SignalProcessing → AIAnalysis/KA discovery | WorkflowExecution reaches expected terminal result | E2E-FP-118-001, E2E-FP-1542-001 | RCA follow-up planned |
+| Fullpipeline A2A RR-creation path | API Frontend A2A → severity triage → RemediationRequest | RR is created only after matching Prometheus evidence | E2E-FP-1853-001/002 and affected consent/actionability specs | RCA follow-up planned |
 
 Unit tests do not count as wiring proof.
 
