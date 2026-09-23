@@ -548,6 +548,14 @@ and E2E tests use requirements-based coverage derived from compliance mandates.
 
 Mandatory validation gates for AI coding agents. Human contributors should follow these as mental checklists.
 
+### OpenCode Workspace Search Through Engram
+
+OpenCode uses this workspace's single Engram MCP route for memory and code tools. Keep zvec-grep behind Engram: do not add a separate zvec-grep MCP server or register CocoIndex/Serena directly for this workspace.
+
+Use `zvec_grep_search` through Engram when a workspace-grounded question needs semantic, cross-file, causal, or workflow-flow discovery. Keep exact symbol and reference lookups on the corresponding Engram tools (`find_symbol`, `find_referencing_symbols`, `find_implementations`). Use the current Kubernaut workspace as the absolute `root`.
+
+For a question that explicitly asks about multiple stages, causes, or handoffs, keep the user's original wording in the primary hybrid `query` and add at most one supplemental `vector` group for one distinct conceptual facet. Use a supplemental `fts` group only for exact terms already present in the request or retrieved evidence. Leave `fuse` unset and use a small per-group `limit` (for example, 5) so group coverage and ranks stay visible. For atomic questions or uncertain decompositions, send only the normal hybrid `query`. Do not invent repository-specific identifiers.
+
 ### CHECKPOINT A: Type Reference Validation
 
 **Trigger**: About to reference any struct field.
