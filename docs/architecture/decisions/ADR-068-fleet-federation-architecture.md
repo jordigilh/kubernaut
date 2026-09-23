@@ -1,10 +1,36 @@
 # ADR-068: Fleet Federation Architecture
 
-**Status**: Implemented (MVP)
+**Status**: Implemented (MVP; amended 2026-09-22)
 **Date**: 2026-06-19
 **Deciders**: Architecture Team
 **Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, WE, and a new FMC Writer service (#54)
 **Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery), DD-FLEET-005 (Cluster-Transparent Tool Exposure — supersedes decision #11's LLM-facing discovery tools), DD-FLEET-007 (Ansible Engine Not Supported for Fleet Execution — amends decision #9 and Alternative H)
+
+## Amendment (2026-09-22): Hub Is a Gateway-Routed Fleet Cluster
+
+This amendment supersedes the earlier ADR-068 behavior that treated an empty
+`ClusterID` as the local-hub shortcut in fleet mode. It also supersedes ADR-065's
+cluster-identity source/format for fleet remediation requests; the CRD field itself
+remains the per-request identity carrier.
+
+When fleet mode is enabled:
+
+1. The hub's `kube-mcp-server` MUST be registered in the MCP Gateway, using its
+   registered name as the hub cluster ID (the standard demo registration is `hub`).
+2. Every remediation target, including a hub-local target, MUST provide a non-empty
+   `cluster_id` equal to that MCP Gateway registration name. The corresponding
+   Prometheus alert/rule MUST carry the same exact `cluster` label. Missing or
+   mismatched attribution fails closed.
+3. All fleet-mode reads and remediation execution, including operations targeting
+   the hub, MUST route through the MCP Gateway. A hub registration is not a reason
+   to fall back to a service's direct in-cluster client.
+4. `RemediationRequest.Spec.ClusterID` stores the MCP Gateway registration ID/name,
+   not the `kube-system` namespace UID. `ClusterName` remains removed as a separate
+   CRD field; the Gateway registration name is the routing identity.
+
+The fleet setup guide provisions both `hub` and `remote-cluster` registrations and
+is the operational reference for this topology. An empty `ClusterID` no longer
+identifies the hub in fleet mode.
 
 ## Context
 
@@ -1508,9 +1534,10 @@ spec:
 
 ### Overview
 
-The WorkflowExecution (WE) controller gains the ability to create Jobs and
-Tekton PipelineRuns on remote clusters by routing K8s write operations through
-the MCP Gateway. This extends the read-only MCP client (`mcpclient.Client`)
+The WorkflowExecution (WE) controller creates Jobs and Tekton PipelineRuns on
+the cluster named by `ClusterID` by routing K8s write operations through the MCP
+Gateway in fleet mode. This includes the registered hub cluster. This extends
+the read-only MCP client (`mcpclient.Client`)
 with a separate `WriterClient` type and introduces a `ClientFactory` pattern
 for transparent local/remote routing.
 
@@ -1520,16 +1547,17 @@ for transparent local/remote routing.
 
 ```yaml
 spec:
-  clusterID: "prod-east-1"    # empty = local hub cluster
+  clusterID: "hub"             # exact MCP Gateway registration name, including the hub
   executionEngine: "job"
   workflowRef:
     workflowID: "restart-pod"
     executionBundle: "quay.io/kubernaut/workflow-restart:v1"
 ```
 
-When `ClusterID` is empty (default), execution runs on the local hub cluster
-exactly as before. When set, the executor routes operations to the remote
-cluster via MCP Gateway.
+In fleet mode, `ClusterID` is required and selects the MCP Gateway registration
+for every target, including `hub`; an empty value is rejected rather than routed
+directly to the process-local cluster. With fleet mode disabled, the legacy
+single-cluster local execution path remains available.
 
 ### Design: ClientFactory Pattern
 

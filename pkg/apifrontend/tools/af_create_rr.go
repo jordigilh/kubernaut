@@ -39,8 +39,9 @@ type ToolDeps struct {
 	// Triager call or RR object is wastefully created. A nil checker fails closed
 	// because management scope must be verified before an RR is created.
 	ScopeChecker scope.ScopeChecker
-	// ClusterLister names known fleet clusters for the unattributed-refusal
-	// message (#2362). Nil-safe: a nil lister preserves the legacy message.
+	// ClusterLister names registered Gateway clusters (#2362). Its presence
+	// also indicates fleet routing is enabled, where the process-local client
+	// must never be used as a signal source for a cluster-attributed RR.
 	ClusterLister ClusterLister
 }
 
@@ -66,8 +67,10 @@ type CreateRRArgs struct {
 	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
 	// where the alert name is the definitive signal (#1372).
 	SignalNameOverride string `json:"-"`
-	// ClusterID is the cluster identifier from Thanos external_labels.
-	// Empty string indicates local hub cluster (ADR-065).
+	// ClusterID is the MCP Gateway cluster name and must exactly match the
+	// Prometheus alert/rule "cluster" label for both hub-local and fleet targets.
+	// New RR creation fails closed when this value is empty or no attributed
+	// alert/rule matches it.
 	ClusterID string `json:"cluster_id,omitempty"`
 	// ConfirmedAmbiguousSignalName, when non-empty and it exactly matches a
 	// previously-surfaced ambiguous candidate's alert name, indicates the
@@ -256,7 +259,7 @@ func HandleCreateRRWithHooks(ctx context.Context, d *ToolDeps, args *CreateRRArg
 
 	signalName := args.SignalNameOverride
 	if signalName == "" {
-		signalName = deriveSignalName(ctx, d.DynClient, args.Namespace, args, triageResult)
+		signalName = deriveSignalName(ctx, d.DynClient, d.ClusterLister != nil, args.Namespace, args, triageResult)
 	}
 	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
 
@@ -541,14 +544,14 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 // Both tiers use DominantEventReason which filters out Normal lifecycle
 // events (F-SIG-08): ScalingReplicaSet, Scheduled, Pulled, Created, etc.
 // are not failure signals and would mislead KA's scenario detection.
-func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
+func deriveSignalName(ctx context.Context, client dynamic.Interface, fleetEnabled bool, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
 	if name := signalNameFromTriage(triageResult); name != "" {
 		return name
 	}
-	// Kubernetes Events are local to the cluster whose API is queried. Fleet
-	// investigations are grounded by Prometheus/Thanos above; never use the
-	// hub-local dynamic client as a remote cluster Event source.
-	if args.ClusterID != "" {
+	// In fleet mode, the target cluster (including the hub) is accessed through
+	// the MCP Gateway, never through AF's process-local dynamic client. The
+	// registered cluster's alert/rule name remains the preferred signal source.
+	if fleetEnabled {
 		return unknownValue
 	}
 	if client == nil {

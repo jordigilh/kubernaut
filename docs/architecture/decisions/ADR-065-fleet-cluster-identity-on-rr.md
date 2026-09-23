@@ -1,6 +1,6 @@
 # ADR-065: Fleet Cluster Identity on RemediationRequest CRD
 
-**Status**: Partially superseded (see amendment below)
+**Status**: Partially superseded; fleet identity/routing semantics superseded by ADR-068 amendment (2026-09-22)
 **Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted) | 2026-06-19 (Implemented) | 2026-07-08 (Amended)
 **Deciders**: Architecture Team
 **Context**: Fleet remediation requires per-RR cluster identity (#54, #1409)
@@ -19,6 +19,14 @@
 > for fleet requests and omit the cluster line when it is empty for local requests. The
 > old RO-only discovery implementation and setter wiring were removed because process-level
 > identity cannot safely attribute requests from multiple clusters.
+
+> **Amendment (2026-09-22, ADR-068 fleet routing update)**: In fleet mode,
+> `RemediationRequest.Spec.ClusterID` is the exact MCP Gateway registration name,
+> including the registered hub name (for example, `hub`). The prior kube-system UID
+> source and empty-means-local shortcut are superseded for fleet requests. The hub
+> must be registered in MCP Gateway; AF requires that ID to match the Prometheus
+> `cluster` label, and all fleet reads/writes, including hub-targeted remediation,
+> route through the Gateway. `ClusterName` remains absent as a separate CRD field.
 
 ## Context
 

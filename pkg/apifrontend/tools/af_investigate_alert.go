@@ -65,8 +65,9 @@ type InvestigateAlertArgs struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace,omitempty"`
-	// ClusterID identifies the fleet cluster the target resource lives on
-	// (#1409, ADR-065). Empty for the local hub cluster.
+	// ClusterID is the registered MCP Gateway cluster name for the target
+	// resource, including the hub when fleet mode is enabled. It must exactly
+	// match the Prometheus alert/rule "cluster" label.
 	ClusterID string `json:"cluster_id,omitempty"`
 	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
 	// severity candidate's alert name after the user has explicitly
@@ -392,8 +393,8 @@ func NewInvestigateAlertTool(cfg InvestigateAlertConfig) (tool.Tool, error) {
 		Description: "Create an investigation for a specific Prometheus alert targeting a Kubernetes resource. " +
 			"Provide alert_name (the Prometheus alert name), api_version, kind, and name of the target resource. " +
 			"For namespaced resources, also provide namespace. " +
-			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the " +
-			"resource lives on; omit for the local hub cluster. " +
+			"Always provide cluster_id using the MCP Gateway registration name, including for the hub in fleet mode; " +
+			"it must match the alert's Prometheus cluster label. " +
 			"The backend validates the alert exists and creates a RemediationRequest.",
 	}, func(ctx agent.Context, args InvestigateAlertArgs) (InvestigateAlertResult, error) {
 		return HandleInvestigateAlert(ctx, cfg, &args, usernameFromContext(ctx))

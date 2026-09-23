@@ -89,7 +89,7 @@ var _ = Describe("Fix #1440: IS CRD co-creation in HandleInvestigateAlert", func
 	}
 
 	validArgs := func() *tools.InvestigateAlertArgs {
-		return &tools.InvestigateAlertArgs{
+		return &tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 			AlertName:  "KubePodCrashLooping",
 			APIVersion: "apps/v1",
 			Kind:       "Deployment",

@@ -100,7 +100,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				Triager:      defaultTestTriager("", "Node", "worker-1"),
 				ScopeChecker: testAlwaysManagedScopeChecker()}
 			result, err := tools.HandleInvestigateAlert(ctx, cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubeNodeNotReady",
 					APIVersion: "v1",
 					Kind:       "Node",
@@ -119,7 +119,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				Mapper:       newScopeAwareMapper(),
 			}
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -214,6 +214,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 					Kind:       "Node",
 					Name:       "worker-1",
 					Namespace:  "kube-system",
+					ClusterID:  hubClusterID,
 				}, false, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).NotTo(BeEmpty())

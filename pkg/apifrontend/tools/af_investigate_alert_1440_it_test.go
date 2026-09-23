@@ -86,7 +86,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				Groups:   []string{"sre-team"},
 			})
 
-			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{
+			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",
@@ -139,7 +139,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				Groups:   []string{"sre-team"},
 			})
 
-			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{
+			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",

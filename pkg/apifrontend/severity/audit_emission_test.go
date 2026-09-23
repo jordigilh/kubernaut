@@ -74,6 +74,7 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: "errors spiking",
+			ClusterID:   hubClusterID,
 			Labels:      map[string]string{"namespace": "prod", "kind": "Deployment", "name": "web"},
 		})
 		Expect(err).NotTo(HaveOccurred())

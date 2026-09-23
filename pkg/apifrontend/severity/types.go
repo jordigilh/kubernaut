@@ -48,8 +48,9 @@ type TriageInput struct {
 	Description string
 	Labels      map[string]string
 	PodNames    []string // Resolved pod names for alert correlation (auto-populated by Triager when PodResolver is set)
-	// ClusterID scopes alert and rule correlation for fleet targets. Empty keeps
-	// the hub-local behavior of considering all returned Prometheus data.
+	// ClusterID is the MCP Gateway cluster name used to scope alert and rule
+	// correlation for both hub-local and fleet targets. It must be non-empty and
+	// exactly match the Prometheus "cluster" label; empty never means hub-local.
 	ClusterID string
 	// ConfirmedSignalName, when non-empty and it exactly matches an
 	// ambiguous candidate's AlertName, indicates the user has already

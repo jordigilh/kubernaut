@@ -41,13 +41,12 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 	})
 
 	Describe("SetReaderFactory dispatch", func() {
-		It("UT-GW-P1-001 [AC-3]: Parse uses local resolver when clusterID is empty", func() {
+		It("UT-GW-P1-001 [AC-3]: single-cluster Parse uses local resolver when clusterID is empty", func() {
 			localResolver := &stubOwnerResolver{
 				ownerKind: "Deployment",
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
-			adapter.SetReaderFactory(&fleettest.StubReaderFactory{Readers: map[string]client.Reader{}})
 
 			payload := buildAlertPayload("")
 			signal, err := adapter.Parse(ctx, payload)
@@ -55,6 +54,23 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			Expect(signal).ToNot(BeNil())
 			Expect(signal.ClusterID).To(BeEmpty(),
 				"local signal must not have ClusterID")
+		})
+
+		It("UT-GW-2394-001 [AC-4, SI-10]: fleet Parse rejects signals without cluster attribution", func() {
+			localResolver := &stubOwnerResolver{
+				ownerKind: "Deployment",
+				ownerName: "nginx",
+			}
+			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{"hub": nil},
+			})
+
+			signal, err := adapter.Parse(ctx, buildAlertPayload(""))
+			Expect(err).To(HaveOccurred(),
+				"fleet mode must reject un-attributed alerts instead of silently routing them to the local hub")
+			Expect(err.Error()).To(ContainSubstring("cluster"))
+			Expect(signal).To(BeNil())
 		})
 
 		It("UT-GW-P1-002 [AC-3]: Parse constructs remote resolver when clusterID is non-empty", func() {
@@ -133,8 +149,8 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				Readers: map[string]client.Reader{"prod-east": nil},
 			})
 
-			payloadLocal := buildAlertPayload("")
-			signalLocal, err := adapter.Parse(ctx, payloadLocal)
+			localAdapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
+			signalLocal, err := localAdapter.Parse(ctx, buildAlertPayload(""))
 			Expect(err).ToNot(HaveOccurred())
 
 			payloadRemote := buildAlertPayload("prod-east")

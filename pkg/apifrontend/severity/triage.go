@@ -492,14 +492,12 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	}, true, true
 }
 
-// matchesCluster enforces Thanos cluster attribution for fleet triage. An
-// empty target cluster preserves hub-local behavior; a fleet target requires
-// an explicit matching cluster label rather than accepting un-attributed data.
+// matchesCluster enforces explicit cluster attribution for both hub-local and
+// fleet triage. The target cluster ID is the MCP Gateway cluster name and must
+// exactly match the Prometheus alert/rule's cluster label. An empty target ID
+// or missing alert/rule attribution never matches.
 func matchesCluster(labels map[string]string, clusterID string) bool {
-	if clusterID == "" {
-		return true
-	}
-	return labels[fleetClusterLabelKey] == clusterID
+	return clusterID != "" && labels[fleetClusterLabelKey] == clusterID
 }
 
 func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules []prom.Rule) (TriageResult, bool) {
