@@ -2,7 +2,7 @@
 
 **Test Plan Identifier**: TP-2462-v1.0
 **Feature**: Exercise local and Fleet-mode APIFrontend contracts in the existing AF E2E job using two isolated Kind clusters
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2026-09-23
 **Author**: Kubernaut development team
 **Status**: Approved
@@ -62,7 +62,7 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 | R3 | Local AF and Fleet Kind host ports collide. | One cluster fails to start or tests call the wrong endpoint. | Suite setup | Reuse `AF_E2E_HOST_PORT_OFFSET` and existing URL helpers for the local cluster; keep Fleet mappings unchanged. |
 | R4 | Fleet Keycloak/Gateway convergence or auth differs from local DEX assumptions. | Fleet AF calls fail before business assertions. | Fleet AF E2E cases | Use the existing Keycloak A2A password-token helper pattern and wait for authenticated Gateway readiness before tests. |
 | R5 | Existing full Fleet spoke tests regress. | Remote Fleet coverage is lost while adding the hub-only path. | Existing `test/e2e/fleet` suite | Keep the current full hub-and-spoke setup as the default; hub-only mode must be opt-in and test-infrastructure-only. |
-| R6 | Two isolated AF stacks plus Fleet core exceed runner capacity or teardown obscures diagnostics. | CI instability or incomplete failure evidence. | Full AF E2E job | Avoid unrelated pipeline controllers, reuse the AF image set in both clusters, preserve the existing job and 25-minute timeout, and collect must-gather from each surviving cluster before teardown. A local Podman storage failure is host-local evidence and does not justify changing CI without a CI failure. |
+| R6 | Two isolated AF stacks plus Fleet core exceed runner capacity or teardown obscures diagnostics. | CI instability or incomplete failure evidence. | Full AF E2E job | Avoid unrelated pipeline controllers, reuse the AF image set in both clusters, retain Podman copies until both clusters have imported them, preserve the existing job and 25-minute timeout, and collect must-gather from each surviving cluster before teardown. A local Podman storage failure is host-local evidence and does not justify changing CI without a CI failure. |
 
 ## 4. Scope
 
@@ -96,7 +96,7 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 1. Reuse the standalone AF Kind creation and deployment helpers for the second cluster. Add only the Keycloak, MCP Gateway, kube-mcp-server, dedicated Valkey, and FMC dependencies from the FMC E2E lane; do not create a spoke cluster or deploy the unrelated full-pipeline controllers.
 2. Add an explicit hub-only branch in Gateway registration generation. Preserve the existing full Fleet remote aliases and remote bridge when hub-only is false.
 3. Configure the Fleet AF and Kubernaut Agent manifests with the registered hub Gateway, Keycloak OAuth2 credentials, Keycloak JWT validation, and least-privilege registry/FMC RBAC.
-4. Update the existing AF E2E `SynchronizedBeforeSuite` to start local AF and Fleet AF stacks with distinct names/kubeconfigs/endpoints and to distribute both contexts to parallel Ginkgo processes. Build the AF image set once and reuse it in both clusters.
+4. Update the existing AF E2E `SynchronizedBeforeSuite` to start local AF and Fleet AF stacks with distinct names/kubeconfigs/endpoints and to distribute both contexts to parallel Ginkgo processes. Build the AF image set once, retain its Podman copies through local-cluster import, then reuse and prune each image after Fleet-cluster import.
 5. Keep the existing AF CI job and 25-minute timeout unchanged. Do not infer a CI resource issue from local Podman storage failures; validate against CI's clean runner environment.
 6. Use the local AF port-offset support to avoid collisions. Keep all local test helpers bound to local AF; new Fleet tests use the separate Fleet AF client and Keycloak token.
 
@@ -122,6 +122,7 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 | Hub Gateway route | Fleet AF A2A call with `cluster_id=hub` | Existing `DeployFleetGatewayInfra` plus hub-only registration renderer | E2E-AF-FLEET-2462-001 |
 | Triage/RCA contracts | Fleet AF A2A and A2A SSE endpoints | New Fleet-mode AF E2E spec file(s) | E2E-AF-FLEET-2462-002.. |
 | Failure diagnostics | Existing AF `SynchronizedAfterSuite` | `test/e2e/apifrontend/e2e_suite_test.go` selects each surviving cluster and passes Fleet-specific extra namespaces | UT-E2E-AF-FLEET-MUSTGATHER-001/002 |
+| Shared image lifecycle | Existing AF `SynchronizedBeforeSuite` | `BuildAPIFrontendE2EImages` shares one image map; local import retains Podman copies and Fleet import prunes them | UT-INFRA-AF-FLEET-2462-010/011 |
 
 ## 7. Scenario inventory
 
@@ -139,6 +140,13 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 |---|---|
 | UT-E2E-AF-FLEET-MUSTGATHER-001 | Always include the local cluster; include the separate Fleet cluster when Fleet setup was attempted. |
 | UT-E2E-AF-FLEET-MUSTGATHER-002 | Request `envoy-gateway-system` and `envoy-ai-gateway-system` logs only for the Fleet cluster's must-gather run. |
+
+### 7.2 Shared CI image lifecycle
+
+| Scenario ID | Contract |
+|---|---|
+| UT-INFRA-AF-FLEET-2462-010 | Ordinary single-cluster Kind image loads prune the Podman source copy. |
+| UT-INFRA-AF-FLEET-2462-011 | The first AF cluster retains shared images so the second Fleet cluster can load the same CI artifacts before pruning them. |
 
 ## 8. Approval and confidence
 

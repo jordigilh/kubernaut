@@ -109,11 +109,7 @@ func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer i
 }
 
 func prebuiltCIArtifactImageName(serviceName, artifactTag string) string {
-	imageName := serviceName
-	if serviceName == "datastorage" {
-		imageName = "kubernaut/datastorage"
-	}
-	return fmt.Sprintf("localhost/%s:%s", imageName, artifactTag)
+	return fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
 }
 
 // ShouldSkipImageExportAndPrune returns true if image export and Podman prune should be skipped.
@@ -342,6 +338,16 @@ func BuildImageForKind(ctx context.Context, cfg E2EImageConfig, writer io.Writer
 //	imageName, _ := BuildImageForKind(cfg, writer)
 //	err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
 func LoadImageToKind(ctx context.Context, imageName, serviceName, clusterName string, writer io.Writer) error {
+	return loadImageToKindIntoCluster(ctx, imageName, serviceName, clusterName, true, writer)
+}
+
+// LoadImageToKindRetainingImage loads the image into a Kind cluster but keeps
+// the Podman copy available for another cluster in the same E2E journey.
+func LoadImageToKindRetainingImage(ctx context.Context, imageName, serviceName, clusterName string, writer io.Writer) error {
+	return loadImageToKindIntoCluster(ctx, imageName, serviceName, clusterName, false, writer)
+}
+
+func loadImageToKindIntoCluster(ctx context.Context, imageName, serviceName, clusterName string, removePodmanImage bool, writer io.Writer) error {
 	// In CI mode (IMAGE_REGISTRY set), pull the image onto the runner first
 	// then load it into Kind. Kind nodes lack GHCR credentials so on-demand
 	// pulling fails with ErrImagePull for private packages.
@@ -392,19 +398,20 @@ func LoadImageToKind(ctx context.Context, imageName, serviceName, clusterName st
 		_, _ = fmt.Fprintf(writer, "   ✅ Removed tar file: %s\n", tmpFile)
 	}
 
-	// CRITICAL: Delete Podman image immediately after Kind load to free disk space
-	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
-	// Solution: Once in Kind, we don't need the Podman copy anymore
-	_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", imageName)
-	rmiCmd.Stdout = writer
-	rmiCmd.Stderr = writer
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	if removePodmanImage {
+		// CRITICAL: Delete the Podman copy immediately after Kind load to free disk space.
+		_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
+		rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", imageName)
+		rmiCmd.Stdout = writer
+		rmiCmd.Stderr = writer
+		if err := rmiCmd.Run(); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+		} else {
+			_, _ = fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", imageName)
+		}
 	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", imageName)
+		_, _ = fmt.Fprintf(writer, "   ♻️  Retaining Podman image for a subsequent Kind cluster: %s\n", imageName)
 	}
-
 	_, _ = fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
 
 	return nil

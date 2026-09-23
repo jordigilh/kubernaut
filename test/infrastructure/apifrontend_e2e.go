@@ -94,8 +94,9 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return nil, err
 	}
 	options := apiFrontendE2EOptions{
-		KindConfigPath: "test/infrastructure/kind-kubernautagent-config.yaml",
-		HostPortOffset: hostPortOffset,
+		KindConfigPath:        "test/infrastructure/kind-kubernautagent-config.yaml",
+		HostPortOffset:        hostPortOffset,
+		RetainImagesAfterLoad: true,
 	}
 	if err := setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, options, writer); err != nil {
 		return images, err
@@ -168,6 +169,9 @@ type apiFrontendE2EOptions struct {
 	HostPortOffset int
 	FleetEnabled   bool
 	FleetImage     string
+	// RetainImagesAfterLoad keeps shared local-mode images in Podman until
+	// the Fleet cluster has imported the same image set.
+	RetainImagesAfterLoad bool
 }
 
 func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) error {
@@ -238,7 +242,11 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 		for name, img := range images {
-			if err := LoadImageToKind(ctx, img, name, clusterName, writer); err != nil {
+			loadImage := LoadImageToKind
+			if options.RetainImagesAfterLoad {
+				loadImage = LoadImageToKindRetainingImage
+			}
+			if err := loadImage(ctx, img, name, clusterName, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)

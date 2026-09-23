@@ -28,7 +28,8 @@ var _ = Describe("localDataStorageImageName", func() {
 })
 
 var _ = Describe("prebuiltCIArtifactImageName", func() {
-	It("UT-INFRA-DS-002: resolves DataStorage using its repository-qualified artifact name", func() {
-		Expect(prebuiltCIArtifactImageName("datastorage", "aianalysis-18d7afe3")).To(Equal("localhost/kubernaut/datastorage:aianalysis-18d7afe3"))
+	It("UT-INFRA-DS-002: matches the DataStorage artifact reference used by CI", func() {
+		Expect(prebuiltCIArtifactImageName("datastorage", "aianalysis-18d7afe3")).To(Equal("localhost/datastorage:aianalysis-18d7afe3"),
+			"BR-FLEET-054: Fleet-enabled AF setup must reuse the CI-loaded DataStorage image")
 	})
 })
