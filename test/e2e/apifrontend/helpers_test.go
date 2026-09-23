@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,22 @@ type persona struct {
 	Role     string
 }
 
+type dexPersonaTokenCacheKey struct {
+	role         string
+	dexURL       string
+	clientID     string
+	clientSecret string
+}
+
+var (
+	dexPersonaTokenCacheMu sync.Mutex
+	// Reuse persona tokens across BeforeEach hooks to limit DEX NodePort traffic per worker.
+	dexPersonaTokens      = make(map[dexPersonaTokenCacheKey]string, 6)
+	dexTokenHTTPTransport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
+	}
+)
+
 // e2ePersonas defines all 6 RBAC personas available in E2E.
 var e2ePersonas = map[string]persona{
 	"sre":                  {Email: "sre@kubernaut.ai", Password: "password", Role: "sre"},
@@ -48,7 +65,25 @@ func fetchDEXTokenForPersona(role string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown persona role: %s", role)
 	}
-	return fetchDEXToken(dexURL, clientID, clientSecret, p.Email, p.Password)
+
+	key := dexPersonaTokenCacheKey{
+		role:         role,
+		dexURL:       dexURL,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+	}
+	dexPersonaTokenCacheMu.Lock()
+	defer dexPersonaTokenCacheMu.Unlock()
+	if token, ok := dexPersonaTokens[key]; ok {
+		return token, nil
+	}
+
+	token, err := fetchDEXToken(dexURL, clientID, clientSecret, p.Email, p.Password)
+	if err != nil {
+		return "", err
+	}
+	dexPersonaTokens[key] = token
+	return token, nil
 }
 
 // a2aInvoke sends a JSON-RPC request to POST /a2a/invoke with the given auth token.
@@ -401,7 +436,17 @@ var dexTokenRetryBackoff = backoff.Config{
 
 const dexTokenMaxAttempts = 4
 
+const dexTokenRequestTimeout = time.Second
+
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
+	tlsClient := &http.Client{
+		Timeout:   dexTokenRequestTimeout,
+		Transport: dexTokenHTTPTransport,
+	}
+	return fetchDEXTokenWithClient(tlsClient, dexURL, clientID, clientSecret, username, password)
+}
+
+func fetchDEXTokenWithClient(tlsClient *http.Client, dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
 		"grant_type":    {"password"},
@@ -410,13 +455,6 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 		"username":      {username},
 		"password":      {password},
 		"scope":         {"openid email profile groups"},
-	}
-
-	tlsClient := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
-		},
 	}
 
 	var lastErr error
