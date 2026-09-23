@@ -3053,6 +3053,10 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	if err != nil {
 		return fmt.Errorf("failed to read inter-service CA from %s: %w", caPEMPath, err)
 	}
+	if apiServerOIDCConfigurationIsCurrent(ctx, nodeName, kubeconfigPath, issuerServiceNamespace, cfg, caPEM) {
+		_, _ = fmt.Fprintln(writer, "  ✅ Existing API server OIDC config and trust root already match; reusing retained cluster")
+		return nil
+	}
 
 	const nodeCAPath = "/etc/kubernetes/pki/oidc-ca.crt"
 	writeCACmd := fmt.Sprintf("cat > %s << 'CAPEM'\n%sCAPEM", nodeCAPath, string(caPEM))
@@ -3146,6 +3150,66 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("API server did not recover after OIDC patching within 120s")
+}
+
+// apiServerOIDCConfigurationIsCurrent is the retry-safe fast path for a
+// retained Kind cluster. Reapplying the same OIDC flags restarts kube-apiserver
+// while its RBAC caches warm; the restart also risks racing the later
+// in-cluster Service lookup. Skip the patch only when the issuer flags, stable
+// Service ClusterIP host alias, and node-side CA all match this run.
+func apiServerOIDCConfigurationIsCurrent(ctx context.Context, nodeName, kubeconfigPath, issuerServiceNamespace string, cfg OIDCPatchConfig, caPEM []byte) bool {
+	issuer, err := url.Parse(cfg.IssuerURL)
+	if err != nil || issuer.Hostname() == "" {
+		return false
+	}
+
+	serviceIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "svc", issuer.Hostname(), "-n", issuerServiceNamespace, "-o", "jsonpath={.spec.clusterIP}")
+	serviceIPOutput, err := serviceIPCmd.Output()
+	if err != nil {
+		return false
+	}
+	serviceIP := strings.TrimSpace(string(serviceIPOutput))
+	if serviceIP == "" {
+		return false
+	}
+
+	const manifestPath = "/etc/kubernetes/manifests/kube-apiserver.yaml"
+	manifestCmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "cat", manifestPath)
+	manifest, err := manifestCmd.Output()
+	if err != nil || !apiServerOIDCManifestMatches(string(manifest), cfg, issuer.Hostname(), serviceIP) {
+		return false
+	}
+
+	const nodeCAPath = "/etc/kubernetes/pki/oidc-ca.crt"
+	nodeCACmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "cat", nodeCAPath)
+	nodeCA, err := nodeCACmd.Output()
+	return err == nil && bytes.Equal(bytes.TrimSpace(nodeCA), bytes.TrimSpace(caPEM))
+}
+
+// apiServerOIDCManifestMatches reports whether the static pod manifest carries
+// the complete OIDC configuration and current issuer Service host alias.
+func apiServerOIDCManifestMatches(manifest string, cfg OIDCPatchConfig, issuerHost, serviceIP string) bool {
+	requiredFlags := []string{
+		"--oidc-username-prefix=" + cfg.UsernamePrefix,
+		"--oidc-username-claim=" + cfg.UsernameClaim,
+		"--oidc-client-id=" + cfg.ClientID,
+		"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt",
+		"--oidc-issuer-url=" + cfg.IssuerURL,
+	}
+	if cfg.GroupsClaim != "" {
+		requiredFlags = append(requiredFlags,
+			"--oidc-groups-prefix="+cfg.GroupsPrefix,
+			"--oidc-groups-claim="+cfg.GroupsClaim)
+	}
+	for _, flag := range requiredFlags {
+		if !strings.Contains(manifest, flag) {
+			return false
+		}
+	}
+
+	hostAlias := fmt.Sprintf("  hostAliases:\n  - ip: %q\n    hostnames:\n    - %q", serviceIP, issuerHost)
+	return strings.Contains(manifest, hostAlias)
 }
 
 // patchAPIServerPodHostsForIssuer resolves the OIDC issuer URL's hostname to

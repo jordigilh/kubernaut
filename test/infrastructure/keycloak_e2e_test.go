@@ -66,3 +66,29 @@ var _ = Describe("Keycloak password grant", func() {
 		Expect(strings.Join(cfg.Scopes, " ")).To(Equal("openid email profile groups"))
 	})
 })
+
+var _ = Describe("Retry-safe API server OIDC configuration", func() {
+	It("UT-INFRA-FLEET-OIDC-004: reuses only a complete config with the current issuer ClusterIP and CA", func() {
+		cfg := OIDCPatchConfig{
+			IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
+			ClientID:       "k8s-api",
+			UsernameClaim:  "preferred_username",
+			UsernamePrefix: "keycloak:",
+		}
+		manifest := `  hostAliases:
+  - ip: "10.96.241.125"
+    hostnames:
+    - "keycloak"
+    - --oidc-username-prefix=keycloak:
+    - --oidc-username-claim=preferred_username
+    - --oidc-client-id=k8s-api
+    - --oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt
+    - --oidc-issuer-url=https://keycloak:8443/realms/kubernaut-demo
+`
+
+		Expect(apiServerOIDCManifestMatches(manifest, cfg, "keycloak", "10.96.241.125")).To(BeTrue())
+		Expect(apiServerOIDCManifestMatches(manifest, cfg, "keycloak", "10.96.241.126")).To(BeFalse())
+		cfg.IssuerURL = "https://keycloak:8443/realms/other"
+		Expect(apiServerOIDCManifestMatches(manifest, cfg, "keycloak", "10.96.241.125")).To(BeFalse())
+	})
+})

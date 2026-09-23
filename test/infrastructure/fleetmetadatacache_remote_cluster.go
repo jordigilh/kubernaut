@@ -129,6 +129,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, cfg RemoteClusterFMCConfig, w
 		KubeconfigPath:          remoteKubeconfigPath,
 		ConfigPath:              "test/infrastructure/kind-fleetmetadatacache-remote-config.yaml",
 		WaitTimeout:             "5m",
+		ReuseExisting:           true,
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true,
 		ExtraWorkerNodes:        cfg.ExtraWorkerNodes,
