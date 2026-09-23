@@ -65,6 +65,7 @@ var _ = Describe("Scenario Detection Rules", func() {
 		Entry("UT-MOCK-022-003: NodeNotReady → node_not_ready", "- Signal Name: NodeNotReady\n- Node: worker-1", "node_not_ready"),
 		Entry("UT-MOCK-022-004: CertManagerCertNotReady → cert_not_ready", "- Signal Name: CertManagerCertNotReady\n- Namespace: cert-manager", "cert_not_ready"),
 		Entry("UT-MOCK-022-005: MemoryExceedsLimit → oomkilled", "- Signal Name: MemoryExceedsLimit\n- Namespace: prod", "oomkilled"),
+		Entry("UT-MOCK-022-006 (BR-AI-056): MemoryEaterResourcePressure → memory_eater_resource_pressure", "- Signal Name: MemoryEaterResourcePressure\n- Resource: staging/Deployment/memory-eater", "memory_eater_resource_pressure"),
 		Entry("UT-ML-2390-002: GitOpsDrift2390 → gitops_drift_2390", "- Signal Name: GitOpsDrift2390\n- Resource: production/Deployment/memory-eater", "gitops_drift_2390"),
 	)
 

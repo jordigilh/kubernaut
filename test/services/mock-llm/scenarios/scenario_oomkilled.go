@@ -56,6 +56,23 @@ func fleetRoutingConfig() MockScenarioConfig {
 	return cfg
 }
 
+func memoryEaterResourcePressureConfig() MockScenarioConfig {
+	cfg := oomkilledConfig()
+	cfg.ScenarioName = "memory_eater_resource_pressure"
+	cfg.SignalName = "MemoryEaterResourcePressure"
+	cfg.Severity = "high"
+	cfg.WorkflowTitle = "Memory Eater Resource Pressure - Increase Memory Limits"
+	cfg.Rationale = "The memory-eater Deployment exceeds its configured memory limit; increase the limit"
+	cfg.RootCause = "The memory-eater Deployment exceeds its configured memory limit"
+	cfg.ResourceName = "memory-eater"
+	return cfg
+}
+
+func memoryEaterResourcePressureScenario() *configScenario {
+	cfg := memoryEaterResourcePressureConfig()
+	return newSignalScenario(cfg.ScenarioName, []string{"memoryeaterresourcepressure"}, cfg)
+}
+
 // oomkilledScenario matches explicit OOM signal names at high confidence and
 // falls back to the generic Kubernetes "BackOff" crash-loop reason at lower
 // confidence. "BackOff" alone is ambiguous -- it fires for ANY crash-looping

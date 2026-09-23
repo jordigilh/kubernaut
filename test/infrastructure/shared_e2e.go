@@ -322,9 +322,40 @@ func combinedRemediateInvestigateScenarioYAML(ns string) string {
 // would never reach kubernaut_watch. This doubles as the E2E happy-path
 // regression proof that full_remediation_autonomous still auto-chains
 // correctly under the consent gate (E2E-FP-1899 coverage matrix).
-func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string {
+func investigationClusterIDArgYAML(clusterID string) string {
+	if clusterID == "" {
+		return ""
+	}
+	return fmt.Sprintf("            cluster_id: %q\n", clusterID)
+}
+
+func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID, clusterID string) string {
 	if ns == "" {
 		return ""
+	}
+	if clusterID != "" {
+		// Fleet autonomous remediation starts at kubernaut_remediate. The
+		// investigate tool creates an interactive driver session and cannot
+		// authorize same-turn autonomous discovery without that driver; the
+		// fleet journey instead verifies the real autonomous RR -> workflow
+		// selection -> execution path on the remote cluster.
+		return fmt.Sprintf(`      - name: "af_full_interactive_remediation_1853"
+        keywords: ["investigate and fix remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            cluster_id: "%s"
+            description: "Autonomous fleet remediation for memory pressure"
+        next_tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            name: "$from_tool:kubernaut_remediate:rr_id"
+`, ns, clusterID)
 	}
 	return fmt.Sprintf(`      - name: "af_full_interactive_remediation_1853"
         keywords: ["investigate and fix remediation"]
@@ -336,7 +367,7 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string 
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            interaction_mode: "full_remediation_autonomous"
+%s            interaction_mode: "full_remediation_autonomous"
         next_tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
@@ -350,7 +381,7 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string 
               name: "kubernaut_watch"
               arguments:
                 name: "$from_tool:kubernaut_investigate:rr_id"
-`, ns, selectWorkflowID)
+`, ns, investigationClusterIDArgYAML(clusterID), selectWorkflowID)
 }
 
 // gitOpsInteractiveInvestigationScenarioYAML returns the explicit transcript
@@ -432,7 +463,7 @@ func gitOpsInteractiveInvestigationScenarioYAML(ns, workflowID string) string {
 // af_watch_1899 below resolve their own $from_tool references from
 // kubernaut_investigate instead of kubernaut_remediate. Returns "" if ns is
 // empty.
-func consentGatePhase2AttemptScenarioYAML(ns string) string {
+func consentGatePhase2AttemptScenarioYAML(ns, clusterID string) string {
 	if ns == "" {
 		return ""
 	}
@@ -446,12 +477,12 @@ func consentGatePhase2AttemptScenarioYAML(ns string) string {
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            interaction_mode: "interactive"
+%s            interaction_mode: "interactive"
         next_tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
             rr_id: "$from_tool:kubernaut_investigate:rr_id"
-`, ns)
+`, ns, investigationClusterIDArgYAML(clusterID))
 }
 
 // consentGatePhase3AttemptScenarioYAML returns a keyword scenario for
@@ -472,7 +503,7 @@ func consentGatePhase2AttemptScenarioYAML(ns string) string {
 // kubernaut_remediate hop) for the same IS-before-RR ordering reason as
 // consentGatePhase2AttemptScenarioYAML's root-cause correction above.
 // Returns "" if ns is empty.
-func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
+func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID, clusterID string) string {
 	if ns == "" {
 		return ""
 	}
@@ -486,7 +517,7 @@ func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            interaction_mode: "full_remediation"
+%s            interaction_mode: "full_remediation"
         next_tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
@@ -496,7 +527,7 @@ func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
             arguments:
               rr_id: "$from_tool:kubernaut_investigate:rr_id"
               workflow_id: "%s"
-`, ns, selectWorkflowID)
+`, ns, investigationClusterIDArgYAML(clusterID), selectWorkflowID)
 }
 
 // noReinvocationAfterCompleteScenarioYAML returns a keyword scenario for
@@ -765,12 +796,18 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// "investigate", and mock-llm's registry breaks confidence ties (all
 	// selector scenarios score 1.0) by registration order, so these must
 	// come first to win over the bare "investigate" keyword.
+	afInvestigationClusterID := ""
+	if os.Getenv("FLEET_E2E") == trueFixture {
+		// The fleet consent journeys investigate a real resource on the remote
+		// cluster; carrying its ID also scopes severity triage to that cluster.
+		afInvestigationClusterID = "remote-cluster"
+	}
 	afKeywordYAML := "scenario_selectors:\n" + remediateScenarios +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
-		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
+		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID, afInvestigationClusterID) +
 		afGitOpsSelectScenarioYAML +
-		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
-		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
+		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"], afInvestigationClusterID) +
+		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID, afInvestigationClusterID) +
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
 		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"

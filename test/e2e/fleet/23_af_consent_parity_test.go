@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -43,13 +44,15 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		task := fleetSendTurn("fleet-cg2-1", "create and investigate then sneak workflow discovery")
+		turnID := "fleet-cg2-1-" + uuid.NewString()[:8]
+		contextID := "ctx-" + turnID
+		task := fleetSendTurn(turnID, "create and investigate then sneak workflow discovery")
 		rrName := fleetWaitForRR(targetNS)
 		fleetAssertNoWorkflowExecution(rrName)
 
-		fleetSendTurnWithTask("fleet-cg2-2", task.ID, "ctx-fleet-cg2-1", "confirm discovery of workflows")
-		fleetSendTurnWithTask("fleet-cg2-3", task.ID, "ctx-fleet-cg2-1", "select the discovered workflow")
-		fleetSendTurnWithTask("fleet-cg2-4", task.ID, "ctx-fleet-cg2-1", "watch this remediation now")
+		fleetSendTurnWithTask(turnID+"-2", task.ID, contextID, "confirm discovery of workflows")
+		fleetSendTurnWithTask(turnID+"-3", task.ID, contextID, "select the discovered workflow")
+		fleetSendTurnWithTask(turnID+"-4", task.ID, contextID, "watch this remediation now")
 		fleetWaitForWorkflowExecution(rrName)
 	})
 
@@ -58,12 +61,14 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		task := fleetSendTurn("fleet-cg3-1", "create and investigate then sneak workflow selection")
+		turnID := "fleet-cg3-1-" + uuid.NewString()[:8]
+		contextID := "ctx-" + turnID
+		task := fleetSendTurn(turnID, "create and investigate then sneak workflow selection")
 		rrName := fleetWaitForRR(targetNS)
 		fleetAssertNoWorkflowExecution(rrName)
 
-		fleetSendTurnWithTask("fleet-cg3-2", task.ID, "ctx-fleet-cg3-1", "select the discovered workflow")
-		fleetSendTurnWithTask("fleet-cg3-3", task.ID, "ctx-fleet-cg3-1", "watch this remediation now")
+		fleetSendTurnWithTask(turnID+"-2", task.ID, contextID, "select the discovered workflow")
+		fleetSendTurnWithTask(turnID+"-3", task.ID, contextID, "watch this remediation now")
 		fleetWaitForWorkflowExecution(rrName)
 	})
 
@@ -72,7 +77,7 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		fleetSendTurn("fleet-autonomous-2365", "investigate and fix remediation for deployment memory-eater")
+		fleetSendTurn("fleet-autonomous-2365-"+uuid.NewString()[:8], "investigate and fix remediation for deployment memory-eater")
 		rrName := fleetWaitForRR(targetNS)
 		fleetWaitForWorkflowExecution(rrName)
 	})

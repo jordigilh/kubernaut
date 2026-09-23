@@ -232,6 +232,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Signal name scenarios
 	r.Register(newSignalScenario("cert_not_ready", []string{"certmanagercertnotready", "cert_not_ready"}, certNotReadyConfig()))
 	r.Register(newSignalScenario("node_not_ready", []string{"nodenotready"}, nodeNotReadyConfig()))
+	r.Register(memoryEaterResourcePressureScenario())
 	r.Register(oomkilledScenario())
 	r.Register(crashloopScenario())
 	r.Register(newSignalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
