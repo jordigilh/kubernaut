@@ -49,8 +49,6 @@ import (
 const (
 	// AFDefaultClusterName is the Kind cluster name for apifrontend E2E tests.
 	AFDefaultClusterName = "apifrontend-e2e"
-	// AFHubClusterID is the MCP Gateway registration name for the hub in AF E2E fixtures.
-	AFHubClusterID = "hub"
 	// AFDefaultNamespace is the Kubernetes namespace for AF E2E workloads.
 	AFDefaultNamespace = kubernautSystem
 )
@@ -231,7 +229,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], AFHubClusterID, writer); err != nil {
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], "", writer); err != nil {
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
@@ -742,7 +740,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, hubClusterID string, writer io.Writer) error {
+func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterID string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
 
@@ -753,7 +751,7 @@ func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, hubClust
 
 	manifest := strings.ReplaceAll(string(data), "ghcr.io/jordigilh/kubernaut/mock-llm:pr-1161", mockLLMImage)
 	manifest = strings.ReplaceAll(manifest, "imagePullPolicy: Always", "imagePullPolicy: IfNotPresent")
-	manifest = strings.ReplaceAll(manifest, "__HUB_CLUSTER_ID__", hubClusterID)
+	manifest = strings.ReplaceAll(manifest, "__HUB_CLUSTER_ID__", clusterID)
 
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }

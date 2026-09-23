@@ -48,10 +48,14 @@ type TriageInput struct {
 	Description string
 	Labels      map[string]string
 	PodNames    []string // Resolved pod names for alert correlation (auto-populated by Triager when PodResolver is set)
-	// ClusterID is the MCP Gateway cluster name used to scope alert and rule
-	// correlation for both hub-local and fleet targets. It must be non-empty and
-	// exactly match the Prometheus "cluster" label; empty never means hub-local.
+	// ClusterID is the MCP Gateway cluster name used to scope fleet alert and
+	// rule correlation. It is ignored when FleetMode is false, because a local
+	// Prometheus endpoint represents only the local cluster.
 	ClusterID string
+	// FleetMode enables exact cluster attribution. In fleet mode ClusterID must
+	// be non-empty and match the Prometheus "cluster" label; otherwise no alert
+	// or rule is eligible. Local mode ignores ClusterID and cluster labels.
+	FleetMode bool
 	// ConfirmedSignalName, when non-empty and it exactly matches an
 	// ambiguous candidate's AlertName, indicates the user has already
 	// confirmed that specific weak candidate (DD-AF-012). Triage() bypasses

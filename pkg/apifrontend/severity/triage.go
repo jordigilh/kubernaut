@@ -261,7 +261,7 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		podNameSet[pn] = struct{}{}
 	}
 
-	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID)
+	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID, input.FleetMode)
 }
 
 // matchCandidate tracks the best alert match at a given priority tier.
@@ -352,11 +352,11 @@ func updateTierCandidate(firing bool, sev, name string, firingCand, pendingCand 
 	}
 }
 
-func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, clusterID string) (TriageResult, bool) {
+func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, clusterID string, fleetMode bool) (TriageResult, bool) {
 	var resourceFiring, resourcePending, nsFiring, nsPending, clusterFiring, clusterPending matchCandidate
 
 	for _, alert := range alerts {
-		if !matchesCluster(alert.Labels, clusterID) {
+		if !matchesCluster(alert.Labels, clusterID, fleetMode) {
 			continue
 		}
 		tier, firing, sev, name := classifyAlertTier(alert, targetLabels, podNameSet, targetNamespace)
@@ -401,7 +401,7 @@ func (t *Triager) runTier15(input TriageInput, ruleGroups []prom.RuleGroup) (Tri
 			if r.State != "pending" {
 				continue
 			}
-			if !matchesCluster(r.Labels, input.ClusterID) {
+			if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
 				continue
 			}
 			matchers, err := prom.ExtractLabelMatchers(r.Query)
@@ -464,7 +464,7 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	if err != nil {
 		return TriageResult{}, false, false
 	}
-	if !matchesCluster(r.Labels, input.ClusterID) {
+	if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
 		return TriageResult{}, false, false
 	}
 	if !prom.MatchesResource(matchers, input.Labels) {
@@ -492,11 +492,13 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	}, true, true
 }
 
-// matchesCluster enforces explicit cluster attribution for both hub-local and
-// fleet triage. The target cluster ID is the MCP Gateway cluster name and must
-// exactly match the Prometheus alert/rule's cluster label. An empty target ID
-// or missing alert/rule attribution never matches.
-func matchesCluster(labels map[string]string, clusterID string) bool {
+// matchesCluster enforces exact Gateway attribution in fleet mode. A local
+// Prometheus endpoint is already scoped to the local cluster, so local triage
+// deliberately ignores any cluster ID or cluster label it happens to carry.
+func matchesCluster(labels map[string]string, clusterID string, fleetMode bool) bool {
+	if !fleetMode {
+		return true
+	}
 	return clusterID != "" && labels[fleetClusterLabelKey] == clusterID
 }
 

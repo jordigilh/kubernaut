@@ -97,7 +97,8 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 					Client:       tc,
 					Namespace:    "kubernaut-system",
 					Triager:      triager,
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					ScopeChecker: testAlwaysManagedScopeChecker(),
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -157,11 +158,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient:    mockMCP,
-					Client:       tc,
-					Namespace:    "kubernaut-system",
-					Triager:      triager,
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					MCPClient:     mockMCP,
+					Client:        tc,
+					Namespace:     "kubernaut-system",
+					Triager:       triager,
+					ScopeChecker:  testAlwaysManagedScopeChecker(),
+					ClusterLister: stubClusterLister{ids: []string{hubClusterID, "remote-cluster"}},
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",

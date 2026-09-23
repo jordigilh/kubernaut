@@ -67,10 +67,9 @@ type CreateRRArgs struct {
 	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
 	// where the alert name is the definitive signal (#1372).
 	SignalNameOverride string `json:"-"`
-	// ClusterID is the MCP Gateway cluster name and must exactly match the
-	// Prometheus alert/rule "cluster" label for both hub-local and fleet targets.
-	// New RR creation fails closed when this value is empty or no attributed
-	// alert/rule matches it.
+	// ClusterID is the MCP Gateway registration name for fleet targets. Fleet
+	// creation requires a non-empty ID and exact Prometheus alert/rule attribution;
+	// standalone single-cluster mode does not use cluster identity.
 	ClusterID string `json:"cluster_id,omitempty"`
 	// ConfirmedAmbiguousSignalName, when non-empty and it exactly matches a
 	// previously-surfaced ambiguous candidate's alert name, indicates the
@@ -330,6 +329,7 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		Name:                args.Name,
 		Description:         args.Description,
 		ClusterID:           args.ClusterID,
+		FleetMode:           d.ClusterLister != nil,
 		Labels:              map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
 		ConfirmedSignalName: args.ConfirmedAmbiguousSignalName,
 	}

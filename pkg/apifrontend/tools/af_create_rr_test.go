@@ -823,9 +823,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"))
 		})
 
-		It("UT-AF-065-002: missing ClusterID fails closed for hub-local remediation", func() {
+		It("UT-AF-065-002: local remediation ignores ClusterID and retains local triage", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
 				Triager:      defaultTestTriager("prod", "Deployment", "redis"),
@@ -836,11 +836,10 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "local test",
 				APIVersion:  "apps/v1",
 			}, "user")
-			Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue())
-
-			list := &remediationv1.RemediationRequestList{}
-			Expect(tc.List(context.Background(), list)).To(Succeed())
-			Expect(list.Items).To(BeEmpty(), "missing cluster identity must not create an RR")
+			Expect(err).NotTo(HaveOccurred())
+			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
+			Expect(created.Spec.ClusterID).To(BeEmpty(), "single-cluster local RRs do not need a Gateway registration ID")
+			Expect(created.Spec.Severity).To(Equal("warning"), "local alert labels remain usable without cluster identity")
 		})
 
 		It("UT-AF-065-003: different clusters produce different fingerprints (no cross-cluster dedup)", func() {

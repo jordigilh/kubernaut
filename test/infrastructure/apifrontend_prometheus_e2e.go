@@ -42,8 +42,10 @@ import (
 	"time"
 )
 
-// DeployPrometheusForSeverityTriage deploys Prometheus in the E2E cluster and
-// seeds AF-specific alert rules for the 5-tier severity triage pipeline tests.
+// DeployPrometheusForSeverityTriage deploys Prometheus in the single-cluster AF
+// E2E environment and seeds AF-specific alert rules for the severity tests.
+// clusterID is optional; the standalone AF lane passes empty because it has no
+// Gateway registration, while a Gateway-backed caller may supply its ID.
 //
 // This delegates to kubernaut's canonical DeployPrometheus (DD-TEST-001 v2.8)
 // and then patches the rules ConfigMap with AF's triage fixtures.
@@ -70,10 +72,7 @@ import (
 // concurrently.
 //
 // Ref: Prometheus OTLP receiver -- https://prometheus.io/docs/guides/opentelemetry/
-func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, hubClusterID, kubeconfigPath string, writer io.Writer) error {
-	if hubClusterID == "" {
-		return fmt.Errorf("hub cluster ID is required for severity triage fixtures")
-	}
+func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, clusterID, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "Deploying Prometheus for severity triage testing...")
 
 	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -86,7 +85,7 @@ func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, hubCluste
 
 	_, _ = fmt.Fprintln(writer, "Seeding AF severity triage alert rules...")
 
-	if err := SeedTriageAlertRules(ctx, namespace, hubClusterID, kubeconfigPath, writer); err != nil {
+	if err := SeedTriageAlertRules(ctx, namespace, clusterID, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("seed triage alert rules: %w", err)
 	}
 
@@ -121,17 +120,11 @@ func waitForPrometheusRollout(ctx context.Context, namespace, kubeconfigPath str
 }
 
 // SeedTriageAlertRules patches the Prometheus rules ConfigMap with AF-specific
-// alert rules for the 5-tier severity triage pipeline. After patching, it
-// triggers a Prometheus config reload.
-func SeedTriageAlertRules(ctx context.Context, namespace, hubClusterID, kubeconfigPath string, writer io.Writer) error {
-	if hubClusterID == "" {
-		return fmt.Errorf("hub cluster ID is required for severity triage rules")
-	}
-	rulesYAML := strings.TrimSpace(strings.ReplaceAll(
-		SeverityTriageAlertRulesYAML,
-		"\"__HUB_CLUSTER_ID__\"",
-		strconv.Quote(hubClusterID),
-	))
+// alert rules for the 5-tier severity triage pipeline. Empty clusterID omits
+// the synthetic cluster labels used only by Gateway-backed callers. After
+// patching, it triggers a Prometheus config reload.
+func SeedTriageAlertRules(ctx context.Context, namespace, clusterID, kubeconfigPath string, writer io.Writer) error {
+	rulesYAML := renderSeverityTriageAlertRules(clusterID)
 
 	patchJSON := fmt.Sprintf(`{"data":{"af-severity-triage.yml":%q}}`, rulesYAML)
 
@@ -167,6 +160,20 @@ func SeedTriageAlertRules(ctx context.Context, namespace, hubClusterID, kubeconf
 
 	_, _ = fmt.Fprintln(writer, "  Prometheus ready with AF severity triage alert rules")
 	return nil
+}
+
+// renderSeverityTriageAlertRules renders the local AF fixture without a
+// synthetic Gateway identity. A non-empty ID is available for callers that
+// explicitly need Gateway-attributed rules; the standalone AF E2E passes an
+// empty ID and local triage ignores cluster labels.
+func renderSeverityTriageAlertRules(clusterID string) string {
+	rulesYAML := SeverityTriageAlertRulesYAML
+	if clusterID == "" {
+		rulesYAML = strings.ReplaceAll(rulesYAML, "          cluster: \"__HUB_CLUSTER_ID__\"\n", "")
+	} else {
+		rulesYAML = strings.ReplaceAll(rulesYAML, "\"__HUB_CLUSTER_ID__\"", strconv.Quote(clusterID))
+	}
+	return strings.TrimSpace(rulesYAML)
 }
 
 // PrometheusRuleState represents the state of a Prometheus alerting rule.
