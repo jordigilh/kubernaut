@@ -47,7 +47,7 @@ const kaInteractiveFleetTargetNamespace = "fleet-ka-interactive"
 const kaInteractiveFleetRemoteClusterID = "remote-cluster"
 
 // kaInteractiveFleetEvidence mirrors the mock-llm scenario's memory-limit
-// evidence constant. Deliberately distinct from #17's kaToolE2ELocal/RemoteEvidence
+// evidence constant. Deliberately distinct from #17's kaToolE2ELocal/FleetEvidence
 // (111Mi/222Mi) and #16's coredns marker so all three fleet E2E fixtures can
 // coexist under parallel Ginkgo execution without cross-matching.
 const kaInteractiveFleetEvidence = "247Mi"

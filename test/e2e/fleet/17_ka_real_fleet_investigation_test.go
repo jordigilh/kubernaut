@@ -49,27 +49,25 @@ const kaToolE2ETargetName = "ka-tool-e2e-target"
 // kaToolE2EKeyword must match the mock-llm scenario's Match keyword exactly.
 const kaToolE2EKeyword = "ka-tool-e2e-test"
 
-// kaToolE2ELocalEvidence/RemoteEvidence mirror the mock-llm scenario's
+// kaToolE2ELocalEvidence/FleetEvidence mirror the mock-llm scenario's
 // memory-limit evidence constants. Each It() deploys ka-tool-e2e-target with
 // this exact memory limit on the one cluster it targets, then asserts the
-// same value surfaces in the final RCA -- proving KA's real investigation
-// loop called the correct tool (kubectl_get_by_name locally, resources_get
-// via the real MCP Gateway for fleet) and reached the correct cluster, not
-// just some cluster with a same-named resource on it.
+// same value and tool name surface in the final RCA -- proving KA's real
+// investigation loop used the registered MCP Gateway for cluster-attributed
+// targets and reached the correct cluster, not just a cluster with a
+// same-named resource on it.
 const (
-	kaToolE2ELocalEvidence  = "111Mi"
-	kaToolE2ERemoteEvidence = "222Mi"
+	kaToolE2ELocalEvidence = "111Mi"
+	kaToolE2EFleetEvidence = "222Mi"
 )
 
 // runKAToolCallE2ECase drives the shared E2E-FLEET-017 flow end to end:
 // deploy the dedicated ka-tool-e2e-target marker on the target cluster with
-// evidence as its memory limit, post the alert with (fleet) or without
-// (hub-local) clusterID -- the ONLY thing that varies between the two
-// It()s below -- wait for AIAnalysis to complete, and assert the evidence
-// value appears in the RCA. Neither this helper nor the mock-llm scenario
-// it drives is ever told which environment it's running against; KA's own
-// tool-schema advertisement (toolDefinitionsForPhase) and overlay routing
-// (executeResolved) determine that, opaquely, from clusterID alone.
+// evidence as its memory limit, post the alert with the target's registered
+// clusterID, wait for AIAnalysis to complete, and assert the evidence value
+// appears in the RCA. Neither this helper nor the mock-llm scenario it drives
+// is told which registered cluster to use; KA's tool schema and overlay
+// routing determine that from clusterID alone.
 func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, clusterID, evidence, targetNamespace string) {
 	runKAToolCallE2ECaseWithAlert(targetKubeconfig, targetClient, clusterID, evidence, targetNamespace, kaToolE2EKeyword, kaToolE2ETargetName)
 }
@@ -92,7 +90,7 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 
 	if clusterID != "" {
 		By("Waiting for the marker Deployment to be readable through the real MCP Gateway")
-		mcpClient, err := newFleetMCPClient(ctx)
+		mcpClient, err := newFleetMCPClientForCluster(ctx, clusterID)
 		Expect(err).ToNot(HaveOccurred(), "MCP Gateway must be ready before posting the fleet alert")
 		DeferCleanup(func() { _ = mcpClient.Close() })
 
@@ -102,7 +100,7 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 			g.Expect(mcpClient.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNamespace}, obj)).To(Succeed())
 			g.Expect(obj.GetName()).To(Equal(targetName))
 		}, 90*time.Second, 2*time.Second).Should(Succeed(),
-			"the remote marker must be visible to resources_get before Gateway owner resolution")
+			"the target marker must be visible through the registered Gateway backend before owner resolution")
 	}
 
 	By(fmt.Sprintf("Sending the alert (cluster_id=%q)", clusterID))
@@ -141,16 +139,24 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 
 	By("Verifying the RCA reflects a genuine, correctly-targeted tool call")
 	Expect(ai.Status.GetRCAResult().RootCauseAnalysis).ToNot(BeNil(), "Completed AIAnalysis must carry rootCauseAnalysis")
-	Expect(ai.Status.RCAResult.RootCauseAnalysis.Summary).To(ContainSubstring(evidence),
+	rootCause := ai.Status.RCAResult.RootCauseAnalysis.Summary
+	Expect(rootCause).To(ContainSubstring(evidence),
 		"AC-4/AC-6, SI-4: the RCA summary must contain the environment-specific evidence %q, proving KA's "+
 			"real investigation loop called the correct tool for this environment and reached the correct "+
 			"cluster's live object -- not a canned response and not a wrong-cluster false positive", evidence)
+	expectedTool := "resources_get"
+	if clusterID == "" {
+		expectedTool = "kubectl_get_by_name"
+	}
+	Expect(rootCause).To(ContainSubstring(expectedTool),
+		"AC-4/SC-7: cluster-attributed investigations must identify the MCP Gateway read tool in the RCA")
 	GinkgoWriter.Printf("  E2E-FLEET-017: confirmed genuine, correctly-targeted round trip (evidence=%s)\n", evidence)
 	return &ai
 }
 
-// E2E-FLEET-017 [AC-4, AC-6, SI-4]: real KA investigation calls the correct
-// tool for hub-local vs. fleet targets, closing issue #1729.
+// E2E-FLEET-017 [AC-4, AC-6, SI-4, SC-7]: real KA investigation calls the
+// MCP Gateway tool for both the registered hub and spoke targets, closing the
+// Fleet-mode hub-routing coverage gap for issue #1729.
 //
 // Authority: issue #1729, DD-FLEET-005, ADR-068.
 //
@@ -165,19 +171,17 @@ func runKAToolCallE2ECaseWithAlert(targetKubeconfig string, targetClient client.
 // integration tests construct the Investigator directly with a real or fake
 // resolver, bypassing Helm entirely; 06_aa_fleet_investigation_test.go
 // drives newFleetMCPClient directly against the MCP gateway, never a real
-// KA binary. This test closes that gap by driving a real, Helm-deployed KA
-// through its full real investigation loop -- signal -> RemediationRequest
-// -> SignalProcessing -> AIAnalysis -- against BOTH a hub-local and a fleet
-// target, in the same run, with the test itself never told which internal
-// tool KA should call for either case (see runKAToolCallE2ECase and
-// scenario_ka_fleet_investigation.go's kaToolCallForAvailability).
-var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4]: KA real investigation calls the correct tool for hub-local vs. fleet targets (issue #1729)", Label("fleet", "ka"), func() {
-	It("hub-local: should call kubectl_get_by_name directly and return genuine hub-cluster data", func() {
-		runKAToolCallE2ECase(kubeconfigPath, k8sClient, "", kaToolE2ELocalEvidence, fleetWorkloadNamespace("fleet-ka-local"))
+// KA binary. This test drives a real, Helm-deployed KA through its full
+// investigation loop -- signal -> RemediationRequest -> SignalProcessing ->
+// AIAnalysis -- against both the separately registered hub and a spoke, with
+// environment-specific evidence and the Gateway tool name asserted.
+var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4, SC-7]: KA real investigation routes registered hub and spoke targets through MCP Gateway (issue #1729)", Label("fleet", "ka"), func() {
+	It("hub: should call resources_get via the registered hub Gateway backend and return genuine hub data", func() {
+		runKAToolCallE2ECase(kubeconfigPath, k8sClient, "hub", kaToolE2EFleetEvidence, fleetWorkloadNamespace("fleet-ka-local"))
 	})
 
 	It("fleet: should call resources_get via the real MCP Gateway and return genuine remote-cluster data", func() {
-		runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence, fleetWorkloadNamespace("fleet-ka-remote"))
+		runKAToolCallE2ECase(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2EFleetEvidence, fleetWorkloadNamespace("fleet-ka-remote"))
 	})
 
 	It("fleet: should detect remote HPA and PDB labels through the real MCP Gateway", func() {
@@ -203,7 +207,7 @@ var _ = Describe("E2E-FLEET-017 [AC-4, AC-6, SI-4]: KA real investigation calls 
 		Expect(remoteK8sClient.Create(ctx, pdb)).To(Succeed())
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), pdb) })
 
-		ai := runKAToolCallE2ECaseWithAlert(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2ERemoteEvidence, fleetWorkloadNamespace("fleet-ka-remote-labels"), kaToolE2EKeyword+"-labels", targetName)
+		ai := runKAToolCallE2ECaseWithAlert(remoteKubeconfigPath, remoteK8sClient, remoteCluster, kaToolE2EFleetEvidence, fleetWorkloadNamespace("fleet-ka-remote-labels"), kaToolE2EKeyword+"-labels", targetName)
 		Expect(ai.Status.PostRCAContext).NotTo(BeNil(), "ADR-056: remote investigation must persist post-RCA context")
 		Expect(ai.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(), "BR-INTEGRATION-1489: remote detected labels must be persisted")
 		Expect(ai.Status.PostRCAContext.DetectedLabels.HPAEnabled).To(BeTrue(), "AC-4/AC-6: HPA label must come from the remote cluster")

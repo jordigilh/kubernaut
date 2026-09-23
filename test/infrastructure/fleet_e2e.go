@@ -205,22 +205,17 @@ type KubeMCPServerAuthConfig struct {
 	// (fleetmetadatacache_e2e.go) set this field.
 	RemoteBridge *RemoteClusterBridgeConfig
 
-	// HubClusterID names the hub-local registration for demo infrastructure.
-	// Empty preserves the existing loopback identity for non-demo callers.
+	// HubClusterID names the additional hub-local registration. Fleet full-pipeline
+	// E2E and the fleet demo set this to "hub" so hub targets also route through
+	// the MCP Gateway; empty preserves loopback-only FMC test topologies.
 	HubClusterID string
 
 	// AllRegistrationsRemote, when true (requires RemoteBridge to be
-	// non-nil), makes ALL THREE registrations (the first one renamed
-	// "remote-cluster" instead of "loopback-cluster", plus prod-east,
-	// prod-west) target the remote bridge instead of only "prod-east" --
-	// and skips deploying a local kube-mcp-server entirely
-	// (deployKubeMCPServerAndRegister). This is the "fleet" full-pipeline
-	// suite's mode: every fleet-routed reconciliation must hit a genuinely
-	// separate Kubernetes control plane (no local/loopback fallback that
-	// could mask the wiring gaps this topology exists to catch -- see
-	// AGENTS.md pyramid invariant). FMC's E2E lanes leave this false,
-	// keeping their narrower "prove isolation via one remote registration"
-	// scope (DD-TEST-013) unaffected.
+	// non-nil), makes the three spoke aliases (remote-cluster, prod-east,
+	// prod-west) target the remote bridge. When HubClusterID is also set, a
+	// separate hub registration uses the local kube-mcp-server. This lets the
+	// fleet suite prove both Gateway-routed hub access and genuine spoke access.
+	// FMC's E2E lanes leave this false, keeping their narrower DD-TEST-013 scope.
 	AllRegistrationsRemote bool
 }
 
@@ -306,13 +301,13 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 // NodePort mapping (31976 for EAIGW MCP) -- already present in
 // kind-fullpipeline-config.yaml.
 //
-// Unlike the FMC E2E lanes' loopback pattern, this suite backs EVERY
-// registration (including the one named "remote-cluster") with a genuinely
-// separate second Kind cluster (AllRegistrationsRemote, DD-TEST-013) so no
-// fleet-routed reconciliation can silently fall back to the primary cluster.
+// Unlike the FMC E2E lanes' loopback pattern, this suite backs every spoke
+// registration (including "remote-cluster") with a genuinely separate second
+// Kind cluster (AllRegistrationsRemote, DD-TEST-013), and separately registers
+// the hub as "hub" so fleet-mode hub targets also route through the Gateway.
 //
-// Total additional memory over fullpipeline: ~388 MB
-// (Istio ~250 MB + Kuadrant ~60 MB + kube-mcp-server ~16 MB + Valkey ~30 MB + FMC ~32 MB).
+// Total additional memory over fullpipeline: ~404 MB
+// (Istio ~250 MB + Kuadrant ~60 MB + two kube-mcp-server deployments ~32 MB + Valkey ~30 MB + FMC ~32 MB).
 //
 // Authority: Issue #54, ADR-068
 // keycloakHostPortDemo is the Kind extraPortMappings host port for Keycloak
@@ -343,7 +338,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet E2E Infrastructure (Issue #54)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Base: Full Pipeline (all services), fleet-enabled from the FIRST helm install (DD-TEST-015)")
-	_, _ = fmt.Fprintln(writer, "  Fleet: Envoy AI Gateway (EAIGW) + chart-managed FMC + Valkey, ALL registrations remote (DD-TEST-013)")
+	_, _ = fmt.Fprintln(writer, "  Fleet: Envoy AI Gateway (EAIGW) + chart-managed FMC + Valkey, hub + remote Gateway registrations")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	cleanStaleTarFiles(writer)
@@ -382,6 +377,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 			Namespace:         namespace,
 			KeycloakNamespace: namespace,
 			GatewayType:       registry.GatewayEAIGW,
+			HubClusterID:      "hub",
 		}, writer)
 		remoteKubeconfigPath = rkp
 		return fleetOpts, err
@@ -420,6 +416,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
+	_, _ = fmt.Fprintln(writer, "  Hub tool prefix:    hub__ (EAIGW convention)")
 	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote-cluster__ (EAIGW convention)")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:   %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -450,6 +447,9 @@ func addFleetWorkloadNamespaces(namespaces map[string]string) {
 		namespaces[key] = fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
 	}
 	namespaces["fleet-ka-interactive"] = "fleet-ka-interactive"
+	// Fixed namespace paired with prometheus_alertmanager_e2e.go's
+	// AFHubClusterTriage2394/AFRemoteClusterTriageCollision2394 rules.
+	namespaces["fleet-af-hub-triage"] = "fleet-af-hub-triage"
 }
 
 // buildLLMCredentialsSecretManifest renders the llm-credentials-primary
@@ -850,8 +850,9 @@ type FleetCoreInfraOptions struct {
 	// CreateTestNamespace before invoking provisionFleetCoreInfra).
 	Namespace string
 
-	// HubClusterID enables the demo's hub-local MCP registration. Empty keeps
-	// the full-pipeline fleet suite's remote-only topology unchanged.
+	// HubClusterID enables a separate MCP Gateway registration for the local
+	// hub kube-mcp-server. Fleet E2E sets this to "hub" so hub-targeted AF
+	// remediations exercise the Gateway path too.
 	HubClusterID string
 
 	// KeycloakNamespace is Namespace (kubernautSystem) for the "fleet"/

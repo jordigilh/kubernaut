@@ -269,6 +269,28 @@ func kaInteractiveFleetBridgeScenarioYAML(targetNamespace string) string {
 `, targetNamespace)
 }
 
+// afHubClusterTriageScenarioYAML drives an AF-created RR against the registered
+// hub MCP Gateway backend for E2E-FLEET-2394-001. Its unique selector keeps the
+// explicit cluster_id=hub tool call isolated from generic remediation tests.
+func afHubClusterTriageScenarioYAML(targetNamespace string) string {
+	if targetNamespace == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_hub_cluster_triage_2394"
+        keywords: ["af-hub-cluster-triage-2394"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "af-hub-triage-target"
+            api_version: "apps/v1"
+            cluster_id: "hub"
+            description: "E2E-FLEET-2394-001 hub-cluster severity attribution"
+`, targetNamespace)
+}
+
 // combinedRemediateInvestigateScenarioYAML returns a keyword scenario for
 // issue #1853 mode 2 (Interactive, single combined message): a single A2A
 // message containing both "create a remediation" and "investigate" intent
@@ -803,6 +825,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		afInvestigationClusterID = "remote-cluster"
 	}
 	afKeywordYAML := "scenario_selectors:\n" + remediateScenarios +
+		afHubClusterTriageScenarioYAML(afRemediateNS["fleet-af-hub-triage"]) +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID, afInvestigationClusterID) +
 		afGitOpsSelectScenarioYAML +

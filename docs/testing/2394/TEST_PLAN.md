@@ -22,10 +22,11 @@ to the requested `cluster_id`, while preserving hub-local behavior.
 
 1. A fleet target selects only alerts attributed to its requested `cluster` label.
 2. A fleet target rejects un-attributed or differently attributed alert data.
-3. Pending and inactive Prometheus rules obey the same cluster boundary.
-4. The production AF investigate path carries `cluster_id` into triage and the
+3. Empty cluster identity preserves local single-cluster triage; local cluster labels are not treated as Gateway identities.
+4. Pending and inactive Prometheus rules obey the same fleet cluster boundary.
+5. The production AF investigate path carries `cluster_id` into triage and the
    created RR preserves the selected alert and severity.
-5. No implementation introduces direct hub-to-spoke Kubernetes API access or
+6. No implementation introduces direct hub-to-spoke Kubernetes API access or
    remote Kubernetes Event consumption.
 
 ## 2. References
@@ -68,6 +69,13 @@ to the requested `cluster_id`, while preserving hub-local behavior.
 - `pkg/apifrontend/severity`: alert and rule correlation by fleet cluster.
 - `pkg/apifrontend/tools/af_create_rr.go`: propagation of `CreateRRArgs.ClusterID` into triage.
 - `pkg/apifrontend/tools/ka_investigate_mcp.go`: production AF investigate dispatch.
+- Standalone AF E2E: single-cluster severity scenarios omit Gateway identity and
+  preserve local alert correlation without deploying MCP Gateway.
+- Full fleet E2E: real AF A2A remediation targeting the Gateway-registered hub
+  while a higher-severity alert with identical target labels is attributed to a
+  spoke cluster.
+- Full fleet E2E: the Gateway rejects an unattributed signal even when its
+  target resource exists on the hub, proving no implicit local fallback.
 
 ### 4.2 Features Not Tested
 
@@ -83,8 +91,11 @@ to the requested `cluster_id`, while preserving hub-local behavior.
 
 | Component | Production entry point | Wiring location | Test ID |
 |-----------|-------------------------|-----------------|---------|
-| Cluster-aware alert/rule triage | `Triager.Triage` | `pkg/apifrontend/severity/triage.go` | UT-AF-2394-001..005 |
+| Cluster-aware alert/rule triage | `Triager.Triage` | `pkg/apifrontend/severity/triage.go` | UT-AF-2394-001..005, UT-AF-2394-006..009 |
 | Cluster ID propagation | `HandleCreateRRWithHooks` via `kubernaut_investigate` | `pkg/apifrontend/tools/af_create_rr.go`, `ka_investigate_mcp.go` | IT-AF-2394-006 |
+| Local AF cluster-label handling | `Triager.Triage` with fleet disabled | `pkg/apifrontend/severity/triage.go`, `test/infrastructure/apifrontend_prometheus_e2e.go` | UT-AF-2394-003/008/010, UT-INFRA-AF-2394-001 |
+| Hub Gateway attribution and severity selection | Real AF A2A `kubernaut_remediate` | `test/e2e/fleet/24_af_hub_cluster_triage_test.go` and `test/infrastructure/fleet_e2e.go` | E2E-FLEET-2394-001 |
+| Missing cluster attribution fails closed | Prometheus webhook owner resolution | `cmd/gateway/main.go`, `pkg/gateway/adapters/prometheus_adapter.go` | E2E-FLEET-2394-002 |
 | Local-only Event fallback | AF RR creation | `pkg/apifrontend/tools/af_create_rr.go` | UT-AF-2390-001/002 |
 
 ### 5.2 Scenario Inventory
@@ -97,12 +108,22 @@ to the requested `cluster_id`, while preserving hub-local behavior.
 | UT-AF-2394-004 | UT | Selects pending rules only when their cluster attribution matches. | AC-4, SI-4, ASVS V4 | BR-FLEET-054 |
 | UT-AF-2394-005 | UT | Evaluates inactive rules only when their cluster attribution matches. | AC-4, SI-4, ASVS V4 | BR-FLEET-054 |
 | IT-AF-2394-006 | IT | Real AF investigate dispatch carries `cluster_id` into triage and writes the selected signal/severity to the RR. | AU-3, AC-4, SC-7, SI-4, ASVS V4 | BR-FLEET-054, BR-INTEGRATION-065 |
+| UT-AF-2394-006 | UT | Fleet triage fails closed when the target cluster ID is empty. | AC-6, ASVS V4/V5 | BR-FLEET-054 |
+| UT-AF-2394-007 | UT | Fleet triage rejects rules without exact cluster attribution. | AC-4, AC-6, ASVS V4/V5 | BR-FLEET-054 |
+| UT-AF-2394-008 | UT | Local triage ignores an incidental cluster ID and still matches local alerts. | SI-4 | BR-INTEGRATION-065 |
+| UT-AF-2394-009 | UT | Fleet hub triage matches `cluster=hub` and excludes spoke collisions. | AC-4, SI-4, ASVS V4 | BR-FLEET-054 |
+| UT-AF-2394-010 | UT | Local triage matches pending rules without a Gateway cluster ID. | SI-4 | BR-INTEGRATION-065 |
+| UT-INFRA-AF-2394-001 | UT | Standalone AF Prometheus fixtures omit a synthetic Gateway cluster label. | SI-4 | BR-INTEGRATION-065 |
+| E2E-FLEET-2394-001 | E2E | Real AF A2A remediation targets a hub-only resource, retains `cluster_id=hub`, and selects its warning alert over an identical-label remote critical collision. | AC-4, SC-7, SI-4, AU-3 | BR-FLEET-054 |
+| E2E-FLEET-2394-002 | E2E | Fleet Gateway rejects an unattributed signal and creates no RR even when the same target exists on the hub. | AC-4, AC-6, SI-10, SC-7, ASVS V4/V5 | BR-FLEET-054, BR-INTEGRATION-065 |
 | UT-AF-2390-001 | UT | Hub-local investigation preserves a grounded local Kubernetes Event signal. | SI-4, ASVS V5 | BR-AI-056 |
 | UT-AF-2390-002 | UT | Fleet investigation does not use a hub-local Kubernetes Event as a remote signal. | AC-4, AC-6, SC-7, ASVS V4 | BR-FLEET-054 |
 
 ### 5.3 Pass Criteria
 
 - All listed UT and IT scenarios pass.
+- E2E-FLEET-2394-001 passes in the fleet E2E lane.
+- E2E-FLEET-2394-002 passes in the fleet E2E lane.
 - Existing `pkg/apifrontend/severity` and `pkg/apifrontend/tools` suites have
   zero regressions.
 - `go build ./...` succeeds.

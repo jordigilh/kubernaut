@@ -131,7 +131,41 @@ func fleetInteractiveBridgeGroundingRule() string {
           name: ka-interactive-fleet-target
           cluster: remote-cluster
         annotations:
-          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"`
+          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"` +
+		`
+  af-hub-cluster-triage-2394.yml: |
+    # E2E-FLEET-2394-001: matching target labels fire on both registered
+    # clusters with different severities. AF must honor the requested
+    # cluster_id and select the hub alert, not the remote collision.
+    groups:
+    - name: af-hub-cluster-triage-2394
+      interval: 10s
+      rules:
+      - alert: AFHubClusterTriage2394
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: hub
+          namespace: fleet-af-hub-triage
+          kind: Deployment
+          name: af-hub-triage-target
+        annotations:
+          summary: "E2E-FLEET-2394-001: hub-attributed grounding alert"
+      - alert: AFRemoteClusterTriageCollision2394
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: critical
+          source: prometheus
+          cluster: remote-cluster
+          namespace: fleet-af-hub-triage
+          kind: Deployment
+          name: af-hub-triage-target
+        annotations:
+          summary: "E2E-FLEET-2394-001: remote-cluster collision alert"
+`
 }
 
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
