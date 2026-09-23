@@ -81,8 +81,14 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).NotTo(HaveOccurred())
 		kubeconfigPath = getEnvOrDefault("AF_E2E_KUBECONFIG", filepath.Join(homeDir, ".kube", e2eClusterName+"-config"))
 
-		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture {
-			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
+		// Helper-only specs use httptest and do not need a Kind cluster.
+		helperTestsOnly := os.Getenv("AF_E2E_HELPER_TESTS_ONLY") == trueFixture
+		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture || helperTestsOnly {
+			if helperTestsOnly {
+				_, _ = fmt.Fprintln(GinkgoWriter, "Skipping cluster setup (AF_E2E_HELPER_TESTS_ONLY=true)")
+			} else {
+				_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
+			}
 			setupSucceeded = true
 			setup, marshalErr := json.Marshal(afE2ESuiteSetup{
 				LocalKubeconfigPath: kubeconfigPath,
@@ -222,7 +228,11 @@ var _ = SynchronizedBeforeSuite(
 		clientSecret = "e2e-client-secret"
 		username = "e2e-user@kubernaut.ai"
 		password = "password"
-		httpClient = newTLSClient(caCertPath)
+		if os.Getenv("AF_E2E_HELPER_TESTS_ONLY") != trueFixture {
+			httpClient = newTLSClient(caCertPath)
+		} else {
+			return
+		}
 
 		By("Building Kubernetes clients from kubeconfig")
 		restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
