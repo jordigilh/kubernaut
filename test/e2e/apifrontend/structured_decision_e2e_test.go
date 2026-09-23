@@ -107,8 +107,8 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 				continue
 			}
 
-			if frame.Result.Kind == "artifact-update" {
-				if frame.Result.Artifact.Metadata == nil || frame.Result.Artifact.Metadata["type"] != "decision" {
+			if frame.Result.Kind == artifactUpdate {
+				if frame.Result.Artifact.Metadata == nil || frame.Result.Artifact.Metadata["type"] != decision {
 					continue
 				}
 				for _, p := range frame.Result.Artifact.Parts {
@@ -120,7 +120,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 			}
 
 			if frame.Result.Kind == statusUpdate {
-				if frame.Result.Metadata == nil || frame.Result.Metadata["type"] != "decision" {
+				if frame.Result.Metadata == nil || frame.Result.Metadata["type"] != decision {
 					continue
 				}
 				if len(frame.Result.Status.Message.Parts) == 0 {
@@ -251,7 +251,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 
 		text, meta := scanDecisionEvent(resp)
 		Expect(text).NotTo(BeEmpty(), "should receive decision event with JSON payload")
-		Expect(meta["type"]).To(Equal("decision"))
+		Expect(meta["type"]).To(Equal(decision))
 
 		Expect(len(text)).To(BeNumerically(">", 512),
 			"#1395: structured JSON payload must NOT be truncated at 512 chars")

@@ -138,7 +138,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
 
 		text, metadata := findFleetAFDecisionEvent(resp)
-		Expect(metadata["type"]).To(Equal("decision"))
+		Expect(metadata["type"]).To(Equal(decision))
 		Expect(len(text)).To(BeNumerically(">", 512), "SI-10: the structured decision payload must not be truncated")
 		Expect(text).NotTo(HaveSuffix("..."))
 
@@ -358,13 +358,13 @@ func groundFleetAFSession(ctx context.Context, token, prompt, contextID string) 
 
 func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 	for _, event := range readFleetAFEvents(resp) {
-		if event["kind"] == "artifact-update" {
+		if event["kind"] == artifactUpdate {
 			artifact, _ := event["artifact"].(map[string]any)
 			if artifact == nil {
 				continue
 			}
 			metadata, _ := artifact["metadata"].(map[string]any)
-			if metadata == nil || metadata["type"] != "decision" {
+			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
 			parts, _ := artifact["parts"].([]any)
@@ -385,7 +385,7 @@ func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 		}
 		if event["kind"] == statusUpdate {
 			metadata, _ := event["metadata"].(map[string]any)
-			if metadata == nil || metadata["type"] != "decision" {
+			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
 			status, _ := event["status"].(map[string]any)
