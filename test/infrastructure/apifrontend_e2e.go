@@ -34,6 +34,7 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -43,6 +44,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,52 +81,53 @@ func afE2EHostPort(defaultPort int) int {
 	return defaultPort + offset
 }
 
-// SetupAPIFrontendE2EInfrastructure is the top-level orchestrator for AF E2E tests.
-// It deploys the full kubernaut stack (KA+DS+PostgreSQL+Redis+mock-LLM+DEX+CRDs)
-// then overlays AF's own image and config.
-//
-// Image strategy mirrors kubernaut's own E2E pattern:
-//   - When IMAGE_REGISTRY + IMAGE_TAG are set, use registry references for DS, KA,
-//     mock-LLM (kinfra BuildImageForKind fast-path) and apifrontend as
-//     IMAGE_REGISTRY + "/apifrontend:" + IMAGE_TAG. When IMAGE_REGISTRY is set,
-//     kind load is skipped so kubelet pulls public GHCR images directly.
-//   - Otherwise, images are built locally and loaded into Kind (including AF via BuildAFImage).
-func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Setup (kubernaut-aligned)")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	projectRoot := getProjectRoot()
+// SetupAPIFrontendE2EInfrastructure builds the standalone AF image set once,
+// deploys the local-mode AF cluster, and returns the images so the Fleet-mode
+// cluster can reuse the same artifacts without rebuilding them.
+func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) (map[string]string, error) {
 	hostPortOffset, err := afE2EHostPortOffset()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	coverdataDir := filepath.Join(projectRoot, "coverdata")
-	if err := os.MkdirAll(coverdataDir, 0o777); err != nil { //nolint:gosec // G301: world-readable dir needed for Kind volume mount
-		_, _ = fmt.Fprintf(writer, "  WARNING: failed to create coverdata dir: %v\n", err)
+	images, err := BuildAPIFrontendE2EImages(ctx, writer)
+	if err != nil {
+		return nil, err
 	}
-
-	imageRegistry := os.Getenv("IMAGE_REGISTRY")
-	imageTag := os.Getenv("IMAGE_TAG")
-	if imageRegistry != "" && imageTag != "" {
-		_, _ = fmt.Fprintf(writer, "  Registry mode: %s/*:%s\n", imageRegistry, imageTag)
-	} else {
-		_, _ = fmt.Fprintln(writer, "  Local build mode (no IMAGE_REGISTRY/IMAGE_TAG set)")
+	options := apiFrontendE2EOptions{
+		KindConfigPath: "test/infrastructure/kind-kubernautagent-config.yaml",
+		HostPortOffset: hostPortOffset,
 	}
+	if err := setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, options, writer); err != nil {
+		return images, err
+	}
+	return images, nil
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Resolve/build images
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\nPHASE 1: Resolving images...")
+// SetupAPIFrontendFleetE2EInfrastructure deploys the standalone AF services
+// plus the minimal hub-only Fleet core into a second isolated Kind cluster
+// (DD-TEST-019).
+// Images are shared with SetupAPIFrontendE2EInfrastructure; fmcImage is built
+// or resolved separately because local-mode AF does not need FMC.
+func SetupAPIFrontendFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, fmcImage string, writer io.Writer) error {
+	return setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, apiFrontendE2EOptions{
+		KindConfigPath: "test/infrastructure/kind-apifrontend-fleet-config.yaml",
+		FleetEnabled:   true,
+		FleetImage:     fmcImage,
+	}, writer)
+}
 
+// BuildAPIFrontendE2EImages resolves the image set shared by the isolated
+// local and Fleet AF clusters. Build the coverage-instrumented AF image after
+// the three supporting images so Podman does not run four dependency-heavy Go
+// image builds concurrently on local developers' machines.
+func BuildAPIFrontendE2EImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
+	_, _ = fmt.Fprintln(writer, "\n📦 Resolving standalone AF E2E images...")
 	type buildResult struct {
 		name  string
 		image string
 		err   error
 	}
-	results := make(chan buildResult, 4)
-
+	results := make(chan buildResult, 3)
 	for _, svc := range []struct {
 		name       string
 		image      string
@@ -136,31 +139,72 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		{"mock-llm", "mock-llm", "test/services/mock-llm/go.Dockerfile", ""},
 	} {
 		go func(name, image, dockerfile, buildCtx string) {
-			cfg := E2EImageConfig{
-				ServiceName:      name,
-				ImageName:        image,
-				DockerfilePath:   dockerfile,
-				BuildContextPath: buildCtx,
-			}
+			cfg := E2EImageConfig{ServiceName: name, ImageName: image, DockerfilePath: dockerfile, BuildContextPath: buildCtx}
 			img, err := BuildImageForKind(ctx, cfg, writer)
 			results <- buildResult{name, img, err}
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
-
-	// DD-TEST-007: AF is always built locally with GOFLAGS=-cover
-	go func() {
-		img, err := BuildAFImage(ctx, writer)
-		results <- buildResult{"apifrontend", img, err}
-	}()
-
 	images := make(map[string]string, 4)
-	for i := 0; i < 4; i++ {
-		r := <-results
-		if r.err != nil {
-			return fmt.Errorf("failed to build %s: %w", r.name, r.err)
+	for range 3 {
+		result := <-results
+		if result.err != nil {
+			return nil, fmt.Errorf("failed to build %s: %w", result.name, result.err)
 		}
-		images[r.name] = r.image
-		_, _ = fmt.Fprintf(writer, "  %s: %s\n", r.name, r.image)
+		images[result.name] = result.image
+		_, _ = fmt.Fprintf(writer, "  %s: %s\n", result.name, result.image)
+	}
+	// DD-TEST-007: AF is built locally with GOFLAGS=-cover after the supporting images.
+	afImage, err := BuildAFImage(ctx, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build apifrontend: %w", err)
+	}
+	images["apifrontend"] = afImage
+	_, _ = fmt.Fprintf(writer, "  apifrontend: %s\n", afImage)
+	return images, nil
+}
+
+type apiFrontendE2EOptions struct {
+	KindConfigPath string
+	HostPortOffset int
+	FleetEnabled   bool
+	FleetImage     string
+}
+
+func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	if options.FleetEnabled {
+		_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Setup (hub-only Fleet mode)")
+	} else {
+		_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Setup (local mode)")
+	}
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	projectRoot := getProjectRoot()
+	coverdataDir := filepath.Join(projectRoot, "coverdata")
+	if err := os.MkdirAll(coverdataDir, 0o777); err != nil { //nolint:gosec // G301: world-readable dir needed for Kind volume mount
+		_, _ = fmt.Fprintf(writer, "  WARNING: failed to create coverdata dir: %v\n", err)
+	}
+	imageRegistry := os.Getenv("IMAGE_REGISTRY")
+	imageTag := os.Getenv("IMAGE_TAG")
+	if imageRegistry != "" && imageTag != "" {
+		_, _ = fmt.Fprintf(writer, "  Registry mode: %s/*:%s\n", imageRegistry, imageTag)
+	} else {
+		_, _ = fmt.Fprintln(writer, "  Reusing the shared AF E2E image set")
+	}
+	if options.KindConfigPath == "" {
+		return fmt.Errorf("kind config path is required for AF E2E setup")
+	}
+	_, _ = fmt.Fprintf(writer, "  Cluster: %s (Kind config: %s, host port offset: %d)\n", clusterName, options.KindConfigPath, options.HostPortOffset)
+	if len(images) == 0 {
+		return fmt.Errorf("api frontend E2E image set is required")
+	}
+	for _, name := range []string{"datastorage", "kubernautagent", "mock-llm", "apifrontend"} {
+		if images[name] == "" {
+			return fmt.Errorf("api frontend E2E image %q is required", name)
+		}
+	}
+	if options.FleetEnabled && options.FleetImage == "" {
+		return fmt.Errorf("fleet metadata cache image is required for Fleet AF E2E setup")
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -170,13 +214,13 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
-		ConfigPath:                "test/infrastructure/kind-kubernautagent-config.yaml",
+		ConfigPath:                options.KindConfigPath,
 		WaitTimeout:               "5m",
 		DeleteExisting:            true,
 		CleanupOrphanedContainers: true,
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
-		HostPortOffset:            hostPortOffset,
+		HostPortOffset:            options.HostPortOffset,
 	}
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -199,6 +243,11 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)
 		}
+		if options.FleetEnabled {
+			if err := LoadImageToKind(ctx, options.FleetImage, "fleetmetadatacache", clusterName, writer); err != nil {
+				return fmt.Errorf("failed to load Fleet Metadata Cache image: %w", err)
+			}
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -218,6 +267,16 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
+	var fleetOptions *FleetHelmOptions
+	if options.FleetEnabled {
+		_, _ = fmt.Fprintln(writer, "  🌐 Provisioning hub-only Fleet core from the FMC E2E setup...")
+		fleetOpts, fleetErr := SetupFMCHubOnlyInfrastructure(ctx, clusterName, kubeconfigPath, namespace, options.FleetImage, writer)
+		fleetOptions = fleetOpts
+		if fleetErr != nil {
+			return fmt.Errorf("hub-only Fleet core setup failed: %w", fleetErr)
+		}
+	}
+
 	_, _ = fmt.Fprintln(writer, "  Deploying DataStorage stack (PostgreSQL + Redis + migrations + DS)...")
 	if err := DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, images["datastorage"], 30089, writer); err != nil {
 		return fmt.Errorf("DataStorage stack deploy failed: %w", err)
@@ -229,7 +288,11 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], "", writer); err != nil {
+	mockLLMClusterID := ""
+	if options.FleetEnabled {
+		mockLLMClusterID = fleetHubClusterID
+	}
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], mockLLMClusterID, writer); err != nil {
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
@@ -242,7 +305,10 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
 
-	certDir := os.Getenv("AF_E2E_CERT_DIR")
+	certDir := ""
+	if !options.FleetEnabled {
+		certDir = os.Getenv("AF_E2E_CERT_DIR")
+	}
 	if certDir == "" {
 		certDir = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", clusterName)
 	}
@@ -255,7 +321,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	_ = os.Setenv("AF_E2E_CERT_DIR", certDir)
 	_ = os.Setenv("CERT_DIR", certDir)
 	_ = os.Setenv("AF_E2E_CA_CERT", filepath.Join(certDir, "ca.crt"))
-	if os.Getenv("AF_E2E_DEX_URL") == "" {
+	if !options.FleetEnabled && os.Getenv("AF_E2E_DEX_URL") == "" {
 		_ = os.Setenv("AF_E2E_DEX_URL", fmt.Sprintf("https://localhost:%d/dex", afE2EHostPort(5556)))
 	}
 	_ = os.Setenv("KUBECONFIG", kubeconfigPath)
@@ -266,12 +332,19 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to install CRDs: %w", err)
 	}
 
-	if err := afDeployDex(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to deploy Dex: %w", err)
+	if !options.FleetEnabled {
+		if err := afDeployDex(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return fmt.Errorf("failed to deploy Dex: %w", err)
+		}
 	}
 
 	if err := afDeployE2ERBAC(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
+	}
+	if options.FleetEnabled {
+		if err := afDeployFleetRBAC(ctx, kubeconfigPath, namespace, writer); err != nil {
+			return fmt.Errorf("failed to deploy Fleet AF RBAC: %w", err)
+		}
 	}
 
 	// Seed DS with action types + workflows so kubernaut_list_workflows returns
@@ -296,8 +369,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	afImage := images["apifrontend"]
-	if err := DeployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, true, writer); err != nil {
-		return fmt.Errorf("failed to deploy AF service: %w", err)
+	var deployErr error
+	if options.FleetEnabled {
+		deployErr = deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, true, fleetOptions, writer)
+	} else {
+		deployErr = DeployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, true, writer)
+	}
+	if deployErr != nil {
+		return fmt.Errorf("failed to deploy AF service: %w", deployErr)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -305,7 +384,11 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
 
-	for _, deploy := range []string{"datastorage", "kubernaut-agent", "mock-llm", "dex", "apifrontend"} {
+	deployments := []string{"datastorage", "kubernaut-agent", "mock-llm", "apifrontend"}
+	if !options.FleetEnabled {
+		deployments = append(deployments, "dex")
+	}
+	for _, deploy := range deployments {
 		_, _ = fmt.Fprintf(writer, "  Waiting for %s...\n", deploy)
 		timeout := 120 * time.Second
 		if deploy == "datastorage" {
@@ -316,9 +399,16 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		}
 	}
 
-	_, _ = fmt.Fprintln(writer, "  Patching KA for JWT delegation (DEX is now available)...")
-	if err := afPatchKAJWTAudience(ctx, kubeconfigPath, namespace, writer); err != nil {
-		_, _ = fmt.Fprintf(writer, "  WARNING: KA JWT audience patch failed (non-fatal): %v\n", err)
+	if options.FleetEnabled {
+		_, _ = fmt.Fprintln(writer, "  Configuring KA for Keycloak identity and Fleet MCP routing...")
+		if err := afPatchKubernautAgentFleetConfig(ctx, kubeconfigPath, namespace, fleetOptions, writer); err != nil {
+			return fmt.Errorf("KA Fleet configuration failed: %w", err)
+		}
+	} else {
+		_, _ = fmt.Fprintln(writer, "  Patching KA for JWT delegation (DEX is now available)...")
+		if err := afPatchKAJWTAudience(ctx, kubeconfigPath, namespace, writer); err != nil {
+			_, _ = fmt.Fprintf(writer, "  WARNING: KA JWT audience patch failed (non-fatal): %v\n", err)
+		}
 	}
 	_, _ = fmt.Fprintln(writer, "  Waiting for kubernaut-agent restart...")
 	if err := WaitForDeploymentRollout(ctx, kubeconfigPath, namespace, "kubernaut-agent", 120*time.Second, writer); err != nil {
@@ -326,7 +416,12 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Ready: Full kubernaut stack + AF")
+	if options.FleetEnabled {
+		_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Ready: APIFrontend + Fleet core")
+		_, _ = fmt.Fprintln(writer, "  Fleet cluster ID: hub (registered through the EAIGW Gateway)")
+	} else {
+		_, _ = fmt.Fprintln(writer, "AF E2E Infrastructure Ready: local APIFrontend stack")
+	}
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
@@ -431,15 +526,25 @@ func CollectAFE2EBinaryCoverage(clusterName string, writer io.Writer) error {
 	}, writer)
 }
 
-// DeployAPIFrontendService deploys the AF ConfigMaps, Deployment, and NodePort Service.
+// DeployAPIFrontendService deploys the local-mode AF ConfigMaps, Deployment, and NodePort Service.
 // When enableCoverage is true, the pod includes GOCOVERDIR=/coverdata env var and
 // a hostPath volume mount (DD-TEST-007). When false (e.g., FP cluster), coverage
 // instrumentation is omitted.
 func DeployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, writer io.Writer) error {
+	return deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, enableCoverage, nil, writer)
+}
+
+func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetHelmOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
 		return fmt.Errorf("failed to read config.yaml: %w", err)
+	}
+	if fleetOptions != nil {
+		configData, err = buildAPIFrontendFleetConfig(configData, namespace, fleetOptions)
+		if err != nil {
+			return fmt.Errorf("failed to configure Fleet-mode APIFrontend: %w", err)
+		}
 	}
 
 	pullPolicy := "IfNotPresent"
@@ -477,6 +582,19 @@ func DeployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
           hostPath:
             path: /coverdata
             type: DirectoryOrCreate`
+	}
+	if fleetOptions != nil {
+		if fleetOptions.OAuth2CredentialsSecret == "" {
+			return fmt.Errorf("fleet OAuth2 credentials secret is required for APIFrontend")
+		}
+		coverageMount += fmt.Sprintf(`
+            - name: fleet-oauth2-credentials
+              mountPath: /etc/apifrontend/%s
+              readOnly: true`, fleetOptions.OAuth2CredentialsSecret)
+		coverageVolume += fmt.Sprintf(`
+        - name: fleet-oauth2-credentials
+          secret:
+            secretName: %s`, fleetOptions.OAuth2CredentialsSecret)
 	}
 
 	manifest := fmt.Sprintf(`apiVersion: v1
@@ -611,6 +729,53 @@ spec:
 `, namespace, indentYAMLLines(string(configData), 4), securityCtx, afImage, pullPolicy,
 		coverageEnv, coverageMount, coverageVolume, healthNodePort)
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
+}
+
+func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+	if fleetOptions == nil {
+		return baseConfig, nil
+	}
+	if fleetOptions.MCPGatewayEndpoint == "" || fleetOptions.OAuth2TokenURL == "" || fleetOptions.OAuth2CredentialsSecret == "" {
+		return nil, fmt.Errorf("fleet MCP endpoint, token URL, and credentials secret are required")
+	}
+	var config map[string]any
+	if err := yaml.Unmarshal(baseConfig, &config); err != nil {
+		return nil, fmt.Errorf("parse AF E2E config: %w", err)
+	}
+	authConfig, ok := config["auth"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("api frontend E2E config must contain an auth mapping")
+	}
+	issuerURL := "https://keycloak:8443/realms/kubernaut-demo"
+	authConfig["issuerURL"] = issuerURL
+	authConfig["jwksURL"] = fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs", namespace)
+	authConfig["audience"] = "kubernaut-apifrontend"
+
+	fmcNamespace := fleetOptions.FleetMetadataCacheNamespace
+	if fmcNamespace == "" {
+		fmcNamespace = namespace
+	}
+	config["fleet"] = map[string]any{
+		"enabled":            true,
+		"backend":            string(fleet.BackendFMC),
+		"endpoint":           fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace),
+		"mcpGatewayEndpoint": fleetOptions.MCPGatewayEndpoint,
+		"mcpGatewayType":     fleetOptions.MCPGatewayType,
+		"namespace":          namespace,
+		"tlsCAFile":          "/etc/apifrontend/inter-service-ca/ca.crt",
+		"oauth2": map[string]any{
+			"enabled":              true,
+			"tokenURL":             fleetOptions.OAuth2TokenURL,
+			"credentialsSecretRef": fleetOptions.OAuth2CredentialsSecret,
+			"scopes":               fleetOptions.OAuth2Scopes,
+			"tlsCAFile":            "/etc/apifrontend/inter-service-ca/ca.crt",
+		},
+	}
+	encoded, err := yaml.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("marshal Fleet-mode AF config: %w", err)
+	}
+	return encoded, nil
 }
 
 // personaOrder is the fixed, deterministic rendering order for the 6
@@ -802,6 +967,132 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
 	return nil
 }
 
+func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, namespace string, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
+		return fmt.Errorf("fleet gateway options and OAuth2 secret are required for Kubernaut Agent")
+	}
+
+	getCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infrastructure
+		"-n", namespace, "get", "configmap", "kubernaut-agent-config", "-o", "jsonpath={.data.config\\.yaml}")
+	currentConfig, err := getCmd.Output()
+	if err != nil {
+		return fmt.Errorf("get KA config for Fleet patch: %w", err)
+	}
+
+	encodedConfig, err := buildKubernautAgentFleetConfig(currentConfig, namespace, fleetOptions)
+	if err != nil {
+		return err
+	}
+	configPatch, err := json.Marshal(map[string]map[string]string{"data": {"config.yaml": string(encodedConfig)}})
+	if err != nil {
+		return fmt.Errorf("marshal KA Fleet ConfigMap patch: %w", err)
+	}
+	patchConfigCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infrastructure
+		"-n", namespace, "patch", "configmap", "kubernaut-agent-config", "--type=merge", "-p", string(configPatch))
+	patchConfigCmd.Stdout = writer
+	patchConfigCmd.Stderr = writer
+	if err := patchConfigCmd.Run(); err != nil {
+		return fmt.Errorf("patch KA Fleet config: %w", err)
+	}
+
+	deploymentPatch, err := buildKubernautAgentFleetDeploymentPatch(fleetOptions)
+	if err != nil {
+		return err
+	}
+	patchDeploymentCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infrastructure
+		"-n", namespace, "patch", "deployment", "kubernaut-agent", "--type=strategic", "-p", string(deploymentPatch))
+	patchDeploymentCmd.Stdout = writer
+	patchDeploymentCmd.Stderr = writer
+	if err := patchDeploymentCmd.Run(); err != nil {
+		return fmt.Errorf("patch KA Fleet OAuth2 credentials mount: %w", err)
+	}
+
+	for _, args := range [][]string{
+		{"--kubeconfig", kubeconfigPath, "-n", namespace, "rollout", "restart", "deployment/kubernaut-agent"},
+		{"--kubeconfig", kubeconfigPath, "-n", namespace, "rollout", "status", "deployment/kubernaut-agent", "--timeout=120s"},
+	} {
+		cmd := exec.CommandContext(ctx, "kubectl", args...) //nolint:gosec // G204: test infrastructure
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("restart KA with Fleet config: %w", err)
+		}
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ KA Fleet OAuth2 configured for %s\n", fleetOptions.MCPGatewayEndpoint)
+	return nil
+}
+
+func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetHelmOptions) ([]byte, error) {
+	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
+		return nil, fmt.Errorf("fleet OAuth2 credentials secret is required for Kubernaut Agent")
+	}
+	return json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"template": map[string]any{
+				"spec": map[string]any{
+					"containers": []map[string]any{{
+						"name": "kubernaut-agent",
+						"volumeMounts": []map[string]any{{
+							"name":      "fleet-oauth2-credentials",
+							"mountPath": "/etc/kubernaut-agent/" + fleetOptions.OAuth2CredentialsSecret,
+							"readOnly":  true,
+						}},
+					}},
+					"volumes": []map[string]any{{
+						"name":   "fleet-oauth2-credentials",
+						"secret": map[string]string{"secretName": fleetOptions.OAuth2CredentialsSecret},
+					}},
+				},
+			},
+		},
+	})
+}
+
+func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" || fleetOptions.MCPGatewayEndpoint == "" || fleetOptions.OAuth2TokenURL == "" {
+		return nil, fmt.Errorf("fleet gateway endpoint, OAuth2 token URL, and secret are required for Kubernaut Agent")
+	}
+	var config map[string]any
+	if err := yaml.Unmarshal(currentConfig, &config); err != nil {
+		return nil, fmt.Errorf("parse KA config for Fleet patch: %w", err)
+	}
+	integrations, ok := config["integrations"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("kubernaut agent config must contain an integrations mapping")
+	}
+	integrations["fleet"] = map[string]any{
+		"endpoint":    fleetOptions.MCPGatewayEndpoint,
+		"gatewayType": fleetOptions.MCPGatewayType,
+		"oauth2": map[string]any{
+			"enabled":              true,
+			"tokenURL":             fleetOptions.OAuth2TokenURL,
+			"credentialsSecretRef": fleetOptions.OAuth2CredentialsSecret,
+			"scopes":               fleetOptions.OAuth2Scopes,
+			"tlsCaFile":            "/etc/tls-ca/ca.crt",
+		},
+	}
+	interactive, ok := config["interactive"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("kubernaut agent config must contain an interactive mapping")
+	}
+	interactive["jwtProviders"] = []map[string]any{{
+		"name":      "keycloak-fleet-e2e",
+		"issuer":    "https://keycloak:8443/realms/kubernaut-demo",
+		"jwksURL":   fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs", namespace),
+		"audience":  "kubernaut-apifrontend",
+		"tlsCaFile": "/etc/tls-ca/ca.crt",
+		"claimMappings": map[string]string{
+			"username": "preferred_username",
+			"groups":   "groups",
+		},
+	}}
+	encoded, err := yaml.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("marshal KA Fleet config: %w", err)
+	}
+	return encoded, nil
+}
+
 func afInstallCRDs(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	crds := []string{
@@ -873,6 +1164,45 @@ metadata:
 		return fmt.Errorf("failed to deploy E2E user RBAC: %w", err)
 	}
 	return nil
+}
+
+func afDeployFleetRBAC(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	manifest := buildAFleetRBACManifest(namespace)
+	if err := kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer); err != nil {
+		return fmt.Errorf("apply least-privilege Fleet AF RBAC: %w", err)
+	}
+	return nil
+}
+
+func buildAFleetRBACManifest(namespace string) string {
+	return fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apifrontend-fleet-registry-reader
+  namespace: %[1]s
+rules:
+- apiGroups: ["gateway.envoyproxy.io"]
+  resources: ["backends"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["aigateway.envoyproxy.io"]
+  resources: ["mcproutes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apifrontend-fleet-registry-reader
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apifrontend-fleet-registry-reader
+subjects:
+- kind: ServiceAccount
+  name: apifrontend
+  namespace: %[1]s
+`, namespace)
 }
 
 func collectDeploymentDiagnostics(ctx context.Context, kubeconfigPath, namespace, name string, writer io.Writer) {

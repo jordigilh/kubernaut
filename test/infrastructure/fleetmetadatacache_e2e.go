@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -81,6 +82,94 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 // port collisions.
 func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
 	return setupFMCE2EInfrastructure(ctx, clusterName, kubeconfigPath, registry.GatewayEAIGW, writer)
+}
+
+// SetupFMCHubOnlyInfrastructure provisions the FMC lane's Keycloak, EAIGW,
+// kube-mcp-server, Valkey, and FMC components into an already-created AF E2E
+// cluster. It reuses the AF lane's existing inter-service CA, registers only
+// the logical hub, and creates no remote Kind cluster (DD-TEST-019).
+func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace, fmcImage string, writer io.Writer) (*FleetHelmOptions, error) {
+	if strings.TrimSpace(fmcImage) == "" {
+		return nil, fmt.Errorf("fmc image is required for hub-only FMC infrastructure")
+	}
+	_, _ = fmt.Fprintln(writer, "🚀 Provisioning hub-only Fleet core from the FMC E2E setup...")
+
+	oidcConfig := OIDCPatchConfig{
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-demo",
+		ClientID:       "k8s-api",
+		UsernameClaim:  "preferred_username",
+		UsernamePrefix: "keycloak:",
+	}
+	if err := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, false, writer); err != nil {
+		return nil, fmt.Errorf("deploy FMC-lane Keycloak: %w", err)
+	}
+	if err := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcConfig, namespace, writer); err != nil {
+		return nil, fmt.Errorf("patch AF Fleet cluster API server for Keycloak OIDC: %w", err)
+	}
+
+	const (
+		fleetClientID     = "kubernaut-fleet-read"
+		fleetClientSecret = "e2e-fleet-secret"
+	)
+	fleetScopes := []string{"kube-mcp-server-audience"}
+	authConfig := KubeMCPServerAuthConfig{
+		Mode:              KubeMCPServerAuthModePassthrough,
+		GatewayType:       registry.GatewayEAIGW,
+		RequireOAuth:      true,
+		AuthorizationURL:  oidcConfig.IssuerURL,
+		KeycloakNamespace: namespace,
+		OAuthAudience:     "kube-mcp-server",
+		StsClientID:       "kube-mcp-server",
+		StsClientSecret:   "e2e-kube-mcp-server-secret",
+		StsAudience:       "k8s-api",
+		StsScopes:         []string{"k8s-api-audience"},
+		CAFilePath:        "/etc/tls-ca/ca.crt",
+		HubClusterID:      "hub",
+	}
+	mcpGatewayEndpoint, err := DeployFleetGatewayInfra(ctx, namespace, kubeconfigPath, authConfig, writer)
+	if err != nil {
+		return nil, fmt.Errorf("deploy hub-only FMC-lane Gateway: %w", err)
+	}
+	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return nil, fmt.Errorf("grant the exchanged hub identity read access: %w", err)
+	}
+	keycloakFleetReadToken := func() (string, error) {
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:       fleetClientID,
+			ClientSecret:   fleetClientSecret,
+			Scopes:         fleetScopes,
+			KubeconfigPath: kubeconfigPath,
+		})
+	}
+	_, hubToolPrefix := fleetHubRegistrationIdentity(authConfig)
+	if err := WaitForFleetReady(ctx, keycloakFleetReadToken, eaigwGatewayNodePort, hubToolPrefix, writer); err != nil {
+		return nil, fmt.Errorf("wait for hub-only Gateway readiness: %w", err)
+	}
+	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return nil, fmt.Errorf("deploy shared AF/KA Fleet OAuth2 secret: %w", err)
+	}
+	fmcOAuth2 := FMCOAuth2Config{
+		TokenURL:     "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+		ClientID:     fleetClientID,
+		ClientSecret: fleetClientSecret,
+		Scopes:       fleetScopes,
+	}
+	if err := deployValkeyAndFMC(ctx, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint,
+		authConfig, fmcOAuth2, os.Getenv("E2E_COVERAGE") == trueFixture, writer); err != nil {
+		return nil, fmt.Errorf("deploy FMC lane Valkey/FMC components: %w", err)
+	}
+
+	return &FleetHelmOptions{
+		MCPGatewayEndpoint:          mcpGatewayEndpoint,
+		MCPGatewayType:              string(registry.GatewayEAIGW),
+		OAuth2TokenURL:              keycloakFleetTokenURLFor(namespace, namespace),
+		OAuth2CredentialsSecret:     fleetOAuth2SecretName,
+		OAuth2Scopes:                fleetScopes,
+		WEOAuth2CredentialsSecret:   fleetOAuth2SecretName,
+		SignalProcessingNamespace:   namespace,
+		FleetMetadataCacheNamespace: namespace,
+	}, nil
 }
 
 func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {

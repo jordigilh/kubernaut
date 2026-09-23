@@ -127,6 +127,7 @@
 | DD-TEST-016 | Explicit Transcript Scenarios for A2A E2E Tests | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-016-a2a-transcript-scenario-harness.md](decisions/DD-TEST-016-a2a-transcript-scenario-harness.md) |
 | DD-TEST-017 | Structured Mock-LLM Scenario Selectors | ✅ Approved and implementing | 2026-09-12 | [DD-TEST-017-structured-mock-llm-scenario-selectors.md](decisions/DD-TEST-017-structured-mock-llm-scenario-selectors.md) |
 | DD-TEST-018 | Provider-Neutral Mock LLM Conversation Planner | ✅ Approved & Implemented | 2026-09-21 | [DD-TEST-018-provider-neutral-mock-llm-conversation-planner.md](decisions/DD-TEST-018-provider-neutral-mock-llm-conversation-planner.md) |
+| DD-TEST-019 | Minimal Fleet-Enabled APIFrontend E2E Topology (reuse standalone AF setup + Fleet-core dependencies) | ✅ Approved | 2026-09-23 | [DD-TEST-019-af-fleet-e2e-minimal-topology.md](decisions/DD-TEST-019-af-fleet-e2e-minimal-topology.md) |
 | DD-AF-015 | Session-Scoped In-Process Event Router | ✅ Approved | 2026-09-13 | [DD-AF-015-session-scoped-event-router.md](decisions/DD-AF-015-session-scoped-event-router.md) |
 | ADR-075 | Multi-Pillar Data Contract Extensibility | 📋 Proposed | 2026-09-14 | [ADR-075-multi-pillar-data-contract-extensibility.md](decisions/ADR-075-multi-pillar-data-contract-extensibility.md) |
 | DD-CONTRACT-003 | Pillar Extension Envelope | 📋 Proposed | 2026-09-14 | [DD-CONTRACT-003-pillar-extension-envelope.md](decisions/DD-CONTRACT-003-pillar-extension-envelope.md) |
