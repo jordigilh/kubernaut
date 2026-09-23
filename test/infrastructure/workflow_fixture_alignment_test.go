@@ -47,6 +47,26 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 		Expect(workflow.Spec.Labels.Priority).To(Equal("*"))
 	})
 
+	It("UT-WORKFLOW-004-004: Fleet and local E2E lanes seed their own workflow fixtures", func() {
+		// Fleet E2E-014/012 and E2E-015 consume only these job-backed fixtures;
+		// Fleet-exec has its own fixture seeded by SetupFleetE2EInfrastructure.
+		fleetSeeds := fullPipelineWorkflowSeeds(true)
+		Expect(fleetSeeds).To(ConsistOf(
+			WorkflowSeedSpec{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
+		))
+
+		localSeeds := fullPipelineWorkflowSeeds(false)
+		Expect(localSeeds).To(ConsistOf(
+			WorkflowSeedSpec{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "fix-certificate", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "production"},
+		))
+	})
+
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",
 		func(fixture, actionType string, severity []string, environment string, component []string, priority string) {
 			content, err := readWorkflowFixtureContent(fixture)

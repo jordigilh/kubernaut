@@ -140,6 +140,28 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 //   - builtImages: Map of service name → full image reference (for cleanup)
 //   - seededUUIDs: Map of "workflow_name:environment" → UUID (seeded in Phase 6b)
 //   - error: First fatal error encountered
+func fullPipelineWorkflowSeeds(fleetMode bool) []WorkflowSeedSpec {
+	seeds := []WorkflowSeedSpec{
+		{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
+		{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
+	}
+	if fleetMode {
+		// Fleet E2E-012/014 and E2E-015 consume these job-backed fixtures.
+		// The fleet-exec-cluster-override fixture is seeded separately by
+		// SetupFleetE2EInfrastructure. Keeping unrelated local workflow fixtures
+		// out of this list prevents Fleet setup from mutating their shared
+		// workflow names in the same namespace.
+		return seeds
+	}
+
+	return append(seeds,
+		WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "production"},
+		WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
+		WorkflowSeedSpec{FixtureDir: "fix-certificate", Environment: "production"},
+		WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "production"},
+	)
+}
+
 func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, fleetProvisioner FleetProvisioner, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Full Pipeline E2E Infrastructure (Issue #39)")
@@ -406,14 +428,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
 
-	fpWorkflows := []WorkflowSeedSpec{
-		{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
-		{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
-		{FixtureDir: "gitops-drift-2390", Environment: "production"},
-		{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
-		{FixtureDir: "fix-certificate", Environment: "production"},
-		{FixtureDir: "generic-restart", Environment: "production"},
-	}
+	fpWorkflows := fullPipelineWorkflowSeeds(fleetProvisioner != nil)
 	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
@@ -660,6 +675,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
 	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
+	}
+	if !skipMockLLM() {
+		_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8c: Seeding A2A severity-grounding alerts...")
+		if err := SeedFullPipelineA2AGroundingRules(ctx, namespace, kubeconfigPath, afRemediateNS, writer); err != nil {
+			return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8c failed: A2A severity grounding: %w", err)
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════

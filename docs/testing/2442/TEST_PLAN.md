@@ -7,7 +7,7 @@
 **Version**: 1.0
 **Created**: 2026-09-21
 **Author**: AI Assistant + Jordi Gil
-**Status**: Implemented; fullpipeline E2E follow-up active
+**Status**: Fullpipeline fixture follow-up implemented; E2E verification pending CI
 **Branch**: `fix/2442-workflow-discovery-membership`
 
 ---
@@ -217,8 +217,9 @@ after the cause is identified and the affected test can run deterministically.
 | BR-MOCK-014 | Concurrent provider requests do not leak state | P0 | Integration | Existing integration coverage | Implemented |
 | BR-TESTING-001 | Scenario and environment overrides are deterministic | P0 | Unit | UT-MOCK-2442-018 | Implemented |
 | BR-TESTING-001 | E2E configuration wires deterministic overrides | P0 | Integration | Existing config-generator coverage | Implemented |
-| BR-KA-017-003 / BR-WORKFLOW-004 | Filtered discovery returns the expected workflow only when its labels match signal context | P0 | E2E | E2E-FP-118-001, E2E-FP-1542-001 | RCA follow-up planned |
-| BR-SEVERITY-001 / BR-INTERACTIVE-010 | A2A RR creation proceeds with correlated alert/rule evidence and remains fail-closed without it | P0 | E2E | E2E-FP-1853-001/002, E2E-FP-1918-001 | RCA follow-up planned |
+| BR-TESTING-001 | A2A grounding rule fixtures are deterministic and target-scoped | P0 | Unit | UT-FP-2443-001/002 | Implemented; passed locally |
+| BR-KA-017-003 / BR-WORKFLOW-004 | Filtered discovery returns the expected workflow only when its labels match signal context | P0 | E2E | E2E-FP-118-001, E2E-FP-1542-001 | Implemented; E2E pending |
+| BR-SEVERITY-001 / BR-INTERACTIVE-010 | A2A RR creation proceeds with correlated alert/rule evidence and remains fail-closed without it | P0 | E2E | E2E-FP-1853-001/002, E2E-FP-1918-001 | Implemented; E2E pending |
 | BR-MOCK-010 | Legacy and custom non-discovery flows remain compatible | P0 | Integration | Existing Mock LLM suite | Implemented |
 | BR-KA-OBSERVABILITY-001 | Streamed multi-tool and chained responses preserve exact scripted usage | P1 | Unit | UT-MOCK-2387-005..006 | Implemented |
 
@@ -244,6 +245,7 @@ after the cause is identified and the affected test can run deterministically.
 | UT-MOCK-2442-018 | Ambiguous workflow/environment overrides are rejected | Implemented |
 | UT-MOCK-2442-020 | Canonical transcript retains provider message content | Implemented |
 | UT-MOCK-2442-027 | An undeclared discovery tool is rejected instead of being requested | Implemented |
+| UT-FP-2443-001/002 | A2A grounding rules are deterministic, resource-correlated, and isolated from Gateway ingestion | Implemented; passed locally |
 
 ### Tier 2: Integration Tests
 
@@ -271,10 +273,10 @@ after the cause is identified and the affected test can run deterministically.
 | ID | Business outcome | Phase |
 |---|---|---|
 | E2E-MOCK-2442-001 | Kind-based AIA/KA journey discovers the seeded workflow before selection | Pending: environment not run |
-| E2E-FP-118-001 | Signal-context filters return the OOM workflow expected by the seeded Mock LLM scenario | RCA follow-up planned |
-| E2E-FP-1542-001 | BackOff/CrashLoop context discovers the real ConfigMap-fix workflow and completes the fix | RCA follow-up planned |
-| E2E-FP-1853-001/002 | A2A-created RR uses grounded severity evidence and passes a valid RR ID through the tool chain | RCA follow-up planned |
-| E2E-FP-1918-001, E2E-FP-1899-001/002 | A2A actionability/consent contracts remain covered after RR-creation fixtures are grounded | RCA follow-up planned |
+| E2E-FP-118-001 | Signal-context filters return the OOM workflow expected by the seeded Mock LLM scenario | Implemented; E2E pending |
+| E2E-FP-1542-001 | BackOff/CrashLoop context discovers the real ConfigMap-fix workflow and completes the fix | Implemented; E2E pending |
+| E2E-FP-1853-001/002 | A2A-created RR uses grounded severity evidence and passes a valid RR ID through the tool chain | Implemented; E2E pending |
+| E2E-FP-1918-001, E2E-FP-1899-001/002 | A2A actionability/consent contracts remain covered after RR-creation fixtures are grounded | Implemented; E2E pending |
 
 ### Fullpipeline RCA Follow-Up — Run 35823531457
 
@@ -522,8 +524,8 @@ make test
 | Mode policy | Handler dispatch | Tool or text response | IT-MOCK-2442-015, IT-MOCK-2442-023 | Implemented |
 | E2E config generation | `DeployMockLLMInNamespace` | Running container behavior | IT-MOCK-2442-016, E2E-MOCK-2442-001 | Pending: E2E not run |
 | Integration config generation | `WriteMockLLMConfigFile` | Running Mock LLM behavior | IT-MOCK-2442-016 | Covered by existing tests |
-| Fullpipeline signal-to-workflow path | Gateway → SignalProcessing → AIAnalysis/KA discovery | WorkflowExecution reaches expected terminal result | E2E-FP-118-001, E2E-FP-1542-001 | RCA follow-up planned |
-| Fullpipeline A2A RR-creation path | API Frontend A2A → severity triage → RemediationRequest | RR is created only after matching Prometheus evidence | E2E-FP-1853-001/002 and affected consent/actionability specs | RCA follow-up planned |
+| Fullpipeline signal-to-workflow path | Gateway → SignalProcessing → AIAnalysis/KA discovery | WorkflowExecution reaches expected terminal result | E2E-FP-118-001, E2E-FP-1542-001 | Implemented; E2E pending |
+| Fullpipeline A2A RR-creation path | API Frontend A2A → severity triage → RemediationRequest | RR is created only after matching Prometheus evidence | E2E-FP-1853-001/002 and affected consent/actionability specs | Implemented; E2E pending |
 
 Unit tests do not count as wiring proof.
 

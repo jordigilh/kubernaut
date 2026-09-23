@@ -86,7 +86,8 @@ var _ = Describe("Investigation Totals on AgentSession Result [E2E-FP-2387-001]"
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}

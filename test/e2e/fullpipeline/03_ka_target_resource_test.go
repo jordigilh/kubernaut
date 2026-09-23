@@ -84,7 +84,8 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}

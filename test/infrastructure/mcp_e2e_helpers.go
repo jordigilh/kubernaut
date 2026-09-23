@@ -231,17 +231,25 @@ rules:
 
 // CreateDirectRR creates a RemediationRequest CRD directly (bypassing the OOMKill
 // pipeline) for tests that don't need the full event->Gateway->SP->RO flow.
-// Returns the RR name. A managed namespace is created for the target resource so
-// that the RO routing engine does not block the RR as UnmanagedResource.
+// Its Pod target matches the generic-restart test workflow's catalog component.
+// Returns the RR name. A managed staging namespace is created for the target
+// resource so the RO routing engine does not block it as UnmanagedResource and
+// DD-KA-017 discovery receives the same environment context as the seeded E2E
+// workflow catalog.
 func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
-	return CreateDirectRRWithSignal(ctx, namespace, testID, "")
+	return createDirectRRWithTargetKind(ctx, namespace, testID, "", "Pod")
 }
 
 // CreateDirectRRWithSignal is like CreateDirectRR but lets the caller specify a
 // mock-LLM signal name. When signalName is empty, defaults to "e2e-<testID>-signal".
 // Use "slow-investigation-test" to keep the KA session alive for tests that need
-// to interact with it via MCP before completion.
+// to interact with it via MCP before completion. Scenario-specific signals use a
+// Deployment target; the generic CreateDirectRR helper uses a Pod target.
 func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName string) (string, error) {
+	return createDirectRRWithTargetKind(ctx, namespace, testID, signalName, "Deployment")
+}
+
+func createDirectRRWithTargetKind(ctx context.Context, namespace, testID, signalName, targetKind string) (string, error) {
 	if signalName == "" {
 		signalName = fmt.Sprintf("e2e-%s-signal", testID)
 	}
@@ -267,7 +275,8 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 			"metadata": map[string]interface{}{
 				"name": targetNS,
 				"labels": map[string]interface{}{
-					"kubernaut.ai/managed": trueFixture,
+					"kubernaut.ai/managed":     trueFixture,
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		},
@@ -295,7 +304,7 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 				"firingTime":        now.UTC().Format(time.RFC3339),
 				"receivedTime":      now.UTC().Format(time.RFC3339),
 				"targetResource": map[string]interface{}{
-					"kind":      "Deployment",
+					"kind":      targetKind,
 					"name":      fmt.Sprintf("%s-target", testID),
 					"namespace": targetNS,
 				},

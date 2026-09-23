@@ -15,7 +15,7 @@ spec:
   actionType: IncreaseMemoryLimits
 
   labels:
-    severity: [critical, high]
+    severity: [critical, high, warning]
     environment: [production, staging, test]
     component: ["*"]
     priority: "*"
