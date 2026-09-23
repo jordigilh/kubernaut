@@ -170,8 +170,10 @@ func renderSeverityTriageAlertRules(clusterID string) string {
 	rulesYAML := SeverityTriageAlertRulesYAML
 	if clusterID == "" {
 		rulesYAML = strings.ReplaceAll(rulesYAML, "          cluster: \"__HUB_CLUSTER_ID__\"\n", "")
+		rulesYAML = strings.ReplaceAll(rulesYAML, "          cluster: \"__UNREGISTERED_CLUSTER_ID__\"\n", "")
 	} else {
 		rulesYAML = strings.ReplaceAll(rulesYAML, "\"__HUB_CLUSTER_ID__\"", strconv.Quote(clusterID))
+		rulesYAML = strings.ReplaceAll(rulesYAML, "\"__UNREGISTERED_CLUSTER_ID__\"", strconv.Quote("unregistered-cluster-2462"))
 	}
 	return strings.TrimSpace(rulesYAML)
 }
@@ -404,6 +406,7 @@ groups:
           severity: critical
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "CPU usage is critically high"
       - alert: HighMemory
@@ -413,6 +416,7 @@ groups:
           severity: high
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Memory usage is high"
       - alert: DiskPressure
@@ -422,6 +426,7 @@ groups:
           severity: medium
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Disk usage is elevated"
       - alert: NetworkLatency
@@ -431,6 +436,7 @@ groups:
           severity: high
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Network latency is high"
       - alert: AFInvestigateGrounding
@@ -440,6 +446,7 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-investigate-e2e
           kind: Pod
           name: af-investigate-target
@@ -452,6 +459,7 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: sev-userhint-ns
           kind: Deployment
           name: test-user-severity-bypass
@@ -464,6 +472,7 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target
@@ -476,6 +485,7 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-2
@@ -488,6 +498,7 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-3
@@ -500,9 +511,36 @@ groups:
           severity: warning
           source: prometheus
           cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-4
         annotations:
           summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-2387-002 (dedicated target -- same intra-suite session_active contention rationale as Grounding2/3; Gateway creates the RR directly from this alert so the grounding kubernaut_investigate dedups onto it and KA investigates signal StructuredDecisionGrounding4)"
+      - alert: FleetSessionActiveGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: fleet-session-active-e2e
+          kind: Pod
+          name: fleet-session-active-target
+        annotations:
+          summary: "Synthetic grounding alert for Fleet-mode session_active AF E2E (#2462)"
+      - alert: FleetUnregisteredClusterGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__UNREGISTERED_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: fleet-unregistered-cluster-e2e
+          kind: Deployment
+          name: fleet-unregistered-target
+        annotations:
+          summary: "Synthetic grounding alert for an unregistered cluster ID with an existing same-named target (#2462)"
 `

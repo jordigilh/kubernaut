@@ -148,6 +148,7 @@ func fleetInteractiveBridgeGroundingRule() string {
           severity: warning
           source: prometheus
           cluster: hub
+          route_skip_gateway: "true"
           namespace: fleet-af-hub-triage
           kind: Deployment
           name: af-hub-triage-target
@@ -160,6 +161,7 @@ func fleetInteractiveBridgeGroundingRule() string {
           severity: critical
           source: prometheus
           cluster: remote-cluster
+          route_skip_gateway: "true"
           namespace: fleet-af-hub-triage
           kind: Deployment
           name: af-hub-triage-target

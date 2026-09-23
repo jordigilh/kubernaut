@@ -2,10 +2,12 @@ package e2e_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,23 +30,48 @@ func TestE2E(t *testing.T) {
 }
 
 const (
-	e2eNamespace = "kubernaut-system"
-	trueFixture  = "true"
+	e2eNamespace                 = "kubernaut-system"
+	trueFixture                  = "true"
+	fleetAFEnvoyGatewayNamespace = "envoy-gateway-system"
+	fleetAFAIGatewayNamespace    = "envoy-ai-gateway-system"
 )
 
 var (
-	e2eClusterName = getEnvOrDefault("AF_E2E_CLUSTER_NAME", kinfra.AFDefaultClusterName)
-	setupSucceeded bool
-	anyTestFailed  bool
-	kubeconfigPath string
-	k8sClient      client.Client
-	clientset      *kubernetes.Clientset
+	e2eClusterName        = getEnvOrDefault("AF_E2E_CLUSTER_NAME", kinfra.AFDefaultClusterName)
+	setupSucceeded        bool
+	anyTestFailed         bool
+	fleetAFSetupAttempted bool
+	kubeconfigPath        string
+	k8sClient             client.Client
+	clientset             *kubernetes.Clientset
 )
+
+// apifrontendE2EClusterNames returns every cluster that may contain partial
+// lane state and therefore needs failure diagnostics or teardown.
+func apifrontendE2EClusterNames(fleetSetupAttempted bool) []string {
+	clusters := []string{e2eClusterName}
+	if fleetSetupAttempted {
+		clusters = append(clusters, fleetAFClusterName)
+	}
+	return clusters
+}
+
+// apifrontendMustGatherExtraNamespaces adds Fleet's EAIGW controller namespaces
+// to its bundle; those controller logs are outside the Helm release namespace.
+func apifrontendMustGatherExtraNamespaces(clusterName string, fleetSetupAttempted bool) []string {
+	if !fleetSetupAttempted || clusterName != fleetAFClusterName {
+		return nil
+	}
+	return []string{fleetAFEnvoyGatewayNamespace, fleetAFAIGatewayNamespace}
+}
 
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
 		kinfra.MarkTestFailure(e2eClusterName)
+		if fleetAFEnabled {
+			kinfra.MarkTestFailure(fleetAFClusterName)
+		}
 	}
 })
 
@@ -57,13 +84,32 @@ var _ = SynchronizedBeforeSuite(
 		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
 			setupSucceeded = true
-			return []byte(kubeconfigPath)
+			setup, marshalErr := json.Marshal(afE2ESuiteSetup{
+				LocalKubeconfigPath: kubeconfigPath,
+				LocalCertDir:        getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName)),
+				FleetClusterName:    fleetAFClusterName,
+				LocalHostPortOffset: e2eHostPort(0),
+			})
+			Expect(marshalErr).NotTo(HaveOccurred())
+			return setup
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		localHostPortOffset, err := fleetAFIsolatedLocalPortOffset()
+		Expect(err).NotTo(HaveOccurred(), "local AF host ports must be offset from the Fleet cluster")
+		Expect(os.Setenv("AF_E2E_HOST_PORT_OFFSET", strconv.Itoa(localHostPortOffset))).To(Succeed())
+
+		fleetClusterName := fleetAFClusterName
+		Expect(fleetClusterName).NotTo(Equal(e2eClusterName), "local and Fleet AF suites require distinct Kind clusters")
+		fleetKubeconfigPath := getEnvOrDefault("AF_E2E_FLEET_KUBECONFIG", filepath.Join(homeDir, ".kube", fleetClusterName+"-config"))
+		Expect(fleetKubeconfigPath).NotTo(Equal(kubeconfigPath), "local and Fleet AF clusters require distinct kubeconfigs")
+		localCertDir := getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName))
+		fleetCertDir := filepath.Join(os.TempDir(), "apifrontend-e2e-certs", fleetClusterName)
+		Expect(os.Setenv("AF_E2E_CERT_DIR", localCertDir)).To(Succeed())
+
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 		defer cancel()
 
-		err = kinfra.SetupAPIFrontendE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
+		apiFrontendImages, err := kinfra.SetupAPIFrontendE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred(), "E2E infrastructure setup failed")
 
 		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != trueFixture {
@@ -99,16 +145,78 @@ var _ = SynchronizedBeforeSuite(
 				To(Succeed(), "HighCPU alert must reach firing state within 120s")
 		}
 
+		_, _ = fmt.Fprintln(GinkgoWriter, "\nSetting up the isolated Fleet-mode AF E2E cluster...")
+		fleetAFSetupAttempted = true
+		fmcImage, fmcImageErr := kinfra.BuildImageForKind(ctx, kinfra.E2EImageConfig{
+			ServiceName:    "fleetmetadatacache",
+			ImageName:      "fleetmetadatacache",
+			DockerfilePath: "docker/fleetmetadatacache.Dockerfile",
+			EnableCoverage: os.Getenv("E2E_COVERAGE") == trueFixture,
+		}, GinkgoWriter)
+		Expect(fmcImageErr).NotTo(HaveOccurred(), "Fleet Metadata Cache image must be available")
+		fleetSetupErr := kinfra.SetupAPIFrontendFleetE2EInfrastructure(
+			ctx, fleetClusterName, fleetKubeconfigPath, e2eNamespace, apiFrontendImages, fmcImage, GinkgoWriter)
+		Expect(fleetSetupErr).NotTo(HaveOccurred(), "Fleet AF infrastructure setup failed")
+		Expect(os.Setenv("KUBECONFIG", kubeconfigPath)).To(Succeed(), "restore the local AF cluster as the default kubeconfig")
+
+		Expect(prepareFleetAFFixtures(ctx, fleetKubeconfigPath)).To(Succeed(), "Fleet AF resource fixtures must be ready")
+		By("IT-INFRA-AF-FLEET-2462-008: confirming the lean AF Fleet setup created no remote Kind cluster")
+		Expect(verifyFleetAFHubOnlyTopology(ctx, e2eClusterName, fleetClusterName)).To(Succeed())
+
+		Expect(configureFleetAFMockLLM(ctx, fleetKubeconfigPath, GinkgoWriter)).To(Succeed(),
+			"Fleet AF mock-LLM must include cluster-attributed test scenarios")
+		Expect(kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, "hub", fleetKubeconfigPath, GinkgoWriter)).To(Succeed(),
+			"Fleet AF severity fixtures must carry the registered hub identity")
+		Expect(injectMetricForTier2(ctx, fleetAFPrometheusURL, "e2e_cpu_usage_percent", 95, map[string]string{
+			"namespace": "sev-tier1-ns", "kind": "Deployment", "name": "test-firing-target",
+		})).To(Succeed(), "Fleet AF firing-alert metric must be injected")
+		Expect(injectMetricForTier2(ctx, fleetAFPrometheusURL, "e2e_memory_usage_percent", 90, map[string]string{
+			"namespace": "sev-tier15-ns", "kind": "Deployment", "name": "test-pending-target",
+		})).To(Succeed(), "Fleet AF pending-alert metric must be injected")
+		Expect(injectMetricForTier2(ctx, fleetAFPrometheusURL, "e2e_disk_usage_percent", 80, map[string]string{
+			"namespace": "sev-tier2-ns", "kind": "Deployment", "name": "test-inactive-target",
+		})).To(Succeed(), "Fleet AF inactive-rule metric must be injected")
+		for _, rule := range []struct {
+			name  string
+			state kinfra.PrometheusRuleState
+		}{
+			{"HighCPU", kinfra.RuleStateFiring},
+			{"HighMemory", kinfra.RuleStatePending},
+			{"AFInvestigateGrounding", kinfra.RuleStateFiring},
+			{"FleetSessionActiveGrounding", kinfra.RuleStateFiring},
+			{"FleetUnregisteredClusterGrounding", kinfra.RuleStateFiring},
+			{"StructuredDecisionGrounding", kinfra.RuleStateFiring},
+		} {
+			Expect(waitForFleetAFPrometheusRule(ctx, rule.name, rule.state)).To(Succeed(),
+				"Fleet AF grounding rule %s must reach %s", rule.name, rule.state)
+		}
+
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		_, _ = fmt.Fprintln(GinkgoWriter, "E2E Infrastructure Ready")
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		setupSucceeded = true
-		return []byte(kubeconfigPath)
+		Expect(os.Setenv("AF_E2E_CERT_DIR", localCertDir)).To(Succeed())
+		Expect(os.Setenv("CERT_DIR", localCertDir)).To(Succeed())
+		Expect(os.Setenv("AF_E2E_CA_CERT", filepath.Join(localCertDir, "ca.crt"))).To(Succeed())
+		setup, marshalErr := json.Marshal(afE2ESuiteSetup{
+			LocalKubeconfigPath: kubeconfigPath,
+			LocalCertDir:        localCertDir,
+			FleetKubeconfigPath: fleetKubeconfigPath,
+			FleetCertDir:        fleetCertDir,
+			FleetClusterName:    fleetClusterName,
+			LocalHostPortOffset: localHostPortOffset,
+		})
+		Expect(marshalErr).NotTo(HaveOccurred())
+		return setup
 	},
 	func(data []byte) {
-		kubeconfigPath = string(data)
+		var setup afE2ESuiteSetup
+		Expect(json.Unmarshal(data, &setup)).To(Succeed(), "suite setup context must decode")
+		kubeconfigPath = setup.LocalKubeconfigPath
+		Expect(os.Setenv("KUBECONFIG", kubeconfigPath)).To(Succeed())
+		Expect(os.Setenv("AF_E2E_HOST_PORT_OFFSET", strconv.Itoa(setup.LocalHostPortOffset))).To(Succeed())
 		baseURL = e2eHostURL("https", 18443)
-		caCertPath = filepath.Join(getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName)), "ca.crt")
+		caCertPath = filepath.Join(setup.LocalCertDir, "ca.crt")
 		dexURL = e2eHostURL("https", 5556) + "/dex"
 		clientID = "kubernaut-apifrontend"
 		clientSecret = "e2e-client-secret"
@@ -128,6 +236,40 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).NotTo(HaveOccurred(), "failed to create controller-runtime client")
 		clientset, err = kubernetes.NewForConfig(restCfg)
 		Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
+
+		fleetAFClusterName = setup.FleetClusterName
+		fleetAFKubeconfigPath = setup.FleetKubeconfigPath
+		fleetAFEnabled = fleetAFKubeconfigPath != ""
+		if fleetAFEnabled {
+			fleetAFBaseURL = "https://localhost:18443"
+			fleetAFHTTPClient = newTLSClientForKubeconfig(filepath.Join(setup.FleetCertDir, "ca.crt"), fleetAFKubeconfigPath)
+
+			fleetRESTConfig, fleetConfigErr := clientcmd.BuildConfigFromFlags("", fleetAFKubeconfigPath)
+			Expect(fleetConfigErr).NotTo(HaveOccurred(), "failed to build Fleet REST config")
+			fleetScheme := k8sscheme.Scheme
+			Expect(remediationv1alpha1.AddToScheme(fleetScheme)).To(Succeed())
+			Expect(investigationsessionv1alpha1.AddToScheme(fleetScheme)).To(Succeed())
+			fleetAFK8sClient, err = client.New(fleetRESTConfig, client.Options{Scheme: fleetScheme})
+			Expect(err).NotTo(HaveOccurred(), "failed to create Fleet Kubernetes client")
+
+			Eventually(func() error {
+				healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer healthCancel()
+				req, requestErr := http.NewRequestWithContext(healthCtx, http.MethodGet, fleetAFBaseURL+"/healthz", nil)
+				if requestErr != nil {
+					return requestErr
+				}
+				resp, requestErr := fleetAFHTTPClient.Do(req)
+				if requestErr != nil {
+					return requestErr
+				}
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("fleet AF healthz returned %d", resp.StatusCode)
+				}
+				return nil
+			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Fleet-mode AF must be healthy over TLS")
+		}
 
 		// #2022/#2025/ADR-053: the mock-LLM's dedicated investigate fixture
 		// (af_investigate/af_progressive_investigate scenarios, see
@@ -190,32 +332,50 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := !setupSucceeded
 		anyFailure := kinfra.ResolveAnyFailure(e2eClusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer kinfra.CleanupFailureMarker(e2eClusterName)
+		if fleetAFSetupAttempted {
+			fleetFailure := kinfra.ResolveAnyFailure(fleetAFClusterName, setupFailed, anyTestFailed, GinkgoWriter)
+			defer kinfra.CleanupFailureMarker(fleetAFClusterName)
+			anyFailure = anyFailure || fleetFailure
+		}
 
 		if anyFailure {
 			_, _ = fmt.Fprintln(GinkgoWriter, "⚠️  Failure detected — collecting must-gather diagnostics BEFORE teardown")
-			// DD-TESTING-003: production must-gather image as a local podman
-			// container on the cluster's "kind" network (see gateway suite
-			// pilot), replacing the old in-process kubectl-log-scraping.
-			mustGatherImage, buildErr := kinfra.BuildMustGatherImageForE2E(context.Background(), GinkgoWriter)
-			if buildErr != nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to build must-gather image (non-fatal): %v\n", buildErr)
+			var existingClusters []string
+			for _, cluster := range apifrontendE2EClusterNames(fleetAFSetupAttempted) {
+				if kindClusterExists(context.Background(), cluster) {
+					existingClusters = append(existingClusters, cluster)
+				}
+			}
+			if len(existingClusters) == 0 {
+				_, _ = fmt.Fprintln(GinkgoWriter, "  No Kind clusters were created; skipping must-gather build")
 			} else {
-				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "apifrontend", e2eClusterName)
-				if err := kinfra.RunMustGatherImage(context.Background(), kinfra.RunMustGatherImageOptions{
-					ClusterName: e2eClusterName,
-					Image:       mustGatherImage,
-					OutputDir:   mustGatherOutputDir,
-					Namespace:   e2eNamespace,
-					UsePodman:   true,
-				}, GinkgoWriter); err != nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to run must-gather image (non-fatal): %v\n", err)
+				// DD-TESTING-003: production must-gather image on the "kind" network.
+				mustGatherImage, buildErr := kinfra.BuildMustGatherImageForE2E(context.Background(), GinkgoWriter)
+				if buildErr != nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to build must-gather image (non-fatal): %v\n", buildErr)
+				} else {
+					for _, cluster := range existingClusters {
+						mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "apifrontend", cluster)
+						if err := kinfra.RunMustGatherImage(context.Background(), kinfra.RunMustGatherImageOptions{
+							ClusterName:     cluster,
+							Image:           mustGatherImage,
+							OutputDir:       mustGatherOutputDir,
+							Namespace:       e2eNamespace,
+							UsePodman:       true,
+							ExtraNamespaces: apifrontendMustGatherExtraNamespaces(cluster, fleetAFSetupAttempted),
+						}, GinkgoWriter); err != nil {
+							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to collect must-gather from %s (non-fatal): %v\n", cluster, err)
+						}
+					}
 				}
 			}
 		}
 
-		_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
-		if err := kinfra.CollectAFE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
-			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
+		if kindClusterExists(context.Background(), e2eClusterName) {
+			_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
+			if err := kinfra.CollectAFE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
+			}
 		}
 
 		if os.Getenv("AF_E2E_SKIP_TEARDOWN") == trueFixture {
@@ -226,8 +386,13 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		if err := kinfra.DeleteCluster(e2eClusterName, "apifrontend", anyFailure, GinkgoWriter); err != nil {
-			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Cluster deletion failed: %v\n", err)
+		for _, cluster := range apifrontendE2EClusterNames(fleetAFSetupAttempted) {
+			if !kindClusterExists(context.Background(), cluster) {
+				continue
+			}
+			if err := kinfra.DeleteCluster(cluster, "apifrontend", anyFailure, GinkgoWriter); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Cluster %s deletion failed: %v\n", cluster, err)
+			}
 		}
 	},
 )

@@ -179,6 +179,8 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(hubRules).To(ContainSubstring("alert: AFHubClusterTriage2394"))
 		Expect(hubRules).To(ContainSubstring("severity: warning"))
 		Expect(hubRules).To(ContainSubstring("cluster: hub"))
+		Expect(hubRules).To(ContainSubstring("route_skip_gateway: \"true\""),
+			"AF triage fixtures must not create duplicate RRs through AlertManager")
 		Expect(hubRules).To(ContainSubstring("alert: AFRemoteClusterTriageCollision2394"))
 		Expect(hubRules).To(ContainSubstring("severity: critical"))
 		Expect(hubRules).To(ContainSubstring("cluster: remote-cluster"))
@@ -195,6 +197,12 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		fleetHubRules := renderSeverityTriageAlertRules("hub")
 		Expect(fleetHubRules).To(ContainSubstring("cluster: \"hub\""),
 			"a caller with a real Gateway registration ID can still render attributed rules")
+		Expect(fleetHubRules).To(ContainSubstring("route_skip_gateway: \"true\""),
+			"AF severity evidence must not also enter the signal-ingestion Gateway path")
+		Expect(fleetHubRules).To(ContainSubstring("cluster: \"unregistered-cluster-2462\""),
+			"the fail-closed test requires a grounded alert for an unregistered identity")
+		Expect(fleetHubRules).To(ContainSubstring("alert: FleetSessionActiveGrounding"),
+			"Fleet AF concurrency fallback needs a hub-attributed grounding alert")
 	})
 
 	It("UT-INFRA-FLEETDEMO-PROMETHEUS-006: rejects an invalid Alertmanager bridge address", func() {

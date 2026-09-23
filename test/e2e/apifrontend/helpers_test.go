@@ -186,13 +186,17 @@ func e2eHostURL(scheme string, defaultPort int) string {
 }
 
 func newTLSClient(caCertPath string) *http.Client {
-	base := newTLSTransport(caCertPath)
+	return newTLSClientForKubeconfig(caCertPath, kubeconfigPath)
+}
+
+func newTLSClientForKubeconfig(caCertPath, clusterKubeconfigPath string) *http.Client {
+	base := newTLSTransportForKubeconfig(caCertPath, clusterKubeconfigPath)
 	return &http.Client{
 		Transport: &retryOn429Transport{base: base, maxRetries: 5, baseDelay: 500 * time.Millisecond},
 	}
 }
 
-func newTLSTransport(caCertPath string) *http.Transport {
+func newTLSTransportForKubeconfig(caCertPath, clusterKubeconfigPath string) *http.Transport {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {
 		caCert, err := os.ReadFile(caCertPath)
@@ -206,7 +210,7 @@ func newTLSTransport(caCertPath string) *http.Transport {
 		// DEX serves a leaf signed by the inter-service CA
 		// (GenerateInterServiceTLS), not the e2e CA above — trust both
 		// (mirrors dex_e2e.go's NewTLSAwareClient for infra-side callers).
-		if isCAPath := kinfra.InterServiceCAPath(kubeconfigPath); isCAPath != "" {
+		if isCAPath := kinfra.InterServiceCAPath(clusterKubeconfigPath); isCAPath != "" {
 			if isCA, err := os.ReadFile(isCAPath); err == nil {
 				pool.AppendCertsFromPEM(isCA)
 			}

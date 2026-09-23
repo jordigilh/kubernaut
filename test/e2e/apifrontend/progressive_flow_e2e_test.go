@@ -31,10 +31,11 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	statusUpdate   = "status-update"
-	completed      = "completed"
-	artifactUpdate = "artifact-update"
-	failed         = "failed"
+	statusUpdate               = "status-update"
+	completed                  = "completed"
+	artifactUpdate             = "artifact-update"
+	failed                     = "failed"
+	investigationSummarySchema = "investigation_summary"
 )
 
 // =============================================================================
@@ -335,7 +336,7 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 					continue
 				}
 				meta, _ := artifact["metadata"].(map[string]any)
-				if meta["schema"] == "investigation_summary" && meta["schema_version"] == "1.0" {
+				if meta["schema"] == investigationSummarySchema && meta["schema_version"] == "1.0" {
 					parts, _ := artifact["parts"].([]any)
 					for _, p := range parts {
 						part, _ := p.(map[string]any)
@@ -446,7 +447,7 @@ var _ = Describe("session_active Fallback RCA Card Content — #1922", Ordered, 
 				continue
 			}
 			meta, _ := artifact["metadata"].(map[string]any)
-			if meta["schema"] != "investigation_summary" {
+			if meta["schema"] != investigationSummarySchema {
 				continue
 			}
 			found = true
