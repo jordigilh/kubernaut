@@ -101,7 +101,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}
@@ -224,6 +225,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 						"SP EnvironmentClassification.Environment must not be empty")
 					GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
 						sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
+					Expect(string(sp.Status.EnvironmentClassification.Environment)).To(Equal("Staging"),
+						"E2E-FP-118-001 workload namespace must align with the staging workflow catalog context")
 
 					Expect(sp.Status.PriorityAssignment).ToNot(BeNil(),
 						"SP PriorityAssignment must be populated")
@@ -714,6 +717,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("apiVersion:"),
 			"Reconstructed RR YAML should contain Kubernetes resource structure")
+		Expect(reconstructionResp.ClusterID.Set).To(BeFalse(),
+			"local-mode K8s-event RRs must not gain a cluster_id during reconstruction")
 		Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
 			"Reconstructed RR should be valid")
 		Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 77),
@@ -1183,6 +1188,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			return false
 		}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
 			"RemediationRequest should be created by Gateway from AlertManager webhook")
+		Expect(remediationRequest.Spec.ClusterID).To(BeEmpty(),
+			"local-mode AlertManager signals without cluster attribution must remain local")
 
 		// ================================================================
 		// AM Step 4: Verify SignalProcessing completed
