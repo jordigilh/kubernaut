@@ -164,15 +164,15 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		}
 	}
 
-	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
-	// The Kind config extraMount uses ./coverdata relative to project root
+	// The Kind config always mounts ./coverdata relative to project root. Create
+	// it for non-coverage runs too, otherwise Kind rejects the hostPath mount.
+	projectRoot := getProjectRoot()
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
 	if os.Getenv("E2E_COVERAGE") == trueFixture {
-		projectRoot := getProjectRoot()
-		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
-		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-			return fmt.Errorf("failed to create coverdata directory: %w", err)
-		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
