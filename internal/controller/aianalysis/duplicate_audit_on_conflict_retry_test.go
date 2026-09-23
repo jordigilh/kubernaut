@@ -38,6 +38,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -156,6 +157,31 @@ func conflictOnceOnStatusUpdate() interceptor.Funcs {
 	}
 }
 
+// concurrentCommitOnceOnStatusUpdate models the case the simple conflict
+// interceptor above does not: another reconciler commits the phase transition
+// before this attempt receives its Conflict. The callback records the
+// competing reconciler's audit event after its status commit succeeds.
+func concurrentCommitOnceOnStatusUpdate(onConcurrentCommit func(client.Object)) interceptor.Funcs {
+	var calls int32
+	return interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			if subResourceName == "status" && atomic.AddInt32(&calls, 1) == 1 {
+				committed := obj.DeepCopyObject().(client.Object)
+				if err := c.SubResource(subResourceName).Update(ctx, committed, opts...); err != nil {
+					return err
+				}
+				onConcurrentCommit(committed)
+				return apierrors.NewConflict(
+					schema.GroupResource{Group: "kubernaut.ai", Resource: "aianalyses"},
+					obj.GetName(),
+					errors2204ConflictSentinel,
+				)
+			}
+			return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+		},
+	}
+}
+
 // errors2204ConflictSentinel is a fixed error value for the synthetic
 // Conflict above; apierrors.NewConflict requires a non-nil err argument to
 // build its message, its identity is not otherwise significant.
@@ -240,5 +266,65 @@ var _ = Describe("Duplicate audit emission on AtomicStatusUpdate conflict-retry 
 				"even though AtomicStatusUpdate's Status().Update() hit a Conflict and retried the whole closure once (#2204)")
 		Expect(auditStoreSpy.countOf(aiaudit.EventTypeAIAgentResult)).To(Equal(int32(1)),
 			"aianalysis.aiagent.result must be recorded exactly once for the same reason")
+	})
+
+	It("UT-AA-2204-102: a concurrent successful status commit must not duplicate the audit call on retry", func() {
+		ctx := context.Background()
+		scheme := newSchemaRejectionTestScheme()
+		analysis := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{Name: "ut-2204-102", Namespace: "default"},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-ut-2204-102", Namespace: "default"},
+				RemediationID:         "rr-ut-2204-102",
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint: "fp-ut-2204-102", Severity: "warning", SignalName: "TestSignal2204",
+						Environment: "staging", BusinessPriority: "P2",
+						TargetResource:    aianalysisv1.TargetResource{Kind: "Deployment", Name: "test-deploy", Namespace: "default"},
+						EnrichmentResults: sharedtypes.EnrichmentResults{},
+					},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+				},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase: PhaseInvestigating,
+				KASession: &aianalysisv1.KASession{
+					ID:        "as-ut-2204-102",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-time.Second)},
+				},
+			},
+		}
+
+		log := logr.Discard()
+		m := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		auditStoreSpy := newAuditEventTypeCounter()
+		auditClient := aiaudit.NewAuditClient(auditStoreSpy, log)
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&aianalysisv1.AIAnalysis{}).
+			WithObjects(analysis).
+			WithInterceptorFuncs(concurrentCommitOnceOnStatusUpdate(func(obj client.Object) {
+				committed := obj.(*aianalysisv1.AIAnalysis)
+				auditClient.RecordAIAgentResult(ctx, committed, committed.Status.GetInvestigationMetadata().InvestigationTime)
+			})).
+			Build()
+
+		r := &AIAnalysisReconciler{
+			Client:        k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			Recorder:      record.NewFakeRecorder(50),
+			Log:           log,
+			Metrics:       m,
+			StatusManager: status.NewManager(k8sClient, k8sClient),
+			AuditClient:   auditClient,
+		}
+		r.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
+			fakeKACompletedSession{name: "as-ut-2204-102"}, log, m, noopAuditClient{}))
+
+		_, err := r.reconcileInvestigating(ctx, analysis)
+		Expect(err).NotTo(HaveOccurred(), "the conflicting status update must be absorbed after the competing commit")
+		Expect(auditStoreSpy.countOf(aiaudit.EventTypeAIAgentCall)).To(Equal(int32(1)),
+			"the competing reconcile emitted one call event; a retry that sees the committed phase must not emit a second")
+		Expect(auditStoreSpy.countOf(aiaudit.EventTypeAIAgentResult)).To(Equal(int32(1)))
 	})
 })

@@ -157,6 +157,15 @@ type investigatingUpdateOutcome struct {
 // reconcileInvestigating (Wave 6 6c GREEN: funlen remediation) — pure code
 // motion, no behavior change.
 func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, analysis *aianalysisv1.AIAnalysis, invHandler *handlers.InvestigatingHandler, outcome *investigatingUpdateOutcome, log logr.Logger) error {
+	// AtomicStatusUpdate may invoke this closure more than once after a
+	// resourceVersion conflict. The outcome is allocated outside that retry
+	// loop, so discard any side-effect markers from the prior attempt before
+	// evaluating the freshly fetched status. Otherwise a retry that observes
+	// another writer's committed phase could skip the handler but still leave
+	// investigationTimeMs set, causing finalizeInvestigatingTransition to
+	// emit a duplicate audit call.
+	*outcome = investigatingUpdateOutcome{}
+
 	// Capture phase after ATOMIC refetch
 	outcome.phaseBefore = analysis.Status.Phase
 
