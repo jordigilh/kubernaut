@@ -190,7 +190,7 @@ func RemoveFleetOnlyPrometheusRules(ctx context.Context, namespace, kubeconfigPa
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Prometheus not ready after removing Fleet-only rules: %w", err)
+		return fmt.Errorf("prometheus not ready after removing Fleet-only rules: %w", err)
 	}
 	return nil
 }
