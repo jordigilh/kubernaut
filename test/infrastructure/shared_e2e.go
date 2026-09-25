@@ -381,7 +381,11 @@ func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID, clusterID stri
 	}
 	return fmt.Sprintf(`      - name: "af_full_interactive_remediation_1853"
         keywords: ["investigate and fix remediation"]
-        match_last_only: true
+        # The OpenAI tool loop presents tool results as the latest user-side
+        # content. Match the original request across the chain so subsequent
+        # calls continue using this scenario instead of falling back to the
+        # generic Tekton workflow.
+        match_last_only: false
         tool_call:
           name: "kubernaut_investigate"
           arguments:
