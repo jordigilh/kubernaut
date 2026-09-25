@@ -50,7 +50,7 @@ type DexE2EConfig struct {
 // verification.
 func DefaultDexE2EConfig(kubeconfigPath string) DexE2EConfig {
 	return DexE2EConfig{
-		TokenEndpoint:  "https://localhost:5556/dex/token",
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/dex/token", KAE2EHostPort(5556)),
 		ClientID:       "kubernaut-agent",
 		ClientSecret:   "e2e-client-secret",
 		Username:       "e2e-user@kubernaut.test",

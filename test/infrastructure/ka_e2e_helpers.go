@@ -69,7 +69,8 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 					_, _ = fmt.Fprintf(writer, "  ⏳ Verifying DataStorage HTTP endpoint...\n")
 					httpDeadline := time.Now().Add(2 * time.Minute)
 					for time.Now().Before(httpDeadline) {
-						req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:28089/readyz", http.NoBody)
+						readyURL := fmt.Sprintf("http://localhost:%d/readyz", KAE2EHostPort(28089))
+						req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, http.NoBody)
 						if reqErr != nil {
 							return fmt.Errorf("failed to build readyz request: %w", reqErr)
 						}

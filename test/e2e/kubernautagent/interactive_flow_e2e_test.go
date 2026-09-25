@@ -433,7 +433,8 @@ type auditEntry struct {
 // Returns nil if the query fails or no results are found. Logs errors to GinkgoWriter
 // so CI failures are debuggable (H5).
 func queryDSAuditsByRRID(rrID string) []auditEntry {
-	url := fmt.Sprintf("https://localhost:8089/api/v1/audit/events?correlation_id=%s&limit=50&offset=0", rrID)
+	url := fmt.Sprintf("https://localhost:%d/api/v1/audit/events?correlation_id=%s&limit=50&offset=0",
+		infrastructure.KAE2EHostPort(8089), rrID)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		GinkgoWriter.Printf("  [queryDSAuditsByRRID] request creation failed: %v\n", err)

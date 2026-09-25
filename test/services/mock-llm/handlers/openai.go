@@ -289,7 +289,14 @@ func (h *handler) handleOpenAIDiscoveryPlan(
 		writeChatCompletion(w, req.Stream, streamUsageRequested(req.StreamOptions), response.BuildToolCallResponse(model, plan.ToolName, responseCfg))
 		return true
 	case conversation.DiscoveryUnresolved:
-		log.Printf("[mock-llm] workflow discovery unresolved: %s", plan.Reason)
+		log.Printf("[mock-llm] workflow discovery unresolved: %s (scenario=%s expected_workflow_id=%s action_type=%s)",
+			plan.Reason, cfg.ScenarioName, cfg.WorkflowID, cfg.ActionType)
+		for _, event := range transcript.Events {
+			if event.Kind == conversation.DiscoveryToolResultEvent && event.ToolName == openai.ToolListWorkflows {
+				log.Printf("[mock-llm] workflow discovery list_workflows response (scenario=%s): %s",
+					cfg.ScenarioName, event.Payload)
+			}
+		}
 		h.respondWithText(w, req.Stream, streamUsageRequested(req.StreamOptions), model, withoutWorkflowSelection(cfg))
 		return true
 	case conversation.DiscoveryComplete:

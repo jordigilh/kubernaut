@@ -53,53 +53,59 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		err   error
 	}
 
-	buildResults := make(chan imageBuildResult, 3)
-
-	go func() {
-		cfg := E2EImageConfig{
+	buildConfigs := []E2EImageConfig{
+		{
 			ServiceName:      "datastorage",
 			ImageName:        "datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   false,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"datastorage", imageName, err}
-	}()
-
-	// ADR-027: Build KA from UBI10 go-toolset → ubi10-minimal (development stage)
-	go func() {
-		cfg := E2EImageConfig{
+		},
+		// ADR-027: Build KA from UBI10 go-toolset → ubi10-minimal (development stage)
+		{
 			ServiceName:      "kubernautagent",
 			ImageName:        "kubernautagent",
 			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
-	}()
-
-	go func() {
-		cfg := E2EImageConfig{
+		},
+		{
 			ServiceName:      "mock-llm",
 			ImageName:        "mock-llm",
 			DockerfilePath:   "test/services/mock-llm/go.Dockerfile",
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
-		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
-		buildResults <- imageBuildResult{"mock-llm", imageName, err}
-	}()
+		},
+	}
 
-	images := make(map[string]string, 3)
-	for i := 0; i < 3; i++ {
-		result := <-buildResults
-		if result.err != nil {
-			return fmt.Errorf("failed to build %s: %w", result.name, result.err)
+	images := make(map[string]string, len(buildConfigs))
+	if os.Getenv("KA_E2E_SERIAL_IMAGE_BUILDS") == trueFixture {
+		_, _ = fmt.Fprintln(writer, "  🔧 Serial image builds enabled for local Podman diagnostics")
+		for _, cfg := range buildConfigs {
+			imageName, err := BuildImageForKind(ctx, cfg, writer)
+			if err != nil {
+				return fmt.Errorf("failed to build %s: %w", cfg.ServiceName, err)
+			}
+			images[cfg.ServiceName] = imageName
+			_, _ = fmt.Fprintf(writer, "  ✅ %s: %s\n", cfg.ServiceName, imageName)
 		}
-		images[result.name] = result.image
-		_, _ = fmt.Fprintf(writer, "  ✅ %s: %s\n", result.name, result.image)
+	} else {
+		buildResults := make(chan imageBuildResult, len(buildConfigs))
+		for _, cfg := range buildConfigs {
+			go func(buildCfg E2EImageConfig) {
+				imageName, err := BuildImageForKind(ctx, buildCfg, writer)
+				buildResults <- imageBuildResult{buildCfg.ServiceName, imageName, err}
+			}(cfg)
+		}
+
+		for range buildConfigs {
+			result := <-buildResults
+			if result.err != nil {
+				return fmt.Errorf("failed to build %s: %w", result.name, result.err)
+			}
+			images[result.name] = result.image
+			_, _ = fmt.Fprintf(writer, "  ✅ %s: %s\n", result.name, result.image)
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -292,7 +298,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
-	if err := waitForDexReady(ctx, kubeconfigPath, afE2EHostPort(5556), writer); err != nil {
+	if err := waitForDexReady(ctx, kubeconfigPath, KAE2EHostPort(5556), writer); err != nil {
 		return fmt.Errorf("DEX not ready: %w", err)
 	}
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {

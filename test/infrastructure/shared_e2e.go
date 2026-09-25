@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,11 @@ const archARM64 = "arm64"
 // createKAKindCluster creates a Kind cluster using the KA Kind config.
 // Reused by both KA and AIAnalysis E2E suites (same port layout).
 func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	hostPortOffset, err := kaE2EHostPortOffset()
+	if err != nil {
+		return err
+	}
+
 	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
@@ -81,8 +87,38 @@ func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string
 		CleanupOrphanedContainers: true,
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
+		HostPortOffset:            hostPortOffset,
 	}
 	return CreateKindClusterWithConfig(ctx, opts, writer)
+}
+
+// kaE2EHostPortOffset returns the optional host-only port offset used to run
+// the KA E2E cluster beside another local Kind cluster. NodePorts and
+// in-cluster service ports remain unchanged.
+func kaE2EHostPortOffset() (int, error) {
+	const envVar = "KA_E2E_HOST_PORT_OFFSET"
+	raw := strings.TrimSpace(os.Getenv(envVar))
+	if raw == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", envVar, raw, err)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", envVar)
+	}
+	return offset, nil
+}
+
+// KAE2EHostPort resolves one KA E2E host port using KA_E2E_HOST_PORT_OFFSET.
+// Cluster setup validates the environment value before any endpoint is used.
+func KAE2EHostPort(defaultPort int) int {
+	offset, err := kaE2EHostPortOffset()
+	if err != nil {
+		return defaultPort
+	}
+	return defaultPort + offset
 }
 
 // CreateKAE2EServiceAccount creates the E2E ServiceAccount with

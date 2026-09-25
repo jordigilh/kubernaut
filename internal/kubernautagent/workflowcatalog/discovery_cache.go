@@ -81,11 +81,18 @@ func (c *Catalog) listWorkflowsByActionTypeFromCache(ctx context.Context, action
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list workflows for action type %s: %w", actionType, err)
 	}
+	c.logger.Info("workflow catalog spike: cache candidates before context filters",
+		"action_type", actionType,
+		"filters", fmt.Sprintf("%+v", filters),
+		"candidate_count", len(workflows))
 
 	matched, err := filterAndScoreCachedWorkflows(workflows, filters)
 	if err != nil {
 		return nil, 0, fmt.Errorf("action type %s: %w", actionType, err)
 	}
+	c.logger.Info("workflow catalog spike: candidates after context filters",
+		"action_type", actionType,
+		"matched_count", len(matched))
 
 	totalCount := len(matched)
 	return paginate(matched, offset, limit), totalCount, nil

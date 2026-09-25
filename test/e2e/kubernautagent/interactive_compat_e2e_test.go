@@ -101,7 +101,7 @@ var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka",
 		It("should read AIAnalysis without interactive fields after CRD upgrade [E2E-KA-COMPAT-003]", func() {
 			By("Step 1: Verifying CRD includes InteractiveSessionInfo (v1.5 schema)")
 			req, err := http.NewRequestWithContext(ctx, "GET",
-				"https://localhost:8088/api/v1/status", nil)
+				fmt.Sprintf("https://localhost:%d/api/v1/status", infrastructure.KAE2EHostPort(8088)), nil)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", saToken))
 

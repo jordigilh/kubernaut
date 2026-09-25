@@ -176,7 +176,7 @@ func ExtractToolResultText(result *mcpsdk.CallToolResult) string {
 // MCPEndpointForKAE2E returns the MCP endpoint URL for the KA E2E Kind cluster.
 // KA is exposed on https://localhost:8088 via NodePort, MCP is under /api/v1/mcp.
 func MCPEndpointForKAE2E() string {
-	return "https://localhost:8088/api/v1/mcp"
+	return fmt.Sprintf("https://localhost:%d/api/v1/mcp", KAE2EHostPort(8088))
 }
 
 // CreateInteractiveE2ESA creates a ServiceAccount with full interactive RBAC

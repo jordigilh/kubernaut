@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,10 +119,10 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupKubernautAgentInfrastructure(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		kaURL = "https://localhost:8088"
-		kaHealthURL = "http://localhost:28088"
-		kaMetricsURL = "http://localhost:9088"
-		dataStorageURL = "https://localhost:8089"
+		kaURL = fmt.Sprintf("https://localhost:%d", infrastructure.KAE2EHostPort(8088))
+		kaHealthURL = fmt.Sprintf("http://localhost:%d", infrastructure.KAE2EHostPort(28088))
+		kaMetricsURL = fmt.Sprintf("http://localhost:%d", infrastructure.KAE2EHostPort(9088))
+		dataStorageURL = fmt.Sprintf("https://localhost:%d", infrastructure.KAE2EHostPort(8089))
 
 		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
 		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
@@ -131,7 +133,7 @@ var _ = SynchronizedBeforeSuite(
 		time.Sleep(5 * time.Second)
 
 		// Issue #753: Health probes moved to dedicated port 8081 (NodePort 30281 → host 28089)
-		dataStorageHealthURL := "http://localhost:28089"
+		dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", infrastructure.KAE2EHostPort(28089))
 		logger.Info("⏳ Waiting for Data Storage service to be ready...")
 		Eventually(func() error {
 			resp, err := http.Get(dataStorageHealthURL + "/readyz")
@@ -205,10 +207,10 @@ var _ = SynchronizedBeforeSuite(
 		ctx, cancel = context.WithCancel(context.Background())
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
-		kaURL = "https://localhost:8088"
-		kaHealthURL = "http://localhost:28088"
-		kaMetricsURL = "http://localhost:9088"
-		dataStorageURL = "https://localhost:8089"
+		kaURL = fmt.Sprintf("https://localhost:%d", infrastructure.KAE2EHostPort(8088))
+		kaHealthURL = fmt.Sprintf("http://localhost:%d", infrastructure.KAE2EHostPort(28088))
+		kaMetricsURL = fmt.Sprintf("http://localhost:%d", infrastructure.KAE2EHostPort(9088))
+		dataStorageURL = fmt.Sprintf("https://localhost:%d", infrastructure.KAE2EHostPort(8089))
 
 		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
 		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
@@ -246,6 +248,25 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
 		infrastructure.MarkTestFailure(clusterName)
+		// E2E-KA-DISC-005 spike: coverage collection scales the agent down
+		// before must-gather, losing its catalog trace. Capture the relevant
+		// lines while the pod is still running, in the failed spec's job log.
+		if strings.Contains(report.FullText(), "E2E-KA-DISC-005") && kubeconfigPath != "" {
+			logCtx, stop := context.WithTimeout(context.Background(), 20*time.Second)
+			defer stop()
+			cmd := exec.CommandContext(logCtx, "kubectl", "logs", "--kubeconfig", kubeconfigPath,
+				"-n", sharedNamespace, "deployment/kubernaut-agent", "--all-pods=true", "--since=15m")
+			logs, err := cmd.CombinedOutput()
+			if err != nil {
+				GinkgoWriter.Printf("DISC-005 agent log capture failed: %v\n", err)
+			}
+			for _, line := range strings.Split(string(logs), "\n") {
+				if strings.Contains(line, `"action_type":"FixAuthorizationPolicy"`) ||
+					strings.Contains(line, `"correlation_id":"rr-disc005-`) {
+					GinkgoWriter.Printf("DISC-005 agent: %s\n", line)
+				}
+			}
+		}
 	}
 })
 

@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -137,6 +138,44 @@ nodes:
 		_, err := offsetKindHostPorts("hostPort: 60000\n", 5536)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("host port 65536 is outside"))
+	})
+})
+
+var _ = Describe("KA E2E host-port offset", func() {
+	const offsetEnv = "KA_E2E_HOST_PORT_OFFSET"
+
+	var originalValue string
+	var hadOriginalValue bool
+
+	BeforeEach(func() {
+		originalValue, hadOriginalValue = os.LookupEnv(offsetEnv)
+	})
+
+	AfterEach(func() {
+		if hadOriginalValue {
+			Expect(os.Setenv(offsetEnv, originalValue)).To(Succeed())
+			return
+		}
+		Expect(os.Unsetenv(offsetEnv)).To(Succeed())
+	})
+
+	It("UT-INFRA-KIND-015: applies a valid configured offset to host URLs", func() {
+		Expect(os.Setenv(offsetEnv, "22000")).To(Succeed())
+
+		offset, err := kaE2EHostPortOffset()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offset).To(Equal(22000))
+		Expect(KAE2EHostPort(8088)).To(Equal(30088))
+	})
+
+	It("UT-INFRA-KIND-016: rejects malformed and negative configured offsets", func() {
+		Expect(os.Setenv(offsetEnv, "invalid")).To(Succeed())
+		_, err := kaE2EHostPortOffset()
+		Expect(err).To(HaveOccurred())
+
+		Expect(os.Setenv(offsetEnv, "-1")).To(Succeed())
+		_, err = kaE2EHostPortOffset()
+		Expect(err).To(HaveOccurred())
 	})
 })
 
