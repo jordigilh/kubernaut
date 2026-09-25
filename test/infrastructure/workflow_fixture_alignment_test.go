@@ -98,6 +98,19 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 		Expect(resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")).To(Equal("restart-staging-uuid"))
 	})
 
+	It("UT-WORKFLOW-004-007: pipeline default discovery selects the executable staging Job", func() {
+		pipelineWorkflowUUIDs := map[string]string{
+			"generic-restart-v1:staging":          "restart-staging-uuid",
+			"fullpipeline-consent-job-v1:staging": "consent-staging-uuid",
+		}
+		legacyWorkflowUUIDs := map[string]string{
+			"generic-restart-v1:staging": "restart-staging-uuid",
+		}
+
+		Expect(resolveDefaultWorkflowUUID(pipelineWorkflowUUIDs)).To(Equal("consent-staging-uuid"))
+		Expect(resolveDefaultWorkflowUUID(legacyWorkflowUUIDs)).To(Equal("restart-staging-uuid"))
+	})
+
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",
 		func(fixture, actionType string, severity []string, environment string, component []string, priority string) {
 			content, err := readWorkflowFixtureContent(fixture)

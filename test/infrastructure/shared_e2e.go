@@ -710,6 +710,17 @@ func resolveWorkflowUUIDForEnvironment(workflowUUIDs map[string]string, workflow
 	return resolveWorkflowUUID(workflowUUIDs, workflowName)
 }
 
+// resolveDefaultWorkflowUUID selects an executable default for pipeline-based
+// E2E suites. Those suites seed a staging-only Job fixture specifically for
+// direct discovery paths; suites without it retain the generic fallback.
+func resolveDefaultWorkflowUUID(workflowUUIDs map[string]string) string {
+	workflowName := "generic-restart-v1"
+	if workflowUUIDs["fullpipeline-consent-job-v1:staging"] != "" {
+		workflowName = "fullpipeline-consent-job-v1"
+	}
+	return resolveWorkflowUUIDForEnvironment(workflowUUIDs, workflowName, "staging")
+}
+
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
@@ -728,11 +739,9 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
 	// The default fallback is used by direct MCP discovery scenarios that do not
-	// carry a keyword-specific selector. Prefer the staging catalog entry for
-	// FullPipeline, where the target namespaces are labeled staging. An explicit
-	// scenario-name override is required because production and staging UUIDs
-	// intentionally differ and cannot be resolved by the name-only fallback.
-	defaultWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")
+	// carry a keyword-specific selector. Pipeline suites use the executable
+	// staging Job fixture, while other callers retain the generic fallback.
+	defaultWorkflowID := resolveDefaultWorkflowUUID(workflowUUIDs)
 	scenariosYAML += fmt.Sprintf("      default:\n        workflow_id: \"%s\"\n", defaultWorkflowID)
 	// Unknown direct MCP signals use the built-in af_unknown selector. Override
 	// it explicitly because the selector is matched by signal text rather than
