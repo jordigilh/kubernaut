@@ -176,10 +176,6 @@ func configureAFMockLLM(ctx context.Context, kubeconfigPath string, client crcli
 	return nil
 }
 
-func addFleetAFScenarioSelectors(config string) (string, error) {
-	return addAFScenarioSelectors(config, fleetAFScenarioSelectors())
-}
-
 func addAFScenarioSelectors(config string, newSelectors []fleetAFScenarioSelector) (string, error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal([]byte(config), &document); err != nil {
@@ -244,7 +240,8 @@ func addAFScenarioSelectors(config string, newSelectors []fleetAFScenarioSelecto
 		}
 		uniqueExisting = append(uniqueExisting, selector)
 	}
-	selectors.Content = append(selectorNodes, uniqueExisting...)
+	selectorNodes = append(selectorNodes, uniqueExisting...)
+	selectors.Content = selectorNodes
 
 	encoded, err := yaml.Marshal(&document)
 	if err != nil {
