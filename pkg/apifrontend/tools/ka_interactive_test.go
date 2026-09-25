@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -208,6 +209,28 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("active"))
+		})
+
+		It("UT-AF-1234-045: takes over an autonomous session when reconnect is not driving", func() {
+			calls := 0
+			mockMCP = &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					calls++
+					if calls == 1 {
+						Expect(args.Action).To(Equal("reconnect"))
+						return nil, fmt.Errorf("not_driving: You must send action=takeover before sending messages")
+					}
+					Expect(args.Action).To(Equal("takeover"))
+					return &ka.InvokeActionResult{Status: "active"}, nil
+				},
+			}
+
+			result, err := tools.HandleReconnect(ctx, mockMCP, nil, "", tools.InteractiveActionArgs{
+				RRID: "rr-prod-001",
+			}, spy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("active"))
+			Expect(calls).To(Equal(2))
 		})
 
 		It("UT-AF-1234-044: KA error", func() {
