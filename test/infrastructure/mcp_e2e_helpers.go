@@ -363,9 +363,10 @@ func createDirectRRWithTargetKind(ctx context.Context, namespace, testID, signal
 				"firingTime":        now.UTC().Format(time.RFC3339),
 				"receivedTime":      now.UTC().Format(time.RFC3339),
 				"targetResource": map[string]interface{}{
-					"kind":      targetKind,
-					"name":      targetName,
-					"namespace": targetNS,
+					"apiVersion": targetAPIVersion(targetKind),
+					"kind":       targetKind,
+					"name":       targetName,
+					"namespace":  targetNS,
 				},
 			},
 		},
@@ -384,6 +385,13 @@ func createDirectRRWithTargetKind(ctx context.Context, namespace, testID, signal
 		return "", fmt.Errorf("create RR CRD: %w", err)
 	}
 	return rrName, nil
+}
+
+func targetAPIVersion(targetKind string) string {
+	if targetKind == "Deployment" {
+		return "apps/v1"
+	}
+	return "v1"
 }
 
 // MCPSessionSetup holds the result of SetupMCPSession.
