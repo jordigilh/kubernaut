@@ -109,6 +109,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Turn 1 (single message): declare interactive mode, then fire-and-forget attempt discover_workflows in the same turn")
 		const turn1CtxID = "ctx-fp-cg2-1"
@@ -271,6 +272,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Turn 1 (single message): declare full_remediation mode (authorizes discovery), then fire-and-forget attempt select_workflow in the same turn")
 		const turn1CtxID = "ctx-fp-cg3-1"
@@ -424,6 +426,7 @@ var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-191
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Seeding a synthetic not-actionable signal so KA's RCA is deterministic regardless of takeover timing (#2265)")
 		// See E2E-FP-1918-001's identical Event below for the full explanation
@@ -560,6 +563,7 @@ var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Lab
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Injecting a synthetic Warning event so AF derives a grounded, not-actionable signal name (#1918)")
 		// af_create_rr.go's HandleCreateRR validates/truncates kubernaut_remediate's

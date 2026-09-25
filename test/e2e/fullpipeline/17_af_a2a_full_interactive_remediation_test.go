@@ -120,6 +120,7 @@ var _ = Describe("AF A2A Full Interactive Remediation Full Pipeline [E2E-FP-1853
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Turn 1 (single message): investigate and fix in one shot (4-deep NextToolCall chain, no manual selection)")
 		body := fpA2ATasksSend("fp-full-1",

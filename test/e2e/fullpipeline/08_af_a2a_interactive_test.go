@@ -111,6 +111,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Grounding the interactive investigation with a synthetic GitOps signal event")
 		Expect(k8sClient.Create(ctx, &corev1.Event{

@@ -98,6 +98,7 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		var sawVisibleContent bool
 		const sharedCtxID = "ctx-fp-ints-shared"

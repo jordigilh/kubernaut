@@ -77,6 +77,7 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		rrName := "e2e-fp-mcp-rr-001"
 		By("Creating RemediationRequest via kubectl CRD fixture")

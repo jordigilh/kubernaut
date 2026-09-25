@@ -287,6 +287,65 @@ func createDirectRRWithTargetKind(ctx context.Context, namespace, testID, signal
 		return "", fmt.Errorf("create managed namespace %s: %w", targetNS, err)
 	}
 
+	targetName := fmt.Sprintf("%s-target", testID)
+	var targetGVR schema.GroupVersionResource
+	var targetObj *unstructured.Unstructured
+	switch targetKind {
+	case "Pod":
+		targetGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      targetName,
+				"namespace": targetNS,
+				"labels":    map[string]interface{}{"app": "memory-eater"},
+			},
+			"spec": map[string]interface{}{
+				"restartPolicy": "Never",
+				"containers": []interface{}{map[string]interface{}{
+					"name":    "app",
+					"image":   "busybox:1.36",
+					"command": []interface{}{"sleep", "3600"},
+				}},
+			},
+		}}
+	case "Deployment":
+		targetGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]interface{}{
+				"name":      targetName,
+				"namespace": targetNS,
+			},
+			"spec": map[string]interface{}{
+				"replicas": int64(0),
+				"selector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{"app": "memory-eater"},
+				},
+				"template": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"labels": map[string]interface{}{"app": "memory-eater"},
+					},
+					"spec": map[string]interface{}{
+						"containers": []interface{}{map[string]interface{}{
+							"name":  "app",
+							"image": "busybox:1.36",
+						}},
+					},
+				},
+			},
+		}}
+	default:
+		return "", fmt.Errorf("unsupported direct RR target kind %s", targetKind)
+	}
+	targetCtx, targetCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer targetCancel()
+	if _, err := dynClient.Resource(targetGVR).Namespace(targetNS).Create(targetCtx, targetObj, metav1.CreateOptions{}); err != nil {
+		return "", fmt.Errorf("create target %s/%s: %w", targetKind, targetName, err)
+	}
+
 	rr := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "kubernaut.ai/v1alpha1",
@@ -305,7 +364,7 @@ func createDirectRRWithTargetKind(ctx context.Context, namespace, testID, signal
 				"receivedTime":      now.UTC().Format(time.RFC3339),
 				"targetResource": map[string]interface{}{
 					"kind":      targetKind,
-					"name":      fmt.Sprintf("%s-target", testID),
+					"name":      targetName,
 					"namespace": targetNS,
 				},
 			},

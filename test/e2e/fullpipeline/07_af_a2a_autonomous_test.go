@@ -65,6 +65,7 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		if createErr := k8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create memory-eater in %s", autoNS)
 		}
+		fpCreateTargetPod(ctx, dep)
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(context.Background(), dep, &client.DeleteOptions{})
 		})
