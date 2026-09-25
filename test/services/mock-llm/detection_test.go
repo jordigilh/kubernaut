@@ -136,6 +136,24 @@ var _ = Describe("Scenario Detection Rules", func() {
 			Expect(confidence).To(Equal(0.91))
 		})
 
+		It("UT-MOCK-2462-001 / BR-FLEET-054: should not match a keyword inside a larger token", func() {
+			selector := scenarios.ScenarioSelector{
+				Keywords:          []string{"fleet e2e severity tier 1"},
+				MatchLastUserOnly: true,
+				Confidence:        1.0,
+			}
+
+			matched, _ := selector.Match(&scenarios.DetectionContext{
+				LastUserContent: "fleet e2e severity tier 15",
+			})
+			Expect(matched).To(BeFalse())
+
+			matched, _ = selector.Match(&scenarios.DetectionContext{
+				LastUserContent: "fleet e2e severity tier 1 with severity critical",
+			})
+			Expect(matched).To(BeTrue())
+		})
+
 		It("should publish selector constraints in scenario metadata", func() {
 			metadataByName := make(map[string]scenarios.ScenarioMetadata)
 			for _, metadata := range registry.List() {

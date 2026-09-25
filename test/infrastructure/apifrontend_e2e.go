@@ -295,15 +295,6 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("AF DS client RBAC failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	mockLLMClusterID := ""
-	if options.FleetEnabled {
-		mockLLMClusterID = fleetHubClusterID
-	}
-	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], mockLLMClusterID, writer); err != nil {
-		return fmt.Errorf("mock-LLM deploy failed: %w", err)
-	}
-
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent RBAC...")
 	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("KA RBAC failed: %w", err)
@@ -372,8 +363,18 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// .status.workflowId can never resolve -- use the direct-CRD-creation path
 	// instead, which computes the same deterministic UUID and stamps status
 	// itself (pkg/shared/contenthash).
-	if _, seedErr = SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
+	var workflowUUIDs map[string]string
+	if workflowUUIDs, seedErr = SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
+	mockLLMClusterID := ""
+	if options.FleetEnabled {
+		mockLLMClusterID = fleetHubClusterID
+	}
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], mockLLMClusterID, workflowUUIDs, writer); err != nil {
+		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
 	afImage := images["apifrontend"]
@@ -675,6 +676,8 @@ spec:
             - name: llm-credentials
               mountPath: /etc/apifrontend/llm-credentials
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
 %[7]s
           readinessProbe:
             httpGet:
@@ -712,6 +715,8 @@ spec:
         - name: llm-credentials
           secret:
             secretName: apifrontend-llm-key
+        - name: tmp
+          emptyDir: {}
 %[8]s
 ---
 apiVersion: v1
@@ -913,7 +918,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterID string, writer io.Writer) error {
+func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterID string, workflowUUIDs map[string]string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
 
@@ -922,11 +927,20 @@ func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage, clusterI
 		return fmt.Errorf("failed to read mock-llm.yaml: %w", err)
 	}
 
+	manifest := renderAFMockLLMManifest(data, mockLLMImage, clusterID, workflowUUIDs)
+	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
+}
+
+func renderAFMockLLMManifest(data []byte, mockLLMImage, clusterID string, workflowUUIDs map[string]string) string {
 	manifest := strings.ReplaceAll(string(data), "ghcr.io/jordigilh/kubernaut/mock-llm:pr-1161", mockLLMImage)
 	manifest = strings.ReplaceAll(manifest, "imagePullPolicy: Always", "imagePullPolicy: IfNotPresent")
 	manifest = strings.ReplaceAll(manifest, "__HUB_CLUSTER_ID__", clusterID)
-
-	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
+	// The CRD seeder assigns the catalog UUID after admission. Keep the AF
+	// selector manifest, but point its direct selection call at that UUID.
+	workflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")
+	manifest = strings.ReplaceAll(manifest, `workflow_id: "restart-v1"`, fmt.Sprintf(`workflow_id: "%s"`, workflowID))
+	manifest = strings.ReplaceAll(manifest, `            remediation_id: "rr-001"`, `            rr_id: "rr-001"`)
+	return manifest
 }
 
 func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {

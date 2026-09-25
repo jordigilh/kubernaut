@@ -14,6 +14,23 @@ import (
 )
 
 var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATION-065]", func() {
+	It("UT-INFRA-AF-FLEET-2462-012 [BR-FLEET-054]: renders seeded workflow and remediation arguments in the AF mock-LLM manifest", func() {
+		manifestPath := filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/mock-llm.yaml")
+		data, err := os.ReadFile(manifestPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		rendered := renderAFMockLLMManifest(data, "localhost/mock-llm:test", "hub", map[string]string{
+			"generic-restart-v1:staging": "restart-staging-uuid",
+		})
+
+		Expect(rendered).To(ContainSubstring(`workflow_id: "restart-staging-uuid"`))
+		Expect(rendered).To(ContainSubstring(`rr_id: "rr-001"`))
+		Expect(rendered).NotTo(ContainSubstring(`workflow_id: "restart-v1"`))
+		Expect(rendered).NotTo(ContainSubstring(`            remediation_id: "rr-001"`))
+		Expect(rendered).To(ContainSubstring(`value: "hub"`))
+		expectValidYAMLDocuments(rendered)
+	})
+
 	It("UT-INFRA-AF-FLEET-2462-004 [BR-FLEET-054, BR-INTEGRATION-065]: renders matching Keycloak, FMC, and Gateway settings for AF", func() {
 		baseConfig, err := os.ReadFile(filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/config.yaml"))
 		Expect(err).NotTo(HaveOccurred())

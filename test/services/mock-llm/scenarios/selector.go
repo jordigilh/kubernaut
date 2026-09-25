@@ -15,7 +15,11 @@ limitations under the License.
 */
 package scenarios
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 // ScenarioSelector is the canonical declarative matcher for static scenarios.
 // See DD-TEST-017 for the migration and deprecation policy.
@@ -33,7 +37,7 @@ type ScenarioSelector struct {
 
 // Match evaluates the selector against a request context. Keyword and signal
 // values are treated case-insensitively and match if any configured value is
-// present. An empty selector does not match.
+// present as a token or phrase. An empty selector does not match.
 func (s ScenarioSelector) Match(ctx *DetectionContext) (bool, float64) {
 	if ctx == nil {
 		return false, 0
@@ -53,7 +57,7 @@ func (s ScenarioSelector) Match(ctx *DetectionContext) (bool, float64) {
 		target = strings.ToLower(ctx.LastUserContent)
 	}
 	for _, keyword := range s.Keywords {
-		if strings.Contains(target, strings.ToLower(keyword)) {
+		if containsKeyword(target, keyword) {
 			return true, s.confidence(1.0)
 		}
 	}
@@ -65,6 +69,49 @@ func (s ScenarioSelector) Match(ctx *DetectionContext) (bool, float64) {
 		}
 	}
 	return false, 0
+}
+
+// containsKeyword prevents a keyword from matching inside a larger word while
+// retaining phrase matching across whitespace and punctuation.
+func containsKeyword(target, keyword string) bool {
+	keyword = strings.ToLower(keyword)
+	if keyword == "" {
+		return false
+	}
+
+	for searchFrom := 0; searchFrom < len(target); {
+		relativeStart := strings.Index(target[searchFrom:], keyword)
+		if relativeStart < 0 {
+			return false
+		}
+		start := searchFrom + relativeStart
+		end := start + len(keyword)
+		if keywordBoundary(target, start, end) {
+			return true
+		}
+		searchFrom = end
+	}
+	return false
+}
+
+func keywordBoundary(target string, start, end int) bool {
+	if start > 0 {
+		before, _ := utf8.DecodeLastRuneInString(target[:start])
+		if isKeywordRune(before) {
+			return false
+		}
+	}
+	if end < len(target) {
+		after, _ := utf8.DecodeRuneInString(target[end:])
+		if isKeywordRune(after) {
+			return false
+		}
+	}
+	return true
+}
+
+func isKeywordRune(value rune) bool {
+	return value == '_' || unicode.IsLetter(value) || unicode.IsDigit(value)
 }
 
 func (s ScenarioSelector) confidence(defaultConfidence float64) float64 {

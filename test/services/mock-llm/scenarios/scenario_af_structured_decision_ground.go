@@ -115,6 +115,25 @@ func structuredDecisionGrounding3Config() MockScenarioConfig {
 	}
 }
 
+// structuredDecisionGroundingConfig is the KA-side grounding response for
+// Fleet E2E's first structured-decision fixture. The AF selector supplies the
+// final present_decision payload, while this investigation response prevents
+// phase_guard.go from replacing its critical RCA with the default warning.
+func structuredDecisionGroundingConfig() MockScenarioConfig {
+	cfg := structuredDecisionGrounding3Config()
+	cfg.ScenarioName = "af_structured_decision_ground"
+	cfg.SignalName = "StructuredDecisionGrounding"
+	// The Fleet follow-up continues through workflow discovery and a user
+	// decision. Keep this seed investigation actionable so AF does not enter
+	// phase2_blocked before the follow-up turn can present that decision.
+	cfg.ToolCallArgs["investigation_outcome"] = "actionable"
+	cfg.ToolCallArgs["actionable"] = true
+	if rca, ok := cfg.ToolCallArgs["root_cause_analysis"].(map[string]interface{}); ok {
+		rca["signal_name"] = cfg.SignalName
+	}
+	return cfg
+}
+
 // structuredDecisionGrounding4Config is KA's own (mock-llm) side of
 // structured_decision_e2e_test.go's E2E-AF-2387-002 groundSessionDelta call
 // (deploy/apifrontend/overlays/e2e/mock-llm.yaml's

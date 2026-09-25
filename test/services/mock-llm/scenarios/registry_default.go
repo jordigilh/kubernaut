@@ -164,6 +164,8 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		for _, ks := range selectorOverrides {
 			cfg := MockScenarioConfig{
 				ScenarioName:      ks.Name,
+				WorkflowID:        ks.WorkflowID,
+				ActionType:        ks.ActionType,
 				ToolCallName:      ks.ToolCall.Name,
 				ToolCallArgs:      ks.ToolCall.Arguments,
 				FallbackArguments: ks.ToolCall.FallbackArguments,
@@ -247,6 +249,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// groundSessionBeta call -- see scenario_af_structured_decision_ground.go's
 	// doc comment for why ToolCallArgs must hand-craft the RCA substituted
 	// into args["rca"] rather than relying on the typed config fields.
+	r.Register(newSignalScenario("af_structured_decision_ground", []string{"structureddecisiongrounding"}, structuredDecisionGroundingConfig()))
 	r.Register(newSignalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
 
 	// E2E-AF-2387-002 (issue #2387): dedicated grounding scenario for

@@ -25,6 +25,7 @@ package infrastructure
 // Provides:
 //   - DeployPrometheusForSeverityTriage: orchestrates Prometheus + AF rules
 //   - SeedTriageAlertRules: patches Prometheus ConfigMap with AF fixtures
+//   - RemoveFleetOnlyPrometheusRules: isolates standalone AF from Fleet markers
 //   - WaitForPrometheusRuleState: polls /api/v1/rules for desired state
 //   - AFInjectOTLPMetrics: single-metric OTLP injection (wraps InjectMetrics)
 //   - SeverityTriageAlertRulesYAML: PromQL alert rule fixtures
@@ -159,6 +160,38 @@ func SeedTriageAlertRules(ctx context.Context, namespace, clusterID, kubeconfigP
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Prometheus ready with AF severity triage alert rules")
+	return nil
+}
+
+// RemoveFleetOnlyPrometheusRules removes synthetic Fleet markers from the
+// standalone AF Prometheus. Those cluster-scoped alerts are intentionally
+// fail-closed by severity triage and would otherwise make unrelated local
+// Tier 2/Tier 2.5 fixtures appear ambiguous.
+func RemoveFleetOnlyPrometheusRules(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	patchJSON := `{"data":{"af-hub-cluster-triage-2394.yml":null,"fleet-alerts-cluster-scoped-2274.yml":null,"fleet-interactive-bridge-grounding.yml":null,"fleet-organic-af-only-alert.yml":null,"fleet-organic-gateway-alert.yml":null}}`
+	patchCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
+		"patch", "configmap", "prometheus-rules", "-n", namespace, "--type=merge", "-p", patchJSON)
+	patchCmd.Stdout = writer
+	patchCmd.Stderr = writer
+	if err := patchCmd.Run(); err != nil {
+		return fmt.Errorf("remove Fleet-only Prometheus rules: %w", err)
+	}
+
+	restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"rollout", "restart", "deployment/prometheus", "-n", namespace)
+	restartCmd.Stdout = writer
+	restartCmd.Stderr = writer
+	if err := restartCmd.Run(); err != nil {
+		return fmt.Errorf("restart Prometheus after removing Fleet-only rules: %w", err)
+	}
+
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"rollout", "status", "deployment/prometheus", "-n", namespace, "--timeout=60s")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("Prometheus not ready after removing Fleet-only rules: %w", err)
+	}
 	return nil
 }
 

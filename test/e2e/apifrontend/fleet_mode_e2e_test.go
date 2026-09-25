@@ -127,7 +127,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 	It("E2E-AF-FLEET-2462-002 [BR-FLEET-054, BR-INTEGRATION-065]: structured RCA and workflow options arrive intact over Fleet SSE", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
-		const contextID = "ctx-fleet-af-structured-2462"
+		contextID := fleetAFUniqueTaskID("ctx-fleet-af-structured-2462")
 
 		groundFleetAFSession(ctx, authToken, "fleet structured grounding one", contextID)
 		resp, err := fleetA2AStream(ctx, authToken,

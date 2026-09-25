@@ -86,6 +86,30 @@ func fetchDEXTokenForPersona(role string) (string, error) {
 	return token, nil
 }
 
+func seedDEXPersonaTokenCache(tokens map[string]string) error {
+	for role, token := range tokens {
+		if _, ok := e2ePersonas[role]; !ok {
+			return fmt.Errorf("unknown DEX persona role %q", role)
+		}
+		if strings.TrimSpace(token) == "" {
+			return fmt.Errorf("empty DEX token for persona %q", role)
+		}
+	}
+
+	dexPersonaTokenCacheMu.Lock()
+	defer dexPersonaTokenCacheMu.Unlock()
+	for role, token := range tokens {
+		key := dexPersonaTokenCacheKey{
+			role:         role,
+			dexURL:       dexURL,
+			clientID:     clientID,
+			clientSecret: clientSecret,
+		}
+		dexPersonaTokens[key] = token
+	}
+	return nil
+}
+
 // a2aInvoke sends a JSON-RPC request to POST /a2a/invoke with the given auth token.
 func a2aInvoke(client *http.Client, base, token, body string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPost, base+"/a2a/invoke", strings.NewReader(body))
@@ -436,7 +460,7 @@ var dexTokenRetryBackoff = backoff.Config{
 
 const dexTokenMaxAttempts = 4
 
-const dexTokenRequestTimeout = time.Second
+const dexTokenRequestTimeout = 3 * time.Second
 
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tlsClient := &http.Client{

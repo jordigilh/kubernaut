@@ -90,9 +90,41 @@ var _ = SynchronizedBeforeSuite(
 				_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
 			}
 			setupSucceeded = true
+			if !helperTestsOnly {
+				severityFixtureClient, severityFixtureErr := newFleetAFSetupClient(kubeconfigPath)
+				Expect(severityFixtureErr).NotTo(HaveOccurred(), "severity fixture Kubernetes client must be available")
+				Expect(prepareSeverityAFFixtures(context.Background(), severityFixtureClient)).To(Succeed(),
+					"retained local severity triage fixtures must be ready")
+				Expect(kinfra.RemoveFleetOnlyPrometheusRules(context.Background(), e2eNamespace, kubeconfigPath, GinkgoWriter)).To(Succeed(),
+					"retained standalone Prometheus must exclude Fleet-only markers")
+				Expect(configureSeverityAFMockLLM(context.Background(), kubeconfigPath, GinkgoWriter)).To(Succeed(),
+					"retained local mock-LLM must include severity scenarios")
+				promURL := e2eHostURL("http", 9190)
+				Expect(kinfra.AFInjectOTLPMetrics(context.Background(), promURL, "e2e_cpu_usage_percent", 95, map[string]string{
+					"namespace": "sev-tier1-ns", "kind": "Deployment", "name": "test-firing-target",
+				})).To(Succeed(), "retained local CPU severity metric must be injected")
+				Expect(kinfra.AFInjectOTLPMetrics(context.Background(), promURL, "e2e_memory_usage_percent", 90, map[string]string{
+					"namespace": "sev-tier15-ns", "kind": "Deployment", "name": "test-pending-target",
+				})).To(Succeed(), "retained local memory severity metric must be injected")
+				Expect(kinfra.WaitForPrometheusRuleState(context.Background(), promURL, "HighCPU", kinfra.RuleStateFiring, 30*time.Second)).To(Succeed(),
+					"retained local HighCPU alert must be firing")
+				Expect(kinfra.WaitForPrometheusRuleState(context.Background(), promURL, "HighMemory", kinfra.RuleStatePending, 30*time.Second)).To(Succeed(),
+					"retained local HighMemory alert must be pending")
+			}
+			fleetKubeconfigPath := os.Getenv("AF_E2E_FLEET_KUBECONFIG")
+			fleetCertDir := os.Getenv("AF_E2E_FLEET_CERT_DIR")
+			if fleetKubeconfigPath != "" && fleetCertDir == "" {
+				fleetCertDir = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", getEnvOrDefault("AF_E2E_FLEET_CLUSTER_NAME", fleetAFDefaultClusterName))
+			}
+			if fleetKubeconfigPath != "" {
+				Expect(configureFleetAFMockLLM(context.Background(), fleetKubeconfigPath, GinkgoWriter)).To(Succeed(),
+					"retained Fleet AF mock-LLM must include cluster-attributed test scenarios")
+			}
 			setup, marshalErr := json.Marshal(afE2ESuiteSetup{
 				LocalKubeconfigPath: kubeconfigPath,
 				LocalCertDir:        getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName)),
+				FleetKubeconfigPath: fleetKubeconfigPath,
+				FleetCertDir:        fleetCertDir,
 				FleetClusterName:    fleetAFClusterName,
 				LocalHostPortOffset: e2eHostPort(0),
 			})
@@ -131,6 +163,14 @@ var _ = SynchronizedBeforeSuite(
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for Prometheus readiness...")
 			Expect(kinfra.WaitForPrometheusReady(ctx, promURL, 90*time.Second, GinkgoWriter)).
 				To(Succeed(), "Prometheus must become ready within 90s")
+			severityFixtureClient, severityFixtureErr := newFleetAFSetupClient(kubeconfigPath)
+			Expect(severityFixtureErr).NotTo(HaveOccurred(), "severity fixture Kubernetes client must be available")
+			Expect(prepareSeverityAFFixtures(ctx, severityFixtureClient)).To(Succeed(),
+				"local severity triage fixtures must be ready")
+			Expect(kinfra.RemoveFleetOnlyPrometheusRules(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)).To(Succeed(),
+				"standalone local Prometheus must exclude Fleet-only markers")
+			Expect(configureSeverityAFMockLLM(ctx, kubeconfigPath, GinkgoWriter)).To(Succeed(),
+				"local mock-LLM must include severity scenarios")
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")
 			// #1839: dedicated namespaces (not "default") so these fixtures
@@ -197,6 +237,18 @@ var _ = SynchronizedBeforeSuite(
 				"Fleet AF grounding rule %s must reach %s", rule.name, rule.state)
 		}
 
+		// Acquire persona tokens once before Ginkgo fans specs out across worker processes.
+		// This avoids concurrent cold logins through the single DEX NodePort during the suite.
+		dexURL = e2eHostURL("https", 5556) + "/dex"
+		clientID = "kubernaut-apifrontend"
+		clientSecret = "e2e-client-secret"
+		personaTokens := make(map[string]string, len(e2ePersonas))
+		for role := range e2ePersonas {
+			token, tokenErr := fetchDEXTokenForPersona(role)
+			Expect(tokenErr).NotTo(HaveOccurred(), "prewarm DEX token for persona %s before parallel E2E specs", role)
+			personaTokens[role] = token
+		}
+
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		_, _ = fmt.Fprintln(GinkgoWriter, "E2E Infrastructure Ready")
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -211,6 +263,7 @@ var _ = SynchronizedBeforeSuite(
 			FleetCertDir:        fleetCertDir,
 			FleetClusterName:    fleetClusterName,
 			LocalHostPortOffset: localHostPortOffset,
+			PersonaTokens:       personaTokens,
 		})
 		Expect(marshalErr).NotTo(HaveOccurred())
 		return setup
@@ -228,6 +281,8 @@ var _ = SynchronizedBeforeSuite(
 		clientSecret = "e2e-client-secret"
 		username = "e2e-user@kubernaut.ai"
 		password = "password"
+		Expect(seedDEXPersonaTokenCache(setup.PersonaTokens)).To(Succeed(),
+			"synchronized DEX persona tokens must seed this Ginkgo worker")
 		if os.Getenv("AF_E2E_HELPER_TESTS_ONLY") != trueFixture {
 			httpClient = newTLSClient(caCertPath)
 		} else {
