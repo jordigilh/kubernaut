@@ -730,6 +730,11 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// intentionally differ and cannot be resolved by the name-only fallback.
 	defaultWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")
 	scenariosYAML += fmt.Sprintf("      default:\n        workflow_id: \"%s\"\n", defaultWorkflowID)
+	// Unknown direct MCP signals use the built-in af_unknown selector, whose
+	// effective scenario name is oomkilled. Override it explicitly because the
+	// selector is matched by signal text rather than the workflow name.
+	oomkillWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "oomkill-increase-memory-v1", "staging")
+	scenariosYAML += fmt.Sprintf("      oomkilled:\n        workflow_id: \"%s\"\n", oomkillWorkflowID)
 	// Override the built-in GitOps selection scenario with the UUID assigned by
 	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
 	afGitOpsWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "gitops-drift-2390-v1", "staging")
