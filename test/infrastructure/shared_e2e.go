@@ -693,6 +693,19 @@ func resolveWorkflowUUID(workflowUUIDs map[string]string, workflowName string) s
 	return workflowName
 }
 
+// resolveWorkflowUUIDForEnvironment selects the catalog UUID for the requested
+// workflow environment. A2A FullPipeline scenarios run in staging namespaces,
+// so the Mock LLM must select the staging catalog entry that
+// discover_workflows can return rather than the production-preferred UUID.
+// Fall back to resolveWorkflowUUID to preserve callers whose workflow is seeded
+// in only one environment.
+func resolveWorkflowUUIDForEnvironment(workflowUUIDs map[string]string, workflowName, environment string) string {
+	if workflowID := workflowUUIDs[workflowName+":"+environment]; workflowID != "" {
+		return workflowID
+	}
+	return resolveWorkflowUUID(workflowUUIDs, workflowName)
+}
+
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
@@ -712,7 +725,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	}
 	// Override the built-in GitOps selection scenario with the UUID assigned by
 	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
-	afGitOpsWorkflowID := resolveWorkflowUUID(workflowUUIDs, "gitops-drift-2390-v1")
+	afGitOpsWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "gitops-drift-2390-v1", "staging")
 	scenariosYAML += fmt.Sprintf(`      af_select_gitops_workflow_2390:
         tool_call:
           name: "kubernaut_select_workflow"
@@ -799,7 +812,12 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// kubernaut_select_workflow deterministically fails with
 	// invalid_workflow (silently, unless the caller strictly asserts on
 	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
-	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
+	afSelectWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "oomkill-increase-memory-v1", "staging")
+	// RCA resolves the zero-replica Deployment to its Pod target before workflow
+	// discovery, so the dedicated staging Job entry uses the exact v1/Pod
+	// component preferred over wildcard candidates. The generic Pod workflow
+	// uses Tekton and is not executable in the FullPipeline cluster.
+	afConsentSelectWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "fullpipeline-consent-job-v1", "staging")
 	// This phrase is also used by the generic consent-gate scenario below.
 	// Register the GitOps-specific rule first so E2E-FP-2390 selects the
 	// workflow whose snapshot contains the dependency and resource assertions.
@@ -813,6 +831,19 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             rr_id: "$from_tool:kubernaut_investigate:rr_id"
             workflow_id: "%s"
 `, afGitOpsWorkflowID)
+	// KA's workflow-discovery LLM request is a separate mock-LLM conversation
+	// from AF's consent-turn selector. Scope this override to the grounded
+	// consent signal so KA stores the executable staging Job workflow in its
+	// discovery result instead of the generic production-preferred fallback.
+	kaConsentWorkflowDiscoveryYAML := fmt.Sprintf(`      - name: "ka_consent_gate_workflow_discovery_1899"
+        caller: "ka"
+        phase: "workflow_discovery"
+        keywords: ["FullPipelineA2ASeverityGrounding"]
+        workflow_id: "%s"
+        action_type: "RestartPod"
+        tool_call:
+          name: "list_available_actions"
+`, afConsentSelectWorkflowID)
 	// #1853 mode 2/3 and #1899 consent-gate scenarios are registered before
 	// af_investigate below: all of their keywords contain the substring
 	// "investigate", and mock-llm's registry breaks confidence ties (all
@@ -829,8 +860,9 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID, afInvestigationClusterID) +
 		afGitOpsSelectScenarioYAML +
+		kaConsentWorkflowDiscoveryYAML +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"], afInvestigationClusterID) +
-		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID, afInvestigationClusterID) +
+		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afConsentSelectWorkflowID, afInvestigationClusterID) +
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
 		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"
@@ -866,11 +898,11 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
             workflow_id: "` + afSelectWorkflowID + `"
       # af_select_discovered_workflow_1899 exists alongside af_select_workflow
-      # above (distinct keyword, same resolved UUID) so the #1899 consent-gate
-      # E2E tests have a dedicated, self-documenting keyword ("select the
-      # discovered workflow") for their genuine follow-up select_workflow
-      # turn, independent of whether af_select_workflow's own keyword phrase
-      # ever changes. Confirmed via must-gather RCA on release/v1.5 (where
+      # above (distinct keyword and Pod-compatible staging workflow) so the
+      # #1899 consent-gate E2E tests have a dedicated, self-documenting keyword
+      # ("select the discovered workflow") for their genuine follow-up
+      # select_workflow turn, independent of whether af_select_workflow's own
+      # keyword phrase ever changes. Confirmed via must-gather RCA on release/v1.5 (where
       # af_select_workflow still used a hardcoded human-readable literal,
       # issue #1834): an unresolved workflow_id fails kubernaut_select_workflow
       # with invalid_workflow, which would mask the consent gate's own PASS
@@ -889,7 +921,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_select_workflow"
           arguments:
             rr_id: "$from_tool:kubernaut_investigate:rr_id"
-            workflow_id: "` + afSelectWorkflowID + `"
+            workflow_id: "` + afConsentSelectWorkflowID + `"
       # af_discover_workflows_1899/af_watch_1899: dedicated to
       # E2E-FP-1899-001/-002's genuine follow-up turns after Turn 1's fresh
       # kubernaut_investigate call (2026-08-25 root-cause correction, #2265

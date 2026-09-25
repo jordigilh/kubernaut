@@ -64,7 +64,38 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 			WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
 			WorkflowSeedSpec{FixtureDir: "fix-certificate", Environment: "production"},
 			WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "production"},
+			WorkflowSeedSpec{FixtureDir: "crashloop-config-fix-job", Environment: "staging"},
+			WorkflowSeedSpec{FixtureDir: "oomkill-increase-memory-job", Environment: "staging"},
+			WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "staging"},
+			WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "staging"},
+			WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "staging"},
+			WorkflowSeedSpec{FixtureDir: "fullpipeline-consent-job", Environment: "staging"},
 		))
+	})
+
+	It("UT-WORKFLOW-004-006: consent discovery has an exact Pod-matching Job workflow", func() {
+		content, err := readWorkflowFixtureContent("fullpipeline-consent-job")
+		Expect(err).NotTo(HaveOccurred())
+
+		workflow := &rwv1alpha1.RemediationWorkflow{}
+		Expect(yaml.Unmarshal([]byte(content), workflow)).To(Succeed())
+		Expect(workflow.Spec.Labels.Severity).To(Equal([]string{"warning"}))
+		Expect(workflow.Spec.Labels.Environment).To(Equal([]string{"staging"}))
+		Expect(workflow.Spec.Labels.Component).To(Equal([]string{"v1/Pod"}))
+		Expect(workflow.Spec.Execution.Engine).To(Equal("job"))
+	})
+
+	It("UT-WORKFLOW-004-005: A2A selectors resolve the workflow UUID for the target environment", func() {
+		workflowUUIDs := map[string]string{
+			"oomkill-increase-memory-v1:production": "oom-production-uuid",
+			"oomkill-increase-memory-v1:staging":    "oom-staging-uuid",
+			"generic-restart-v1:production":         "restart-production-uuid",
+			"generic-restart-v1:staging":            "restart-staging-uuid",
+		}
+
+		Expect(resolveWorkflowUUIDForEnvironment(workflowUUIDs, "oomkill-increase-memory-v1", "staging")).To(Equal("oom-staging-uuid"))
+		Expect(resolveWorkflowUUIDForEnvironment(workflowUUIDs, "oomkill-increase-memory-v1", "production")).To(Equal("oom-production-uuid"))
+		Expect(resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")).To(Equal("restart-staging-uuid"))
 	})
 
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",

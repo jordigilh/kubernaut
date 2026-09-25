@@ -159,6 +159,15 @@ func fullPipelineWorkflowSeeds(fleetMode bool) []WorkflowSeedSpec {
 		WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
 		WorkflowSeedSpec{FixtureDir: "fix-certificate", Environment: "production"},
 		WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "production"},
+		// FullPipeline A2A targets are isolated in managed staging namespaces.
+		// Seed matching catalog entries so discovery sees workflow IDs from the
+		// target's environment while production system fixtures remain available.
+		WorkflowSeedSpec{FixtureDir: "crashloop-config-fix-job", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "oomkill-increase-memory-job", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "fullpipeline-consent-job", Environment: "staging"},
 	)
 }
 
