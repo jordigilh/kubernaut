@@ -88,4 +88,33 @@ var _ = Describe("FullPipeline A2A severity grounding rules [BR-SEVERITY-001, BR
 		Expect(rulesYAML).To(BeEmpty())
 		Expect(ruleNames).To(BeEmpty())
 	})
+
+	It("UT-FP-2443-003: keeps consent targets on the supported warning severity", func() {
+		rulesYAML, _ := fullPipelineA2AGroundingRuleFile(map[string]string{
+			"consent-phase2": "fp-cg2-1234",
+			"consent-phase3": "fp-cg3-5678",
+		})
+
+		Expect(rulesYAML).To(ContainSubstring("severity: warning"))
+	})
+
+	It("UT-FP-2443-004: grounds no-actionability targets with their synthetic signal names", func() {
+		rulesYAML, ruleNames := fullPipelineA2AGroundingRuleFile(map[string]string{
+			"consent-phase2":      "fp-cg2-1234",
+			"interactive":         "fp-interactive-abcd",
+			"not-actionable-1918": "fp-na1918-1234",
+			"terminal-1912":       "fp-t1912-5678",
+		})
+
+		Expect(ruleNames).To(Equal([]string{
+			fullPipelineA2AGroundingRulePrefix + "fp_cg2_1234",
+			fullPipelineA2AGroundingRulePrefix + "fp_interactive_abcd",
+			"E2EFP1918NotActionable",
+			"E2EFP1912NotActionable",
+		}))
+		Expect(rulesYAML).To(ContainSubstring("alert: E2EFP1918NotActionable"))
+		Expect(rulesYAML).To(ContainSubstring("alert: E2EFP1912NotActionable"))
+		Expect(rulesYAML).To(ContainSubstring("namespace: \"fp-na1918-1234\""))
+		Expect(rulesYAML).To(ContainSubstring("namespace: \"fp-t1912-5678\""))
+	})
 })

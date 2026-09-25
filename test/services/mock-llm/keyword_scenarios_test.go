@@ -177,6 +177,35 @@ scenarios:
 	})
 
 	Describe("UT-MOCK-KW-002: Registry detection of keyword scenarios", func() {
+		It("UT-MOCK-KW-002-005: should carry workflow discovery overrides into scoped selectors", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+				ScenarioSelectors: []config.ScenarioSelectorOverride{{
+					Name:       "ka_consent_discovery",
+					Caller:     "ka",
+					Phase:      "workflow_discovery",
+					Keywords:   []string{"FullPipelineA2ASeverityGrounding"},
+					WorkflowID: "consent-workflow-uuid",
+					ActionType: "RestartPod",
+					ToolCall:   config.ToolCallOverride{Name: "list_available_actions"},
+				}},
+			})
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content:        "FullPipelineA2ASeverityGrounding workflow discovery",
+				Caller:         scenarios.CallerKA,
+				Phase:          scenarios.PhaseWorkflowDiscovery,
+				AvailableTools: []string{"list_available_actions", "list_workflows", "get_workflow", "submit_result_with_workflow"},
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("ka_consent_discovery"))
+
+			scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			cfg := scenarioWithCfg.Config()
+			Expect(cfg.WorkflowID).To(Equal("consent-workflow-uuid"))
+			Expect(cfg.ActionType).To(Equal("RestartPod"))
+		})
+
 		It("UT-MOCK-KW-002-001: should detect scenario by keyword match", func() {
 			overrides := &config.Overrides{
 				Scenarios: map[string]config.ScenarioOverride{},

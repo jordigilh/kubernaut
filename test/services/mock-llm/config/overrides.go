@@ -86,6 +86,8 @@ type ScenarioSelectorOverride struct {
 	Keywords       []string          `yaml:"keywords"`
 	Caller         string            `yaml:"caller,omitempty"`
 	Phase          string            `yaml:"phase,omitempty"`
+	WorkflowID     string            `yaml:"workflow_id,omitempty"`
+	ActionType     string            `yaml:"action_type,omitempty"`
 	ToolCall       ToolCallOverride  `yaml:"tool_call"`
 	MatchLastOnly  bool              `yaml:"match_last_only,omitempty"`
 	RepeatToolCall bool              `yaml:"repeat_tool_call,omitempty"`

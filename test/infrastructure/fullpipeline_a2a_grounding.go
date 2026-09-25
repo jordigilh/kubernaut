@@ -98,9 +98,18 @@ func fullPipelineA2AGroundingRuleFile(targetNamespaces map[string]string) (strin
 		if targetNamespace == "" {
 			continue
 		}
-
 		ruleName := fullPipelineA2AGroundingRulePrefix + strings.ReplaceAll(targetNamespace, "-", "_")
-		ruleNames = append(ruleNames, ruleName)
+		alertName := ruleName
+		// These scenarios also inject a matching Kubernetes Event. Use the same
+		// signal name for severity grounding so RR creation has evidence without
+		// changing the KA scenario selected for the test.
+		switch scenarioKey {
+		case "terminal-1912":
+			alertName = "E2EFP1912NotActionable"
+		case "not-actionable-1918":
+			alertName = "E2EFP1918NotActionable"
+		}
+		ruleNames = append(ruleNames, alertName)
 		ruleBlocks = append(ruleBlocks, fmt.Sprintf(`      - alert: %s
         expr: vector(1) > 0
         for: 0s
@@ -111,7 +120,7 @@ func fullPipelineA2AGroundingRuleFile(targetNamespaces map[string]string) (strin
           %s: %q
         annotations:
           summary: FullPipeline A2A severity grounding for %s`,
-			ruleName,
+			alertName,
 			strconv.Quote(targetNamespace),
 			SkipGatewayRouteLabelKey,
 			SkipGatewayRouteLabelValue,
