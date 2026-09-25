@@ -723,6 +723,13 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
 		scenariosYAML += fmt.Sprintf("      %s:\n        workflow_id: \"%s\"\n", key, workflowUUIDs[key])
 	}
+	// The default fallback is used by direct MCP discovery scenarios that do not
+	// carry a keyword-specific selector. Prefer the staging catalog entry for
+	// FullPipeline, where the target namespaces are labeled staging. An explicit
+	// scenario-name override is required because production and staging UUIDs
+	// intentionally differ and cannot be resolved by the name-only fallback.
+	defaultWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "generic-restart-v1", "staging")
+	scenariosYAML += fmt.Sprintf("      default:\n        workflow_id: \"%s\"\n", defaultWorkflowID)
 	// Override the built-in GitOps selection scenario with the UUID assigned by
 	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
 	afGitOpsWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "gitops-drift-2390-v1", "staging")
