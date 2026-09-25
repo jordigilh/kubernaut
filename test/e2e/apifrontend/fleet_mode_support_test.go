@@ -133,7 +133,7 @@ func configureFleetAFMockLLM(ctx context.Context, kubeconfigPath string, writer 
 	if err != nil {
 		return fmt.Errorf("build Fleet AF mock-LLM client: %w", err)
 	}
-	return configureAFMockLLM(ctx, client, fleetAFScenarioSelectors(), writer)
+	return configureAFMockLLM(ctx, kubeconfigPath, client, fleetAFScenarioSelectors(), writer)
 }
 
 func configureSeverityAFMockLLM(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
@@ -141,10 +141,10 @@ func configureSeverityAFMockLLM(ctx context.Context, kubeconfigPath string, writ
 	if err != nil {
 		return fmt.Errorf("build severity AF mock-LLM client: %w", err)
 	}
-	return configureAFMockLLM(ctx, client, severityAFScenarioSelectors(), writer)
+	return configureAFMockLLM(ctx, kubeconfigPath, client, severityAFScenarioSelectors(), writer)
 }
 
-func configureAFMockLLM(ctx context.Context, client crclient.Client, newSelectors []fleetAFScenarioSelector, writer io.Writer) error {
+func configureAFMockLLM(ctx context.Context, kubeconfigPath string, client crclient.Client, newSelectors []fleetAFScenarioSelector, writer io.Writer) error {
 
 	configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "mock-llm-config", Namespace: e2eNamespace}}
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(configMap), configMap); err != nil {
