@@ -202,8 +202,9 @@ func SyncSignalFromRCA(signal katypes.SignalContext, target katypes.RemediationT
 // FinalizeWorkflowResult applies post-Phase 3 processing to the workflow
 // discovery result, mirroring the autonomous path in Investigate() L558-569.
 // This ensures interactive discover_workflows results have the same
-// completeness as autonomous results: severity backfill, detected labels,
-// authoritative remediation target, and TARGET_RESOURCE_* parameters.
+// completeness as autonomous results: authoritative signal severity,
+// detected labels, authoritative remediation target, and TARGET_RESOURCE_*
+// parameters.
 //
 // enrichData may be nil when the interactive path lacks full enrichment (F5).
 // All callees handle nil gracefully.
@@ -211,7 +212,7 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 	if result == nil {
 		return
 	}
-	backfillSeverity(result, signal)
+	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
 	InjectRemediationTarget(result, signal, enrichData)
 	if result.RemediationTarget.APIVersion == "" && rcaResult != nil && rcaResult.RemediationTarget.APIVersion != "" {

@@ -42,6 +42,9 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 
 	rcaCopy := *rcaResult
 	rcaResult = &rcaCopy
+	// This entry point accepts a Phase-1 result from an interactive session;
+	// replace any model-provided severity before it enters discovery context.
+	applySignalSeverity(rcaResult, signal)
 
 	inv.anomalyDetectorFor(correlationID).Reset()
 	// #2387 (BR-KA-OBSERVABILITY-001): cumulative per-RR accounting — NO
@@ -205,7 +208,7 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 			"correlation_id", correlationID)
 		rcaResult.HumanReviewNeeded = true
 		rcaResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
-		backfillSeverity(rcaResult, signal)
+		applySignalSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, rawEnrichData)
 		InjectRemediationTarget(rcaResult, signal, rawEnrichData)
 		InjectTargetResourceParameters(rcaResult)

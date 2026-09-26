@@ -288,7 +288,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 
 			// BR-AI-008: RootCauseAnalysis capture
-			It("should capture RootCauseAnalysis in status", func() {
+			It("UT-AA-SP-105-003 (BR-SP-105): should capture RCA with SignalProcessing severity", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
@@ -296,7 +296,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil())
 				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(Equal("OOM caused by memory leak"))
-				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("high"))
+				Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("warning"),
+					"SignalProcessing severity must override the LLM's RCA severity")
 				Expect(analysis.Status.GetRCAResult().RootCause).To(Equal("OOM caused by memory leak"))
 			})
 

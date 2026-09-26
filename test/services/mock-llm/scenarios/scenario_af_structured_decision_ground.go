@@ -45,14 +45,14 @@ package scenarios
 // treat the grounding call as "nothing authoritative to substitute" and
 // preserve mock-llm.yaml's scripted "critical" RCA untouched. That does
 // NOT work: internal/kubernautagent/investigator/investigator.go's
-// backfillSeverity unconditionally guarantees InvestigationResult.Severity
-// is never empty for any investigation that actually completes (falls back
-// to the signal's own severity, then "unknown" -- required for CRD enum
-// validation), so canonicalGroundedRCA's nil-on-empty-severity branch is
-// unreachable for a real completing investigation. Confirmed empirically
-// on helios08 (2026-08-19): leaving Severity unset still produced
-// severity=="warning" (backfilled from the StructuredDecisionGrounding3
-// alert's own severity label) at the SSE payload, not "".
+// applySignalSeverity unconditionally guarantees InvestigationResult.Severity
+// comes from the signal's SP classification (or "unknown" when absent --
+// required for CRD enum validation), so canonicalGroundedRCA's
+// nil-on-empty-severity branch is unreachable for a real completing
+// investigation. Confirmed empirically on helios08 (2026-08-19): leaving
+// Severity unset still produced severity=="warning" (from the
+// StructuredDecisionGrounding3 alert's severity label) at the SSE payload,
+// not "".
 //
 // The actual fix: since full substitution of args["rca"] is unavoidable
 // for any real completing grounding investigation, make the substituted

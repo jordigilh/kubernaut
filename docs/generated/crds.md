@@ -1736,7 +1736,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `summary`| _string_| Brief summary of root cause|
-| `severity`| _string_| Severity determined by RCA (normalized per , )<br /> Aligned with KA/workflow catalog (critical, high, warning, info, unknown)|
+| `severity`| _string_| Severity classified by SignalProcessing Rego policy (BR-SP-105); KA's RCA must preserve this input value.<br /> Aligned with KA/workflow catalog (critical, high, warning, info, unknown)|
 | `signalType`| _string_| Signal type determined by RCA (may differ from input)|
 | `contributingFactors`| _string array_| Contributing factors|
 | `remediationTarget`| _[RemediationTarget](#remediationtarget)_| RemediationTarget identifies the actual resource the LLM determined should be remediated.<br /> The LLM may identify a higher-level resource (e.g., Deployment) rather than<br />the Pod that generated the signal. The WFE creator should prefer this over the RR's<br />TargetResource when available to ensure the correct resource is patched.|
@@ -2235,5 +2235,4 @@ _Appears in:_
 | `version`| _string_| Version of the workflow|
 | `executionBundle`| _string_| ExecutionBundle resolved from workflow catalog<br />OCI bundle reference for Tekton PipelineRun|
 | `executionBundleDigest`| _string_| ExecutionBundleDigest for audit trail and reproducibility|
-
 

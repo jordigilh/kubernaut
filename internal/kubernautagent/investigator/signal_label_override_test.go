@@ -893,19 +893,31 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 		})
 	})
 
-	Describe("UT-KA-1374-F8-002: severity preserved when result already has it", func() {
-		It("should not override existing severity [BR-INTERACTIVE-010]", func() {
+	Describe("SignalProcessing severity authority [BR-SP-105]", func() {
+		It("UT-KA-SP-105-001: should replace model severity with the SP-classified severity", func() {
 			result := &katypes.InvestigationResult{
-				Severity:   "high",
+				Severity:   "unknown",
 				RCASummary: "test rca",
 			}
 			signal := katypes.SignalContext{
-				Severity:     "critical",
+				Severity:     "high",
 				ResourceKind: "Deployment",
 			}
 			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
 			Expect(result.Severity).To(Equal("high"),
-				"existing severity must be preserved")
+				"SP-classified severity must override model-provided severity")
+		})
+
+		It("UT-KA-SP-105-002: should use unknown rather than model severity when SP severity is absent", func() {
+			result := &katypes.InvestigationResult{
+				Severity:   "critical",
+				RCASummary: "test rca",
+			}
+
+			investigator.FinalizeWorkflowResult(result, katypes.SignalContext{}, &katypes.InvestigationResult{}, nil)
+
+			Expect(result.Severity).To(Equal("unknown"),
+				"model-provided severity must not replace missing SP classification")
 		})
 	})
 

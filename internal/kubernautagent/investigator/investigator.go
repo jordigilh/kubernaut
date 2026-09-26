@@ -549,6 +549,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
+	// SignalProcessing's Rego result is the authoritative severity. Apply it
+	// before emitting RCA events or passing the RCA into later phases.
+	applySignalSeverity(rcaResult, signal)
 
 	if rcaResult.Cancelled {
 		// #2387: cancelled snapshots still carry the partial counts
@@ -621,6 +624,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	}
 
 	if workflowResult.Cancelled {
+		applySignalSeverity(workflowResult, p.Signal)
 		// #2387: see the RCA-cancelled path above — partial counts apply here too.
 		inv.applyMetricsFromScope(workflowResult, p.CorrelationID)
 		inv.setTokenUsageFromScope(workflowResult, p.CorrelationID)
@@ -676,13 +680,13 @@ func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *kat
 }
 
 // finalizeAndEmitRCAOnlyResult applies the common Phase-1-only finalization
-// steps (severity backfill, label attachment, remediation-target injection,
-// audit emission) shared by every early-return path in Investigate: the
-// interactive-hold, human-review-needed, not-actionable, and re-enrichment
-// hard-fail branches. Callers set any branch-specific fields on rcaResult
-// before invoking this helper.
+// steps (authoritative signal severity, label attachment,
+// remediation-target injection, and audit emission) shared by every
+// early-return path in Investigate: the interactive-hold, human-review-needed,
+// not-actionable, and re-enrichment hard-fail branches. Callers set any
+// branch-specific fields on rcaResult before invoking this helper.
 func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
-	backfillSeverity(rcaResult, signal)
+	applySignalSeverity(rcaResult, signal)
 	attachDetectedLabels(rcaResult, enrichData)
 	InjectRemediationTarget(rcaResult, signal, enrichData)
 	InjectTargetResourceParameters(rcaResult)
@@ -870,7 +874,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 
 	MergePhase1Fallbacks(workflowResult, p1Ctx)
 
-	backfillSeverity(workflowResult, signal)
+	applySignalSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
 	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
 	// Issue #1044: propagate RCA-identified api_version to the workflow result
@@ -902,13 +906,10 @@ func countTrueLabels(flags ...bool) int {
 	return n
 }
 
-// backfillSeverity ensures InvestigationResult.Severity is never empty.
-// If the LLM didn't provide severity, fall back to the signal's severity.
-// If still empty, use "unknown" to satisfy the CRD enum validation.
-func backfillSeverity(result *katypes.InvestigationResult, signal katypes.SignalContext) {
-	if result.Severity != "" {
-		return
-	}
+// applySignalSeverity makes the SignalProcessing classification authoritative
+// over any severity supplied by the LLM. If SP did not provide a classification,
+// use "unknown" rather than accepting a model-generated value.
+func applySignalSeverity(result *katypes.InvestigationResult, signal katypes.SignalContext) {
 	if signal.Severity != "" {
 		result.Severity = signal.Severity
 		return

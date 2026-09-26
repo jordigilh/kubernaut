@@ -209,6 +209,32 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
+	Describe("SignalProcessing severity authority [BR-SP-105]", func() {
+		It("UT-KA-SP-105-003: tells both investigation phases to preserve SP severity", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			investigation, err := builder.RenderInvestigation(prompt.SignalData{
+				Name: "api-server", Namespace: "production", Severity: "high", Message: "OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			workflowSelection, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "api-server", Namespace: "production", Severity: "high", Message: "OOMKilled",
+				},
+				Phase1: &prompt.Phase1Data{Severity: "high"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, rendered := range []string{investigation, workflowSelection} {
+				Expect(rendered).To(ContainSubstring("SignalProcessing Rego policy is authoritative"))
+				Expect(rendered).To(ContainSubstring("Do not reassess or change this severity"))
+				Expect(rendered).To(ContainSubstring("Copy the exact input severity"))
+			}
+		})
+	})
+
 	Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 		Describe("UT-KA-715-001: Phase 3 prompt includes structured Phase 1 assessment", func() {

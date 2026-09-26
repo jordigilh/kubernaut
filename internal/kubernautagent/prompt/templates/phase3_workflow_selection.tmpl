@@ -15,6 +15,12 @@ A **{{ .Severity }} {{ .SignalName }}** event {{ if eq .SignalMode "proactive" }
 - Signal Mode: {{ .SignalMode }}
 - Resource: {{ .Namespace }}/{{ .ResourceKind }}/{{ .ResourceName }}
 
+## Severity Authority (BR-SP-105)
+
+The SignalProcessing Rego policy is authoritative for severity; the value above is its normalized classification.
+Do not reassess or change this severity based on RCA findings or workflow selection.
+Copy the exact input severity into `root_cause_analysis.severity` and, when present, the top-level `severity` field.
+
 **Business Impact Assessment**:
 - **Priority**: {{ .PriorityDescription }}
 - **Environment**: {{ .Environment }}

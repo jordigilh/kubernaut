@@ -744,7 +744,7 @@ type InteractiveSessionInfo struct {
 type RootCauseAnalysis struct {
 	// Brief summary of root cause
 	Summary string `json:"summary"`
-	// Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1, ADR-066)
+	// Severity classified by SignalProcessing Rego policy (BR-SP-105); KA's RCA must preserve this input value.
 	// DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, warning, info, unknown)
 	// +kubebuilder:validation:Enum=critical;high;warning;info;unknown
 	// +optional

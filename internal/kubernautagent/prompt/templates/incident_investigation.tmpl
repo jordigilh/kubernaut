@@ -23,6 +23,12 @@
 - Signal Source: {{ .SignalSource }}
 - Cluster: {{ .ClusterName }}
 
+## Severity Authority (BR-SP-105)
+
+The SignalProcessing Rego policy is authoritative for severity; the value above is its normalized classification.
+Do not reassess or change this severity based on investigation findings or RCA evidence.
+Copy the exact input severity into `root_cause_analysis.severity` and, when present, the top-level `severity` field.
+
 ## Error Details (FOR RCA INVESTIGATION)
 - Error Message: {{ .ErrorMessage }}
 - Description: {{ if .Description }}{{ .Description }}{{ else }}N/A{{ end }}

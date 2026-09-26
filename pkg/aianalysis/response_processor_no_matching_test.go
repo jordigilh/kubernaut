@@ -217,8 +217,9 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 				"#769: rootCause must contain the RCA summary, not 'N/A'")
 		})
 
-		It("UT-AA-769-002: preserves full rootCauseAnalysis struct with remediationTarget", func() {
+		It("UT-AA-769-002 / UT-AA-SP-105-001 (BR-AI-008, BR-SP-105): keeps SP severity over model RCA severity", func() {
 			analysis := createAnalysis()
+			analysis.Spec.AnalysisRequest.SignalContext.Severity = "high"
 			resp := buildNoMatchingWorkflowsResp()
 
 			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
@@ -228,11 +229,26 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 				"#769: rootCauseAnalysis must be set")
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Summary).To(
 				Equal("The namespace-quota ResourceQuota is exhausted"))
-			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("medium"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("high"),
+				"SignalProcessing severity must be authoritative in AIAnalysis RCA")
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Name).To(Equal("api-server"))
 			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.RemediationTarget.Namespace).To(Equal("demo-quota"))
+		})
+
+		It("UT-AA-SP-105-002 (BR-SP-105): uses SP severity when KA omits RCA severity", func() {
+			analysis := createAnalysis()
+			analysis.Spec.AnalysisRequest.SignalContext.Severity = "high"
+			resp := buildNoMatchingWorkflowsResp()
+			resp.RootCauseAnalysis = rawJSON(map[string]interface{}{
+				"summary": "The namespace-quota ResourceQuota is exhausted",
+			})
+
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(Equal("high"),
+				"SP-classified severity must replace the mapper's unknown fallback")
 		})
 
 		It("UT-AA-769-003: handles nil RCA gracefully — no panic, fields remain empty", func() {
