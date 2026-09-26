@@ -721,6 +721,16 @@ func resolveDefaultWorkflowUUID(workflowUUIDs map[string]string) string {
 	return resolveWorkflowUUIDForEnvironment(workflowUUIDs, workflowName, "staging")
 }
 
+// resolveConsentWorkflowUUID selects the exact-Pod consent fixture when the
+// FullPipeline lane seeded it. Fleet intentionally omits that staging-only
+// fixture, so its consent journeys must select a workflow that Fleet did seed.
+func resolveConsentWorkflowUUID(workflowUUIDs map[string]string, fallbackWorkflowID string) string {
+	if workflowID := workflowUUIDs["fullpipeline-consent-job-v1:staging"]; workflowID != "" {
+		return workflowID
+	}
+	return fallbackWorkflowID
+}
+
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
@@ -843,7 +853,10 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// discovery, so the dedicated staging Job entry uses the exact v1/Pod
 	// component preferred over wildcard candidates. The generic Pod workflow
 	// uses Tekton and is not executable in the FullPipeline cluster.
-	afConsentSelectWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "fullpipeline-consent-job-v1", "staging")
+	afConsentSelectWorkflowID := resolveConsentWorkflowUUID(
+		workflowUUIDs,
+		resolveWorkflowUUIDForEnvironment(workflowUUIDs, "oomkill-increase-memory-v1", "staging"),
+	)
 	// This phrase is also used by the generic consent-gate scenario below.
 	// Register the GitOps-specific rule first so E2E-FP-2390 selects the
 	// workflow whose snapshot contains the dependency and resource assertions.
@@ -884,7 +897,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	afKeywordYAML := "scenario_selectors:\n" + remediateScenarios +
 		afHubClusterTriageScenarioYAML(afRemediateNS["fleet-af-hub-triage"]) +
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
-		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID, afInvestigationClusterID) +
+		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afConsentSelectWorkflowID, afInvestigationClusterID) +
 		afGitOpsSelectScenarioYAML +
 		kaConsentWorkflowDiscoveryYAML +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"], afInvestigationClusterID) +

@@ -36,6 +36,20 @@ var _ = Describe("Mock LLM transcript wiring", func() {
 		Expect(overrides.TranscriptScenarios[0].Steps[3].ToolCall.Arguments).To(HaveKeyWithValue("name", "$from_tool:kubernaut_investigate:rr_id"))
 	})
 
+	It("UT-INFRA-FP-1853-001 (BR-INTERACTIVE-010): autonomous chain selects the supplied catalog workflow", func() {
+		raw := "scenario_selectors:\n" + fullInteractiveRemediationScenarioYAML("fp-full-interactive", "consent-staging-uuid", "")
+		var overrides config.Overrides
+		Expect(yaml.Unmarshal([]byte(raw), &overrides)).To(Succeed())
+		Expect(overrides.ScenarioSelectors).To(HaveLen(1))
+
+		selection := overrides.ScenarioSelectors[0].NextToolCall
+		Expect(selection).NotTo(BeNil())
+		Expect(selection.Name).To(Equal("kubernaut_discover_workflows"))
+		Expect(selection.NextToolCall).NotTo(BeNil())
+		Expect(selection.NextToolCall.Name).To(Equal("kubernaut_select_workflow"))
+		Expect(selection.NextToolCall.Arguments).To(HaveKeyWithValue("workflow_id", "consent-staging-uuid"))
+	})
+
 	It("UT-INFRA-FLEET-CONSENT-001 (BR-INTERACTIVE-004): targets the managed Deployment in fleet investigations", func() {
 		raw := "scenario_selectors:\n" +
 			consentGatePhase2AttemptScenarioYAML("fleet-consent-phase2", "remote-cluster") +

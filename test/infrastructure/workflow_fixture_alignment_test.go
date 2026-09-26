@@ -111,6 +111,36 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 		Expect(resolveDefaultWorkflowUUID(legacyWorkflowUUIDs)).To(Equal("restart-staging-uuid"))
 	})
 
+	It("UT-WORKFLOW-004-009 (BR-INTERACTIVE-010, AC-6): consent selectors use a seeded workflow in each E2E lane", func() {
+		fleetWorkflowUUIDs := map[string]string{
+			"oomkill-increase-memory-v1:production": "oom-production-uuid",
+		}
+		fullPipelineWorkflowUUIDs := map[string]string{
+			"oomkill-increase-memory-v1:staging":  "oom-staging-uuid",
+			"fullpipeline-consent-job-v1:staging": "consent-staging-uuid",
+		}
+
+		fleetFallback := resolveWorkflowUUIDForEnvironment(fleetWorkflowUUIDs, "oomkill-increase-memory-v1", "staging")
+		fullPipelineFallback := resolveWorkflowUUIDForEnvironment(fullPipelineWorkflowUUIDs, "oomkill-increase-memory-v1", "staging")
+
+		Expect(fleetFallback).To(Equal("oom-production-uuid"))
+		Expect(resolveConsentWorkflowUUID(fullPipelineWorkflowUUIDs, fullPipelineFallback)).To(Equal("consent-staging-uuid"),
+			"FullPipeline should retain its exact-Pod consent fixture")
+		Expect(resolveConsentWorkflowUUID(fleetWorkflowUUIDs, fleetFallback)).To(Equal("oom-production-uuid"),
+			"Fleet should fall back to the catalog UUID it actually seeded")
+	})
+
+	It("UT-WORKFLOW-004-008: GitOps FullPipeline fixture admits the SP-derived warning severity", func() {
+		content, err := readWorkflowFixtureContent("gitops-drift-2390")
+		Expect(err).NotTo(HaveOccurred())
+
+		workflow := &rwv1alpha1.RemediationWorkflow{}
+		Expect(yaml.Unmarshal([]byte(content), workflow)).To(Succeed())
+		Expect(workflow.Spec.Labels.Severity).To(Equal([]string{"warning"}))
+		Expect(workflow.Spec.Labels.Environment).To(ContainElement("staging"))
+		Expect(workflow.Spec.Labels.Component).To(ContainElement("apps/v1/Deployment"))
+	})
+
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",
 		func(fixture, actionType string, severity []string, environment string, component []string, priority string) {
 			content, err := readWorkflowFixtureContent(fixture)

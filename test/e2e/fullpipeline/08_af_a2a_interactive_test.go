@@ -32,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -54,7 +55,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 	It("should complete 4-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]
 		Expect(targetNS).NotTo(BeEmpty(), "interactive namespace must be set by SynchronizedBeforeSuite")
-		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:production"]
+		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:staging"]
 		Expect(ok).To(BeTrue(), "E2E-FP-2390-001: GitOps workflow must be seeded")
 		Expect(gitOpsWorkflowUUID).NotTo(BeEmpty(), "E2E-FP-2390-001: GitOps workflow UUID must be populated")
 		By("Verifying AF is reachable")
@@ -187,6 +188,24 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		Expect(taskID).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
+		By("Verifying SignalProcessing classifies the severity-grounding alert before workflow discovery")
+		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
+		Expect(rrName).NotTo(BeEmpty())
+		Eventually(func() string {
+			spList := &signalprocessingv1.SignalProcessingList{}
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == rrName {
+					return sp.Status.GetSignalClassification().Severity
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal(signalprocessingv1.SeverityWarning),
+			"E2E-FP-2390-001: the SP-derived severity must match the GitOps workflow's warning label")
+
 		By("Turn 2: discover available workflows")
 		body = fpA2ATasksSendWithContext("fp-int-2", turn1ContextID, taskID,
 			"discover available workflows")
@@ -231,9 +250,6 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		}()
 
 		By("Capturing the workflow execution and Job before terminal cleanup")
-		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
-		Expect(rrName).NotTo(BeEmpty())
-
 		By("[E2E-FP-1189-004] Verifying interactive WFE has TARGET_RESOURCE_* parameters")
 		var we *workflowexecutionv1.WorkflowExecution
 		Eventually(func() bool {

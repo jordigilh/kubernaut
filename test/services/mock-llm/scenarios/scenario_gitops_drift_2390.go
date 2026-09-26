@@ -37,7 +37,7 @@ func gitopsDrift2390Config() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName:         "gitops_drift_2390",
 		SignalName:           "GitOpsDrift2390",
-		Severity:             "critical",
+		Severity:             "warning",
 		WorkflowName:         "gitops-drift-2390-v1",
 		ActionType:           "IncreaseMemoryLimits",
 		WorkflowID:           uuid.DeterministicUUID("gitops-drift-2390-v1"),

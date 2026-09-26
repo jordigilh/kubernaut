@@ -11,7 +11,7 @@ spec:
     preconditions: "The target Deployment is managed by the test GitOps repository"
   actionType: IncreaseMemoryLimits
   labels:
-    severity: [critical, high]
+    severity: [warning]
     environment: [production, staging, test]
     component: [apps/v1/Deployment]
     priority: "*"
