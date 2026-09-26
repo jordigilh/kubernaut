@@ -130,7 +130,7 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 			"Fleet should fall back to the catalog UUID it actually seeded")
 	})
 
-	It("UT-WORKFLOW-004-008: GitOps FullPipeline fixture admits the SP-derived warning severity", func() {
+	It("UT-WORKFLOW-004-008: GitOps FullPipeline fixture admits the SP-derived warning severity and RCA Pod target", func() {
 		content, err := readWorkflowFixtureContent("gitops-drift-2390")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -138,7 +138,7 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 		Expect(yaml.Unmarshal([]byte(content), workflow)).To(Succeed())
 		Expect(workflow.Spec.Labels.Severity).To(Equal([]string{"warning"}))
 		Expect(workflow.Spec.Labels.Environment).To(ContainElement("staging"))
-		Expect(workflow.Spec.Labels.Component).To(ContainElement("apps/v1/Deployment"))
+		Expect(workflow.Spec.Labels.Component).To(ContainElements("apps/v1/Deployment", "v1/Pod"))
 	})
 
 	DescribeTable("UT-WORKFLOW-004-002: isolated AIAnalysis fixtures keep exact label contracts",

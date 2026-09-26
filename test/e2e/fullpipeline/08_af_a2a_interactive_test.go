@@ -228,7 +228,24 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		rpc, parseErr = fpParseRPC(resp3)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 3 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 3 — select workflow OK\n")
+		GinkgoWriter.Printf("  Turn 3 — selection request completed; verifying selected workflow\n")
+
+		By("Verifying successful selection created the expected WorkflowExecution")
+		var we *workflowexecutionv1.WorkflowExecution
+		Eventually(func() bool {
+			weList := &workflowexecutionv1.WorkflowExecutionList{}
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range weList.Items {
+				if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+					we = &weList.Items[i]
+					return we.Spec.WorkflowRef.WorkflowID == gitOpsWorkflowUUID
+				}
+			}
+			return false
+		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
+			"E2E-FP-2390-001: successful Turn 3 selection must create a WorkflowExecution for workflow %s", gitOpsWorkflowUUID)
 
 		By("Turn 4: watch remediation progress (blocks until terminal phase)")
 		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
@@ -249,24 +266,8 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			}{response: response, err: invokeErr}
 		}()
 
-		By("Capturing the workflow execution and Job before terminal cleanup")
+		By("Capturing the Job before terminal cleanup")
 		By("[E2E-FP-1189-004] Verifying interactive WFE has TARGET_RESOURCE_* parameters")
-		var we *workflowexecutionv1.WorkflowExecution
-		Eventually(func() bool {
-			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
-				return false
-			}
-			for i := range weList.Items {
-				if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
-					we = &weList.Items[i]
-					return true
-				}
-			}
-			return false
-		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
-			"WorkflowExecution for RR %s must exist", rrName)
-
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(gitOpsWorkflowUUID),
 			"E2E-FP-2390-001: GitOps workflow must be selected")
 		Expect(we.Spec.WorkflowRef.Dependencies).NotTo(BeNil(),

@@ -8,12 +8,14 @@ spec:
     what: "Applies the selected GitOps remediation bundle"
     whenToUse: "When an interactive GitOps remediation is requested"
     whenNotToUse: "When the target is not managed by the GitOps workflow"
-    preconditions: "The target Deployment is managed by the test GitOps repository"
+    preconditions: "The target Deployment or its RCA-resolved Pod is managed by the test GitOps repository"
   actionType: IncreaseMemoryLimits
   labels:
     severity: [warning]
     environment: [production, staging, test]
-    component: [apps/v1/Deployment]
+    # RCA resolves the isolated zero-replica Deployment to its concrete Pod
+    # before workflow discovery; accept both that target and the root workload.
+    component: [apps/v1/Deployment, v1/Pod]
     priority: "*"
     cluster: ["*"]
   dependencies:
