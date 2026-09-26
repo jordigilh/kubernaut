@@ -277,7 +277,13 @@ data:
 
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
-        match_last_only: true
+        # The APIFRONTEND reinvoking runner can replace the latest user message
+        # with its synthetic "Continue the investigation" prompt while the
+        # decision turn is still active. Keep this scenario eligible from the
+        # original decision request in the conversation history so the mock
+        # emits present_decision instead of falling through to the default
+        # scenario (which can issue an invalid duplicate investigation).
+        match_last_only: false
         # repeat_tool_call is required, not optional, here: the mock-LLM's
         # hasFunctionResults gate (handlers/gemini.go) is computed over the
         # WHOLE session's conversation history, not scoped to this scenario.
