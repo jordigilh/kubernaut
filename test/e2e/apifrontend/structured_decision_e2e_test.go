@@ -149,8 +149,9 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 	// successful kubernaut_investigate turn in the same A2A session
 	// (contextID), so the later present_decision turn's before-callback
 	// (enforceGroundingGuard, phase_guard.go) finds
-	// session.StateKeyGroundedContentAvailable=true and lets the mock-LLM's
-	// scripted RCA/options through instead of overwriting them with the
+	// session.StateKeyGroundedContentAvailable=true and preserves the grounded
+	// path: AF substitutes KA's authoritative RCA (including signal severity)
+	// while retaining the scripted workflow options, instead of applying the
 	// fail-closed "no investigation content" fallback. Targets a dedicated
 	// af-structured-decision-e2e/structured-decision-target fixture (managed
 	// namespace, StructuredDecisionGrounding synthetic alert,
@@ -209,8 +210,8 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 	// observe session_active instead of a clean grounded result, which per
 	// investigateHasGroundedContent (phase_guard.go) deterministically
 	// fails present_decision's grounding guard closed -- surfacing as an
-	// empty payload.RCA.Severity instead of the scripted "critical" (CI run
-	// 31351842574, "severity must flow from mock-LLM through AF to SSE").
+	// empty payload.RCA.Severity instead of the authoritative "warning"
+	// (CI run 31351842574).
 	// A third dedicated target removes the last remaining shared fixture in
 	// this Ordered block.
 	groundSessionBeta := func(ctx context.Context, contextID string) {
@@ -305,8 +306,8 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		Expect(err).NotTo(HaveOccurred(), "AU-3: payload must parse for audit trail")
 
 		By("Verifying RCA fields")
-		Expect(payload.RCA.Severity).To(Equal("critical"),
-			"AU-3: severity must flow from mock-LLM through AF to SSE")
+		Expect(payload.RCA.Severity).To(Equal("warning"),
+			"AU-3: authoritative SignalProcessing severity must override the mock-LLM RCA severity")
 		Expect(payload.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
 		Expect(payload.RCA.CausalChain).To(HaveLen(3))
 		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production")) // BR-KA-OBSERVABILITY-001: substituted target survives to the artifact
@@ -325,8 +326,9 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		// follow-up filed; the audit trail confirms identical executed work
 		// and token sums, 1100/150, on both landings). Either landing proves
 		// a live investigation; pre-#2387 both fields read hard 0 with zero
-		// tokens. severity/confidence/causal_chain/target above remain
-		// LLM-authored pass-through and are unaffected.
+		// tokens. Grounded RCA fields are substituted from KA's investigation;
+		// in particular, its severity is the authoritative signal severity
+		// (warning here), not the mock-LLM's attempted critical escalation.
 		Expect(payload.RCA.ToolCallsCount).To(BeElementOf(0, 1))
 		Expect(payload.RCA.LLMTurns).To(BeElementOf(1, 2, 3))
 
@@ -404,8 +406,9 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		err = json.Unmarshal([]byte(text), &payload)
 		Expect(err).NotTo(HaveOccurred(), "AU-3: payload must parse for audit trail")
 
-		By("Verifying substituted RCA content (same script as 1396-001's fixture)")
-		Expect(payload.RCA.Severity).To(Equal("critical")) // BR-KA-OBSERVABILITY-001: substitution serves the scripted fixture RCA
+		By("Verifying grounded RCA content and authoritative signal severity")
+		Expect(payload.RCA.Severity).To(Equal("warning"),
+			"BR-KA-OBSERVABILITY-001: grounded RCA must retain SignalProcessing's authoritative severity")
 		Expect(payload.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
 		Expect(payload.RCA.CausalChain).To(HaveLen(3))
 		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production")) // BR-KA-OBSERVABILITY-001: substituted target survives to the artifact

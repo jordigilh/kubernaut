@@ -36,9 +36,10 @@ package scenarios
 // tool_calls_count/llm_turns.
 //
 // Without a dedicated scenario here, this call falls through to
-// defaultFallbackScenario (scenario_default_fallback.go), which hardcodes
-// Severity: "warning" -- surfacing as "severity must flow from mock-LLM
-// through AF to SSE: expected warning to equal critical" (E2E-AF-1396-001).
+// defaultFallbackScenario (scenario_default_fallback.go), which also returns
+// Severity: "warning" for this signal. That is the authoritative severity;
+// the dedicated scenario is needed to provide the grounded RCA fields, not
+// to preserve the mock-LLM's conflicting "critical" severity.
 //
 // #1818 follow-up correction: an earlier version of this file tried to
 // leave Severity == "" here so canonicalGroundedRCA (phase_guard.go) would
@@ -54,11 +55,12 @@ package scenarios
 // StructuredDecisionGrounding3 alert's severity label) at the SSE payload,
 // not "".
 //
-// The actual fix: since full substitution of args["rca"] is unavoidable
-// for any real completing grounding investigation, make the substituted
-// content agree with mock-llm.yaml's own af_structured_decision
-// present_decision script instead of describing this call's real (but
-// irrelevant to the test) target.
+// Since full substitution of args["rca"] is unavoidable for any real
+// completing grounding investigation, make the substituted RCA content
+// agree with mock-llm.yaml's af_structured_decision present_decision script
+// instead of describing this call's real (but irrelevant to the test) target.
+// applySignalSeverity still replaces its scripted "critical" with the
+// signal's authoritative "warning" severity.
 //
 // ToolCallArgs (not the Severity/Confidence/ResourceKind/... config fields,
 // and not ExactAnalysisText) is required here: this scenario resolves in a
@@ -117,8 +119,9 @@ func structuredDecisionGrounding3Config() MockScenarioConfig {
 
 // structuredDecisionGroundingConfig is the KA-side grounding response for
 // Fleet E2E's first structured-decision fixture. The AF selector supplies the
-// final present_decision payload, while this investigation response prevents
-// phase_guard.go from replacing its critical RCA with the default warning.
+// final present_decision payload, while this investigation response provides
+// grounded RCA fields. KA replaces its scripted "critical" with the signal's
+// authoritative "warning" severity before AF emits the decision.
 func structuredDecisionGroundingConfig() MockScenarioConfig {
 	cfg := structuredDecisionGrounding3Config()
 	cfg.ScenarioName = "af_structured_decision_ground"
@@ -144,11 +147,11 @@ func structuredDecisionGroundingConfig() MockScenarioConfig {
 // Identical in shape to structuredDecisionGrounding3Config above (same
 // substituted RCA content, same Deployment-kind steering past
 // investigator_gates.go's sameKindValidationGate, same single-turn
-// submit_result resolution): the 2387-002 test asserts the SAME
-// severity/confidence/causal_chain/target values 1396-001 asserts, PLUS the
-// server-computed call-level counts and token sums the grounding
-// investigation really produced. Every constraint documented on the
-// Grounding3 config (ToolCallArgs not typed fields, no ExactAnalysisText,
+// submit_result resolution): the 2387-002 test asserts the same authoritative
+// warning severity and grounded confidence/causal_chain/target values as
+// 1396-001, plus the server-computed call-level counts and token sums the
+// grounding investigation really produced. Every constraint documented on
+// the Grounding3 config (ToolCallArgs not typed fields, no ExactAnalysisText,
 // 3-item causal_chain) applies verbatim here.
 func structuredDecisionGrounding4Config() MockScenarioConfig {
 	return MockScenarioConfig{

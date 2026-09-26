@@ -240,9 +240,8 @@ data:
         # (1395-001), so 1396-001's own grounding call could nondeterministically
         # inherit 1395-001's still-open KA session and observe
         # session_active, surfacing as an empty (fail-closed)
-        # payload.RCA.Severity instead of the scripted "critical" (CI run
-        # 31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
-        # through AF to SSE"). See StructuredDecisionGrounding3
+        # payload.RCA.Severity instead of the authoritative "warning" (CI run
+        # 31351842574, E2E-AF-1396-001). See StructuredDecisionGrounding3
         # (apifrontend_prometheus_e2e.go).
         keywords: ["seed third fixture context 1396 001"]
         match_last_only: true

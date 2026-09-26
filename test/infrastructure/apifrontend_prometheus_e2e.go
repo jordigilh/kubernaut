@@ -369,9 +369,8 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //     target, so 1396-001's own groundSession call can just as
 //     nondeterministically inherit #1395-001's still-open KA session and
 //     observe "session_active", surfacing as an empty (fail-closed)
-//     payload.RCA.Severity instead of the scripted "critical" (CI run
-//     31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
-//     through AF to SSE"). A third dedicated target removes the last
+//     payload.RCA.Severity instead of the authoritative "warning" (CI run
+//     31351842574, E2E-AF-1396-001). A third dedicated target removes the last
 //     remaining shared fixture in this Ordered block: each of the 3 Its
 //     now grounds against its own RR.
 //

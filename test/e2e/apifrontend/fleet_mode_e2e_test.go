@@ -156,7 +156,8 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 			} `json:"options"`
 		}
 		Expect(json.Unmarshal([]byte(text), &decision)).To(Succeed(), "AU-3: decision must be valid structured JSON")
-		Expect(decision.RCA.Severity).To(Equal("critical"))
+		Expect(decision.RCA.Severity).To(Equal("warning"),
+			"SignalProcessing's authoritative severity must override the mock-LLM RCA severity")
 		Expect(decision.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
 		Expect(decision.RCA.CausalChain).To(HaveLen(3))
 		Expect(decision.Options).To(HaveLen(3))
