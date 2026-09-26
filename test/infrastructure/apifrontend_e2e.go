@@ -55,6 +55,18 @@ const (
 	AFDefaultNamespace = kubernautSystem
 )
 
+func startAFInfraSetupStep(writer io.Writer, name string) time.Time {
+	started := time.Now()
+	_, _ = fmt.Fprintf(writer, "[AF E2E Infrastructure] START %s at %s\n", name, started.Format(time.RFC3339Nano))
+	return started
+}
+
+func finishAFInfraSetupStep(writer io.Writer, name string, started time.Time) {
+	finished := time.Now()
+	_, _ = fmt.Fprintf(writer, "[AF E2E Infrastructure] DONE %s duration=%s at %s\n",
+		name, finished.Sub(started).Round(time.Millisecond), finished.Format(time.RFC3339Nano))
+}
+
 // afE2EHostPortOffset returns the optional host-port offset used for isolated
 // AF E2E runs. The offset changes only Kind's host bindings; service and
 // NodePort values inside the cluster remain at their established defaults.
@@ -89,7 +101,9 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if err != nil {
 		return nil, err
 	}
+	imagesStarted := startAFInfraSetupStep(writer, "build shared APIFrontend E2E images")
 	images, err := BuildAPIFrontendE2EImages(ctx, writer)
+	finishAFInfraSetupStep(writer, "build shared APIFrontend E2E images", imagesStarted)
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +112,12 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		HostPortOffset:        hostPortOffset,
 		RetainImagesAfterLoad: true,
 	}
+	infrastructureStarted := startAFInfraSetupStep(writer, "provision local-mode APIFrontend services")
 	if err := setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, options, writer); err != nil {
+		finishAFInfraSetupStep(writer, "provision local-mode APIFrontend services", infrastructureStarted)
 		return images, err
 	}
+	finishAFInfraSetupStep(writer, "provision local-mode APIFrontend services", infrastructureStarted)
 	return images, nil
 }
 
@@ -110,11 +127,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 // Images are shared with SetupAPIFrontendE2EInfrastructure; fmcImage is built
 // or resolved separately because local-mode AF does not need FMC.
 func SetupAPIFrontendFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, fmcImage string, writer io.Writer) error {
-	return setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, apiFrontendE2EOptions{
+	infrastructureStarted := startAFInfraSetupStep(writer, "provision Fleet-mode APIFrontend services")
+	err := setupAPIFrontendE2EInfrastructure(ctx, clusterName, kubeconfigPath, namespace, images, apiFrontendE2EOptions{
 		KindConfigPath: "test/infrastructure/kind-apifrontend-fleet-config.yaml",
 		FleetEnabled:   true,
 		FleetImage:     fmcImage,
 	}, writer)
+	finishAFInfraSetupStep(writer, "provision Fleet-mode APIFrontend services", infrastructureStarted)
+	return err
 }
 
 // BuildAPIFrontendE2EImages resolves the image set shared by the isolated
@@ -140,8 +160,10 @@ func BuildAPIFrontendE2EImages(ctx context.Context, writer io.Writer) (map[strin
 		{"mock-llm", "mock-llm", "test/services/mock-llm/go.Dockerfile", ""},
 	} {
 		go func(name, image, dockerfile, buildCtx string) {
+			started := startAFInfraSetupStep(writer, "build "+name+" image")
 			cfg := E2EImageConfig{ServiceName: name, ImageName: image, DockerfilePath: dockerfile, BuildContextPath: buildCtx}
 			img, err := BuildImageForKind(ctx, cfg, writer)
+			finishAFInfraSetupStep(writer, "build "+name+" image", started)
 			results <- buildResult{name, img, err}
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
@@ -155,7 +177,9 @@ func BuildAPIFrontendE2EImages(ctx context.Context, writer io.Writer) (map[strin
 		_, _ = fmt.Fprintf(writer, "  %s: %s\n", result.name, result.image)
 	}
 	// DD-TEST-007: AF is built locally with GOFLAGS=-cover after the supporting images.
+	afImageStarted := startAFInfraSetupStep(writer, "build apifrontend image")
 	afImage, err := BuildAFImage(ctx, writer)
+	finishAFInfraSetupStep(writer, "build apifrontend image", afImageStarted)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build apifrontend: %w", err)
 	}
@@ -226,16 +250,21 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		ProjectRootAsWorkingDir:   true,
 		HostPortOffset:            options.HostPortOffset,
 	}
+	clusterStarted := startAFInfraSetupStep(writer, "create Kind cluster "+clusterName)
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
+		finishAFInfraSetupStep(writer, "create Kind cluster "+clusterName, clusterStarted)
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "create Kind cluster "+clusterName, clusterStarted)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into Kind
 	// ═══════════════════════════════════════════════════════════════════════
+	imagesLoadStarted := startAFInfraSetupStep(writer, "load images into Kind cluster "+clusterName)
 	if imageRegistry != "" {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading AF image into Kind (coverage build); others pull from GHCR...")
 		if err := LoadImageToKind(ctx, images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+			finishAFInfraSetupStep(writer, "load images into Kind cluster "+clusterName, imagesLoadStarted)
 			return fmt.Errorf("failed to load apifrontend image: %w", err)
 		}
 		_, _ = fmt.Fprintln(writer, "  apifrontend loaded")
@@ -247,48 +276,62 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 				loadImage = LoadImageToKindRetainingImage
 			}
 			if err := loadImage(ctx, img, name, clusterName, writer); err != nil {
+				finishAFInfraSetupStep(writer, "load images into Kind cluster "+clusterName, imagesLoadStarted)
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)
 		}
 		if options.FleetEnabled {
 			if err := LoadImageToKind(ctx, options.FleetImage, "fleetmetadatacache", clusterName, writer); err != nil {
+				finishAFInfraSetupStep(writer, "load images into Kind cluster "+clusterName, imagesLoadStarted)
 				return fmt.Errorf("failed to load Fleet Metadata Cache image: %w", err)
 			}
 		}
 	}
+	finishAFInfraSetupStep(writer, "load images into Kind cluster "+clusterName, imagesLoadStarted)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy kubernaut stack (DS + KA + dependencies)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 4: Deploying kubernaut stack...")
 
+	namespaceTLSStarted := startAFInfraSetupStep(writer, "create test namespace and inter-service TLS")
 	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		finishAFInfraSetupStep(writer, "create test namespace and inter-service TLS", namespaceTLSStarted)
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Generating inter-service TLS...")
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		finishAFInfraSetupStep(writer, "create test namespace and inter-service TLS", namespaceTLSStarted)
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		finishAFInfraSetupStep(writer, "create test namespace and inter-service TLS", namespaceTLSStarted)
 		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "create test namespace and inter-service TLS", namespaceTLSStarted)
 
 	var fleetOptions *FleetHelmOptions
 	if options.FleetEnabled {
 		_, _ = fmt.Fprintln(writer, "  🌐 Provisioning hub-only Fleet core from the FMC E2E setup...")
+		fleetCoreStarted := startAFInfraSetupStep(writer, "provision hub-only Fleet core")
 		fleetOpts, fleetErr := SetupFMCHubOnlyInfrastructure(ctx, clusterName, kubeconfigPath, namespace, options.FleetImage, writer)
 		fleetOptions = fleetOpts
 		if fleetErr != nil {
+			finishAFInfraSetupStep(writer, "provision hub-only Fleet core", fleetCoreStarted)
 			return fmt.Errorf("hub-only Fleet core setup failed: %w", fleetErr)
 		}
+		finishAFInfraSetupStep(writer, "provision hub-only Fleet core", fleetCoreStarted)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying DataStorage stack (PostgreSQL + Redis + migrations + DS)...")
+	dataStorageStarted := startAFInfraSetupStep(writer, "deploy DataStorage stack")
 	if err := DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, images["datastorage"], 30089, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy DataStorage stack", dataStorageStarted)
 		return fmt.Errorf("DataStorage stack deploy failed: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy DataStorage stack", dataStorageStarted)
 
 	_, _ = fmt.Fprintln(writer, "  Binding apifrontend SA to data-storage-client role...")
 	if err := afBindServiceAccountToDSClient(ctx, kubeconfigPath, namespace, writer); err != nil {
@@ -296,13 +339,17 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent RBAC...")
+	kaSetupStarted := startAFInfraSetupStep(writer, "deploy Kubernaut Agent and RBAC")
 	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy Kubernaut Agent and RBAC", kaSetupStarted)
 		return fmt.Errorf("KA RBAC failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent...")
 	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy Kubernaut Agent and RBAC", kaSetupStarted)
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy Kubernaut Agent and RBAC", kaSetupStarted)
 
 	certDir := ""
 	if !options.FleetEnabled {
@@ -311,12 +358,16 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if certDir == "" {
 		certDir = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", clusterName)
 	}
+	certsStarted := startAFInfraSetupStep(writer, "generate and install APIFrontend TLS")
 	if err := AFGenerateCerts(ctx, certDir, writer); err != nil {
+		finishAFInfraSetupStep(writer, "generate and install APIFrontend TLS", certsStarted)
 		return fmt.Errorf("failed to generate AF certs: %w", err)
 	}
 	if err := AFCreateTLSSecrets(ctx, kubeconfigPath, namespace, certDir, writer); err != nil {
+		finishAFInfraSetupStep(writer, "generate and install APIFrontend TLS", certsStarted)
 		return fmt.Errorf("failed to create AF TLS secrets: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "generate and install APIFrontend TLS", certsStarted)
 	_ = os.Setenv("AF_E2E_CERT_DIR", certDir)
 	_ = os.Setenv("CERT_DIR", certDir)
 	_ = os.Setenv("AF_E2E_CA_CERT", filepath.Join(certDir, "ca.crt"))
@@ -327,14 +378,20 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 
 	_, _ = fmt.Fprintln(writer, "Phase 5: Deploy AF (programmatic)")
 
+	crdsStarted := startAFInfraSetupStep(writer, "install APIFrontend E2E CRDs")
 	if err := afInstallCRDs(ctx, kubeconfigPath, writer); err != nil {
+		finishAFInfraSetupStep(writer, "install APIFrontend E2E CRDs", crdsStarted)
 		return fmt.Errorf("failed to install CRDs: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "install APIFrontend E2E CRDs", crdsStarted)
 
 	if !options.FleetEnabled {
+		dexStarted := startAFInfraSetupStep(writer, "deploy local DEX")
 		if err := afDeployDex(ctx, kubeconfigPath, namespace, writer); err != nil {
+			finishAFInfraSetupStep(writer, "deploy local DEX", dexStarted)
 			return fmt.Errorf("failed to deploy Dex: %w", err)
 		}
+		finishAFInfraSetupStep(writer, "deploy local DEX", dexStarted)
 	}
 
 	if err := afDeployE2ERBAC(ctx, kubeconfigPath, namespace, writer); err != nil {
@@ -353,8 +410,10 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
 	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
 	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
+	seedStarted := startAFInfraSetupStep(writer, "seed APIFrontend workflow fixtures")
 	var seedErr error
 	if seedErr = SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); seedErr != nil {
+		finishAFInfraSetupStep(writer, "seed APIFrontend workflow fixtures", seedStarted)
 		return fmt.Errorf("seed action types (CRD): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
@@ -365,28 +424,36 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// itself (pkg/shared/contenthash).
 	var workflowUUIDs map[string]string
 	if workflowUUIDs, seedErr = SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
+		finishAFInfraSetupStep(writer, "seed APIFrontend workflow fixtures", seedStarted)
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
+	finishAFInfraSetupStep(writer, "seed APIFrontend workflow fixtures", seedStarted)
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
+	mockLLMStarted := startAFInfraSetupStep(writer, "deploy APIFrontend mock-LLM")
 	mockLLMClusterID := ""
 	if options.FleetEnabled {
 		mockLLMClusterID = fleetHubClusterID
 	}
 	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], mockLLMClusterID, workflowUUIDs, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy APIFrontend mock-LLM", mockLLMStarted)
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy APIFrontend mock-LLM", mockLLMStarted)
 
 	afImage := images["apifrontend"]
 	var deployErr error
+	afDeployStarted := startAFInfraSetupStep(writer, "deploy APIFrontend service")
 	if options.FleetEnabled {
 		deployErr = deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, true, fleetOptions, writer)
 	} else {
 		deployErr = DeployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, true, writer)
 	}
 	if deployErr != nil {
+		finishAFInfraSetupStep(writer, "deploy APIFrontend service", afDeployStarted)
 		return fmt.Errorf("failed to deploy AF service: %w", deployErr)
 	}
+	finishAFInfraSetupStep(writer, "deploy APIFrontend service", afDeployStarted)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Wait for rollouts + enable JWT on KA
@@ -399,30 +466,41 @@ func setupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 	for _, deploy := range deployments {
 		_, _ = fmt.Fprintf(writer, "  Waiting for %s...\n", deploy)
+		rolloutStarted := startAFInfraSetupStep(writer, "wait for "+deploy+" rollout")
 		timeout := 120 * time.Second
 		if deploy == "datastorage" {
 			timeout = 180 * time.Second
 		}
 		if err := WaitForDeploymentRollout(ctx, kubeconfigPath, namespace, deploy, timeout, writer); err != nil {
+			finishAFInfraSetupStep(writer, "wait for "+deploy+" rollout", rolloutStarted)
 			return fmt.Errorf("%s not ready: %w", deploy, err)
 		}
+		finishAFInfraSetupStep(writer, "wait for "+deploy+" rollout", rolloutStarted)
 	}
 
 	if options.FleetEnabled {
 		_, _ = fmt.Fprintln(writer, "  Configuring KA for Keycloak identity and Fleet MCP routing...")
+		kaConfigStarted := startAFInfraSetupStep(writer, "configure Kubernaut Agent for Fleet")
 		if err := afPatchKubernautAgentFleetConfig(ctx, kubeconfigPath, namespace, fleetOptions, writer); err != nil {
+			finishAFInfraSetupStep(writer, "configure Kubernaut Agent for Fleet", kaConfigStarted)
 			return fmt.Errorf("KA Fleet configuration failed: %w", err)
 		}
+		finishAFInfraSetupStep(writer, "configure Kubernaut Agent for Fleet", kaConfigStarted)
 	} else {
 		_, _ = fmt.Fprintln(writer, "  Patching KA for JWT delegation (DEX is now available)...")
+		kaConfigStarted := startAFInfraSetupStep(writer, "configure Kubernaut Agent JWT audience")
 		if err := afPatchKAJWTAudience(ctx, kubeconfigPath, namespace, writer); err != nil {
 			_, _ = fmt.Fprintf(writer, "  WARNING: KA JWT audience patch failed (non-fatal): %v\n", err)
 		}
+		finishAFInfraSetupStep(writer, "configure Kubernaut Agent JWT audience", kaConfigStarted)
 	}
 	_, _ = fmt.Fprintln(writer, "  Waiting for kubernaut-agent restart...")
+	kaRolloutStarted := startAFInfraSetupStep(writer, "wait for Kubernaut Agent reconfiguration rollout")
 	if err := WaitForDeploymentRollout(ctx, kubeconfigPath, namespace, "kubernaut-agent", 120*time.Second, writer); err != nil {
+		finishAFInfraSetupStep(writer, "wait for Kubernaut Agent reconfiguration rollout", kaRolloutStarted)
 		return fmt.Errorf("kubernaut-agent not ready after JWT patch: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "wait for Kubernaut Agent reconfiguration rollout", kaRolloutStarted)
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	if options.FleetEnabled {

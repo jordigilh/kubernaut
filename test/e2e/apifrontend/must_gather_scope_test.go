@@ -6,10 +6,10 @@ import (
 )
 
 var _ = Describe("APIFrontend E2E must-gather scope [BR-TESTING-001]", func() {
-	It("UT-E2E-AF-FLEET-MUSTGATHER-001: includes local and Fleet clusters when Fleet setup was attempted", func() {
-		Expect(apifrontendE2EClusterNames(false)).To(Equal([]string{e2eClusterName}),
+	It("UT-E2E-AF-FLEET-MUSTGATHER-001: combined runs include local and Fleet clusters when Fleet setup was attempted", func() {
+		Expect(apifrontendE2EClusterNames(afE2ELaneCombined, false)).To(Equal([]string{e2eClusterName}),
 			"BR-TESTING-001: local AF failure diagnostics must target the local cluster")
-		Expect(apifrontendE2EClusterNames(true)).To(Equal([]string{e2eClusterName, fleetAFClusterName}),
+		Expect(apifrontendE2EClusterNames(afE2ELaneCombined, true)).To(Equal([]string{e2eClusterName, fleetAFClusterName}),
 			"BR-TESTING-001: Fleet-enabled AF failure diagnostics must target both clusters")
 	})
 
@@ -22,5 +22,17 @@ var _ = Describe("APIFrontend E2E must-gather scope [BR-TESTING-001]", func() {
 		}), "BR-TESTING-001: Fleet diagnostics must include both deployed Envoy controller namespaces")
 		Expect(apifrontendMustGatherExtraNamespaces(fleetAFClusterName, false)).To(BeEmpty(),
 			"BR-TESTING-001: local-only runs must not collect Fleet controller namespaces")
+	})
+
+	It("UT-E2E-AF-FLEET-LANE-001 [BR-FLEET-054]: local CI lane owns only the standalone AF cluster", func() {
+		Expect(apifrontendE2EClusterNames(afE2ELaneLocal, false)).To(Equal([]string{e2eClusterName}))
+		Expect(apifrontendE2EClusterNames(afE2ELaneLocal, true)).To(Equal([]string{e2eClusterName}),
+			"the local lane must never claim or tear down the Fleet lane's cluster")
+	})
+
+	It("UT-E2E-AF-FLEET-LANE-002 [BR-INTEGRATION-065]: Fleet CI lane owns only its hub-only cluster", func() {
+		Expect(apifrontendE2EClusterNames(afE2ELaneFleet, true)).To(Equal([]string{fleetAFClusterName}))
+		Expect(apifrontendE2EClusterNames(afE2ELaneFleet, false)).To(BeEmpty(),
+			"a Fleet-only setup failure before cluster creation must not target the local cluster")
 	})
 })

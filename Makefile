@@ -555,6 +555,30 @@ test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified 
 		go tool cover -func=coverage_e2e_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+# Fleet-mode APIFrontend E2E tests share the apifrontend package but run in an
+# isolated CI lane with a Fleet-only Kind cluster (DD-TEST-019 amendment).
+.PHONY: test-e2e-apifrontend-fleet
+test-e2e-apifrontend-fleet: generate ginkgo ensure-coverage-dirs ## Run Fleet-mode APIFrontend E2E tests in their isolated lane
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 apifrontend-fleet - E2E Tests (hub-only Fleet Kind cluster, $(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@export AF_E2E_LANE="$${AF_E2E_LANE:-fleet}"; \
+	GINKGO_CMD="$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_apifrontend-fleet.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/apifrontend/...,github.com/jordigilh/kubernaut/internal/controller/apifrontend/..."; \
+	if [ -n "$(GINKGO_LABEL)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
+	else \
+		GINKGO_CMD="$$GINKGO_CMD --label-filter='fleet-mode-af'"; \
+	fi; \
+	if [ -n "$(GINKGO_FOCUS)" ]; then GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; fi; \
+	if [ -n "$(GINKGO_SKIP)" ]; then GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; fi; \
+	eval "$$GINKGO_CMD ./test/e2e/apifrontend/..."
+	@if [ -f coverage_e2e_apifrontend_binary.out ]; then cp coverage_e2e_apifrontend_binary.out coverage_e2e_apifrontend-fleet_binary.out; fi
+	@if [ -f coverage_e2e_apifrontend-fleet_binary.out ]; then cp coverage_e2e_apifrontend-fleet_binary.out coverage_e2e_apifrontend-fleet.out; fi
+	@if [ -f coverage_e2e_apifrontend-fleet.out ]; then \
+		echo "📊 Coverage report generated: coverage_e2e_apifrontend-fleet.out"; \
+		go tool cover -func=coverage_e2e_apifrontend-fleet.out | grep total || echo "No coverage data"; \
+	fi
+
 # DataStorage E2E tests: exclude generated code from coverage; keep client pre-generation step
 .PHONY: test-e2e-datastorage
 test-e2e-datastorage: generate ginkgo ensure-coverage-dirs ## Run datastorage E2E tests (coverage excludes ogen-client)

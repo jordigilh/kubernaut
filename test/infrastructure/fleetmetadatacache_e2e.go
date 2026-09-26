@@ -100,12 +100,18 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 		UsernameClaim:  "preferred_username",
 		UsernamePrefix: "keycloak:",
 	}
+	keycloakStarted := startAFInfraSetupStep(writer, "deploy Fleet-lane Keycloak")
 	if err := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, false, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy Fleet-lane Keycloak", keycloakStarted)
 		return nil, fmt.Errorf("deploy FMC-lane Keycloak: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy Fleet-lane Keycloak", keycloakStarted)
+	apiServerOIDCStarted := startAFInfraSetupStep(writer, "configure Fleet-lane API server OIDC")
 	if err := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcConfig, namespace, writer); err != nil {
+		finishAFInfraSetupStep(writer, "configure Fleet-lane API server OIDC", apiServerOIDCStarted)
 		return nil, fmt.Errorf("patch AF Fleet cluster API server for Keycloak OIDC: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "configure Fleet-lane API server OIDC", apiServerOIDCStarted)
 
 	const (
 		fleetClientID     = "kubernaut-fleet-read"
@@ -126,13 +132,19 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 		CAFilePath:        "/etc/tls-ca/ca.crt",
 		HubClusterID:      "hub",
 	}
+	gatewayStarted := startAFInfraSetupStep(writer, "deploy Fleet-lane Gateway and kube-mcp-server")
 	mcpGatewayEndpoint, err := DeployFleetGatewayInfra(ctx, namespace, kubeconfigPath, authConfig, writer)
 	if err != nil {
+		finishAFInfraSetupStep(writer, "deploy Fleet-lane Gateway and kube-mcp-server", gatewayStarted)
 		return nil, fmt.Errorf("deploy hub-only FMC-lane Gateway: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy Fleet-lane Gateway and kube-mcp-server", gatewayStarted)
+	rbacStarted := startAFInfraSetupStep(writer, "grant Fleet-lane exchanged identity RBAC")
 	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
+		finishAFInfraSetupStep(writer, "grant Fleet-lane exchanged identity RBAC", rbacStarted)
 		return nil, fmt.Errorf("grant the exchanged hub identity read access: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "grant Fleet-lane exchanged identity RBAC", rbacStarted)
 	keycloakFleetReadToken := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
 			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-demo/protocol/openid-connect/token", keycloakHostPortFMC),
@@ -143,22 +155,31 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 		})
 	}
 	_, hubToolPrefix := fleetHubRegistrationIdentity(authConfig)
+	gatewayReadyStarted := startAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness")
 	if err := WaitForFleetReady(ctx, keycloakFleetReadToken, eaigwGatewayNodePort, hubToolPrefix, writer); err != nil {
+		finishAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness", gatewayReadyStarted)
 		return nil, fmt.Errorf("wait for hub-only Gateway readiness: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "wait for Fleet-lane authenticated Gateway readiness", gatewayReadyStarted)
+	oauthSecretStarted := startAFInfraSetupStep(writer, "deploy Fleet OAuth2 credentials")
 	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy Fleet OAuth2 credentials", oauthSecretStarted)
 		return nil, fmt.Errorf("deploy shared AF/KA Fleet OAuth2 secret: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy Fleet OAuth2 credentials", oauthSecretStarted)
 	fmcOAuth2 := FMCOAuth2Config{
 		TokenURL:     "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 		ClientID:     fleetClientID,
 		ClientSecret: fleetClientSecret,
 		Scopes:       fleetScopes,
 	}
+	fmcStarted := startAFInfraSetupStep(writer, "deploy Fleet-lane Valkey and Metadata Cache")
 	if err := deployValkeyAndFMC(ctx, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint,
 		authConfig, fmcOAuth2, os.Getenv("E2E_COVERAGE") == trueFixture, writer); err != nil {
+		finishAFInfraSetupStep(writer, "deploy Fleet-lane Valkey and Metadata Cache", fmcStarted)
 		return nil, fmt.Errorf("deploy FMC lane Valkey/FMC components: %w", err)
 	}
+	finishAFInfraSetupStep(writer, "deploy Fleet-lane Valkey and Metadata Cache", fmcStarted)
 
 	return &FleetHelmOptions{
 		MCPGatewayEndpoint:          mcpGatewayEndpoint,

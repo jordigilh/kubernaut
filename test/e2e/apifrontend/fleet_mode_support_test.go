@@ -498,14 +498,16 @@ func verifyFleetAFHubOnlyTopology(ctx context.Context, localClusterName, fleetCl
 	if err != nil {
 		return err
 	}
-	if _, ok := clusters[localClusterName]; !ok {
-		return fmt.Errorf("local AF Kind cluster %q was not created", localClusterName)
+	if localClusterName != "" {
+		if _, ok := clusters[localClusterName]; !ok {
+			return fmt.Errorf("local AF kind cluster %q was not created", localClusterName)
+		}
 	}
 	if _, ok := clusters[fleetClusterName]; !ok {
-		return fmt.Errorf("fleet AF Kind cluster %q was not created", fleetClusterName)
+		return fmt.Errorf("fleet AF kind cluster %q was not created", fleetClusterName)
 	}
 	if _, ok := clusters[fleetClusterName+"-remote"]; ok {
-		return fmt.Errorf("hub-only Fleet AF setup unexpectedly created remote cluster %q", fleetClusterName+"-remote")
+		return fmt.Errorf("hub-only fleet AF setup unexpectedly created remote cluster %q", fleetClusterName+"-remote")
 	}
 	return nil
 }

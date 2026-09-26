@@ -1,15 +1,17 @@
-# DD-TEST-019: Minimal Fleet-Enabled APIFrontend E2E Topology
+# DD-TEST-019: Minimal Fleet-Enabled APIFrontend E2E Topology and CI Lanes
 
 **Status**: ✅ Approved by the user (2026-09-23)
-**Decision date**: 2026-09-23
+**Decision date**: 2026-09-23; CI-lane amendment approved 2026-09-26
 **Related**: Issue #2462, BR-FLEET-054, BR-INTEGRATION-065, ADR-068, DD-TEST-014, DD-TEST-015
 
 ## Context
 
-Issue #2462 adds Fleet-attributed APIFrontend (AF) coverage to the existing AF
-E2E job while preserving its standalone local-mode baseline. The test plan
-requires two isolated Kind clusters: the existing local AF topology and a
-Fleet-enabled AF topology whose Gateway exposes one registered `hub` backend.
+Issue #2462 adds Fleet-attributed APIFrontend (AF) coverage while preserving
+the standalone local-mode baseline. The original plan put both environments
+in one AF E2E job; the 2026-09-26 amendment below splits them into isolated CI
+lanes. The test topology still comprises the local AF environment and a
+Fleet-enabled AF environment whose Gateway exposes one registered `hub`
+backend.
 
 The initial implementation reused `SetupFullPipelineInfrastructure` because
 its `FleetProvisioner` callback already provisions Keycloak and Fleet before
@@ -56,30 +58,47 @@ credential/RBAC wiring to the existing AF and KA test manifests.
 - **Cons**: Requires explicit test-infrastructure wiring for AF/KA Fleet config
   and must keep that wiring aligned with the Helm chart's configuration.
 
-### C. Add a new Fleet-only E2E job or use a mock FMC
+### C. Split local and Fleet-mode AF into separate CI lanes
 
-- **Pros**: Separates Fleet infrastructure costs from the existing AF job, or
-  lowers the Fleet dependency footprint with a mock.
-- **Cons**: Violates the approved existing-job requirement or weakens the
-  end-to-end proof of real Gateway/FMC behavior.
+- **Pros**: Gives each mode independent setup timing and failure visibility;
+  each runner provisions only the cluster and fixtures its selected specs need.
+- **Cons**: Adds a CI matrix entry and repeats ordinary job startup steps. The
+  Fleet lane must continue to use the real hub-only Gateway/FMC topology.
 
 ## Decision
 
-Use Alternative B. Keep both Kind clusters in the existing APIFrontend E2E
-job. Use the existing standalone AF setup and Kind creation helpers for both
-clusters, reuse the AF image set, and add only Fleet core dependencies to the
-Fleet cluster. Configure APIFrontend and Kubernaut Agent with the same
+Use Alternative B for infrastructure and test topology. The local AF setup
+remains DEX-authenticated and local-scoped. The Fleet AF setup uses the
 hub-only Gateway, OAuth2 secret, and Keycloak issuer; register exactly one
 `hub` backend and do not create a remote cluster.
 
-The local AF setup remains DEX-authenticated and local-scoped. The Fleet AF
-setup uses the Keycloak A2A credentials and real FMC/Gateway routing. No
-production service or chart behavior changes as part of this decision.
+No production service or chart behavior changes as part of this decision.
+
+## Amendment (2026-09-26): separate local and Fleet-mode AF CI lanes
+
+The user approved splitting the AF tests into two CI matrix lanes to make the
+repeated 12–14 minute synchronized setup observable by mode rather than
+provisioning both environments serially before either mode's tests run. This
+amendment supersedes the original requirement that no new workflow lane be
+added; it does not change the selected infrastructure topology or Fleet
+coverage contract.
+
+- `E2E (apifrontend)` runs all non-Fleet AF specs against one standalone local
+  AF Kind cluster. The `fleet-mode-af` label is excluded.
+- `E2E (apifrontend-fleet)` runs only `fleet-mode-af` specs against one
+  Fleet-enabled AF Kind cluster with the real hub-only Gateway/FMC setup.
+- The two CI jobs remain isolated. They do not provision clusters in parallel
+  within a runner, add a third cluster, or create a spoke/remote cluster.
+- With `AF_E2E_LANE` unset, the suite retains its current combined two-cluster
+  behavior for developers who run the whole package locally.
+- The existing 25-minute GitHub Actions budget is initially retained for each
+  lane. The setup-stage timing output is used to identify any remaining slow
+  provisioning phase before changing timeouts or introducing concurrency.
 
 ## Consequences
 
-- The 25-minute CI timeout remains unchanged while the lean setup is
-  implemented and validated.
+- Each CI lane owns and tears down only its own Kind cluster, while the
+  combined local-development path still diagnoses and tears down both.
 - Fleet AF tests prove real `cluster_id=hub` routing through the registered
   Gateway and fail-closed behavior for an unregistered ID.
 - FMC retains a dedicated Valkey deployment; the standalone AF DataStorage
@@ -87,7 +106,7 @@ production service or chart behavior changes as part of this decision.
 - Test infrastructure must verify the rendered AF/KA Fleet configuration,
   OAuth2 secret mounts, Backend registry permissions, and absence of a spoke
   Kind cluster.
-- Keep the existing CI workflow unchanged based on local-host Podman storage
-  failures; CI runs on a clean environment, so local disk exhaustion is not
-  evidence that the CI job needs disk or tool-install changes.
+- Do not infer a provisioning bottleneck from local Podman storage failures;
+  use the separated clean-runner CI logs and per-stage timing before changing
+  infrastructure concurrency or timeout budgets.
 - Existing FullPipeline and Fleet E2E topology/setup remain unchanged.
