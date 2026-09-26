@@ -18,6 +18,7 @@ package mockllm_test
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ var _ = Describe("APIFRONTEND structured decision selector", func() {
 					Data map[string]string `yaml:"data"`
 				}
 				err := decoder.Decode(&document)
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				Expect(err).NotTo(HaveOccurred())
