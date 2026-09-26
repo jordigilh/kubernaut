@@ -871,9 +871,21 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             workflow_id: "%s"
 `, afGitOpsWorkflowID)
 	// KA's workflow-discovery LLM request is a separate mock-LLM conversation
-	// from AF's consent-turn selector. Scope this override to the grounded
-	// consent signal so KA stores the executable staging Job workflow in its
-	// discovery result instead of the generic production-preferred fallback.
+	// from AF's consent-turn selector. The interactive GitOps signal has a
+	// namespace suffix, so use signal-pattern matching (rather than a keyword
+	// prefix, which treats the underscore as part of the word) and return the
+	// same resolved staging GitOps workflow selected by AF on Turn 3.
+	kaGitOpsWorkflowDiscoveryYAML := fmt.Sprintf(`      - name: "ka_gitops_workflow_discovery_2390"
+        caller: "ka"
+        phase: "workflow_discovery"
+        signal_patterns: ["FullPipelineA2ASeverityGrounding_fp_int_"]
+        workflow_id: "%s"
+        action_type: "IncreaseMemoryLimits"
+        tool_call:
+          name: "list_available_actions"
+`, afGitOpsWorkflowID)
+	// Keep the consent discovery mapping scoped to consent scenarios; the
+	// dedicated GitOps signal selector above must not change their workflow.
 	kaConsentWorkflowDiscoveryYAML := fmt.Sprintf(`      - name: "ka_consent_gate_workflow_discovery_1899"
         caller: "ka"
         phase: "workflow_discovery"
@@ -899,6 +911,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afConsentSelectWorkflowID, afInvestigationClusterID) +
 		afGitOpsSelectScenarioYAML +
+		kaGitOpsWorkflowDiscoveryYAML +
 		kaConsentWorkflowDiscoveryYAML +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"], afInvestigationClusterID) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afConsentSelectWorkflowID, afInvestigationClusterID) +

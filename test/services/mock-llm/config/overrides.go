@@ -75,15 +75,16 @@ type ScenarioOverride struct {
 }
 
 // ScenarioSelectorOverride defines a declarative scenario selector injected via YAML.
-// Consumers (e.g., AF E2E tests) use this to map prompt keywords to specific
-// tool call responses without modifying mock-LLM code.
+// Consumers (e.g., AF E2E tests) use this to map prompt keywords or signal-name
+// patterns to specific tool call responses without modifying mock-LLM code.
 //
 // When MatchLastOnly is true, keyword matching uses only the last user message
 // instead of the full conversation history. This prevents prior-turn keywords
 // from shadowing later-turn keywords in multi-turn ADK agent conversations.
 type ScenarioSelectorOverride struct {
 	Name           string            `yaml:"name"`
-	Keywords       []string          `yaml:"keywords"`
+	Keywords       []string          `yaml:"keywords,omitempty"`
+	SignalPatterns []string          `yaml:"signal_patterns,omitempty"`
 	Caller         string            `yaml:"caller,omitempty"`
 	Phase          string            `yaml:"phase,omitempty"`
 	WorkflowID     string            `yaml:"workflow_id,omitempty"`
@@ -183,12 +184,17 @@ func validateScenarioSelectors(selectors []ScenarioSelectorOverride) error {
 		if selector.Phase != "" && !validScenarioSelectorPhase(selector.Phase) {
 			return errors.New("scenario selector phase is invalid")
 		}
-		if len(selector.Keywords) == 0 {
-			return errors.New("scenario selector must define at least one keyword")
+		if len(selector.Keywords) == 0 && len(selector.SignalPatterns) == 0 {
+			return errors.New("scenario selector must define at least one keyword or signal pattern")
 		}
 		for _, keyword := range selector.Keywords {
 			if strings.TrimSpace(keyword) == "" {
 				return errors.New("scenario selector keyword must not be empty")
+			}
+		}
+		for _, pattern := range selector.SignalPatterns {
+			if strings.TrimSpace(pattern) == "" {
+				return errors.New("scenario selector signal pattern must not be empty")
 			}
 		}
 		if strings.TrimSpace(selector.ToolCall.Name) == "" {

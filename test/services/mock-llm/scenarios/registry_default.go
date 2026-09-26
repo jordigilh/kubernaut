@@ -177,6 +177,7 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 			r.Register(newSelectorScenario(ks.Name, ScenarioSelector{
 				Scope:             ScenarioScope{Caller: Caller(ks.Caller), Phase: Phase(ks.Phase)},
 				Keywords:          ks.Keywords,
+				SignalPatterns:    ks.SignalPatterns,
 				MatchLastUserOnly: ks.MatchLastOnly,
 				Confidence:        1.0,
 			}, cfg))
