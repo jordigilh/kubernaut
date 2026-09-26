@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -74,23 +74,27 @@ var _ = Describe("Scenario Catalog Validation", func() {
 			"low_confidence", "MOCK_LOW_CONFIDENCE", "critical",
 			uuid.DeterministicUUID("generic-restart-v1"), 0.35,
 			"human judgment"),
-		Entry("UT-MOCK-026-007: problem_resolved",
+		Entry("UT-MOCK-026-007: approval_required",
+			"approval_required", "MOCK_APPROVAL_TEST", "high",
+			uuid.DeterministicUUID("crashloop-config-fix-v1"), 0.75,
+			"invalid configuration directive"),
+		Entry("UT-MOCK-026-008: problem_resolved",
 			"problem_resolved", "MOCK_PROBLEM_RESOLVED", "info",
 			"", 0.85,
 			"self-resolved"),
-		Entry("UT-MOCK-026-008: rca_incomplete",
+		Entry("UT-MOCK-026-009: rca_incomplete",
 			"rca_incomplete", "MOCK_RCA_INCOMPLETE", "critical",
 			uuid.DeterministicUUID("generic-restart-v1"), 0.88,
 			"affected resource could not be determined"),
-		Entry("UT-MOCK-026-009: oomkilled_predictive",
+		Entry("UT-MOCK-026-010: oomkilled_predictive",
 			"oomkilled_predictive", "OOMKilled", "critical",
 			uuid.DeterministicUUID("oomkill-increase-memory-v1"), 0.88,
 			"Predicted OOMKill"),
-		Entry("UT-MOCK-026-010: cert_not_ready",
+		Entry("UT-MOCK-026-011: cert_not_ready",
 			"cert_not_ready", "CertManagerCertNotReady", "critical",
 			uuid.DeterministicUUID("fix-certificate-v1"), 0.92,
 			"Certificate stuck"),
-		Entry("UT-MOCK-026-011: not_actionable",
+		Entry("UT-MOCK-026-012: not_actionable",
 			"not_actionable", "MOCK_NOT_ACTIONABLE", "info",
 			"", 0.0,
 			"Orphaned PVC"),

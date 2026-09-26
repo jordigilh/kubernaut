@@ -19,6 +19,7 @@ package audit
 import (
 	"github.com/go-faster/jx"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // buildConfigReloadedPayload builds the aiagent.config.reloaded payload
@@ -57,6 +58,12 @@ func buildEnrichmentCompletedPayload(event *AuditEvent) ogenclient.AuditEventReq
 	if ns := dataString(event.Data, "root_owner_namespace"); ns != "" {
 		payload.RootOwnerNamespace.SetTo(ns)
 	}
+	if labels, ok := detectedLabelsFromEventData(event.Data, "detected_labels_summary"); ok {
+		payload.DetectedLabelsSummary.SetTo(labels)
+	}
+	if _, present := event.Data["failed_detections"]; present {
+		payload.FailedDetections.SetTo(dataStringSlice(event.Data, "failed_detections"))
+	}
 	return ogenclient.NewAIAgentEnrichmentCompletedPayloadAuditEventRequestEventData(payload)
 }
 
@@ -84,6 +91,20 @@ func buildLLMRequestPayload(event *AuditEvent) ogenclient.AuditEventRequestEvent
 		Model:         dataString(event.Data, "model"),
 		PromptLength:  dataInt(event.Data, "prompt_length"),
 		PromptPreview: truncate(dataString(event.Data, "prompt_preview"), previewMaxLen),
+	}
+	if phase := dataString(event.Data, "phase"); phase != "" {
+		payload.Phase.SetTo(phase)
+	}
+	if _, present := event.Data["workflow_discovery_enrichment_labels_present"]; present {
+		workflowContext := ogenclient.WorkflowDiscoveryAuditContext{
+			EnrichmentLabelsPresent: dataBool(event.Data, "workflow_discovery_enrichment_labels_present"),
+			SignalLabelsPresent:     dataBool(event.Data, "workflow_discovery_signal_labels_present"),
+			PromptLabelsPresent:     dataBool(event.Data, "workflow_discovery_prompt_labels_present"),
+		}
+		if labels := dataStringMap(event.Data, "workflow_discovery_detected_labels"); len(labels) > 0 {
+			workflowContext.DetectedLabels.SetTo(detectedLabelsFromStringMap(labels))
+		}
+		payload.WorkflowDiscoveryContext.SetTo(workflowContext)
 	}
 	if tools := dataStringSlice(event.Data, "toolsets_enabled"); len(tools) > 0 {
 		payload.ToolsetsEnabled = tools
@@ -214,6 +235,11 @@ func buildResponseFailedPayload(event *AuditEvent) ogenclient.AuditEventRequestE
 		IncidentID:   event.CorrelationID,
 		ErrorMessage: dataString(event.Data, "error_message"),
 		Phase:        dataString(event.Data, "phase"),
+	}
+	if details, ok := event.Data["error_details"].(*sharedaudit.ErrorDetails); ok && details != nil {
+		if converted, ok := sharedaudit.ToOgenOptErrorDetails(details).Get(); ok {
+			payload.ErrorDetails = converted
+		}
 	}
 	if dur := dataFloat64(event.Data, "duration_seconds"); dur > 0 {
 		payload.DurationSeconds.SetTo(float32(dur))

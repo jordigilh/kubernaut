@@ -597,11 +597,11 @@ a real confidence increase, for the cost of one file read.
 
 ### 10.2 New risk found the same way: Kimi and Qwen currently share gpt-oss's reasoning-capture gap
 
-`pkg/shared/llm/openaicompat/reasoning.go`'s `DetectReasoningMode` and
-`DetectEffortDialect` only special-case DeepSeek by name
-(`deepseek-reasoner`/`deepseek-r1`/`deepseek-v4`) and real OpenAI o-series/gpt-5-family
-models. DD-LLM-005 confirms DeepSeek is the only non-Anthropic/OpenAI model with
-bespoke compatibility code in KA today. Everything else — including Kimi and Qwen —
+`pkg/shared/llm/openaicompat/reasoning.go`'s `DetectReasoningMode` only special-cases
+DeepSeek by name (`deepseek-reasoner`/`deepseek-r1`). `DetectEffortDialect` additionally
+recognizes OpenAI/Azure o-series and GPT-5 names, including 5.6+ variants. DD-LLM-005 confirms
+DeepSeek is the only non-Anthropic/OpenAI model with bespoke compatibility code in KA today.
+Everything else — including Kimi and Qwen —
 falls to the compatibility floor (`ReasoningModeNone` / `EffortDialectNone`): no
 reasoning-effort control, and reasoning content is captured for display but never
 replayed on later turns. That is the exact "reasoning silently dropped" gap already

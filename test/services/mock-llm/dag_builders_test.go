@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -148,6 +148,17 @@ var _ = Describe("DAG Builders", func() {
 			result, err := dag.Execute(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Result.ToolName).To(Equal(openai.ToolGetResourceContext))
+		})
+
+		It("should return final analysis when the retired search tool is unavailable", func() {
+			dag := conversation.SelectDAG([]openai.Tool{
+				{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResult}},
+				{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolKubectlGetYAML}},
+			})
+			ctx := ctxWithToolResults(0)
+			result, err := dag.Execute(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Result.ResponseType).To(Equal(conversation.StepFinalAnalysis))
 		})
 	})
 

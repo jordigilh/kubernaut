@@ -18,6 +18,7 @@ package audit
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/go-faster/jx"
@@ -77,6 +78,98 @@ func dataStringSlice(d map[string]interface{}, key string) []string {
 		}
 	}
 	return nil
+}
+
+func dataStringMap(d map[string]interface{}, key string) map[string]string {
+	if v, ok := d[key]; ok {
+		if values, ok := v.(map[string]string); ok {
+			return values
+		}
+	}
+	return nil
+}
+
+func detectedLabelsFromStringMap(values map[string]string) ogenclient.DetectedLabels {
+	labels := ogenclient.DetectedLabels{}
+	setDetectedLabelBooleans(values, &labels)
+	if value := values["gitOpsTool"]; value != "" {
+		labels.GitOpsTool.SetTo(ogenclient.DetectedLabelsGitOpsTool(value))
+	}
+	if value := values["serviceMesh"]; value != "" {
+		labels.ServiceMesh.SetTo(ogenclient.DetectedLabelsServiceMesh(value))
+	}
+	if value := values["storageBackend"]; value != "" {
+		labels.StorageBackend.SetTo(ogenclient.DetectedLabelsStorageBackend(value))
+	}
+	if value := values["failedDetections"]; value != "" {
+		for _, field := range strings.Split(value, ",") {
+			if field != "" {
+				labels.FailedDetections = append(labels.FailedDetections, ogenclient.DetectedLabelsFailedDetectionsItem(field))
+			}
+		}
+	}
+	return labels
+}
+
+func setDetectedLabelBooleans(values map[string]string, labels *ogenclient.DetectedLabels) {
+	const detectedLabelTrue = "true"
+	if values["gitOpsManaged"] == detectedLabelTrue {
+		labels.GitOpsManaged.SetTo(true)
+	}
+	if values["pdbProtected"] == detectedLabelTrue {
+		labels.PdbProtected.SetTo(true)
+	}
+	if values["hpaEnabled"] == detectedLabelTrue {
+		labels.HpaEnabled.SetTo(true)
+	}
+	if values["stateful"] == detectedLabelTrue {
+		labels.Stateful.SetTo(true)
+	}
+	if values["helmManaged"] == detectedLabelTrue {
+		labels.HelmManaged.SetTo(true)
+	}
+	if values["networkIsolated"] == detectedLabelTrue {
+		labels.NetworkIsolated.SetTo(true)
+	}
+	if values["resourceQuotaConstrained"] == detectedLabelTrue {
+		labels.ResourceQuotaConstrained.SetTo(true)
+	}
+	if values["virtualMachine"] == detectedLabelTrue {
+		labels.VirtualMachine.SetTo(true)
+	}
+	if values["liveMigratable"] == detectedLabelTrue {
+		labels.LiveMigratable.SetTo(true)
+	}
+	if values["cdiManaged"] == detectedLabelTrue {
+		labels.CdiManaged.SetTo(true)
+	}
+}
+
+func detectedLabelsFromEventData(d map[string]interface{}, key string) (ogenclient.DetectedLabels, bool) {
+	value, ok := d[key]
+	if !ok || value == nil {
+		return ogenclient.DetectedLabels{}, false
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ogenclient.DetectedLabels{}, false
+	}
+	var labels ogenclient.DetectedLabels
+	if err := json.Unmarshal(raw, &labels); err != nil {
+		return ogenclient.DetectedLabels{}, false
+	}
+	return labels, true
+}
+
+func detectedLabelsFromJSONText(raw string) (ogenclient.DetectedLabels, bool) {
+	if raw == "" {
+		return ogenclient.DetectedLabels{}, false
+	}
+	var labels ogenclient.DetectedLabels
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return ogenclient.DetectedLabels{}, false
+	}
+	return labels, true
 }
 
 const previewMaxLen = 500

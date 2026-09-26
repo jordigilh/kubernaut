@@ -28,9 +28,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -219,6 +219,78 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 				"DetectedLabels must be set from ORIGINAL enrichment when re-enrichment labels all fail")
 			Expect(dl.GitOpsManaged).To(BeTrue(),
 				"Original signal-target ArgoCD labels must be preserved")
+		})
+	})
+
+	Describe("IT-KA-1052-003: RCA-driven workflow discovery forwards detected labels", func() {
+		It("should forward RCA discovery DetectedLabels JSON to list_available_actions", func() {
+			capturingDS := &paramCapturingDS{}
+			reg := registry.New()
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
+				reg.Register(t)
+			}
+
+			scheme := runtime.NewScheme()
+			_ = appsv1.AddToScheme(scheme)
+			_ = autoscalingv2.AddToScheme(scheme)
+			_ = corev1.AddToScheme(scheme)
+			_ = policyv1.AddToScheme(scheme)
+			_ = networkingv1.AddToScheme(scheme)
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "api-server", Namespace: "production",
+					Annotations: map[string]string{"argocd.argoproj.io/managed-by": "production"},
+				},
+			}
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "production"}}
+			ld := enrichment.NewLabelDetector(
+				dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns),
+				newItTestMapper(), invLogger,
+			)
+			k8sClient := &k8sFixtureClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+			}
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).
+				WithLabelDetector(ld)
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "list_available_actions", Arguments: `{}`}},
+					},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.9}`),
+				},
+			}
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
+			})
+
+			_, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "api-server", Namespace: "production", Severity: "critical",
+				Message: "OOMKilled", ResourceKind: "Deployment", ResourceName: "api-server",
+				Environment: "production", Priority: "P0",
+			}, &katypes.InvestigationResult{
+				RCASummary: "OOMKilled in production",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1",
+				},
+			}, nil, "corr-1052-003")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturingDS.actionsCalled).To(BeTrue(),
+				"list_available_actions must have been called during RCA workflow discovery")
+
+			dl := capturingDS.listActionsFilters.DetectedLabels
+			Expect(dl).NotTo(BeNil(),
+				"RCA workflow discovery must forward DetectedLabels to discovery filters")
+			Expect(dl.GitOpsManaged).To(BeTrue(),
+				"RCA workflow discovery must preserve gitOpsManaged=true")
+			Expect(dl.GitOpsTool).To(Equal("argocd"),
+				"RCA workflow discovery must preserve gitOpsTool=argocd")
 		})
 	})
 })

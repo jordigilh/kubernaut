@@ -58,6 +58,10 @@ func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
 				"restart-cache", "noop", // workflow_discovery_rca_characterization_test.go
 				"rotate-node-logs", "increase-memory-limit", // samekind_confidence_2119_test.go, gate_undeclared_tool_2121_test.go
 			}),
+			discoveredWorkflowIDs: []string{
+				"restart-sub", "scale-up", "generic-fix", "restart-pod",
+				"restart-cache", "noop", "rotate-node-logs", "increase-memory-limit",
+			},
 		}
 	}
 	return investigator.New(cfg)

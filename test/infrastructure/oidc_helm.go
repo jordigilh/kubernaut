@@ -45,6 +45,7 @@ type OIDCConsoleHelmOptions struct {
 	LoginURL         string
 	RedeemURL        string
 	ConsoleJWKSURL   string
+	BackendLogoutURL string
 	IngressNamespace string
 	ConsoleTLSSecret string
 }
@@ -68,6 +69,9 @@ func keycloakOIDCConsoleHelmOptionsForRealm(keycloakNamespace, realm string) OID
 		LoginURL:       keycloakBrowserBase + "/protocol/openid-connect/auth",
 		RedeemURL:      keycloakServiceBase + "/protocol/openid-connect/token",
 		ConsoleJWKSURL: keycloakServiceBase + "/protocol/openid-connect/certs",
+		// Keycloak's end_session_endpoint is provider-specific; derive it here
+		// for the demo instead of making the generic Helm chart Keycloak-aware.
+		BackendLogoutURL: keycloakBrowserBase + "/protocol/openid-connect/logout?id_token_hint={id_token}",
 	}
 }
 
@@ -120,6 +124,9 @@ func appendOIDCConsoleHelmArgs(args []string, opts OIDCConsoleHelmOptions) []str
 	}
 	if opts.IngressNamespace != "" {
 		args = append(args, "--set", "networkPolicies.console.ingressNamespaces[0]="+opts.IngressNamespace)
+	}
+	if opts.BackendLogoutURL != "" {
+		args = append(args, "--set-string", "console.oauth2Proxy.backendLogoutURL="+opts.BackendLogoutURL)
 	}
 	if !opts.SkipDiscovery {
 		return args

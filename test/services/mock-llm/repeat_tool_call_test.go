@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -332,6 +332,15 @@ keyword_scenarios:
 			}
 			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("sess-multi"))
+		})
+
+		It("should not infer a function from an unknown tool call ID", func() {
+			messages := []openai.Message{
+				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{}`}}}},
+				{Role: "tool", ToolCallID: "unknown-call", Content: content(`{"session_id":"sess-unknown"}`)},
+			}
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
+			Expect(val).To(BeEmpty())
 		})
 	})
 

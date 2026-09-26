@@ -67,7 +67,7 @@ var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "sess
 	}
 
 	readyzURL := func() string {
-		u := getEnvOrDefault("AF_E2E_HEALTH_URL", "http://localhost:18081")
+		u := getEnvOrDefault("AF_E2E_HEALTH_URL", e2eHostURL("http", 18081))
 		return u + "/readyz"
 	}
 

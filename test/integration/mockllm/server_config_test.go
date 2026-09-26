@@ -44,7 +44,7 @@ var _ = Describe("Server Config Integration", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := chatRequest("- Signal Name: OOMKilled", []string{"search_workflow_catalog"})
+			body := chatRequest("- Signal Name: CrashLoopBackOff", []string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()

@@ -1401,7 +1401,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
-		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-011"})
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID, RRID: "rr-takeover-011"})
 		Expect(err).NotTo(HaveOccurred())
 
 		rc := launcher.RRContextSafe(ctx)
@@ -1428,7 +1428,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
-		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-012"})
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID, RRID: "rr-takeover-012"})
 		Expect(err).NotTo(HaveOccurred(),
 			"SI-17: takeover must fail safe (degrade), not fail closed, when the RR fetch errors")
 
@@ -1446,7 +1446,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 
 		_, _, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Namespace: "kubernaut-system",
-		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-013"})
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID, RRID: "rr-takeover-013"})
 		Expect(err).NotTo(HaveOccurred())
 
 		rc := launcher.RRContextSafe(ctx)
@@ -1651,7 +1651,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			Namespace:    "kubernaut-system",
 			Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			ScopeChecker: &mocks.NeverManagedScopeChecker{},
-		}, &tools.InvestigateMCPArgs{
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID,
 			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
 		})
 		Expect(err).To(HaveOccurred())
@@ -1665,7 +1665,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			Namespace:    "kubernaut-system",
 			Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			ScopeChecker: &mocks.AlwaysManagedScopeChecker{},
-		}, &tools.InvestigateMCPArgs{
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID,
 			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -1697,7 +1697,7 @@ var _ = Describe("ScopeChecker pre-check (#2025)", func() {
 			Client:       tc,
 			Namespace:    "kubernaut-system",
 			ScopeChecker: &mocks.NeverManagedScopeChecker{},
-		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-2025"})
+		}, &tools.InvestigateMCPArgs{ClusterID: hubClusterID, RRID: "rr-takeover-2025"})
 		Expect(err).NotTo(HaveOccurred(),
 			"a takeover of an already-existing RR must not be re-scope-checked")
 	})

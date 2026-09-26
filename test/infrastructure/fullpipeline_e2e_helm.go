@@ -425,33 +425,62 @@ type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string
 func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔐 Pre-provisioning inter-service CA + authwebhook-tls (deploy fleet correctly the first time)...")
 
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	var caCert *x509.Certificate
+	var caKey *ecdsa.PrivateKey
+	var caCertPEM, caKeyPEM []byte
+
+	secretCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"get", "secret", "authwebhook-tls", "--ignore-not-found", "-o", "name")
+	existingSecret, err := secretCmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to generate CA key: %w", err)
+		return fmt.Errorf("failed to check for an existing inter-service CA: %w", err)
 	}
-	caTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(time.Now().UnixNano()),
-		Subject:               pkix.Name{CommonName: "authwebhook-ca"},
-		NotBefore:             time.Now().Add(-1 * time.Hour),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
+	if strings.TrimSpace(string(existingSecret)) != "" {
+		// Reusing a retained Kind cluster must preserve its existing trust root:
+		// chart-managed service certificates and the running API server already
+		// trust this CA. Rotating it here leaves retained pods with certificates
+		// signed by the previous root and makes the next Keycloak/OIDC bootstrap
+		// fail TLS verification.
+		caCert, caKey, err = loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+		if err != nil {
+			return fmt.Errorf("failed to reuse existing inter-service CA: %w", err)
+		}
+		caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+		if err != nil {
+			return fmt.Errorf("failed to marshal reused CA private key: %w", err)
+		}
+		caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
+		_, _ = fmt.Fprintln(writer, "  ♻️ Reusing existing inter-service CA for retained cluster")
+	} else {
+		caKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return fmt.Errorf("failed to generate CA key: %w", err)
+		}
+		caTemplate := &x509.Certificate{
+			SerialNumber:          big.NewInt(time.Now().UnixNano()),
+			Subject:               pkix.Name{CommonName: "authwebhook-ca"},
+			NotBefore:             time.Now().Add(-1 * time.Hour),
+			NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+			BasicConstraintsValid: true,
+			IsCA:                  true,
+		}
+		caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+		if err != nil {
+			return fmt.Errorf("failed to self-sign CA certificate: %w", err)
+		}
+		caCert, err = x509.ParseCertificate(caDER)
+		if err != nil {
+			return fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
+		}
+		caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+		caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+		if err != nil {
+			return fmt.Errorf("failed to marshal CA private key: %w", err)
+		}
+		caKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
 	}
-	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-	if err != nil {
-		return fmt.Errorf("failed to self-sign CA certificate: %w", err)
-	}
-	caCert, err := x509.ParseCertificate(caDER)
-	if err != nil {
-		return fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
-	}
-	caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
-	caKeyDER, err := x509.MarshalECPrivateKey(caKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal CA private key: %w", err)
-	}
-	caKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
 
 	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
 		fmt.Sprintf("authwebhook.%s.svc", namespace),
@@ -983,7 +1012,7 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 
 	args := []string{
 		"--kubeconfig", kubeconfigPath,
-		"install", "kubernaut", chartPath,
+		"upgrade", "--install", "kubernaut", chartPath,
 		"--namespace", namespace,
 		"--timeout", "8m",
 		// Deliberately no --wait: charts/kubernaut/templates/hooks/migration-job.yaml

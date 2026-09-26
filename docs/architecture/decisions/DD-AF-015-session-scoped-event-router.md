@@ -29,17 +29,22 @@ The router provides:
 - `Publish(InvestigationEvent)`, which snapshots subscribers under a lock and
   invokes them after unlocking.
 - Multiple concurrent subscribers without last-writer-wins replacement.
-- Explicit lifecycle cleanup through deferred unsubscribe at each call boundary.
+- Explicit lifecycle cleanup through unsubscribe at the owning stream boundary.
 
 `WatchTerminalEvents` remains the sole consumer of the KA event channel. It
-publishes non-terminal and terminal events through the router. Pooled calls and
-`kubernaut_watch` subscribe only for the duration of their active A2A call.
+publishes non-terminal and terminal events through the router. `kubernaut_watch`
+subscribes for the duration of its active A2A call; pooled interactive calls
+subscribe for the enclosing A2A stream even when their MCP tool call returns
+earlier.
 When a router is present but has no subscribers, terminal events are not sent to
 the detached handoff context, preventing writes to a closed A2A queue. Direct
 legacy calls without a router retain the DD-AF-009/#1438 fallback behavior.
 
 The A2A adapter is injected into the KA package as an `EventEmitter`, keeping
-KA session management independent of A2A presentation details.
+KA session management independent of A2A presentation details. For pooled
+interactive actions, the subscription is associated with the enclosing A2A
+stream context rather than the shorter MCP tool-call context, because KA may
+publish residual notifications after the tool result has returned.
 
 ## Alternatives
 
@@ -68,6 +73,7 @@ and keeps the implementation within the existing session-pool lifecycle.
 
 - KA events can reach pooled calls and `kubernaut_watch` without misrouting.
 - Subscriber cleanup is explicit and token-specific.
+- Late pooled notifications remain deliverable until the enclosing A2A stream ends.
 - User isolation remains enforced by the existing composite pool key.
 - No KA protocol, MCP transport, or A2A wire-format change is required.
 - Slow sinks do not hold the router mutex.
@@ -82,5 +88,5 @@ and keeps the implementation within the existing session-pool lifecycle.
 ## Verification
 
 BDD coverage proves router fan-out, unsubscribe behavior, concurrent lifecycle
-operations, pooled-call subscription cleanup, terminal-event routing, and the
-existing direct fallback path.
+operations, late pooled-call subscription cleanup, terminal-event routing, and
+the existing direct fallback path.

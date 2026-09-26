@@ -16,14 +16,14 @@
 
 ### 1.1 Purpose
 
-This test plan validates that the Kubernaut Agent (KA) emits fully populated audit events for all 8 event types, achieving parity with the Python HAPI implementation and satisfying SOC2 CC8.1 requirements for complete LLM interaction reconstruction from audit traces.
+This test plan validates that the Kubernaut Agent (KA) emits fully populated audit events for all 8 event types, achieving parity with the Python HAPI implementation and satisfying SOC2 CC7.2 requirements for complete LLM interaction reconstruction from audit traces.
 
 KA currently emits all 8 event types but populates almost no data beyond correlation IDs and basic token counts. This creates a compliance gap: DataStorage stores structurally empty payloads that cannot reconstruct the agent-LLM conversation. This test plan covers closing 8 audit gaps (GAP-A1 through GAP-A8) identified in the KA-HAPI audit parity analysis, plus OpenAPI schema extensions for full data fidelity.
 
 ### 1.2 Objectives
 
 1. **Payload completeness**: All 6 investigator event types (`llm.request`, `llm.response`, `llm.tool_call`, `validation_attempt`, `response.complete`, `response.failed`) carry fully populated OpenAPI-typed payloads
-2. **SOC2 CC8.1 reconstruction**: Every LLM turn (prompt, response, tool calls, validation) is reconstructable from audit events queried by `correlation_id`
+2. **SOC2 CC7.2 reconstruction**: Every LLM turn (prompt, response, tool calls, validation, and failure details) is reconstructable from audit events queried by `correlation_id`
 3. **ADR-034 compliance**: All events carry `event_id` (UUID), `EventAction`, `EventOutcome`, `ActorType`, `ActorID`
 4. **Schema fidelity**: OpenAPI `IncidentResponseData` extended with `remediationTarget`, `executionBundle`, `confidence` — zero structural data loss
 5. **No regressions**: Existing enrichment audit tests (`UT-KA-433W-010..011`, `IT-KA-433-ENR-*`) and adversarial tests (`UT-KA-433-AUD-*`) continue to pass
@@ -48,7 +48,7 @@ KA currently emits all 8 event types but populates almost no data beyond correla
 
 - **BR-AUDIT-005**: Audit event persistence and queryability by `remediation_id`
 - **DD-AUDIT-005**: Hybrid provider data capture — KA owns complete `IncidentResponse` in audit traces
-- **SOC2 CC8.1**: Complete remediation request reconstruction from audit traces
+- **SOC2 CC7.2**: Monitoring and investigation of system activity through complete audit traces
 - **ADR-034**: Unified audit table design with event-sourcing pattern
 - **DD-AUDIT-003**: Per-service audit trace requirements (KA replaces HAPI for `aiagent.*` events)
 - **BR-AUDIT-021-030**: Workflow selection audit trail
@@ -221,8 +221,8 @@ Tests validate observable audit outcomes:
 | ADR-034 | EventAction/EventOutcome on every event | P0 | Integration | IT-KA-433-AP-008 | Pending |
 | ADR-034 | ActorType/ActorID on every event | P0 | Unit | UT-KA-433-AP-003 | Pending |
 | ADR-034 | ActorType/ActorID on every event | P0 | E2E | E2E-KA-433-AP-003 | Pending |
-| DD-AUDIT-005 | Error details in response.failed | P1 | Unit | UT-KA-433-AP-011 | Pending |
-| DD-AUDIT-005 | Error details in response.failed | P1 | Integration | IT-KA-433-AP-006 | Pending |
+| BR-AUDIT-005 / DD-ERROR-001 | Standardized error details in response.failed | P1 | Unit | UT-KA-433-AP-011 | Pending |
+| BR-AUDIT-005 / DD-ERROR-001 | Standardized error details in response.failed | P1 | Integration | IT-KA-433-AP-006 | Pending |
 | BR-AUDIT-021-030 | Per-attempt validation audit | P1 | Unit | UT-KA-433-AP-012..013 | Pending |
 | BR-AUDIT-021-030 | Per-attempt validation audit | P1 | Integration | IT-KA-433-AP-004 | Pending |
 | ADR-056 | Re-enrichment must not contaminate labels from different resource identity | P0 | Integration | IT-KA-433-AP-020 | Pending |
@@ -259,7 +259,7 @@ Format: `{TIER}-KA-433-AP-{NNN}` (AP = Audit Parity)
 | `UT-KA-433-AP-008` | `analysis_preview` truncates at 500 chars — prevents payload bloat (DD-AUDIT-005) | Pending |
 | `UT-KA-433-AP-009` | `buildEventData` maps `LLMToolCallPayload` with `jx.Raw` — enables tool interaction reconstruction (SOC2 CC8.1) | Pending |
 | `UT-KA-433-AP-010` | `tool_result_preview` truncates at 500 chars — prevents payload bloat (DD-AUDIT-005) | Pending |
-| `UT-KA-433-AP-011` | `buildEventData` maps `AIAgentResponseFailedPayload` with error details — enables failure analysis (DD-AUDIT-005) | Pending |
+| `UT-KA-433-AP-011` | `buildEventData` maps `AIAgentResponseFailedPayload` with standardized `error_details` — enables failure analysis (BR-AUDIT-005, DD-ERROR-001) | Pending |
 | `UT-KA-433-AP-012` | `buildEventData` maps `WorkflowValidationPayload` with attempt details — enables validation audit (BR-AUDIT-021-030) | Pending |
 | `UT-KA-433-AP-013` | Validation failure event has `EventOutcome="failure"` — enables outcome filtering (ADR-034) | Pending |
 | `UT-KA-433-AP-014` | `buildEventData` maps `AIAgentResponsePayload` with full `IncidentResponseData` — enables complete response reconstruction (DD-AUDIT-005) | Pending |
@@ -286,7 +286,7 @@ Format: `{TIER}-KA-433-AP-{NNN}` (AP = Audit Parity)
 | `IT-KA-433-AP-003` | Investigation emits per-tool-call events with `tool_name` and `tool_result` — operator can reconstruct tool interactions | Pending |
 | `IT-KA-433-AP-004` | Investigation emits `validation_attempt` per self-correction attempt — operator can see validation history | Pending |
 | `IT-KA-433-AP-005` | Investigation emits `response.complete` with cumulative tokens and response data — operator can see final result | Pending |
-| `IT-KA-433-AP-006` | Investigation emits `response.failed` with `error_message` and `phase` — operator can diagnose failures | Pending |
+| `IT-KA-433-AP-006` | Investigation emits `response.failed` with `error_message`, `phase`, and standardized `error_details` — operator can diagnose failures and determine retry guidance | Pending |
 | `IT-KA-433-AP-007` | All investigator events have UUID `event_id` in Data — enables per-event traceability | Pending |
 | `IT-KA-433-AP-008` | All investigator events have `EventAction` and `EventOutcome` set — enables event classification | Pending |
 | `IT-KA-433-AP-020` | Re-enrichment with different RCA target must NOT copy detected labels from signal target — prevents cross-resource label contamination (ADR-056) | Pending |

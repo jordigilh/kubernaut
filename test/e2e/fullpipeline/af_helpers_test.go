@@ -30,7 +30,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -54,6 +57,51 @@ const (
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers (adapted from test/e2e/apifrontend/helpers_test.go)
 // ────────────────────────────────────────────────────────────────────────────
+
+// fpCreateTargetPod gives isolated zero-replica Deployment fixtures the Pod
+// that RCA and workflow discovery resolve as the concrete target. The owner
+// reference preserves the Deployment root-owner chain used by enrichment.
+func fpCreateTargetPod(ctx context.Context, deployment *appsv1.Deployment) {
+	controller := true
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      deployment.Name,
+			Namespace: deployment.Namespace,
+			Labels:    map[string]string{"app": "memory-eater"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       deployment.Name,
+				UID:        deployment.UID,
+				Controller: &controller,
+			}},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{{
+				Name:    "app",
+				Image:   "busybox:1.36",
+				Command: []string{"sleep", "3600"},
+			}},
+		},
+	}
+	key := client.ObjectKeyFromObject(pod)
+	existing := &corev1.Pod{}
+	getErr := apiReader.Get(ctx, key, existing)
+	if getErr == nil {
+		Expect(k8sClient.Delete(ctx, existing)).To(Succeed(), "delete stale isolated target Pod %s/%s", pod.Namespace, pod.Name)
+		Eventually(func() bool {
+			current := &corev1.Pod{}
+			return apierrors.IsNotFound(apiReader.Get(context.Background(), key, current))
+		}, 30*time.Second, time.Second).Should(BeTrue(), "stale isolated target Pod %s/%s should finish deletion", pod.Namespace, pod.Name)
+	} else {
+		Expect(apierrors.IsNotFound(getErr)).To(BeTrue(), "check for stale isolated target Pod %s/%s", pod.Namespace, pod.Name)
+	}
+	Expect(k8sClient.Create(ctx, pod)).To(Succeed(), "create isolated target Pod %s/%s", pod.Namespace, pod.Name)
+	DeferCleanup(func() {
+		_ = k8sClient.Delete(context.Background(), pod)
+	})
+}
 
 // FullPipeline A2A specs use one shared SRE identity and are marked Serial to
 // avoid per-user MCP rate-limit contention. Direct service-account MCP specs

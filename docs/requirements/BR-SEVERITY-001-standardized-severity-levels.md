@@ -28,13 +28,13 @@ Kubernaut uses severity levels across multiple components and boundaries:
 
 1. **External systems** (Prometheus, PagerDuty, custom alerting) produce severity values in arbitrary schemes (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.)
 2. **SignalProcessing** normalizes external severity to an internal canonical set via Rego policy (DD-SEVERITY-001)
-3. **Kubernaut Agent (KA) LLM prompts** instruct the LLM to assess root cause severity using canonical levels
+3. **Kubernaut Agent (KA)** receives the SignalProcessing classification and MUST preserve it in the RCA; the LLM does not independently classify or override severity
 4. **AIAnalysis CRD** validates severity against a `kubebuilder:validation:Enum`
 5. **Workflow catalog** uses severity as a search filter label
 
 Without a single authoritative definition of what each canonical severity level **means**, with concrete examples, the system risks:
 
-- LLM returning values outside the allowed set (e.g., `"warning"`, `"info"`)
+- LLM replacing the SignalProcessing classification with a severity inferred from RCA evidence
 - Inconsistent interpretation across components (one component treats `"high"` differently than another)
 - Ambiguity for operators writing Rego policies about which level to map to
 - Drift between prompt definitions and CRD validation enums
@@ -44,7 +44,7 @@ Without a single authoritative definition of what each canonical severity level 
 | Benefit | Impact |
 |---------|--------|
 | **Consistency** | All components use the same severity taxonomy with the same semantics |
-| **LLM Reliability** | Prompts with precise definitions and examples reduce hallucinated severity values |
+| **Severity Integrity** | KA preserves SignalProcessing's Rego classification through RCA and workflow selection |
 | **Operator Clarity** | Operators writing Rego policies have unambiguous mapping targets |
 | **Technical Documentation** | Single source of truth for severity definitions across all docs |
 | **CRD Validation** | Enum values aligned with documented levels; no surprises at admission time |
@@ -175,8 +175,8 @@ This table documents where each component enforces or references the canonical s
 | Component | Mechanism | Levels Supported | Source File |
 |-----------|-----------|-----------------|-------------|
 | **AIAnalysis CRD** | `kubebuilder:validation:Enum` | `critical`, `high`, `medium`, `low`, `unknown` | `api/aianalysis/v1alpha1/aianalysis_types.go` |
-| **Kubernaut Agent (KA) Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/incident/prompt_builder.py` |
-| **KA Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/recovery/prompt_builder.py` |
+| **Kubernaut Agent (KA) Incident Prompt** | Pass-through instruction for SP-classified input | Same severity values as SignalProcessing | `internal/kubernautagent/prompt/templates/incident_investigation.tmpl` |
+| **KA Workflow Selection Prompt** | Pass-through instruction for SP-classified input | Same severity values as SignalProcessing | `internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl` |
 | **SignalProcessing Rego** | Rego policy output | `critical`, `high`, `medium`, `low`, `unknown` | `config/rego/severity.rego` |
 | **Workflow Catalog** | DataStorage label filter (JSONB array, ? operator) | `[critical, high, medium, low]` | `api/openapi/data-storage-v1.yaml` |
 | **Prometheus Metrics** | Label cardinality | `critical`, `high`, `medium`, `low`, `unknown` | Various `metrics.go` files |
@@ -195,7 +195,7 @@ The 5-level set is deliberately constrained to maintain acceptable Prometheus me
 
 ### LLM Prompt Alignment
 
-The severity definitions in this BR are the **single source of truth**. Both `incident/prompt_builder.py` and `recovery/prompt_builder.py` MUST reproduce these definitions verbatim (or by reference) so the LLM receives consistent instructions.
+SignalProcessing Rego is the **source of the severity classification**. KA prompts MUST identify the supplied severity as authoritative and instruct the LLM to copy it unchanged into RCA and response fields; prompts MUST NOT ask the LLM to reassess or override it. Severity definitions may be provided as context, but do not transfer classification authority to the LLM.
 
 ### Rego Policy Mapping Target
 
@@ -212,8 +212,8 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | # | Criterion | Verification |
 |---|-----------|-------------|
 | AC-1 | All five levels (`critical`, `high`, `medium`, `low`, `unknown`) are accepted by the AIAnalysis CRD | CRD validation test |
-| AC-2 | Kubernaut Agent (KA) incident prompt severity section matches this BR's definitions | Code review / prompt unit test |
-| AC-3 | KA recovery prompt severity section matches this BR's definitions | Code review / prompt unit test |
+| AC-2 | KA incident prompt instructs the model to preserve the supplied SignalProcessing severity in RCA output | Prompt unit test |
+| AC-3 | KA workflow-selection prompt instructs the model to preserve the supplied SignalProcessing severity in RCA/output fields | Prompt unit test |
 | AC-4 | SignalProcessing default Rego policy maps to all five levels | Rego unit test |
 | AC-5 | No component uses severity values outside this set (e.g., `warning`, `info`, `error`) | `grep` audit across codebase |
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |

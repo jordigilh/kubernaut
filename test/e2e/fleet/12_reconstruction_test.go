@@ -195,25 +195,18 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		Expect(reconResp.CorrelationID.Value).To(Equal(correlationID))
 	})
 
-	Context("reconstruction without fleet cluster context", func() {
-		It("should return empty cluster_id for hub-only RRs", func() {
-			// Deliberately create a hub-only RR rather than opportunistically
-			// scanning existing RRs for one without spec.clusterID: every RR
-			// in this suite is fleet-scoped (DD-TEST-014: fleet E2E targets
-			// only the remote cluster for reconciliation), so scanning would
-			// never find one and always Skip -- which the project forbids
-			// (no Skip()/pending tests; see AGENTS.md TDD Anti-Patterns).
-			// Submitting a signal with no "cluster" label reproduces the
-			// genuine backward-compatibility case: prometheus_adapter.go
-			// reads spec.clusterID from commonLabels["cluster"], which is
-			// empty here, so resolverForCluster falls back to the local/hub
-			// resolver and the resulting RR's spec.clusterID stays empty.
-			By("Creating a hub-only (non-fleet) target resource on the local/hub cluster")
+	Context("reconstruction with hub Gateway cluster context", func() {
+		It("should preserve the hub registration cluster_id in reconstruction", func() {
+			// Fleet mode registers the hub as "hub" in MCP Gateway, alongside
+			// the spoke registrations. A hub-origin signal carries that exact
+			// identity rather than relying on the old empty-ID local shortcut.
+			By("Creating a hub target resource for the registered hub Gateway backend")
 			const targetName = "hub-only-reconstruction-target"
+			targetNS := fleetWorkloadNamespace("fleet-reconstruction")
 			dep := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      targetName,
-					Namespace: namespace,
+					Namespace: targetNS,
 					Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 				},
 				Spec: appsv1.DeploymentSpec{
@@ -232,26 +225,26 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			}
 			DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
 
-			By("Submitting a signal with no cluster label to create a hub-only RR")
-			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", "warning",
-				targetName, "")
+			By("Submitting a signal with cluster_id=hub to create a hub-routed RR")
+			payload := buildPrometheusAlertWithClusterInNamespace("HubOnlyReconstruction", "warning",
+				targetName, targetNS, "hub")
 			gatewayURL := urlLocalhost30080
 			body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 			var response map[string]interface{}
 			Expect(json.Unmarshal(body, &response)).To(Succeed())
 			Expect(response["status"]).To(Equal("created"),
-				"Alert should result in a new hub-only RemediationRequest")
+				"Alert should result in a new hub-targeted RemediationRequest")
 			hubRRName, ok := response["remediationRequestName"].(string)
 			Expect(ok).To(BeTrue(), "Response must contain remediationRequestName")
 
-			By("Waiting for the hub-only RR to be picked up by reconciliation")
+			By("Waiting for the hub-targeted RR to be picked up by reconciliation")
 			Eventually(func(g Gomega) {
 				var rr remediationv1.RemediationRequest
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
 					Name: hubRRName, Namespace: namespace,
 				}, &rr)).To(Succeed())
-				g.Expect(rr.Spec.ClusterID).To(BeEmpty(), "hub-only RR must not have spec.clusterID set")
+				g.Expect(rr.Spec.ClusterID).To(Equal("hub"), "hub-targeted fleet RR must retain the Gateway registration ID")
 				g.Expect(rr.Status.OverallPhase).To(BeElementOf(
 					remediationv1.PhasePending, remediationv1.PhaseProcessing, remediationv1.PhaseAnalyzing,
 					remediationv1.PhaseAwaitingApproval, remediationv1.PhaseExecuting, remediationv1.PhaseVerifying,
@@ -268,7 +261,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			// so a separate blind sleep before it added nothing but wasted
 			// wall-clock time on every run. Budget bumped from 30s to 40s to
 			// preserve the same total wait headroom the sleep+30s poll gave.
-			By(fmt.Sprintf("Reconstructing hub-only RR: %s (polling for async audit-event persistence)", hubRRName))
+			By(fmt.Sprintf("Reconstructing hub-targeted RR: %s (polling for async audit-event persistence)", hubRRName))
 			var resp *ogenclient.ReconstructionResponse
 			Eventually(func(g Gomega) {
 				result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
@@ -280,10 +273,11 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				resp = reconResp
 			}, 40*time.Second, 2*time.Second).Should(Succeed())
 
-			Expect(resp.ClusterID.Set).To(BeFalse(),
-				"hub-only RR should not have cluster_id set")
+			Expect(resp.ClusterID.Set).To(BeTrue(),
+				"hub-targeted fleet RR reconstruction must include cluster_id")
+			Expect(resp.ClusterID.Value).To(Equal("hub"))
 
-			GinkgoWriter.Printf("Backward compat PASS: hub-only RR %s has no cluster_id\n", hubRRName)
+			GinkgoWriter.Printf("Hub Gateway reconstruction PASS: cluster_id=%q for %s\n", resp.ClusterID.Value, hubRRName)
 		})
 	})
 })

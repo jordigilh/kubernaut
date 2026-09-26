@@ -145,6 +145,25 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 12", func() {
 })
 
 // ========================================
+// BR-WE-014 / BR-TESTING-001: catalog-authoritative execution engine
+// ========================================
+var _ = Describe("enrichFromCatalog — catalog-authoritative execution engine", func() {
+	It("UT-KA-ENGINE-001 (BR-WE-014, BR-TESTING-001): replaces a conflicting LLM engine with the catalog engine", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{ExecutionEngine: "job"})
+
+		result := &katypes.InvestigationResult{
+			WorkflowID:      "wf-with-schema",
+			ExecutionEngine: "tekton",
+		}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ExecutionEngine).To(Equal("job"))
+	})
+})
+
+// ========================================
 // UT-KA-2326 (Issue #2326, DD-FLEET-008, BR-FLEET-004)
 // ========================================
 // ExecutionClusterID is catalog-authoritative (workflow-declared, never

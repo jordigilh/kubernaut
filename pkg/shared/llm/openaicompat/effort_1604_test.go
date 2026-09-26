@@ -52,6 +52,11 @@ var _ = Describe("openaicompat effort knob — #1604", func() {
 			Entry("gpt-5-mini", "gpt-5-mini"),
 			Entry("gpt-5.1", "gpt-5.1"),
 			Entry("gpt-5-codex", "gpt-5-codex"),
+			Entry("gpt-6-luna", "gpt-6-luna"),
+			Entry("gpt-6-sol", "gpt-6-sol"),
+			Entry("gpt-6-terra", "gpt-6-terra"),
+			Entry("GPT-6 Astra", "GPT-6-ASTRA"),
+			Entry("future GPT version and suffix", "gpt-7.2-sol-preview"),
 		)
 
 		DescribeTable("DeepSeek reasoning models detect to the DeepSeek dialect",
@@ -69,6 +74,7 @@ var _ = Describe("openaicompat effort knob — #1604", func() {
 				Expect(openaicompat.DetectEffortDialect(model)).To(Equal(openaicompat.EffortDialectNone))
 			},
 			Entry("gpt-4o", "gpt-4o"),
+			Entry("non-reasoning GPT-4 model", "gpt-4.1"),
 			Entry("gpt-3.5-turbo", "gpt-3.5-turbo"),
 			Entry("llama3 (self-hosted)", "llama3"),
 			Entry("unrecognized future model", "some-future-model-9000"),

@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -43,6 +44,7 @@ const (
 	kubeMcpServerRoute       = "kube-mcp-server-route"
 	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
 	fleetRemoteClusterID     = "remote-cluster"
+	fleetHubClusterID        = "hub"
 )
 
 // KubeMCPServerImage is the current Go-native K8s MCP server image.
@@ -204,22 +206,17 @@ type KubeMCPServerAuthConfig struct {
 	// (fleetmetadatacache_e2e.go) set this field.
 	RemoteBridge *RemoteClusterBridgeConfig
 
-	// HubClusterID names the hub-local registration for demo infrastructure.
-	// Empty preserves the existing loopback identity for non-demo callers.
+	// HubClusterID names the additional hub-local registration. Fleet full-pipeline
+	// E2E and the fleet demo set this to "hub" so hub targets also route through
+	// the MCP Gateway; empty preserves loopback-only FMC test topologies.
 	HubClusterID string
 
 	// AllRegistrationsRemote, when true (requires RemoteBridge to be
-	// non-nil), makes ALL THREE registrations (the first one renamed
-	// "remote-cluster" instead of "loopback-cluster", plus prod-east,
-	// prod-west) target the remote bridge instead of only "prod-east" --
-	// and skips deploying a local kube-mcp-server entirely
-	// (deployKubeMCPServerAndRegister). This is the "fleet" full-pipeline
-	// suite's mode: every fleet-routed reconciliation must hit a genuinely
-	// separate Kubernetes control plane (no local/loopback fallback that
-	// could mask the wiring gaps this topology exists to catch -- see
-	// AGENTS.md pyramid invariant). FMC's E2E lanes leave this false,
-	// keeping their narrower "prove isolation via one remote registration"
-	// scope (DD-TEST-013) unaffected.
+	// non-nil), makes the three spoke aliases (remote-cluster, prod-east,
+	// prod-west) target the remote bridge. When HubClusterID is also set, a
+	// separate hub registration uses the local kube-mcp-server. This lets the
+	// fleet suite prove both Gateway-routed hub access and genuine spoke access.
+	// FMC's E2E lanes leave this false, keeping their narrower DD-TEST-013 scope.
 	AllRegistrationsRemote bool
 }
 
@@ -305,13 +302,13 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 // NodePort mapping (31976 for EAIGW MCP) -- already present in
 // kind-fullpipeline-config.yaml.
 //
-// Unlike the FMC E2E lanes' loopback pattern, this suite backs EVERY
-// registration (including the one named "remote-cluster") with a genuinely
-// separate second Kind cluster (AllRegistrationsRemote, DD-TEST-013) so no
-// fleet-routed reconciliation can silently fall back to the primary cluster.
+// Unlike the FMC E2E lanes' loopback pattern, this suite backs every spoke
+// registration (including "remote-cluster") with a genuinely separate second
+// Kind cluster (AllRegistrationsRemote, DD-TEST-013), and separately registers
+// the hub as "hub" so fleet-mode hub targets also route through the Gateway.
 //
-// Total additional memory over fullpipeline: ~388 MB
-// (Istio ~250 MB + Kuadrant ~60 MB + kube-mcp-server ~16 MB + Valkey ~30 MB + FMC ~32 MB).
+// Total additional memory over fullpipeline: ~404 MB
+// (Istio ~250 MB + Kuadrant ~60 MB + two kube-mcp-server deployments ~32 MB + Valkey ~30 MB + FMC ~32 MB).
 //
 // Authority: Issue #54, ADR-068
 // keycloakHostPortDemo is the Kind extraPortMappings host port for Keycloak
@@ -342,7 +339,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet E2E Infrastructure (Issue #54)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Base: Full Pipeline (all services), fleet-enabled from the FIRST helm install (DD-TEST-015)")
-	_, _ = fmt.Fprintln(writer, "  Fleet: Envoy AI Gateway (EAIGW) + chart-managed FMC + Valkey, ALL registrations remote (DD-TEST-013)")
+	_, _ = fmt.Fprintln(writer, "  Fleet: Envoy AI Gateway (EAIGW) + chart-managed FMC + Valkey, hub + remote Gateway registrations")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	cleanStaleTarFiles(writer)
@@ -381,6 +378,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 			Namespace:         namespace,
 			KeycloakNamespace: namespace,
 			GatewayType:       registry.GatewayEAIGW,
+			HubClusterID:      "hub",
 		}, writer)
 		remoteKubeconfigPath = rkp
 		return fleetOpts, err
@@ -390,6 +388,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	if err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, fmt.Errorf("fullpipeline base setup (fleet-enabled) failed: %w", err)
 	}
+	addFleetWorkloadNamespaces(afRemediateNS)
 
 	// DD-FLEET-008 (BR-FLEET-004, Issue #2326): seed one dedicated,
 	// fully-isolated workflow fixture that declares
@@ -418,11 +417,40 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
+	_, _ = fmt.Fprintln(writer, "  Hub tool prefix:    hub__ (EAIGW convention)")
 	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote-cluster__ (EAIGW convention)")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:   %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return builtImages, seededUUIDs, afRemediateNS, remoteKubeconfigPath, nil
+}
+
+// addFleetWorkloadNamespaces allocates isolated namespaces for fleet tests that
+// create remediation targets. The namespaces are returned through the existing
+// synchronized E2E namespace map and are created on both clusters by the suite.
+func addFleetWorkloadNamespaces(namespaces map[string]string) {
+	for key, prefix := range map[string]string{
+		"fleet-signal-ingestion": "fleet-signal",
+		"fleet-dedup":            "fleet-dedup",
+		"fleet-routing":          "fleet-routing",
+		"fleet-journey":          "fleet-journey",
+		"fleet-input-validation": "fleet-input",
+		"fleet-reconstruction":   "fleet-reconstruction",
+		"fleet-cluster-scoped":   "fleet-cluster",
+		"fleet-crashloop":        "fleet-crashloop",
+		"fleet-oomkill":          "fleet-oomkill",
+		"fleet-exec-override":    "fleet-exec",
+		"fleet-ka-local":         "fleet-ka-local",
+		"fleet-ka-remote":        "fleet-ka-remote",
+		"fleet-ka-remote-labels": "fleet-ka-labels",
+		"fleet-organic-gateway":  "fleet-organic-gw",
+	} {
+		namespaces[key] = fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
+	}
+	namespaces["fleet-ka-interactive"] = "fleet-ka-interactive"
+	// Fixed namespace paired with prometheus_alertmanager_e2e.go's
+	// AFHubClusterTriage2394/AFRemoteClusterTriageCollision2394 rules.
+	namespaces["fleet-af-hub-triage"] = "fleet-af-hub-triage"
 }
 
 // buildLLMCredentialsSecretManifest renders the llm-credentials-primary
@@ -553,7 +581,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	}
 	hubClusterID := opts.HubClusterID
 	if hubClusterID == "" {
-		hubClusterID = "hub"
+		hubClusterID = fleetHubClusterID
 	}
 
 	gatewayLabel := gatewayLabelKuadrant
@@ -802,6 +830,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth")
 	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.redeemURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token\n", idpNamespace)
 	_, _ = fmt.Fprintf(writer, "      console.oauth2Proxy.jwksURL=https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs\n", idpNamespace)
+	_, _ = fmt.Fprintln(writer, "      console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}")
 	_, _ = fmt.Fprintln(writer, "    AFTER `helm install`: make bind-fleet-af-rbac KUBECONFIG="+kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "    See ~/.kubernaut/helm/fleet-e2e-values.yaml for the full worked example.")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -822,8 +851,9 @@ type FleetCoreInfraOptions struct {
 	// CreateTestNamespace before invoking provisionFleetCoreInfra).
 	Namespace string
 
-	// HubClusterID enables the demo's hub-local MCP registration. Empty keeps
-	// the full-pipeline fleet suite's remote-only topology unchanged.
+	// HubClusterID enables a separate MCP Gateway registration for the local
+	// hub kube-mcp-server. Fleet E2E sets this to "hub" so hub-targeted AF
+	// remediations exercise the Gateway path too.
 	HubClusterID string
 
 	// KeycloakNamespace is Namespace (kubernautSystem) for the "fleet"/
@@ -859,6 +889,10 @@ type FleetCoreInfraOptions struct {
 	RemoteClusterName string
 }
 
+func shouldPreloadFleetExternalImages(imageRegistry string) bool {
+	return imageRegistry != ""
+}
+
 // provisionFleetCoreInfra deploys Keycloak (IdP), the genuinely separate
 // remote Kind cluster (DD-TEST-013), and the Kuadrant MCP Gateway +
 // kube-mcp-server -- the full fleet-core infrastructure sequence shared by:
@@ -884,7 +918,6 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	gatewayType := opts.GatewayType
 	spokeWorkers := opts.SpokeWorkers
 	var remoteKubeconfigPath string
-
 	// Backward-compatible default (all existing callers pre-dating this
 	// parameter expect Kuadrant), mirroring DeployFleetGatewayInfra's own
 	// zero-value handling.
@@ -909,7 +942,6 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 			HubClusterID: opts.HubClusterID,
 		})
 	}
-
 	// Demo callers share the persistent Keycloak and certificate lifecycle
 	// with the local demo. Ginkgo callers retain their lightweight path.
 	isDemo := keycloakNamespace == idpNamespace
@@ -945,19 +977,6 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		}
 	}
 
-	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
-	// Backs EVERY registration (AllRegistrationsRemote) with a genuinely
-	// separate Kubernetes control plane -- unlike the FMC E2E lane, which
-	// only bridges "prod-east" for isolation testing, this suite's whole
-	// point is that "remote-cluster" (the identity nearly every fleet
-	// test targets) is a genuinely separate physical cluster, not the
-	// primary one.
-	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
-	remoteClusterName := opts.RemoteClusterName
-	if remoteClusterName == "" {
-		remoteClusterName = clusterName + "-remote"
-	}
-	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
 	sharedAuthConfig := KubeMCPServerAuthConfig{
 		Mode:              KubeMCPServerAuthModePassthrough,
 		GatewayType:       gatewayType,
@@ -971,7 +990,18 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		StsScopes:         []string{"k8s-api-audience"},
 		CAFilePath:        "/etc/tls-ca/ca.crt",
 	}
-	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
+	var remoteBridge *RemoteClusterBridgeConfig
+	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
+	// The full Fleet E2E topology backs every spoke registration with a
+	// genuinely separate Kubernetes control plane.
+	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
+	remoteClusterName := opts.RemoteClusterName
+	if remoteClusterName == "" {
+		remoteClusterName = clusterName + "-remote"
+	}
+	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
+	var remoteErr error
+	remoteBridge, remoteErr = SetupRemoteClusterForFMC(ctx, RemoteClusterFMCConfig{
 		PrimaryClusterName:    clusterName,
 		PrimaryKubeconfigPath: kubeconfigPath,
 		RemoteClusterName:     remoteClusterName,
@@ -1038,22 +1068,28 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
 	// EAIGW's controller/CRDs are installed separately (deployEnvoyAIGatewayInfra
 	// applies its own upstream manifests, not preloaded images here) --
-	// kube-mcp-server is the only image both gateways need preloaded.
-	preloadImages := []string{KubeMCPServerImage}
-	if gatewayType != registry.GatewayEAIGW {
-		preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
-	}
-	for _, img := range preloadImages {
-		if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
-			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+	// kube-mcp-server is the only image both gateways need preloaded. Keep the
+	// archive path for CI, where it avoids registry rate limits; local Podman
+	// Kind imports can leave containerd with an unusable temporary image alias.
+	if shouldPreloadFleetExternalImages(os.Getenv("IMAGE_REGISTRY")) {
+		preloadImages := []string{KubeMCPServerImage}
+		if gatewayType != registry.GatewayEAIGW {
+			preloadImages = append(preloadImages, kuadrantControllerImage, kuadrantBrokerImage)
 		}
+		for _, img := range preloadImages {
+			if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+			}
+		}
+	} else {
+		_, _ = fmt.Fprintln(writer, "  ℹ️  Local mode: skipping external image archive preload; Kind will pull images on demand")
 	}
 
 	kubeMCPAuthConfig := sharedAuthConfig
 	kubeMCPAuthConfig.RemoteBridge = remoteBridge
 	kubeMCPAuthConfig.HubClusterID = opts.HubClusterID
-	// Keep the established remote fleet registrations unchanged and add the
-	// hub registration separately for the demo.
+	// Full Fleet E2E keeps every spoke registration backed by the genuinely
+	// remote cluster. Hub-only AF setup uses DeployFleetCoreInfra directly.
 	kubeMCPAuthConfig.AllRegistrationsRemote = true
 
 	// FMC's own client_credentials grant (and every other fleet-aware
@@ -1150,7 +1186,6 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return nil, "", err
 	}
-
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet infrastructure ready")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:        http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
@@ -1778,6 +1813,13 @@ func fleetHubRegistrationIdentity(authConfig KubeMCPServerAuthConfig) (string, s
 	return authConfig.HubClusterID, strings.ReplaceAll(authConfig.HubClusterID, "-", "_") + "_"
 }
 
+// isHubOnlyRegistration identifies the single-cluster Fleet topology used by
+// AF E2E: the local kube-mcp-server is exposed only as its registered hub
+// identity, with no implicit loopback or spoke aliases.
+func isHubOnlyRegistration(authConfig KubeMCPServerAuthConfig) bool {
+	return authConfig.HubClusterID != "" && !authConfig.AllRegistrationsRemote && authConfig.RemoteBridge == nil
+}
+
 // deployEnvoyAIGatewayRegistrations creates the three Backends
 // (hub/remote-cluster/prod-east/prod-west in the demo,
 // remote-cluster/prod-east/prod-west in the full-pipeline suite) plus the
@@ -1786,6 +1828,9 @@ func fleetHubRegistrationIdentity(authConfig KubeMCPServerAuthConfig) (string, s
 
 func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
+	if isHubOnlyRegistration(authConfig) {
+		return deployEnvoyAIGatewayHubOnlyRegistration(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
+	}
 
 	kubeMCPHostname := fmt.Sprintf("kube-mcp-server.%s.svc.cluster.local", namespace)
 	keycloakNamespace := authConfig.KeycloakNamespace
@@ -1975,6 +2020,106 @@ spec:
 		return fmt.Errorf("backend/MCPRoute creation failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "    ✅ Backends + MCPRoute created (%s, prod-east, prod-west, %s)\n", loopbackClusterName, hubClusterName)
+	return nil
+}
+
+// deployEnvoyAIGatewayHubOnlyRegistration creates the single logical hub
+// backend used by isolated Fleet AF E2E topology. The backend intentionally
+// points at this cluster's kube-mcp-server; cluster identity is still explicit
+// (`hub`) and requests reach it through the Gateway, not a local AF client.
+func deployEnvoyAIGatewayHubOnlyRegistration(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	hubClusterName, _ := fleetHubRegistrationIdentity(authConfig)
+	if hubClusterName == "" {
+		return fmt.Errorf("hub cluster identity is required for hub-only Gateway registration")
+	}
+
+	kubeMCPHostname := fmt.Sprintf("kube-mcp-server.%s.svc.cluster.local", namespace)
+	keycloakNamespace := authConfig.KeycloakNamespace
+	if keycloakNamespace == "" {
+		keycloakNamespace = namespace
+	}
+	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", keycloakNamespace)
+	jwksURI := authConfig.AuthorizationURL + "/protocol/openid-connect/certs"
+
+	manifest := strings.TrimSpace(fmt.Sprintf(`---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: keycloak-jwks
+  namespace: %[1]s
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[2]s
+      port: 8443
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: keycloak-jwks-tls
+  namespace: %[1]s
+spec:
+  targetRefs:
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: keycloak-jwks
+  validation:
+    caCertificateRefs:
+    - name: inter-service-ca
+      group: ""
+      kind: ConfigMap
+    hostname: keycloak
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: %[3]s
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+    environment: "hub"
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[4]s
+      port: 8080
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: kube-mcp-server-route
+  namespace: %[1]s
+spec:
+  parentRefs:
+  - name: mcp-gateway
+  path: /mcp
+  backendRefs:
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: %[3]s
+    forwardHeaders:
+    - name: Authorization
+  securityPolicy:
+    oauth:
+      issuer: %[5]q
+      audiences: [%[6]q]
+      jwks:
+        remoteJWKS:
+          uri: %[7]s
+          backendRefs:
+          - group: gateway.envoyproxy.io
+            kind: Backend
+            name: keycloak-jwks
+            port: 8443
+      protectedResourceMetadata:
+        resource: %[8]q
+`, namespace, keycloakHostname, hubClusterName, kubeMCPHostname,
+		authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint))
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("hub-only Gateway registration failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "    ✅ Single hub Gateway registration created (%s)\n", hubClusterName)
 	return nil
 }
 
@@ -2291,6 +2436,20 @@ spec:
     name: %s
     namespace: %s
 `, hubClusterName, namespace, hubClusterPrefix, brokerCredRefYAML, kubeMcpServerRoute, namespace)
+	}
+	if isHubOnlyRegistration(authConfig) {
+		manifestDocuments := make([]string, 0, 3)
+		for _, document := range []string{brokerCredSecretManifest, localRouteManifest, hubRegistrationManifest} {
+			if trimmed := strings.TrimSpace(document); trimmed != "" {
+				manifestDocuments = append(manifestDocuments, trimmed)
+			}
+		}
+		manifest := strings.Join(manifestDocuments, "\n")
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+			return fmt.Errorf("hub-only Gateway registration failed: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "    ✅ Single hub MCPServerRegistration created (%s)\n", hubClusterName)
+		return nil
 	}
 
 	routeManifest := strings.TrimSpace(fmt.Sprintf(`%[2]s%[5]s%[8]s%[11]s---
@@ -3015,6 +3174,10 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	if err != nil {
 		return fmt.Errorf("failed to read inter-service CA from %s: %w", caPEMPath, err)
 	}
+	if apiServerOIDCConfigurationIsCurrent(ctx, nodeName, kubeconfigPath, issuerServiceNamespace, cfg, caPEM) {
+		_, _ = fmt.Fprintln(writer, "  ✅ Existing API server OIDC config and trust root already match; reusing retained cluster")
+		return nil
+	}
 
 	const nodeCAPath = "/etc/kubernetes/pki/oidc-ca.crt"
 	writeCACmd := fmt.Sprintf("cat > %s << 'CAPEM'\n%sCAPEM", nodeCAPath, string(caPEM))
@@ -3108,6 +3271,66 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("API server did not recover after OIDC patching within 120s")
+}
+
+// apiServerOIDCConfigurationIsCurrent is the retry-safe fast path for a
+// retained Kind cluster. Reapplying the same OIDC flags restarts kube-apiserver
+// while its RBAC caches warm; the restart also risks racing the later
+// in-cluster Service lookup. Skip the patch only when the issuer flags, stable
+// Service ClusterIP host alias, and node-side CA all match this run.
+func apiServerOIDCConfigurationIsCurrent(ctx context.Context, nodeName, kubeconfigPath, issuerServiceNamespace string, cfg OIDCPatchConfig, caPEM []byte) bool {
+	issuer, err := url.Parse(cfg.IssuerURL)
+	if err != nil || issuer.Hostname() == "" {
+		return false
+	}
+
+	serviceIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "svc", issuer.Hostname(), "-n", issuerServiceNamespace, "-o", "jsonpath={.spec.clusterIP}")
+	serviceIPOutput, err := serviceIPCmd.Output()
+	if err != nil {
+		return false
+	}
+	serviceIP := strings.TrimSpace(string(serviceIPOutput))
+	if serviceIP == "" {
+		return false
+	}
+
+	const manifestPath = "/etc/kubernetes/manifests/kube-apiserver.yaml"
+	manifestCmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "cat", manifestPath)
+	manifest, err := manifestCmd.Output()
+	if err != nil || !apiServerOIDCManifestMatches(string(manifest), cfg, issuer.Hostname(), serviceIP) {
+		return false
+	}
+
+	const nodeCAPath = "/etc/kubernetes/pki/oidc-ca.crt"
+	nodeCACmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "cat", nodeCAPath)
+	nodeCA, err := nodeCACmd.Output()
+	return err == nil && bytes.Equal(bytes.TrimSpace(nodeCA), bytes.TrimSpace(caPEM))
+}
+
+// apiServerOIDCManifestMatches reports whether the static pod manifest carries
+// the complete OIDC configuration and current issuer Service host alias.
+func apiServerOIDCManifestMatches(manifest string, cfg OIDCPatchConfig, issuerHost, serviceIP string) bool {
+	requiredFlags := []string{
+		"--oidc-username-prefix=" + cfg.UsernamePrefix,
+		"--oidc-username-claim=" + cfg.UsernameClaim,
+		"--oidc-client-id=" + cfg.ClientID,
+		"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt",
+		"--oidc-issuer-url=" + cfg.IssuerURL,
+	}
+	if cfg.GroupsClaim != "" {
+		requiredFlags = append(requiredFlags,
+			"--oidc-groups-prefix="+cfg.GroupsPrefix,
+			"--oidc-groups-claim="+cfg.GroupsClaim)
+	}
+	for _, flag := range requiredFlags {
+		if !strings.Contains(manifest, flag) {
+			return false
+		}
+	}
+
+	hostAlias := fmt.Sprintf("  hostAliases:\n  - ip: %q\n    hostnames:\n    - %q", serviceIP, issuerHost)
+	return strings.Contains(manifest, hostAlias)
 }
 
 // patchAPIServerPodHostsForIssuer resolves the OIDC issuer URL's hostname to

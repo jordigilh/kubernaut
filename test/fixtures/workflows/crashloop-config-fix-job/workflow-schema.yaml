@@ -21,6 +21,7 @@ spec:
     environment: [production, staging, test]
     component: ["*"]
     priority: "*"
+    cluster: ["*"]
   
   execution:
     engine: job

@@ -27,6 +27,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -200,9 +201,27 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		Expect(err).NotTo(HaveOccurred())
 		defer setup.Cleanup()
 
-		By("Creating direct RR to trigger autonomous investigation")
-		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-006")
+		// The FullPipeline default Pod workflow is warning-only. Keep the fixture's
+		// external severity aligned with that catalog label; SP remains the source
+		// of the severity consumed by AIAnalysis and workflow discovery.
+		By("Creating warning-severity direct RR to trigger autonomous investigation")
+		rrName, err := infrastructure.CreateDirectRRWithSeverity(ctx, namespace, "e2e-1293-006", "warning")
 		Expect(err).NotTo(HaveOccurred())
+		By("Verifying SP classified the RR as warning before autonomous investigation")
+		Eventually(func() string {
+			spList := &signalprocessingv1.SignalProcessingList{}
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == rrName {
+					return sp.Status.GetSignalClassification().Severity
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal(signalprocessingv1.SeverityWarning),
+			"E2E-1293-006: the direct RR fixture must classify to the default workflow's warning label")
 
 		By("Waiting for AA to reach Investigating with a KA session that has polled at least once")
 		aaName := waitForAAInvestigating(rrName)

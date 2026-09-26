@@ -107,6 +107,7 @@ var _ = Describe("AF A2A Combined Remediate+Investigate Full Pipeline [E2E-FP-18
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Turn 1 (single message): create AND investigate in one shot (kubernaut_remediate -> kubernaut_investigate chain)")
 		body := fpA2ATasksSend("fp-comb-1",

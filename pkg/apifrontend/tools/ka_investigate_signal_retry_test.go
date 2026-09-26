@@ -154,7 +154,7 @@ var _ = Describe("SignalInteractive bounded retry + fail-closed (#2289)", func()
 					Triager:      defaultTestTriager("prod", "Deployment", "web-2289"),
 					ScopeChecker: testAlwaysManagedScopeChecker(), Auditor: auditRec,
 				}, tools.InvestigateMCPArgs{
-					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2289",
+					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-2289", ClusterID: hubClusterID,
 				},
 				false, "sre-user",
 			)

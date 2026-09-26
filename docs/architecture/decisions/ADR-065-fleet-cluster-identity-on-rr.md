@@ -1,6 +1,6 @@
 # ADR-065: Fleet Cluster Identity on RemediationRequest CRD
 
-**Status**: Partially superseded (see amendment below)
+**Status**: Partially superseded; fleet identity/routing semantics superseded by ADR-068 amendment (2026-09-22)
 **Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted) | 2026-06-19 (Implemented) | 2026-07-08 (Amended)
 **Deciders**: Architecture Team
 **Context**: Fleet remediation requires per-RR cluster identity (#54, #1409)
@@ -14,9 +14,23 @@
 > code samples below referencing `ClusterName` are historical and no longer reflect the current
 > implementation.
 
+> **Amendment (2026-09-20, Issue #2449)**: RemediationOrchestrator no longer performs
+> boot-time cluster discovery. Notification bodies read `RemediationRequest.Spec.ClusterID`
+> for fleet requests and omit the cluster line when it is empty for local requests. The
+> old RO-only discovery implementation and setter wiring were removed because process-level
+> identity cannot safely attribute requests from multiple clusters.
+
+> **Amendment (2026-09-22, ADR-068 fleet routing update)**: In fleet mode,
+> `RemediationRequest.Spec.ClusterID` is the exact MCP Gateway registration name,
+> including the registered hub name (for example, `hub`). The prior kube-system UID
+> source and empty-means-local shortcut are superseded for fleet requests. The hub
+> must be registered in MCP Gateway; AF requires that ID to match the Prometheus
+> `cluster` label, and all fleet reads/writes, including hub-targeted remediation,
+> route through the Gateway. `ClusterName` remains absent as a separate CRD field.
+
 ## Context
 
-Today, cluster identity is only known to RO via boot-time discovery (`pkg/shared/cluster/identity.go` → `kube-system` namespace UID). It's included in notification bodies but not on the RR CRD itself.
+Historically, cluster identity was known to RO via boot-time discovery (`pkg/shared/cluster/identity.go` → `kube-system` namespace UID). RO now reads the authoritative per-request identity from the RR CRD.
 
 For fleet-wide remediation (#54), a central control plane manages RemediationRequests from multiple managed clusters. Services consuming RRs (AF, RO, Console) need to know which cluster a signal originated from without inferring it from their own environment.
 
@@ -65,7 +79,7 @@ type RemediationRequestSpec struct {
 | Service | Usage |
 |---|---|
 | **AF** | Include in `investigation_summary` and `execution_progress` SSE payloads for Console context banner (#1409) |
-| **RO** | Replace boot-time `SetClusterIdentity` with RR-sourced identity in notifications (cleaner, per-RR) |
+| **RO** | Read RR-sourced identity in notifications (cleaner, per-RR) |
 | **Console** | Display cluster in persistent context banner during remediation flows |
 | **Fleet scheduler** (future) | Route RRs to appropriate cluster-scoped workflow executors |
 | **Audit/DS** | Cluster-scoped audit queries and compliance reporting |
@@ -103,7 +117,7 @@ type RemediationRequestSpec struct {
 1. Add fields to CRD spec (`omitempty` — no breaking change)
 2. Update Gateway adapters to populate `clusterID`/`clusterName` at RR creation
 3. AF reads from RR spec when session starts (already fetches RR)
-4. RO migrates from `SetClusterIdentity` to RR field (optional, can keep both during transition)
+4. RO reads the RR field in notification bodies; empty values retain local-mode behavior
 
 ## Implementation Plan
 

@@ -32,7 +32,52 @@ var _ = Describe("Mock LLM transcript wiring", func() {
 		Expect(overrides.TranscriptScenarios[0].Name).To(Equal("af_gitops_interactive_2390"))
 		Expect(overrides.TranscriptScenarios[0].Steps).To(HaveLen(4))
 		Expect(overrides.TranscriptScenarios[0].Steps[0].ToolCall.Name).To(Equal("kubernaut_investigate"))
-		Expect(overrides.TranscriptScenarios[0].Steps[2].ToolCall.Arguments).To(HaveKeyWithValue("workflow_id", "gitops-workflow-uuid"))
+		selectionArguments := overrides.TranscriptScenarios[0].Steps[2].ToolCall.Arguments
+		Expect(selectionArguments).To(HaveKeyWithValue("workflow_id", "gitops-workflow-uuid"))
+		parameters, ok := selectionArguments["parameters"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "GitOps selection must supply declared workflow parameters")
+		Expect(parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"))
 		Expect(overrides.TranscriptScenarios[0].Steps[3].ToolCall.Arguments).To(HaveKeyWithValue("name", "$from_tool:kubernaut_investigate:rr_id"))
+	})
+
+	It("UT-INFRA-FP-1853-001 (BR-INTERACTIVE-010): autonomous chain selects the supplied catalog workflow", func() {
+		raw := "scenario_selectors:\n" + fullInteractiveRemediationScenarioYAML("fp-full-interactive", "consent-staging-uuid", "")
+		var overrides config.Overrides
+		Expect(yaml.Unmarshal([]byte(raw), &overrides)).To(Succeed())
+		Expect(overrides.ScenarioSelectors).To(HaveLen(1))
+
+		selection := overrides.ScenarioSelectors[0].NextToolCall
+		Expect(selection).NotTo(BeNil())
+		Expect(selection.Name).To(Equal("kubernaut_discover_workflows"))
+		Expect(selection.NextToolCall).NotTo(BeNil())
+		Expect(selection.NextToolCall.Name).To(Equal("kubernaut_select_workflow"))
+		Expect(selection.NextToolCall.Arguments).To(HaveKeyWithValue("workflow_id", "consent-staging-uuid"))
+	})
+
+	It("UT-INFRA-FLEET-CONSENT-001 (BR-INTERACTIVE-004): targets the managed Deployment in fleet investigations", func() {
+		raw := "scenario_selectors:\n" +
+			consentGatePhase2AttemptScenarioYAML("fleet-consent-phase2", "remote-cluster") +
+			consentGatePhase3AttemptScenarioYAML("fleet-consent-phase3", "workflow-uuid", "remote-cluster") +
+			fullInteractiveRemediationScenarioYAML("fleet-full-interactive", "workflow-uuid", "remote-cluster")
+		configMapYAML := "data:\n  scenarios.yaml: |\n" + indentYAMLLines(raw, 4)
+		var configMap struct {
+			Data map[string]string `yaml:"data"`
+		}
+		Expect(yaml.Unmarshal([]byte(configMapYAML), &configMap)).To(Succeed())
+		var overrides config.Overrides
+		Expect(yaml.Unmarshal([]byte(configMap.Data["scenarios.yaml"]), &overrides)).To(Succeed())
+		Expect(overrides.ScenarioSelectors).To(HaveLen(3))
+		Expect(overrides.ScenarioSelectors[0].ToolCall.Arguments).To(HaveKeyWithValue("kind", "Deployment"))
+		Expect(overrides.ScenarioSelectors[0].ToolCall.Arguments).To(HaveKeyWithValue("api_version", "apps/v1"))
+		Expect(overrides.ScenarioSelectors[0].ToolCall.Arguments).To(HaveKeyWithValue("cluster_id", "remote-cluster"))
+		Expect(overrides.ScenarioSelectors[2].ToolCall.Name).To(Equal("kubernaut_remediate"))
+		Expect(overrides.ScenarioSelectors[2].ToolCall.Arguments).To(HaveKeyWithValue("kind", "Deployment"))
+		Expect(overrides.ScenarioSelectors[2].ToolCall.Arguments).To(HaveKeyWithValue("cluster_id", "remote-cluster"))
+		Expect(overrides.ScenarioSelectors[2].NextToolCall.Name).To(Equal("kubernaut_watch"))
+		Expect(overrides.ScenarioSelectors[2].NextToolCall.Arguments).To(HaveKeyWithValue("name", "$from_tool:kubernaut_remediate:rr_id"))
+
+		nonFleet := consentGatePhase2AttemptScenarioYAML("fullpipeline", "")
+		Expect(nonFleet).To(ContainSubstring(`kind: "Deployment"`))
+		Expect(nonFleet).To(ContainSubstring(`api_version: "apps/v1"`))
 	})
 })

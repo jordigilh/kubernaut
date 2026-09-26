@@ -94,9 +94,11 @@ func BuildInstruction(namespace string, alertToolsEnabled bool) string {
 		sb.WriteString("for this deployment; if they name a specific resource, offer kubernaut_investigate against it instead.\n")
 	}
 	sb.WriteString("- kubernaut_investigate: use when investigating by resource identity (api_version, kind, name, namespace). ")
-	sb.WriteString("The backend determines the relevant alert via triage.\n")
-	sb.WriteString("- When calling kubernaut_remediate, provide: api_version, namespace, kind, name, description. ")
+	sb.WriteString("For new investigations, provide cluster_id using the MCP Gateway registration name; the hub is registered in fleet mode too. ")
+	sb.WriteString("The backend determines the relevant alert via cluster-scoped triage.\n")
+	sb.WriteString("- When calling kubernaut_remediate, provide: api_version, namespace, kind, name, description, cluster_id. ")
 	sb.WriteString("The namespace is the workload namespace where the target resource lives.\n")
+	sb.WriteString("  cluster_id must match the MCP Gateway registration name and the Prometheus cluster label; this includes the hub in fleet mode.\n")
 	sb.WriteString("  AF auto-resolves the remaining fields:\n")
 	sb.WriteString("  - severity: via the Prometheus severity triage pipeline\n")
 	sb.WriteString("  - signalName: from AlertManager alerts, rule names, or K8s events\n")

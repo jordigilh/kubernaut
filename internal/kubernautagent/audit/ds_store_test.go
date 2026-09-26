@@ -24,6 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -84,6 +85,11 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event.Data["root_owner_name"] = "api-server"
 			event.Data["root_owner_namespace"] = "production"
 			event.Data["owner_chain_length"] = 2
+			event.Data["detected_labels_summary"] = map[string]interface{}{
+				"gitOpsManaged": true,
+				"gitOpsTool":    "argocd",
+			}
+			event.Data["failed_detections"] = []string{}
 			event.Data["remediation_history_fetched"] = true
 
 			err := store.StoreAudit(context.Background(), event)
@@ -101,6 +107,12 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(payload.RootOwnerName).To(Equal("api-server"))
 			Expect(payload.RootOwnerNamespace.Value).To(Equal("production"))
 			Expect(payload.OwnerChainLength).To(Equal(2))
+			labels, ok := payload.DetectedLabelsSummary.Get()
+			Expect(ok).To(BeTrue())
+			Expect(labels.GitOpsManaged.Value).To(BeTrue())
+			Expect(labels.GitOpsTool.Value).To(Equal(ogenclient.DetectedLabelsGitOpsTool_argocd))
+			Expect(payload.FailedDetections.Set).To(BeTrue())
+			Expect(payload.FailedDetections.Value).To(BeEmpty())
 			Expect(payload.RemediationHistoryFetched).To(BeTrue())
 		})
 	})
@@ -248,6 +260,9 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
 				event.Data["error_message"] = test
+				event.Data["error_details"] = sharedaudit.NewErrorDetails(
+					"kubernautagent", "ERR_UPSTREAM_FAILURE", test, true,
+				)
 				event.Data["cluster_id"] = remoteCluster
 				event.Data["phase"] = rca
 				event.Data["cancelled_phase"] = rca
@@ -521,6 +536,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event.Data["component"] = "deployment"
 			event.Data["environment"] = "production"
 			event.Data["priority"] = "P0"
+			event.Data["detected_labels_present"] = true
+			event.Data["detected_labels_json"] = `{"gitOpsManaged":true,"gitOpsTool":"argocd"}`
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -543,6 +560,10 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(filters.Component).To(Equal("deployment"))
 			Expect(filters.Environment).To(Equal("production"))
 			Expect(string(filters.Priority)).To(Equal("P0"))
+			labels, ok := filters.DetectedLabels.Get()
+			Expect(ok).To(BeTrue())
+			Expect(labels.GitOpsManaged.Value).To(BeTrue())
+			Expect(labels.GitOpsTool.Value).To(Equal(ogenclient.DetectedLabelsGitOpsTool_argocd))
 		})
 
 		It("UT-KA-1677-AUDIT-010: builds workflows_listed payload without filters when no signal-context present", func() {

@@ -448,7 +448,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 
 			kind, _ := raw["kind"].(string)
 			switch kind {
-			case "artifact-update":
+			case artifactUpdate:
 				var art taskArtifactUpdate
 				if json.Unmarshal(evt.Result, &art) == nil {
 					artifacts = append(artifacts, art)

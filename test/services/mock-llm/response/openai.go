@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,8 +28,7 @@ import (
 
 // usageFor returns the scenario-scripted Usage when cfg carries a Usage
 // override (issue #2387), falling back to the builder's deterministic
-// default otherwise. BuildMultiToolCallResponse takes no scenario config
-// and always reports its default.
+// default otherwise.
 func usageFor(cfg scenarios.MockScenarioConfig, def openai.Usage) openai.Usage {
 	if cfg.Usage != nil {
 		return openai.Usage{
@@ -79,7 +78,7 @@ func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioCon
 
 // BuildMultiToolCallResponse creates a ChatCompletionResponse with multiple
 // tool calls in a single assistant message, enabling parallel tool execution.
-func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolCallEntry) openai.ChatCompletionResponse {
+func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolCallEntry, cfg scenarios.MockScenarioConfig) openai.ChatCompletionResponse {
 	calls := make([]openai.ToolCall, len(toolEntries))
 	for i, entry := range toolEntries {
 		argsJSON, _ := json.Marshal(entry.Arguments)
@@ -110,7 +109,7 @@ func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolC
 				FinishReason: "tool_calls",
 			},
 		},
-		Usage: openai.Usage{PromptTokens: 500, CompletionTokens: 80, TotalTokens: 580},
+		Usage: usageFor(cfg, openai.Usage{PromptTokens: 500, CompletionTokens: 80, TotalTokens: 580}),
 	}
 }
 
@@ -172,7 +171,11 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case openai.ToolListAvailableActions:
 		return map[string]interface{}{"limit": 100}
 	case openai.ToolListWorkflows:
-		return map[string]interface{}{"action_type": "remediation"}
+		actionType := cfg.ActionType
+		if actionType == "" {
+			actionType = "remediation"
+		}
+		return map[string]interface{}{"action_type": actionType}
 	case openai.ToolGetWorkflow:
 		return map[string]interface{}{"workflow_id": cfg.WorkflowID}
 	case openai.ToolGetResourceContext:
@@ -209,6 +212,9 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"kind":        cfg.ResourceKind,
 			"name":        cfg.ResourceName,
 			"description": "Auto-remediation triggered by AI analysis",
+		}
+		if cfg.ClusterID != "" {
+			args["cluster_id"] = cfg.ClusterID
 		}
 		if cfg.APIVersion != "" {
 			args["api_version"] = cfg.APIVersion
@@ -314,10 +320,10 @@ func rcaOnlyJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	}
 
 	obj := map[string]interface{}{
-		"root_cause_analysis":    rca,
-		"severity":               cfg.Severity,
-		"confidence":             cfg.Confidence,
-		"investigation_outcome":  "actionable",
+		"root_cause_analysis":   rca,
+		"severity":              cfg.Severity,
+		"confidence":            cfg.Confidence,
+		"investigation_outcome": "actionable",
 	}
 	if cfg.InvestigationOutcome != "" {
 		obj["investigation_outcome"] = cfg.InvestigationOutcome
@@ -378,17 +384,25 @@ func randomHex(n int) string {
 // names via the preceding assistant message's ToolCalls ordering.
 func ExtractFieldFromToolResult(messages []openai.Message, toolName, field string) string {
 	var pendingCalls []string
+	callNamesByID := make(map[string]string)
 	for _, m := range messages {
 		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
 			pendingCalls = pendingCalls[:0]
 			for _, tc := range m.ToolCalls {
+				callNamesByID[tc.ID] = tc.Function.Name
 				pendingCalls = append(pendingCalls, tc.Function.Name)
 			}
 			continue
 		}
-		if m.Role == "tool" && m.Content != nil && len(pendingCalls) > 0 {
-			callName := pendingCalls[0]
-			pendingCalls = pendingCalls[1:]
+		if m.Role == "tool" && m.Content != nil && (m.ToolCallID != "" || len(pendingCalls) > 0) {
+			callName := callNamesByID[m.ToolCallID]
+			if m.ToolCallID == "" {
+				if len(pendingCalls) == 0 {
+					continue
+				}
+				callName = pendingCalls[0]
+				pendingCalls = pendingCalls[1:]
+			}
 			if callName != toolName {
 				continue
 			}

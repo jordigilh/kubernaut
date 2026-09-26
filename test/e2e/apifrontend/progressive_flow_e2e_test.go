@@ -31,10 +31,11 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	statusUpdate   = "status-update"
-	completed      = "completed"
-	artifactUpdate = "artifact-update"
-	failed         = "failed"
+	statusUpdate               = "status-update"
+	completed                  = "completed"
+	artifactUpdate             = "artifact-update"
+	failed                     = "failed"
+	investigationSummarySchema = "investigation_summary"
 )
 
 // =============================================================================
@@ -161,7 +162,7 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		earlyRCA := result.earlyRCAEvents[0]
 		meta, ok := earlyRCA["metadata"].(map[string]any)
 		Expect(ok).To(BeTrue(), "early_rca event must have metadata")
-		Expect(meta["type"]).To(Equal("decision"), "metadata.type must be 'decision'")
+		Expect(meta["type"]).To(Equal(decision), "metadata.type must be 'decision'")
 		Expect(meta["schema"]).To(Equal("early_rca"), "metadata.schema must be 'early_rca'")
 		Expect(meta["schema_version"]).To(Equal("1.0"), "metadata.schema_version must be '1.0'")
 	})
@@ -335,7 +336,7 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 					continue
 				}
 				meta, _ := artifact["metadata"].(map[string]any)
-				if meta["schema"] == "investigation_summary" && meta["schema_version"] == "1.0" {
+				if meta["schema"] == investigationSummarySchema && meta["schema_version"] == "1.0" {
 					parts, _ := artifact["parts"].([]any)
 					for _, p := range parts {
 						part, _ := p.(map[string]any)
@@ -446,7 +447,7 @@ var _ = Describe("session_active Fallback RCA Card Content — #1922", Ordered, 
 				continue
 			}
 			meta, _ := artifact["metadata"].(map[string]any)
-			if meta["schema"] != "investigation_summary" {
+			if meta["schema"] != investigationSummarySchema {
 				continue
 			}
 			found = true

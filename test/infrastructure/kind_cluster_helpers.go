@@ -51,6 +51,11 @@ var kindVersionPattern = regexp.MustCompile(`kind v(\d+)\.(\d+)\.(\d+)`)
 // version as the existing control-plane node (appendWorkerNodesToKindConfig).
 var kindNodeImagePattern = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
 
+// kindHostPortPattern matches only Kind extraPortMappings hostPort fields.
+// Container ports and in-cluster service ports must remain unchanged when an
+// isolated E2E run selects a separate host-port block.
+var kindHostPortPattern = regexp.MustCompile(`(?m)^(\s*hostPort:\s*)(\d+)(\s*(?:#.*)?)$`)
+
 // checkKindVersionOutput parses `kind version` output (format: "kind v0.32.0
 // go1.26.4 linux/amd64") and returns an error if the installed CLI is older
 // than the minimum required version. Pure function (no I/O) so it is
@@ -122,6 +127,35 @@ func appendWorkerNodesToKindConfig(kindConfigYAML string, workerCount int) (stri
 		b.WriteString(fmt.Sprintf("- role: worker\n  image: %s\n", image))
 	}
 	return b.String(), nil
+}
+
+// offsetKindHostPorts shifts every Kind extraPortMappings hostPort by offset.
+// This keeps the shared NodePort/service contract intact while allowing two
+// Kind clusters owned by different users to coexist on one host.
+func offsetKindHostPorts(kindConfigYAML string, offset int) (string, error) {
+	if offset == 0 {
+		return kindConfigYAML, nil
+	}
+	if offset < 0 {
+		return "", fmt.Errorf("host port offset must be non-negative")
+	}
+
+	for _, match := range kindHostPortPattern.FindAllStringSubmatch(kindConfigYAML, -1) {
+		port, err := strconv.Atoi(match[2])
+		if err != nil {
+			return "", fmt.Errorf("parse host port %q: %w", match[2], err)
+		}
+		shifted := port + offset
+		if shifted < 1 || shifted > 65535 {
+			return "", fmt.Errorf("host port %d is outside valid range after offset %d", shifted, offset)
+		}
+	}
+
+	return kindHostPortPattern.ReplaceAllStringFunc(kindConfigYAML, func(line string) string {
+		match := kindHostPortPattern.FindStringSubmatch(line)
+		port, _ := strconv.Atoi(match[2]) // validated in the pass above
+		return match[1] + strconv.Itoa(port+offset) + match[3]
+	}), nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -534,6 +568,10 @@ type KindClusterOptions struct {
 	// ProjectRootAsWorkingDir sets working directory to project root (for ./coverdata resolution)
 	ProjectRootAsWorkingDir bool
 
+	// HostPortOffset shifts only extraPortMappings host ports in ConfigPath.
+	// NodePorts and in-cluster service ports remain unchanged.
+	HostPortOffset int
+
 	// ExtraWorkerNodes appends this many `role: worker` node entries to the
 	// Kind config's `nodes:` list at creation time, pinned to the same node
 	// image as the config's existing control-plane node (Issue #2333: some
@@ -629,11 +667,36 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 
 	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", absoluteConfigPath)
 
-	// 3b. Append extra worker nodes if requested (Issue #2333). Only rewrite
-	// the config into a temp file when actually needed -- every existing
-	// caller (ExtraWorkerNodes=0) keeps passing absoluteConfigPath straight
-	// through, unchanged.
+	// 3b. Apply an optional host-port offset before adding worker nodes. The
+	// offset is useful when another user owns a cluster using the default port
+	// block on the same host.
 	kindConfigPath := absoluteConfigPath
+	if opts.HostPortOffset != 0 {
+		configBytes, readErr := os.ReadFile(kindConfigPath)
+		if readErr != nil {
+			return fmt.Errorf("failed to read kind config %s: %w", kindConfigPath, readErr)
+		}
+		configWithOffset, offsetErr := offsetKindHostPorts(string(configBytes), opts.HostPortOffset)
+		if offsetErr != nil {
+			return fmt.Errorf("failed to offset host ports in kind config: %w", offsetErr)
+		}
+		tmpConfig, tmpErr := os.CreateTemp("", fmt.Sprintf("kind-%s-ports-*.yaml", opts.ClusterName))
+		if tmpErr != nil {
+			return fmt.Errorf("failed to create temporary kind config with host-port offset: %w", tmpErr)
+		}
+		defer func() { _ = os.Remove(tmpConfig.Name()) }()
+		if _, writeErr := tmpConfig.WriteString(configWithOffset); writeErr != nil {
+			return fmt.Errorf("failed to write temporary kind config with host-port offset: %w", writeErr)
+		}
+		if closeErr := tmpConfig.Close(); closeErr != nil {
+			return fmt.Errorf("failed to close temporary kind config with host-port offset: %w", closeErr)
+		}
+		kindConfigPath = tmpConfig.Name()
+		_, _ = fmt.Fprintf(writer, "  🔀 Applied host-port offset +%d\n", opts.HostPortOffset)
+	}
+
+	// Append extra worker nodes if requested (Issue #2333). When both options
+	// are used, worker nodes are appended to the already-offset configuration.
 	if opts.ExtraWorkerNodes > 0 {
 		configBytes, readErr := os.ReadFile(absoluteConfigPath)
 		if readErr != nil {

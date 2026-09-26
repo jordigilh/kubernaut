@@ -32,6 +32,7 @@ func fleetExecClusterOverrideConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "fleet_exec_cluster_override", SignalName: "FleetExecClusterOverride2326", Severity: "critical",
 		WorkflowName: "fleet-exec-cluster-override-v1", WorkflowID: uuid.DeterministicUUID("fleet-exec-cluster-override-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Fleet Exec Cluster Override - Increase Memory Limits", Confidence: 0.9,
 		Rationale:    "E2E-FLEET-2326-001 fixture: selected to prove WorkflowExecution.Spec.ClusterID follows the workflow's declared execution cluster, not the signal's origin cluster",
 		RootCause:    "E2E-FLEET-2326-001 synthetic fixture signal (DD-FLEET-008 cross-cluster execution routing coverage)",

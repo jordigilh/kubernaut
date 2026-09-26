@@ -431,7 +431,18 @@ func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string)
 		}
 		// #1635 / DD-LLM-009: dedicated channel, kept distinct from the
 		// EmitReasoningSafe path used by orchestration narration below.
-		_ = launcher.EmitReasoningContentSafe(ctx, text, redacted)
+		if err := launcher.EmitReasoningContentSafe(ctx, text, redacted); err != nil {
+			logr.FromContextOrDiscard(ctx).Error(err, "failed to emit reasoning content event to A2A",
+				"rr_id", extractRRIDFromContext(ctx),
+				"turn", evt.Turn,
+				"phase", evt.Phase)
+		} else {
+			logr.FromContextOrDiscard(ctx).V(1).Info("emitted reasoning content event to A2A",
+				"rr_id", extractRRIDFromContext(ctx),
+				"turn", evt.Turn,
+				"phase", evt.Phase,
+				"redacted", redacted)
+		}
 		return
 	}
 	if text == "" {
@@ -503,7 +514,15 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 				publishTerminalEvent(ctx, router, evt)
 				return
 			}
-			publishSessionEvent(router, evt)
+			subscribers := publishSessionEvent(router, evt)
+			if evt.Type == ka.EventTypeReasoningContentDelta {
+				logr.FromContextOrDiscard(ctx).V(1).Info("WatchTerminalEvents published reasoning content event",
+					"rr_id", rrID,
+					"event_type", evt.Type,
+					"turn", evt.Turn,
+					"phase", evt.Phase,
+					"subscribers", subscribers)
+			}
 		case <-done:
 			drainBufferedTerminalEvent(ctx, events, router)
 			return
@@ -540,10 +559,11 @@ func drainBufferedTerminalEvent(ctx context.Context, events <-chan ka.Investigat
 	}
 }
 
-func publishSessionEvent(router *ka.EventRouter, evt ka.InvestigationEvent) {
+func publishSessionEvent(router *ka.EventRouter, evt ka.InvestigationEvent) int {
 	if router != nil {
-		router.Publish(evt)
+		return router.Publish(evt)
 	}
+	return 0
 }
 
 func publishTerminalEvent(ctx context.Context, router *ka.EventRouter, evt ka.InvestigationEvent) {

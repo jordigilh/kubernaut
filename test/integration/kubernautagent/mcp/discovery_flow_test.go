@@ -496,7 +496,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
 			cr := completer.getCompletedResult()
 			Expect(cr.RCASummary).To(
-				Equal("Unable to determine specific root cause"),
+				Equal("Container exceeded memory limits due to traffic spike"),
 				"must propagate exact RCA from extraction step, not the complete_no_action fallback")
 			Expect(cr.RCASummary).NotTo(
 				Equal("Investigation completed without workflow selection"),

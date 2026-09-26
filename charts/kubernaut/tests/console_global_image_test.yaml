@@ -77,3 +77,16 @@ tests:
       - equal:
           path: spec.template.spec.containers[1].image
           value: harbor.corp/platform/kubernaut-console@sha256:0123456789abcdef
+
+  - it: "IT-HELM-2413-004 (BR-PLATFORM-006): explicit console pullspec overrides the shared image"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      console:
+        imageOverride: quay.io/kubernaut-ai/kubernaut-console:1.6.0-rc16
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: quay.io/kubernaut-ai/kubernaut-console:1.6.0-rc16

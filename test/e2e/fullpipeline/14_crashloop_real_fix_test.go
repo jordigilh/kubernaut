@@ -86,8 +86,11 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 		testNamespace = fmt.Sprintf("fp-e2e-crashloop-%d", time.Now().Unix())
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:   testNamespace,
-				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+				Name: testNamespace,
+				Labels: map[string]string{
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())

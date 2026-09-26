@@ -79,6 +79,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 						"container": "c",
 						"namespace": ns,
 						"severity":  "warning",
+						"cluster":   hubClusterID,
 					},
 					State: "firing",
 				},
@@ -94,7 +95,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(resolver),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "worker",
@@ -157,6 +158,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 						"pod":       "api-server-rs-pod1",
 						"namespace": ns,
 						"severity":  "critical",
+						"cluster":   hubClusterID,
 					},
 					State: "firing",
 				},
@@ -172,7 +174,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(resolver),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "api-server",
@@ -234,6 +236,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 						"pod":       "web-rs-abc",
 						"namespace": ns,
 						"severity":  "high",
+						"cluster":   hubClusterID,
 					},
 					State: "firing",
 				},
@@ -248,7 +251,7 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(severity.NewK8sPodResolver(dynamicClient, logr.Discard())),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web",

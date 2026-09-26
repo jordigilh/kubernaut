@@ -70,7 +70,9 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 	// Helper function to create and reconcile AIAnalysis for approval testing
 	createAndReconcileAIAnalysis := func(signalType, severity string) *aianalysisv1.AIAnalysis {
 		remediationID := fmt.Sprintf("rr-approval-%s", uuid.New().String()[:8])
-		
+		targetName := fmt.Sprintf("approval-target-%s", uuid.New().String()[:8])
+		createITAAAnalysisPodFixture(k8sClient, testNamespace, targetName)
+
 		// Create AIAnalysis CRD directly (no Signal CRD needed for integration tests)
 		aianalysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
@@ -95,7 +97,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 						BusinessPriority: "P1",
 						TargetResource: aianalysisv1.TargetResource{
 							Kind:      "Pod",
-							Name:      "test-pod",
+							Name:      targetName,
 							Namespace: testNamespace,
 						},
 					},
@@ -149,38 +151,38 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			// - alternative_workflows: [alt1, alt2] (E2E-KA-002 validated)
 			result := createAndReconcileAIAnalysis("MOCK_LOW_CONFIDENCE", "high")
 
-		// ========================================
-		// ASSERT: Low confidence triggers terminal failure (BR-AI-050)
-		// ========================================
-		// Per BR-AI-050 + Issue #28: Low confidence (<0.7) transitions to Failed phase
-		Expect(result.Status.Phase).To(Equal("Failed"),
-			"Low confidence (<0.7) transitions to Failed phase per BR-AI-050")
+			// ========================================
+			// ASSERT: Low confidence triggers terminal failure (BR-AI-050)
+			// ========================================
+			// Per BR-AI-050 + Issue #28: Low confidence (<0.7) transitions to Failed phase
+			Expect(result.Status.Phase).To(Equal("Failed"),
+				"Low confidence (<0.7) transitions to Failed phase per BR-AI-050")
 
-		// Human review required for low confidence
-		Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue(),
-			"NeedsHumanReview=true for low confidence scenarios")
+			// Human review required for low confidence
+			Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue(),
+				"NeedsHumanReview=true for low confidence scenarios")
 
-		// Status should indicate low confidence failure
-		Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
-			"Reason should be 'WorkflowResolutionFailed' (umbrella category)")
-		Expect(result.Status.SubReason).To(Equal("LowConfidence"),
-			"SubReason should be 'LowConfidence' for specific failure type")
+			// Status should indicate low confidence failure
+			Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
+				"Reason should be 'WorkflowResolutionFailed' (umbrella category)")
+			Expect(result.Status.SubReason).To(Equal("LowConfidence"),
+				"SubReason should be 'LowConfidence' for specific failure type")
 
-		// Alternative workflows stored for human review context (BR-AUDIT-005 Gap #4)
-		Expect(result.Status.GetRCAResult().AlternativeWorkflows).ToNot(BeEmpty(),
-			"Alternative workflows should be stored for human review context")
-		Expect(len(result.Status.GetRCAResult().AlternativeWorkflows)).To(BeNumerically(">=", 2),
-			"Mock LLM returns at least 2 alternatives for low_confidence scenario")
+			// Alternative workflows stored for human review context (BR-AUDIT-005 Gap #4)
+			Expect(result.Status.GetRCAResult().AlternativeWorkflows).ToNot(BeEmpty(),
+				"Alternative workflows should be stored for human review context")
+			Expect(len(result.Status.GetRCAResult().AlternativeWorkflows)).To(BeNumerically(">=", 2),
+				"Mock LLM returns at least 2 alternatives for low_confidence scenario")
 
-		// Validate alternative structure
-		for _, alt := range result.Status.GetRCAResult().AlternativeWorkflows {
-			Expect(alt.WorkflowID).ToNot(BeEmpty(), "Alternative workflow must have ID")
-			Expect(alt.Rationale).ToNot(BeEmpty(), "Alternative must have rationale")
-		}
+			// Validate alternative structure
+			for _, alt := range result.Status.GetRCAResult().AlternativeWorkflows {
+				Expect(alt.WorkflowID).ToNot(BeEmpty(), "Alternative workflow must have ID")
+				Expect(alt.Rationale).ToNot(BeEmpty(), "Alternative must have rationale")
+			}
 
-		// NOTE: ApprovalContext only populated in Analyzing phase (Completed flow)
-		// Low confidence scenarios transition to Failed without reaching Analyzing
-		// Alternative workflows stored in Status.AlternativeWorkflows for audit trail
+			// NOTE: ApprovalContext only populated in Analyzing phase (Completed flow)
+			// Low confidence scenarios transition to Failed without reaching Analyzing
+			// Alternative workflows stored in Status.AlternativeWorkflows for audit trail
 
 			// ========================================
 			// BUSINESS IMPACT
@@ -226,49 +228,49 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				},
 			}
 
-		for _, tc := range testCases {
-			By(fmt.Sprintf("Testing %s scenario", tc.scenario))
+			for _, tc := range testCases {
+				By(fmt.Sprintf("Testing %s scenario", tc.scenario))
 
-			// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
-			// KA will set human_review_reason based on MockLLM scenario
-			result := createAndReconcileAIAnalysis(tc.signalType, "high")
+				// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
+				// KA will set human_review_reason based on MockLLM scenario
+				result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
-			// #768: no_matching_workflows is now Phase=Completed (successful investigation)
-			// Other low-confidence failures remain Phase=Failed
-			if tc.expectedReason == "no_matching_workflows" {
-				// #768: Completed with AnalysisCompleted/NoMatchingWorkflows
-				Expect(result.Status.Phase).To(Equal("Completed"),
-					fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
-				Expect(result.Status.Reason).To(Equal(aianalysisv1.AIAnalysisReason("AnalysisCompleted")),
-					"Reason should be AnalysisCompleted (#768)")
-				Expect(result.Status.SubReason).To(Equal("NoMatchingWorkflows"))
-				Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue())
-			} else if tc.expectedConfidence < 0.7 || tc.expectedConfidence == 0.0 {
-				// Low confidence / other failure: Terminal failure
-				Expect(result.Status.Phase).To(Equal("Failed"),
-					fmt.Sprintf("Low confidence transitions to Failed for %s", tc.scenario))
+				// #768: no_matching_workflows is now Phase=Completed (successful investigation)
+				// Other low-confidence failures remain Phase=Failed
+				if tc.expectedReason == "no_matching_workflows" {
+					// #768: Completed with AnalysisCompleted/NoMatchingWorkflows
+					Expect(result.Status.Phase).To(Equal("Completed"),
+						fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
+					Expect(result.Status.Reason).To(Equal(aianalysisv1.AIAnalysisReason("AnalysisCompleted")),
+						"Reason should be AnalysisCompleted (#768)")
+					Expect(result.Status.SubReason).To(Equal("NoMatchingWorkflows"))
+					Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue())
+				} else if tc.expectedConfidence < 0.7 || tc.expectedConfidence == 0.0 {
+					// Low confidence / other failure: Terminal failure
+					Expect(result.Status.Phase).To(Equal("Failed"),
+						fmt.Sprintf("Low confidence transitions to Failed for %s", tc.scenario))
 
-				Expect(result.Status.GetReview().NeedsHumanReview).To(Equal(tc.expectedApproval),
-					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
+					Expect(result.Status.GetReview().NeedsHumanReview).To(Equal(tc.expectedApproval),
+						fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
 
-				Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
-					"Reason should be umbrella category per BR-KA-197")
+					Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
+						"Reason should be umbrella category per BR-KA-197")
 
-				expectedSubReason := map[string]string{
-					"llm_parsing_error": "LLMParsingError",
-					"low_confidence":    "LowConfidence",
-				}[tc.expectedReason]
+					expectedSubReason := map[string]string{
+						"llm_parsing_error": "LLMParsingError",
+						"low_confidence":    "LowConfidence",
+					}[tc.expectedReason]
 
-				Expect(result.Status.SubReason).To(Equal(expectedSubReason),
-					fmt.Sprintf("SubReason should be '%s' for %s scenario", expectedSubReason, tc.scenario))
-			} else {
-				// High confidence: Completed phase
-				Expect(result.Status.Phase).To(Equal("Completed"),
-					fmt.Sprintf("High confidence (>=0.7) reaches Completed for %s", tc.scenario))
+					Expect(result.Status.SubReason).To(Equal(expectedSubReason),
+						fmt.Sprintf("SubReason should be '%s' for %s scenario", expectedSubReason, tc.scenario))
+				} else {
+					// High confidence: Completed phase
+					Expect(result.Status.Phase).To(Equal("Completed"),
+						fmt.Sprintf("High confidence (>=0.7) reaches Completed for %s", tc.scenario))
 
-				Expect(result.Status.GetApproval().ApprovalRequired).To(Equal(tc.expectedApproval),
-					fmt.Sprintf("ApprovalRequired should be %v for %s", tc.expectedApproval, tc.scenario))
-			}
+					Expect(result.Status.GetApproval().ApprovalRequired).To(Equal(tc.expectedApproval),
+						fmt.Sprintf("ApprovalRequired should be %v for %s", tc.expectedApproval, tc.scenario))
+				}
 
 				// ========================================
 				// BUSINESS IMPACT
@@ -299,13 +301,13 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				expectedApproval   bool
 				description        string
 			}{
-		{
-			scenario:           "high_confidence_production",
-			signalType:         "OOMKilled",
-			expectedConfidence: 0.95,
-			expectedApproval:   false, // 0.95 >= 0.8 (Rego threshold) → auto-approved
-			description:        "Production with high confidence 0.95 auto-approved (above Rego threshold 0.8)",
-		},
+				{
+					scenario:           "high_confidence_production",
+					signalType:         "OOMKilled",
+					expectedConfidence: 0.95,
+					expectedApproval:   false, // 0.95 >= 0.8 (Rego threshold) → auto-approved
+					description:        "Production with high confidence 0.95 auto-approved (above Rego threshold 0.8)",
+				},
 				{
 					scenario:           "low_confidence_require_approval",
 					signalType:         "MOCK_LOW_CONFIDENCE", // Mock: 0.35
@@ -322,68 +324,68 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				},
 			}
 
-		for _, tc := range testCases {
-			By(fmt.Sprintf("Testing %s: %s", tc.scenario, tc.description))
+			for _, tc := range testCases {
+				By(fmt.Sprintf("Testing %s: %s", tc.scenario, tc.description))
 
-			// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
-			// KA returns MockLLM confidence, Rego policy evaluates for approval
-			result := createAndReconcileAIAnalysis(tc.signalType, "high")
+				// ARRANGE & ACT: Create and reconcile AIAnalysis with specific scenario
+				// KA returns MockLLM confidence, Rego policy evaluates for approval
+				result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
-			// #768: no_matching_workflows (zero confidence + no workflow) is now Completed
-			if tc.scenario == "zero_confidence_require_approval" {
-				// #768: Completed + NeedsHumanReview
-				Expect(result.Status.Phase).To(Equal("Completed"),
-					fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
-				Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue())
-			} else if tc.expectedConfidence < 0.7 {
-				// Low confidence (not no_matching_workflows): Terminal failure
-				Expect(result.Status.Phase).To(Equal("Failed"),
-					fmt.Sprintf("Low confidence (<0.7) transitions to Failed for %s", tc.scenario))
+				// #768: no_matching_workflows (zero confidence + no workflow) is now Completed
+				if tc.scenario == "zero_confidence_require_approval" {
+					// #768: Completed + NeedsHumanReview
+					Expect(result.Status.Phase).To(Equal("Completed"),
+						fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
+					Expect(result.Status.GetReview().NeedsHumanReview).To(BeTrue())
+				} else if tc.expectedConfidence < 0.7 {
+					// Low confidence (not no_matching_workflows): Terminal failure
+					Expect(result.Status.Phase).To(Equal("Failed"),
+						fmt.Sprintf("Low confidence (<0.7) transitions to Failed for %s", tc.scenario))
 
-				if result.Status.GetRCAResult().SelectedWorkflow != nil {
-					Expect(result.Status.GetRCAResult().SelectedWorkflow.Confidence).To(
-						BeNumerically("~", tc.expectedConfidence, 0.05),
-						fmt.Sprintf("Confidence should match MockLLM %s scenario", tc.scenario))
-				}
-
-				Expect(result.Status.GetReview().NeedsHumanReview).To(Equal(tc.expectedApproval),
-					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
-
-			} else {
-				// High confidence: Completed phase (Rego policy evaluation)
-				Expect(result.Status.Phase).To(Equal("Completed"),
-					fmt.Sprintf("High confidence (>=0.7) reaches Completed for %s", tc.scenario))
-
-				// Confidence score matches MockLLM scenario
-				if result.Status.GetRCAResult().SelectedWorkflow != nil {
-					Expect(result.Status.GetRCAResult().SelectedWorkflow.Confidence).To(
-						BeNumerically("~", tc.expectedConfidence, 0.05),
-						fmt.Sprintf("Confidence should match MockLLM %s scenario", tc.scenario))
-				}
-
-				// Approval decision matches expected policy outcome (Rego evaluation)
-				Expect(result.Status.GetApproval().ApprovalRequired).To(Equal(tc.expectedApproval),
-					fmt.Sprintf("ApprovalRequired should be %v for %s", tc.expectedApproval, tc.scenario))
-
-				// Validate approval context for manual review scenarios
-				if tc.expectedApproval {
-					Expect(result.Status.GetApproval().ApprovalContext).ToNot(BeNil(),
-						"ApprovalContext must be populated when approval required")
-					Expect(result.Status.GetApproval().ApprovalContext.ConfidenceScore).To(
-						BeNumerically("~", tc.expectedConfidence, 0.05),
-						"ApprovalContext confidence should match workflow confidence")
-
-					// Confidence level correctly categorized based on actual confidence
-					expectedLevel := "low"
-					if tc.expectedConfidence >= 0.6 && tc.expectedConfidence < 0.8 {
-						expectedLevel = "medium"
-					} else if tc.expectedConfidence >= 0.8 {
-						expectedLevel = "high"
+					if result.Status.GetRCAResult().SelectedWorkflow != nil {
+						Expect(result.Status.GetRCAResult().SelectedWorkflow.Confidence).To(
+							BeNumerically("~", tc.expectedConfidence, 0.05),
+							fmt.Sprintf("Confidence should match MockLLM %s scenario", tc.scenario))
 					}
-					Expect(result.Status.GetApproval().ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel),
-						fmt.Sprintf("Confidence level should be '%s' for score %v", expectedLevel, tc.expectedConfidence))
+
+					Expect(result.Status.GetReview().NeedsHumanReview).To(Equal(tc.expectedApproval),
+						fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
+
+				} else {
+					// High confidence: Completed phase (Rego policy evaluation)
+					Expect(result.Status.Phase).To(Equal("Completed"),
+						fmt.Sprintf("High confidence (>=0.7) reaches Completed for %s", tc.scenario))
+
+					// Confidence score matches MockLLM scenario
+					if result.Status.GetRCAResult().SelectedWorkflow != nil {
+						Expect(result.Status.GetRCAResult().SelectedWorkflow.Confidence).To(
+							BeNumerically("~", tc.expectedConfidence, 0.05),
+							fmt.Sprintf("Confidence should match MockLLM %s scenario", tc.scenario))
+					}
+
+					// Approval decision matches expected policy outcome (Rego evaluation)
+					Expect(result.Status.GetApproval().ApprovalRequired).To(Equal(tc.expectedApproval),
+						fmt.Sprintf("ApprovalRequired should be %v for %s", tc.expectedApproval, tc.scenario))
+
+					// Validate approval context for manual review scenarios
+					if tc.expectedApproval {
+						Expect(result.Status.GetApproval().ApprovalContext).ToNot(BeNil(),
+							"ApprovalContext must be populated when approval required")
+						Expect(result.Status.GetApproval().ApprovalContext.ConfidenceScore).To(
+							BeNumerically("~", tc.expectedConfidence, 0.05),
+							"ApprovalContext confidence should match workflow confidence")
+
+						// Confidence level correctly categorized based on actual confidence
+						expectedLevel := "low"
+						if tc.expectedConfidence >= 0.6 && tc.expectedConfidence < 0.8 {
+							expectedLevel = "medium"
+						} else if tc.expectedConfidence >= 0.8 {
+							expectedLevel = "high"
+						}
+						Expect(result.Status.GetApproval().ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel),
+							fmt.Sprintf("Confidence level should be '%s' for score %v", expectedLevel, tc.expectedConfidence))
+					}
 				}
-			}
 
 				// ========================================
 				// BUSINESS IMPACT

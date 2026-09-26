@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -364,7 +365,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	})
 
 	Describe("IT-KA-433-AP-006: Investigation emits response.failed on LLM error", func() {
-		It("should include error_message and phase in response.failed event", func() {
+		It("should include error_message, phase, and standardized error_details", func() {
 			failingClient := &errorLLMClient{err: fmt.Errorf("LLM timeout after 30s")}
 			inv := investigator.New(investigator.Config{
 				Client: failingClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -381,6 +382,13 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			Expect(first.Data["phase"]).To(Equal("rca"))
 			Expect(first.EventAction).To(Equal(audit.ActionResponseFailed))
 			Expect(first.EventOutcome).To(Equal(audit.OutcomeFailure))
+			errorDetails, ok := first.Data["error_details"].(*sharedaudit.ErrorDetails)
+			Expect(ok).To(BeTrue())
+			Expect(errorDetails.Message).To(Equal("LLM timeout after 30s"))
+			Expect(errorDetails.Code).To(Equal("ERR_UPSTREAM_TIMEOUT"))
+			Expect(errorDetails.Component).To(Equal("kubernautagent"))
+			Expect(errorDetails.RetryPossible).To(BeTrue())
+			Expect(eventsOfType(audit.EventTypeResponseComplete)).To(BeEmpty())
 		})
 	})
 

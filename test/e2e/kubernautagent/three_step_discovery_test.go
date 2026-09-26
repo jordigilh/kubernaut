@@ -100,6 +100,11 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// BEHAVIOR: Workflow selected via three-step discovery
 			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
 				"selectedWorkflow must be present — three-step discovery should find oomkill-increase-memory-v1")
+			// DataStorage assigns the catalog UUID from the seeded workflow content;
+			// assert the stable workflow identity rather than a retired deterministic ID.
+			Expect(string(incidentResp.SelectedWorkflow.Raw)).To(ContainSubstring(
+				`"workflow_name":"oomkill-increase-memory-v1"`),
+				"selectedWorkflow must be the workflow returned by list_workflows")
 
 			// CORRECTNESS: Confident recommendation (Mock LLM oomkilled scenario returns 0.95)
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.10),
@@ -140,8 +145,9 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 				Severity:              "high",
 				SignalSource:          "kubernetes",
 				ResourceNamespace:     "staging",
-				ResourceKind:          "Pod",
-				ResourceName:          "worker-pod-xyz",
+				ResourceKind:          "Deployment",
+				ResourceAPIVersion:    "apps/v1",
+				ResourceName:          "worker",
 				ErrorMessage:          "Container failing due to config error - testing three-step variant",
 				Environment:           "production",
 				Priority:              "P1",
@@ -160,6 +166,9 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// ========================================
 			Expect(incidentResp.SelectedWorkflow).ToNot(BeNil(),
 				"selectedWorkflow must be present for CrashLoop via three-step discovery")
+			Expect(string(incidentResp.SelectedWorkflow.Raw)).To(ContainSubstring(
+				`"workflow_name":"crashloop-config-fix-v1"`),
+				"selectedWorkflow must be the workflow returned by list_workflows")
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Confidence should be ~0.95 for CrashLoop scenario")
 

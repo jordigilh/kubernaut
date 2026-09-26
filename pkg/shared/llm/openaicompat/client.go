@@ -225,6 +225,11 @@ func buildRequestBody(model string, req Request, stream bool) map[string]any {
 			},
 		}
 	}
+	if stream {
+		body["stream_options"] = map[string]any{
+			"include_usage": true,
+		}
+	}
 	applyEffort(body, req.Effort, req.EffortDialect)
 	return body
 }

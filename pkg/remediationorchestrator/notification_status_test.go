@@ -151,7 +151,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			body := nc.BuildGlobalTimeoutBody(
-				"HighCPUAlert", "test-rr-628-006", "Executing",
+				"HighCPUAlert", "test-rr-628-006", "", "Executing",
 				"30m", "2026-04-09T10:00:00Z", "2026-04-09T10:30:00Z",
 			)
 
@@ -179,7 +179,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			body := nc.BuildPhaseTimeoutBody(
-				"HighMemAlert", "test-rr-628-007", "AIAnalysis",
+				"HighMemAlert", "test-rr-628-007", "", "AIAnalysis",
 				"15m", "2026-04-09T11:00:00Z", "2026-04-09T11:15:00Z",
 			)
 
@@ -242,8 +242,8 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 				{label: "Manual Review", body: reviewNR.Spec.Body},
 				{label: "Approval", body: approvalNR.Spec.Body},
 				{label: "Self-Resolved", body: selfNR.Spec.Body},
-				{label: "Global Timeout", body: nc.BuildGlobalTimeoutBody("sig", "rr", "Executing", "30m", "t0", "t1")},
-				{label: "Phase Timeout", body: nc.BuildPhaseTimeoutBody("sig", "rr", "AI", "15m", "t0", "t1")},
+				{label: "Global Timeout", body: nc.BuildGlobalTimeoutBody("sig", "rr", "", "Executing", "30m", "t0", "t1")},
+				{label: "Phase Timeout", body: nc.BuildPhaseTimeoutBody("sig", "rr", "", "AI", "15m", "t0", "t1")},
 			}
 
 			for _, tc := range cases {

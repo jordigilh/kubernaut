@@ -25,6 +25,7 @@ ARG BUILD_DATE=unknown
 USER root
 RUN dnf install -y git ca-certificates tzdata && \
 	dnf clean all
+RUN mkdir -p /tmp && chmod 1777 /tmp
 USER 1001
 
 WORKDIR /opt/app-root/src
@@ -56,6 +57,7 @@ FROM scratch AS production
 COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /tmp /tmp
 COPY --from=builder /opt/app-root/src/apifrontend /apifrontend
 USER 65534
 EXPOSE 8443 8081 9090
@@ -89,6 +91,7 @@ LABEL name="kubernaut-apifrontend" \
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:04febb4a74cc9ef3eca05ef851d92957276cc6e82fe8cb1ee44abf5114d440d8 AS development
 RUN microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
+RUN mkdir -p /tmp && chmod 1777 /tmp
 RUN useradd -r -u 1001 -g root apifrontend-user
 COPY --from=builder /opt/app-root/src/apifrontend /usr/local/bin/apifrontend
 RUN chmod +x /usr/local/bin/apifrontend

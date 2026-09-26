@@ -26,7 +26,7 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 	)
 
 	BeforeEach(func() {
-		dsAuditURL = getEnvOrDefault("AF_E2E_DS_AUDIT_URL", "https://localhost:8089/api/v1/audit/events")
+		dsAuditURL = getEnvOrDefault("AF_E2E_DS_AUDIT_URL", e2eHostURL("https", 8089)+"/api/v1/audit/events")
 
 		var err error
 		authToken, err = fetchDEXTokenForPersona("sre")
@@ -34,7 +34,7 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 		mcpSessionID, err = initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
 
-		kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
+		kubeconfigPath := getEnvOrDefault("AF_E2E_KUBECONFIG", os.Getenv("HOME")+"/.kube/"+e2eClusterName+"-config")
 		saToken, saErr := kinfra.GetServiceAccountToken(context.Background(), e2eNamespace, "apifrontend", kubeconfigPath)
 		Expect(saErr).NotTo(HaveOccurred(), "SA token for DS audit auth")
 

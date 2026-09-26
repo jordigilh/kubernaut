@@ -1086,7 +1086,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet, fleetmetadatacache-kuadrant, fleetmetadatacache-eaigw]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, apifrontend-fleet, fullpipeline, fleet, fleetmetadatacache-kuadrant, fleetmetadatacache-eaigw]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -1125,6 +1125,13 @@ jobs:
           - service: apifrontend
             service_name: "API Frontend"
             timeout: 25
+            ginkgo_label: "!fleet-mode-af"
+            af_e2e_lane: local
+          - service: apifrontend-fleet
+            service_name: "API Frontend (Fleet mode)"
+            timeout: 25
+            ginkgo_label: fleet-mode-af
+            af_e2e_lane: fleet
           - service: fullpipeline
             service_name: "Full Pipeline"
             # Issue #1802 investigation: baseline suite runtime was already
@@ -1163,7 +1170,7 @@ jobs:
           submodules: true
 
       - name: Free disk space (E2E jobs need headroom for Kind + images)
-        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet' || matrix.service == 'apifrontend-fleet'
         run: |
           echo "Disk before cleanup:"
           df -h /
@@ -1208,8 +1215,8 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
-      - name: Install Helm (fleet/fleetmetadatacache-kuadrant/fleetmetadatacache-eaigw E2E deploy Istio/Kuadrant/Envoy AI Gateway via helm)
-        if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
+      - name: Install Helm (Fleet E2E lanes deploy Istio/Kuadrant/Envoy AI Gateway via helm)
+        if: matrix.service == 'apifrontend-fleet' || matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: latest
@@ -1246,6 +1253,9 @@ jobs:
       # matrix.timeout budget (job-level timeout-minutes below), which is more time
       # than any individual retry attempt got before.
       - name: Run ${{ matrix.service }} E2E tests
+        env:
+          GINKGO_LABEL: ${{ matrix.ginkgo_label }}
+          AF_E2E_LANE: ${{ matrix.af_e2e_lane }}
         run: make test-e2e-${{ matrix.service }}
       
       - name: Calculate and save E2E coverage
@@ -1360,75 +1370,6 @@ jobs:
       - name: Cleanup containers
         if: always()
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  # ========================================
-  # RCA DOSSIER (NON-BLOCKING)
-  # Runs after the E2E matrix only when a test failed. Engram downloads the
-  # failed job log and must-gather artifact transiently, builds a deterministic
-  # RR-scoped dossier, and uploads only the compact result. This job
-  # is intentionally not part of merge-gate: an RCA outage must never hide the
-  # original test failure or change branch protection semantics.
-  # ========================================
-
-  rca-dossier:
-    name: Generate RCA Dossier
-    needs: [detect-changes, e2e-tests]
-    if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.e2e-tests.result == 'failure'
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    container: quay.io/jordigilh/engram:latest
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Inventory this failed workflow run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 -m engram.pipeline.kubernaut_corpus_inventory \
-            --repo "${{ github.repository }}" \
-            --run-id "${{ github.run_id }}" \
-            --output corpus-inventory.json
-
-      - name: Generate compact RCA dossier
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 -m engram.pipeline.kubernaut_rca_backfill \
-            --inventory corpus-inventory.json \
-            --output rca-output \
-            --limit 1 \
-            --dossiers-only
-
-      - name: Publish RCA summary
-        if: always()
-        run: |
-          if [ -f rca-output/baseline-metrics.json ]; then
-            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          from pathlib import Path
-          metrics = json.loads(Path("rca-output/baseline-metrics.json").read_text())["metrics"]
-          print("## Engram RCA candidate")
-          print(f"- Dossiers generated: {metrics['dossiers_generated']}")
-          print(f"- Candidates promoted: {metrics['candidates_promoted']}")
-          print(f"- Promotion skipped by quality gate: {metrics['promotion_skipped_quality']}")
-          print(f"- Environment/setup failures: {metrics['environment_setup_failures']}")
-          print(f"- Unresolved failures: {metrics['unresolved_failures']}")
-          PY
-          fi
-
-      - name: Upload compact RCA output
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: rca-dossiers-${{ github.run_id }}
-          path: |
-            corpus-inventory.json
-            rca-output/baseline-metrics.json
-            rca-output/failure-anchors.jsonl
-            rca-output/**/*.json
-          retention-days: 14
-          if-no-files-found: warn
 
   # ========================================
   # HELM SMOKE TESTS
@@ -2617,6 +2558,76 @@ jobs:
             echo "⚠️  Some tests were skipped or had issues (see above)"
             exit 1
           fi
+
+  # ========================================
+  # RCA DOSSIER (NON-BLOCKING)
+  # Runs after the test summary so all runtime test jobs have finished and
+  # uploaded their failure logs and must-gather artifacts. Engram downloads the
+  # failed job log and must-gather artifact transiently, builds a deterministic
+  # RR-scoped dossier, and uploads only the compact result. This job is
+  # intentionally not part of merge-gate: an RCA outage must never hide the
+  # original test failure or change branch protection semantics.
+  # ========================================
+
+  rca-dossier:
+    name: Generate RCA Dossier
+    needs: [detect-changes, summary]
+    if: always() && needs.detect-changes.outputs.code_changed == 'true' && needs.summary.result == 'failure'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    container: quay.io/jordigilh/engram:latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Inventory this failed workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m engram.pipeline.kubernaut_corpus_inventory \
+            --repo "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --output corpus-inventory.json
+
+      - name: Generate compact RCA dossier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m engram.pipeline.kubernaut_rca_backfill \
+            --inventory corpus-inventory.json \
+            --output rca-output \
+            --limit 1 \
+            --dossiers-only
+
+      - name: Publish RCA summary
+        if: always()
+        run: |
+          if [ -f rca-output/baseline-metrics.json ]; then
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          metrics = json.loads(Path("rca-output/baseline-metrics.json").read_text())["metrics"]
+          print("## Engram RCA candidate")
+          print(f"- Dossiers generated: {metrics['dossiers_generated']}")
+          print(f"- Candidates promoted: {metrics['candidates_promoted']}")
+          print(f"- Promotion skipped by quality gate: {metrics['promotion_skipped_quality']}")
+          print(f"- Environment/setup failures: {metrics['environment_setup_failures']}")
+          print(f"- Unresolved failures: {metrics['unresolved_failures']}")
+          PY
+          fi
+
+      - name: Upload compact RCA output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rca-dossiers-${{ github.run_id }}
+          path: |
+            corpus-inventory.json
+            rca-output/baseline-metrics.json
+            rca-output/failure-anchors.jsonl
+            rca-output/**/*.json
+          retention-days: 14
+          if-no-files-found: warn
 
   # ========================================
   # MERGE GATE (single required check)

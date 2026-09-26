@@ -27,6 +27,7 @@ func standaloneExecClusterIDConfig() MockScenarioConfig {
 		SignalName:           "StandaloneExecutionCluster2378",
 		Severity:             "critical",
 		WorkflowName:         "standalone-exec-cluster-id-v1",
+		ActionType:           "IncreaseMemoryLimits",
 		WorkflowID:           uuid.DeterministicUUID("standalone-exec-cluster-id-v1"),
 		WorkflowTitle:        "Standalone Execution Cluster ID - Increase Memory Limits",
 		Confidence:           0.9,

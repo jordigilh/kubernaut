@@ -77,8 +77,8 @@ var _ = Describe("UT-MOCK-KA-018: ka_interactive_fleet_bridge_e2e must not be hi
 		// "- Resource: <ns>/<kind>/<name>" line RenderInvestigation's
 		// incident_investigation.tmpl renders into the system prompt from
 		// prompt.SignalData.ResourceName.
-		prompt := "investigate: high kainteractivefleetbridgegrounding in kubernaut-system — memory pressure detected\n" +
-			"- resource: kubernaut-system/deployment/ka-interactive-fleet-target"
+		prompt := "investigate: high kainteractivefleetbridgegrounding in fleet-ka-interactive — memory pressure detected\n" +
+			"- resource: fleet-ka-interactive/deployment/ka-interactive-fleet-target"
 		ctx := &scenarios.DetectionContext{
 			Content:         prompt,
 			AllText:         prompt,
@@ -98,8 +98,8 @@ var _ = Describe("UT-MOCK-KA-018: ka_interactive_fleet_bridge_e2e must not be hi
 	It("UT-MOCK-KA-018-002: autonomous-phase turn (no interactive keyword) never returns ForceText, so RCA can conclude via submit_result", func() {
 		registry := scenarios.DefaultRegistryFull(overrides, "")
 
-		prompt := "investigate: high kainteractivefleetbridgegrounding in kubernaut-system — memory pressure detected\n" +
-			"- resource: kubernaut-system/deployment/ka-interactive-fleet-target"
+		prompt := "investigate: high kainteractivefleetbridgegrounding in fleet-ka-interactive — memory pressure detected\n" +
+			"- resource: fleet-ka-interactive/deployment/ka-interactive-fleet-target"
 		ctx := &scenarios.DetectionContext{
 			Content:         prompt,
 			AllText:         prompt,

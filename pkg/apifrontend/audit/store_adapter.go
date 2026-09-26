@@ -10,6 +10,7 @@ import (
 
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 const eventTypePrefix = "apifrontend."
@@ -109,6 +110,24 @@ func detailStrSlice(d map[string]string, key string) []string {
 		return nil
 	}
 	return []string{v}
+}
+
+func errorDetails(e *Event) ogenclient.ErrorDetails {
+	details := e.ErrorDetails
+	if details == nil {
+		message := detailStr(e.Detail, "error")
+		if message == "" {
+			message = "unknown audit failure"
+		}
+		details = sharedtypes.NewErrorDetails(
+			"apifrontend", "ERR_INTERNAL_UNKNOWN", message, false,
+		)
+	}
+	converted, ok := sharedtypes.ToOgenOptErrorDetails(details).Get()
+	if !ok {
+		return ogenclient.ErrorDetails{}
+	}
+	return converted
 }
 
 var typedPayloadEvents = map[EventType]bool{
@@ -392,10 +411,11 @@ func buildA2ATaskCompletedPayload(e *Event) ogenclient.AuditEventRequestEventDat
 func buildA2ATaskFailedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 	d := e.Detail
 	payload := ogenclient.ApifrontendA2ATaskFailedPayload{
-		EventType: ogenclient.ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed,
-		SessionID: detailStr(d, "session_id"),
-		TaskID:    detailStr(d, "task_id"),
-		Error:     detailStr(d, "error"),
+		EventType:    ogenclient.ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed,
+		SessionID:    detailStr(d, "session_id"),
+		TaskID:       detailStr(d, "task_id"),
+		Error:        detailStr(d, "error"),
+		ErrorDetails: errorDetails(e),
 	}
 	if v := detailStr(d, "rr_name"); v != "" {
 		payload.RrName = ogenclient.NewOptString(v)
@@ -466,9 +486,10 @@ func buildSeverityTriageCompletedPayload(e *Event) ogenclient.AuditEventRequestE
 func buildSeverityTriageFailedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 	d := e.Detail
 	return ogenclient.NewApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData(ogenclient.ApifrontendSeverityTriageFailedPayload{
-		EventType:  ogenclient.ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed,
-		Error:      detailStr(d, "error"),
-		FailedTier: ogenclient.NewOptString(detailStr(d, "failed_tier")),
+		EventType:    ogenclient.ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed,
+		Error:        detailStr(d, "error"),
+		ErrorDetails: errorDetails(e),
+		FailedTier:   ogenclient.NewOptString(detailStr(d, "failed_tier")),
 	})
 }
 

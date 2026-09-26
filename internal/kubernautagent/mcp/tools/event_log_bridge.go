@@ -121,10 +121,19 @@ func (b *EventLogBridge) forward(evt session.InvestigationEvent) {
 		level = "error"
 	}
 
-	if logErr := b.logFn(level, "kubernaut-investigate", data); logErr != nil {
+	logErr := b.logFn(level, "kubernaut-investigate", data)
+	if logErr != nil {
 		b.logger.Error(logErr, "sess.Log delivery failed",
 			"investigation_session_id", b.sessionID,
 			"event_type", evt.Type,
 			"seq", seq)
+	} else if evt.Type == session.EventTypeReasoningContentDelta {
+		// Keep this boundary observable without logging the sensitive payload.
+		b.logger.V(1).Info("EventLogBridge delivered reasoning content event",
+			"investigation_session_id", b.sessionID,
+			"event_type", evt.Type,
+			"seq", seq,
+			"turn", evt.Turn,
+			"phase", evt.Phase)
 	}
 }

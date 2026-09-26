@@ -52,20 +52,26 @@ var _ = Describe("Override Wiring Integration", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := chatRequestWithTools(
-				"- Signal Name: OOMKilled\n- Namespace: default",
-				[]string{openai.ToolListAvailableActions, openai.ToolListWorkflows, openai.ToolGetWorkflow},
-			)
+			messages := []openai.Message{{Role: "user", Content: stringPointer("- Signal Name: OOMKilled\n- Namespace: default")}}
+			tools := []openai.Tool{
+				{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolListAvailableActions}},
+				{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolListWorkflows}},
+				{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolGetWorkflow}},
+			}
 
-			// Step through three-step mode to reach get_workflow which carries the UUID
+			// Step through the real provider transcript to reach get_workflow.
 			for i := 0; i < 3; i++ {
-				resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
+				request := openai.ChatCompletionRequest{Model: "mock-model", Messages: messages, Tools: tools}
+				body, err := json.Marshal(request)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
 				Expect(err).NotTo(HaveOccurred())
 
 				var result openai.ChatCompletionResponse
 				Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
 				resp.Body.Close()
 
+				Expect(result.Choices).To(HaveLen(1))
 				if result.Choices[0].FinishReason == "tool_calls" &&
 					result.Choices[0].Message.ToolCalls[0].Function.Name == openai.ToolGetWorkflow {
 					var args map[string]interface{}
@@ -76,11 +82,18 @@ var _ = Describe("Override Wiring Integration", func() {
 					return
 				}
 
-				body = chatRequestWithToolResult(
-					"- Signal Name: OOMKilled\n- Namespace: default",
-					[]string{openai.ToolListAvailableActions, openai.ToolListWorkflows, openai.ToolGetWorkflow},
-					i+1,
-				)
+				assistant := result.Choices[0].Message
+				Expect(assistant.ToolCalls).To(HaveLen(1))
+				toolName := assistant.ToolCalls[0].Function.Name
+				payload := `{"actions":[]}`
+				if toolName == openai.ToolListWorkflows {
+					payload = `{"workflows":[{"workflow_id":"custom-uuid-from-override"}]}`
+				}
+				messages = append(messages, assistant, openai.Message{
+					Role:       "tool",
+					ToolCallID: assistant.ToolCalls[0].ID,
+					Content:    stringPointer(payload),
+				})
 			}
 			Fail("get_workflow tool call with overridden UUID not found in 3 steps")
 		})
@@ -161,7 +174,7 @@ var _ = Describe("Override Wiring Integration", func() {
 				"override keyed by WorkflowName:environment should apply to matching scenario")
 		})
 
-		It("should prefer :production override when multiple environments exist", func() {
+		It("should reject an ambiguous override when multiple environments exist", func() {
 			tmpDir := GinkgoT().TempDir()
 			overridePath := filepath.Join(tmpDir, "overrides.yaml")
 			Expect(os.WriteFile(overridePath, []byte(`scenarios:
@@ -181,8 +194,8 @@ var _ = Describe("Override Wiring Integration", func() {
 
 			withCfg, ok := crashScenario.(scenarios.ScenarioWithConfig)
 			Expect(ok).To(BeTrue())
-			Expect(withCfg.Config().WorkflowID).To(Equal("uuid-production"),
-				":production override should take precedence over other environments")
+			Expect(withCfg.Config().WorkflowID).To(Equal(uuid.DeterministicUUID("crashloop-config-fix-v1")),
+				"ambiguous environment overrides must not select an arbitrary environment")
 		})
 	})
 
@@ -224,40 +237,6 @@ var _ = Describe("Override Wiring Integration", func() {
 	})
 })
 
-func chatRequestWithTools(content string, toolNames []string) *bytes.Buffer {
-	return chatRequest(content, toolNames)
-}
-
-func chatRequestWithToolResult(content string, toolNames []string, toolResultCount int) *bytes.Buffer {
-	messages := []map[string]interface{}{
-		{"role": "user", "content": content},
-	}
-	for i := 0; i < toolResultCount; i++ {
-		messages = append(messages, map[string]interface{}{
-			"role":         "tool",
-			"content":      `{"result": "ok"}`,
-			"tool_call_id": "call_test",
-		})
-	}
-
-	req := map[string]interface{}{
-		"model":    "mock-model",
-		"messages": messages,
-	}
-	if len(toolNames) > 0 {
-		tools := make([]map[string]interface{}, len(toolNames))
-		for i, name := range toolNames {
-			tools[i] = map[string]interface{}{
-				"type": "function",
-				"function": map[string]interface{}{
-					"name":        name,
-					"description": "test",
-					"parameters":  map[string]interface{}{},
-				},
-			}
-		}
-		req["tools"] = tools
-	}
-	data, _ := json.Marshal(req)
-	return bytes.NewBuffer(data)
+func stringPointer(value string) *string {
+	return &value
 }

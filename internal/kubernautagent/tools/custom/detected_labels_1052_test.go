@@ -86,7 +86,32 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", f
 		})
 	})
 
-	Describe("UT-KA-1052-003: list_available_actions omits DetectedLabels when empty", func() {
+	Describe("UT-KA-1052-003: get_workflow forwards DetectedLabelsJSON to discovery filters", func() {
+		It("should set filters.DetectedLabels from SignalContext.DetectedLabelsJSON", func() {
+			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
+				Severity:           "critical",
+				ResourceKind:       "Deployment",
+				Environment:        "production",
+				Priority:           "P0",
+				RemediationID:      "rr-1052-003",
+				DetectedLabelsJSON: detectedLabelsJSON,
+			})
+
+			allTools := newTestTools(fake)
+			getWorkflow := allTools[2]
+
+			_, err := getWorkflow.Execute(ctx, json.RawMessage(`{"workflow_id":"550e8400-e29b-41d4-a716-446655440000"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fake.getWorkflowFilters).NotTo(BeNil())
+			Expect(fake.getWorkflowFilters.DetectedLabels).NotTo(BeNil(),
+				"DetectedLabels must be set on get_workflow filters when SignalContext carries DetectedLabelsJSON")
+			Expect(fake.getWorkflowFilters.DetectedLabels.GitOpsManaged).To(BeTrue())
+			Expect(fake.getWorkflowFilters.DetectedLabels.GitOpsTool).To(Equal("argocd"))
+		})
+	})
+
+	Describe("UT-KA-1052-004: list_available_actions omits DetectedLabels when empty", func() {
 		It("should not set filters.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:     "critical",
@@ -106,7 +131,7 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", f
 		})
 	})
 
-	Describe("UT-KA-1052-004: list_workflows omits DetectedLabels when empty", func() {
+	Describe("UT-KA-1052-005: list_workflows omits DetectedLabels when empty", func() {
 		It("should not set filters.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:     "critical",
@@ -126,7 +151,7 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", f
 		})
 	})
 
-	Describe("UT-KA-1052-005: DetectedLabelsJSON round-trips through SignalContext", func() {
+	Describe("UT-KA-1052-006: DetectedLabelsJSON round-trips through SignalContext", func() {
 		It("should store and retrieve DetectedLabelsJSON via context", func() {
 			signal := katypes.SignalContext{
 				Severity:           "high",
@@ -144,7 +169,7 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", f
 		})
 	})
 
-	Describe("UT-KA-1052-006: empty enrichment DetectedLabels produces no filter on tools", func() {
+	Describe("UT-KA-1052-007: empty enrichment DetectedLabels produces no filter on tools", func() {
 		It("should not set DetectedLabels on either tool when DetectedLabelsJSON is zero-value", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:           "critical",

@@ -32,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -49,12 +50,13 @@ import (
 // Turn 2: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
 // Turn 3: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
 // Turn 4: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
+// BR-INTERACTIVE-009: selected workflow parameter values must flow through to execution.
 var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-2390"), Serial, func() {
 
 	It("should complete 4-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive"]
 		Expect(targetNS).NotTo(BeEmpty(), "interactive namespace must be set by SynchronizedBeforeSuite")
-		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:production"]
+		gitOpsWorkflowUUID, ok := workflowUUIDs["gitops-drift-2390-v1:staging"]
 		Expect(ok).To(BeTrue(), "E2E-FP-2390-001: GitOps workflow must be seeded")
 		Expect(gitOpsWorkflowUUID).NotTo(BeEmpty(), "E2E-FP-2390-001: GitOps workflow UUID must be populated")
 		By("Verifying AF is reachable")
@@ -111,6 +113,7 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		By("Grounding the interactive investigation with a synthetic GitOps signal event")
 		Expect(k8sClient.Create(ctx, &corev1.Event{
@@ -186,6 +189,24 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		Expect(taskID).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
+		By("Verifying SignalProcessing classifies the severity-grounding alert before workflow discovery")
+		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
+		Expect(rrName).NotTo(BeEmpty())
+		Eventually(func() string {
+			spList := &signalprocessingv1.SignalProcessingList{}
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == rrName {
+					return sp.Status.GetSignalClassification().Severity
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal(signalprocessingv1.SeverityWarning),
+			"E2E-FP-2390-001: the SP-derived severity must match the GitOps workflow's warning label")
+
 		By("Turn 2: discover available workflows")
 		body = fpA2ATasksSendWithContext("fp-int-2", turn1ContextID, taskID,
 			"discover available workflows")
@@ -208,7 +229,24 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 		rpc, parseErr = fpParseRPC(resp3)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 3 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 3 — select workflow OK\n")
+		GinkgoWriter.Printf("  Turn 3 — selection request completed; verifying selected workflow\n")
+
+		By("Verifying successful selection created the expected WorkflowExecution")
+		var we *workflowexecutionv1.WorkflowExecution
+		Eventually(func() bool {
+			weList := &workflowexecutionv1.WorkflowExecutionList{}
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range weList.Items {
+				if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+					we = &weList.Items[i]
+					return we.Spec.WorkflowRef.WorkflowID == gitOpsWorkflowUUID
+				}
+			}
+			return false
+		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
+			"E2E-FP-2390-001: successful Turn 3 selection must create a WorkflowExecution for workflow %s", gitOpsWorkflowUUID)
 
 		By("Turn 4: watch remediation progress (blocks until terminal phase)")
 		body = fpA2ATasksSendWithContext("fp-int-4", turn1ContextID, taskID,
@@ -229,27 +267,8 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			}{response: response, err: invokeErr}
 		}()
 
-		By("Capturing the workflow execution and Job before terminal cleanup")
-		rrName := fpWaitForRRWithTargetNS(targetNS, 30*time.Second)
-		Expect(rrName).NotTo(BeEmpty())
-
+		By("Capturing the Job before terminal cleanup")
 		By("[E2E-FP-1189-004] Verifying interactive WFE has TARGET_RESOURCE_* parameters")
-		var we *workflowexecutionv1.WorkflowExecution
-		Eventually(func() bool {
-			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
-				return false
-			}
-			for i := range weList.Items {
-				if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
-					we = &weList.Items[i]
-					return true
-				}
-			}
-			return false
-		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
-			"WorkflowExecution for RR %s must exist", rrName)
-
 		Expect(we.Spec.WorkflowRef.WorkflowID).To(Equal(gitOpsWorkflowUUID),
 			"E2E-FP-2390-001: GitOps workflow must be selected")
 		Expect(we.Spec.WorkflowRef.Dependencies).NotTo(BeNil(),
@@ -279,6 +298,10 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			HaveField("Name", "configmap-gitea-repo-config"),
 			HaveField("VolumeSource.ConfigMap.Name", "gitea-repo-config"),
 		)), "E2E-FP-2390-002: Job must mount gitea-repo-config")
+		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].Env).To(ContainElement(And(
+			HaveField("Name", "MEMORY_LIMIT_NEW"),
+			HaveField("Value", "512Mi"),
+		)), "E2E-FP-2390-001: selected workflow parameter must reach the Job environment")
 		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
 			HaveField("Name", "secret-gitea-repo-creds"),
 			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
@@ -310,6 +333,8 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			"TARGET_RESOURCE_KIND must be injected into interactive WFE parameters")
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
 			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
+		Expect(params).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+			"E2E-FP-2390-001: explicit selection parameters must reach the WorkflowExecution")
 		GinkgoWriter.Printf("  [E2E-FP-1189-004] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 

@@ -162,7 +162,7 @@ var _ = Describe("E2E: discover_workflows (#1176)", Label("e2e", "discover-workf
 
 		resp, err := httpClient.Get(baseURL + "/metrics")
 		if err != nil {
-			resp, err = http.Get("http://localhost:18081/metrics")
+			resp, err = http.Get(e2eHostURL("http", 18081) + "/metrics")
 		}
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()

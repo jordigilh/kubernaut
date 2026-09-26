@@ -3,6 +3,8 @@ package audit
 import (
 	"context"
 	"time"
+
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 // EventType classifies audit events for L3 forensic analysis.
@@ -58,11 +60,11 @@ const (
 	EventAgentCardAccessed EventType = "discovery.agent_card_accessed"
 
 	// New from Issue #1021 catalog (Issue #1156)
-	EventSessionCompleted     EventType = "session.completed"
-	EventTriageStarted        EventType = "triage.started"
-	EventTriageCompleted      EventType = "triage.completed"
-	EventRRCreated            EventType = "rr.created"
-	EventRRDeduplicated       EventType = "rr.deduplicated"
+	EventSessionCompleted EventType = "session.completed"
+	EventTriageStarted    EventType = "triage.started"
+	EventTriageCompleted  EventType = "triage.completed"
+	EventRRCreated        EventType = "rr.created"
+	EventRRDeduplicated   EventType = "rr.deduplicated"
 	// AU-3/AU-12: AF tool-layer scope rejection (Issue #2025/#2022, ADR-053
 	// Addendum "Point 3"). Parallel to RO's orchestrator.routing.blocked,
 	// giving agent-initiated RR-creation rejections the same audit visibility
@@ -86,14 +88,15 @@ const (
 
 // Event represents a SOC2-compatible audit event.
 type Event struct {
-	Timestamp     time.Time         `json:"timestamp"`
-	Type          EventType         `json:"type"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	RequestID     string            `json:"request_id,omitempty"`
-	UserID        string            `json:"user_id,omitempty"`
-	SourceIP      string            `json:"source_ip,omitempty"`
-	ClusterID     string            `json:"cluster_id,omitempty"`
-	Detail        map[string]string `json:"detail,omitempty"`
+	Timestamp     time.Time                 `json:"timestamp"`
+	Type          EventType                 `json:"type"`
+	CorrelationID string                    `json:"correlation_id,omitempty"`
+	RequestID     string                    `json:"request_id,omitempty"`
+	UserID        string                    `json:"user_id,omitempty"`
+	SourceIP      string                    `json:"source_ip,omitempty"`
+	ClusterID     string                    `json:"cluster_id,omitempty"`
+	Detail        map[string]string         `json:"detail,omitempty"`
+	ErrorDetails  *sharedaudit.ErrorDetails `json:"error_details,omitempty"`
 }
 
 // Emitter is the interface for writing audit events.

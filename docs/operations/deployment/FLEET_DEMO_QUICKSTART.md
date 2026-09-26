@@ -44,13 +44,15 @@ make setup-fleet-demo-infra \
 ### OpenAI reasoning models
 
 For a first-party OpenAI reasoning model, use `LLM_PROVIDER=openai`. The demo infers
-conservative defaults for `gpt-5*` and `o1`/`o3`/`o4` models. `gpt-5.6-luna` defaults to
-`enabled: true` with `effort: none`:
+conservative defaults for older `gpt-5*` and `o1`/`o3`/`o4` models. GPT model IDs at version
+5.6 or newer use `enabled: true` with `effort: none`, independent of their variant suffix. This
+keeps the demo's Chat Completions function-tool requests compatible with current 5.6+/GPT-6
+models:
 
 ```bash
 make setup-fleet-demo-infra \
   LLM_PROVIDER=openai \
-  LLM_MODEL=gpt-5.6-luna \
+  LLM_MODEL=gpt-6-luna \
   LLM_ENDPOINT=https://api.openai.com/v1 \
   LLM_CREDENTIALS_FILE=/tmp/llm-credentials
 ```
@@ -62,7 +64,7 @@ global:
   llmProfiles:
     primary:
       provider: openai
-      model: gpt-5.6-luna
+      model: gpt-6-luna
       endpoint: https://api.openai.com/v1
       credentialsSecretName: llm-credentials-primary
       reasoning:
@@ -76,7 +78,7 @@ Equivalent command-line Helm settings are:
 helm upgrade --install kubernaut charts/kubernaut \
   --namespace kubernaut-system \
   --set global.llmProfiles.primary.provider=openai \
-  --set global.llmProfiles.primary.model=gpt-5.6-luna \
+  --set global.llmProfiles.primary.model=gpt-6-luna \
   --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
   --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
   --set global.llmProfiles.primary.reasoning.enabled=true \
@@ -89,11 +91,15 @@ by both API Frontend and Kubernaut Agent. For `openai_compatible`, reasoning is 
 from a GPT-like model name; set the overrides explicitly only when the endpoint supports them.
 
 The OpenAI Chat Completions mapping is identity-based: `none`, `minimal`, `low`, `medium`,
-`high`, `xhigh`, and `max` become the same `reasoning_effort` value. Model support is still
-specific to each model: base `gpt-5` documents `minimal` through `high`, while `gpt-5.6-luna`
-documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`. After changing Helm values,
-restart the API Frontend and Kubernaut Agent deployments because their LLM clients are
-constructed at startup.
+`high`, `xhigh`, and `max` become the same `reasoning_effort` value. The provider-supported
+subset remains model-specific; for example, base `gpt-5` documents `minimal` through `high`,
+while `gpt-5.6-luna` documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`. After
+changing Helm values, restart the API Frontend and Kubernaut Agent deployments because their
+LLM clients are constructed at startup.
+
+GPT-6 Astra does not support function calling through Chat Completions, so it is not compatible
+with Kubernaut's current function-tool path; use a tool-compatible GPT-6 variant such as Sol or
+Luna instead.
 
 To deploy images from a development repository instead of the default
 `quay.io/kubernaut-ai/`, add `IMAGE_REPOSITORY` and `IMAGE_TAG`, for example:

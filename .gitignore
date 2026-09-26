@@ -311,6 +311,7 @@ must-gather-*.tar.gz
 # Code graph caches (IDE plugins)
 .codegraph-colbymchenry/
 .codegraph/
+.codanna/
 
 # Serena MCP trial (project config/cache/logs; not yet a team decision)
 .serena/

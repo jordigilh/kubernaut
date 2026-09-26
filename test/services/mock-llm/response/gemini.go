@@ -18,6 +18,7 @@ package response
 import (
 	"encoding/json"
 
+	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
@@ -195,6 +196,91 @@ func CountFunctionResponses(contents []GeminiContent) int {
 		}
 	}
 	return count
+}
+
+// LastFunctionResponseName returns the name of the latest function response.
+func LastFunctionResponseName(contents []GeminiContent) string {
+	for i := len(contents) - 1; i >= 0; i-- {
+		for j := len(contents[i].Parts) - 1; j >= 0; j-- {
+			if response := contents[i].Parts[j].FunctionResponse; response != nil {
+				return response.Name
+			}
+		}
+	}
+	return ""
+}
+
+// WorkflowDiscoveryContains reports whether a list_workflows function
+// response contains the selected workflow ID.
+func WorkflowDiscoveryContains(contents []GeminiContent, workflowID string) bool {
+	if workflowID == "" {
+		return false
+	}
+	for _, content := range contents {
+		for _, part := range content.Parts {
+			if part.FunctionResponse == nil || part.FunctionResponse.Name != openai.ToolListWorkflows {
+				continue
+			}
+			result := decodeWorkflowDiscoveryResponse(part.FunctionResponse.Response)
+			for _, workflow := range result.Workflows {
+				if workflow.WorkflowID == workflowID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// WorkflowDiscoveryNextCursor returns the next cursor from the latest
+// list_workflows function response when another page is available.
+func WorkflowDiscoveryNextCursor(contents []GeminiContent) string {
+	for i := len(contents) - 1; i >= 0; i-- {
+		for j := len(contents[i].Parts) - 1; j >= 0; j-- {
+			response := contents[i].Parts[j].FunctionResponse
+			if response == nil || response.Name != openai.ToolListWorkflows {
+				continue
+			}
+			result := decodeWorkflowDiscoveryResponse(response.Response)
+			if result.Pagination.HasNext {
+				return result.Pagination.NextCursor
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+type workflowDiscoveryResponse struct {
+	Workflows  []workflowDiscoveryEntry    `json:"workflows"`
+	Pagination workflowDiscoveryPagination `json:"pagination"`
+}
+
+type workflowDiscoveryEntry struct {
+	WorkflowID string `json:"workflowId"`
+}
+
+type workflowDiscoveryPagination struct {
+	HasNext    bool   `json:"hasNext"`
+	NextCursor string `json:"nextCursor"`
+}
+
+func decodeWorkflowDiscoveryResponse(value interface{}) workflowDiscoveryResponse {
+	var raw []byte
+	if text, ok := value.(string); ok {
+		raw = []byte(text)
+	} else {
+		var err error
+		raw, err = json.Marshal(value)
+		if err != nil {
+			return workflowDiscoveryResponse{}
+		}
+	}
+	var result workflowDiscoveryResponse
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return workflowDiscoveryResponse{}
+	}
+	return result
 }
 
 // LastContentIsFunctionResponse returns true if the final content entry in the

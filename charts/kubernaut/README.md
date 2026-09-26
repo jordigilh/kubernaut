@@ -400,10 +400,41 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set console.ingress.enabled=true
 ```
 
+The Console OIDC settings are split between the shared APIFrontend issuer and the
+OAuth2 Proxy sidecar:
+
+| Value | Purpose |
+|---|---|
+| `apifrontend.config.auth.issuerURL` | Browser-facing OIDC issuer used by the Console and APIFrontend. |
+| `console.oauth2Proxy.skipDiscovery` | Set to `true` when the provider has different browser-facing and in-cluster endpoints. |
+| `console.oauth2Proxy.loginURL` | Browser-facing authorization endpoint; required with `skipDiscovery=true`. |
+| `console.oauth2Proxy.redeemURL` | In-cluster token endpoint; required with `skipDiscovery=true`. |
+| `console.oauth2Proxy.jwksURL` | In-cluster JWKS endpoint; required with `skipDiscovery=true`. |
+| `console.oauth2Proxy.backendLogoutURL` | Provider `end_session_endpoint`, including the literal `{id_token}` placeholder when required. |
+
+When `skipDiscovery=false` (the default), OAuth2 Proxy discovers the authorization,
+token, and JWKS endpoints from `apifrontend.config.auth.issuerURL`. The logout endpoint
+is still configured explicitly because OIDC discovery is provider metadata, not a URL
+that Helm can safely derive or fetch at render time.
+
 - `console.ingress.host` is **required** whenever `console.enabled=true` — even if you leave
   `console.ingress.enabled=false` (the default) to front the console with your own
   Ingress/Route — because oauth2-proxy needs the browser-facing hostname for its OIDC
   redirect URL regardless of who creates the Ingress.
+- To terminate the OIDC provider session as well as the OAuth2 Proxy session, set the
+  provider-discovered `end_session_endpoint` explicitly. Preserve OAuth2 Proxy's literal
+  `{id_token}` placeholder when the provider requires an ID token hint:
+
+  ```yaml
+  console:
+    oauth2Proxy:
+      backendLogoutURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"
+  ```
+
+  The chart does not assume a universal Keycloak or Dex endpoint. Use the endpoint returned
+  by the configured provider's OIDC discovery document, use HTTPS in production, and use an
+  explicit local/dev HTTP provider only when appropriate. The value is sent only to
+  OAuth2 Proxy; the Console SPA does not receive the ID token or provider logout URL.
 - `console.ingress.enabled` is **opt-in, disabled by default** (BR-PLATFORM-009), same as
   `gateway.ingress.enabled`/`apifrontend.ingress.enabled`: Console is optional browser-facing
   UI tooling in front of APIFrontend that users may replace with their own UI or front with
@@ -564,6 +595,10 @@ For OpenAI Chat Completions, the canonical effort values are `none`, `minimal`, 
 `medium`, `high`, `xhigh`, and `max`, and the value is passed through as `reasoning_effort`.
 The supported subset is model-specific: base `gpt-5` documents `minimal`, `low`, `medium`,
 and `high`; `gpt-5.6-luna` documents `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
+The local/fleet demo installer applies version defaults rather than pinning one model release:
+GPT model IDs at version 5.6 or newer use `none`, independent of the variant suffix. GPT-6
+Astra is not compatible with Chat Completions function calling, which the current agent tool path
+requires.
 Do not infer support for a custom `openai_compatible` endpoint from a GPT-like model name;
 use `reasoning.capabilityOverride` or an explicit demo override only after checking the endpoint.
 

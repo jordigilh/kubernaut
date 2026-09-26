@@ -73,6 +73,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 							"namespace": "prod",
 							"kind":      "Deployment",
 							"name":      "web-app",
+							"cluster":   hubClusterID,
 						},
 					},
 				},
@@ -96,11 +97,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 					Client:       tc,
 					Namespace:    "kubernaut-system",
 					Triager:      triager,
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					ScopeChecker: testAlwaysManagedScopeChecker(),
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
 					Name:       "web-app",
+					ClusterID:  hubClusterID,
 				},
 				true, "",
 			)
@@ -155,11 +158,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient:    mockMCP,
-					Client:       tc,
-					Namespace:    "kubernaut-system",
-					Triager:      triager,
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					MCPClient:     mockMCP,
+					Client:        tc,
+					Namespace:     "kubernaut-system",
+					Triager:       triager,
+					ScopeChecker:  testAlwaysManagedScopeChecker(),
+					ClusterLister: stubClusterLister{ids: []string{hubClusterID, "remote-cluster"}},
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -177,7 +182,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 	})
 
 	Describe("WIRE-C02: investigate preserves grounded Kubernetes event signals", func() {
-		It("UT-AF-2390-001: new-RR investigation passes the dynamic client to signal derivation (BR-AI-056)", func() {
+		It("UT-AF-2390-001: fleet-mode investigation does not derive signals from hub-local events (BR-FLEET-054)", func() {
 			eventCh := make(chan ka.InvestigationEvent)
 			close(eventCh)
 
@@ -209,24 +214,27 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			))
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient:    mockMCP,
-					Client:       tc,
-					DynClient:    dc,
-					Namespace:    "kubernaut-system",
-					Triager:      unnamedAlertTestTriager("prod", "Deployment", "web-app-2390"),
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					MCPClient:     mockMCP,
+					Client:        tc,
+					DynClient:     dc,
+					Namespace:     "kubernaut-system",
+					Triager:       unnamedAlertTestTriager("prod", "Deployment", "web-app-2390"),
+					ScopeChecker:  testAlwaysManagedScopeChecker(),
+					ClusterLister: stubClusterLister{ids: []string{hubClusterID, "remote-cluster"}},
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
 					Name:       "web-app-2390",
+					ClusterID:  hubClusterID,
 				},
 				true, "alice",
 			)
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
-			Expect(created.Spec.SignalName).To(Equal("GitOpsDrift2390"),
-				"investigate-created RR must preserve the grounded Kubernetes event signal")
+			Expect(created.Spec.SignalName).To(Equal("unknown"),
+				"cluster-attributed investigations must not read hub-local events directly")
 		})
 
 		It("UT-AF-2390-002: fleet investigation does not use hub-local Kubernetes Events as its signal (BR-FLEET-054)", func() {
@@ -270,12 +278,14 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			}, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, &tools.InvestigateConfig{
-					MCPClient:    mockMCP,
-					Client:       tc,
-					DynClient:    dc,
-					Namespace:    "kubernaut-system",
-					Triager:      triager,
-					ScopeChecker: testAlwaysManagedScopeChecker()}, tools.InvestigateMCPArgs{
+					MCPClient:     mockMCP,
+					Client:        tc,
+					DynClient:     dc,
+					Namespace:     "kubernaut-system",
+					Triager:       triager,
+					ScopeChecker:  testAlwaysManagedScopeChecker(),
+					ClusterLister: stubClusterLister{ids: []string{hubClusterID, "remote-cluster"}},
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
@@ -299,7 +309,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 				alerts: []prom.Alert{
 					{
 						State:  "firing",
-						Labels: map[string]string{"alertname": "HighCPU", "severity": "warning", "namespace": "prod", "kind": "Deployment", "name": "api"},
+						Labels: map[string]string{"alertname": "HighCPU", "severity": "warning", "namespace": "prod", "kind": "Deployment", "name": "api", "cluster": hubClusterID},
 					},
 				},
 			}
@@ -311,6 +321,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 				Namespace: "prod",
 				Kind:      "Deployment",
 				Name:      "api",
+				ClusterID: hubClusterID,
 				Labels:    map[string]string{"namespace": "prod", "kind": "Deployment", "name": "api"},
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -438,6 +449,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 							"namespace": "prod",
 							"kind":      "Deployment",
 							"name":      "web-app-1922",
+							"cluster":   hubClusterID,
 						},
 					},
 				},
@@ -471,6 +483,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 					Namespace:  "prod",
 					Kind:       "Deployment",
 					Name:       "web-app-1922",
+					ClusterID:  hubClusterID,
 				},
 				true, "bob",
 			)
@@ -563,6 +576,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 						"namespace": "prod",
 						"kind":      "Deployment",
 						"name":      "worker-2247",
+						"cluster":   hubClusterID,
 					},
 				},
 			},
@@ -590,6 +604,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "worker-2247",
+				ClusterID:  hubClusterID,
 			},
 			true, "alice",
 		)

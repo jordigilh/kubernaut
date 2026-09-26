@@ -32,6 +32,7 @@ func lowConfidenceConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "low_confidence", SignalName: "MOCK_LOW_CONFIDENCE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
+		ActionType:    "RestartPod",
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.35,
 		Rationale:    "Multiple possible root causes identified; generic restart is safest but requires human judgment to confirm",
 		RootCause:    "Multiple possible root causes identified, requires human judgment",
@@ -46,6 +47,14 @@ func lowConfidenceConfig() MockScenarioConfig {
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}
+}
+
+func approvalRequiredConfig() MockScenarioConfig {
+	cfg := crashloopConfig()
+	cfg.ScenarioName = "approval_required"
+	cfg.SignalName = "MOCK_APPROVAL_TEST"
+	cfg.Confidence = 0.75
+	return cfg
 }
 
 func problemResolvedConfig() MockScenarioConfig {
@@ -69,9 +78,12 @@ func problemResolvedConfig() MockScenarioConfig {
 // audit trail -> DataStorage, correlation_id-reconstructable per SOC2
 // CC8.1) without requiring a real reasoning-capable provider.
 func reasoningCaptureConfig() MockScenarioConfig {
+	const reasoningText = "Weighed a transient traffic spike against a sustained leak: memory climbed steadily over 6h with no correlated traffic increase, which rules out a spike and points to a leak. Increasing the memory limit is the safe immediate mitigation while the leak itself would need a code-level fix."
+
 	return MockScenarioConfig{
 		ScenarioName: "mock_reasoning_capture", SignalName: "MOCK_REASONING_CAPTURE", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.92,
 		Rationale:    "Sustained memory climb over 6h rules out a transient spike; increasing limits addresses the sustained leak",
 		RootCause:    "Container exceeded memory limits due to a sustained memory leak",
@@ -81,7 +93,8 @@ func reasoningCaptureConfig() MockScenarioConfig {
 		Contributing:         []string{"memory_leak", "insufficient_memory_limits"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
-		ReasoningText:        "Weighed a transient traffic spike against a sustained leak: memory climbed steadily over 6h with no correlated traffic increase, which rules out a spike and points to a leak. Increasing the memory limit is the safe immediate mitigation while the leak itself would need a code-level fix.",
+		ThoughtText:          reasoningText,
+		ReasoningText:        reasoningText,
 	}
 }
 
@@ -101,11 +114,13 @@ func problemResolvedContradictionConfig() MockScenarioConfig {
 func maxRetriesExhaustedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "max_retries_exhausted", SignalName: "MOCK_MAX_RETRIES_EXHAUSTED", Severity: "high",
-		WorkflowName: "nonexistent-invalid-workflow-xyz", WorkflowID: uuid.DeterministicUUID("nonexistent-invalid-workflow-xyz"),
-		WorkflowTitle: "Invalid Workflow", Confidence: 0.6,
-		RootCause:    "LLM analysis completed but selected an invalid workflow not present in the catalog.",
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
+		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.6,
+		RootCause:    "LLM analysis selected a valid workflow with invalid parameters on every correction attempt.",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
 		APIVersion:           "v1",
+		RawParameters:        map[string]interface{}{"MEMORY_LIMIT_NEW": float64(123)},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}
@@ -195,7 +210,8 @@ func parallelToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
 		ScenarioName: "parallel_tools", SignalName: "MOCK_PARALLEL_TOOLS", Severity: "high",
-		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.9,
 		RootCause:    "Container OOMKilled due to memory limits below steady-state usage",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
@@ -216,7 +232,8 @@ func alertmanagerNodeToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
 		ScenarioName: "alertmanager_node_tools", SignalName: "MOCK_ALERTMANAGER_NODE_TOOLS", Severity: "high",
-		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.88,
 		RootCause:    "Node resource exhaustion correlated with active alerts",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
@@ -236,6 +253,7 @@ func rcaIncompleteConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "rca_incomplete", SignalName: "MOCK_RCA_INCOMPLETE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
+		ActionType:    "RestartPod",
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.88,
 		RootCause:    "Root cause identified but affected resource could not be determined from signal context",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",

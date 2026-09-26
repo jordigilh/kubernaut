@@ -65,12 +65,13 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			targetName    = "fleet-organic-gw-target"
 			ruleName      = "FleetOrganicGatewayAlert"
 		)
+		targetNS := fleetWorkloadNamespace("fleet-organic-gateway")
 
 		By("Creating the real target Deployment BEFORE the alert can fire (Gateway owner-resolution requires it to exist)")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -94,7 +95,10 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			{
 				Name: "fleet_organic_gw_signal",
 				Labels: map[string]string{
-					"namespace": namespace,
+					"namespace": targetNS,
+					// E2E-FLEET-021 runs in fleet mode, so the firing alert must
+					// carry the registered hub identity as a per-alert label.
+					"cluster": "hub",
 					// Must match the rule's expr label matcher AND the label-key
 					// convention Gateway's extractTargetResource expects (the
 					// lowercase Kind as the label KEY, e.g. "deployment", not a
@@ -121,16 +125,18 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			found := false
 			for i := range rrList.Items {
 				if rrList.Items[i].Spec.SignalName == ruleName {
+					g.Expect(rrList.Items[i].Spec.ClusterID).To(Equal("hub"),
+						"E2E-FLEET-021: organic hub alert must retain its explicit fleet cluster identity")
 					found = true
 					break
 				}
 			}
 			g.Expect(found).To(BeTrue(),
 				"AC-4: a RemediationRequest with signalName=%q must exist, organically created by "+
-					"AlertManager's real webhook forward to Gateway -- this is a hub-local signal (no "+
-					"cluster label), so scope-check uses the local K8s informer cache, not FMC",
+					"AlertManager's real webhook forward to Gateway -- this hub target must carry "+
+					"cluster=hub and resolve through the registered hub Gateway backend",
 				ruleName)
-			// fmcSyncTimeout-scale window even though this signal is hub-local: it
+			// fmcSyncTimeout-scale window even though the target is on the hub: it
 			// comfortably covers Prometheus's evaluation_interval (15s) + rule
 			// interval (10s) + AlertManager's group_wait/group_interval (5s each)
 			// stacked before the webhook fires at all.

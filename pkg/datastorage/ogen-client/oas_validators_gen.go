@@ -366,6 +366,24 @@ func (s *AIAgentEnrichmentCompletedPayload) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.DetectedLabelsSummary.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "detected_labels_summary",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.FailedDetections.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -872,6 +890,17 @@ func (s *AIAgentResponseFailedPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
 			Error: err,
 		})
 	}
@@ -1881,6 +1910,17 @@ func (s *ApifrontendA2ATaskFailedPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
 			Error: err,
 		})
 	}
@@ -2909,6 +2949,17 @@ func (s *ApifrontendSeverityTriageFailedPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ErrorDetails.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_details",
 			Error: err,
 		})
 	}
@@ -6154,6 +6205,10 @@ func (s ErrorDetailsComponent) Validate() error {
 		return nil
 	case "authwebhook":
 		return nil
+	case "kubernautagent":
+		return nil
+	case "apifrontend":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -6635,6 +6690,24 @@ func (s *LLMRequestPayload) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "prompt_length",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.WorkflowDiscoveryContext.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflow_discovery_context",
 			Error: err,
 		})
 	}
@@ -9925,6 +9998,36 @@ func (s WorkflowCatalogCreatedPayloadStatus) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *WorkflowDiscoveryAuditContext) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.DetectedLabels.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "detected_labels",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
 }
 
 func (s *WorkflowDiscoveryAuditPayload) Validate() error {

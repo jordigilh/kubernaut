@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
+	shareduuid "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/handlers"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
@@ -82,7 +83,7 @@ var _ = Describe("Full Conversation Flows", func() {
 	})
 
 	Describe("IT-MOCK-012: Three-step conversation flow", func() {
-		It("should complete: list_available_actions -> list_workflows -> get_workflow -> final_analysis", func() {
+		It("should paginate list_workflows until membership permits get_workflow", func() {
 			threeStepTools := []map[string]interface{}{
 				{"type": "function", "function": map[string]interface{}{"name": "list_available_actions", "parameters": map[string]interface{}{}}},
 				{"type": "function", "function": map[string]interface{}{"name": "list_workflows", "parameters": map[string]interface{}{}}},
@@ -93,7 +94,8 @@ var _ = Describe("Full Conversation Flows", func() {
 				map[string]string{"role": "user", "content": "- Signal Name: CrashLoopBackOff\n- Namespace: staging"},
 			}
 
-			expectedTools := []string{"list_available_actions", "list_workflows", "get_workflow"}
+			workflowID := shareduuid.DeterministicUUID("crashloop-config-fix-v1")
+			expectedTools := []string{"list_available_actions", "list_workflows", "list_workflows", "get_workflow"}
 			for i, expectedTool := range expectedTools {
 				body := marshalReq(map[string]interface{}{
 					"model": "mock-model", "messages": messages, "tools": threeStepTools,
@@ -107,11 +109,34 @@ var _ = Describe("Full Conversation Flows", func() {
 					"step %d should return tool_calls", i)
 				Expect(result.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(expectedTool),
 					"step %d should call %s", i, expectedTool)
+				if i == 2 {
+					var args map[string]interface{}
+					Expect(json.Unmarshal([]byte(result.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+					Expect(args).To(HaveKeyWithValue("action_type", "RestartDeployment"))
+					Expect(args).To(HaveKeyWithValue("page", "next"))
+					Expect(args).To(HaveKeyWithValue("cursor", "cursor-1"))
+				}
+				if i == 3 {
+					var args map[string]interface{}
+					Expect(json.Unmarshal([]byte(result.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+					Expect(args).To(HaveKeyWithValue("workflow_id", workflowID))
+				}
 
 				// Append assistant + tool result for next turn
+				toolResult := `{"result": "ok"}`
+				if i == 1 {
+					toolResult = `{"actionType":"RestartDeployment","workflows":[{"workflowId":"other-workflow"}],"pagination":{"hasNext":true,"nextCursor":"cursor-1"}}`
+				}
+				if i == 2 {
+					toolResult = `{"actionType":"RestartDeployment","workflows":[{"workflowId":"` + workflowID + `"}],"pagination":{"hasPrevious":true}}`
+				}
 				messages = append(messages,
 					map[string]interface{}{"role": "assistant", "content": nil, "tool_calls": result.Choices[0].Message.ToolCalls},
-					map[string]string{"role": "tool", "content": `{"result": "ok"}`},
+					map[string]string{
+						"role":         "tool",
+						"tool_call_id": result.Choices[0].Message.ToolCalls[0].ID,
+						"content":      toolResult,
+					},
 				)
 			}
 

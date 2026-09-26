@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,6 +22,16 @@ import openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 func HasThreeStepTools(tools []openai.Tool) bool {
 	for _, t := range tools {
 		if t.Function.Name == openai.ToolListAvailableActions {
+			return true
+		}
+	}
+	return false
+}
+
+// HasTool reports whether the tool list contains the named tool.
+func HasTool(tools []openai.Tool, name string) bool {
+	for _, t := range tools {
+		if t.Function.Name == name {
 			return true
 		}
 	}
@@ -55,6 +65,39 @@ type ToolResultCountGE struct {
 
 func (c *ToolResultCountGE) Evaluate(ctx *Context) bool {
 	return ctx.CountToolResults() >= c.N
+}
+
+// WorkflowDiscoveryNeedsNextPage evaluates whether the mock model should
+// continue list_workflows pagination before selecting the workflow.
+type WorkflowDiscoveryNeedsNextPage struct{}
+
+func (c *WorkflowDiscoveryNeedsNextPage) Evaluate(ctx *Context) bool {
+	return ctx.LastToolCallName() == openai.ToolListWorkflows &&
+		!ctx.WorkflowDiscoveryTargetFound() &&
+		ctx.WorkflowDiscoveryNextCursor() != ""
+}
+
+// WorkflowDiscoveryNeedsGet evaluates whether the selected workflow has been
+// found and the next response should request its full definition.
+type WorkflowDiscoveryNeedsGet struct{}
+
+func (c *WorkflowDiscoveryNeedsGet) Evaluate(ctx *Context) bool {
+	return ctx.LastToolCallName() == openai.ToolListWorkflows && ctx.WorkflowDiscoveryTargetFound()
+}
+
+// WorkflowDiscoveryComplete evaluates the terminal transition after the
+// selected workflow's full definition has been returned. Contexts without an
+// expected workflow retain the original count-based DAG behavior.
+type WorkflowDiscoveryComplete struct {
+	MinimumResults int
+}
+
+func (c *WorkflowDiscoveryComplete) Evaluate(ctx *Context) bool {
+	if ctx.workflowID() == "" {
+		return ctx.CountToolResults() >= c.MinimumResults
+	}
+	return ctx.CountToolResults() >= c.MinimumResults &&
+		ctx.LastToolCallName() == openai.ToolGetWorkflow
 }
 
 // HasSubmitWithWorkflowTool checks whether the tools list includes

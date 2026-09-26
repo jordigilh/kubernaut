@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +55,7 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 
 	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
 	defer cancel()
+	toolCtx = ka.WithEventLifetime(toolCtx, ctx)
 	result, err := mcpClient.InvokeAction(toolCtx, ka.InvokeActionArgs{
 		RRID:    args.RRID,
 		Action:  action,
@@ -173,7 +175,15 @@ func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, k8sClient crcl
 			}, nil
 		}
 	}
-	return invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
+	result, err := invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
+	if err == nil || !strings.Contains(err.Error(), "not_driving") {
+		return result, err
+	}
+
+	// KA requires takeover when the disconnected session is still owned by an
+	// autonomous driver. Retry only that explicit state transition; other
+	// reconnect failures remain errors.
+	return invokeInteractiveAction(ctx, mcpClient, "takeover", args, auditor, audit.EventKADelegated)
 }
 
 // NewMessageTool creates the kubernaut_message tool.

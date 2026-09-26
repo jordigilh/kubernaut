@@ -25,6 +25,7 @@ func oomkilledConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "oomkilled", SignalName: "OOMKilled", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.95,
 		Rationale:    "Container exceeded memory limits under traffic spike; increasing limits is the safest remediation with medium risk tolerance",
 		RootCause:    "Container exceeded memory limits due to traffic spike",
@@ -39,6 +40,37 @@ func oomkilledConfig() MockScenarioConfig {
 		IsActionable:         BoolPtr(true),
 		ForceText:            BoolPtr(false),
 	}
+}
+
+// fleetRoutingConfig backs E2E-FLEET-004 with the catalog-backed OOM workflow
+// for its remote memory-eater Deployment. The dedicated signal avoids the
+// generic fallback's stale Pod target and low-confidence manual-review path.
+func fleetRoutingConfig() MockScenarioConfig {
+	cfg := oomkilledConfig()
+	cfg.ScenarioName = "fleet_routing"
+	cfg.SignalName = "FleetRouting"
+	cfg.WorkflowTitle = "Fleet Routing - Increase Memory Limits"
+	cfg.Rationale = "E2E-FLEET-004 routes the remote memory-eater Deployment through a catalog-backed fleet workflow"
+	cfg.RootCause = "The remote Deployment is experiencing memory pressure"
+	cfg.ResourceName = "memory-eater"
+	return cfg
+}
+
+func memoryEaterResourcePressureConfig() MockScenarioConfig {
+	cfg := oomkilledConfig()
+	cfg.ScenarioName = "memory_eater_resource_pressure"
+	cfg.SignalName = "MemoryEaterResourcePressure"
+	cfg.Severity = "high"
+	cfg.WorkflowTitle = "Memory Eater Resource Pressure - Increase Memory Limits"
+	cfg.Rationale = "The memory-eater Deployment exceeds its configured memory limit; increase the limit"
+	cfg.RootCause = "The memory-eater Deployment exceeds its configured memory limit"
+	cfg.ResourceName = "memory-eater"
+	return cfg
+}
+
+func memoryEaterResourcePressureScenario() *configScenario {
+	cfg := memoryEaterResourcePressureConfig()
+	return newSignalScenario(cfg.ScenarioName, []string{"memoryeaterresourcepressure"}, cfg)
 }
 
 // oomkilledScenario matches explicit OOM signal names at high confidence and
@@ -65,7 +97,7 @@ func oomkilledScenario() *configScenario {
 						return true, 0.8
 					}
 				}
-				if strings.Contains(signal, "backoff") {
+				if signal == "backoff" {
 					return true, 0.5
 				}
 				return false, 0

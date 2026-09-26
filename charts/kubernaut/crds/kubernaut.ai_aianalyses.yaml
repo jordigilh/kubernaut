@@ -1091,7 +1091,7 @@ spec:
                         type: object
                       severity:
                         description: |-
-                          Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1, ADR-066)
+                          Severity classified by SignalProcessing Rego policy (BR-SP-105); KA's RCA must preserve this input value.
                           DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, warning, info, unknown)
                         enum:
                         - critical

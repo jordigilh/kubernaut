@@ -63,7 +63,7 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 
 	messages := reqData.Messages
 	if len(messages) == 0 && reqData.Prompt != "" {
-		messages = []openai.Message{{Role: "user", Content: &reqData.Prompt}}
+		messages = []openai.Message{{Role: userMessageRole, Content: &reqData.Prompt}}
 	}
 
 	ctx := conversation.NewContext(messages)

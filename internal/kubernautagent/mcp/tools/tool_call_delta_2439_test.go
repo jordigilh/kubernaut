@@ -172,6 +172,9 @@ var _ = Describe("MCP workflow discovery tool-call delta wiring — #2439", func
 
 type discoveryCatalogFetcher2439 struct{}
 
-func (discoveryCatalogFetcher2439) FetchValidator(context.Context) (*parser.Validator, error) {
+func (discoveryCatalogFetcher2439) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
+		state.Add("wf-2439")
+	}
 	return parser.NewValidator([]string{"wf-2439"}), nil
 }

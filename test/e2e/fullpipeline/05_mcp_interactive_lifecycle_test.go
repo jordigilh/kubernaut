@@ -33,6 +33,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -448,9 +449,27 @@ var _ = Describe("FP-MCP-009: concurrent takeover contention", Label("e2e", "ful
 
 var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2e", "fullpipeline", "interactive", "mcp"), func() {
 	It("should discover workflows and select if catalog matches", func() {
-		By("Creating direct RR")
-		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-005")
+		// FullPipeline's default selectable Pod workflow is warning-only. The
+		// RR still goes through SP, so choose the external input that SP normalizes
+		// to the catalog severity rather than letting the default high input hide it.
+		By("Creating warning-severity direct RR for the consent Job workflow")
+		rrName, err := infrastructure.CreateDirectRRWithSeverity(ctx, namespace, "fp-mcp-005", "warning")
 		Expect(err).NotTo(HaveOccurred())
+		By("Verifying SP classified the RR as warning before workflow discovery")
+		Eventually(func() string {
+			spList := &signalprocessingv1.SignalProcessingList{}
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == rrName {
+					return sp.Status.GetSignalClassification().Severity
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal(signalprocessingv1.SeverityWarning),
+			"FP-MCP-005: the direct RR fixture must classify to the default workflow's warning label")
 
 		By("Setting up MCP session")
 		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-005-sa", kubeconfigPath, GinkgoWriter)

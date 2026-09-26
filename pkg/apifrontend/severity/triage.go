@@ -8,6 +8,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 const fleetClusterLabelKey = "cluster"
@@ -138,11 +140,14 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		if t.auditor != nil {
 			t.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventSeverityTriageFailed,
+				ErrorDetails: sharedaudit.NewErrorDetails(
+					"apifrontend", "ERR_UPSTREAM_FAILURE", security.RedactError(err), true,
+				),
 				Detail: map[string]string{
 					"namespace": input.Namespace,
 					"kind":      input.Kind,
 					"name":      input.Name,
-					"error":     err.Error(),
+					"error":     security.RedactError(err),
 				},
 			})
 		}
@@ -256,7 +261,7 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		podNameSet[pn] = struct{}{}
 	}
 
-	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID)
+	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID, input.FleetMode)
 }
 
 // matchCandidate tracks the best alert match at a given priority tier.
@@ -347,11 +352,11 @@ func updateTierCandidate(firing bool, sev, name string, firingCand, pendingCand 
 	}
 }
 
-func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, clusterID string) (TriageResult, bool) {
+func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, clusterID string, fleetMode bool) (TriageResult, bool) {
 	var resourceFiring, resourcePending, nsFiring, nsPending, clusterFiring, clusterPending matchCandidate
 
 	for _, alert := range alerts {
-		if !matchesCluster(alert.Labels, clusterID) {
+		if !matchesCluster(alert.Labels, clusterID, fleetMode) {
 			continue
 		}
 		tier, firing, sev, name := classifyAlertTier(alert, targetLabels, podNameSet, targetNamespace)
@@ -396,7 +401,7 @@ func (t *Triager) runTier15(input TriageInput, ruleGroups []prom.RuleGroup) (Tri
 			if r.State != "pending" {
 				continue
 			}
-			if !matchesCluster(r.Labels, input.ClusterID) {
+			if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
 				continue
 			}
 			matchers, err := prom.ExtractLabelMatchers(r.Query)
@@ -459,7 +464,7 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	if err != nil {
 		return TriageResult{}, false, false
 	}
-	if !matchesCluster(r.Labels, input.ClusterID) {
+	if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
 		return TriageResult{}, false, false
 	}
 	if !prom.MatchesResource(matchers, input.Labels) {
@@ -487,14 +492,14 @@ func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input Tria
 	}, true, true
 }
 
-// matchesCluster enforces Thanos cluster attribution for fleet triage. An
-// empty target cluster preserves hub-local behavior; a fleet target requires
-// an explicit matching cluster label rather than accepting un-attributed data.
-func matchesCluster(labels map[string]string, clusterID string) bool {
-	if clusterID == "" {
+// matchesCluster enforces exact Gateway attribution in fleet mode. A local
+// Prometheus endpoint is already scoped to the local cluster, so local triage
+// deliberately ignores any cluster ID or cluster label it happens to carry.
+func matchesCluster(labels map[string]string, clusterID string, fleetMode bool) bool {
+	if !fleetMode {
 		return true
 	}
-	return labels[fleetClusterLabelKey] == clusterID
+	return clusterID != "" && labels[fleetClusterLabelKey] == clusterID
 }
 
 func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules []prom.Rule) (TriageResult, bool) {

@@ -45,8 +45,11 @@ hub-local `kube-mcp-server` as `hub`, so Gateway discovery exposes `hub__...` to
 for workflows whose catalog declares `execution.clusterId: hub`. The spoke is a
 genuinely separate Kubernetes control plane with the `demo-webui` workload and its
 `remote-cluster` MCP registration. The GitOps workflow Job runs on the hub; ArgoCD
-then reconciles the commit onto the spoke. This explicit non-empty `ClusterID` uses
-the MCP Gateway dispatch path rather than the normal empty-ID local-client shortcut.
+then reconciles the commit onto the spoke. In fleet mode, every remediation target,
+including one on the hub, uses its exact MCP Gateway registration name in
+`cluster_id` (`hub` or `remote-cluster`). Prometheus alerting rules must carry the
+same `cluster` label. All reads and remediation execution route through the Gateway;
+the empty-ID local-client shortcut is not used in fleet mode.
 
 Both clusters trust the **same** Keycloak realm (`kubernaut-demo`), reached from the
 spoke via a hand-authored Service+Endpoints bridge over the podman `kind` network — no

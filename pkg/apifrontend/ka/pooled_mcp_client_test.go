@@ -438,4 +438,53 @@ var _ = Describe("PooledMCPClient live event subscription — #1637", func() {
 		Expect(duringCallCurrent).To(Equal(context.Background()),
 			"no router means callPooledTool has nothing to subscribe — call must still succeed unaffected")
 	})
+
+	It("IT-AF-1637-006: retains the subscription until the enclosing event lifetime ends", func() {
+		var received int
+
+		session := &mockPoolSession{}
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return session, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		router, err := pool.InjectVerified(context.Background(), "ns/rr-late-event", "alice", session)
+		Expect(err).NotTo(HaveOccurred())
+
+		client := ka.NewPooledMCPClient(pool, logr.Discard(), func(_ context.Context, evt ka.InvestigationEvent) {
+			if evt.Type == ka.EventTypeReasoningContentDelta {
+				received++
+			}
+		})
+		callCtx := ctxWithIdentity("alice", []string{"sre"})
+		eventCtx, cancelEventLifetime := context.WithCancel(context.Background())
+		defer cancelEventLifetime()
+		callCtx = ka.WithEventLifetime(callCtx, eventCtx)
+
+		session.callFn = func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"status":"message_received","session_id":"sess-late-event"}`}},
+			}, nil
+		}
+
+		_, err = client.InvokeAction(callCtx, ka.InvokeActionArgs{
+			RRID: "ns/rr-late-event", Action: "message", Message: "hello",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The notification can arrive after CallTool has returned but while the
+		// enclosing A2A stream is still alive.
+		router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningContentDelta})
+		Expect(received).To(Equal(1),
+			"late pooled events must remain attached to the enclosing event lifetime")
+
+		cancelEventLifetime()
+		Eventually(func() int {
+			return router.Publish(ka.InvestigationEvent{Type: ka.EventTypeReasoningContentDelta})
+		}).Should(Equal(0),
+			"event subscription must be removed when the enclosing event lifetime ends")
+	})
 })

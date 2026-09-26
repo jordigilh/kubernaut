@@ -1,10 +1,30 @@
-# DD-TEST-014: Fleet E2E Remote-Cluster-Only Topology
+# DD-TEST-014: Fleet E2E Hub-and-Spoke Topology
 
-**Status**: ✅ Approved & Implemented
+**Status**: ✅ Approved & Implemented (amended 2026-09-22)
 **Date**: 2026-07-04
 **Author**: AI Assistant
 **Related**: Issue #54, ADR-068, BR-INTEGRATION-065, DD-TEST-013,
 Spike S17/S18/S19/S20 (`docs/spikes/multi-cluster-mcp-gateway/`)
+
+---
+
+## Amendment (2026-09-22): Register the hub through MCP Gateway
+
+The original remote-only topology remains in force for the three spoke aliases
+(`remote-cluster`, `prod-east`, `prod-west`). The fleet full-pipeline suite now
+also sets `HubClusterID="hub"`: infrastructure deploys the local
+`kube-mcp-server` as a separately registered Gateway backend for hub targets.
+Hub reads and remediation therefore use the same Gateway path as spoke access;
+the suite does not use an implicit local-client shortcut. With
+`HubClusterID` empty, the original behavior is unchanged and the local server
+continues to be omitted when `AllRegistrationsRemote` is enabled.
+
+The additional wiring is covered by `E2E-FLEET-2394-001`, which places the
+target only on hub while Prometheus exposes matching target labels with
+different hub and `remote-cluster` severities. The test verifies AF retains
+`cluster_id="hub"` and chooses the hub warning alert over the remote critical
+collision during severity triage. The related routing decision is recorded in
+ADR-068.
 
 ---
 
@@ -39,8 +59,11 @@ flag. When true (the `fleet` suite's mode):
 
 - **All three** registrations (`remote-cluster`, `prod-east`, `prod-west`)
   target the remote bridge's `kube-mcp-server`, instead of only `prod-east`.
-- The local `kube-mcp-server` Deployment is **not created at all** --
-  `deployKubeMCPServerAndRegister` is skipped entirely.
+- When `HubClusterID` is empty, the local `kube-mcp-server` Deployment is not
+  created, preserving the original remote-only topology.
+- When `HubClusterID` is set, the local `kube-mcp-server` is deployed only as
+  the separately registered hub Gateway backend; hub-target reads do not
+  bypass the Gateway.
 - This makes the `fleet` suite's coverage strictly stronger than the
   loopback pattern: every fleet-routed reconciliation in this suite must
   reach a genuinely separate Kubernetes control plane, so a missing
@@ -48,7 +71,8 @@ flag. When true (the `fleet` suite's mode):
   results / connection errors) instead of silently succeeding against local
   state.
 - The narrower FMC E2E lanes (`test/e2e/fleetmetadatacache/`) are
-  unaffected: they leave `AllRegistrationsRemote` false and keep
+  unaffected: they leave `AllRegistrationsRemote` false and `HubClusterID`
+  empty, and keep
   DD-TEST-013's original "prove isolation via exactly one remote
   registration" scope, which is sufficient for their narrower SOC2 CC8.1 /
   FedRAMP AC-4 assertion.
@@ -127,10 +151,11 @@ remains accurate there.
 - **Positive**: Reuses the already-proven, already-tested Keycloak
   infrastructure code from the FMC E2E lanes (DD-TEST-013) instead of
   introducing a second, protocol-incompatible IdP pattern.
-- **Negative**: The `fleet` suite no longer stands up a local
-  `kube-mcp-server` at all, so any future test scenario that specifically
-  needs to compare local-vs-remote behavior side by side would need its own
-  bridge configuration or a suite-level opt-out of `AllRegistrationsRemote`.
+- **Positive**: The fleet suite exercises both Gateway-routed hub access and
+  genuine spoke access without introducing a direct local-client shortcut.
+- **Negative**: A suite scenario that needs a hub target must register it with
+  `HubClusterID` and use the Gateway cluster ID; it cannot rely on an empty
+  cluster ID to select local state.
 - **Negative**: Two E2E lanes (`kubernautagent`, `apifrontend` full-pipeline)
   still depend on Dex for capabilities Keycloak's fleet realm does not yet
   provide (ROPC grant, 7-persona-group shape), so full Dex removal remains
@@ -141,6 +166,7 @@ remains accurate there.
 | Component | Production Entry Point | Wiring Code Location | E2E Test ID |
 |---|---|---|---|
 | `KubeMCPServerAuthConfig.AllRegistrationsRemote` | Read by `deployKuadrantRegistrations` / `SetupFleetE2EInfrastructure` | `test/infrastructure/fleet_e2e.go` | E2E-FLEET-DISC-001/002/003 |
+| `KubeMCPServerAuthConfig.HubClusterID` | Deploys and registers the local hub backend through MCP Gateway | `test/infrastructure/fleet_e2e.go` | E2E-FLEET-2394-001 |
 | `fleetAuthenticatedHTTPClient` / `keycloakFleetReadTokenFunc` | Called by `newFleetMCPClient` and `WaitForFleetReady` | `test/e2e/fleet/suite_test.go`, `test/infrastructure/fleet_e2e.go` | all `test/e2e/fleet/*_test.go` specs |
 | `remote-cluster`/`remote_cluster_` naming | `deployKuadrantRegistrations`, `SetupFleetE2EInfrastructure` | `test/infrastructure/fleet_e2e.go` | all `test/e2e/fleet/*_test.go` specs |
 

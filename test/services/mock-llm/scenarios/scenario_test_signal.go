@@ -21,6 +21,7 @@ func testSignalConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "test_signal", SignalName: "TestSignal", Severity: "critical",
 		WorkflowName: "test-signal-handler-v1", WorkflowID: uuid.DeterministicUUID("test-signal-handler-v1"),
+		ActionType:    "DeletePod",
 		WorkflowTitle: "Test Signal Handler", Confidence: 0.90,
 		RootCause:    "Test signal for graceful shutdown validation",
 		ResourceKind: "Pod", ResourceNS: "test", ResourceName: "test-pod",

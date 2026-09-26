@@ -230,7 +230,7 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 	// LLM RCA output, not derived from pre-computed owner chain.
 
 	// Store root cause analysis (if present) - uses centralized helper with remediationTarget
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		rcaResult := analysis.Status.EnsureRCAResult()
 		rcaResult.RootCause = rca.Summary
 		rcaResult.RootCauseAnalysis = rca
@@ -450,7 +450,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	}
 
 	// Preserve RCA if available - Issue #97: uses centralized helper with remediationTarget
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 	}
 
@@ -595,7 +595,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.EnsureInvestigationMetadata().Warnings = res.Warnings
 
 	// Store RCA if available - Issue #97: uses centralized helper with remediationTarget
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 	}
 
@@ -648,7 +648,7 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	analysis.Status.EnsureInvestigationMetadata().Warnings = res.Warnings
 
 	// Store RCA for audit trail — benign conditions still warrant documentation
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 	}
 
@@ -701,7 +701,7 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 	analysis.Status.EnsureInvestigationMetadata().Warnings = res.Warnings
 
 	// #769: Preserve RCA — both rootCause (summary) and rootCauseAnalysis (full struct)
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		rcaResult := analysis.Status.EnsureRCAResult()
 		rcaResult.RootCause = rca.Summary
 		rcaResult.RootCauseAnalysis = rca
@@ -752,7 +752,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.EnsureInvestigationMetadata().Warnings = res.Warnings
 
 	// Store RCA if available (for human review context) - Issue #97: centralized helper
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 	}
 
@@ -813,7 +813,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	}
 
 	// Store RCA if available (for human review context) - Issue #97: centralized helper
-	if rca := ExtractRootCauseAnalysis(res.RootCauseAnalysis); rca != nil {
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
 		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 	}
 
@@ -992,8 +992,10 @@ func mapWarningsToSubReason(warnings []string) string {
 	}
 }
 
-// ExtractRootCauseAnalysis extracts RCA from an AgentSessionResult's raw-JSON
-// RootCauseAnalysis field, including remediationTarget.
+// ExtractRootCauseAnalysis decodes RCA from an AgentSessionResult's raw-JSON
+// RootCauseAnalysis field, including remediationTarget. It preserves the
+// response's severity; use extractRootCauseAnalysisWithSPSeverity when storing
+// an RCA on AIAnalysis so SignalProcessing remains authoritative.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
 // BR-496 v2: remediationTarget is KA-injected from K8s-verified root_owner, not LLM-provided.
 // #542: KA emits "remediationTarget" in JSON; CRD stores it as RemediationTarget.
@@ -1031,5 +1033,22 @@ func ExtractRootCauseAnalysis(rcaData *apiextensionsv1.JSON) *aianalysisv1.RootC
 		}
 	}
 
+	return rca
+}
+
+// extractRootCauseAnalysisWithSPSeverity decodes the RCA narrative from KA but
+// takes severity from AIAnalysis.Spec, which carries SignalProcessing's Rego
+// classification. A missing signal classification is represented as unknown;
+// the model-provided severity is never used as a substitute.
+func extractRootCauseAnalysisWithSPSeverity(analysis *aianalysisv1.AIAnalysis, rcaData *apiextensionsv1.JSON) *aianalysisv1.RootCauseAnalysis {
+	rca := ExtractRootCauseAnalysis(rcaData)
+	if rca == nil {
+		return nil
+	}
+
+	rca.Severity = "unknown"
+	if analysis != nil && analysis.Spec.AnalysisRequest.SignalContext.Severity != "" {
+		rca.Severity = analysis.Spec.AnalysisRequest.SignalContext.Severity
+	}
 	return rca
 }

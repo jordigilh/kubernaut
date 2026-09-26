@@ -131,8 +131,8 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Description: "Generic pod restart for unknown issues",
 			SignalType:  "Unknown",
 			Severity:    "warning",
-			Component:   []string{"apps/v1/Deployment"},
-			Priority:    "P2",
+			Component:   []string{"v1/Pod"},
+			Priority:    "*",
 			// Mock LLM "low_confidence" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
@@ -153,14 +153,28 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to delete"},
 			},
 		},
+		{
+			WorkflowID:  "imagepullbackoff-metrics-v1",
+			Name:        "ImagePullBackOff Confidence Metrics Fixture",
+			Description: "Test-only Pod restart workflow for confidence histogram integration coverage",
+			SignalType:  "ImagePullBackOff",
+			Severity:    "critical",
+			Component:   []string{"v1/Pod"},
+			Priority:    "P2",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
+			},
+		},
 	}
 
-	// Create workflows for staging, production, AND test environments
+	// Create workflows for staging, production, test, AND development environments
 	// Pattern: Environment-specific workflow instances
 	// - Most tests use staging (metrics_integration_test.go)
 	// - Some tests use production (approval decision tests)
 	// - Graceful shutdown tests use test (graceful_shutdown_test.go)
-	// - DataStorage filters by environment, so we need all three
+	// - Audit and metrics tests use development
+	// - DataStorage filters by environment, so we need all four
 	var allWorkflows []TestWorkflow
 	for _, wf := range baseWorkflows {
 		// Staging version
@@ -177,6 +191,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 		testWf := wf
 		testWf.Environment = "test"
 		allWorkflows = append(allWorkflows, testWf)
+
+		// Development version (for audit and metrics tests)
+		developmentWf := wf
+		developmentWf.Environment = "development"
+		allWorkflows = append(allWorkflows, developmentWf)
 	}
 
 	return allWorkflows
@@ -228,12 +247,13 @@ func SeedTestWorkflowsViaDirectCRDCreation(ctx context.Context, k8sClient client
 func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n📝 Writing Mock LLM configuration file: %s\n", configPath)
 
-	// Build YAML content with deterministic key order
-	// Format must match config.Overrides: map[string]ScenarioOverride{workflow_id: "..."}
+	// Build YAML content with deterministic key order. AIAnalysis must exercise
+	// workflow discovery so the selected workflow is registered in the session
+	// before submit_result_with_workflow is returned.
 	var yamlContent strings.Builder
 	yamlContent.WriteString("scenarios:\n")
 	for _, key := range infrastructure.SortedWorkflowUUIDKeys(workflowUUIDs) {
-		yamlContent.WriteString(fmt.Sprintf("  %s:\n    workflow_id: %s\n", key, workflowUUIDs[key]))
+		yamlContent.WriteString(fmt.Sprintf("  %s:\n    workflow_id: %s\n    force_text: false\n", key, workflowUUIDs[key]))
 	}
 
 	// Write to file

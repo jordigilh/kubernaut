@@ -199,10 +199,11 @@ type InvestigateMCPArgs struct {
 	Namespace  string `json:"namespace,omitempty"`
 	Kind       string `json:"kind,omitempty"`
 	Name       string `json:"name,omitempty"`
-	// ClusterID identifies the fleet cluster the target resource lives on
-	// (#1409, ADR-065). Only meaningful when creating a new RR (ignored for
-	// the rr_id takeover path, since the cluster identity is read back from
-	// the existing RR object instead). Empty for the local hub cluster.
+	// ClusterID is the registered MCP Gateway cluster name for the target
+	// resource, including the hub when fleet mode is enabled. It must exactly
+	// match the Prometheus alert/rule "cluster" label. Only meaningful when
+	// creating a new RR (ignored for the rr_id takeover path, since identity is
+	// read back from the existing RR object instead).
 	ClusterID string `json:"cluster_id,omitempty"`
 
 	// InteractionMode declares how much autonomy the harness should grant
@@ -1041,9 +1042,8 @@ func NewInvestigateMCPTool(cfg *InvestigateConfig, mapper meta.RESTMapper) (tool
 		Description: "Investigate an infrastructure incident via MCP. " +
 			"Provide rr_id to resume an existing investigation, or " +
 			"api_version/kind/name (and optional namespace for namespaced resources) " +
-			"to create a new investigation. " +
-			"For fleet (multi-cluster) deployments, also provide cluster_id when creating a new " +
-			"investigation to identify which cluster the resource lives on; omit for the local hub cluster " +
+			"and cluster_id using the MCP Gateway registration name to create a new investigation. " +
+			"In fleet mode, the hub is registered too; cluster_id must match Prometheus cluster attribution. " +
 			"(ignored when resuming via rr_id, since cluster identity is read from the existing request). " +
 			"This tool blocks until the investigation completes and returns " +
 			"the root-cause analysis summary. Live progress events stream " +

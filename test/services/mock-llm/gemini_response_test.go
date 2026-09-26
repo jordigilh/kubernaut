@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/response"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -92,6 +93,21 @@ var _ = Describe("Gemini Response Builders (issue #1157)", func() {
 		It("UT-MOCK-GEMINI-002-004: should have no text part when function call is present", func() {
 			resp := response.BuildGeminiToolCallResponse("search_workflow_catalog", cfg)
 			Expect(resp.Candidates[0].Content.Parts[0].Text).To(BeEmpty())
+		})
+
+		It("UT-MOCK-1637-003: reasoning capture scenario emits a Gemini thought part", func() {
+			scenario, ok := scenarios.DefaultRegistry().Get("mock_reasoning_capture")
+			Expect(ok).To(BeTrue())
+			configured, ok := scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+
+			reasoningCfg := configured.Config()
+			Expect(reasoningCfg.ThoughtText).NotTo(BeEmpty(),
+				"the Gemini AF path must receive the reasoning scenario's thought text")
+
+			resp := response.BuildGeminiToolCallResponse(openai.ToolSubmitResultWithWorkflow, reasoningCfg)
+			Expect(resp.Candidates[0].Content.Parts[0].Thought).To(BeTrue())
+			Expect(resp.Candidates[0].Content.Parts[0].Text).To(Equal(reasoningCfg.ReasoningText))
 		})
 	})
 

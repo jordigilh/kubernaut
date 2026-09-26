@@ -177,6 +177,35 @@ scenarios:
 	})
 
 	Describe("UT-MOCK-KW-002: Registry detection of keyword scenarios", func() {
+		It("UT-MOCK-KW-002-005: should carry workflow discovery overrides into scoped selectors", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+				ScenarioSelectors: []config.ScenarioSelectorOverride{{
+					Name:       "ka_consent_discovery",
+					Caller:     "ka",
+					Phase:      "workflow_discovery",
+					Keywords:   []string{"FullPipelineA2ASeverityGrounding"},
+					WorkflowID: "consent-workflow-uuid",
+					ActionType: "RestartPod",
+					ToolCall:   config.ToolCallOverride{Name: "list_available_actions"},
+				}},
+			})
+
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content:        "FullPipelineA2ASeverityGrounding workflow discovery",
+				Caller:         scenarios.CallerKA,
+				Phase:          scenarios.PhaseWorkflowDiscovery,
+				AvailableTools: []string{"list_available_actions", "list_workflows", "get_workflow", "submit_result_with_workflow"},
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("ka_consent_discovery"))
+
+			scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			cfg := scenarioWithCfg.Config()
+			Expect(cfg.WorkflowID).To(Equal("consent-workflow-uuid"))
+			Expect(cfg.ActionType).To(Equal("RestartPod"))
+		})
+
 		It("UT-MOCK-KW-002-001: should detect scenario by keyword match", func() {
 			overrides := &config.Overrides{
 				Scenarios: map[string]config.ScenarioOverride{},
@@ -275,6 +304,79 @@ scenarios:
 			scenarioWithCfg := result.Scenario.(scenarios.ScenarioWithConfig)
 			cfg := scenarioWithCfg.Config()
 			Expect(cfg.ForceText).To(Equal(scenarios.BoolPtr(false)))
+		})
+	})
+
+	Describe("UT-MOCK-2390-002: GitOps workflow discovery signal selector", func() {
+		It("UT-MOCK-2390-002-001: should route a suffixed FullPipeline signal to the configured GitOps workflow", func() {
+			yaml := `
+scenario_selectors:
+  - name: "ka_gitops_workflow_discovery_2390"
+    caller: "ka"
+    phase: "workflow_discovery"
+    signal_patterns: ["FullPipelineA2ASeverityGrounding_fp_int_"]
+    workflow_id: "gitops-staging-uuid"
+    action_type: "IncreaseMemoryLimits"
+    tool_call:
+      name: "list_available_actions"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+
+			registry := scenarios.DefaultRegistryFull(overrides, "")
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: `{"signal_name":"FullPipelineA2ASeverityGrounding_fp_int_3e56c0e0"}`,
+				Caller:  scenarios.CallerKA,
+				Phase:   scenarios.PhaseWorkflowDiscovery,
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("ka_gitops_workflow_discovery_2390"))
+
+			scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			cfg := scenarioWithCfg.Config()
+			Expect(cfg.WorkflowID).To(Equal("gitops-staging-uuid"))
+			Expect(cfg.ActionType).To(Equal("IncreaseMemoryLimits"))
+
+			unrelatedResult := registry.Detect(&scenarios.DetectionContext{
+				Content: `{"signal_name":"FullPipelineA2ASeverityGrounding_consent_3e56c0e0"}`,
+				Caller:  scenarios.CallerKA,
+				Phase:   scenarios.PhaseWorkflowDiscovery,
+			})
+			Expect(unrelatedResult).NotTo(BeNil())
+			Expect(unrelatedResult.Scenario.Name()).NotTo(Equal("ka_gitops_workflow_discovery_2390"))
+		})
+
+		It("UT-MOCK-2390-002-002: should reject a selector with an empty signal pattern", func() {
+			yaml := `
+scenario_selectors:
+  - name: "invalid_signal_pattern"
+    signal_patterns: ["   "]
+    tool_call:
+      name: "list_available_actions"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			_, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).To(MatchError("scenario selector signal pattern must not be empty"))
+		})
+
+		It("UT-MOCK-2390-002-003: should require keywords or signal patterns", func() {
+			yaml := `
+scenario_selectors:
+  - name: "missing_matcher"
+    tool_call:
+      name: "list_available_actions"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
+
+			_, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).To(MatchError("scenario selector must define at least one keyword or signal pattern"))
 		})
 	})
 })

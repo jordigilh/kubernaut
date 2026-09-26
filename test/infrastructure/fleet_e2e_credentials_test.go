@@ -66,6 +66,25 @@ var _ = Describe("buildLLMCredentialsSecretManifest", func() {
 	})
 })
 
+var _ = Describe("addFleetWorkloadNamespaces", func() {
+	It("UT-INFRA-FLEET-026: allocates isolated workload namespaces outside kubernaut-system", func() {
+		namespaces := map[string]string{}
+		addFleetWorkloadNamespaces(namespaces)
+
+		Expect(namespaces).To(HaveKey("fleet-crashloop"))
+		Expect(namespaces).To(HaveKey("fleet-oomkill"))
+		Expect(namespaces).To(HaveKey("fleet-organic-gateway"))
+		Expect(namespaces).To(HaveKey("fleet-ka-interactive"))
+
+		seen := map[string]struct{}{}
+		for key, namespace := range namespaces {
+			Expect(namespace).NotTo(Equal("kubernaut-system"), "workload %s must not use the control-plane namespace", key)
+			Expect(seen).NotTo(HaveKey(namespace), "workload namespace %s must be isolated", namespace)
+			seen[namespace] = struct{}{}
+		}
+	})
+})
+
 // Issue found 2026-09-02 (demo team report): the fleet demo's AlertManager
 // runs in a dedicated "monitoring" namespace (DD-EM-005's fleet-wide
 // platform-monitoring instance), but Gateway's Service lives in
@@ -286,6 +305,109 @@ var _ = Describe("fleet gateway cluster registration identities", func() {
 		Expect(manifest).To(ContainSubstring("name: prod-west"))
 		expectValidYAMLDocuments(manifest)
 	})
+
+	It("IT-INFRA-AF-FLEET-2462-001 [BR-FLEET-054]: renders one hub Gateway backend without loopback or spoke aliases", func() {
+		manifest := captureKubectlManifest(func() error {
+			return deployEnvoyAIGatewayRegistrations(context.Background(), "kubernaut-system", "test-kubeconfig", "http://gateway/mcp", KubeMCPServerAuthConfig{
+				GatewayType:      registry.GatewayEAIGW,
+				AuthorizationURL: "https://keycloak:8443/realms/kubernaut-demo",
+				OAuthAudience:    "kube-mcp-server",
+				HubClusterID:     "hub",
+			}, io.Discard)
+		})
+
+		type backendEndpoint struct {
+			FQDN struct {
+				Hostname string `yaml:"hostname"`
+				Port     int    `yaml:"port"`
+			} `yaml:"fqdn"`
+		}
+		type backendRef struct {
+			Name           string `yaml:"name"`
+			ForwardHeaders []struct {
+				Name string `yaml:"name"`
+			} `yaml:"forwardHeaders"`
+		}
+		type gatewayDocument struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec struct {
+				Endpoints   []backendEndpoint `yaml:"endpoints"`
+				BackendRefs []backendRef      `yaml:"backendRefs"`
+			} `yaml:"spec"`
+		}
+
+		decoder := yaml.NewDecoder(strings.NewReader(manifest))
+		var fleetBackendNames []string
+		var hubBackendName string
+		var hubBackendHost string
+		var hubBackendPort int
+		var hubRouteRefs []string
+		hubForwardsAuthorization := false
+		for {
+			var doc gatewayDocument
+			err := decoder.Decode(&doc)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			Expect(err).NotTo(HaveOccurred(), "Gateway manifest document must parse")
+
+			switch doc.Kind {
+			case "Backend":
+				if doc.Metadata.Name == "keycloak-jwks" {
+					continue
+				}
+				fleetBackendNames = append(fleetBackendNames, doc.Metadata.Name)
+				if doc.Metadata.Name == "hub" && len(doc.Spec.Endpoints) == 1 {
+					hubBackendName = doc.Metadata.Name
+					hubBackendHost = doc.Spec.Endpoints[0].FQDN.Hostname
+					hubBackendPort = doc.Spec.Endpoints[0].FQDN.Port
+				}
+			case "MCPRoute":
+				for _, ref := range doc.Spec.BackendRefs {
+					hubRouteRefs = append(hubRouteRefs, ref.Name)
+					if ref.Name == "hub" {
+						for _, header := range ref.ForwardHeaders {
+							if header.Name == "Authorization" {
+								hubForwardsAuthorization = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		Expect(fleetBackendNames).To(Equal([]string{"hub"}),
+			"hub-only AF Fleet mode must not publish implicit loopback or spoke registrations")
+		Expect(hubBackendName).To(Equal("hub"))
+		Expect(hubBackendHost).To(Equal("kube-mcp-server.kubernaut-system.svc.cluster.local"))
+		Expect(hubBackendPort).To(Equal(8080))
+		Expect(hubRouteRefs).To(Equal([]string{"hub"}), "the MCP route must expose only the explicit hub backend")
+		Expect(hubForwardsAuthorization).To(BeTrue(), "the caller token must reach the registered hub MCP backend")
+		expectValidYAMLDocuments(manifest)
+	})
+
+	It("UT-INFRA-AF-FLEET-2462-002 [BR-FLEET-054]: detects an explicit single-cluster hub registration", func() {
+		Expect(isHubOnlyRegistration(KubeMCPServerAuthConfig{
+			GatewayType:  registry.GatewayEAIGW,
+			HubClusterID: "hub",
+		})).To(BeTrue())
+		Expect(isHubOnlyRegistration(KubeMCPServerAuthConfig{
+			GatewayType:            registry.GatewayEAIGW,
+			HubClusterID:           "hub",
+			AllRegistrationsRemote: true,
+		})).To(BeFalse(), "full Fleet routing must keep its existing remote registration behavior")
+	})
+
+	It("IT-INFRA-AF-FLEET-2462-003 [BR-INTEGRATION-065]: standalone FMC setup requires an image", func() {
+		fleetOptions, err := SetupFMCHubOnlyInfrastructure(context.Background(), "", "", "", "", io.Discard)
+
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("fmc image is required"))
+		Expect(fleetOptions).To(BeNil())
+	})
 })
 
 func captureKubectlManifest(run func() error) string {
@@ -312,6 +434,16 @@ func captureKubectlManifest(run func() error) string {
 	Expect(err).NotTo(HaveOccurred())
 	return string(manifest)
 }
+
+var _ = Describe("fleet external image preload policy", func() {
+	It("UT-INFRA-FLEETDEMO-026 [BR-PLATFORM-014]: skips archive preload in local mode", func() {
+		Expect(shouldPreloadFleetExternalImages("")).To(BeFalse())
+	})
+
+	It("UT-INFRA-FLEETDEMO-027 [BR-PLATFORM-014]: preloads external images in CI mode", func() {
+		Expect(shouldPreloadFleetExternalImages("quay.io/kubernaut-ai")).To(BeTrue())
+	})
+})
 
 func expectValidYAMLDocuments(manifest string) {
 	decoder := yaml.NewDecoder(strings.NewReader(manifest))

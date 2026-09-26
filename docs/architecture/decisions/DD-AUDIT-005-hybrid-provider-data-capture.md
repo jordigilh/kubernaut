@@ -38,7 +38,7 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 | Service | Event Type | Purpose | Content |
 |---------|-----------|---------|---------|
 | **Kubernaut Agent (KA)** | `aiagent.response.complete` | Provider perspective (success) | Full `IncidentResponse` structure |
-| **Kubernaut Agent (KA)** | `aiagent.response.failed` | Provider perspective (failure) | Error message, failure phase, duration (#442, SOC2 CC8.1) |
+| **Kubernaut Agent (KA)** | `aiagent.response.failed` | Provider perspective (failure) | Error message, standardized `error_details`, failure phase, duration (#442, BR-AUDIT-005, SOC2 CC7.2) |
 | **AI Analysis** | `aianalysis.analysis.completed` | Consumer perspective | `provider_response_summary` + business context |
 
 ---
@@ -484,4 +484,3 @@ Starting in v1.3 ([issue #433](https://github.com/jordigilh/kubernaut/issues/433
 - [SOC2 Audit Test Plan v2.1.0](../../development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md)
 - [ADR-034: Unified Audit Table Design](./ADR-034-unified-audit-table-design.md)
 - [ADR-038: Asynchronous Buffered Audit Trace Ingestion](./ADR-038-async-buffered-audit-ingestion.md)
-

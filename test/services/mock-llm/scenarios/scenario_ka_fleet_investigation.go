@@ -37,8 +37,8 @@ const kaToolE2ETargetName = "ka-tool-e2e-target"
 // as afFleetKubectlRemoteClusterID in scenario_af_fleet_kubectl.go).
 const kaToolE2ETargetNamespace = "kubernaut-system"
 
-// kaToolE2EKeyword selects this scenario. A single keyword serves BOTH the
-// hub-local and fleet test cases (issue #1729, E2E-FLEET-017): the test
+// kaToolE2EKeyword selects this scenario. A single keyword serves both the
+// registered hub and spoke test cases (issue #1729, E2E-FLEET-017): the test
 // tells the pipeline nothing about which tool KA should call -- it only
 // varies the alert's cluster_id and which cluster the target resource lives
 // on -- so the scenario itself must be environment-agnostic too.
@@ -72,9 +72,10 @@ const (
 	kaToolE2ELocalToolName = "kubectl_get_by_name"
 )
 
-// kaToolE2ELocalEvidence/RemoteEvidence are the memory limit values
+// kaToolE2ELocalEvidence/FleetEvidence are the memory limit values
 // E2E-FLEET-017 deploys ka-tool-e2e-target with on each cluster (a
-// deliberately different value per cluster, NOT the resource name/kind/
+// deliberately different value between the legacy local path and registered
+// Gateway path, NOT the resource name/kind/
 // namespace, which are identical everywhere the fixture is deployed and
 // therefore would not distinguish "reached the right cluster" from "reached
 // the wrong one"). A resource-limit value is invisible to SignalProcessing's
@@ -85,8 +86,8 @@ const (
 // come from a genuine kubectl_get_by_name/resources_get round trip against
 // the correct cluster's live object.
 const (
-	kaToolE2ELocalEvidence  = "111Mi"
-	kaToolE2ERemoteEvidence = "222Mi"
+	kaToolE2ELocalEvidence = "111Mi"
+	kaToolE2EFleetEvidence = "222Mi"
 )
 
 // kaToolCallForAvailability picks which single tool call to script based
@@ -126,7 +127,7 @@ func kaToolCallForAvailability(available []string, targetName string) (toolName 
 			"apiVersion": "apps/v1",
 			"name":       targetName,
 			"namespace":  kaToolE2ETargetNamespace,
-		}, kaToolE2ERemoteEvidence, true
+		}, kaToolE2EFleetEvidence, true
 	case slices.Contains(available, kaToolE2ELocalToolName):
 		return kaToolE2ELocalToolName, map[string]interface{}{
 			"kind":      "Deployment",
@@ -141,7 +142,7 @@ func kaToolCallForAvailability(available []string, targetName string) (toolName 
 // kaToolCallE2EScenario drives KA's real investigation loop (via real
 // AIAnalysis reconciliation, not a mocked shortcut) to call one real K8s
 // read tool and echo back proof of a genuine, correctly-targeted round
-// trip. One scenario, one keyword, for BOTH the hub-local and fleet test
+// trip. One scenario and keyword cover both registered hub and spoke test
 // cases (issue #1729 close-out, E2E-FLEET-017) -- see
 // kaToolCallForAvailability for how it stays strictly environment-agnostic.
 //
@@ -151,9 +152,8 @@ func kaToolCallForAvailability(available []string, targetName string) (toolName 
 // dynamic scenarios, e.g. afFleetKubectlScenario).
 //
 // Turn 2 (function results present): KA's investigator loop has, by this
-// point, already executed the tool for real -- against the local registry
-// (hub-local case) or against this suite's real fleet overlay -> MCP
-// Gateway -> remote Kind cluster (fleet case) -- and appended the tool
+// point, already executed the tool for real -- against this suite's fleet
+// overlay -> MCP Gateway -> registered hub or remote Kind cluster -- and appended the tool
 // result to the conversation. ConfigForContext inspects ctx.AllText for the
 // environment-specific expectedEvidence value and only reports it found in
 // RootCause if present, so the E2E test can assert on genuine,
@@ -211,7 +211,7 @@ func (s *kaToolCallE2EScenario) ConfigForContext(ctx *DetectionContext) MockScen
 	// (turn 2) has been appended to the conversation with the correct
 	// cluster's live object data -- neither the turn-1 alert-derived prompt
 	// nor SP's own KubernetesContext enrichment carries a resource-limit
-	// value (see kaToolE2ELocal/RemoteEvidence doc comment above).
+	// value (see kaToolE2ELocal/FleetEvidence doc comment above).
 	// ctx.AllText is lowercased by buildDetectionContext
 	// (test/services/mock-llm/handlers/openai.go), so expectedEvidence
 	// ("111Mi"/"222Mi", a case-sensitive K8s memory quantity string) must be

@@ -4,14 +4,19 @@
 **Date**: 2025-11-16
 **Deciders**: Architecture Team
 **Related**: ADR-041, DD-WORKFLOW-001, DD-STORAGE-008
-**Version**: 1.1
+**Version**: 1.2
+
+> **Severity authority correction**: The v1.1 clauses below that tell the LLM to assess or override severity are superseded by BR-SP-105 and DD-SEVERITY-001. SignalProcessing's Rego classification is authoritative; the LLM must pass it through unchanged in RCA and workflow-search fields.
 
 ## Changelog
 
 ### Version 1.1 (2025-11-16)
 - Clarified that `signal_type` in search query comes from LLM's RCA assessment, not input signal
-- Clarified that `severity` in search query comes from LLM's RCA assessment, not input signal
-- Emphasized that LLM determines technical fields based on investigation
+- (Superseded) Clarified that `severity` in search query comes from LLM's RCA assessment, not input signal
+- Emphasized that LLM determines technical fields based on investigation; severity is now explicitly excluded from this responsibility by BR-SP-105
+
+### Version 1.2 (2026-09-25)
+- Corrected severity authority: the SP Rego classification is passed through unchanged; RCA evidence must not cause the LLM to reclassify severity
 
 
 ### Version 1.0 (2025-11-16)
@@ -137,7 +142,7 @@ LIMIT 10;
 
 **Required Components**:
 1. `signal_type`: Canonical Kubernetes event reason (first word)
-2. `severity`: RCA severity assessment (second word)
+2. `severity`: SignalProcessing's normalized severity (second word; pass through unchanged)
 
 **Optional Components**:
 3. Additional context keywords for semantic matching
@@ -155,7 +160,7 @@ NodeNotReady critical infrastructure
 
 **DO**:
 - ✅ Use canonical signal_type (exact Kubernetes event reason)
-- ✅ Use RCA severity (not input severity if different)
+- ✅ Use the SignalProcessing severity unchanged (do not reassess it from RCA findings)
 - ✅ Put signal_type first, severity second (consistent order)
 - ✅ Add optional context keywords for better semantic matching
 - ✅ Use space-separated format (for embedding compatibility)
@@ -174,9 +179,9 @@ NodeNotReady critical infrastructure
 
 | Parameter | Type | Source | LLM Role | Purpose |
 |-----------|------|--------|----------|---------|
-| `query` | string | LLM constructs | **Determine** from RCA | Semantic search (signal_type + severity + keywords) |
+| `query` | string | LLM constructs using SP context | **Construct** from signal type + supplied severity + keywords | Semantic search (signal_type + severity + keywords) |
 | `label.signal-type` | string | LLM's RCA | **Determine** from investigation | Exact match filter (canonical event) |
-| `label.severity` | string | LLM's RCA | **Determine** from assessment | Exact match filter (RCA severity) |
+| `label.severity` | string | SignalProcessing classification | **Pass-through unchanged** | Exact match filter (SP severity) |
 | `label.environment` | string | Input | **Pass-through** | Exact match filter (production/staging/etc) |
 | `label.priority` | string | Input | **Pass-through** | Exact match filter (P0/P1/P2/P3) |
 | `label.risk-tolerance` | string | Input | **Pass-through** | Exact match filter (low/medium/high) |
@@ -187,17 +192,17 @@ NodeNotReady critical infrastructure
 #### 3.2 Field Roles
 
 **LLM Determines (Technical Assessment)**:
-- `query`: Constructed from RCA findings
+- `query`: Constructed from RCA findings, while retaining the supplied SP severity
 - `label.signal-type`: Canonical Kubernetes event from investigation
-- `label.severity`: RCA severity assessment (may differ from input)
 
 **LLM Pass-Through (Business/Policy)**:
+- `label.severity`: SignalProcessing's Rego classification (must not be recalculated)
 - `label.environment`: Deployment classification (not technical)
 - `label.priority`: Business priority (not technical severity)
 - `label.risk-tolerance`: Organizational policy (not technical decision)
 - `label.business-category`: Business classification (not technical)
 
-**Key Principle**: LLM determines technical fields from RCA, passes through business/policy fields unchanged.
+**Key Principle**: The LLM may determine RCA findings and signal type, but must pass through SignalProcessing's severity and the other policy fields unchanged.
 
 ---
 
@@ -241,68 +246,23 @@ Label: label.signal-type=OOMKilled ✅
 
 ---
 
-### 5. RCA Severity Taxonomy (4 Levels)
+### 5. Severity Pass-Through (BR-SP-105)
 
-**CRITICAL**: The LLM's RCA severity may differ from input signal severity. Assess based on investigation.
+SignalProcessing determines normalized severity from the external signal using the operator-configured Rego policy. The LLM receives that classification as input and MUST NOT reassess, infer, or replace it based on investigation evidence, environment, business impact, or RCA findings.
 
-| Level | Assessment Criteria | Example Scenario |
-|-------|-------------------|------------------|
-| `critical` | • Production outage affecting users NOW<br>• Data loss risk or in progress<br>• Revenue impact (transactions failing)<br>• Complete service unavailability<br>• SLA violation in progress | Payment service down, 100% error rate, users cannot checkout |
-| `high` | • Significant service degradation<br>• Multiple users affected<br>• SLA at risk (approaching threshold)<br>• Escalation likely if not resolved<br>• Partial functionality loss | API latency 5x normal, 20% error rate, users reporting issues |
-| `medium` | • Limited impact to single service<br>• Workaround available<br>• No immediate user impact<br>• Single user/team affected<br>• Degraded but functional | Background job failing, manual workaround exists, no user-facing impact |
-| `low` | • Minimal or no impact<br>• Informational/proactive<br>• No user impact<br>• Development/test environment<br>• Cosmetic issue | Dev pod restarting, test environment issue, informational alert |
-
-#### 5.1 Assessment Factors (Priority Order)
-
-1. **User Impact** (Primary Factor)
-   - How many users are affected RIGHT NOW?
-   - Are users blocked from critical functionality?
-   - Is this user-facing or internal?
-
-2. **Environment** (Severity Multiplier)
-   - Production → Higher severity
-   - Staging → Medium severity
-   - Development → Lower severity
-
-3. **Business Impact** (Critical Consideration)
-   - Revenue loss (transactions failing)
-   - SLA violations (uptime, latency)
-   - Compliance issues (data access, audit)
-
-4. **Escalation Risk** (Future Impact)
-   - Will this spread to other services?
-   - Will this get worse over time?
-   - Is this a cascading failure?
-
-5. **Data Risk** (Catastrophic Potential)
-   - Risk of data loss
-   - Risk of data corruption
-   - Risk of data exposure
-
-#### 5.2 Usage Guidelines
-
-**DO**:
-- ✅ Assess severity independently based on investigation
-- ✅ Override input severity if investigation reveals different impact
-- ✅ Consider all 5 assessment factors
-- ✅ Justify your severity assessment in natural language analysis
-
-**DO NOT**:
-- ❌ Blindly copy input severity without assessment
-- ❌ Use severity levels not in taxonomy (e.g., "urgent", "emergency")
-- ❌ Let business priority override technical severity assessment
+**Rules**:
+- Copy the exact input severity to `root_cause_analysis.severity`.
+- Use the exact input severity for `label.severity` and in the workflow-search query.
+- If the input classification is `unknown`, preserve `unknown`; do not upgrade it based on the investigation.
+- The LLM may report impact and uncertainty in the RCA narrative, but severity classification remains owned by SignalProcessing.
 
 **Example**:
 ```
-Input: severity="high"
-Investigation:
-  - Production payment service (revenue-critical)
-  - 100% error rate (complete outage)
-  - Users cannot complete transactions
-  - P0 priority, immediate revenue impact
-Assessment: This meets "critical" criteria (production outage, revenue impact)
-Query: "OOMKilled critical"
-Label: label.severity=critical ✅ (escalated from "high")
+SignalProcessing input: severity="high"
+Investigation: confirms a production outage affecting users
+RCA: may explain the outage and its impact, but must retain severity="high"
+Query: "OOMKilled high"
+Label: label.severity=high
 ```
 
 ---
@@ -397,7 +357,7 @@ Error Details:
 2. Examined Resource: deployment/payment-service in production namespace
 3. Reviewed Metrics: Memory usage exceeded 512Mi limit
 4. Root Cause: Insufficient memory allocation for current load
-5. RCA Severity: critical (production outage, revenue impact, users affected)
+5. SignalProcessing severity: critical (authoritative input classification; copied unchanged)
 ```
 
 **LLM's MCP Search Call**:
@@ -490,12 +450,12 @@ GET /api/v1/playbooks/search?
 #### 7.2 Field Justification
 
 **Query Construction**:
-- `query="OOMKilled critical"`: ✅ Canonical signal_type + RCA severity
+- `query="OOMKilled critical"`: ✅ Canonical signal_type + SignalProcessing severity
 - Simple format for semantic matching with workflow descriptions
 
 **Label Parameters (Exact Matching)**:
 - `label.signal-type=OOMKilled`: ✅ LLM determined from investigation
-- `label.severity=critical`: ✅ LLM assessed (confirmed input severity)
+- `label.severity=critical`: ✅ Passed through unchanged from SignalProcessing
 - `label.environment=production`: ✅ Pass-through from input
 - `label.priority=P0`: ✅ Pass-through from input
 - `label.risk-tolerance=low`: ✅ Pass-through from input
@@ -516,12 +476,12 @@ This taxonomy must be included in the LLM prompt (ADR-041) as a dedicated sectio
 
 **Prompt Section: "MCP Workflow Search Guidance"**
 
-**Location**: After "RCA Severity Assessment", before "Output Format"
+**Location**: After the signal context, before "Output Format"
 
 **Content**: Summary of this DD with:
 - Query format specification: `<signal_type> <severity> [optional_keywords]`
 - Signal type canonical values (top 10 most common)
-- RCA severity criteria (4 levels with examples)
+- SignalProcessing severity pass-through requirement (no LLM reassessment)
 - Business/policy field pass-through requirement
 - Complete MCP search example
 
@@ -554,14 +514,14 @@ Example: "OOMKilled critical: Increases memory limits and restarts pod on OOM"
 - [ ] Test MCP search guidance section is present in prompt
 - [ ] Test query format is explained
 - [ ] Test signal type canonical values are listed
-- [ ] Test RCA severity criteria are explained
+- [ ] Test SignalProcessing severity pass-through is explained
 - [ ] Test business/policy pass-through is clarified
 - [ ] Test complete example is included
 
 **Integration Tests** (Future - with real LLM):
 - [ ] Test LLM constructs query correctly (`<signal_type> <severity>`)
 - [ ] Test LLM uses canonical signal types (not natural language)
-- [ ] Test LLM assesses RCA severity independently
+- [ ] Test LLM preserves the SP severity regardless of RCA findings
 - [ ] Test LLM passes through business/policy fields unchanged
 - [ ] Test LLM populates workflow parameters correctly
 - [ ] Test confidence scores are 90%+ for exact matches

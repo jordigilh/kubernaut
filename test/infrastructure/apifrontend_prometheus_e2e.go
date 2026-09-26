@@ -25,6 +25,7 @@ package infrastructure
 // Provides:
 //   - DeployPrometheusForSeverityTriage: orchestrates Prometheus + AF rules
 //   - SeedTriageAlertRules: patches Prometheus ConfigMap with AF fixtures
+//   - RemoveFleetOnlyPrometheusRules: isolates standalone AF from Fleet markers
 //   - WaitForPrometheusRuleState: polls /api/v1/rules for desired state
 //   - AFInjectOTLPMetrics: single-metric OTLP injection (wraps InjectMetrics)
 //   - SeverityTriageAlertRulesYAML: PromQL alert rule fixtures
@@ -37,12 +38,15 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// DeployPrometheusForSeverityTriage deploys Prometheus in the E2E cluster and
-// seeds AF-specific alert rules for the 5-tier severity triage pipeline tests.
+// DeployPrometheusForSeverityTriage deploys Prometheus in the single-cluster AF
+// E2E environment and seeds AF-specific alert rules for the severity tests.
+// clusterID is optional; the standalone AF lane passes empty because it has no
+// Gateway registration, while a Gateway-backed caller may supply its ID.
 //
 // This delegates to kubernaut's canonical DeployPrometheus (DD-TEST-001 v2.8)
 // and then patches the rules ConfigMap with AF's triage fixtures.
@@ -69,7 +73,7 @@ import (
 // concurrently.
 //
 // Ref: Prometheus OTLP receiver -- https://prometheus.io/docs/guides/opentelemetry/
-func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, clusterID, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "Deploying Prometheus for severity triage testing...")
 
 	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -82,7 +86,7 @@ func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfi
 
 	_, _ = fmt.Fprintln(writer, "Seeding AF severity triage alert rules...")
 
-	if err := SeedTriageAlertRules(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := SeedTriageAlertRules(ctx, namespace, clusterID, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("seed triage alert rules: %w", err)
 	}
 
@@ -117,10 +121,11 @@ func waitForPrometheusRollout(ctx context.Context, namespace, kubeconfigPath str
 }
 
 // SeedTriageAlertRules patches the Prometheus rules ConfigMap with AF-specific
-// alert rules for the 5-tier severity triage pipeline. After patching, it
-// triggers a Prometheus config reload.
-func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	rulesYAML := strings.TrimSpace(SeverityTriageAlertRulesYAML)
+// alert rules for the 5-tier severity triage pipeline. Empty clusterID omits
+// the synthetic cluster labels used only by Gateway-backed callers. After
+// patching, it triggers a Prometheus config reload.
+func SeedTriageAlertRules(ctx context.Context, namespace, clusterID, kubeconfigPath string, writer io.Writer) error {
+	rulesYAML := renderSeverityTriageAlertRules(clusterID)
 
 	patchJSON := fmt.Sprintf(`{"data":{"af-severity-triage.yml":%q}}`, rulesYAML)
 
@@ -156,6 +161,54 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 
 	_, _ = fmt.Fprintln(writer, "  Prometheus ready with AF severity triage alert rules")
 	return nil
+}
+
+// RemoveFleetOnlyPrometheusRules removes synthetic Fleet markers from the
+// standalone AF Prometheus. Those cluster-scoped alerts are intentionally
+// fail-closed by severity triage and would otherwise make unrelated local
+// Tier 2/Tier 2.5 fixtures appear ambiguous.
+func RemoveFleetOnlyPrometheusRules(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	patchJSON := `{"data":{"af-hub-cluster-triage-2394.yml":null,"fleet-alerts-cluster-scoped-2274.yml":null,"fleet-interactive-bridge-grounding.yml":null,"fleet-organic-af-only-alert.yml":null,"fleet-organic-gateway-alert.yml":null}}`
+	patchCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
+		"patch", "configmap", "prometheus-rules", "-n", namespace, "--type=merge", "-p", patchJSON)
+	patchCmd.Stdout = writer
+	patchCmd.Stderr = writer
+	if err := patchCmd.Run(); err != nil {
+		return fmt.Errorf("remove Fleet-only Prometheus rules: %w", err)
+	}
+
+	restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"rollout", "restart", "deployment/prometheus", "-n", namespace)
+	restartCmd.Stdout = writer
+	restartCmd.Stderr = writer
+	if err := restartCmd.Run(); err != nil {
+		return fmt.Errorf("restart Prometheus after removing Fleet-only rules: %w", err)
+	}
+
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"rollout", "status", "deployment/prometheus", "-n", namespace, "--timeout=60s")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("prometheus not ready after removing Fleet-only rules: %w", err)
+	}
+	return nil
+}
+
+// renderSeverityTriageAlertRules renders the local AF fixture without a
+// synthetic Gateway identity. A non-empty ID is available for callers that
+// explicitly need Gateway-attributed rules; the standalone AF E2E passes an
+// empty ID and local triage ignores cluster labels.
+func renderSeverityTriageAlertRules(clusterID string) string {
+	rulesYAML := SeverityTriageAlertRulesYAML
+	if clusterID == "" {
+		rulesYAML = strings.ReplaceAll(rulesYAML, "          cluster: \"__HUB_CLUSTER_ID__\"\n", "")
+		rulesYAML = strings.ReplaceAll(rulesYAML, "          cluster: \"__UNREGISTERED_CLUSTER_ID__\"\n", "")
+	} else {
+		rulesYAML = strings.ReplaceAll(rulesYAML, "\"__HUB_CLUSTER_ID__\"", strconv.Quote(clusterID))
+		rulesYAML = strings.ReplaceAll(rulesYAML, "\"__UNREGISTERED_CLUSTER_ID__\"", strconv.Quote("unregistered-cluster-2462"))
+	}
+	return strings.TrimSpace(rulesYAML)
 }
 
 // PrometheusRuleState represents the state of a Prometheus alerting rule.
@@ -316,9 +369,8 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //     target, so 1396-001's own groundSession call can just as
 //     nondeterministically inherit #1395-001's still-open KA session and
 //     observe "session_active", surfacing as an empty (fail-closed)
-//     payload.RCA.Severity instead of the scripted "critical" (CI run
-//     31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
-//     through AF to SSE"). A third dedicated target removes the last
+//     payload.RCA.Severity instead of the authoritative "warning" (CI run
+//     31351842574, E2E-AF-1396-001). A third dedicated target removes the last
 //     remaining shared fixture in this Ordered block: each of the 3 Its
 //     now grounds against its own RR.
 //
@@ -385,6 +437,8 @@ groups:
         labels:
           severity: critical
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "CPU usage is critically high"
       - alert: HighMemory
@@ -393,6 +447,8 @@ groups:
         labels:
           severity: high
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Memory usage is high"
       - alert: DiskPressure
@@ -401,6 +457,8 @@ groups:
         labels:
           severity: medium
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Disk usage is elevated"
       - alert: NetworkLatency
@@ -409,6 +467,8 @@ groups:
         labels:
           severity: high
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
         annotations:
           summary: "Network latency is high"
       - alert: AFInvestigateGrounding
@@ -417,6 +477,8 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-investigate-e2e
           kind: Pod
           name: af-investigate-target
@@ -428,6 +490,8 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: sev-userhint-ns
           kind: Deployment
           name: test-user-severity-bypass
@@ -439,6 +503,8 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target
@@ -450,6 +516,8 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-2
@@ -461,6 +529,8 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-3
@@ -472,9 +542,37 @@ groups:
         labels:
           severity: warning
           source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
           namespace: af-structured-decision-e2e
           kind: Pod
           name: structured-decision-target-4
         annotations:
           summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-2387-002 (dedicated target -- same intra-suite session_active contention rationale as Grounding2/3; Gateway creates the RR directly from this alert so the grounding kubernaut_investigate dedups onto it and KA investigates signal StructuredDecisionGrounding4)"
+      - alert: FleetSessionActiveGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: fleet-session-active-e2e
+          kind: Pod
+          name: fleet-session-active-target
+        annotations:
+          summary: "Synthetic grounding alert for Fleet-mode session_active AF E2E (#2462)"
+      - alert: FleetUnregisteredClusterGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__UNREGISTERED_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: fleet-unregistered-cluster-e2e
+          kind: Deployment
+          name: fleet-unregistered-target
+        annotations:
+          summary: "Synthetic grounding alert for an unregistered cluster ID with an existing same-named target (#2462)"
 `

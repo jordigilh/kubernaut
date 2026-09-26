@@ -50,7 +50,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 	var mcpSessionID string
 
 	BeforeAll(func() {
-		promURL := "http://localhost:9190"
+		promURL := e2eHostURL("http", 9190)
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
 		}

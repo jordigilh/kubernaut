@@ -113,6 +113,18 @@ var _ = Describe("resolveDemoReasoning", func() {
 		Entry("UT-INFRA-FLEETDEMO-052 [BR-PLATFORM-014]: gpt-5.6-luna defaults to no reasoning tokens",
 			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6-luna"},
 			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-062 [BR-PLATFORM-014]: GPT Luna model versions default to no reasoning effort for function-tool compatibility",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-6-luna"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-063 [BR-PLATFORM-014]: newer GPT versions use the same default across model variants",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "GPT-7.2-SOL-preview"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-065 [BR-PLATFORM-014]: GPT 5.6 Terra defaults to no reasoning effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6-terra"},
+			true, "none", ""),
+		Entry("UT-INFRA-FLEETDEMO-066 [BR-PLATFORM-014]: GPT 5.6 base alias defaults to no reasoning effort",
+			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5.6"},
+			true, "none", ""),
 		Entry("UT-INFRA-FLEETDEMO-053 [BR-PLATFORM-014]: gpt-5 defaults to minimal effort",
 			DemoHelmOptions{LLMProvider: "openai", LLMModel: "gpt-5"},
 			true, "minimal", ""),
@@ -312,6 +324,18 @@ var _ = Describe("buildDemoHelmArgs", func() {
 		))
 	})
 
+	It("UT-INFRA-FLEETDEMO-064 [BR-PLATFORM-014]: renders the GPT 5.6+ function-tool-compatible effort independent of variant", func() {
+		opts := baseOpts
+		opts.LLMProvider = "openai"
+		opts.LLMModel = "gpt-6-sol"
+		args := buildDemoHelmArgs("/tmp/kubeconfig", "charts/kubernaut", "kubernaut-system", baseFleetOpts, opts, "/tmp/sp.rego", "/tmp/aa.rego")
+
+		Expect(args).To(ContainElements(
+			"--set", "global.llmProfiles.primary.reasoning.enabled=true",
+			"--set", "global.llmProfiles.primary.reasoning.effort=none",
+		))
+	})
+
 	It("UT-INFRA-FLEETDEMO-051 [BR-PLATFORM-014]: renders explicit reasoning overrides for custom endpoints", func() {
 		opts := baseOpts
 		opts.LLMReasoningEnabled = demoBoolPointer(true)
@@ -362,6 +386,7 @@ var _ = Describe("buildDemoHelmArgs", func() {
 			"--set", "console.oauth2Proxy.loginURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
 			"--set", "console.oauth2Proxy.redeemURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			"--set", "console.oauth2Proxy.jwksURL=https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
+			"--set-string", "console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 		))
 	})
 
@@ -557,6 +582,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 		Expect(opts.LoginURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/auth"))
 		Expect(opts.RedeemURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/token"))
 		Expect(opts.ConsoleJWKSURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/certs"))
+		Expect(opts.BackendLogoutURL).To(HaveSuffix("/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}"))
 	})
 
 	It("UT-INFRA-OIDC-001: preserves Dex-only full-pipeline configuration", func() {
@@ -590,6 +616,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 			LoginURL:         "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/auth",
 			RedeemURL:        "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			ConsoleJWKSURL:   "https://keycloak.idp.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs",
+			BackendLogoutURL: "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 		})
 		Expect(args).To(ContainElements(
 			"--set", "console.enabled=true",
@@ -597,6 +624,7 @@ var _ = Describe("appendOIDCConsoleHelmArgs", func() {
 			"--set", "console.auth.secretName=console-oauth-creds",
 			"--set", "console.ingress.host=kubernaut-console.local",
 			"--set", "console.oauth2Proxy.skipDiscovery=true",
+			"--set-string", "console.oauth2Proxy.backendLogoutURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/logout?id_token_hint={id_token}",
 			"--set", "networkPolicies.console.ingressNamespaces[0]=traefik-system",
 		))
 	})

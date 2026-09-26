@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,22 @@ type persona struct {
 	Role     string
 }
 
+type dexPersonaTokenCacheKey struct {
+	role         string
+	dexURL       string
+	clientID     string
+	clientSecret string
+}
+
+var (
+	dexPersonaTokenCacheMu sync.Mutex
+	// Reuse persona tokens across BeforeEach hooks to limit DEX NodePort traffic per worker.
+	dexPersonaTokens      = make(map[dexPersonaTokenCacheKey]string, 6)
+	dexTokenHTTPTransport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
+	}
+)
+
 // e2ePersonas defines all 6 RBAC personas available in E2E.
 var e2ePersonas = map[string]persona{
 	"sre":                  {Email: "sre@kubernaut.ai", Password: "password", Role: "sre"},
@@ -48,7 +65,49 @@ func fetchDEXTokenForPersona(role string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown persona role: %s", role)
 	}
-	return fetchDEXToken(dexURL, clientID, clientSecret, p.Email, p.Password)
+
+	key := dexPersonaTokenCacheKey{
+		role:         role,
+		dexURL:       dexURL,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+	}
+	dexPersonaTokenCacheMu.Lock()
+	defer dexPersonaTokenCacheMu.Unlock()
+	if token, ok := dexPersonaTokens[key]; ok {
+		return token, nil
+	}
+
+	token, err := fetchDEXToken(dexURL, clientID, clientSecret, p.Email, p.Password)
+	if err != nil {
+		return "", err
+	}
+	dexPersonaTokens[key] = token
+	return token, nil
+}
+
+func seedDEXPersonaTokenCache(tokens map[string]string) error {
+	for role, token := range tokens {
+		if _, ok := e2ePersonas[role]; !ok {
+			return fmt.Errorf("unknown DEX persona role %q", role)
+		}
+		if strings.TrimSpace(token) == "" {
+			return fmt.Errorf("empty DEX token for persona %q", role)
+		}
+	}
+
+	dexPersonaTokenCacheMu.Lock()
+	defer dexPersonaTokenCacheMu.Unlock()
+	for role, token := range tokens {
+		key := dexPersonaTokenCacheKey{
+			role:         role,
+			dexURL:       dexURL,
+			clientID:     clientID,
+			clientSecret: clientSecret,
+		}
+		dexPersonaTokens[key] = token
+	}
+	return nil
 }
 
 // a2aInvoke sends a JSON-RPC request to POST /a2a/invoke with the given auth token.
@@ -173,14 +232,30 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func e2eHostPort(defaultPort int) int {
+	offset, err := strconv.Atoi(getEnvOrDefault("AF_E2E_HOST_PORT_OFFSET", "0"))
+	if err != nil {
+		return defaultPort
+	}
+	return defaultPort + offset
+}
+
+func e2eHostURL(scheme string, defaultPort int) string {
+	return fmt.Sprintf("%s://localhost:%d", scheme, e2eHostPort(defaultPort))
+}
+
 func newTLSClient(caCertPath string) *http.Client {
-	base := newTLSTransport(caCertPath)
+	return newTLSClientForKubeconfig(caCertPath, kubeconfigPath)
+}
+
+func newTLSClientForKubeconfig(caCertPath, clusterKubeconfigPath string) *http.Client {
+	base := newTLSTransportForKubeconfig(caCertPath, clusterKubeconfigPath)
 	return &http.Client{
 		Transport: &retryOn429Transport{base: base, maxRetries: 5, baseDelay: 500 * time.Millisecond},
 	}
 }
 
-func newTLSTransport(caCertPath string) *http.Transport {
+func newTLSTransportForKubeconfig(caCertPath, clusterKubeconfigPath string) *http.Transport {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {
 		caCert, err := os.ReadFile(caCertPath)
@@ -194,7 +269,7 @@ func newTLSTransport(caCertPath string) *http.Transport {
 		// DEX serves a leaf signed by the inter-service CA
 		// (GenerateInterServiceTLS), not the e2e CA above — trust both
 		// (mirrors dex_e2e.go's NewTLSAwareClient for infra-side callers).
-		if isCAPath := kinfra.InterServiceCAPath(kubeconfigPath); isCAPath != "" {
+		if isCAPath := kinfra.InterServiceCAPath(clusterKubeconfigPath); isCAPath != "" {
 			if isCA, err := os.ReadFile(isCAPath); err == nil {
 				pool.AppendCertsFromPEM(isCA)
 			}
@@ -385,7 +460,17 @@ var dexTokenRetryBackoff = backoff.Config{
 
 const dexTokenMaxAttempts = 4
 
+const dexTokenRequestTimeout = 3 * time.Second
+
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
+	tlsClient := &http.Client{
+		Timeout:   dexTokenRequestTimeout,
+		Transport: dexTokenHTTPTransport,
+	}
+	return fetchDEXTokenWithClient(tlsClient, dexURL, clientID, clientSecret, username, password)
+}
+
+func fetchDEXTokenWithClient(tlsClient *http.Client, dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
 		"grant_type":    {"password"},
@@ -394,13 +479,6 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 		"username":      {username},
 		"password":      {password},
 		"scope":         {"openid email profile groups"},
-	}
-
-	tlsClient := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
-		},
 	}
 
 	var lastErr error

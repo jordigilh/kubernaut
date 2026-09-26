@@ -77,6 +77,17 @@ var _ = Describe("Response Builders", func() {
 		})
 	})
 
+	Describe("UT-MOCK-2442-001: workflow discovery action type", func() {
+		It("uses the scenario action type for list_workflows", func() {
+			cfg.ActionType = "IncreaseMemoryLimits"
+
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolListWorkflows, cfg)
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args["action_type"]).To(Equal("IncreaseMemoryLimits"))
+		})
+	})
+
 	Describe("UT-MOCK-001: OpenAI text response builder", func() {
 		It("UT-MOCK-001-005: should produce text response with finish_reason=stop", func() {
 			resp := response.BuildTextResponse("mock-model", cfg)

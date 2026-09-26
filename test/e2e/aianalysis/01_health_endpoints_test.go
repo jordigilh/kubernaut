@@ -108,7 +108,7 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 			var resp *http.Response
 			var err error
 			Eventually(func() error {
-				resp, err = httpClient.Get("http://localhost:28088/healthz")
+				resp, err = httpClient.Get(kaHealthURL + "/healthz")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 			defer func() {
@@ -126,7 +126,7 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 			var resp *http.Response
 			var err error
 			Eventually(func() error {
-				resp, err = httpClient.Get("http://localhost:30281/readyz")
+				resp, err = httpClient.Get(dataStorageHealthURL + "/readyz")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 			defer func() {

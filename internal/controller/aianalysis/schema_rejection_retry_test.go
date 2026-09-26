@@ -144,6 +144,8 @@ func (neverCalledRegoEvaluator) Evaluate(_ context.Context, _ *rego.PolicyInput)
 // Interceptor helpers
 // ----------------------------------------------------------------------------
 
+const statusSubresourceName = "status"
+
 // failNStatusUpdates returns interceptor funcs whose SubResourceUpdate hook
 // rejects the first n calls to Status().Update() with a synthetic
 // apierrors.IsInvalid error (modeling a CRD schema rejection), then delegates
@@ -156,7 +158,7 @@ func failNStatusUpdates(n int32) interceptor.Funcs {
 	var calls int32
 	return interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if subResourceName == "status" && atomic.AddInt32(&calls, 1) <= n {
+			if subResourceName == statusSubresourceName && atomic.AddInt32(&calls, 1) <= n {
 				return apierrors.NewInvalid(
 					schema.GroupKind{Group: "kubernaut.ai", Kind: "AIAnalysis"},
 					obj.GetName(),

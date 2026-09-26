@@ -24,12 +24,12 @@ limitations under the License.
 //
 //	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
-// Every registered cluster identity (remote-cluster, prod-east, prod-west)
-// is backed by the SAME remote bridge to the remote cluster's kube-mcp-server
-// (KubeMCPServerAuthConfig.AllRegistrationsRemote, test/infrastructure/fleet_e2e.go)
-// -- unlike the "loopback" pattern this suite used before, there is no local
-// K8s MCP Server and no cluster identity secretly resolves against the
-// primary cluster. kube-mcp-server runs in passthrough mode with a real RFC
+// Spoke registrations (remote-cluster, prod-east, prod-west) are backed by
+// the remote bridge to the remote cluster's kube-mcp-server
+// (KubeMCPServerAuthConfig.AllRegistrationsRemote). The hub is separately
+// registered as "hub" and its kube-mcp-server is also reached through the
+// Gateway (ADR-068 amendment, 2026-09-22). No remediation uses an implicit
+// local-client shortcut. kube-mcp-server runs in passthrough mode with a real RFC
 // 8693 Standard Token Exchange against Keycloak (mirrors the FMC E2E lane;
 // Keycloak replaces DEX here because DEX has no Standard Token Exchange,
 // Spike S17/S20). Tool names use the `remote-cluster__` prefix EAIGW
@@ -37,11 +37,9 @@ limitations under the License.
 // Kuadrant's static broker credential, a structural SPOF; Kuadrant itself
 // stays covered by its own standalone FMC E2E lane).
 //
-// Because every fleet cluster identity is now remote, any K8s object a test
-// wants Gateway/SP/RO/WE to discover, scope-check, or dispatch against via
-// MCP (the memory-eater fixture, per-test target Deployments, CoreDNS pod
-// discovery for enrichment) must be created against remoteK8sClient, NOT
-// k8sClient. Kubernaut's own CRDs (RemediationRequest, SignalProcessing,
+// K8s objects for a spoke cluster must be created through remoteK8sClient;
+// hub-targeted fixtures are created on k8sClient but read/routed through the
+// registered "hub" MCP Gateway backend. Kubernaut's own CRDs (RemediationRequest, SignalProcessing,
 // AIAnalysis, WorkflowExecution, ...) are reconciled by controllers running
 // in the PRIMARY cluster and stay on k8sClient.
 //
@@ -73,6 +71,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -129,15 +129,14 @@ var (
 	k8sClient client.Client
 	apiReader client.Reader
 
-	// remoteK8sClient targets the second Kind cluster (DD-TEST-013) that
-	// backs remote-cluster/prod-east/prod-west (AllRegistrationsRemote,
-	// see test/infrastructure/fleet_e2e.go). Kubernaut's own CRDs
-	// (RemediationRequest, SignalProcessing, etc.) are reconciled by
-	// controllers running in the PRIMARY cluster and stay on k8sClient;
-	// only the "target" resources a fleet alert claims to remediate (and
-	// anything discovered for MCP enrichment, e.g. a CoreDNS Pod) must live
-	// here, since that's the cluster kube-mcp-server actually reads from
-	// once AllRegistrationsRemote is set.
+	// remoteK8sClient targets the second Kind cluster (DD-TEST-013) backing
+	// the spoke registrations remote-cluster/prod-east/prod-west
+	// (AllRegistrationsRemote, see test/infrastructure/fleet_e2e.go).
+	// Spoke-target fixtures and their MCP-enrichment resources live here;
+	// hub-target fixtures stay on k8sClient and are read through the separately
+	// registered Gateway hub. Kubernaut's own CRDs (RemediationRequest,
+	// SignalProcessing, etc.) are reconciled by controllers in the PRIMARY
+	// cluster and stay on k8sClient.
 	remoteK8sClient client.Client
 
 	dataStorageClient *ogenclient.Client
@@ -188,7 +187,7 @@ func postWithFleetAuth(url string, body io.Reader) (*http.Response, error) {
 // resource created/labeled by a test immediately before posting an alert is
 // only guaranteed to be visible to FMC's scope-check endpoint after the next
 // full sync tick. Because syncAll() iterates every registered cluster
-// (remote-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
+// (hub, remote-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
 // a single cycle can itself take non-trivial wall time, so worst-case
 // staleness exceeds the nominal 10s interval. 90s gives multiple sync cycles
 // of margin and allows the AF request itself to complete; a 15s window (the
@@ -220,6 +219,22 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 			"Gateway should accept the alert (body: %s)", string(body))
 	}, fmcSyncTimeout, 1*time.Second).Should(Succeed())
 	return respBody
+}
+
+func fleetWorkloadNamespace(key string) string {
+	ns, ok := fpRemediateNS[key]
+	ExpectWithOffset(1, ok).To(BeTrue(), "fleet workload namespace %q must be provisioned", key)
+	ExpectWithOffset(1, ns).NotTo(BeEmpty(), "fleet workload namespace %q must not be empty", key)
+	return ns
+}
+
+func deployFleetMemoryEater(targetName, targetNamespace, targetKubeconfig string, targetClient client.Client, memoryLimit, growthLimit string) {
+	Expect(infrastructure.DeployMemoryEaterNamed(ctx, targetName, targetNamespace,
+		targetKubeconfig, memoryLimit, growthLimit, GinkgoWriter)).To(Succeed())
+	DeferCleanup(func() {
+		dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: targetNamespace}}
+		_ = targetClient.Delete(context.Background(), dep)
+	})
 }
 
 // fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
@@ -263,22 +278,28 @@ func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 	return &http.Client{Transport: testauth.NewStaticTokenTransport(token)}, nil
 }
 
-// newFleetMCPClient creates an MCP client with auto-discovered tool prefix for
-// the "remote-cluster" registration (the only cluster targeted across all
-// e2e/fleet MCP tests). This suite runs EAIGW, whose "{clusterID}__" naming
-// convention derives the prefix "remote-cluster__" from the Backend name
-// (deployEnvoyAIGatewayRegistrations); DiscoverToolPrefix is gateway-agnostic
-// (PrefixFromToolNames, mcpclient/discover.go) so it also works unchanged
-// against Kuadrant's admin-set spec.prefix in the standalone FMC E2E lane.
-//
-// Retries up to 90s to handle the broker sync delay where the MCP gateway
-// hasn't finished syncing tools from kube-mcp-server yet (~60s observed in
-// spike S15).
+// newFleetMCPClient creates an MCP client for the remote-cluster registration,
+// preserving the default used by existing spoke-focused scenarios.
 func newFleetMCPClient(ctx context.Context) (*mcpclient.Client, error) {
+	return newFleetMCPClientForCluster(ctx, "remote-cluster")
+}
+
+// newFleetMCPClientForCluster creates an authenticated MCP client with an
+// auto-discovered tool prefix for a registered fleet cluster. This suite runs
+// EAIGW, whose "{clusterID}__" naming convention derives the prefix from the
+// Backend name; DiscoverToolPrefix is gateway-agnostic and also works against
+// Kuadrant's admin-set spec.prefix in the standalone FMC E2E lane.
+//
+// Retries up to 90s to handle broker synchronization delay, then warms the new
+// session because kube-mcp-server negotiates its upstream connection lazily.
+func newFleetMCPClientForCluster(ctx context.Context, clusterID string) (*mcpclient.Client, error) {
+	if clusterID == "" {
+		return nil, fmt.Errorf("cluster ID is required for a fleet MCP client")
+	}
+
 	const (
 		maxRetries    = 18
 		retryInterval = 5 * time.Second
-		clusterID     = "remote-cluster"
 	)
 
 	authClient, err := fleetAuthenticatedHTTPClient()
@@ -441,31 +462,23 @@ var _ = SynchronizedBeforeSuite(
 			Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace on %s: %s", kc, string(labelOut))
 		}
 
-		By("Creating per-test remediate namespaces (dynamic, UUID-based; primary cluster -- Kubernaut CRDs)")
+		By("Creating per-test workload namespaces (dynamic, UUID-based; primary and remote clusters)")
 		for key, ns := range remediateNS {
-			GinkgoWriter.Printf("  Creating namespace %s (scenario: %s)\n", ns, key)
-			createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-				"create", "namespace", ns)
-			createNSOut, createNSErr := createNSCmd.CombinedOutput()
-			if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
-				Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create namespace %s: %s", ns, string(createNSOut))
+			for _, kc := range []string{tempKubeconfigPath, remoteKcPath} {
+				GinkgoWriter.Printf("  Creating namespace %s on %s (scenario: %s)\n", ns, kc, key)
+				createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kc,
+					"create", "namespace", ns)
+				createNSOut, createNSErr := createNSCmd.CombinedOutput()
+				if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
+					Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create namespace %s: %s", ns, string(createNSOut))
+				}
+				labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kc,
+					"label", "namespace", ns,
+					"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
+				labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
+				Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 			}
-			labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-				"label", "namespace", ns,
-				"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
-			labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
-			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
-
-		// The shared "memory-eater" fixture (referenced by clusterID=remote-cluster/
-		// prod-east/prod-west across 01_signal_ingestion_test.go and
-		// 03_ro_clusterid_routing_test.go) must live on the REMOTE cluster now that
-		// AllRegistrationsRemote backs every registered cluster identity with the
-		// same remote bridge -- kube-mcp-server reads it from there, not the
-		// primary cluster.
-		By("Deploying memory-eater in remote cluster's kubernaut-system for fleet E2E tests")
-		err = infrastructure.DeployMemoryEater(ctx, namespace, remoteKcPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
 
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)

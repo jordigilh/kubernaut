@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
@@ -29,7 +30,7 @@ import (
 // (populated by test infrastructure from DataStorage UUIDs). The lookup checks:
 //  1. Exact match by ScenarioName (backward compatibility)
 //  2. Fallback match by WorkflowName prefix (strips ":environment" suffix),
-//     preferring ":production" when multiple environments exist
+//     rejecting ambiguous environment matches
 func DefaultRegistryWithOverrides(overrides *config.Overrides) *Registry {
 	return DefaultRegistryFull(overrides, "")
 }
@@ -95,26 +96,31 @@ func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.S
 }
 
 // findOverrideByWorkflowName searches override keys for entries matching the
-// given workflow name. Keys have format "workflow_name:environment". When
-// multiple environments match, ":production" is preferred since the E2E
-// tests assert against production workflows.
+// given workflow name. Keys have format "workflow_name:environment". A
+// name-only lookup may resolve multiple environments only when every matching
+// environment carries the same override value.
 func findOverrideByWorkflowName(overrides map[string]config.ScenarioOverride, workflowName string) (config.ScenarioOverride, bool) {
-	var best config.ScenarioOverride
-	found := false
-	for key, ov := range overrides {
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
 		name := key
 		if idx := strings.Index(key, ":"); idx != -1 {
 			name = key[:idx]
 		}
 		if name == workflowName {
-			best = ov
-			found = true
-			if strings.HasSuffix(key, ":production") {
-				return ov, true
-			}
+			keys = append(keys, key)
 		}
 	}
-	return best, found
+	if len(keys) == 0 {
+		return config.ScenarioOverride{}, false
+	}
+	selected := overrides[keys[0]]
+	for _, key := range keys[1:] {
+		if !reflect.DeepEqual(selected, overrides[key]) {
+			// Do not select an environment from a conflicting name-only lookup.
+			return config.ScenarioOverride{}, false
+		}
+	}
+	return selected, true
 }
 
 // DefaultRegistryFull returns a registry with optional overrides and golden
@@ -158,6 +164,8 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		for _, ks := range selectorOverrides {
 			cfg := MockScenarioConfig{
 				ScenarioName:      ks.Name,
+				WorkflowID:        ks.WorkflowID,
+				ActionType:        ks.ActionType,
 				ToolCallName:      ks.ToolCall.Name,
 				ToolCallArgs:      ks.ToolCall.Arguments,
 				FallbackArguments: ks.ToolCall.FallbackArguments,
@@ -169,6 +177,7 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 			r.Register(newSelectorScenario(ks.Name, ScenarioSelector{
 				Scope:             ScenarioScope{Caller: Caller(ks.Caller), Phase: Phase(ks.Phase)},
 				Keywords:          ks.Keywords,
+				SignalPatterns:    ks.SignalPatterns,
 				MatchLastUserOnly: ks.MatchLastOnly,
 				Confidence:        1.0,
 			}, cfg))
@@ -201,6 +210,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Selector-based keyword scenarios (highest priority = 1.0)
 	r.Register(newKeywordScenario("no_workflow_found", "mock_no_workflow_found", noWorkflowFoundConfig()))
 	r.Register(newKeywordScenario("low_confidence", "mock_low_confidence", lowConfidenceConfig()))
+	r.Register(newKeywordScenario("approval_required", "mock_approval_test", approvalRequiredConfig()))
 	r.Register(newKeywordScenario("problem_resolved_contradiction", "mock_problem_resolved_contradiction", problemResolvedContradictionConfig()))
 	r.Register(newKeywordScenario("problem_resolved", "mock_problem_resolved", problemResolvedConfig()))
 	r.Register(newKeywordScenarioMulti("problem_resolved", []string{"mock_not_reproducible", "mock not reproducible"}, problemResolvedConfig()))
@@ -214,6 +224,9 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
+	for _, scenario := range aiAnalysisFixtureScenarios() {
+		r.Register(scenario)
+	}
 
 	// Proactive scenarios (checked before signal-name)
 	r.Register(predictiveNoActionScenario())
@@ -222,6 +235,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Signal name scenarios
 	r.Register(newSignalScenario("cert_not_ready", []string{"certmanagercertnotready", "cert_not_ready"}, certNotReadyConfig()))
 	r.Register(newSignalScenario("node_not_ready", []string{"nodenotready"}, nodeNotReadyConfig()))
+	r.Register(memoryEaterResourcePressureScenario())
 	r.Register(oomkilledScenario())
 	r.Register(crashloopScenario())
 	r.Register(newSignalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
@@ -236,6 +250,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// groundSessionBeta call -- see scenario_af_structured_decision_ground.go's
 	// doc comment for why ToolCallArgs must hand-craft the RCA substituted
 	// into args["rca"] rather than relying on the typed config fields.
+	r.Register(newSignalScenario("af_structured_decision_ground", []string{"structureddecisiongrounding"}, structuredDecisionGroundingConfig()))
 	r.Register(newSignalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
 
 	// E2E-AF-2387-002 (issue #2387): dedicated grounding scenario for
@@ -262,6 +277,9 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// E2E test's alert traffic -- see fleetExecClusterOverrideConfig's doc
 	// comment.
 	r.Register(newSignalScenario("fleet_exec_cluster_override_2326", []string{"fleetexecclusteroverride2326"}, fleetExecClusterOverrideConfig()))
+	// E2E-FLEET-004 (BR-INTEGRATION-054): resolve the isolated FleetRouting
+	// signal to the existing catalog-backed Deployment remediation workflow.
+	r.Register(newSignalScenario("fleet_routing", []string{"fleetrouting"}, fleetRoutingConfig()))
 
 	// E2E-FP-2378-001: standalone execution must ignore a catalog-declared
 	// execution cluster while retaining the metadata in WorkflowExecution.
@@ -271,12 +289,15 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// The A2A investigation targets a zero-replica Deployment, so the E2E
 	// fixture supplies a synthetic warning event to ground this signal.
 	r.Register(newSignalScenario("gitops_drift_2390", []string{"gitopsdrift2390"}, gitopsDrift2390Config()))
+	r.Register(newSelectorScenario("gitops_drift_2390", ScenarioSelector{
+		Keywords:          []string{"gitops-drift-2390", "gitops drift 2390"},
+		MatchLastUserOnly: true,
+	}, gitopsDrift2390Config()))
 	r.Register(newSelectorScenario("af_select_gitops_workflow_2390", ScenarioSelector{
 		Keywords:          []string{"select the discovered GitOps workflow"},
 		MatchLastUserOnly: true,
 		Confidence:        1.0,
 	}, gitopsSelectWorkflow2390Config()))
-	r.Register(newKeywordScenario("gitops_drift_2390", "gitops-drift-2390", gitopsDrift2390Config()))
 
 	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.

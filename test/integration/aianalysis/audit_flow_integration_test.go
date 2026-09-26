@@ -197,11 +197,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fmt.Sprintf("fp-workflow-%s", uuid.New().String()[:8]),
-							Severity:         "critical",
+							Fingerprint: fmt.Sprintf("fp-workflow-%s", uuid.New().String()[:8]),
+							// Match the seeded crashloop-config-fix-v1 fixture.
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "critical-pod",
@@ -477,8 +478,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fmt.Sprintf("fp-investigation-%s", uuid.New().String()[:8]),
-							Severity:         "critical",
+							Fingerprint: fmt.Sprintf("fp-investigation-%s", uuid.New().String()[:8]),
+							// Match the seeded crashloop-config-fix-v1 fixture.
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
@@ -593,8 +595,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fmt.Sprintf("fp-inv-error-%s", uuid.New().String()[:8]),
-							Severity:         "critical",
+							Fingerprint: fmt.Sprintf("fp-inv-error-%s", uuid.New().String()[:8]),
+							// Match the seeded crashloop-config-fix-v1 fixture.
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
@@ -685,11 +688,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fmt.Sprintf("fp-approval-%s", uuid.New().String()[:8]),
-							Severity:         "critical",
+							Fingerprint: fmt.Sprintf("fp-approval-%s", uuid.New().String()[:8]),
+							// Match the seeded crashloop-config-fix-v1 fixture.
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production requires approval
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "prod-pod",
@@ -903,6 +907,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			By("Creating AIAnalysis resource to trigger phase transitions")
 			rrID := fmt.Sprintf("rr-phases-%s", uuid.New().String()[:8])
+			targetName := fmt.Sprintf("phase-target-%s", uuid.New().String()[:8])
+			createITAAAnalysisPodFixture(k8sClient, namespace, targetName)
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-phases-%s", uuid.New().String()[:8]),
@@ -922,7 +928,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
-								Name:      "dev-pod",
+								Name:      targetName,
 								Namespace: namespace,
 							},
 						},

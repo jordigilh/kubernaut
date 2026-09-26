@@ -49,7 +49,7 @@ import (
 // Field Descriptions:
 // - Message: Human-readable error description
 // - Code: Machine-readable error classification (ERR_[CATEGORY]_[SPECIFIC])
-// - Component: Service emitting the error (gateway, aianalysis, workflowexecution, remediationorchestrator)
+// - Component: Service emitting the error (gateway, aianalysis, workflowexecution, remediationorchestrator, kubernautagent, apifrontend)
 // - RetryPossible: Indicates if operation can be retried (true=transient, false=permanent)
 // - StackTrace: Top N stack frames for debugging (optional, 5-10 frames max)
 //
@@ -72,7 +72,7 @@ type ErrorDetails struct {
 	Code string `json:"code"`
 
 	// Component identifies the service emitting the error.
-	// Values: "gateway", "aianalysis", "workflowexecution", "remediationorchestrator"
+// Values: "gateway", "aianalysis", "workflowexecution", "remediationorchestrator", "kubernautagent", "apifrontend"
 	Component string `json:"component"`
 
 	// RetryPossible indicates if the operation can be retried.
@@ -89,7 +89,7 @@ type ErrorDetails struct {
 // NewErrorDetails creates a standardized ErrorDetails structure.
 //
 // Parameters:
-// - component: Service name (gateway, aianalysis, workflowexecution, remediationorchestrator)
+// - component: Service name (gateway, aianalysis, workflowexecution, remediationorchestrator, kubernautagent, apifrontend)
 // - code: Error code (ERR_[CATEGORY]_[SPECIFIC])
 // - message: Human-readable error description
 // - retryPossible: Whether the operation can be retried
@@ -248,6 +248,3 @@ func captureStackTrace(depth int) []string {
 
 	return stackTrace
 }
-
-
-

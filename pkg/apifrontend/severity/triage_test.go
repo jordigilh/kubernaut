@@ -15,7 +15,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
-const fleetClusterID = "remote-cluster"
+const (
+	hubClusterID   = "hub"
+	fleetClusterID = "remote-cluster"
+)
 
 var _ = Describe("Triage Orchestrator", func() {
 
@@ -30,6 +33,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			Kind:        "Deployment",
 			Name:        "web-api",
 			Description: "High error rate on web-api",
+			ClusterID:   hubClusterID,
 			Labels: map[string]string{
 				"namespace": "prod",
 				"kind":      "Deployment",
@@ -90,7 +94,7 @@ var _ = Describe("Triage Orchestrator", func() {
 	// BR-FLEET-054 / BR-INTEGRATION-065: fleet triage must preserve cluster
 	// attribution. FedRAMP AC-4/AC-6/SI-4 and OWASP ASVS V4/V5 are behavioral
 	// objectives here: another cluster's evidence must not influence the result.
-	Describe("Fleet cluster attribution (#2394)", func() {
+	Describe("Cluster attribution modes (#2394)", func() {
 		It("UT-AF-2394-001: fleet triage selects the requested cluster's resource alert", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
@@ -106,6 +110,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			fleetInput := defaultInput
 			fleetInput.ClusterID = fleetClusterID
+			fleetInput.FleetMode = true
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), fleetInput)
@@ -123,12 +128,13 @@ var _ = Describe("Triage Orchestrator", func() {
 					}, State: "firing"},
 					{Labels: map[string]string{
 						"alertname": "UnattributedAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
-						"severity": "critical",
+						"severity": "critical", "cluster": "",
 					}, State: "firing"},
 				},
 			}
 			fleetInput := defaultInput
 			fleetInput.ClusterID = fleetClusterID
+			fleetInput.FleetMode = true
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), fleetInput)
@@ -136,18 +142,124 @@ var _ = Describe("Triage Orchestrator", func() {
 				"fleet triage must fail closed when no alert is attributed to the requested cluster")
 		})
 
-		It("UT-AF-2394-003: empty cluster ID preserves hub-local alert matching", func() {
+		It("UT-AF-2394-003: local triage preserves hub alert matching without a cluster ID", func() {
 			mockProm := &mockPromClient{
-				alerts: []prom.Alert{{Labels: map[string]string{
-					"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
-					"severity": "warning", "cluster": "remote-cluster",
-				}, State: "firing"}},
+				alerts: []prom.Alert{
+					{Labels: map[string]string{
+						"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "warning", "cluster": hubClusterID,
+					}, State: "firing"},
+				},
 			}
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
-			result, err := triager.Triage(context.Background(), defaultInput)
+			hubInput := defaultInput
+			hubInput.ClusterID = ""
+			result, err := triager.Triage(context.Background(), hubInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlertName).To(Equal("HubAlert"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-009: fleet hub triage selects only the requested Gateway registration", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{
+						"alertname": "RemoteCollision", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "critical", "cluster": fleetClusterID,
+					}, State: "firing"},
+					{Labels: map[string]string{
+						"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "warning", "cluster": hubClusterID,
+					}, State: "firing"},
+				},
+			}
+			fleetHubInput := defaultInput
+			fleetHubInput.ClusterID = hubClusterID
+			fleetHubInput.FleetMode = true
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), fleetHubInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("HubAlert"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-008: local triage ignores an incidental cluster ID", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{{Labels: map[string]string{
+					"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+					"severity": "warning", "cluster": hubClusterID,
+				}, State: "firing"}},
+			}
+			localInput := defaultInput
+			localInput.ClusterID = "ignored-local-cluster-id"
+			localInput.FleetMode = false
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), localInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("HubAlert"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-010: local triage matches rules without a Gateway cluster ID", func() {
+			mockProm := &mockPromClient{
+				ruleGroups: []prom.RuleGroup{{Rules: []prom.Rule{{
+					Name: "LocalPendingRule", Query: `up{namespace="prod"}`, State: "pending",
+					Labels: map[string]string{"severity": "warning", "cluster": hubClusterID},
+				}}}},
+			}
+			localInput := defaultInput
+			localInput.ClusterID = ""
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), localInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RuleName).To(Equal("LocalPendingRule"))
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-2394-006: empty cluster ID cannot match attributed or unattributed alerts", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{
+						"alertname": "HubAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "warning", "cluster": hubClusterID,
+					}, State: "firing"},
+					{Labels: map[string]string{
+						"alertname": "UnattributedAlert", "namespace": "prod", "kind": "Deployment", "name": "web-api",
+						"severity": "critical", "cluster": "",
+					}, State: "firing"},
+				},
+			}
+			input := defaultInput
+			input.ClusterID = ""
+			input.FleetMode = true
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"missing cluster identity must fail closed instead of wildcarding hub or un-attributed alerts")
+		})
+
+		It("UT-AF-2394-007: a rule without cluster attribution cannot ground hub triage", func() {
+			queryCount := 0
+			mockProm := &mockPromClient{
+				ruleGroups: []prom.RuleGroup{{Rules: []prom.Rule{
+					{Name: "UnattributedRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{
+						"severity": "critical", "cluster": "",
+					}},
+				}}},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{{Value: 1, Metric: map[string]string{"namespace": "prod"}}}},
+				queryHook:   func() { queryCount++ },
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			input := defaultInput
+			input.FleetMode = true
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+			Expect(queryCount).To(Equal(0), "an unattributed rule must be rejected before evaluation")
 		})
 
 		It("UT-AF-2394-004: pending rules are selected only from the requested cluster", func() {
@@ -159,6 +271,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			fleetInput := defaultInput
 			fleetInput.ClusterID = fleetClusterID
+			fleetInput.FleetMode = true
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), fleetInput)
@@ -177,6 +290,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			fleetInput := defaultInput
 			fleetInput.ClusterID = fleetClusterID
+			fleetInput.FleetMode = true
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), fleetInput)
@@ -1160,12 +1274,51 @@ func (m *mockPromClient) GetAlerts(ctx context.Context) ([]prom.Alert, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return m.alerts, m.alertsErr
+	return withHubClusterOnAlerts(m.alerts), m.alertsErr
 }
 
 func (m *mockPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
 	m.rulesCallCount++
-	return m.ruleGroups, m.rulesErr
+	return withHubClusterOnRules(m.ruleGroups), m.rulesErr
+}
+
+// The triage test double represents the hub's Prometheus endpoint. Fixtures
+// without an explicit cluster label are local hub evidence; tests for
+// unattributed evidence set cluster to the empty string explicitly.
+func withHubClusterOnAlerts(alerts []prom.Alert) []prom.Alert {
+	clustered := make([]prom.Alert, len(alerts))
+	for i, alert := range alerts {
+		clustered[i] = alert
+		clustered[i].Labels = cloneLabels(alert.Labels)
+		if _, ok := clustered[i].Labels["cluster"]; !ok {
+			clustered[i].Labels["cluster"] = hubClusterID
+		}
+	}
+	return clustered
+}
+
+func withHubClusterOnRules(groups []prom.RuleGroup) []prom.RuleGroup {
+	clustered := make([]prom.RuleGroup, len(groups))
+	for i, group := range groups {
+		clustered[i] = group
+		clustered[i].Rules = make([]prom.Rule, len(group.Rules))
+		for j, rule := range group.Rules {
+			clustered[i].Rules[j] = rule
+			clustered[i].Rules[j].Labels = cloneLabels(rule.Labels)
+			if _, ok := clustered[i].Rules[j].Labels["cluster"]; !ok {
+				clustered[i].Rules[j].Labels["cluster"] = hubClusterID
+			}
+		}
+	}
+	return clustered
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	cloned := make(map[string]string, len(labels)+1)
+	for key, value := range labels {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (m *mockPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {

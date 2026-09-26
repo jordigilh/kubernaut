@@ -60,7 +60,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-001: Full discovery lifecycle", func() {
 		It("should execute start -> message -> discover_workflows -> select_workflow", func() {
 			rrID := fmt.Sprintf("rr-disc001-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"), withSeverity("critical"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -265,7 +265,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-005: cross-resource RCA discovery lifecycle (#1374)", func() {
 		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-KA-261]", func() {
 			rrID := fmt.Sprintf("rr-disc005-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"))
+			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"), withSeverity("critical"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -346,7 +346,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-004: select alternative workflow propagates parameters through real KA (#1169)", func() {
 		It("should discover alternatives with parameters and successfully select one", func() {
 			rrID := fmt.Sprintf("rr-disc004-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"), withSeverity("critical"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{

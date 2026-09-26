@@ -243,6 +243,13 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(eventCounts).To(HaveKey("aianalysis.aiagent.call"),
 				"Should audit AI agent API calls during investigation")
+			if eventCounts["aianalysis.aiagent.call"] != 1 {
+				for _, event := range events {
+					if event.EventType == aianalysisaudit.EventTypeAIAgentCall {
+						GinkgoWriter.Printf("AI agent call audit event for RCA: %+v\n", event)
+					}
+				}
+			}
 			Expect(eventCounts["aianalysis.aiagent.call"]).To(Equal(1),
 				"Should have EXACTLY 1 AI agent call in happy path (no retries/duplicates)")
 
@@ -533,10 +540,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-approval",
-							Severity:         "critical",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production requires approval
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "payment-service",

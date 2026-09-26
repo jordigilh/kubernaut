@@ -132,12 +132,15 @@ func (a *PrometheusAdapter) SetReaderFactory(rf readerFactory) {
 }
 
 // resolverForCluster returns the appropriate owner resolver for the given clusterID.
-// For local signals (empty clusterID) or when no readerFactory is configured,
-// it returns the local resolver. For remote signals, it constructs an
-// ownerchain.K8sOwnerResolver backed by a remote client.Reader from the factory.
+// For single-cluster mode (no readerFactory), it returns the local resolver.
+// When fleet mode is enabled, an explicit registered clusterID is required
+// and every resolver, including the hub, is created through the MCP Gateway.
 // On error, it returns an error rather than selecting the local resolver.
 func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) (types.OwnerResolver, error) {
 	if clusterID == "" {
+		if a.readerFactory != nil {
+			return nil, errors.New("cluster ID required when fleet mode is enabled")
+		}
 		return a.ownerResolver, nil
 	}
 	if a.readerFactory == nil {

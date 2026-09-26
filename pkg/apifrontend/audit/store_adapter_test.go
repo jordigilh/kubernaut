@@ -10,6 +10,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 type capturingStore struct {
@@ -255,6 +256,30 @@ var _ = Describe("StoreAdapter", func() {
 		Expect(evt).NotTo(BeNil())
 		Expect(evt.CorrelationID).NotTo(BeEmpty())
 		Expect(evt.CorrelationID).To(HaveLen(36))
+	})
+
+	It("UT-AF-2444-006: persists standardized error details for A2A failures", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventA2ATaskFailed,
+			CorrelationID: "session-2444",
+			RequestID:     "task-2444",
+			ErrorDetails: sharedaudit.NewErrorDetails(
+				"apifrontend", "ERR_UPSTREAM_FAILURE", "provider stream failed", true,
+			),
+			Detail: map[string]string{
+				"session_id": "session-2444",
+				"task_id":    "task-2444",
+				"error":      "provider stream failed",
+			},
+		})
+
+		evt := store.lastEvent()
+		Expect(evt).NotTo(BeNil())
+		payload, ok := evt.EventData.GetApifrontendA2ATaskFailedPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.ErrorDetails.Code).To(Equal("ERR_UPSTREAM_FAILURE"))
+		Expect(payload.ErrorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentApifrontend))
+		Expect(payload.ErrorDetails.RetryPossible).To(BeTrue())
 	})
 
 	It("UT-AF-1156-039: event_category is always apifrontend", func() {

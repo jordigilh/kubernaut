@@ -1,0 +1,45 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: crashloop-config-fix-aa-approval-v1
+spec:
+  version: "1.0.0"
+  description:
+    what: "Restarts a production deployment after a configuration failure"
+    whenToUse: "When a production deployment is in CrashLoopBackOff due to misconfiguration"
+    whenNotToUse: "When the crash is caused by a persistent code bug"
+    preconditions: "Workload is managed by a Deployment"
+
+  actionType: RestartDeployment
+
+  labels:
+    severity: [high]
+    environment: [production]
+    component: [apps/v1/Deployment]
+    priority: P1
+
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:a663ba9ddf8a074025723a4fbbef5542f520deb4e5eaf9814e07775456ecd7e0
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource"
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to restart"

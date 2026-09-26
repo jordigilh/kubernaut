@@ -30,7 +30,7 @@ func wiringTestRuleGroups() []prom.RuleGroup {
 					Name:   "WiringTestRule",
 					Query:  fmt.Sprintf(`rate(requests{namespace="%s"}[5m])`, defaultFixture),
 					State:  "inactive",
-					Labels: map[string]string{"severity": "high"},
+					Labels: map[string]string{"severity": "high", "cluster": hubClusterID},
 				},
 			},
 		},
@@ -77,6 +77,7 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 			Name:        "test-workload",
 			Namespace:   defaultFixture,
 			Description: "test workload failing",
+			ClusterID:   hubClusterID,
 			Labels:      map[string]string{"namespace": defaultFixture, "kind": "Deployment", "name": "test-workload"},
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -103,6 +104,7 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 			Name:        "test-workload",
 			Namespace:   defaultFixture,
 			Description: "test workload failing",
+			ClusterID:   hubClusterID,
 			Labels:      map[string]string{"namespace": defaultFixture, "kind": "Deployment", "name": "test-workload"},
 		})
 		Expect(err).NotTo(HaveOccurred())

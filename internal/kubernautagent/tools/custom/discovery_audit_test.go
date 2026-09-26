@@ -27,8 +27,8 @@ import (
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // fakeAuditStore captures every AuditEvent passed to StoreAudit (Issue #1677
@@ -72,11 +72,12 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 		}
 		store = &fakeAuditStore{}
 		ctx = katypes.WithSignalContext(context.Background(), katypes.SignalContext{
-			Severity:      "critical",
-			ResourceKind:  "Deployment",
-			Environment:   "production",
-			Priority:      "P0",
-			RemediationID: "rr-audit-test-001",
+			Severity:           "critical",
+			ResourceKind:       "Deployment",
+			Environment:        "production",
+			Priority:           "P0",
+			RemediationID:      "rr-audit-test-001",
+			DetectedLabelsJSON: `{"gitOpsManaged":true,"gitOpsTool":"argocd"}`,
 		})
 	})
 
@@ -100,6 +101,7 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 			Expect(ev.Data["component"]).To(Equal("deployment"))
 			Expect(ev.Data["environment"]).To(Equal("production"))
 			Expect(ev.Data["priority"]).To(Equal("P0"))
+			Expect(ev.Data["detected_labels_json"]).To(MatchJSON(`{"gitOpsManaged":true,"gitOpsTool":"argocd"}`))
 		})
 	})
 

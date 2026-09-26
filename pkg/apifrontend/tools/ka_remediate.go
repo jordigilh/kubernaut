@@ -30,8 +30,10 @@ type RemediateArgs struct {
 	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
 	// Required when providing namespace/kind/name (#1372).
 	APIVersion string `json:"api_version"`
-	// ClusterID identifies the fleet cluster the target resource lives on
-	// (#1409, ADR-065). Empty for the local hub cluster.
+	// ClusterID is the registered MCP Gateway cluster name for the target
+	// resource, including the hub when fleet mode is enabled. It must exactly
+	// match the Prometheus alert/rule "cluster" label; leaving it empty cannot
+	// create a new RemediationRequest.
 	ClusterID string `json:"cluster_id,omitempty"`
 	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
 	// candidate's alert name after the user has explicitly confirmed it
@@ -154,7 +156,8 @@ func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, contr
 		Name: "kubernaut_remediate",
 		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. " +
 			"The pipeline will analyze and remediate automatically. " +
-			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the resource lives on; omit for the local hub cluster.",
+			"Always provide cluster_id using the MCP Gateway registration name, including for the hub in fleet mode. " +
+			"It must match the cluster label on the Prometheus evidence used for severity triage.",
 	}, func(ctx agent.Context, args RemediateArgs) (RemediateResult, error) {
 		return HandleRemediate(ctx, d, &args, usernameFromContext(ctx))
 	})

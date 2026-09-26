@@ -130,7 +130,9 @@ successful RCA should always be preserved regardless of whether a workflow was s
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
 | BR-AI-008 | RCA field capture | P0 | Unit | UT-AA-769-001 | Pending |
-| BR-AI-008 | RCA full struct | P0 | Unit | UT-AA-769-002 | Pending |
+| BR-AI-008, BR-SP-105 | RCA full struct; severity comes from SP classification | P0 | Unit | UT-AA-769-002 / UT-AA-SP-105-001 | Passing |
+| BR-SP-105 | SP severity retained when KA omits RCA severity | P0 | Unit | UT-AA-SP-105-002 | Passing |
+| BR-SP-105 | Handler preserves SP severity over KA RCA severity | P0 | Unit | UT-AA-SP-105-003 | Passing |
 | BR-AI-008 | RCA edge cases | P1 | Unit | UT-AA-769-003 | Pending |
 | BR-AUDIT-005 | Audit AnalysisPreview | P0 | Unit | UT-AA-769-004 | Pending |
 | BR-ORCH-036 | RO notification RCA context | P0 | Unit | UT-RO-769-001 | Pending |
@@ -145,7 +147,9 @@ successful RCA should always be preserved regardless of whether a workflow was s
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | `UT-AA-769-001` | AA sets rootCause = RCA summary string when humanReviewReason=no_matching_workflows | Pending |
-| `UT-AA-769-002` | AA sets rootCauseAnalysis with full struct (summary, severity, contributingFactors, remediationTarget) | Pending |
+| `UT-AA-769-002` / `UT-AA-SP-105-001` | AA keeps the full RCA struct but uses the SP-classified severity instead of KA's severity | Passing |
+| `UT-AA-SP-105-002` | AA uses SP severity when KA omits RCA severity | Passing |
+| `UT-AA-SP-105-003` | InvestigatingHandler stores SP severity instead of KA RCA severity | Passing |
 | `UT-AA-769-003` | AA handles nil/empty RCA gracefully — rootCause remains empty, no panic | Pending |
 | `UT-AA-769-004` | Audit RecordAnalysisComplete includes AnalysisPreview with RCA summary (truncated to 500 chars) | Pending |
 | `UT-RO-769-001` | RO manual review notification context includes RCA summary for human reviewer | Pending |
@@ -183,9 +187,9 @@ successful RCA should always be preserved regardless of whether a workflow was s
 1. rootCause contains the RCA summary string
 2. rootCause is NOT "N/A" or empty
 
-### UT-AA-769-002: rootCauseAnalysis full struct preserved
+### UT-AA-769-002 / UT-AA-SP-105-001: rootCauseAnalysis preserved with SP severity
 
-**BR**: BR-AI-008
+**BR**: BR-AI-008, BR-SP-105
 **Priority**: P0
 **Type**: Unit
 **File**: `test/unit/aianalysis/response_processor_no_matching_test.go`
@@ -194,16 +198,40 @@ successful RCA should always be preserved regardless of whether a workflow was s
 - Same as UT-AA-769-001
 
 **Test Steps**:
-1. **Given**: Same IncidentResponse as UT-AA-769-001 with remediationTarget={kind:Deployment, name:api-server, namespace:demo-quota}
+1. **Given**: Same IncidentResponse as UT-AA-769-001 with severity="medium" and remediationTarget={kind:Deployment, name:api-server, namespace:demo-quota}; AIAnalysis SignalContext severity is "high"
 2. **When**: ProcessIncidentResponse is called
 3. **Then**: analysis.Status.RootCauseAnalysis is non-nil with all fields populated
 
 **Expected Results**:
 1. RootCauseAnalysis.Summary matches input
-2. RootCauseAnalysis.Severity == "medium"
+2. RootCauseAnalysis.Severity == "high" (SignalProcessing classification wins over KA response)
 3. RootCauseAnalysis.ContributingFactors length > 0
 4. RootCauseAnalysis.RemediationTarget.Kind == "Deployment"
 5. RootCauseAnalysis.RemediationTarget.Name == "api-server"
+
+### UT-AA-SP-105-002: SP severity used when KA omits RCA severity
+
+**BR**: BR-SP-105
+**Priority**: P0
+**Type**: Unit
+**File**: `pkg/aianalysis/response_processor_no_matching_test.go`
+
+**Test Steps**:
+1. **Given**: AIAnalysis SignalContext severity is "high" and KA supplies an RCA summary without severity
+2. **When**: ProcessAgentSessionResult is called
+3. **Then**: AIAnalysis status RootCauseAnalysis severity is "high", not the mapper's "unknown" fallback
+
+### UT-AA-SP-105-003: InvestigatingHandler preserves SP severity
+
+**BR**: BR-SP-105
+**Priority**: P0
+**Type**: Unit
+**File**: `pkg/aianalysis/investigating_handler_test.go`
+
+**Test Steps**:
+1. **Given**: AIAnalysis SignalContext severity is "warning" and KA returns RCA severity "high"
+2. **When**: InvestigatingHandler processes the AgentSessionResult
+3. **Then**: the stored RCA severity is "warning"
 
 ### UT-AA-769-003: Nil RCA handled gracefully
 

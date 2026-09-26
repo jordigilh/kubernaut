@@ -18,6 +18,7 @@ package openaicompat_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 
@@ -42,7 +43,9 @@ var _ = Describe("openaicompat streaming usage — #2387", func() {
 	})
 
 	It("UT-KA-2387-100: surfaces a trailing usage chunk on the terminal streamed Response", func() {
+		var receivedBody map[string]interface{}
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			Expect(json.NewDecoder(r.Body).Decode(&receivedBody)).To(Succeed())
 			w.Header().Set("Content-Type", "text/event-stream")
 			flusher, _ := w.(http.Flusher)
 			chunks := []string{
@@ -75,5 +78,26 @@ var _ = Describe("openaicompat streaming usage — #2387", func() {
 		Expect(final.Usage.PromptTokens).To(Equal(12))
 		Expect(final.Usage.CompletionTokens).To(Equal(7))
 		Expect(final.Usage.TotalTokens).To(Equal(19))
+		Expect(receivedBody["stream"]).To(BeTrue())
+		streamOptions, ok := receivedBody["stream_options"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(streamOptions["include_usage"]).To(BeTrue())
+	})
+
+	It("UT-KA-2387-101: does not add stream usage options to non-streaming requests", func() {
+		var receivedBody map[string]interface{}
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			Expect(json.NewDecoder(r.Body).Decode(&receivedBody)).To(Succeed())
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+		}))
+		client := openaicompat.New("gpt-4o", server.URL, "test-key")
+
+		_, err := client.Chat(context.Background(), openaicompat.Request{
+			Messages: []openaicompat.Message{{Role: "user", Content: "hi"}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(receivedBody["stream"]).To(BeFalse())
+		Expect(receivedBody).NotTo(HaveKey("stream_options"))
 	})
 })

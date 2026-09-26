@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -29,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
@@ -76,7 +78,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
 	}
 
-	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, messages, toolDefs)
+	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, phase, messages, toolDefs, llmCtx.WorkflowDiscovery)
 
 	resp, cancelled, callErr := inv.doLLMCall(ctx, state, messages, phase, llmCtx, turn, toolDefs)
 	if callErr != nil {
@@ -232,6 +234,15 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 	failEvent.EventAction = audit.ActionResponseFailed
 	failEvent.EventOutcome = audit.OutcomeFailure
 	failEvent.Data["error_message"] = err.Error()
+	errorCode := "ERR_UPSTREAM_FAILURE"
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		errorCode = "ERR_UPSTREAM_TIMEOUT"
+	}
+	// BR-AUDIT-005 Gap #7: retain machine-readable failure classification and
+	// retry guidance for SOC2 reconstruction of failed LLM turns.
+	failEvent.Data["error_details"] = sharedaudit.NewErrorDetails(
+		"kubernautagent", errorCode, err.Error(), llm.IsRetryable(err),
+	)
 	failEvent.Data["phase"] = p.phase
 	failEvent.Data["duration_seconds"] = time.Since(p.loopStart).Seconds()
 	audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
@@ -249,15 +260,22 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 
 // emitLLMRequestAudit records the per-turn LLM request audit event (AU-3:
 // model, prompt length/preview, enabled toolsets, full message history).
-func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, messages []llm.Message, toolDefs []llm.ToolDefinition) {
+func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, phase katypes.Phase, messages []llm.Message, toolDefs []llm.ToolDefinition, workflowContext *workflowDiscoveryAuditContext) {
 	reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 	reqEvent.EventAction = audit.ActionLLMRequest
 	reqEvent.EventOutcome = audit.OutcomeSuccess
 	reqEvent.Data["model"] = modelName
+	reqEvent.Data["phase"] = string(phase)
 	reqEvent.Data["prompt_length"] = totalPromptLength(messages)
 	reqEvent.Data["prompt_preview"] = lastUserMessage(messages)
 	reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 	reqEvent.Data["messages"] = messagesToAuditFormat(messages)
+	if workflowContext != nil {
+		reqEvent.Data["workflow_discovery_enrichment_labels_present"] = workflowContext.EnrichmentLabelsPresent
+		reqEvent.Data["workflow_discovery_signal_labels_present"] = workflowContext.SignalLabelsPresent
+		reqEvent.Data["workflow_discovery_prompt_labels_present"] = workflowContext.PromptLabelsPresent
+		reqEvent.Data["workflow_discovery_detected_labels"] = workflowContext.DetectedLabels
+	}
 	audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
 }
 

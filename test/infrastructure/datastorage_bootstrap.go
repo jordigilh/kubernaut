@@ -131,6 +131,10 @@ func generateInfrastructureImageTag(consumer string) string {
 	return fmt.Sprintf("%s-%s", consumer, uuid)
 }
 
+func localDataStorageImageName(imageTag string) string {
+	return fmt.Sprintf("localhost/kubernaut/datastorage:%s", imageTag)
+}
+
 // DSBootstrapInfra holds references to started infrastructure components
 // Used for cleanup and health monitoring during integration tests.
 type DSBootstrapInfra struct {
@@ -240,7 +244,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
 	imageTag := generateInfrastructureImageTag(serviceName)
-	imageName = fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
+	imageName = localDataStorageImageName(imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,

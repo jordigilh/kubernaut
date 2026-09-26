@@ -102,8 +102,8 @@ func fleetInteractiveBridgeGroundingRule() string {
     # CI RCA (run 30833443049, job 91756267907, E2E-FLEET-018): after Tier 3
     # (pure-LLM severity invention) was removed, AF's kubernaut_remediate and
     # kubernaut_investigate tool calls against the dedicated
-    # "ka-interactive-fleet-target" marker Deployment (kubernaut-system
-    # namespace, test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go)
+    # "ka-interactive-fleet-target" marker Deployment in the dedicated fleet
+    # workload namespace (test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go)
     # both failed closed with "no active alert or prometheus rule correlates
     # to this resource" -- that fixture is intentionally its OWN dedicated
     # Deployment (not the shared memory-eater fixture above, per the #1839
@@ -127,12 +127,47 @@ func fleetInteractiveBridgeGroundingRule() string {
         labels:
           severity: warning
           source: prometheus
-          namespace: kubernaut-system
           kind: Deployment
           name: ka-interactive-fleet-target
           cluster: remote-cluster
         annotations:
-          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"`
+          summary: "Synthetic grounding alert for E2E-FLEET-018 KA interactive-bridge fixture (issue #1768)"` +
+		`
+  af-hub-cluster-triage-2394.yml: |
+    # E2E-FLEET-2394-001: matching target labels fire on both registered
+    # clusters with different severities. AF must honor the requested
+    # cluster_id and select the hub alert, not the remote collision.
+    groups:
+    - name: af-hub-cluster-triage-2394
+      interval: 10s
+      rules:
+      - alert: AFHubClusterTriage2394
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: hub
+          route_skip_gateway: "true"
+          namespace: fleet-af-hub-triage
+          kind: Deployment
+          name: af-hub-triage-target
+        annotations:
+          summary: "E2E-FLEET-2394-001: hub-attributed grounding alert"
+      - alert: AFRemoteClusterTriageCollision2394
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: critical
+          source: prometheus
+          cluster: remote-cluster
+          route_skip_gateway: "true"
+          namespace: fleet-af-hub-triage
+          kind: Deployment
+          name: af-hub-triage-target
+        annotations:
+          summary: "E2E-FLEET-2394-001: remote-cluster collision alert"
+`
 }
 
 // DeployPrometheus deploys a real Prometheus instance into the Kind cluster.
@@ -343,10 +378,10 @@ data:
         # Gateway's extractTargetResource (pkg/gateway/adapters/prometheus_adapter.go)
         # resolves the target Kind/Name from a label KEY matching a K8s resource's
         # lowercase singular name (e.g. "deployment": "<name>"), the same convention
-        # buildPrometheusAlertWithCluster uses for every other fleet alert -- a
+        # buildPrometheusAlertWithClusterInNamespace uses for every other fleet alert -- a
         # literal "kind"/"name" label pair is not recognized and resolves to
         # Unknown/unknown, which owner-resolution then drops (target not found).
-        expr: fleet_organic_gw_signal{namespace="kubernaut-system", deployment="fleet-organic-gw-target"} > 0
+        expr: fleet_organic_gw_signal{namespace=~"fleet-organic-gw-[a-f0-9]+", deployment="fleet-organic-gw-target"} > 0
         for: 0s
         labels:
           severity: warning

@@ -239,20 +239,20 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 #### BR-MOCK-010: DAG-Based Conversation State Machine
 
-**Description**: The Mock LLM service MUST implement conversation flow management using a Directed Acyclic Graph (DAG) where nodes represent conversation states and edges represent transitions triggered by request conditions.
+**Description**: The Mock LLM service MUST implement conversation flow management using a testable state machine where nodes represent conversation states and transitions are triggered by request conditions. A DAG remains valid for legacy and generic flows; protocol-specific flows may use a typed planner when semantic invariants cannot be represented safely by result counts.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Replaces the hardcoded if/else routing in the Python Mock LLM (`_handle_openai_request`, `_is_phase3_request`) with a testable, extensible, and declarative structure. Each conversation mode (legacy, three-step, three-phase) is a separate DAG definition.
+**Rationale**: Replaces the hardcoded if/else routing in the Python Mock LLM (`_handle_openai_request`, `_is_phase3_request`) with testable, extensible, and declarative state management. Legacy and generic conversation modes may use DAG definitions; protocol-specific modes may use a typed planner when semantic invariants cannot be represented safely by result counts.
 
 **Acceptance Criteria**:
 - [ ] DAG engine accepts a graph definition with named nodes and typed transitions
-- [ ] Each node has a response handler (tool call, content, error)
+- [ ] Each node has a response handler (tool call, content, error), or the protocol-specific planner returns an equivalent semantic response plan
 - [ ] Transitions evaluate conditions on `ConversationContext` (message history, tool results, markers)
 - [ ] DAG path traversal is recorded for the verification API (BR-MOCK-041)
 - [ ] Engine supports multiple concurrent conversations without state leakage
 
-**Implementation Status**: ✅ Implemented (v1.3, Phase 1B — DAG engine, builders, conditions, handler wiring 2026-03-28)
+**Implementation Status**: ✅ Implemented for the existing DAG engine (v1.3, Phase 1B — DAG engine, builders, conditions, handler wiring 2026-03-28); DD-TEST-018 extends the contract with a typed discovery planner.
 
 **Related Issues**: #560
 
@@ -288,11 +288,13 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 **Acceptance Criteria**:
 - [ ] First turn: returns `list_available_actions` tool call
 - [ ] After tool result: returns `list_workflows` tool call for the selected action type
-- [ ] After tool result: returns `get_workflow` tool call for the selected workflow
-- [ ] Final turn: returns content response with RCA and workflow selection
-- [ ] Detection: activates when request includes three-step tool definitions and tool results count matches expected progression
+- [ ] After a `list_workflows` result containing the configured target: returns `get_workflow` for that target
+- [ ] When the target is absent and another page exists: requests the next `list_workflows` page
+- [ ] When the target is absent and no page remains: returns an unresolved/no-workflow response without `get_workflow` or workflow submission
+- [ ] Final turn: returns content response with RCA and workflow selection only after membership and schema retrieval succeed
+- [ ] Detection: activates when request includes three-step tool definitions and derives state from tool names/results, not total tool-result counts
 
-**Implementation Status**: 📋 Planned
+**Implementation Status**: ✅ Implemented; provider-neutral planner delivered in DD-TEST-018
 
 **Related Issues**: #560, DD-KA-017
 

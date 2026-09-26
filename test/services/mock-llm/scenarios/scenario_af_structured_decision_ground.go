@@ -36,29 +36,31 @@ package scenarios
 // tool_calls_count/llm_turns.
 //
 // Without a dedicated scenario here, this call falls through to
-// defaultFallbackScenario (scenario_default_fallback.go), which hardcodes
-// Severity: "warning" -- surfacing as "severity must flow from mock-LLM
-// through AF to SSE: expected warning to equal critical" (E2E-AF-1396-001).
+// defaultFallbackScenario (scenario_default_fallback.go), which also returns
+// Severity: "warning" for this signal. That is the authoritative severity;
+// the dedicated scenario is needed to provide the grounded RCA fields, not
+// to preserve the mock-LLM's conflicting "critical" severity.
 //
 // #1818 follow-up correction: an earlier version of this file tried to
 // leave Severity == "" here so canonicalGroundedRCA (phase_guard.go) would
 // treat the grounding call as "nothing authoritative to substitute" and
 // preserve mock-llm.yaml's scripted "critical" RCA untouched. That does
 // NOT work: internal/kubernautagent/investigator/investigator.go's
-// backfillSeverity unconditionally guarantees InvestigationResult.Severity
-// is never empty for any investigation that actually completes (falls back
-// to the signal's own severity, then "unknown" -- required for CRD enum
-// validation), so canonicalGroundedRCA's nil-on-empty-severity branch is
-// unreachable for a real completing investigation. Confirmed empirically
-// on helios08 (2026-08-19): leaving Severity unset still produced
-// severity=="warning" (backfilled from the StructuredDecisionGrounding3
-// alert's own severity label) at the SSE payload, not "".
+// applySignalSeverity unconditionally guarantees InvestigationResult.Severity
+// comes from the signal's SP classification (or "unknown" when absent --
+// required for CRD enum validation), so canonicalGroundedRCA's
+// nil-on-empty-severity branch is unreachable for a real completing
+// investigation. Confirmed empirically on helios08 (2026-08-19): leaving
+// Severity unset still produced severity=="warning" (from the
+// StructuredDecisionGrounding3 alert's severity label) at the SSE payload,
+// not "".
 //
-// The actual fix: since full substitution of args["rca"] is unavoidable
-// for any real completing grounding investigation, make the substituted
-// content agree with mock-llm.yaml's own af_structured_decision
-// present_decision script instead of describing this call's real (but
-// irrelevant to the test) target.
+// Since full substitution of args["rca"] is unavoidable for any real
+// completing grounding investigation, make the substituted RCA content
+// agree with mock-llm.yaml's af_structured_decision present_decision script
+// instead of describing this call's real (but irrelevant to the test) target.
+// applySignalSeverity still replaces its scripted "critical" with the
+// signal's authoritative "warning" severity.
 //
 // ToolCallArgs (not the Severity/Confidence/ResourceKind/... config fields,
 // and not ExactAnalysisText) is required here: this scenario resolves in a
@@ -115,6 +117,26 @@ func structuredDecisionGrounding3Config() MockScenarioConfig {
 	}
 }
 
+// structuredDecisionGroundingConfig is the KA-side grounding response for
+// Fleet E2E's first structured-decision fixture. The AF selector supplies the
+// final present_decision payload, while this investigation response provides
+// grounded RCA fields. KA replaces its scripted "critical" with the signal's
+// authoritative "warning" severity before AF emits the decision.
+func structuredDecisionGroundingConfig() MockScenarioConfig {
+	cfg := structuredDecisionGrounding3Config()
+	cfg.ScenarioName = "af_structured_decision_ground"
+	cfg.SignalName = "StructuredDecisionGrounding"
+	// The Fleet follow-up continues through workflow discovery and a user
+	// decision. Keep this seed investigation actionable so AF does not enter
+	// phase2_blocked before the follow-up turn can present that decision.
+	cfg.ToolCallArgs["investigation_outcome"] = "actionable"
+	cfg.ToolCallArgs["actionable"] = true
+	if rca, ok := cfg.ToolCallArgs["root_cause_analysis"].(map[string]interface{}); ok {
+		rca["signal_name"] = cfg.SignalName
+	}
+	return cfg
+}
+
 // structuredDecisionGrounding4Config is KA's own (mock-llm) side of
 // structured_decision_e2e_test.go's E2E-AF-2387-002 groundSessionDelta call
 // (deploy/apifrontend/overlays/e2e/mock-llm.yaml's
@@ -125,11 +147,11 @@ func structuredDecisionGrounding3Config() MockScenarioConfig {
 // Identical in shape to structuredDecisionGrounding3Config above (same
 // substituted RCA content, same Deployment-kind steering past
 // investigator_gates.go's sameKindValidationGate, same single-turn
-// submit_result resolution): the 2387-002 test asserts the SAME
-// severity/confidence/causal_chain/target values 1396-001 asserts, PLUS the
-// server-computed call-level counts and token sums the grounding
-// investigation really produced. Every constraint documented on the
-// Grounding3 config (ToolCallArgs not typed fields, no ExactAnalysisText,
+// submit_result resolution): the 2387-002 test asserts the same authoritative
+// warning severity and grounded confidence/causal_chain/target values as
+// 1396-001, plus the server-computed call-level counts and token sums the
+// grounding investigation really produced. Every constraint documented on
+// the Grounding3 config (ToolCallArgs not typed fields, no ExactAnalysisText,
 // 3-item causal_chain) applies verbatim here.
 func structuredDecisionGrounding4Config() MockScenarioConfig {
 	return MockScenarioConfig{

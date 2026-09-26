@@ -61,10 +61,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-001",
-							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
@@ -111,8 +111,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
 			Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
-			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionEngine).To(Equal("job"),
-				"IT-AA-2390-001: selected workflow execution engine must persist in AA status")
+			// The seeded crashloop-config-fix catalog fixture declares Tekton;
+			// the catalog engine is authoritative over the mock selection.
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionEngine).To(Equal("tekton"),
+				"IT-AA-2390-001: catalog execution engine must persist in AA status")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionBundle).ToNot(BeEmpty(),
 				"IT-AA-2390-001: selected workflow execution bundle must persist in AA status")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowName).ToNot(BeEmpty(),
@@ -132,9 +134,8 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}()
 
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
-			// Use a signal that returns confidence < 0.8 (Rego default threshold).
-			// Unrecognized signals hit the mock LLM default scenario (confidence 0.75),
-			// ensuring the production catch-all rule fires: is_production + not is_high_confidence.
+			// Use the registered 0.75-confidence scenario, ensuring the
+			// production catch-all rule fires: is_production + not is_high_confidence.
 			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "MOCK_APPROVAL_TEST"
 
 			By("Creating production AIAnalysis")
@@ -171,10 +172,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-002",
-							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",
@@ -295,10 +296,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-462-002",
-							Severity:         "warning",
+							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
-							BusinessPriority: "P2",
+							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-pod",

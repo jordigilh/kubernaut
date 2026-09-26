@@ -21,6 +21,7 @@ func oomkilledPredictiveConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "oomkilled_predictive", SignalName: "OOMKilled", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		ActionType:    "IncreaseMemoryLimits",
 		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.88,
 		Rationale:    "Predicted OOMKill trend warrants preemptive memory limit increase before the threshold is breached",
 		RootCause:    "Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",

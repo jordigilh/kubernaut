@@ -64,7 +64,8 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}

@@ -32,7 +32,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 	Describe("Input validation — resource scope (UT-AF-1372-010..019)", func() {
 		It("UT-AF-1372-010: rejects empty alert_name", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -45,7 +45,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-011: rejects empty api_version", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "",
 					Kind:       "Deployment",
@@ -58,7 +58,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-012: rejects empty kind", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "",
@@ -71,7 +71,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-013: rejects empty name", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -95,7 +95,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg.PromClient = promClient
 			cfg.Triager = defaultTestTriager("", "Node", "worker-03")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "NodeNotReady",
 					APIVersion: "v1",
 					Kind:       "Node",
@@ -108,7 +108,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-015: rejects nil k8s client", func() {
 			cfg := tools.InvestigateAlertConfig{ControllerNS: "kubernaut-system"}
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -131,7 +131,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				},
 			}
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -154,7 +154,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				},
 			}
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -182,7 +182,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				},
 			}
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "HighMemoryUsage",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -204,7 +204,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				},
 			}
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "NonExistentAlert",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -218,7 +218,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-024: succeeds without prom client (graceful degradation)", func() {
 			result, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -235,7 +235,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-030: RR signalName set to alert_name on CRD", func() {
 			cfg := baseCfg()
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -254,7 +254,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-031: RR targetResource includes apiVersion", func() {
 			cfg := baseCfg()
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -273,7 +273,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-032: dedup returns existing RR for same fingerprint", func() {
 			cfg := baseCfg()
 			result1, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -284,7 +284,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			Expect(result1.AlreadyExists).To(BeFalse())
 
 			result2, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -300,7 +300,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 	Describe("FedRAMP compliance (UT-AF-1372-040..048)", func() {
 		It("UT-AF-1372-040: path traversal in alert_name rejected", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "../../etc/passwd",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -313,7 +313,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-041: path traversal in api_version rejected", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "../../v1",
 					Kind:       "Deployment",
@@ -326,7 +326,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-042: oversized alert_name rejected", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  fmt.Sprintf("%0254d", 0),
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -339,7 +339,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 
 		It("UT-AF-1372-043: CRLF injection in alert_name rejected", func() {
 			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "alert\r\ninjection",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -375,7 +375,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.ValidationFailures = counter
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -397,7 +397,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.ValidationFailures = counter
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -427,7 +427,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.Mapper = newMapper()
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -442,7 +442,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg.Mapper = newMapper()
 			cfg.Triager = defaultTestTriager("", "Node", "worker-1")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubeNodeNotReady",
 					APIVersion: "v1",
 					Kind:       "Node",
@@ -458,7 +458,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg.Mapper = newMapper()
 			cfg.Triager = defaultTestTriager("", "Node", "worker-1")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubeNodeNotReady",
 					APIVersion: "v1",
 					Kind:       "Node",
@@ -472,7 +472,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.Mapper = newMapper()
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -487,7 +487,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.ScopeChecker = nil
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -519,7 +519,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Triager:      defaultTestTriager("demo-gateway", "Deployment", "api-frontend"),
-				ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.InvestigateAlertArgs{
+				ScopeChecker: testAlwaysManagedScopeChecker()}, &tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 				AlertName:  "ScalingLimited",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",
@@ -621,7 +621,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.ScopeChecker = &mocks.NeverManagedScopeChecker{}
 			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -636,7 +636,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			cfg := baseCfg()
 			cfg.ScopeChecker = &mocks.AlwaysManagedScopeChecker{}
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
-				&tools.InvestigateAlertArgs{
+				&tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 					AlertName:  "KubePodCrashLooping",
 					APIVersion: "apps/v1",
 					Kind:       "Deployment",
@@ -652,7 +652,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-2028-007: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
 			cfg := baseCfg()
 			cfg.Triager = ambiguousTestTriager()
-			args := &tools.InvestigateAlertArgs{
+			args := &tools.InvestigateAlertArgs{ClusterID: hubClusterID,
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",

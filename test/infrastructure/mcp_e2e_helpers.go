@@ -229,19 +229,35 @@ rules:
 	return cmd.Run()
 }
 
-// CreateDirectRR creates a RemediationRequest CRD directly (bypassing the OOMKill
-// pipeline) for tests that don't need the full event->Gateway->SP->RO flow.
-// Returns the RR name. A managed namespace is created for the target resource so
-// that the RO routing engine does not block the RR as UnmanagedResource.
+// CreateDirectRR creates a RemediationRequest CRD directly (bypassing the
+// event->Gateway ingestion path) for tests that don't need an OOMKill trigger.
+// The request still follows the normal RO->SP processing path. Its Pod target
+// matches the generic-restart test workflow's catalog component.
+// Returns the RR name. A managed staging namespace is created for the target
+// resource so the RO routing engine does not block it as UnmanagedResource and
+// DD-KA-017 discovery receives the same environment context as the seeded E2E
+// workflow catalog.
 func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
-	return CreateDirectRRWithSignal(ctx, namespace, testID, "")
+	return createDirectRRWithTargetKindAndSeverity(ctx, namespace, testID, "", "Pod", "high")
+}
+
+// CreateDirectRRWithSeverity creates a direct Pod RR with a chosen external
+// severity input. SignalProcessing still classifies the RR; use this when a test
+// intentionally exercises a workflow whose catalog severity is specific.
+func CreateDirectRRWithSeverity(ctx context.Context, namespace, testID, severity string) (string, error) {
+	return createDirectRRWithTargetKindAndSeverity(ctx, namespace, testID, "", "Pod", severity)
 }
 
 // CreateDirectRRWithSignal is like CreateDirectRR but lets the caller specify a
 // mock-LLM signal name. When signalName is empty, defaults to "e2e-<testID>-signal".
 // Use "slow-investigation-test" to keep the KA session alive for tests that need
-// to interact with it via MCP before completion.
+// to interact with it via MCP before completion. Scenario-specific signals use a
+// Deployment target; the generic CreateDirectRR helper uses a Pod target.
 func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName string) (string, error) {
+	return createDirectRRWithTargetKindAndSeverity(ctx, namespace, testID, signalName, "Deployment", "high")
+}
+
+func createDirectRRWithTargetKindAndSeverity(ctx context.Context, namespace, testID, signalName, targetKind, severity string) (string, error) {
 	if signalName == "" {
 		signalName = fmt.Sprintf("e2e-%s-signal", testID)
 	}
@@ -267,7 +283,8 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 			"metadata": map[string]interface{}{
 				"name": targetNS,
 				"labels": map[string]interface{}{
-					"kubernaut.ai/managed": trueFixture,
+					"kubernaut.ai/managed":     trueFixture,
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		},
@@ -276,6 +293,65 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 	defer nsCancel()
 	if _, err := dynClient.Resource(nsGVR).Create(nsCtx, nsObj, metav1.CreateOptions{}); err != nil {
 		return "", fmt.Errorf("create managed namespace %s: %w", targetNS, err)
+	}
+
+	targetName := fmt.Sprintf("%s-target", testID)
+	var targetGVR schema.GroupVersionResource
+	var targetObj *unstructured.Unstructured
+	switch targetKind {
+	case "Pod":
+		targetGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      targetName,
+				"namespace": targetNS,
+				"labels":    map[string]interface{}{"app": "memory-eater"},
+			},
+			"spec": map[string]interface{}{
+				"restartPolicy": "Never",
+				"containers": []interface{}{map[string]interface{}{
+					"name":    "app",
+					"image":   "busybox:1.36",
+					"command": []interface{}{"sleep", "3600"},
+				}},
+			},
+		}}
+	case "Deployment":
+		targetGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]interface{}{
+				"name":      targetName,
+				"namespace": targetNS,
+			},
+			"spec": map[string]interface{}{
+				"replicas": int64(0),
+				"selector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{"app": "memory-eater"},
+				},
+				"template": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"labels": map[string]interface{}{"app": "memory-eater"},
+					},
+					"spec": map[string]interface{}{
+						"containers": []interface{}{map[string]interface{}{
+							"name":  "app",
+							"image": "busybox:1.36",
+						}},
+					},
+				},
+			},
+		}}
+	default:
+		return "", fmt.Errorf("unsupported direct RR target kind %s", targetKind)
+	}
+	targetCtx, targetCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer targetCancel()
+	if _, err := dynClient.Resource(targetGVR).Namespace(targetNS).Create(targetCtx, targetObj, metav1.CreateOptions{}); err != nil {
+		return "", fmt.Errorf("create target %s/%s: %w", targetKind, targetName, err)
 	}
 
 	rr := &unstructured.Unstructured{
@@ -290,14 +366,15 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 				"signalFingerprint": fingerprint,
 				"signalName":        signalName,
 				"signalType":        "alert",
-				"severity":          "high",
+				"severity":          severity,
 				"targetType":        "kubernetes",
 				"firingTime":        now.UTC().Format(time.RFC3339),
 				"receivedTime":      now.UTC().Format(time.RFC3339),
 				"targetResource": map[string]interface{}{
-					"kind":      "Deployment",
-					"name":      fmt.Sprintf("%s-target", testID),
-					"namespace": targetNS,
+					"apiVersion": targetAPIVersion(targetKind),
+					"kind":       targetKind,
+					"name":       targetName,
+					"namespace":  targetNS,
 				},
 			},
 		},
@@ -316,6 +393,13 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 		return "", fmt.Errorf("create RR CRD: %w", err)
 	}
 	return rrName, nil
+}
+
+func targetAPIVersion(targetKind string) string {
+	if targetKind == "Deployment" {
+		return "apps/v1"
+	}
+	return "v1"
 }
 
 // MCPSessionSetup holds the result of SetupMCPSession.

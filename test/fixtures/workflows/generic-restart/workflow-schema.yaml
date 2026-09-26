@@ -16,9 +16,10 @@ spec:
   
   labels:
     severity: [info, warning, high]
-    environment: [production, staging, test]
+    environment: [production, staging, test, development]
     component: [v1/Pod]
-    priority: P2
+    priority: "*"
+    cluster: ["*"]
   
   execution:
     engine: tekton

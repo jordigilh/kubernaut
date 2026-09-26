@@ -163,6 +163,48 @@ var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 		Expect(rule).To(ContainSubstring("cluster: remote-cluster"))
 	})
 
+	It("UT-INFRA-FLEET-2394-001 [BR-FLEET-054]: renders valid hub and remote severity-triage rules", func() {
+		rule := fleetInteractiveBridgeGroundingRule()
+		Expect(rule).To(ContainSubstring("af-hub-cluster-triage-2394.yml: |"))
+
+		manifest := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: prometheus-rules\ndata:\n" + rule
+		var configMap map[string]interface{}
+		configMapDecoder := utilyaml.NewYAMLOrJSONDecoder(strings.NewReader(manifest), 4096)
+		Expect(configMapDecoder.Decode(&configMap)).To(Succeed(), "fixture must render as valid ConfigMap YAML")
+
+		data, ok := configMap["data"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "ConfigMap data must be a YAML mapping")
+		hubRules, ok := data["af-hub-cluster-triage-2394.yml"].(string)
+		Expect(ok).To(BeTrue(), "hub triage fixture must be a ConfigMap string value")
+		Expect(hubRules).To(ContainSubstring("alert: AFHubClusterTriage2394"))
+		Expect(hubRules).To(ContainSubstring("severity: warning"))
+		Expect(hubRules).To(ContainSubstring("cluster: hub"))
+		Expect(hubRules).To(ContainSubstring("route_skip_gateway: \"true\""),
+			"AF triage fixtures must not create duplicate RRs through AlertManager")
+		Expect(hubRules).To(ContainSubstring("alert: AFRemoteClusterTriageCollision2394"))
+		Expect(hubRules).To(ContainSubstring("severity: critical"))
+		Expect(hubRules).To(ContainSubstring("cluster: remote-cluster"))
+		var parsedHubRules map[string]interface{}
+		hubRulesDecoder := utilyaml.NewYAMLOrJSONDecoder(strings.NewReader(hubRules), 4096)
+		Expect(hubRulesDecoder.Decode(&parsedHubRules)).To(Succeed(), "hub alert rules must be valid Prometheus rule YAML")
+	})
+
+	It("UT-INFRA-AF-2394-001 [BR-INTEGRATION-065]: local AF triage rules omit a synthetic Gateway cluster ID", func() {
+		localRules := renderSeverityTriageAlertRules("")
+		Expect(localRules).To(ContainSubstring("alert: HighCPU"))
+		Expect(localRules).NotTo(ContainSubstring("cluster:"), "the standalone AF lane has no Gateway cluster identity")
+
+		fleetHubRules := renderSeverityTriageAlertRules("hub")
+		Expect(fleetHubRules).To(ContainSubstring("cluster: \"hub\""),
+			"a caller with a real Gateway registration ID can still render attributed rules")
+		Expect(fleetHubRules).To(ContainSubstring("route_skip_gateway: \"true\""),
+			"AF severity evidence must not also enter the signal-ingestion Gateway path")
+		Expect(fleetHubRules).To(ContainSubstring("cluster: \"unregistered-cluster-2462\""),
+			"the fail-closed test requires a grounded alert for an unregistered identity")
+		Expect(fleetHubRules).To(ContainSubstring("alert: FleetSessionActiveGrounding"),
+			"Fleet AF concurrency fallback needs a hub-attributed grounding alert")
+	})
+
 	It("UT-INFRA-FLEETDEMO-PROMETHEUS-006: rejects an invalid Alertmanager bridge address", func() {
 		_, err := buildManagedPrometheusManifestChecked("monitoring", "remote-cluster", "not-an-address")
 

@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func itToolCtx() context.Context {
@@ -185,6 +185,40 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 		})
 	})
 
+	Describe("IT-KA-2442-001: list_workflows discovery membership through real catalog wire", func() {
+		It("should accumulate IDs from every page in the current discovery context", func() {
+			state := katypes.NewDiscoveredWorkflowState()
+			ctx := katypes.WithDiscoveredWorkflowState(itToolCtx(), state)
+
+			page1, err := reg.Execute(ctx, "list_workflows", json.RawMessage(fmt.Sprintf(
+				`{"action_type":"IncreaseMemoryLimits","page":"next","cursor":"%s"}`,
+				custom.EncodeCursor(0, 1))))
+			Expect(err).NotTo(HaveOccurred())
+			page1Data := decodeWorkflowPage(page1)
+
+			var page1Pagination map[string]interface{}
+			Expect(json.Unmarshal(page1Data["pagination"], &page1Pagination)).To(Succeed())
+			nextCursor, ok := page1Pagination["nextCursor"].(string)
+			Expect(ok).To(BeTrue())
+
+			page2, err := reg.Execute(ctx, "list_workflows", json.RawMessage(fmt.Sprintf(
+				`{"action_type":"IncreaseMemoryLimits","page":"next","cursor":"%s"}`,
+				nextCursor)))
+			Expect(err).NotTo(HaveOccurred())
+			page2Data := decodeWorkflowPage(page2)
+
+			for _, page := range []map[string]json.RawMessage{page1Data, page2Data} {
+				var workflows []struct {
+					WorkflowID string `json:"workflowId"`
+				}
+				Expect(json.Unmarshal(page["workflows"], &workflows)).To(Succeed())
+				for _, workflow := range workflows {
+					Expect(state.Contains(workflow.WorkflowID)).To(BeTrue())
+				}
+			}
+		})
+	})
+
 	Describe("IT-KA-688-402: list_workflows without cursor returns all matching workflows", func() {
 		It("should return all matching workflows with pagination stripped (single page)", func() {
 			By("Calling without page/cursor — DS uses default limit=10, all 2 workflows fit in one page")
@@ -205,3 +239,9 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 		})
 	})
 })
+
+func decodeWorkflowPage(data string) map[string]json.RawMessage {
+	var page map[string]json.RawMessage
+	Expect(json.Unmarshal([]byte(data), &page)).To(Succeed())
+	return page
+}

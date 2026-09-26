@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
@@ -65,6 +66,7 @@ var _ = Describe("Scenario Detection Rules", func() {
 		Entry("UT-MOCK-022-003: NodeNotReady → node_not_ready", "- Signal Name: NodeNotReady\n- Node: worker-1", "node_not_ready"),
 		Entry("UT-MOCK-022-004: CertManagerCertNotReady → cert_not_ready", "- Signal Name: CertManagerCertNotReady\n- Namespace: cert-manager", "cert_not_ready"),
 		Entry("UT-MOCK-022-005: MemoryExceedsLimit → oomkilled", "- Signal Name: MemoryExceedsLimit\n- Namespace: prod", "oomkilled"),
+		Entry("UT-MOCK-022-006 (BR-AI-056): MemoryEaterResourcePressure → memory_eater_resource_pressure", "- Signal Name: MemoryEaterResourcePressure\n- Resource: staging/Deployment/memory-eater", "memory_eater_resource_pressure"),
 		Entry("UT-ML-2390-002: GitOpsDrift2390 → gitops_drift_2390", "- Signal Name: GitOpsDrift2390\n- Resource: production/Deployment/memory-eater", "gitops_drift_2390"),
 	)
 
@@ -134,6 +136,24 @@ var _ = Describe("Scenario Detection Rules", func() {
 			Expect(confidence).To(Equal(0.91))
 		})
 
+		It("UT-MOCK-2462-001 / BR-FLEET-054: should not match a keyword inside a larger token", func() {
+			selector := scenarios.ScenarioSelector{
+				Keywords:          []string{"fleet e2e severity tier 1"},
+				MatchLastUserOnly: true,
+				Confidence:        1.0,
+			}
+
+			matched, _ := selector.Match(&scenarios.DetectionContext{
+				LastUserContent: "fleet e2e severity tier 15",
+			})
+			Expect(matched).To(BeFalse())
+
+			matched, _ = selector.Match(&scenarios.DetectionContext{
+				LastUserContent: "fleet e2e severity tier 1 with severity critical",
+			})
+			Expect(matched).To(BeTrue())
+		})
+
 		It("should publish selector constraints in scenario metadata", func() {
 			metadataByName := make(map[string]scenarios.ScenarioMetadata)
 			for _, metadata := range registry.List() {
@@ -192,6 +212,42 @@ var _ = Describe("Scenario Detection Rules", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.Scenario.Name()).To(Equal("crashloop"),
 				"a BackOff signal on the crashloop-app fixture (which has the required ConfigMap) must still select crashloop-config-fix-v1")
+		})
+
+		It("UT-MOCK-026-003: ImagePullBackOff does not route to the OOM workflow", func() {
+			ctx := &scenarios.DetectionContext{
+				Content: "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Resource: default/Pod/image-pull-pod",
+				AllText: "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Resource: default/Pod/image-pull-pod",
+			}
+			result := registry.Detect(ctx)
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("default"),
+				"ImagePullBackOff must not select oomkill-increase-memory-v1")
+		})
+
+		It("UT-MOCK-004-001 / BR-AI-OBSERVABILITY-004: selects the seeded confidence-metrics workflow for the matching ImagePullBackOff fixture", func() {
+			const seededWorkflowID = "cf45df95-0bc0-4daa-9bd7-4fd3d11e9374"
+			registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{
+					"imagepullbackoff-metrics-v1:staging": {WorkflowID: seededWorkflowID},
+				},
+			})
+
+			prompt := "# Incident Analysis\n- Signal Name: ImagePullBackOff\n- Severity: critical\n- Resource: staging/Pod/confidence-pod"
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content:    prompt,
+				AllText:    prompt,
+				SignalName: "ImagePullBackOff",
+			})
+
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("aa_metrics_imagepullbackoff")) // BR-AI-OBSERVABILITY-004
+
+			configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			Expect(configured.Config().WorkflowName).To(Equal("imagepullbackoff-metrics-v1")) // BR-AI-OBSERVABILITY-004
+			Expect(configured.Config().ActionType).To(Equal("RestartPod")) // BR-AI-OBSERVABILITY-004
+			Expect(configured.Config().WorkflowID).To(Equal(seededWorkflowID))
 		})
 	})
 

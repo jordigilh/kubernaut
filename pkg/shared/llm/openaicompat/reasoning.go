@@ -16,7 +16,10 @@ limitations under the License.
 
 package openaicompat
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // ReasoningMode controls how a captured reasoning/thinking block is
 // round-tripped back to the provider on a later turn. Different
@@ -93,8 +96,8 @@ func shouldReplayReasoning(mode ReasoningMode, hadToolCalls bool) bool {
 // reasoning text back to the provider; EffortDialect governs asking the
 // provider to think harder or less in the first place. A model can have
 // either, both, or neither independently (e.g. a bare-bones self-hosted
-// server has neither; DeepSeek has both; real OpenAI o-series/gpt-5 has
-// only the effort dial, since Chat Completions never returns their
+// server has neither; DeepSeek has both; real OpenAI o-series and GPT-5
+// models have only the effort dial, since Chat Completions never returns their
 // reasoning text at all — see #1604's non-goal on the Responses API).
 type EffortDialect string
 
@@ -104,10 +107,10 @@ const (
 	// never receives a speculative field it might reject.
 	EffortDialectNone EffortDialect = "none"
 
-	// EffortDialectOpenAI: real OpenAI/Azure o-series and gpt-5-family
-	// reasoning models. The canonical effort vocabulary ("none", "minimal",
-	// "low", "medium", "high", "xhigh", "max") is OpenAI's own and is passed
-	// through verbatim as the wire "reasoning_effort" field.
+	// EffortDialectOpenAI: real OpenAI/Azure o-series and GPT-5+ reasoning
+	// models. The canonical effort vocabulary ("none",
+	// "minimal", "low", "medium", "high", "xhigh", "max") is OpenAI's own
+	// and is passed through verbatim as the wire "reasoning_effort" field.
 	EffortDialectOpenAI EffortDialect = "openai"
 
 	// EffortDialectDeepSeek: DeepSeek's own two-tier dialect ("high"/"max")
@@ -143,17 +146,71 @@ func DetectEffortDialectWithOverride(model, override string) EffortDialect {
 		return EffortDialectDeepSeek
 	}
 
-	// Real OpenAI o-series and gpt-5-family reasoning models. Heuristic
-	// mirrors langchaingo's own model-family detection (tmc/langchaingo
-	// llms/openai/openaillm.go SupportsReasoning) — the same problem has
-	// the same shape of answer in every Go OpenAI client, not a shortcut
-	// unique to this package.
-	if lower == "o1" || strings.HasPrefix(lower, "o1-") ||
-		lower == "o3" || strings.HasPrefix(lower, "o3-") ||
-		lower == "o4" || strings.HasPrefix(lower, "o4-") ||
-		strings.HasPrefix(lower, "o5-") ||
-		strings.HasPrefix(lower, "gpt-5") {
+	// OpenAI o-series, GPT-5, and GPT-5.6+ model IDs represent supported
+	// effort families. Version parsing lets new variants inherit field
+	// support without enumerating their suffixes.
+	if isOpenAIReasoningEffortModel(lower) {
 		return EffortDialectOpenAI
 	}
 	return EffortDialectNone
+}
+
+// isOpenAIReasoningEffortModel reports whether model naming identifies a
+// first-party OpenAI model family that accepts the reasoning_effort request
+// field. Unknown and custom names remain false so OpenAI-compatible endpoints
+// do not receive speculative fields (DD-LLM-005 compatibility floor).
+func isOpenAIReasoningEffortModel(model string) bool {
+	lower := strings.ToLower(model)
+	return isOpenAISeriesReasoningModel(lower) || strings.HasPrefix(lower, "o5-") ||
+		strings.HasPrefix(lower, "gpt-5") || isGPT56OrNewerModel(lower)
+}
+
+// DefaultOpenAIReasoningEffort returns the conservative demo default for a
+// recognized OpenAI reasoning model family. GPT model IDs version 5.6 and
+// newer use "none" independent of their suffix; older GPT-5 IDs retain the
+// minimal default, and o1/o3/o4 use low. An empty result means no demo default
+// is inferred for this model name.
+func DefaultOpenAIReasoningEffort(model string) string {
+	lower := strings.ToLower(model)
+	switch {
+	case isGPT56OrNewerModel(lower):
+		return "none"
+	case strings.HasPrefix(lower, "gpt-5"):
+		return "minimal"
+	case isOpenAISeriesReasoningModel(lower):
+		return "low"
+	default:
+		return ""
+	}
+}
+
+func isOpenAISeriesReasoningModel(model string) bool {
+	return model == "o1" || strings.HasPrefix(model, "o1-") ||
+		model == "o3" || strings.HasPrefix(model, "o3-") ||
+		model == "o4" || strings.HasPrefix(model, "o4-")
+}
+
+func isGPT56OrNewerModel(model string) bool {
+	const modelPrefix = "gpt-"
+	model = strings.ToLower(model)
+	if !strings.HasPrefix(model, modelPrefix) {
+		return false
+	}
+	version := strings.SplitN(strings.TrimPrefix(model, modelPrefix), "-", 2)[0]
+	components := strings.Split(version, ".")
+	if len(components) > 2 {
+		return false
+	}
+	major, err := strconv.Atoi(components[0])
+	if err != nil {
+		return false
+	}
+	minor := 0
+	if len(components) == 2 {
+		minor, err = strconv.Atoi(components[1])
+		if err != nil {
+			return false
+		}
+	}
+	return major > 5 || (major == 5 && minor >= 6)
 }

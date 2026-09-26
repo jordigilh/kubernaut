@@ -35,8 +35,11 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 		testNS := fmt.Sprintf("fp-e2e-1189-%d", time.Now().Unix())
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:   testNS,
-				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+				Name: testNS,
+				Labels: map[string]string{
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -74,6 +77,7 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+		fpCreateTargetPod(ctx, dep)
 
 		rrName := "e2e-fp-mcp-rr-001"
 		By("Creating RemediationRequest via kubectl CRD fixture")

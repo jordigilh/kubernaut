@@ -76,10 +76,11 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		// scenario match (scenario_fleet_exec_cluster_override.go) keys off
 		// SignalName only, so renaming the Deployment does not affect it.
 		const targetName = "memory-eater-exec-cluster-override"
+		targetNS := fleetWorkloadNamespace("fleet-exec-override")
 		dep := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNS,
 				Labels:    map[string]string{"kubernaut.ai/managed": "true"},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -110,8 +111,8 @@ var _ = Describe("E2E-FLEET-2390-001 [AC-6]: workflow-declared execution cluster
 		// remote cluster is torn down with the suite, so retain this fixed-name
 		// fixture until then.
 
-		payload := buildPrometheusAlertWithCluster("FleetExecClusterOverride2326", "critical",
-			targetName, "prod-west")
+		payload := buildPrometheusAlertWithClusterInNamespace("FleetExecClusterOverride2326", "critical",
+			targetName, targetNS, "prod-west")
 
 		gatewayURL := urlLocalhost30080
 		body := postFleetAlertUntilAccepted(gatewayURL, payload)

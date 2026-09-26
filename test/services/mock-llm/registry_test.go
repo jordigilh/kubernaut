@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -139,6 +140,213 @@ var _ = Describe("Scenario Registry", func() {
 		})
 		Expect(result).NotTo(BeNil())
 		Expect(result.Scenario.Name()).To(Equal("default"))
+	})
+
+	It("UT-MOCK-2442-018: rejects ambiguous workflow overrides", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-v1:production": {WorkflowID: "production-id"},
+				"oomkill-increase-memory-v1:staging":    {WorkflowID: "staging-id"},
+				"oomkill-increase-memory-v1:test":       {WorkflowID: "test-id"},
+			},
+		})
+
+		scenario, ok := registry.Get("oomkilled")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
+	})
+
+	It("UT-MOCK-2442-019: applies identical workflow overrides across environments", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-v1:production": {WorkflowID: "catalog-id"},
+				"oomkill-increase-memory-v1:staging":    {WorkflowID: "catalog-id"},
+				"oomkill-increase-memory-v1:test":       {WorkflowID: "catalog-id"},
+			},
+		})
+
+		scenario, ok := registry.Get("oomkilled")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-020: keeps max-retry workflow discoverable while forcing validation failures", func() {
+		registry = scenarios.DefaultRegistry()
+
+		scenario, ok := registry.Get("max_retries_exhausted")
+		Expect(ok).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+
+		cfg := configured.Config()
+		Expect(cfg.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
+		Expect(cfg.RawParameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", BeNumerically("==", 123)))
+	})
+
+	It("UT-MOCK-2442-021: selects isolated AIAnalysis fixture scenarios by fingerprint", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"oomkill-increase-memory-aa-staging-v1:staging": {WorkflowID: "catalog-id"},
+			},
+		})
+
+		result := registry.Detect(&scenarios.DetectionContext{Content: "e2e-fingerprint-002"})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_staging_oom"))
+
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("oomkill-increase-memory-aa-staging-v1"))
+		Expect(cfg.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(cfg.WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-022: selects isolated AIAnalysis fixtures from prompt-visible fields", func() {
+		registry = scenarios.DefaultRegistryWithOverrides(&config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{
+				"crashloop-config-fix-aa-approval-v1:production": {WorkflowID: "catalog-id"},
+			},
+		})
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "- Signal Name: CrashLoopBackOff\n- Severity: high\n- Resource: payments/Deployment/payment-service",
+			AllText: "Signal Name: CrashLoopBackOff Severity: high Resource: payments/Deployment/payment-service\nRCA Summary: configuration failure\nPhase 1 Assessment: Severity: critical",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_approval_crashloop"))
+
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-approval-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.Severity).To(Equal("critical"))
+		Expect(cfg.WorkflowID).To(Equal("catalog-id"))
+	})
+
+	It("UT-MOCK-2442-023: selects the warning production audit fixture", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Namespace: payments Resource Name: payment-service",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_audit_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-audit-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-024: selects the warning staging Rego fixture", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Namespace: default Resource Name: frontend",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_rego_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-rego-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-028: selects the staging session fixture with the catalog workflow identity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Resource: staging/Pod/session-test-pod",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_session_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-session-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-029: selects the production data-quality fixture with the catalog workflow identity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: warning Resource: production/Pod/test-app",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_data_quality_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		Expect(cfg.WorkflowName).To(Equal("crashloop-config-fix-aa-data-quality-v1"))
+		Expect(cfg.ActionType).To(Equal("RestartDeployment"))
+		Expect(cfg.WorkflowID).To(Equal(uuid.DeterministicUUID(cfg.WorkflowName)))
+	})
+
+	It("UT-MOCK-2442-030: ignores RCA severity and schema enum when routing by signal severity", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: warning\n- Resource: payments/Deployment/payment-service",
+			AllText: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: warning\n- Resource: payments/Deployment/payment-service\nPhase 1 Assessment: - Severity: critical\nResponse schema: {\"severity\": \"critical|high|warning|info|unknown\"}",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_audit_crashloop"))
+		configured, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().WorkflowName).To(Equal("crashloop-config-fix-aa-audit-v1"))
+	})
+
+	It("UT-MOCK-2442-025: matches detected-label fixtures in dynamic namespaces", func() {
+		registry = scenarios.DefaultRegistry()
+
+		ctx := &scenarios.DetectionContext{
+			Content: "Signal Name: CrashLoopBackOff Severity: critical Resource: adr056-e2e-1234/Deployment/app-e2e-001",
+		}
+		fixture, ok := registry.Get("aa_e2e_detected_labels_crashloop")
+		Expect(ok).To(BeTrue())
+		configured, ok := fixture.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		Expect(configured.Config().ResourceName).To(Equal("app-e2e-001"))
+		Expect(configured.Config().ResourceNS).To(BeEmpty())
+		matched, confidence := fixture.Match(ctx)
+		Expect(matched).To(BeTrue(), "detected-label fixture confidence=%v", confidence)
+
+		result := registry.Detect(ctx)
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
+	})
+
+	It("UT-MOCK-2442-026: matches AIAnalysis fixtures when structured fields are only in accumulated prompt text", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			Content: "RCA findings: configuration regression. Select the appropriate remediation workflow.",
+			AllText: "# Workflow Selection Request\n- Signal Name: CrashLoopBackOff\n- Severity: critical\n- Resource: adr056-e2e-1234/Deployment/app-e2e-001",
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
+	})
+
+	It("UT-MOCK-2442-027: matches AIAnalysis fixtures when prompt fields are serialized", func() {
+		registry = scenarios.DefaultRegistry()
+
+		result := registry.Detect(&scenarios.DetectionContext{
+			AllText: `{"signal_name":"CrashLoopBackOff","severity":"critical","resource":"adr056-e2e-1234/Deployment/app-e2e-001"}`,
+		})
+		Expect(result).NotTo(BeNil())
+		Expect(result.Scenario.Name()).To(Equal("aa_e2e_detected_labels_crashloop"))
 	})
 
 	Describe("UT-MOCK-020-003: List returns metadata for all registered scenarios", func() {

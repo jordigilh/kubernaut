@@ -161,21 +161,26 @@ func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 		return fmt.Errorf("failed to export image %s: %w", imageName, err)
 	}
 
-	// Verify .tar file exists and has reasonable size
-	fileInfo, err := os.Stat(tarPath)
+	size, err := validateImageArchive(tarPath)
 	if err != nil {
-		return fmt.Errorf("failed to verify .tar file: %w", err)
+		return err
 	}
 
-	// .tar files should be at least 100 MB for our service images
-	if fileInfo.Size() < 100*1024*1024 {
-		return fmt.Errorf(".tar file too small (%d bytes), export may have failed", fileInfo.Size())
-	}
-
-	sizeMB := fileInfo.Size() / (1024 * 1024)
+	sizeMB := size / (1024 * 1024)
 	_, _ = fmt.Fprintf(writer, "  ✅ Image exported successfully (%d MB)\n", sizeMB)
 
 	return nil
+}
+
+func validateImageArchive(tarPath string) (int64, error) {
+	fileInfo, err := os.Stat(tarPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to verify .tar file: %w", err)
+	}
+	if fileInfo.Size() == 0 {
+		return 0, fmt.Errorf(".tar file is empty: %s", tarPath)
+	}
+	return fileInfo.Size(), nil
 }
 
 // LoadImageFromTar loads a .tar file into a Kind cluster

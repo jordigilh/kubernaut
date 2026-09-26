@@ -351,6 +351,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "CrashLoopBackOff on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-abc-xyz", "worker-def-123"},
 			}
@@ -382,6 +383,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "CrashLoopBackOff on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-abc-xyz"},
 			}
@@ -413,6 +415,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "web-api",
 				Description: "High CPU usage",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "prod", "kind": "Deployment", "name": "web-api"},
 			}
 
@@ -465,6 +468,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "CrashLoopBackOff",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 			}
 
@@ -515,6 +519,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "Multiple issues on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-abc-xyz", "worker-def-123"},
 			}
@@ -550,6 +555,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "CrashLoopBackOff on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-abc-xyz", "worker-def-123"},
 			}
@@ -592,6 +598,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "CrashLoopBackOff on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-abc-xyz"},
 			}
@@ -623,6 +630,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "OOM on worker",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 				PodNames:    []string{"worker-def-123"},
 			}
@@ -659,6 +667,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "worker",
 				Description: "issue",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 			}
 
@@ -712,6 +721,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "OOM",
+				ClusterID:   hubClusterID,
 				Labels:      map[string]string{"namespace": "prod", "kind": "Deployment", "name": "web"},
 			}
 
