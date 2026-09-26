@@ -669,9 +669,9 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	if !ok {
 		return
 	}
-	if result.ExecutionEngine == "" {
-		result.ExecutionEngine = meta.ExecutionEngine
-	}
+	// The workflow catalog owns backend selection; never preserve a conflicting
+	// model-supplied engine (BR-WE-014, BR-TESTING-001).
+	result.ExecutionEngine = meta.ExecutionEngine
 	if result.ExecutionBundle == "" {
 		result.ExecutionBundle = meta.ExecutionBundle
 	}
