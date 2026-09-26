@@ -111,8 +111,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
 			Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
-			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionEngine).To(Equal("job"),
-				"IT-AA-2390-001: selected workflow execution engine must persist in AA status")
+			// The seeded crashloop-config-fix catalog fixture declares Tekton;
+			// the catalog engine is authoritative over the mock selection.
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionEngine).To(Equal("tekton"),
+				"IT-AA-2390-001: catalog execution engine must persist in AA status")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionBundle).ToNot(BeEmpty(),
 				"IT-AA-2390-001: selected workflow execution bundle must persist in AA status")
 			Expect(analysis.Status.GetRCAResult().SelectedWorkflow.WorkflowName).ToNot(BeEmpty(),
