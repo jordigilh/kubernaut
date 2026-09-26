@@ -23,9 +23,13 @@ import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 // scenarios so prior-turn remediation text cannot select the generic workflow.
 func gitopsSelectWorkflow2390Config() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName:   "af_select_gitops_workflow_2390",
-		ToolCallName:   "kubernaut_select_workflow",
-		ToolCallArgs:   map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id", "workflow_id": uuid.DeterministicUUID("gitops-drift-2390-v1")},
+		ScenarioName: "af_select_gitops_workflow_2390",
+		ToolCallName: "kubernaut_select_workflow",
+		ToolCallArgs: map[string]interface{}{
+			"rr_id":       "$from_tool:kubernaut_remediate:rr_id",
+			"workflow_id": uuid.DeterministicUUID("gitops-drift-2390-v1"),
+			"parameters":  map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+		},
 		ForceText:      BoolPtr(false),
 		RepeatToolCall: true,
 	}

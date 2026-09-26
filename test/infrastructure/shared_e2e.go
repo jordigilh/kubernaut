@@ -442,6 +442,8 @@ func gitOpsInteractiveInvestigationScenarioYAML(ns, workflowID string) string {
               arguments:
                 rr_id: "$from_tool:kubernaut_investigate:rr_id"
                 workflow_id: "%s"
+                parameters:
+                  MEMORY_LIMIT_NEW: "512Mi"
           - user: "watch remediation progress"
             tool_call:
               name: "kubernaut_watch"
@@ -768,6 +770,8 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           arguments:
             rr_id: "$from_tool:kubernaut_investigate:rr_id"
             workflow_id: "%s"
+            parameters:
+              MEMORY_LIMIT_NEW: "512Mi"
 `, afGitOpsWorkflowID)
 	scenariosYAML += fmt.Sprintf("      injection_configmap_read:\n"+
 		"        force_text: false\n"+

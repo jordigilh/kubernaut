@@ -50,6 +50,7 @@ import (
 // Turn 2: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
 // Turn 3: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
 // Turn 4: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
+// BR-INTERACTIVE-009: selected workflow parameter values must flow through to execution.
 var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-2390"), Serial, func() {
 
 	It("should complete 4-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
@@ -297,6 +298,10 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			HaveField("Name", "configmap-gitea-repo-config"),
 			HaveField("VolumeSource.ConfigMap.Name", "gitea-repo-config"),
 		)), "E2E-FP-2390-002: Job must mount gitea-repo-config")
+		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].Env).To(ContainElement(And(
+			HaveField("Name", "MEMORY_LIMIT_NEW"),
+			HaveField("Value", "512Mi"),
+		)), "E2E-FP-2390-001: selected workflow parameter must reach the Job environment")
 		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(And(
 			HaveField("Name", "secret-gitea-repo-creds"),
 			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
@@ -328,6 +333,8 @@ var _ = Describe("AF A2A Interactive Transcript Full Pipeline [E2E-FP-2390-001]"
 			"TARGET_RESOURCE_KIND must be injected into interactive WFE parameters")
 		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
 			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
+		Expect(params).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+			"E2E-FP-2390-001: explicit selection parameters must reach the WorkflowExecution")
 		GinkgoWriter.Printf("  [E2E-FP-1189-004] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
 			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 

@@ -32,7 +32,11 @@ var _ = Describe("Mock LLM transcript wiring", func() {
 		Expect(overrides.TranscriptScenarios[0].Name).To(Equal("af_gitops_interactive_2390"))
 		Expect(overrides.TranscriptScenarios[0].Steps).To(HaveLen(4))
 		Expect(overrides.TranscriptScenarios[0].Steps[0].ToolCall.Name).To(Equal("kubernaut_investigate"))
-		Expect(overrides.TranscriptScenarios[0].Steps[2].ToolCall.Arguments).To(HaveKeyWithValue("workflow_id", "gitops-workflow-uuid"))
+		selectionArguments := overrides.TranscriptScenarios[0].Steps[2].ToolCall.Arguments
+		Expect(selectionArguments).To(HaveKeyWithValue("workflow_id", "gitops-workflow-uuid"))
+		parameters, ok := selectionArguments["parameters"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "GitOps selection must supply declared workflow parameters")
+		Expect(parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"))
 		Expect(overrides.TranscriptScenarios[0].Steps[3].ToolCall.Arguments).To(HaveKeyWithValue("name", "$from_tool:kubernaut_investigate:rr_id"))
 	})
 

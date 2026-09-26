@@ -1658,6 +1658,118 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 		})
 	})
 
+	Describe("explicit selection parameters (BR-INTERACTIVE-009)", func() {
+		It("UT-KA-SW-AC-004: should merge declared selection parameters and preserve authoritative target values", func() {
+			workflowID := "wf-explicit-params"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID:      workflowID,
+					WorkflowName:    "workflow-with-explicit-params",
+					ExecutionEngine: "job",
+					ExecutionBundle: "oci://workflow:v1",
+					Version:         "v1.0",
+					DeclaredParameterNames: map[string]bool{
+						"ALT_KEY":                   true,
+						"MEMORY_LIMIT_NEW":          true,
+						"TARGET_RESOURCE_KIND":      true,
+						"TARGET_RESOURCE_NAME":      true,
+						"TARGET_RESOURCE_NAMESPACE": true,
+					},
+				},
+			}
+			completer := &mockHTTPCompleter{foundID: "http-ac-004", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-ac-004",
+					CorrelationID: "rr-ac-004",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult: &katypes.InvestigationResult{
+						RCASummary: "needs more memory",
+						RemediationTarget: katypes.RemediationTarget{
+							Kind:       "Deployment",
+							Name:       "memory-eater",
+							Namespace:  "fp-interactive",
+							APIVersion: "apps/v1",
+						},
+					},
+					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-recommended"},
+						Alternatives: []mcpinternal.DiscoveredWorkflow{{
+							WorkflowID: workflowID,
+							Parameters: map[string]interface{}{"ALT_KEY": "alt_val"},
+						}},
+					},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithHTTPSessionCompleter(completer),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-ac-004",
+				WorkflowID: workflowID,
+				Parameters: map[string]interface{}{
+					"MEMORY_LIMIT_NEW":          "512Mi",
+					"TARGET_RESOURCE_KIND":      "Pod",
+					"TARGET_RESOURCE_NAME":      "spoofed",
+					"TARGET_RESOURCE_NAMESPACE": "wrong-namespace",
+				},
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				_, result := completer.getCompleted()
+				g.Expect(result).NotTo(BeNil())
+				g.Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+					"explicit selected workflow parameters must reach downstream execution")
+				g.Expect(result.Parameters).To(HaveKeyWithValue("ALT_KEY", "alt_val"),
+					"discovered parameters for the selected alternative must be preserved")
+				g.Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+					"KA-injected target kind must override caller-supplied values")
+				g.Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+					"KA-injected target name must override caller-supplied values")
+				g.Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "fp-interactive"),
+					"KA-injected target namespace must override caller-supplied values")
+				g.Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+					"the authoritative target API version must remain available to execution")
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
+		})
+
+		It("UT-KA-SW-AC-005: should reject parameters not declared by the selected workflow", func() {
+			workflowID := "wf-declared-params-only"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID:             workflowID,
+					WorkflowName:           "declared-params-only",
+					DeclaredParameterNames: map[string]bool{"MEMORY_LIMIT_NEW": true},
+				},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-ac-005",
+					CorrelationID: "rr-ac-005",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:     &katypes.InvestigationResult{RCASummary: "test"},
+					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+						Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: workflowID},
+					},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-ac-005",
+				WorkflowID: workflowID,
+				Parameters: map[string]interface{}{"UNDECLARED_PARAM": "value"},
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid_parameter"))
+			Expect(err.Error()).To(ContainSubstring("UNDECLARED_PARAM"))
+		})
+	})
+
 	Describe("UT-KA-SW-AC-003: select_workflow logs error when both completion paths fail", func() {
 		It("should still return workflow_selected but log error when both paths fail", func() {
 			wfID := "wf-both-fail"

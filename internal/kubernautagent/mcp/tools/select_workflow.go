@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -377,6 +378,9 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	if err != nil {
 		return SelectWorkflowOutput{}, fmt.Errorf("workflow catalog lookup failed: %w", err)
 	}
+	if err := validateSelectedParameters(input.Parameters, workflow.DeclaredParameterNames); err != nil {
+		return SelectWorkflowOutput{}, err
+	}
 
 	// #1654: stop the inactivity timer synchronously (not deferred to the
 	// completion goroutine below) — the session is terminating regardless of
@@ -466,6 +470,7 @@ func (t *SelectWorkflowTool) completeSelectionAsync(input SelectWorkflowInput, d
 	}
 
 	finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
+	applySelectionParameterOverrides(finalResult, input.Parameters)
 	if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
 		t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
 			"rr_id", input.RRID, "workflow_id", input.WorkflowID)
@@ -492,6 +497,22 @@ func (t *SelectWorkflowTool) completeSelectionAsync(input SelectWorkflowInput, d
 			}
 		}
 	}()
+}
+
+// applySelectionParameterOverrides merges explicitly supplied values into the
+// selected workflow's discovered parameters. KA-owned target values are
+// reinjected afterward so callers cannot replace the authoritative target.
+func applySelectionParameterOverrides(result *katypes.InvestigationResult, parameters map[string]interface{}) {
+	if len(parameters) == 0 {
+		return
+	}
+	if result.Parameters == nil {
+		result.Parameters = make(map[string]interface{}, len(parameters))
+	}
+	for name, value := range parameters {
+		result.Parameters[name] = value
+	}
+	investigator.InjectTargetResourceParameters(result)
 }
 
 // isWorkflowInDiscoveryResult checks if the given workflow_id is in the
@@ -642,6 +663,26 @@ func cloneParameterMap(src map[string]interface{}) map[string]interface{} {
 		dst[k] = v
 	}
 	return dst
+}
+
+// validateSelectedParameters prevents selection input from adding undeclared
+// parameters to the selected workflow's execution request.
+func validateSelectedParameters(parameters map[string]interface{}, declaredParameterNames map[string]bool) error {
+	if len(parameters) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(parameters))
+	for name := range parameters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if !declaredParameterNames[name] {
+			return ErrCodeInvalidParameter.WithDetail("parameter", name)
+		}
+	}
+	return nil
 }
 
 func validateSelectWorkflowInput(input SelectWorkflowInput) error {

@@ -103,6 +103,10 @@ var (
 		Code:    "invalid_input",
 		Message: "Missing required input field",
 	}
+	ErrCodeInvalidParameter = &MCPError{
+		Code:    "invalid_parameter",
+		Message: "parameter is not declared by selected workflow",
+	}
 	ErrCodeNoSession = &MCPError{
 		Code:    "no_session",
 		Message: "No active interactive session for this remediation",
