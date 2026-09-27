@@ -1,15 +1,22 @@
 # DD-WORKFLOW-003: Parameterized Remediation Actions
 
 **Status**: Approved  
-**Version**: 2.4  
+**Version**: 2.5
 **Created**: 2025-11-15  
-**Updated**: 2026-08-02  
+**Updated**: 2026-09-26
 **Target Release**: v1.1  
 **Related**: BR-WORKFLOW-001, DD-WORKFLOW-001, BR-496
 
 ---
 
 ## Changelog
+
+### Version 2.5 (2026-09-26)
+**Changes** ([Issue #2466](https://github.com/jordigilh/kubernaut/issues/2466)):
+- ✅ Clarified that `TARGET_RESOURCE_API_VERSION` is also KA-managed when the RCA target has an API version, consistent with DD-KA-006 and `kaManagedParams`.
+- ✅ Clarified the Step 3 LLM projection: expose the structured workflow description and operational parameter definitions only; exclude all four KA-managed target parameters and execution/dependency metadata.
+
+**Rationale**: KA derives target identity from the authoritative RCA target and injects it after LLM selection. The schema shown to the LLM must not invite the model to provide values KA will overwrite. In this Go implementation, API group/version is represented by `TARGET_RESOURCE_API_VERSION` (for example, `apps/v1`); there is no separately injected `TARGET_RESOURCE_API_GROUP` parameter.
 
 ### Version 2.4 (2026-08-02)
 **Changes** ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)):
@@ -19,10 +26,10 @@
 
 ### Version 2.3 (2026-03-04)
 **Changes**:
-- ✅ Added HAPI-Managed Canonical Parameters section (BR-496 v2): `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE` are injected by HAPI from K8s-verified `root_owner`, not provided by LLM.
+- ✅ Added HAPI-Managed Canonical Parameters section (BR-496 v2): `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, and `TARGET_RESOURCE_NAMESPACE` are injected by HAPI from K8s-verified `root_owner`, not provided by LLM.
 - ✅ Documented workflow schema contract (Step 0 validation) and schema stripping behavior.
 
-**Rationale**: BR-496 v2 shifts target resource identity ownership to HAPI. Workflow schemas must declare canonical params, but the LLM does not populate them.
+**Rationale**: BR-496 v2 shifts target resource identity ownership to KA. Workflow schemas must declare the three canonical target params, but the LLM does not populate them.
 
 ### Version 2.2 (2025-11-15)
 **Changes**:
@@ -218,17 +225,19 @@ The LLM selects a specific remediation workflow and populates its required param
 
 ### KA-Managed Canonical Parameters (BR-496 v2)
 
-Three parameters are **KA-managed** — their values are injected by Kubernaut Agent (KA, formerly
+Three required parameters are **KA-managed** — their values are injected by Kubernaut Agent (KA, formerly
 HolmesGPT-API/HAPI) from the K8s-verified `root_owner`, not provided by the LLM:
 
 - **`TARGET_RESOURCE_NAME`**: Name of the root managing resource (e.g., "payment-api")
 - **`TARGET_RESOURCE_KIND`**: Kind of the root managing resource (e.g., "Deployment")
 - **`TARGET_RESOURCE_NAMESPACE`**: Namespace of the root managing resource (omitted for cluster-scoped resources)
 
+`TARGET_RESOURCE_API_VERSION` is an additional KA-managed parameter. When known, its value is derived from the authoritative `RemediationTarget` and injected by KA. It is not a fourth required schema declaration. The API group is represented as part of the API version (for example, `apps/v1`); no separate `TARGET_RESOURCE_API_GROUP` parameter is currently injected.
+
 **Workflow Schema Contract**: All workflow schemas **MUST** declare these three parameters. KA's
 schema validator (`internal/kubernautagent/parser/validator.go`) rejects schemas that omit them.
 
-**Schema Stripping**: When `get_workflow` returns the workflow schema to the LLM, these three parameters are stripped from the response. This prevents the LLM from seeing or populating values that KA will overwrite.
+**Schema Stripping**: When `get_workflow` returns the workflow schema to the LLM, all four KA-managed target parameters are stripped from the response. References to those parameters in an operational parameter's `dependsOn` list are also removed. This prevents the LLM from seeing or populating values that KA will overwrite. Only the structured workflow description and remaining operational parameter definitions are exposed; execution and dependency metadata remain internal to KA and the execution path.
 
 **Operational Parameters**: All other parameters (e.g., `MEMORY_LIMIT_NEW`, `SCALE_TARGET_REPLICAS`) remain LLM-provided. KA does not manage or validate these — the LLM populates them based on its investigation.
 
@@ -1397,4 +1406,3 @@ func (r *PlaybookRegistryController) validateParameters(playbook *PlaybookRegist
 **Gap to 100% (8%)**:
 - Unknown: Will operators prefer shared images or separate images?
 - Mitigation: Support both patterns, let operators choose based on their needs
-

@@ -367,8 +367,9 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 		tcEvent.Data["tool_call_index"] = i
 		tcEvent.Data["tool_name"] = tc.Name
 		tcEvent.Data["tool_arguments"] = tc.Arguments
-		tcEvent.Data["tool_result"] = toolResults[i]
-		tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
+		auditResult := auditSafeToolResult(tc.Name, toolResults[i])
+		tcEvent.Data["tool_result"] = auditResult
+		tcEvent.Data["tool_result_preview"] = truncatePreview(auditResult, 500)
 		audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
 
 		messages = append(messages, llm.Message{
@@ -381,6 +382,18 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 
 	budgetExhausted = inv.anomalyDetectorFor(correlationID).TotalExceeded()
 	return messages, nil, budgetExhausted
+}
+
+const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`
+
+// auditSafeToolResult keeps the Step 3 parameter schema in the LLM's message
+// history but excludes it from the generic tool-call audit record. The
+// selected workflow ID remains available in the corresponding tool arguments.
+func auditSafeToolResult(toolName, toolResult string) string {
+	if toolName == "get_workflow" {
+		return omittedWorkflowSchemaAuditResult
+	}
+	return toolResult
 }
 
 // buildTruncationRetryMessages emits the truncation-detected audit event and

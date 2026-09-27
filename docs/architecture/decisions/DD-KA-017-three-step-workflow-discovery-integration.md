@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 2.1 (Go rewrite)
+**Version**: 2.2 (Go rewrite)
 **Confidence**: 90%
 **Applies To**: Kubernaut Agent (KA), DataStorage Service (DS)
 
@@ -12,6 +12,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.2 | 2026-09-26 | — | Issue #2466: documented the LLM-facing projection boundary. Step 2 returns candidate identity/version and structured description only; Step 3 returns structured description and operational parameters only. KA-managed target parameters and execution/dependency metadata are excluded from the LLM response. The full CRD-backed catalog record remains available internally. `get_workflow` audit results are omitted from generic `aiagent.llm.tool_call` persistence and from in-memory `aiagent.llm.request` history data while remaining intact in the LLM conversation. |
 | 1.0–1.5 | 2026-02-05 to 2026-03-24 | Architecture Team | Historical evolution under the Python-era implementation: introduced the three-step tools, moved label detection from signal source to RCA target (ADR-056), surfaced labels as read-only `cluster_context`, added one-shot reassessment via `detected_infrastructure`, and split resource-context tools by scope (Issue #524). Superseded by v2.0 below; see git history for the original entries. |
 | 2.0 | 2026-08-01 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). Replaced the Python "shared mutable `session_state` dict" mechanism with Go's actual mechanism: `SignalContext.DetectedLabelsJSON`, propagated via `context.Context`. Removed the dual incident/recovery-flow framing — Go KA has a single unified investigation flow, so the "recovery flow validation parity" rationale is historical only. Renamed `BR-HAPI-017-*` → `BR-KA-017-*`. Corrected the label count from 7 to the current 12 infrastructure characteristics (`internal/kubernautagent/enrichment/label_detector.go`). **Also corrected a factually wrong first draft**: the tools do not call DataStorage over REST — per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (Issue #1677, implemented), discovery/scoring ownership moved from DS into KA's own `workflowcatalog.Catalog` before this rewrite was even written; the DS REST surface this DD originally described is retired dead code. |
 | 2.1 | 2026-09-20 | — | Issue #2442: selected workflow IDs must be returned by `list_workflows` in the current selection context; pagination and self-correction accumulate IDs, while `get_workflow` remains read-only for membership. |
@@ -29,6 +30,15 @@ KA exposes three LLM tools for workflow discovery, defined in `internal/kubernau
 | `list_available_actions` | `workflowcatalog.Catalog.ListActions` | Action type discovery from taxonomy |
 | `list_workflows` | `workflowcatalog.Catalog.ListWorkflowsByActionType` | Workflow selection within an action type |
 | `get_workflow` | `workflowcatalog.Catalog.GetWorkflow` (or equivalent by-ID lookup) | Single workflow parameter schema lookup |
+
+### LLM-Facing Data Boundary (Issue #2466)
+
+The workflow Catalog remains the complete etcd-backed source for KA's validation and execution handoff. Tool output is a separate projection:
+
+- Step 2 exposes workflow identity/version and structured description for comparison; it does not expose schema-image, execution-bundle, execution-engine, or service-account data.
+- Step 3 exposes the structured description and operational parameter definitions. KA-managed `TARGET_RESOURCE_NAME`, `TARGET_RESOURCE_KIND`, `TARGET_RESOURCE_NAMESPACE`, and `TARGET_RESOURCE_API_VERSION` definitions are removed, as are `dependsOn` references to those managed definitions. The full managed values are still injected by KA from the authoritative RCA target.
+- Execution engine/configuration, bundle/image references, service-account details, raw CRD content, and infrastructure dependencies are not LLM selection inputs.
+- The generic `aiagent.llm.tool_call` audit event stores a fixed omission marker for a `get_workflow` result. The in-memory `aiagent.llm.request` event history and final/cancelled accumulated-message audit snapshots use the same marker instead of the full tool result. The current Data Storage `aiagent.llm.request` schema does not persist message history. The complete allowed projection is passed to the LLM conversation but not persisted in the tool-call audit; the workflow ID remains in the tool arguments and Step 1/2 audit events continue to carry their typed discovery evidence.
 
 **Important architectural correction vs. the historical (pre-#1677) design**: these tools do **not** call DataStorage (DS) over the network. Per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (implemented, Issue #1677), workflow/action-type discovery, search, and scoring logic — and the informer-backed cache that backs it — was relocated **from DS into KA itself** (`internal/kubernautagent/workflowcatalog`). DS's `/api/v1/workflows*` REST surface was retired as dead code in that migration. The tool table above reflects the current in-process call path; DD-WORKFLOW-019 is authoritative on *why* and *when* that ownership moved. DD-WORKFLOW-016 remains authoritative for the discovery protocol's conceptual shape (three steps, taxonomy-driven action types, pagination contract), independent of which service executes it.
 
