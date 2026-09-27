@@ -3490,7 +3490,17 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventEventData:
+		if err := s.WorkflowActionsListedAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowCandidatesListedAuditPayloadAuditEventEventData:
+		if err := s.WorkflowCandidatesListedAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData:
 		if err := s.WorkflowDiscoveryAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -4260,7 +4270,17 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventRequestEventData:
+		if err := s.WorkflowActionsListedAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case WorkflowCandidatesListedAuditPayloadAuditEventRequestEventData:
+		if err := s.WorkflowCandidatesListedAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData:
 		if err := s.WorkflowDiscoveryAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -9964,6 +9984,140 @@ func (s *ValidationResult) Validate() error {
 	return nil
 }
 
+func (s *WorkflowActionsListedAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Query.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "query",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowActionsListedAuditPayloadEventType) Validate() error {
+	switch s {
+	case "workflow.catalog.actions_listed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowCandidatesListedAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Query.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "query",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Results.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "results",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowCandidatesListedAuditPayloadEventType) Validate() error {
+	switch s {
+	case "workflow.catalog.workflows_listed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowCandidatesResultsMetadata) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Workflows {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflows",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *WorkflowCatalogCreatedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -10077,10 +10231,6 @@ func (s *WorkflowDiscoveryAuditPayload) Validate() error {
 
 func (s WorkflowDiscoveryAuditPayloadEventType) Validate() error {
 	switch s {
-	case "workflow.catalog.actions_listed":
-		return nil
-	case "workflow.catalog.workflows_listed":
-		return nil
 	case "workflow.catalog.workflow_retrieved":
 		return nil
 	case "workflow.catalog.selection_validated":
@@ -10361,6 +10511,34 @@ func (s *WorkflowResultAudit) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.FinalScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "final_score",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := s.Scoring.Validate(); err != nil {
 			return err

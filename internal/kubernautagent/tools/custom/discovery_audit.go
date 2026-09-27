@@ -20,14 +20,17 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
 // ========================================
 // WORKFLOW CATALOG DISCOVERY AUDIT EMISSION (Issue #1677 Phase 2d)
 // ========================================
-// Authority: DD-WORKFLOW-019 (KA owns discovery directly), BR-AUDIT-023.
+// Authority: DD-AUDIT-009 (event-specific typed results), DD-WORKFLOW-019
+// (KA owns discovery directly), BR-AUDIT-023.
 // KA, not DS, now generates the 4 workflow.catalog.* discovery events --
 // this file wires the 3 custom MCP tools into the audit infrastructure
 // built in Phase 2c (internal/kubernautagent/audit/{emitter,ds_store,
@@ -70,7 +73,7 @@ func correlationIDFromFilters(filters *models.WorkflowDiscoveryFilters, fallback
 }
 
 // emitAuditEvent emits workflow.catalog.actions_listed (BR-AUDIT-023, Step 1).
-func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.WorkflowDiscoveryFilters, totalCount int, durationMs int64) {
+func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.WorkflowDiscoveryFilters, entries []models.ActionTypeEntry, page models.PaginationMetadata, durationMs int64) {
 	if t.auditStore == nil {
 		return
 	}
@@ -78,7 +81,11 @@ func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.Wo
 		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory))
 	ev.EventAction = kaaudit.ActionDiscovery
 	ev.EventOutcome = kaaudit.OutcomeSuccess
-	ev.Data["total_count"] = totalCount
+	ev.Data["total_count"] = page.TotalCount
+	ev.Data["returned"] = len(entries)
+	ev.Data["offset"] = page.Offset
+	ev.Data["limit"] = page.Limit
+	ev.Data["actions"] = actionAuditResults(entries)
 	ev.Data["duration_ms"] = durationMs
 	if err := applyDiscoveryFilterData(ev.Data, filters); err != nil {
 		t.logger.Error(err, "workflow discovery audit context unavailable")
@@ -87,21 +94,65 @@ func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.Wo
 }
 
 // emitAuditEvent emits workflow.catalog.workflows_listed (BR-AUDIT-023, Step 2).
-func (t *listWorkflowsTool) emitAuditEvent(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, totalCount int, durationMs int64) {
+func (t *listWorkflowsTool) emitAuditEvent(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, candidates []workflowcatalog.ScoredWorkflow, page models.PaginationMetadata, durationMs int64) {
 	if t.auditStore == nil {
+		return
+	}
+	results, err := workflowAuditResults(candidates, page.Offset)
+	if err != nil {
+		t.logger.Error(err, "workflow discovery audit results unavailable")
 		return
 	}
 	ev := kaaudit.NewEvent(kaaudit.EventTypeWorkflowsListed, correlationIDFromFilters(filters, ""),
 		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory))
 	ev.EventAction = kaaudit.ActionDiscovery
 	ev.EventOutcome = kaaudit.OutcomeSuccess
-	ev.Data["total_count"] = totalCount
+	ev.Data["total_count"] = page.TotalCount
+	ev.Data["returned"] = len(candidates)
+	ev.Data["offset"] = page.Offset
+	ev.Data["limit"] = page.Limit
 	ev.Data["duration_ms"] = durationMs
 	ev.Data["action_type"] = actionType
+	ev.Data["workflows"] = results
 	if err := applyDiscoveryFilterData(ev.Data, filters); err != nil {
 		t.logger.Error(err, "workflow discovery audit context unavailable")
 	}
 	kaaudit.StoreBestEffort(ctx, t.auditStore, ev, t.logger)
+}
+
+func actionAuditResults(entries []models.ActionTypeEntry) []kaaudit.WorkflowActionAuditResult {
+	results := make([]kaaudit.WorkflowActionAuditResult, 0, len(entries))
+	for _, entry := range entries {
+		results = append(results, kaaudit.WorkflowActionAuditResult{
+			ActionType: entry.ActionType,
+			Description: kaaudit.WorkflowActionAuditDescription{
+				What:          entry.Description.What,
+				WhenToUse:     entry.Description.WhenToUse,
+				WhenNotToUse:  entry.Description.WhenNotToUse,
+				Preconditions: entry.Description.Preconditions,
+			},
+			WorkflowCount: entry.WorkflowCount,
+		})
+	}
+	return results
+}
+
+func workflowAuditResults(candidates []workflowcatalog.ScoredWorkflow, offset int) ([]kaaudit.WorkflowCandidateAuditResult, error) {
+	results := make([]kaaudit.WorkflowCandidateAuditResult, 0, len(candidates))
+	for i, candidate := range candidates {
+		workflowID, err := uuid.Parse(candidate.Workflow.WorkflowID)
+		if err != nil {
+			return nil, fmt.Errorf("parsing candidate workflow ID %q for audit: %w", candidate.Workflow.WorkflowID, err)
+		}
+		results = append(results, kaaudit.WorkflowCandidateAuditResult{
+			WorkflowID: workflowID,
+			Title:      candidate.Workflow.WorkflowName,
+			Version:    candidate.Workflow.Version,
+			Rank:       offset + i + 1,
+			FinalScore: candidate.FinalScore,
+		})
+	}
+	return results, nil
 }
 
 // emitAuditEvents emits workflow.catalog.workflow_retrieved and

@@ -352,7 +352,7 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-KA-197 DD-AUDIT-002)", 
 			Expect(byType[audit.EventTypeSelectionValidated].ResourceID.Value).To(Equal("wf-selected"))
 			Expect(string(byType[audit.EventTypeSelectionValidated].EventOutcome)).To(Equal(audit.OutcomeSuccess))
 
-			actionsPayload, ok := byType[audit.EventTypeActionsListed].EventData.GetWorkflowDiscoveryAuditPayload()
+			actionsPayload, ok := byType[audit.EventTypeActionsListed].EventData.GetWorkflowActionsListedAuditPayload()
 			Expect(ok).To(BeTrue())
 			Expect(actionsPayload.Results.TotalFound).To(Equal(int32(3)))
 		})

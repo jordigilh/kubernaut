@@ -55,6 +55,14 @@ func (c *Catalog) ListWorkflowsByActionType(ctx context.Context, actionType stri
 	return c.listWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
 }
 
+// ListScoredWorkflowsByActionType returns the same ordered candidates as
+// ListWorkflowsByActionType together with the exact cache score used for that
+// order. It is consumed by KA's audit path; the LLM response continues to use
+// WorkflowDiscoveryEntry, which intentionally has no score field.
+func (c *Catalog) ListScoredWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]ScoredWorkflow, int, error) {
+	return c.listScoredWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
+}
+
 // GetWorkflowWithContextFilters retrieves a workflow by ID with an additional
 // security gate that verifies the workflow matches the provided context filters.
 // Returns ErrNotFound if the workflow doesn't exist OR exists but doesn't match

@@ -86,7 +86,7 @@ func newMinimalGatewayPayload(alertName string) dsgen.AuditEventRequestEventData
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 			SignalType:  dsgen.GatewayAuditPayloadSignalType("alert"),
-			SignalName:   alertName,
+			SignalName:  alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
 		},
@@ -120,17 +120,17 @@ func newMinimalWorkflowPayload(workflowID string) dsgen.AuditEventRequestEventDa
 }
 
 func newMinimalGenericPayload() dsgen.AuditEventRequestEventData {
-	// Use WorkflowDiscoveryAuditPayload as a minimal generic payload for testing
-	return dsgen.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(
-		dsgen.WorkflowDiscoveryAuditPayload{
-			EventType: dsgen.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
+	// Use the event-specific Step 1 payload as a minimal generic payload for testing.
+	return dsgen.NewWorkflowActionsListedAuditPayloadAuditEventRequestEventData(
+		dsgen.WorkflowActionsListedAuditPayload{
+			EventType: dsgen.WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed,
 			Query: dsgen.QueryMetadata{
 				TopK: 10,
 			},
-			Results: dsgen.ResultsMetadata{
+			Results: dsgen.WorkflowActionsResultsMetadata{
 				TotalFound: 0,
 				Returned:   0,
-				Workflows:  []dsgen.WorkflowResultAudit{},
+				Actions:    []dsgen.WorkflowActionResultAudit{},
 			},
 			SearchMetadata: dsgen.SearchExecutionMetadata{
 				DurationMs: 100,

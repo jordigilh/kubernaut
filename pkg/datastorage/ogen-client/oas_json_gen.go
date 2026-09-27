@@ -17498,20 +17498,56 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("workflow.catalog.actions_listed")
+		{
+			s := s.WorkflowActionsListedAuditPayload
+			{
+				e.FieldStart("query")
+				s.Query.Encode(e)
+			}
+			{
+				e.FieldStart("results")
+				s.Results.Encode(e)
+			}
+			{
+				e.FieldStart("search_metadata")
+				s.SearchMetadata.Encode(e)
+			}
+		}
+	case WorkflowCandidatesListedAuditPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("workflow.catalog.workflows_listed")
+		{
+			s := s.WorkflowCandidatesListedAuditPayload
+			{
+				if s.ActionType.Set {
+					e.FieldStart("action_type")
+					s.ActionType.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("query")
+				s.Query.Encode(e)
+			}
+			{
+				e.FieldStart("results")
+				s.Results.Encode(e)
+			}
+			{
+				e.FieldStart("search_metadata")
+				s.SearchMetadata.Encode(e)
+			}
+		}
+	case AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData:
 		switch s.Type {
-		case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData:
-			e.FieldStart("event_type")
-			e.Str("workflow.catalog.actions_listed")
 		case AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("workflow.catalog.selection_validated")
 		case AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("workflow.catalog.workflow_retrieved")
-		case AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
-			e.FieldStart("event_type")
-			e.Str("workflow.catalog.workflows_listed")
 		}
 		{
 			s := s.WorkflowDiscoveryAuditPayload
@@ -20681,16 +20717,16 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 					s.Type = RemediationApprovalAuditPayloadAuditEventEventData
 					found = true
 				case "workflow.catalog.actions_listed":
-					s.Type = AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData
+					s.Type = WorkflowActionsListedAuditPayloadAuditEventEventData
+					found = true
+				case "workflow.catalog.workflows_listed":
+					s.Type = WorkflowCandidatesListedAuditPayloadAuditEventEventData
 					found = true
 				case "workflow.catalog.selection_validated":
 					s.Type = AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData
 					found = true
 				case "workflow.catalog.workflow_retrieved":
 					s.Type = AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData
-					found = true
-				case "workflow.catalog.workflows_listed":
-					s.Type = AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData
 					found = true
 				case "datastorage.workflow.created":
 					s.Type = WorkflowCatalogCreatedPayloadAuditEventEventData
@@ -21107,7 +21143,15 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationApprovalAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventEventData:
+		if err := s.WorkflowActionsListedAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowCandidatesListedAuditPayloadAuditEventEventData:
+		if err := s.WorkflowCandidatesListedAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData:
 		if err := s.WorkflowDiscoveryAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -23025,20 +23069,56 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("workflow.catalog.actions_listed")
+		{
+			s := s.WorkflowActionsListedAuditPayload
+			{
+				e.FieldStart("query")
+				s.Query.Encode(e)
+			}
+			{
+				e.FieldStart("results")
+				s.Results.Encode(e)
+			}
+			{
+				e.FieldStart("search_metadata")
+				s.SearchMetadata.Encode(e)
+			}
+		}
+	case WorkflowCandidatesListedAuditPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("workflow.catalog.workflows_listed")
+		{
+			s := s.WorkflowCandidatesListedAuditPayload
+			{
+				if s.ActionType.Set {
+					e.FieldStart("action_type")
+					s.ActionType.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("query")
+				s.Query.Encode(e)
+			}
+			{
+				e.FieldStart("results")
+				s.Results.Encode(e)
+			}
+			{
+				e.FieldStart("search_metadata")
+				s.SearchMetadata.Encode(e)
+			}
+		}
+	case AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData:
 		switch s.Type {
-		case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData:
-			e.FieldStart("event_type")
-			e.Str("workflow.catalog.actions_listed")
 		case AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("workflow.catalog.selection_validated")
 		case AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("workflow.catalog.workflow_retrieved")
-		case AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
-			e.FieldStart("event_type")
-			e.Str("workflow.catalog.workflows_listed")
 		}
 		{
 			s := s.WorkflowDiscoveryAuditPayload
@@ -26208,16 +26288,16 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 					s.Type = RemediationApprovalAuditPayloadAuditEventRequestEventData
 					found = true
 				case "workflow.catalog.actions_listed":
-					s.Type = AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData
+					s.Type = WorkflowActionsListedAuditPayloadAuditEventRequestEventData
+					found = true
+				case "workflow.catalog.workflows_listed":
+					s.Type = WorkflowCandidatesListedAuditPayloadAuditEventRequestEventData
 					found = true
 				case "workflow.catalog.selection_validated":
 					s.Type = AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData
 					found = true
 				case "workflow.catalog.workflow_retrieved":
 					s.Type = AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData
-					found = true
-				case "workflow.catalog.workflows_listed":
-					s.Type = AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData
 					found = true
 				case "datastorage.workflow.created":
 					s.Type = WorkflowCatalogCreatedPayloadAuditEventRequestEventData
@@ -26634,7 +26714,15 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationApprovalAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+	case WorkflowActionsListedAuditPayloadAuditEventRequestEventData:
+		if err := s.WorkflowActionsListedAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case WorkflowCandidatesListedAuditPayloadAuditEventRequestEventData:
+		if err := s.WorkflowCandidatesListedAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData:
 		if err := s.WorkflowDiscoveryAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -42902,6 +42990,12 @@ func (s *QueryMetadata) encodeFields(e *jx.Encoder) {
 		e.Int32(s.TopK)
 	}
 	{
+		if s.Offset.Set {
+			e.FieldStart("offset")
+			s.Offset.Encode(e)
+		}
+	}
+	{
 		if s.MinScore.Set {
 			e.FieldStart("min_score")
 			s.MinScore.Encode(e)
@@ -42915,10 +43009,11 @@ func (s *QueryMetadata) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfQueryMetadata = [3]string{
+var jsonFieldsNameOfQueryMetadata = [4]string{
 	0: "top_k",
-	1: "min_score",
-	2: "filters",
+	1: "offset",
+	2: "min_score",
+	3: "filters",
 }
 
 // Decode decodes QueryMetadata from json.
@@ -42941,6 +43036,16 @@ func (s *QueryMetadata) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"top_k\"")
+			}
+		case "offset":
+			if err := func() error {
+				s.Offset.Reset()
+				if err := s.Offset.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"offset\"")
 			}
 		case "min_score":
 			if err := func() error {
@@ -52270,6 +52375,934 @@ func (s *VerifyChainResponse) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *WorkflowActionDescriptionAudit) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowActionDescriptionAudit) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("what")
+		e.Str(s.What)
+	}
+	{
+		e.FieldStart("when_to_use")
+		e.Str(s.WhenToUse)
+	}
+	{
+		if s.WhenNotToUse.Set {
+			e.FieldStart("when_not_to_use")
+			s.WhenNotToUse.Encode(e)
+		}
+	}
+	{
+		if s.Preconditions.Set {
+			e.FieldStart("preconditions")
+			s.Preconditions.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowActionDescriptionAudit = [4]string{
+	0: "what",
+	1: "when_to_use",
+	2: "when_not_to_use",
+	3: "preconditions",
+}
+
+// Decode decodes WorkflowActionDescriptionAudit from json.
+func (s *WorkflowActionDescriptionAudit) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowActionDescriptionAudit to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "what":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.What = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"what\"")
+			}
+		case "when_to_use":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.WhenToUse = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"when_to_use\"")
+			}
+		case "when_not_to_use":
+			if err := func() error {
+				s.WhenNotToUse.Reset()
+				if err := s.WhenNotToUse.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"when_not_to_use\"")
+			}
+		case "preconditions":
+			if err := func() error {
+				s.Preconditions.Reset()
+				if err := s.Preconditions.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preconditions\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowActionDescriptionAudit")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowActionDescriptionAudit) {
+					name = jsonFieldsNameOfWorkflowActionDescriptionAudit[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowActionDescriptionAudit) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowActionDescriptionAudit) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowActionResultAudit) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowActionResultAudit) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("action_type")
+		e.Str(s.ActionType)
+	}
+	{
+		e.FieldStart("description")
+		s.Description.Encode(e)
+	}
+	{
+		e.FieldStart("workflow_count")
+		e.Int32(s.WorkflowCount)
+	}
+}
+
+var jsonFieldsNameOfWorkflowActionResultAudit = [3]string{
+	0: "action_type",
+	1: "description",
+	2: "workflow_count",
+}
+
+// Decode decodes WorkflowActionResultAudit from json.
+func (s *WorkflowActionResultAudit) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowActionResultAudit to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "action_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ActionType = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_type\"")
+			}
+		case "description":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.Description.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"description\"")
+			}
+		case "workflow_count":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int32()
+				s.WorkflowCount = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_count\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowActionResultAudit")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowActionResultAudit) {
+					name = jsonFieldsNameOfWorkflowActionResultAudit[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowActionResultAudit) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowActionResultAudit) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowActionsListedAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowActionsListedAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("query")
+		s.Query.Encode(e)
+	}
+	{
+		e.FieldStart("results")
+		s.Results.Encode(e)
+	}
+	{
+		e.FieldStart("search_metadata")
+		s.SearchMetadata.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfWorkflowActionsListedAuditPayload = [4]string{
+	0: "event_type",
+	1: "query",
+	2: "results",
+	3: "search_metadata",
+}
+
+// Decode decodes WorkflowActionsListedAuditPayload from json.
+func (s *WorkflowActionsListedAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowActionsListedAuditPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "query":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.Query.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"query\"")
+			}
+		case "results":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Results.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"results\"")
+			}
+		case "search_metadata":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.SearchMetadata.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"search_metadata\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowActionsListedAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowActionsListedAuditPayload) {
+					name = jsonFieldsNameOfWorkflowActionsListedAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowActionsListedAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowActionsListedAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowActionsListedAuditPayloadEventType as json.
+func (s WorkflowActionsListedAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowActionsListedAuditPayloadEventType from json.
+func (s *WorkflowActionsListedAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowActionsListedAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowActionsListedAuditPayloadEventType(v) {
+	case WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed:
+		*s = WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed
+	default:
+		*s = WorkflowActionsListedAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowActionsListedAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowActionsListedAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowActionsResultsMetadata) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowActionsResultsMetadata) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("total_found")
+		e.Int32(s.TotalFound)
+	}
+	{
+		e.FieldStart("returned")
+		e.Int32(s.Returned)
+	}
+	{
+		if s.Actions != nil {
+			e.FieldStart("actions")
+			e.ArrStart()
+			for _, elem := range s.Actions {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowActionsResultsMetadata = [3]string{
+	0: "total_found",
+	1: "returned",
+	2: "actions",
+}
+
+// Decode decodes WorkflowActionsResultsMetadata from json.
+func (s *WorkflowActionsResultsMetadata) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowActionsResultsMetadata to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "total_found":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int32()
+				s.TotalFound = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_found\"")
+			}
+		case "returned":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int32()
+				s.Returned = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"returned\"")
+			}
+		case "actions":
+			if err := func() error {
+				s.Actions = make([]WorkflowActionResultAudit, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem WorkflowActionResultAudit
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Actions = append(s.Actions, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actions\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowActionsResultsMetadata")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowActionsResultsMetadata) {
+					name = jsonFieldsNameOfWorkflowActionsResultsMetadata[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowActionsResultsMetadata) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowActionsResultsMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowCandidatesListedAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowCandidatesListedAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		if s.ActionType.Set {
+			e.FieldStart("action_type")
+			s.ActionType.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("query")
+		s.Query.Encode(e)
+	}
+	{
+		e.FieldStart("results")
+		s.Results.Encode(e)
+	}
+	{
+		e.FieldStart("search_metadata")
+		s.SearchMetadata.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfWorkflowCandidatesListedAuditPayload = [5]string{
+	0: "event_type",
+	1: "action_type",
+	2: "query",
+	3: "results",
+	4: "search_metadata",
+}
+
+// Decode decodes WorkflowCandidatesListedAuditPayload from json.
+func (s *WorkflowCandidatesListedAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowCandidatesListedAuditPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "action_type":
+			if err := func() error {
+				s.ActionType.Reset()
+				if err := s.ActionType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_type\"")
+			}
+		case "query":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Query.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"query\"")
+			}
+		case "results":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Results.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"results\"")
+			}
+		case "search_metadata":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				if err := s.SearchMetadata.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"search_metadata\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowCandidatesListedAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011101,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowCandidatesListedAuditPayload) {
+					name = jsonFieldsNameOfWorkflowCandidatesListedAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowCandidatesListedAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowCandidatesListedAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowCandidatesListedAuditPayloadEventType as json.
+func (s WorkflowCandidatesListedAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowCandidatesListedAuditPayloadEventType from json.
+func (s *WorkflowCandidatesListedAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowCandidatesListedAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowCandidatesListedAuditPayloadEventType(v) {
+	case WorkflowCandidatesListedAuditPayloadEventTypeWorkflowCatalogWorkflowsListed:
+		*s = WorkflowCandidatesListedAuditPayloadEventTypeWorkflowCatalogWorkflowsListed
+	default:
+		*s = WorkflowCandidatesListedAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowCandidatesListedAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowCandidatesListedAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowCandidatesResultsMetadata) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowCandidatesResultsMetadata) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("total_found")
+		e.Int32(s.TotalFound)
+	}
+	{
+		e.FieldStart("returned")
+		e.Int32(s.Returned)
+	}
+	{
+		if s.Workflows != nil {
+			e.FieldStart("workflows")
+			e.ArrStart()
+			for _, elem := range s.Workflows {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowCandidatesResultsMetadata = [3]string{
+	0: "total_found",
+	1: "returned",
+	2: "workflows",
+}
+
+// Decode decodes WorkflowCandidatesResultsMetadata from json.
+func (s *WorkflowCandidatesResultsMetadata) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowCandidatesResultsMetadata to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "total_found":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int32()
+				s.TotalFound = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_found\"")
+			}
+		case "returned":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int32()
+				s.Returned = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"returned\"")
+			}
+		case "workflows":
+			if err := func() error {
+				s.Workflows = make([]WorkflowResultAudit, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem WorkflowResultAudit
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Workflows = append(s.Workflows, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflows\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowCandidatesResultsMetadata")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowCandidatesResultsMetadata) {
+					name = jsonFieldsNameOfWorkflowCandidatesResultsMetadata[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowCandidatesResultsMetadata) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowCandidatesResultsMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *WorkflowCatalogCreatedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -53161,10 +54194,6 @@ func (s *WorkflowDiscoveryAuditPayloadEventType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch WorkflowDiscoveryAuditPayloadEventType(v) {
-	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed:
-		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed
-	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed:
-		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed
 	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved:
 		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved
 	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated:
@@ -54434,6 +55463,18 @@ func (s *WorkflowResultAudit) encodeFields(e *jx.Encoder) {
 		e.Int32(s.Rank)
 	}
 	{
+		if s.Version.Set {
+			e.FieldStart("version")
+			s.Version.Encode(e)
+		}
+	}
+	{
+		if s.FinalScore.Set {
+			e.FieldStart("final_score")
+			s.FinalScore.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("scoring")
 		s.Scoring.Encode(e)
 	}
@@ -54463,15 +55504,17 @@ func (s *WorkflowResultAudit) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowResultAudit = [8]string{
+var jsonFieldsNameOfWorkflowResultAudit = [10]string{
 	0: "workflow_id",
 	1: "title",
 	2: "rank",
-	3: "scoring",
-	4: "owner",
-	5: "maintainer",
-	6: "description",
-	7: "labels",
+	3: "version",
+	4: "final_score",
+	5: "scoring",
+	6: "owner",
+	7: "maintainer",
+	8: "description",
+	9: "labels",
 }
 
 // Decode decodes WorkflowResultAudit from json.
@@ -54479,7 +55522,7 @@ func (s *WorkflowResultAudit) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkflowResultAudit to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -54519,8 +55562,28 @@ func (s *WorkflowResultAudit) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"rank\"")
 			}
+		case "version":
+			if err := func() error {
+				s.Version.Reset()
+				if err := s.Version.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"version\"")
+			}
+		case "final_score":
+			if err := func() error {
+				s.FinalScore.Reset()
+				if err := s.FinalScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"final_score\"")
+			}
 		case "scoring":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.Scoring.Decode(d); err != nil {
 					return err
@@ -54578,8 +55641,9 @@ func (s *WorkflowResultAudit) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001111,
+	for i, mask := range [2]uint8{
+		0b00100111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

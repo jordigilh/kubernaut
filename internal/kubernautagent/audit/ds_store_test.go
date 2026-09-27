@@ -544,11 +544,11 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData))
+			Expect(req.EventData.Type).To(Equal(ogenclient.WorkflowActionsListedAuditPayloadAuditEventRequestEventData))
 
-			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			payload, ok := req.EventData.GetWorkflowActionsListedAuditPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.EventType).To(Equal(ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed))
+			Expect(payload.EventType).To(Equal(ogenclient.WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed))
 			Expect(payload.Query.TopK).To(Equal(int32(3)))
 			Expect(payload.Results.TotalFound).To(Equal(int32(3)))
 			Expect(payload.Results.Returned).To(Equal(int32(3)))
@@ -578,9 +578,9 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(err).NotTo(HaveOccurred())
 
 			req := recorder.calls[0]
-			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData))
+			Expect(req.EventData.Type).To(Equal(ogenclient.WorkflowCandidatesListedAuditPayloadAuditEventRequestEventData))
 
-			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			payload, ok := req.EventData.GetWorkflowCandidatesListedAuditPayload()
 			Expect(ok).To(BeTrue())
 			_, filtersSet := payload.Query.Filters.Get()
 			Expect(filtersSet).To(BeFalse(), "filters must be unset when no signal-context fields are present")

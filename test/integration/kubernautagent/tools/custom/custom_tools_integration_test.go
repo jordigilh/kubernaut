@@ -20,12 +20,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	audittypes "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -88,6 +95,255 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("oom-recovery"))
 		})
+	})
+})
+
+var _ = Describe("IT-KA-2466-001: LLM workflow projection from the etcd-backed Catalog", func() {
+	var reg *registry.Registry
+
+	BeforeEach(func() {
+		Expect(wfCatalog).NotTo(BeNil(), "workflow catalog must be initialized by SynchronizedBeforeSuite")
+		reg = registry.New()
+		for _, tool := range custom.NewAllTools(wfCatalog, nil, logr.Discard()) {
+			reg.Register(tool)
+		}
+	})
+
+	It("returns the description and operational parameters without KA target or execution metadata", func() {
+		wfUUID, ok := workflowUUIDs["oomkill-increase-memory-v1:production"]
+		Expect(ok).To(BeTrue(), "oomkill-increase-memory-v1:production must be seeded")
+
+		result, err := reg.Execute(itToolCtx(), "get_workflow",
+			json.RawMessage(fmt.Sprintf(`{"workflow_id":%q}`, wfUUID)))
+		Expect(err).NotTo(HaveOccurred())
+
+		var response map[string]json.RawMessage
+		Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+		Expect(response).To(HaveKey("description"))
+		Expect(response).To(HaveKey("parameters"))
+		Expect(response).To(HaveLen(2))
+		Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_NAME"))
+		Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_KIND"))
+		Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_NAMESPACE"))
+		Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_API_VERSION"))
+		Expect(result).NotTo(ContainSubstring("schemaImage"))
+		Expect(result).NotTo(ContainSubstring("executionEngine"))
+		Expect(result).NotTo(ContainSubstring("executionBundle"))
+		Expect(result).NotTo(ContainSubstring("serviceAccountName"))
+		Expect(result).NotTo(ContainSubstring("contentHash"))
+
+		var parameters struct {
+			Schema struct {
+				Parameters []struct {
+					Name        string `json:"name"`
+					Type        string `json:"type"`
+					Required    bool   `json:"required"`
+					Description string `json:"description"`
+				} `json:"parameters"`
+			} `json:"schema"`
+		}
+		Expect(json.Unmarshal(response["parameters"], &parameters)).To(Succeed())
+		Expect(parameters.Schema.Parameters).To(HaveLen(1))
+		Expect(parameters.Schema.Parameters[0].Name).To(Equal("MEMORY_LIMIT_NEW"))
+		Expect(parameters.Schema.Parameters[0].Type).To(Equal("string"))
+		Expect(parameters.Schema.Parameters[0].Required).To(BeTrue())
+		Expect(parameters.Schema.Parameters[0].Description).To(ContainSubstring("New memory limit"))
+		Expect(result).NotTo(ContainSubstring("synthetic-sensitive-audit-sentinel-2459"),
+			"the seeded metadata annotation must not be present in the LLM-facing projection")
+	})
+})
+
+var _ = Describe("IT-KA-2459-001: discovery results persist through the buffered Data Storage audit path", func() {
+	It("reconstructs the returned actions and ranked workflow candidates by remediation ID", func() {
+		remediationID := "it-ka-2459-" + uuid.NewString()
+		toolCtx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+			Severity: "critical", ResourceKind: "Pod", Environment: "production", Priority: "P1",
+			RemediationID: remediationID,
+		})
+		store, err := audittypes.NewBufferedDSAuditStore(dsAuditClient, logr.Discard(),
+			audittypes.WithFlushInterval(time.Hour), audittypes.WithBufferSize(20), audittypes.WithBatchSize(20))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			Expect(store.Close()).To(Succeed())
+		})
+
+		reg := registry.New()
+		custom.RegisterAll(reg, wfCatalog, store, nil, nil, logr.Discard())
+
+		By("executing Step 1 and retaining the actual action options returned to the caller")
+		actionsResult, err := reg.Execute(toolCtx, "list_available_actions", json.RawMessage(`{}`))
+		Expect(err).NotTo(HaveOccurred())
+		var actionsResponse struct {
+			ActionTypes []struct {
+				ActionType    string `json:"actionType"`
+				WorkflowCount int    `json:"workflowCount"`
+				Description   struct {
+					What          string `json:"what"`
+					WhenToUse     string `json:"whenToUse"`
+					WhenNotToUse  string `json:"whenNotToUse"`
+					Preconditions string `json:"preconditions"`
+				} `json:"description"`
+			} `json:"actionTypes"`
+		}
+		Expect(json.Unmarshal([]byte(actionsResult), &actionsResponse)).To(Succeed())
+		Expect(actionsResponse.ActionTypes).NotTo(BeEmpty())
+
+		By("executing Step 2 and retaining the ordered candidate identities returned to the caller")
+		workflowsResult, err := reg.Execute(toolCtx, "list_workflows", json.RawMessage(`{"action_type":"IncreaseMemoryLimits"}`))
+		Expect(err).NotTo(HaveOccurred())
+		var workflowsResponse struct {
+			Workflows []struct {
+				WorkflowID   string `json:"workflowId"`
+				WorkflowName string `json:"workflowName"`
+				Version      string `json:"version"`
+			} `json:"workflows"`
+		}
+		Expect(json.Unmarshal([]byte(workflowsResult), &workflowsResponse)).To(Succeed())
+		Expect(workflowsResponse.Workflows).NotTo(BeEmpty())
+
+		By("flushing the async buffer before querying with the independent Data Storage client")
+		flushCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		Expect(store.Flush(flushCtx)).To(Succeed())
+
+		resp, err := ogenClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(remediationID),
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.Data).To(HaveLen(2), "the unique remediation ID should return the two discovery audit events")
+
+		By("checking the raw Data Storage response so typed decoding cannot hide leaked extra JSON fields")
+		rawURL := dsURL + "/api/v1/audit/events?" + url.Values{"correlation_id": {remediationID}}.Encode()
+		rawRequest, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
+		Expect(err).NotTo(HaveOccurred())
+		rawResponse, err := dsHTTPClient.Do(rawRequest)
+		Expect(err).NotTo(HaveOccurred())
+		rawBody, err := io.ReadAll(rawResponse.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rawResponse.Body.Close()).To(Succeed())
+		Expect(rawResponse.StatusCode).To(Equal(http.StatusOK), string(rawBody))
+		var rawEnvelope struct {
+			Data []struct {
+				EventType string          `json:"event_type"`
+				EventData json.RawMessage `json:"event_data"`
+			} `json:"data"`
+		}
+		Expect(json.Unmarshal(rawBody, &rawEnvelope)).To(Succeed())
+		Expect(rawEnvelope.Data).To(HaveLen(2))
+		for _, rawEvent := range rawEnvelope.Data {
+			Expect(rawEvent.EventType).To(Or(Equal(audittypes.EventTypeActionsListed), Equal(audittypes.EventTypeWorkflowsListed)))
+			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("parameters"))
+			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("execution_bundle"))
+			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("synthetic-sensitive-audit-sentinel-2459"))
+		}
+
+		var actionsEvent, workflowsEvent *ogenclient.AuditEvent
+		for i := range resp.Data {
+			event := &resp.Data[i]
+			Expect(event.CorrelationID).To(Equal(remediationID))
+			Expect(event.EventTimestamp).NotTo(BeZero())
+			Expect(event.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflow))
+			Expect(event.EventAction).To(Equal("discovery"))
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			Expect(event.ActorType.Value).To(Equal("service"))
+			Expect(event.ActorID.Value).To(Equal("kubernaut-agent"))
+			Expect(event.EventID.Set).To(BeTrue())
+			switch event.EventType {
+			case audittypes.EventTypeActionsListed:
+				actionsEvent = event
+			case audittypes.EventTypeWorkflowsListed:
+				workflowsEvent = event
+			}
+		}
+		Expect(actionsEvent).NotTo(BeNil())
+		Expect(workflowsEvent).NotTo(BeNil())
+		Expect(actionsEvent.EventData.IsWorkflowActionsListedAuditPayload()).To(BeTrue())
+		Expect(workflowsEvent.EventData.IsWorkflowCandidatesListedAuditPayload()).To(BeTrue())
+
+		var actionPayload map[string]json.RawMessage
+		actionData, err := json.Marshal(actionsEvent.EventData)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal(actionData, &actionPayload)).To(Succeed())
+		var actionQuery struct {
+			TopK    int `json:"top_k"`
+			Offset  int `json:"offset"`
+			Filters struct {
+				Severity    string `json:"severity"`
+				Component   string `json:"component"`
+				Environment string `json:"environment"`
+				Priority    string `json:"priority"`
+			} `json:"filters"`
+		}
+		Expect(json.Unmarshal(actionPayload["query"], &actionQuery)).To(Succeed())
+		Expect(actionQuery.TopK).To(Equal(10))
+		Expect(actionQuery.Offset).To(Equal(0))
+		Expect(actionQuery.Filters.Severity).To(Equal("critical"))
+		Expect(actionQuery.Filters.Component).To(Equal("pod"))
+		Expect(actionQuery.Filters.Environment).To(Equal("production"))
+		Expect(actionQuery.Filters.Priority).To(Equal("P1"))
+		var actionResults struct {
+			TotalFound int `json:"total_found"`
+			Returned   int `json:"returned"`
+			Actions    []struct {
+				ActionType    string `json:"action_type"`
+				WorkflowCount int    `json:"workflow_count"`
+				Description   struct {
+					What          string `json:"what"`
+					WhenToUse     string `json:"when_to_use"`
+					WhenNotToUse  string `json:"when_not_to_use"`
+					Preconditions string `json:"preconditions"`
+				} `json:"description"`
+			} `json:"actions"`
+		}
+		Expect(json.Unmarshal(actionPayload["results"], &actionResults)).To(Succeed())
+		Expect(actionResults.TotalFound).To(BeNumerically(">=", actionResults.Returned))
+		Expect(actionResults.Returned).To(Equal(len(actionsResponse.ActionTypes)))
+		Expect(actionResults.Actions).To(HaveLen(len(actionsResponse.ActionTypes)))
+		for i, action := range actionsResponse.ActionTypes {
+			Expect(actionResults.Actions[i].ActionType).To(Equal(action.ActionType))
+			Expect(actionResults.Actions[i].WorkflowCount).To(Equal(action.WorkflowCount))
+			Expect(actionResults.Actions[i].Description.What).To(Equal(action.Description.What))
+			Expect(actionResults.Actions[i].Description.WhenToUse).To(Equal(action.Description.WhenToUse))
+			Expect(actionResults.Actions[i].Description.WhenNotToUse).To(Equal(action.Description.WhenNotToUse))
+			Expect(actionResults.Actions[i].Description.Preconditions).To(Equal(action.Description.Preconditions))
+		}
+
+		var workflowPayload map[string]json.RawMessage
+		workflowData, err := json.Marshal(workflowsEvent.EventData)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal(workflowData, &workflowPayload)).To(Succeed())
+		var actionType string
+		Expect(json.Unmarshal(workflowPayload["action_type"], &actionType)).To(Succeed())
+		Expect(actionType).To(Equal("IncreaseMemoryLimits"))
+		var workflowResults struct {
+			TotalFound int `json:"total_found"`
+			Returned   int `json:"returned"`
+			Workflows  []struct {
+				WorkflowID string  `json:"workflow_id"`
+				Title      string  `json:"title"`
+				Version    string  `json:"version"`
+				Rank       int     `json:"rank"`
+				FinalScore float64 `json:"final_score"`
+				Scoring    struct {
+					Confidence float64 `json:"confidence"`
+				} `json:"scoring"`
+			} `json:"workflows"`
+		}
+		Expect(json.Unmarshal(workflowPayload["results"], &workflowResults)).To(Succeed())
+		Expect(workflowResults.TotalFound).To(BeNumerically(">=", workflowResults.Returned))
+		Expect(workflowResults.Returned).To(Equal(len(workflowsResponse.Workflows)))
+		Expect(workflowResults.Workflows).To(HaveLen(len(workflowsResponse.Workflows)))
+		for i, candidate := range workflowResults.Workflows {
+			Expect(candidate.WorkflowID).To(Equal(workflowsResponse.Workflows[i].WorkflowID))
+			Expect(candidate.Title).To(Equal(workflowsResponse.Workflows[i].WorkflowName))
+			Expect(candidate.Version).To(Equal(workflowsResponse.Workflows[i].Version))
+			Expect(candidate.Rank).To(Equal(i + 1))
+			Expect(candidate.FinalScore).To(Equal(0.5))
+			Expect(candidate.Scoring.Confidence).To(Equal(candidate.FinalScore))
+		}
+		Expect(string(workflowData)).NotTo(ContainSubstring("parameters"))
+		Expect(string(workflowData)).NotTo(ContainSubstring("execution_bundle"))
+		Expect(string(workflowData)).NotTo(ContainSubstring("synthetic-sensitive-audit-sentinel-2459"))
 	})
 })
 

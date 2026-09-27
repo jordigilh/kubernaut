@@ -26,6 +26,7 @@ import (
 
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -105,6 +106,46 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 		})
 	})
 
+	Describe("UT-KA-2459-001: actions_listed records the returned action choices and page", func() {
+		It("should preserve the exact entries returned to the caller, not only their total count", func() {
+			fake.listActionsEntries = []models.ActionTypeEntry{{
+				ActionType: "IncreaseMemoryLimits",
+				Description: models.ActionTypeDescription{
+					What:          "Increase pod memory limits",
+					WhenToUse:     "Pods are OOMKilled",
+					WhenNotToUse:  "The issue is a memory leak",
+					Preconditions: "The pod is managed by a controller",
+				},
+				WorkflowCount: 3,
+			}}
+			fake.listActionsTotal = 4
+			listActions := newAuditedTools(fake, store)[0]
+			args, err := json.Marshal(map[string]string{
+				"page":   "next",
+				"cursor": custom.EncodeCursor(1, 1),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			result, err := listActions.Execute(ctx, args)
+			Expect(err).NotTo(HaveOccurred())
+			var response struct {
+				ActionTypes []models.ActionTypeEntry `json:"actionTypes"`
+			}
+			Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+			Expect(response.ActionTypes).To(Equal(fake.listActionsEntries))
+
+			Expect(store.events).To(HaveLen(1))
+			ev := store.events[0]
+			actions, marshalErr := json.Marshal(ev.Data["actions"])
+			Expect(marshalErr).NotTo(HaveOccurred())
+			Expect(actions).To(MatchJSON(`[{"action_type":"IncreaseMemoryLimits","description":{"what":"Increase pod memory limits","when_to_use":"Pods are OOMKilled","when_not_to_use":"The issue is a memory leak","preconditions":"The pod is managed by a controller"},"workflow_count":3}]`))
+			Expect(ev.Data["total_count"]).To(Equal(4))
+			Expect(ev.Data["returned"]).To(Equal(1))
+			Expect(ev.Data["offset"]).To(Equal(1))
+			Expect(ev.Data["limit"]).To(Equal(1))
+		})
+	})
+
 	Describe("IT-KA-1677-AUDIT-002: list_workflows emits workflow.catalog.workflows_listed", func() {
 		It("should emit exactly one event with the correct type, category, action, and action_type", func() {
 			allTools := newAuditedTools(fake, store)
@@ -122,6 +163,42 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 			Expect(ev.CorrelationID).To(Equal("rr-audit-test-001"))
 			Expect(ev.Data["total_count"]).To(Equal(1))
 			Expect(ev.Data["action_type"]).To(Equal("ScaleReplicas"))
+		})
+	})
+
+	Describe("UT-KA-2459-002: workflows_listed records the exact ranked candidates without audit-only leakage", func() {
+		It("should preserve the cache score and rank in audit data while keeping them out of the LLM response", func() {
+			parameters := json.RawMessage(`{"token":"do-not-audit-sentinel"}`)
+			executionBundle := "registry.example.invalid/private/do-not-audit-sentinel@sha256:abc"
+			workflow := models.RemediationWorkflow{
+				WorkflowID:      "550e8400-e29b-41d4-a716-446655440000",
+				WorkflowName:    "oomkill-increase-memory-v1",
+				Version:         "1.2.3",
+				Name:            "OOM memory recovery",
+				Description:     models.StructuredDescription{What: "Increase pod memory limits"},
+				ExecutionBundle: &executionBundle,
+				Parameters:      &parameters,
+			}
+			fake.listScoredWorkflows = []workflowcatalog.ScoredWorkflow{{Workflow: workflow, FinalScore: 0.51}}
+			fake.listWorkflowsTotal = 5
+			listWorkflows := newAuditedTools(fake, store)[1]
+
+			result, err := listWorkflows.Execute(ctx, json.RawMessage(`{"action_type":"IncreaseMemoryLimits"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(ContainSubstring("final_score"))
+			Expect(result).NotTo(ContainSubstring("0.51"))
+
+			Expect(store.events).To(HaveLen(1))
+			ev := store.events[0]
+			Expect(ev.Data["action_type"]).To(Equal("IncreaseMemoryLimits"))
+			workflows, marshalErr := json.Marshal(ev.Data["workflows"])
+			Expect(marshalErr).NotTo(HaveOccurred())
+			Expect(workflows).To(MatchJSON(`[{"workflow_id":"550e8400-e29b-41d4-a716-446655440000","title":"oomkill-increase-memory-v1","version":"1.2.3","rank":1,"final_score":0.51}]`))
+			Expect(string(workflows)).NotTo(ContainSubstring("do-not-audit-sentinel"))
+			Expect(ev.Data["total_count"]).To(Equal(5))
+			Expect(ev.Data["returned"]).To(Equal(1))
+			Expect(ev.Data["offset"]).To(Equal(0))
+			Expect(ev.Data["limit"]).To(Equal(10))
 		})
 	})
 

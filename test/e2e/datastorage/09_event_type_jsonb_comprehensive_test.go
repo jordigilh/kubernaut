@@ -108,7 +108,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 					SignalType:  "alert",
-					SignalName:   "HighCPU",
+					SignalName:  "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-abc123",
 				}),
@@ -141,7 +141,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalDeduplicated,
 					SignalType:  "alert",
-					SignalName:   "HighCPU",
+					SignalName:  "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-dedupe-456",
 				}),
@@ -174,7 +174,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 					SignalType:  "alert",
-					SignalName:   "CRDCreated",
+					SignalName:  "CRDCreated",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-012",
 				}),
@@ -207,7 +207,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdFailed,
 					SignalType:  "alert",
-					SignalName:   "CRDCreationFailed",
+					SignalName:  "CRDCreationFailed",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-fail-789",
 				}),
@@ -1109,15 +1109,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceType:   ogenclient.NewOptString("WorkflowDiscovery"),
 				ResourceID:     ogenclient.NewOptString("actions-list"),
 				CorrelationID:  correlationID,
-				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(ogenclient.WorkflowDiscoveryAuditPayload{
-					EventType: ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
+				EventData: ogenclient.NewWorkflowActionsListedAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowActionsListedAuditPayload{
+					EventType: ogenclient.WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed,
 					Query: ogenclient.QueryMetadata{
 						TopK: 5,
 					},
-					Results: ogenclient.ResultsMetadata{
+					Results: ogenclient.WorkflowActionsResultsMetadata{
 						TotalFound: 5,
 						Returned:   5,
-						Workflows:  []ogenclient.WorkflowResultAudit{},
+						Actions:    []ogenclient.WorkflowActionResultAudit{},
 					},
 					SearchMetadata: ogenclient.SearchExecutionMetadata{
 						DurationMs: 150,

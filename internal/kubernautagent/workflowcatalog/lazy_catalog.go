@@ -229,6 +229,16 @@ func (l *LazyCatalog) ListWorkflowsByActionType(ctx context.Context, actionType 
 	return c.ListWorkflowsByActionType(ctx, actionType, filters, offset, limit)
 }
 
+// ListScoredWorkflowsByActionType delegates the score-bearing discovery call
+// once the backing Catalog is ready.
+func (l *LazyCatalog) ListScoredWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]ScoredWorkflow, int, error) {
+	c, err := l.get()
+	if err != nil {
+		return nil, 0, err
+	}
+	return c.ListScoredWorkflowsByActionType(ctx, actionType, filters, offset, limit)
+}
+
 // GetWorkflowWithContextFilters delegates to the underlying Catalog once
 // Ready, or returns ErrCatalogNotReady beforehand.
 func (l *LazyCatalog) GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {

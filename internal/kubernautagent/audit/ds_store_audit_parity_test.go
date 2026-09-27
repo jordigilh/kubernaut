@@ -18,6 +18,7 @@ package audit_test
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -922,5 +923,142 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(payload.PromptPreview).To(Equal("Please correct the JSON output..."),
 				"prompt_preview must be populated for retry audit events (BUG-5)")
 		})
+	})
+
+	Describe("UT-KA-2459-003: event-specific workflow discovery payloads preserve result evidence", func() {
+		It("should persist the exact action choices and actual page counts for Step 1", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+			event := audit.NewEvent(audit.EventTypeActionsListed, "rr-2459-actions")
+			event.Data["total_count"] = 5
+			event.Data["returned"] = 2
+			event.Data["offset"] = 2
+			event.Data["limit"] = 2
+			event.Data["duration_ms"] = 7
+			event.Data["actions"] = []audit.WorkflowActionAuditResult{
+				{
+					ActionType: "IncreaseMemoryLimits",
+					Description: audit.WorkflowActionAuditDescription{
+						What: "Increase pod memory limits", WhenToUse: "Pods are OOMKilled",
+						WhenNotToUse: "The issue is a memory leak", Preconditions: "Controller-managed pod",
+					},
+					WorkflowCount: 3,
+				},
+				{ActionType: "RestartPod", Description: audit.WorkflowActionAuditDescription{What: "Restart pod", WhenToUse: "Pod is unhealthy"}, WorkflowCount: 2},
+			}
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(recorder.calls).To(HaveLen(1))
+			payload, err := json.Marshal(recorder.calls[0].EventData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(payload).To(MatchJSON(`{
+				"event_type":"workflow.catalog.actions_listed",
+				"query":{"top_k":2,"offset":2},
+				"results":{"total_found":5,"returned":2,"actions":[
+					{"action_type":"IncreaseMemoryLimits","description":{"what":"Increase pod memory limits","when_to_use":"Pods are OOMKilled","when_not_to_use":"The issue is a memory leak","preconditions":"Controller-managed pod"},"workflow_count":3},
+					{"action_type":"RestartPod","description":{"what":"Restart pod","when_to_use":"Pod is unhealthy"},"workflow_count":2}
+				]},
+				"search_metadata":{"duration_ms":7}
+			}`))
+		})
+
+		It("should persist action type, ordered candidates, version, actual score, and the legacy score alias for Step 2", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+			event := audit.NewEvent(audit.EventTypeWorkflowsListed, "rr-2459-workflows")
+			event.Data["action_type"] = "IncreaseMemoryLimits"
+			event.Data["total_count"] = 4
+			event.Data["returned"] = 2
+			event.Data["offset"] = 1
+			event.Data["limit"] = 2
+			event.Data["duration_ms"] = 9
+			event.Data["workflows"] = []audit.WorkflowCandidateAuditResult{
+				{WorkflowID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"), Title: "oomkill-increase-memory-v1", Version: "1.2.3", Rank: 2, FinalScore: 0.81},
+				{WorkflowID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"), Title: "oomkill-increase-memory-v2", Version: "2.0.0", Rank: 3, FinalScore: 0.72},
+			}
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(recorder.calls).To(HaveLen(1))
+			payload, err := json.Marshal(recorder.calls[0].EventData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(payload).To(MatchJSON(`{
+				"event_type":"workflow.catalog.workflows_listed",
+				"action_type":"IncreaseMemoryLimits",
+				"query":{"top_k":2,"offset":1},
+				"results":{"total_found":4,"returned":2,"workflows":[
+					{"workflow_id":"550e8400-e29b-41d4-a716-446655440000","title":"oomkill-increase-memory-v1","version":"1.2.3","rank":2,"final_score":0.81,"scoring":{"confidence":0.81}},
+					{"workflow_id":"550e8400-e29b-41d4-a716-446655440001","title":"oomkill-increase-memory-v2","version":"2.0.0","rank":3,"final_score":0.72,"scoring":{"confidence":0.72}}
+				]},
+				"search_metadata":{"duration_ms":9}
+			}`))
+			Expect(payload).NotTo(ContainSubstring("execution_bundle"))
+			Expect(payload).NotTo(ContainSubstring("parameters"))
+		})
+
+		It("should decode historical Step 1 and Step 2 event data through the new request and response unions", func() {
+			legacyActions := []byte(`{
+				"event_type":"workflow.catalog.actions_listed",
+				"query":{"top_k":5},
+				"results":{"total_found":5,"returned":5,"workflows":[]},
+				"search_metadata":{"duration_ms":4}
+			}`)
+			var actionResponse ogenclient.AuditEventEventData
+			Expect(json.Unmarshal(legacyActions, &actionResponse)).To(Succeed())
+			actions, ok := actionResponse.GetWorkflowActionsListedAuditPayload()
+			Expect(ok).To(BeTrue(), "old Step 1 payload must decode to the event-specific response variant")
+			Expect(actions.Results.TotalFound).To(Equal(int32(5)))
+
+			var actionRequest ogenclient.AuditEventRequestEventData
+			Expect(json.Unmarshal(legacyActions, &actionRequest)).To(Succeed())
+			_, ok = actionRequest.GetWorkflowActionsListedAuditPayload()
+			Expect(ok).To(BeTrue(), "old Step 1 payload must decode to the event-specific request variant")
+
+			legacyWorkflows := []byte(`{
+				"event_type":"workflow.catalog.workflows_listed",
+				"query":{"top_k":5},
+				"results":{"total_found":1,"returned":1,"workflows":[
+					{"workflow_id":"550e8400-e29b-41d4-a716-446655440000","title":"legacy-workflow","rank":1,"scoring":{"confidence":0.7}}
+				]},
+				"search_metadata":{"duration_ms":5}
+			}`)
+			var workflowResponse ogenclient.AuditEventEventData
+			Expect(json.Unmarshal(legacyWorkflows, &workflowResponse)).To(Succeed())
+			workflows, ok := workflowResponse.GetWorkflowCandidatesListedAuditPayload()
+			Expect(ok).To(BeTrue(), "old Step 2 payload must decode to the event-specific response variant")
+			Expect(workflows.Results.Workflows).To(HaveLen(1))
+			Expect(workflows.Results.Workflows[0].FinalScore.Set).To(BeFalse(),
+				"historical records need not have the explicit final_score field")
+			Expect(workflows.Results.Workflows[0].Scoring.Confidence).To(Equal(0.7))
+
+			var workflowRequest ogenclient.AuditEventRequestEventData
+			Expect(json.Unmarshal(legacyWorkflows, &workflowRequest)).To(Succeed())
+			_, ok = workflowRequest.GetWorkflowCandidatesListedAuditPayload()
+			Expect(ok).To(BeTrue(), "old Step 2 payload must decode to the event-specific request variant")
+		})
+
+		DescribeTable("should round-trip supported GitOps filters and detection failures",
+			func(tool string) {
+				recorder := &fakeOgenClient{}
+				store := audit.NewDSAuditStore(recorder)
+				event := audit.NewEvent(audit.EventTypeActionsListed, "rr-2459-labels")
+				event.Data["total_count"] = 1
+				event.Data["returned"] = 1
+				event.Data["limit"] = 10
+				event.Data["severity"] = string(ogenclient.WorkflowSearchFiltersSeverityCritical)
+				event.Data["detected_labels_present"] = true
+				event.Data["detected_labels_json"] = `{"gitOpsManaged":true,"gitOpsTool":"` + tool + `","failedDetections":["networkIsolated"]}`
+				Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+				payload, ok := recorder.calls[0].EventData.GetWorkflowActionsListedAuditPayload()
+				Expect(ok).To(BeTrue())
+				filters, ok := payload.Query.Filters.Get()
+				Expect(ok).To(BeTrue())
+				labels, ok := filters.DetectedLabels.Get()
+				Expect(ok).To(BeTrue())
+				Expect(labels.GitOpsTool.Value).To(Equal(ogenclient.DetectedLabelsGitOpsTool(tool)))
+				Expect(labels.FailedDetections).To(ContainElement(ogenclient.DetectedLabelsFailedDetectionsItemNetworkIsolated))
+			},
+			Entry("ArgoCD", "argocd"),
+			Entry("Flux", "flux"),
+		)
 	})
 })

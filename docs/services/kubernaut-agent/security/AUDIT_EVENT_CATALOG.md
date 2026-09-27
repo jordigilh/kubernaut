@@ -149,18 +149,20 @@ type AuditEvent struct {
 
 ---
 
-## Workflow Catalog Discovery (Issue #1677, DD-WORKFLOW-019)
+## Workflow Catalog Discovery (Issue #1677/#2459, DD-WORKFLOW-019, DD-AUDIT-009)
 
 Event category is `"workflow"` (via `WithEventCategory(WorkflowCatalogEventCategory)`), not the default `"aiagent"` — these describe the workflow-catalog domain, not KA's own investigation lifecycle. Relocated from Data Storage to KA in DD-WORKFLOW-019 (KA is the correct generator: it decides what to show the LLM, not DS). Event type/action string values are unchanged from their DS-generated predecessors, so existing audit-query consumers keyed on `event_type` are unaffected.
 
 | Event Type | Constant | NIST/SOC2 Control | Trigger | Detail Fields (`Data`) |
 |-----------|----------|-------------|---------|---------------|
-| `workflow.catalog.actions_listed` | `EventTypeActionsListed` | AU-2, CC7.2 | Step 1: action types returned for a signal context (DD-WORKFLOW-014 v3.0) | `action_types`, `filters` |
-| `workflow.catalog.workflows_listed` | `EventTypeWorkflowsListed` | AU-2, CC7.2 | Step 2: workflows returned for a selected action type | `action_type`, `workflow_count` |
+| `workflow.catalog.actions_listed` | `EventTypeActionsListed` | AU-2, AU-3, CC7.2 | Step 1: action choices returned for a signal context (DD-WORKFLOW-014 v3.0, DD-AUDIT-009) | `results.actions[]` (action type, structured description, matching workflow count), `results.total_found`, `results.returned`, `query.top_k`/`query.offset`, `query.filters`, `search_metadata.duration_ms` |
+| `workflow.catalog.workflows_listed` | `EventTypeWorkflowsListed` | AU-2, AU-3, CC7.2 | Step 2: ranked workflow candidates returned for the requested action type | `action_type`, `results.workflows[]` (workflow ID/title/version, 1-based rank, `final_score`, legacy `scoring.confidence` alias), `results.total_found`, `results.returned`, `query.top_k`/`query.offset`, `query.filters`, `search_metadata.duration_ms` |
 | `workflow.catalog.workflow_retrieved` | `EventTypeWorkflowRetrieved` | AU-2, CC7.2 | Step 3: a single workflow's parameter schema retrieved (`ResourceType`/`ResourceID` = `"Workflow"`/workflow ID) | `workflow_id` |
 | `workflow.catalog.selection_validated` | `EventTypeSelectionValidated` | AU-2, CC7.2, CC8.1 | Post-selection: re-validation query result for the LLM's chosen workflow | `workflow_id`, `valid` |
 
 **Emitted from:** `internal/kubernautagent/tools/custom/discovery_audit.go`
+
+The Step 2 `final_score` is the exact cache-computed label-ranking score used to order candidates; `scoring.confidence` mirrors that score for compatibility and is not LLM decision confidence. Ranking evidence is audit-only and is not added to the LLM-facing discovery response. Both event-specific typed payloads exclude workflow parameter schemas and execution bundles; historical records without the new result fields remain decodable.
 
 ---
 
