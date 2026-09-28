@@ -7,26 +7,28 @@
 >
 > **Partially superseded by [#1839](https://github.com/jordigilh/kubernaut/issues/1839) /
 > [DD-AF-010](../../../../architecture/decisions/DD-AF-010-remove-ungrounded-severity-inference.md):**
-> Tier 3 (pure LLM classification, BAC-T-06) has been **removed**. When Tier 1/1.5/2/2.5
-> all miss -- i.e. no real Prometheus alert or rule correlates to the resource -- the
-> pipeline now returns `severity.ErrSeverityUndetermined` and `HandleCreateRR` creates no
+> Tier 3 (pure LLM classification, BAC-T-06) was **removed**. When alert/rule evidence
+> cannot provide an explicit severity, the pipeline returns
+> `severity.ErrSeverityUndetermined` and `HandleCreateRR` creates no
 > `RemediationRequest`, instead of asking the LLM to invent a severity with zero grounding
 > evidence. All "falls through to Tier 3" test rows below (UT-AF-T-031/032/034/038/043/048/
 > 051/051b/051d, F-T.16, F-T.36) describe pre-#1839 behavior; see DD-AF-010 and
 > `pkg/apifrontend/severity/triage_test.go`'s "No Grounded Signal — Fail Closed (#1839)"
 > describe block for current behavior.
+>
+> **Further superseded by [DD-AF-016](../../../../architecture/decisions/DD-AF-016-explicit-alert-severity-source.md) / #2467:** The Tier 2.5 LLM-with-rule-context fallback described below is no longer allowed. AF must use explicit alert/rule severity unchanged; rule-only candidates must agree on one non-empty raw value; missing/conflicting evidence creates no RR. All Tier 2.5 LLM acceptance criteria and provider-dependency scenarios in this historical #92 plan are superseded. Tier 3 remains removed by DD-AF-010.
 
 **Test Plan Identifier:** TP-AF-092-SEVERITY-TRIAGE
 **Issue:** [#92](https://github.com/jordigilh/kubernaut-apifrontend/issues/92)
 **Version:** 1.0
 **Date:** 2026-05-02
-**Status:** Draft
+**Status:** Historical — severity-inference portions superseded by DD-AF-010 and DD-AF-016
 
 ---
 
 ## 1. Introduction
 
-This test plan validates the three-tier severity triage pipeline that determines severity for manual signals before `RemediationRequest` creation. The pipeline queries Prometheus for firing alerts (Tier 1), pending alerts (Tier 1.5), evaluates rule expressions (Tier 2), falls back to LLM with rule context (Tier 2.5), and finally to pure LLM classification (Tier 3).
+This historical plan records the original severity-triage design for manual signals. Its LLM fallback requirements (Tier 2.5 and Tier 3) are superseded by DD-AF-010 and DD-AF-016; consult those decisions and the #2467 test plan for current requirements.
 
 ### 1.1 Scope
 

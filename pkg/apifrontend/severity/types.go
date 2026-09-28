@@ -36,6 +36,7 @@ const (
 	// SourceClusterPendingAlert is the pending equivalent of SourceClusterFiringAlert.
 	SourceClusterPendingAlert Source = "cluster_pending_alert"
 	SourceRuleEval            Source = "rule_evaluation"
+	SourceRuleLabel           Source = "rule_label"
 	SourceLLMRuleInform       Source = "llm_rule_informed"
 	SourceLLMTriage           Source = "llm_triage"
 )

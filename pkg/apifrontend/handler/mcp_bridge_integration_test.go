@@ -283,7 +283,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				"session_id": "sess-decision-it",
 				"summary":    "Pod crash-looping due to OOMKilled",
 				"rca": map[string]any{
-					"severity":         "critical",
 					"confidence":       0.92,
 					"target":           "pod/nginx-abc123",
 					"tool_calls_count": 5,
@@ -314,7 +313,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				"session_id": "sess-audit-decision",
 				"summary":    "test summary",
 				"rca": map[string]any{
-					"severity":         "warning",
 					"confidence":       0.80,
 					"target":           "deploy/api",
 					"tool_calls_count": 2,
@@ -838,7 +836,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				"session_id": "sess-obs-001",
 				"summary":    "test summary",
 				"rca": map[string]any{
-					"severity":         "info",
 					"confidence":       0.70,
 					"target":           "svc/backend",
 					"tool_calls_count": 1,

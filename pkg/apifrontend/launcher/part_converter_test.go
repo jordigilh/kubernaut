@@ -1479,7 +1479,7 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 					"session_id": "sess-it-001",
 					"summary":    "OOMKill detected in production data-processor pod with critical severity and high confidence",
 					"rca": map[string]any{
-						"severity":         "critical",
+						"severity":         "info",
 						"confidence":       0.92,
 						"causal_chain":     []any{"Memory leak in data-processor worker goroutine", "Container hit 512Mi memory limit", "Kernel sent OOMKill signal to container"},
 						"target":           "Deployment/data-processor in production",
@@ -1495,6 +1495,7 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 			},
 		}
 		queue, ctx := partConverterBridgeCtx()
+		launcher.SetDecisionRCAClassificationSafe(ctx, "critical", false)
 		_, _ = convertStreaming(ctx, nil, part)
 
 		Expect(queue.events).To(HaveLen(1))
@@ -1522,7 +1523,6 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 					"session_id": "sess-it-002",
 					"summary":    "Certificate expired",
 					"rca": map[string]any{
-						"severity":         "high",
 						"confidence":       0.88,
 						"causal_chain":     []any{"TLS cert expired", "Mutual TLS handshake failed"},
 						"target":           "Secret/tls-cert in istio-system",
@@ -1546,7 +1546,7 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 		Expect(ok).To(BeTrue())
 		rca, ok := dp.Data["rca"].(map[string]any)
 		Expect(ok).To(BeTrue(), "AU-3: RCA must be present for audit tracing")
-		Expect(rca["severity"]).To(Equal("high"))
+		Expect(rca).NotTo(HaveKey("severity"), "model severity must not be projected without trusted server state")
 		Expect(rca["confidence"]).To(BeNumerically("~", 0.88, 0.001))
 		causalChain, ok := rca["causal_chain"].([]any)
 		Expect(ok).To(BeTrue())
@@ -1554,6 +1554,38 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 		Expect(rca["target"]).To(Equal("Secret/tls-cert in istio-system"))
 		Expect(rca["tool_calls_count"]).To(BeNumerically("==", 5))
 		Expect(rca["llm_turns"]).To(BeNumerically("==", 3))
+	})
+
+	It("IT-AF-2467-001: projects trusted server severity over conflicting model output", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-2467",
+					"summary":    "Memory pressure detected",
+					"rca": map[string]any{
+						"severity":   "critical",
+						"confidence": 0.88,
+						"target":     "Deployment/api",
+					},
+					"options": []any{},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		launcher.SetDecisionRCAClassificationSafe(ctx, "warning", true)
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		rca, ok := dp.Data["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal("warning"), "artifact severity must come from trusted server projection")
+		Expect(rca["provisional"]).To(BeTrue(), "pre-SP triage provenance must remain visible")
 	})
 
 	It("IT-AF-1396-002: AC-6 — extended WorkflowOption fields (Parameters, RuledOutReason) flow through", func() {

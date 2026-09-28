@@ -76,9 +76,8 @@ var _ = Describe("present_decision", func() {
 			"AC-6: false recommendation must be omitted (omitempty) to prevent confusion")
 	})
 
-	It("UT-AF-1396-001: AU-3 RCAData serializes all fields for structured decision payload", func() {
+	It("UT-AF-2467-001: AU-3 RCAData serializes narrative and bookkeeping fields without SP severity", func() {
 		rca := tools.RCAData{
-			Severity:       "critical",
 			Confidence:     0.92,
 			CausalChain:    []string{"Memory leak in data-processor", "Container hit 512Mi limit", "OOMKill signal"},
 			Target:         "Deployment/data-processor in production",
@@ -87,8 +86,8 @@ var _ = Describe("present_decision", func() {
 		}
 		data, err := json.Marshal(rca)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(data)).To(ContainSubstring(`"severity":"critical"`))
 		Expect(string(data)).To(ContainSubstring(`"confidence":0.92`))
+		Expect(string(data)).NotTo(ContainSubstring(`"severity"`))
 		Expect(string(data)).To(ContainSubstring(`"causal_chain"`))
 		Expect(string(data)).To(ContainSubstring(`"target":"Deployment/data-processor in production"`))
 		Expect(string(data)).To(ContainSubstring(`"tool_calls_count":19`))
@@ -96,7 +95,6 @@ var _ = Describe("present_decision", func() {
 
 		var decoded tools.RCAData
 		Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		Expect(decoded.Severity).To(Equal("critical"))
 		Expect(decoded.Confidence).To(BeNumerically("~", 0.92, 0.001))
 		Expect(decoded.CausalChain).To(HaveLen(3))
 		Expect(decoded.ToolCallsCount).To(Equal(19))
@@ -115,19 +113,19 @@ var _ = Describe("present_decision", func() {
 			"the LLM is never told to supply tool_calls_count -- marking it required makes every present_decision call fail schema validation (#2073/#2074)")
 		Expect(schema.Required).NotTo(ContainElement("llm_turns"),
 			"the LLM is never told to supply llm_turns -- marking it required makes every present_decision call fail schema validation (#2073/#2074)")
-		Expect(schema.Required).To(ContainElement("severity"),
-			"fields the LLM IS expected to supply must remain required")
+		Expect(schema.Properties).NotTo(HaveKey("severity"),
+			"SP-owned severity must not be writable through the LLM-facing present_decision schema (#2467)")
 	})
 
 	It("UT-AF-2074-002: AU-3 RCAData omits zero-value tool_calls_count/llm_turns from JSON but still round-trips genuine values", func() {
-		rca := tools.RCAData{Severity: "critical", Confidence: 0.9}
+		rca := tools.RCAData{Confidence: 0.9}
 		data, err := json.Marshal(rca)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data)).NotTo(ContainSubstring("tool_calls_count"),
 			"an unset count must not appear in the payload the LLM is never told to populate (#2073/#2074)")
 		Expect(string(data)).NotTo(ContainSubstring("llm_turns"))
 
-		rcaWithCounts := tools.RCAData{Severity: "critical", Confidence: 0.9, ToolCallsCount: 5, LLMTurns: 2}
+		rcaWithCounts := tools.RCAData{Confidence: 0.9, ToolCallsCount: 5, LLMTurns: 2}
 		data2, err := json.Marshal(rcaWithCounts)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data2)).To(ContainSubstring(`"tool_calls_count":5`),
@@ -184,20 +182,13 @@ var _ = Describe("present_decision", func() {
 		Expect(string(data)).To(ContainSubstring(`"rca":`), "RCA must always be present (required field)")
 	})
 
-	It("UT-AF-1396-011: AU-3 HandlePresentDecision includes RCA severity in message", func() {
-		result := tools.HandlePresentDecision(tools.PresentDecisionArgs{
-			SessionID: "sess-1",
-			Summary:   "OOMKill detected",
-			RCA: tools.RCAData{
-				Severity:   "critical",
-				Confidence: 0.95,
-			},
-			Options: []tools.WorkflowOption{
-				{WorkflowID: "wf-1", Name: "Restart"},
-			},
-		})
+	It("UT-AF-2467-002: HandlePresentDecision never renders model-authored severity", func() {
+		var args tools.PresentDecisionArgs
+		Expect(json.Unmarshal([]byte(`{"session_id":"sess-1","summary":"OOMKill detected","rca":{"severity":"critical","confidence":0.95},"options":[{"workflow_id":"wf-1","name":"Restart"}]}`), &args)).To(Succeed())
+		result := tools.HandlePresentDecision(args)
 		Expect(result.Presented).To(BeTrue())
-		Expect(result.Message).To(ContainSubstring("critical"))
-		Expect(result.Message).To(ContainSubstring("0.95"))
+		Expect(result.Message).NotTo(ContainSubstring("Severity:"))
+		Expect(result.Message).NotTo(ContainSubstring("critical"))
+		Expect(result.Message).NotTo(ContainSubstring("0.95"))
 	})
 })

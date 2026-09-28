@@ -481,7 +481,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 			Expect(result.AlertName).To(Equal("KubePodCrashLooping"))
 		})
 
-		It("UT-AF-TRIAGE-009: multiple pod-correlated alerts returns highest severity", func() {
+		It("UT-AF-TRIAGE-009: multiple pod-correlated alerts with conflicting severities fail closed", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
 					{
@@ -525,11 +525,8 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 			}
 
 			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
-			result, err := triager.Triage(context.Background(), input)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("critical"))
-			Expect(result.Source).To(Equal(severity.SourceFiringAlert))
-			Expect(result.AlertName).To(Equal("KubePodOOMKilled"))
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
 		})
 	})
 

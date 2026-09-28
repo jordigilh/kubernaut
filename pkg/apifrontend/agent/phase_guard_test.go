@@ -700,7 +700,7 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 			"rca must remain present (not deleted) -- it is a required property in present_decision's "+
 				"ADK schema (#1396); deleting it makes ADK's own validation reject the call before the "+
 				"AU-3 artifact can ever be emitted")
-		Expect(rca["severity"]).To(BeEmpty(), "rca payload must be cleared, not left carrying invented fields")
+		Expect(rca).NotTo(HaveKey("severity"), "SP severity must not be carried in LLM-facing tool arguments")
 		Expect(rca["target"]).To(BeEmpty())
 	})
 
@@ -818,7 +818,7 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 		// internal/taskstore/store.go registers it at init().
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue(), "rca must be overwritten with a gob-safe map[string]any, not a *tools.RCAData struct pointer (#2110)")
-		Expect(rca["severity"]).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
+		Expect(rca).NotTo(HaveKey("severity"), "trusted severity is projected only into the server-built artifact")
 		Expect(rca["confidence"]).To(Equal(0.55))
 		Expect(rca["target"]).To(Equal("pod/real-target"))
 		Expect(rca["causal_chain"]).To(Equal([]string{"MemoryPressure", "Evicted"}))
@@ -838,8 +838,7 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
-			"with no structured rca to pass through, the harness has nothing authoritative to substitute for severity/confidence/causal_chain")
+		Expect(rca).NotTo(HaveKey("severity"), "model severity is not retained when no trusted structured RCA exists")
 		Expect(rca["confidence"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["confidence"]))
 		Expect(rca["causal_chain"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["causal_chain"]))
 		Expect(rca["tool_calls_count"]).To(Equal(0),
@@ -867,8 +866,8 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
-			"the first call's rca must not leak into a present_decision grounded by the second, rca-less call")
+		Expect(rca).NotTo(HaveKey("severity"),
+			"the first call's trusted severity must not leak into a later rca-less decision")
 		Expect(rca["tool_calls_count"]).To(Equal(0),
 			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 		Expect(rca["llm_turns"]).To(Equal(0),
@@ -931,9 +930,8 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
-			"#2068: a Provisional (AF-synthesized severity-triage guess, not a genuine KA finding) rca must "+
-				"not clobber present_decision's own rca -- same treatment as 'no structured rca at all' (UT-AF-2071-015)")
+		Expect(rca).NotTo(HaveKey("severity"),
+			"#2068: provisional severity is server-projected into the artifact, never copied into model arguments")
 		Expect(rca["tool_calls_count"]).To(Equal(0),
 			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 		Expect(rca["llm_turns"]).To(Equal(0),
@@ -962,7 +960,7 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 		// UT-AF-2071-014's comment above for why.
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca["severity"]).To(Equal("warning"), "a non-Provisional rca must still overwrite present_decision's rca (#2023's original guarantee)")
+		Expect(rca).NotTo(HaveKey("severity"), "even grounded severity remains outside model-writable arguments")
 	})
 
 	It("UT-AF-2068-005: treats a malformed (non-object) rca payload the same as no rca at all, without panicking", func() {
@@ -983,8 +981,8 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 
 		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
-			"a malformed rca payload has nothing authoritative to substitute, same as UT-AF-2071-015")
+		Expect(rca).NotTo(HaveKey("severity"),
+			"a malformed RCA cannot preserve model-authored severity, same as UT-AF-2071-015")
 		Expect(rca["tool_calls_count"]).To(Equal(0),
 			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 		Expect(rca["llm_turns"]).To(Equal(0),

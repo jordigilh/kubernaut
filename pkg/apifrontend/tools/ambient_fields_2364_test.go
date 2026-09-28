@@ -31,6 +31,8 @@ var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
 			"fields the LLM IS expected to supply must remain required")
 		Expect(schema.Required).To(ContainElement("summary"))
 		Expect(schema.Required).To(ContainElement("rca"))
+		Expect(mustSchema[tools.RCAData]().Properties).NotTo(HaveKey("severity"),
+			"SP-owned severity must not be part of the LLM-writable present_decision contract")
 	})
 
 	It("UT-2364-002: SI-10 discover/select schemas tolerate cluster_id/session_id", func() {
@@ -86,7 +88,8 @@ var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
 		Expect(rcaSchema.Properties).To(HaveKey("cluster_id"),
 			"jsonschema-go rejects unknown NESTED properties too (infer.go) -- spoke-scoped RCA must validate")
 		Expect(rcaSchema.Required).NotTo(ContainElement("cluster_id"))
-		Expect(rcaSchema.Required).To(ContainElement("severity"))
+		Expect(rcaSchema.Properties).NotTo(HaveKey("severity"),
+			"the server adds any authoritative severity after model-argument validation")
 
 		targetSchema, err := jsonschema.For[tools.TargetInfo](nil)
 		Expect(err).NotTo(HaveOccurred())

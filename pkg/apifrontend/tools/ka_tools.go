@@ -378,7 +378,6 @@ func HandleListWorkflowsKA(ctx context.Context, mcpClient ka.MCPClient, args Lis
 // This field is required — ADK schema validation enforces self-correction
 // if omitted by the LLM (#1396).
 type RCAData struct {
-	Severity    string   `json:"severity"`
 	Confidence  float64  `json:"confidence"`
 	CausalChain []string `json:"causal_chain,omitempty"`
 	Target      string   `json:"target"`
@@ -460,9 +459,6 @@ type PresentDecisionResult struct {
 // HandlePresentDecision formats RCA and options for user presentation.
 func HandlePresentDecision(args PresentDecisionArgs) PresentDecisionResult {
 	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s", args.Summary)
-	if args.RCA.Severity != "" {
-		msg += fmt.Sprintf("\nSeverity: %s (confidence: %.2f)", args.RCA.Severity, args.RCA.Confidence)
-	}
 	msg += "\n\nAvailable actions:"
 	for i, opt := range args.Options {
 		msg += fmt.Sprintf("\n  %d. %s", i+1, opt.Name)

@@ -72,12 +72,11 @@ Alerting rules are defined in `deploy/kustomize/base/05-prometheusrule.yaml`. Ea
 
 ### Triage Latency Impact on SLO-3 (CRD Tool p99)
 
-The `af_create_rr` tool path always includes severity triage (severity is AF-resolved, never LLM-supplied — #1282). This adds latency:
+The `af_create_rr` tool path always includes Prometheus-backed severity triage (severity is AF-resolved from explicit alert/rule labels, never LLM-inferred — DD-AF-016). This adds latency:
 - **Tier 1** (Prometheus `/api/v1/alerts`): ~50ms — within SLO-3 budget
 - **Tier 1.5/2** (cached rules + instant query): ~100-200ms — within SLO-3 budget
-- **Tier 2.5/3** (LLM fallback): 2-15s — **exceeds** SLO-3; measured separately by SLO-8/9
 
-When triage falls to LLM tiers, the tool call will exceed SLO-3's 500ms target. This is expected and tracked independently. The `af_severity_triage_duration_seconds` histogram isolates triage latency from the overall tool latency.
+There is no LLM fallback in severity triage. The `af_severity_triage_duration_seconds` histogram isolates Prometheus-backed correlation latency from the overall tool latency; unrelated AF agent-model latency is outside this severity-triage measurement.
 
 ## Validation Plan
 

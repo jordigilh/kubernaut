@@ -47,7 +47,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 		}
 	}
 
-	presentDecisionResponse := func(fabricatedToolCallsCount, fabricatedLLMTurns int) *model.LLMResponse {
+	presentDecisionResponse := func() *model.LLMResponse {
 		return &model.LLMResponse{
 			Content: &genai.Content{
 				Role: "model",
@@ -61,8 +61,8 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 								"rca": map[string]any{
 									"severity": "critical", "confidence": 0.9,
 									"target":           "Deployment/checkout-service",
-									"tool_calls_count": fabricatedToolCallsCount,
-									"llm_turns":        fabricatedLLMTurns,
+									"tool_calls_count": 19,
+									"llm_turns":        17,
 								},
 								"options": []any{},
 							},
@@ -77,7 +77,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 		state := newMapState()
 		Expect(state.Set(session.StateKeyGroundedContentAvailable, true)).To(Succeed())
 
-		resp := presentDecisionResponse(19, 17)
+		resp := presentDecisionResponse()
 		out, err := sanitizePresentDecisionResponse(newCtx(state), resp, nil)
 
 		Expect(err).NotTo(HaveOccurred())
@@ -94,7 +94,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 	It("UT-AF-2105-002 (regression guard): overwrites args with the honest no-data payload when ungrounded", func() {
 		state := newMapState() // StateKeyGroundedContentAvailable never set -> ungrounded
 
-		resp := presentDecisionResponse(19, 17)
+		resp := presentDecisionResponse()
 		out, err := sanitizePresentDecisionResponse(newCtx(state), resp, nil)
 
 		Expect(err).NotTo(HaveOccurred())
@@ -123,6 +123,34 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 			"only kubernaut_present_decision FunctionCalls are sanitized")
 	})
 
+	It("UT-AF-2467-003: removes model severity from arguments while retaining server projection state", func() {
+		state := newMapState()
+		ctx := newCtx(state)
+		recordInvestigateGroundingState(ctx, map[string]any{
+			"summary": "Alert evidence indicates elevated memory pressure.",
+			"rca": map[string]any{
+				"severity":        "warning",
+				"confidence":      0.72,
+				"target":          "Deployment/api",
+				"rca_summary":     "Severity triage is based on a matching alert rule.",
+				"provisional":     true,
+				"total_llm_turns": 0,
+			},
+		}, true)
+
+		resp := presentDecisionResponse()
+		out, err := sanitizePresentDecisionResponse(ctx, resp, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(BeNil())
+
+		rcaMap, ok := resp.Content.Parts[0].FunctionCall.Args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rcaMap).NotTo(HaveKey("severity"),
+			"trusted severity is projected only into the server-built artifact, not model arguments")
+		Expect(rcaMap).NotTo(HaveKey("provisional"),
+			"provenance metadata is projected only into the server-built artifact")
+	})
+
 	It("UT-AF-2105-004 (regression guard): handles a nil/errored/contentless response without panicking", func() {
 		state := newMapState()
 
@@ -134,7 +162,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out).To(BeNil())
 
-		out, err = sanitizePresentDecisionResponse(newCtx(state), presentDecisionResponse(19, 17), context.DeadlineExceeded)
+		out, err = sanitizePresentDecisionResponse(newCtx(state), presentDecisionResponse(), context.DeadlineExceeded)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out).To(BeNil())
 	})

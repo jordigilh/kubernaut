@@ -253,8 +253,7 @@ graph LR
     Orchestrator --> Security
     ToolRegistry --> SessionManager
     ToolRegistry --> SevTriager
-    SevTriager -->|/api/v1/*| Prom[Prometheus]
-    SevTriager -->|Tier 2.5| LLMProv[LLM Provider]
+    SevTriager -->|alerts/rules; explicit severity only| Prom[Prometheus]
     SessionManager -->|CRD| K8s[K8s API]
     Orchestrator --> Audit
 ```
@@ -714,7 +713,7 @@ AF ServiceAccount permissions:
 | `af_http_request_duration_seconds` | method, path, status | — | Implemented |
 | `af_tool_call_duration_seconds` | tool, type | P99 < 500ms (internal), < 2s (proxy) | Implemented |
 | `af_auth_duration_seconds` | result | P99 < 200ms | Implemented |
-| `af_severity_triage_duration_seconds` | tier | P95 < 5s (Tier 1-2), P95 < 15s (Tier 2.5) | Implemented (#92) |
+| `af_severity_triage_duration_seconds` | tier | P95 < 5s for Prometheus-backed alert/rule correlation; no severity-LLM tier | Implemented (#92, DD-AF-016) |
 | `af_sse_connect_duration_seconds` | — | P99 < 1s | Planned (PR6) |
 | `af_ka_poll_duration_seconds` | endpoint | — | Planned (PR5) |
 
