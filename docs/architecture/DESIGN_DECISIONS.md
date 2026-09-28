@@ -109,6 +109,7 @@
 | DD-FLEET-003 | Full Federation Validation (`ValidateFullFederation`, GW/RO dual-capability requirement) | ✅ Approved & Implemented | 2026-07-04 | [DD-FLEET-003-full-federation-validation.md](decisions/DD-FLEET-003-full-federation-validation.md) |
 | DD-FLEET-005 | Cluster-Transparent Tool Exposure for KA's RCA Investigation (server-side pre-scope, name-transparent aliasing, no LLM-facing cluster discovery) | ✅ Approved (design) | 2026-07-25 | [DD-FLEET-005-cluster-transparent-tool-exposure.md](decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md) |
 | DD-AUDIT-008 | Audit Event Builder Registry Pattern (buildEventData decomposition) | ✅ Approved & Implemented | 2026-07-01 | [DD-AUDIT-008-audit-event-builder-registry-pattern.md](decisions/DD-AUDIT-008-audit-event-builder-registry-pattern.md) |
+| DD-AUDIT-009 | Event-Specific Typed Workflow Discovery Payloads | ✅ Approved & Implemented | 2026-09-26 | [DD-AUDIT-009-workflow-discovery-event-specific-payloads.md](decisions/DD-AUDIT-009-workflow-discovery-event-specific-payloads.md) |
 | DD-TEST-014 | Fleet E2E Remote-Cluster-Only Topology (`AllRegistrationsRemote`, Keycloak adoption, `remote-cluster` rename) | ✅ Approved & Implemented | 2026-07-04 | [DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md) |
 | DD-LLM-004 | Remove langchaingo, Generalize Anthropic-Family Client, Extract Shared OpenAI-Compatible Core | 📋 Proposed | 2026-07-06 | [DD-LLM-004-langchaingo-removal-generalized-clients.md](decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md) |
 | DD-LLM-005 | Model-Aware Reasoning/Thinking Token Support | 📋 Proposed | 2026-07-06 | [DD-LLM-005-model-aware-reasoning-support.md](decisions/DD-LLM-005-model-aware-reasoning-support.md) |
@@ -175,5 +176,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: September 21, 2026
+**Last Updated**: September 26, 2026
 **Maintained By**: Kubernaut Architecture Team

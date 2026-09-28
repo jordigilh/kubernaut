@@ -29,6 +29,7 @@ import (
 
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -64,9 +65,8 @@ var getWorkflowSchemaJSON = json.RawMessage(`{
 
 // WorkflowCatalog is the subset of workflowcatalog.Catalog's three-step
 // discovery protocol used by the custom MCP tools below. Satisfied by
-// *workflowcatalog.Catalog in production; defined here (rather than
-// importing the workflowcatalog package) so unit tests can substitute a
-// lightweight fake without standing up an informer cache/envtest.
+// *workflowcatalog.Catalog in production; tests can substitute a lightweight
+// fake without standing up an informer cache/envtest.
 //
 // Issue #1677 Phase 2d (DD-WORKFLOW-019): replaces the former
 // WorkflowDiscoveryClient/*ogenclient.Client indirection through
@@ -74,6 +74,7 @@ var getWorkflowSchemaJSON = json.RawMessage(`{
 type WorkflowCatalog interface {
 	ListActions(ctx context.Context, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.ActionTypeEntry, int, error)
 	ListWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error)
+	ListScoredWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]workflowcatalog.ScoredWorkflow, int, error)
 	GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error)
 }
 
@@ -200,7 +201,9 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
 
-	t.emitAuditEvent(ctx, filters, totalCount, durationMs)
+	t.emitAuditEvent(ctx, filters, entries, models.PaginationMetadata{
+		Offset: offset, Limit: limit, TotalCount: totalCount,
+	}, durationMs)
 
 	resp := models.ActionTypeListResponse{
 		ActionTypes: entries,
@@ -261,10 +264,14 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	}
 
 	start := time.Now()
-	workflows, totalCount, err := t.catalog.ListWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
+	candidates, totalCount, err := t.catalog.ListScoredWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return "", fmt.Errorf("listing workflows: %w", err)
+	}
+	workflows := make([]models.RemediationWorkflow, 0, len(candidates))
+	for i := range candidates {
+		workflows = append(workflows, candidates[i].Workflow)
 	}
 	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
 		for i := range workflows {
@@ -272,7 +279,9 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		}
 	}
 
-	t.emitAuditEvent(ctx, a.ActionType, filters, totalCount, durationMs)
+	t.emitAuditEvent(ctx, a.ActionType, filters, candidates, models.PaginationMetadata{
+		Offset: offset, Limit: limit, TotalCount: totalCount,
+	}, durationMs)
 
 	resp := models.WorkflowDiscoveryResponse{
 		ActionType: a.ActionType,
@@ -299,22 +308,15 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 func convertWorkflowsToDiscoveryEntries(workflows []models.RemediationWorkflow) []models.WorkflowDiscoveryEntry {
 	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
 	for _, wf := range workflows {
+		// The CRD-backed catalog retains execution metadata for KA's later
+		// validation and execution handoff. The LLM only needs candidate
+		// identity and the structured description to compare workflows.
 		entry := models.WorkflowDiscoveryEntry{
-			WorkflowID:      wf.WorkflowID,
-			WorkflowName:    wf.WorkflowName,
-			Name:            wf.Name,
-			Description:     wf.Description,
-			Version:         wf.Version,
-			ExecutionEngine: string(wf.ExecutionEngine),
-		}
-		if wf.SchemaImage != nil {
-			entry.SchemaImage = *wf.SchemaImage
-		}
-		if wf.ExecutionBundle != nil {
-			entry.ExecutionBundle = *wf.ExecutionBundle
-		}
-		if wf.ServiceAccountName != nil {
-			entry.ServiceAccountName = *wf.ServiceAccountName
+			WorkflowID:   wf.WorkflowID,
+			WorkflowName: wf.WorkflowName,
+			Name:         wf.Name,
+			Description:  wf.Description,
+			Version:      wf.Version,
 		}
 		discoveryEntries = append(discoveryEntries, entry)
 	}
@@ -329,8 +331,113 @@ type getWorkflowTool struct {
 	logger     logr.Logger
 }
 
-func (t *getWorkflowTool) Name() string                { return "get_workflow" }
-func (t *getWorkflowTool) Description() string         { return "Get a specific workflow definition by ID" }
+var kaManagedWorkflowParameterNames = map[string]struct{}{
+	"TARGET_RESOURCE_NAME":        {},
+	"TARGET_RESOURCE_KIND":        {},
+	"TARGET_RESOURCE_NAMESPACE":   {},
+	"TARGET_RESOURCE_API_VERSION": {},
+}
+
+type workflowParameterSchemaEnvelope struct {
+	Schema struct {
+		Parameters []json.RawMessage `json:"parameters"`
+	} `json:"schema"`
+}
+
+// llmWorkflowParameters returns only operational parameter definitions. The
+// target identity parameters are injected from KA's authoritative RCA target,
+// and are neither LLM-provided nor useful as LLM inputs.
+func llmWorkflowParameters(parameters *json.RawMessage) (json.RawMessage, error) {
+	if parameters == nil || strings.TrimSpace(string(*parameters)) == "" || strings.TrimSpace(string(*parameters)) == "null" {
+		return nil, nil
+	}
+
+	var envelope workflowParameterSchemaEnvelope
+	if err := json.Unmarshal(*parameters, &envelope); err != nil {
+		return nil, fmt.Errorf("decoding workflow parameter schema: %w", err)
+	}
+	if envelope.Schema.Parameters == nil {
+		return nil, fmt.Errorf("workflow parameter schema is missing schema.parameters")
+	}
+
+	filtered, err := projectOperationalWorkflowParameters(envelope.Schema.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	envelope.Schema.Parameters = filtered
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling LLM workflow parameter schema: %w", err)
+	}
+	return encoded, nil
+}
+
+func projectOperationalWorkflowParameters(parameters []json.RawMessage) ([]json.RawMessage, error) {
+	filtered := make([]json.RawMessage, 0, len(parameters))
+	for i, rawParameter := range parameters {
+		var parameter struct {
+			Name      string   `json:"name"`
+			DependsOn []string `json:"dependsOn"`
+		}
+		if err := json.Unmarshal(rawParameter, &parameter); err != nil {
+			return nil, fmt.Errorf("decoding workflow parameter %d: %w", i, err)
+		}
+		if parameter.Name == "" {
+			return nil, fmt.Errorf("workflow parameter %d is missing name", i)
+		}
+		if isKAManagedWorkflowParameter(parameter.Name) {
+			continue
+		}
+
+		filteredParameter, err := stripKAManagedParameterDependencies(rawParameter, parameter.DependsOn)
+		if err != nil {
+			return nil, fmt.Errorf("projecting workflow parameter %d dependencies: %w", i, err)
+		}
+		filtered = append(filtered, filteredParameter)
+	}
+	return filtered, nil
+}
+
+func stripKAManagedParameterDependencies(parameter json.RawMessage, dependencies []string) (json.RawMessage, error) {
+	filteredDependencies := make([]string, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		if !isKAManagedWorkflowParameter(dependency) {
+			filteredDependencies = append(filteredDependencies, dependency)
+		}
+	}
+	if len(filteredDependencies) == len(dependencies) {
+		return parameter, nil
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(parameter, &fields); err != nil {
+		return nil, fmt.Errorf("decoding parameter fields: %w", err)
+	}
+	if len(filteredDependencies) == 0 {
+		delete(fields, "dependsOn")
+	} else {
+		dependenciesJSON, err := json.Marshal(filteredDependencies)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling dependencies: %w", err)
+		}
+		fields["dependsOn"] = dependenciesJSON
+	}
+	filteredParameter, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling parameter fields: %w", err)
+	}
+	return filteredParameter, nil
+}
+
+func isKAManagedWorkflowParameter(name string) bool {
+	_, managed := kaManagedWorkflowParameterNames[strings.ToUpper(strings.TrimSpace(name))]
+	return managed
+}
+
+func (t *getWorkflowTool) Name() string { return "get_workflow" }
+func (t *getWorkflowTool) Description() string {
+	return "Get a workflow's structured description and operational parameter schema by ID"
+}
 func (t *getWorkflowTool) Parameters() json.RawMessage { return getWorkflowSchemaJSON }
 
 func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -367,14 +474,23 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 
 	t.emitAuditEvents(ctx, a.WorkflowID, filters, durationMs)
 
-	// DD-WORKFLOW-018/Issue #1677 Phase 2d (user-confirmed): the on-demand
-	// success-metrics overlay (TotalExecutions/SuccessfulExecutions/
-	// ActualSuccessRate) is dropped entirely rather than migrated -- it was
-	// best-effort display telemetry from an abandoned success-rate-weighted
-	// selection design with zero use in the actual scoring logic.
-	data, err := json.Marshal(wf)
+	// Keep the complete Catalog model intact for KA's validation and later
+	// execution handoff. The tool response is a separate allowlisted LLM view:
+	// structured description plus operational parameter definitions only.
+	parameters, err := llmWorkflowParameters(wf.Parameters)
 	if err != nil {
-		return "", fmt.Errorf("marshaling workflow response: %w", err)
+		return "", fmt.Errorf("projecting workflow parameters for LLM: %w", err)
+	}
+	response := struct {
+		Description models.StructuredDescription `json:"description"`
+		Parameters  json.RawMessage              `json:"parameters,omitempty"`
+	}{
+		Description: wf.Description,
+		Parameters:  parameters,
+	}
+	data, err := json.Marshal(response)
+	if err != nil {
+		return "", fmt.Errorf("marshaling LLM workflow response: %w", err)
 	}
 	return string(data), nil
 }

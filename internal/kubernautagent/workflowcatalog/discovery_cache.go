@@ -77,6 +77,18 @@ func (c *Catalog) listActionsFromCache(ctx context.Context, filters *models.Work
 // listWorkflowsByActionTypeFromCache is ListWorkflowsByActionType's
 // cache-backed implementation (Step 2).
 func (c *Catalog) listWorkflowsByActionTypeFromCache(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error) {
+	candidates, totalCount, err := c.listScoredWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	workflows := make([]models.RemediationWorkflow, 0, len(candidates))
+	for i := range candidates {
+		workflows = append(workflows, candidates[i].Workflow)
+	}
+	return workflows, totalCount, nil
+}
+
+func (c *Catalog) listScoredWorkflowsByActionTypeFromCache(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]ScoredWorkflow, int, error) {
 	workflows, err := c.cache.ListWorkflowsByActionType(ctx, actionType)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list workflows for action type %s: %w", actionType, err)
@@ -149,13 +161,12 @@ func (c *Catalog) getWorkflowWithContextFiltersFromCache(ctx context.Context, wo
 	return &wf, nil
 }
 
-// scoredWorkflow pairs a converted models.RemediationWorkflow with its #220
-// final_score, so filterAndScoreCachedWorkflows can sort before discarding
-// the score (models.RemediationWorkflow itself carries no final_score field
-// -- that value is transient, computed only for a specific query's filters).
-type scoredWorkflow struct {
-	workflow models.RemediationWorkflow
-	score    float64
+// ScoredWorkflow carries the cache-computed ranking score alongside its
+// workflow. The score is query-specific and is retained for audit evidence;
+// callers must not add it to the LLM-facing WorkflowDiscoveryEntry.
+type ScoredWorkflow struct {
+	Workflow   models.RemediationWorkflow
+	FinalScore float64
 }
 
 // filterAndScoreCachedWorkflows converts every CRD in workflows to
@@ -169,7 +180,7 @@ type scoredWorkflow struct {
 // whole call rather than silently dropping the offending workflow: an admin
 // wrote invalid CRD content, which is exactly the kind of problem an error
 // response (surfaced to a caller/alert) should not hide.
-func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, filters *models.WorkflowDiscoveryFilters) ([]models.RemediationWorkflow, error) {
+func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, filters *models.WorkflowDiscoveryFilters) ([]ScoredWorkflow, error) {
 	var dl *models.DetectedLabels
 	var customLabels map[string][]string
 	if filters != nil {
@@ -177,7 +188,7 @@ func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, f
 		customLabels = filters.CustomLabels
 	}
 
-	scored := make([]scoredWorkflow, 0, len(workflows))
+	scored := make([]ScoredWorkflow, 0, len(workflows))
 	for i := range workflows {
 		rw := &workflows[i]
 		if !matchesMandatoryLabels(crdLabelsToMandatoryLabels(rw.Spec.Labels), filters) {
@@ -200,21 +211,16 @@ func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, f
 		boost := detectedLabelsBoost(detectedLabels, dl)
 		custom := customLabelsBoost(crdCustomLabelsToModel(rw.Spec.CustomLabels), customLabels)
 		penalty := detectedLabelsPenalty(detectedLabels, dl)
-		scored = append(scored, scoredWorkflow{workflow: wf, score: finalScore(boost, custom, penalty)})
+		scored = append(scored, ScoredWorkflow{Workflow: wf, FinalScore: finalScore(boost, custom, penalty)})
 	}
 
 	sort.SliceStable(scored, func(i, j int) bool {
-		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
+		if scored[i].FinalScore != scored[j].FinalScore {
+			return scored[i].FinalScore > scored[j].FinalScore
 		}
-		return scored[i].workflow.WorkflowID < scored[j].workflow.WorkflowID
+		return scored[i].Workflow.WorkflowID < scored[j].Workflow.WorkflowID
 	})
-
-	result := make([]models.RemediationWorkflow, len(scored))
-	for i, s := range scored {
-		result[i] = s.workflow
-	}
-	return result, nil
+	return scored, nil
 }
 
 // sortActionTypeEntries sorts entries alphabetically by ActionType -- mirrors

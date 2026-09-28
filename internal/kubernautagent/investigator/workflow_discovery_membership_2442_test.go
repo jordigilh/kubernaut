@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -43,6 +44,10 @@ func (discoveredWorkflowCatalog2442) ListActions(context.Context, *models.Workfl
 
 func (discoveredWorkflowCatalog2442) ListWorkflowsByActionType(context.Context, string, *models.WorkflowDiscoveryFilters, int, int) ([]models.RemediationWorkflow, int, error) {
 	return []models.RemediationWorkflow{{WorkflowID: "workflow-presented"}}, 1, nil
+}
+
+func (discoveredWorkflowCatalog2442) ListScoredWorkflowsByActionType(context.Context, string, *models.WorkflowDiscoveryFilters, int, int) ([]workflowcatalog.ScoredWorkflow, int, error) {
+	return []workflowcatalog.ScoredWorkflow{{Workflow: models.RemediationWorkflow{WorkflowID: "workflow-presented"}, FinalScore: 0.5}}, 1, nil
 }
 
 func (discoveredWorkflowCatalog2442) GetWorkflowWithContextFilters(context.Context, string, *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {

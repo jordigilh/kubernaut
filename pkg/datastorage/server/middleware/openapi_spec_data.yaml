@@ -1853,6 +1853,8 @@ components:
             - $ref: '#/components/schemas/NotificationAuditPayload'
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
+            - $ref: '#/components/schemas/WorkflowActionsListedAuditPayload'
+            - $ref: '#/components/schemas/WorkflowCandidatesListedAuditPayload'
             - $ref: '#/components/schemas/WorkflowDiscoveryAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -2005,8 +2007,8 @@ components:
               'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'authwebhook.workflow.registration_failed': '#/components/schemas/AuthwebhookWorkflowRegistrationFailedPayload'
-              'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
-              'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.actions_listed': '#/components/schemas/WorkflowActionsListedAuditPayload'
+              'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowCandidatesListedAuditPayload'
               'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.selection_validated': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
@@ -4193,12 +4195,60 @@ components:
           description: Updated description
           example: "Updated workflow description"
 
-    # Workflow Discovery Events (DD-KA-017 formerly DD-HAPI-017, DD-WORKFLOW-014 v3.0)
+    # Workflow Discovery Events (DD-KA-017, DD-WORKFLOW-014 v3.0, DD-AUDIT-009)
+    WorkflowActionsListedAuditPayload:
+      type: object
+      required: [event_type, query, results, search_metadata]
+      description: |
+        Event-specific audit payload for Step 1 action choices returned by
+        KubernautAgent. The actions field is optional only for compatibility
+        with historical records written before Issue #2459.
+        Authority: DD-AUDIT-009, BR-AUDIT-023/025.
+      properties:
+        event_type:
+          type: string
+          enum: ['workflow.catalog.actions_listed']
+          description: Discriminator matching the parent audit event type.
+        query:
+          $ref: '#/components/schemas/QueryMetadata'
+        results:
+          $ref: '#/components/schemas/WorkflowActionsResultsMetadata'
+        search_metadata:
+          $ref: '#/components/schemas/SearchExecutionMetadata'
+
+    WorkflowCandidatesListedAuditPayload:
+      type: object
+      required: [event_type, query, results, search_metadata]
+      description: |
+        Event-specific audit payload for Step 2 workflow candidates returned
+        by KubernautAgent. action_type and the results.workflows list are
+        optional only for compatibility with historical records written
+        before Issue #2459.
+        Authority: DD-AUDIT-009, BR-AUDIT-023/025/026.
+      properties:
+        event_type:
+          type: string
+          enum: ['workflow.catalog.workflows_listed']
+          description: Discriminator matching the parent audit event type.
+        action_type:
+          type: string
+          description: Action type whose ranked workflow candidates were listed.
+          example: IncreaseMemoryLimits
+        query:
+          $ref: '#/components/schemas/QueryMetadata'
+        results:
+          $ref: '#/components/schemas/WorkflowCandidatesResultsMetadata'
+        search_metadata:
+          $ref: '#/components/schemas/SearchExecutionMetadata'
+
     WorkflowDiscoveryAuditPayload:
       type: object
       required: [event_type, query, results, search_metadata]
       description: |
-        Audit event payload for three-step workflow discovery operations.
+        Legacy typed payload for Step 3 workflow retrieval/selection validation.
+        Step 1 and Step 2 use their event-specific schemas above. The narrowed
+        event_type enum avoids overlapping discriminator matches while keeping
+        historical Step 1/Step 2 records readable through their new optional fields.
         Authority: DD-KA-017 (Three-Step Workflow Discovery Integration, formerly DD-HAPI-017)
         Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
         Replaces WorkflowSearchAuditPayload (search endpoint removed).
@@ -4206,8 +4256,6 @@ components:
         event_type:
           type: string
           enum:
-            - 'workflow.catalog.actions_listed'
-            - 'workflow.catalog.workflows_listed'
             - 'workflow.catalog.workflow_retrieved'
             - 'workflow.catalog.selection_validated'
           description: Discriminator for event data union type (matches parent event_type)
@@ -4226,8 +4274,13 @@ components:
         top_k:
           type: integer
           format: int32
-          description: Maximum number of results to return
+          description: Maximum number of results requested for this page
           example: 5
+        offset:
+          type: integer
+          format: int32
+          description: Zero-based offset of the returned page; absent on historical records.
+          example: 10
         min_score:
           type: number
           format: double
@@ -4256,6 +4309,74 @@ components:
           items:
             $ref: '#/components/schemas/WorkflowResultAudit'
 
+    WorkflowActionsResultsMetadata:
+      type: object
+      required: [total_found, returned]
+      description: Step 1 action choices and page counts (BR-AUDIT-025).
+      properties:
+        total_found:
+          type: integer
+          format: int32
+          description: Total number of action types matching the discovery query.
+        returned:
+          type: integer
+          format: int32
+          description: Number of action types included in this page.
+        actions:
+          type: array
+          description: Action entries actually returned by Step 1; omitted on historical records.
+          items:
+            $ref: '#/components/schemas/WorkflowActionResultAudit'
+
+    WorkflowActionResultAudit:
+      type: object
+      required: [action_type, description, workflow_count]
+      description: An action choice returned to the workflow-selection agent.
+      properties:
+        action_type:
+          type: string
+          description: Action taxonomy identifier.
+          example: IncreaseMemoryLimits
+        description:
+          $ref: '#/components/schemas/WorkflowActionDescriptionAudit'
+        workflow_count:
+          type: integer
+          format: int32
+          description: Number of matching workflows for this action type.
+
+    WorkflowActionDescriptionAudit:
+      type: object
+      required: [what, when_to_use]
+      description: Structured action taxonomy description.
+      properties:
+        what:
+          type: string
+        when_to_use:
+          type: string
+        when_not_to_use:
+          type: string
+        preconditions:
+          type: string
+
+    WorkflowCandidatesResultsMetadata:
+      type: object
+      required: [total_found, returned]
+      description: Step 2 ranked workflow candidates and page counts (BR-AUDIT-026).
+      properties:
+        total_found:
+          type: integer
+          format: int32
+          description: Total number of workflows matching the action type and query.
+        returned:
+          type: integer
+          format: int32
+          description: Number of workflow candidates included in this page.
+        workflows:
+          type: array
+          description: Ranked workflow candidates actually returned; omitted on historical records.
+          items:
+            $ref: '#/components/schemas/WorkflowResultAudit'
+
     WorkflowResultAudit:
       type: object
       required: [workflow_id, title, rank, scoring]
@@ -4275,6 +4396,20 @@ components:
           format: int32
           description: Search result ranking (1-indexed)
           example: 1
+        version:
+          type: string
+          description: Workflow semantic version at discovery time.
+          example: 1.2.3
+        final_score:
+          type: number
+          format: double
+          description: |
+            Cache-computed normalized catalog ranking score (0.0-1.0). Optional
+            only for historical record compatibility; new Step 2 events must
+            populate it from the score used to order candidates.
+          example: 0.81
+          minimum: 0
+          maximum: 1
         scoring:
           $ref: '#/components/schemas/ScoringV1Audit'
         owner:
@@ -4297,7 +4432,10 @@ components:
     ScoringV1Audit:
       type: object
       required: [confidence]
-      description: V1.0 scoring (confidence only per DD-WORKFLOW-004 v2.0)
+      description: |
+        Legacy V1.0 scoring alias. On workflow.catalog.workflows_listed,
+        confidence mirrors final_score from the catalog's label-ranking
+        calculation; it is not the LLM's decision confidence.
       properties:
         confidence:
           type: number
@@ -5043,10 +5181,10 @@ components:
           additionalProperties: true
           description: Arguments passed to tool (flexible for different tools)
         tool_result:
-          description: Full result returned by tool
+          description: Audit-safe result content; workflow parameter schemas are omitted from get_workflow records.
         tool_result_preview:
           type: string
-          description: First 500 characters of tool result
+          description: Preview of the audit-safe tool result (at most 500 characters).
 
     WorkflowValidationPayload:
       type: object

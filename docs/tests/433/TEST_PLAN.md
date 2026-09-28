@@ -429,9 +429,9 @@ For Anthropic and Mistral, which accept custom endpoint configuration, Chat roun
 | IT-KA-433-040 | `get_series` sends `match[]`, `limit`, `start`, `end` to `/api/v1/series` | BR-HAPI-433-003 |
 | IT-KA-433-041 | `get_series` defaults `start` to 1h ago and `end` to now when not provided | BR-HAPI-433-003 |
 | IT-KA-433-042 | `get_series` injects `_truncated` hint when response contains exactly `MetadataLimit` series | BR-HAPI-433-003 |
-| IT-KA-433-033 | list_available_actions queries DataStorage API | BR-HAPI-433 (DD-HAPI-017) |
-| IT-KA-433-034 | list_workflows searches DataStorage with criteria | BR-HAPI-433 (DD-HAPI-017) |
-| IT-KA-433-035 | get_workflow retrieves specific workflow definition | BR-HAPI-433 (DD-HAPI-017) |
+| IT-KA-433-033 | list_available_actions queries the KA Catalog | BR-HAPI-433 (DD-HAPI-017) |
+| IT-KA-433-034 | list_workflows searches the KA Catalog with criteria | BR-HAPI-433 (DD-HAPI-017) |
+| IT-KA-433-035 | get_workflow resolves a workflow UUID in the KA Catalog and returns its LLM-safe projection | BR-HAPI-433 (DD-HAPI-017) |
 | IT-KA-433-036 | get_resource_context combines K8s owner chain + DS remediation history | BR-HAPI-433 (DD-HAPI-017) |
 | IT-KA-433-037 | Summarizer produces shortened output via secondary llm.Client | BR-HAPI-433-002 |
 

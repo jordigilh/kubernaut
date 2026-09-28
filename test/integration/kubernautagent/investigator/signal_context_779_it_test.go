@@ -28,10 +28,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // paramCapturingDS captures the filters/args passed to each catalog method
@@ -64,6 +65,19 @@ func (p *paramCapturingDS) ListWorkflowsByActionType(_ context.Context, actionTy
 	return []models.RemediationWorkflow{
 		{WorkflowID: "wf-restart-v1", WorkflowName: "restart-v1", Name: "Restart Pod", Description: models.StructuredDescription{What: "restart", WhenToUse: "crash"}},
 	}, 1, nil
+}
+
+func (p *paramCapturingDS) ListScoredWorkflowsByActionType(_ context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, _, _ int) ([]workflowcatalog.ScoredWorkflow, int, error) {
+	p.listWorkflowsActionType = actionType
+	p.listWorkflowsFilters = filters
+	p.workflowsCalled = true
+	return []workflowcatalog.ScoredWorkflow{{
+		Workflow: models.RemediationWorkflow{
+			WorkflowID: "wf-restart-v1", WorkflowName: "restart-v1", Name: "Restart Pod",
+			Description: models.StructuredDescription{What: "restart", WhenToUse: "crash"},
+		},
+		FinalScore: 0.5,
+	}}, 1, nil
 }
 
 func (p *paramCapturingDS) GetWorkflowWithContextFilters(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {

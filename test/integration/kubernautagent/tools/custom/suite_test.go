@@ -19,6 +19,7 @@ package custom_test
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
@@ -59,6 +61,9 @@ const (
 var (
 	dsInfra       *infrastructure.DSBootstrapInfra
 	ogenClient    *ogenclient.Client
+	dsAuditClient sharedaudit.DataStorageClient
+	dsHTTPClient  *http.Client
+	dsURL         string
 	workflowUUIDs map[string]string
 
 	// #1677 Phase 2e (DD-WORKFLOW-019): the 3 discovery tools are now
@@ -148,9 +153,11 @@ var _ = SynchronizedBeforeSuite(
 			}
 		}
 
-		dsURL := fmt.Sprintf("https://localhost:%d", kaDataStoragePort)
+		dsURL = fmt.Sprintf("https://localhost:%d", kaDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, token, 5*time.Second)
 		ogenClient = dsClients.OpenAPIClient
+		dsAuditClient = dsClients.AuditClient
+		dsHTTPClient = dsClients.HTTPClient
 
 		// #1677 Phase 2e: build KA's own informer-backed catalog against the
 		// same envtest cluster, one per Ginkgo process (mirrors production:

@@ -1,0 +1,10 @@
+# Local-only build/test artifacts are consumed by host-side helpers, not image builds.
+/.git/
+/bin/
+/ci-images-*/
+/.codanna/
+/.codegraph/
+/.codegraph-colbymchenry/
+/.serena/
+/.zvec-grep/
+coverage_*

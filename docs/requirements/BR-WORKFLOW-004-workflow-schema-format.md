@@ -165,8 +165,8 @@ spec:
 | `spec.labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
 | `spec.customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
 | `spec.detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from Kubernaut Agent (KA) during workflow discovery. |
-| `spec.execution` | object | No | Execution engine configuration |
-| `spec.dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Validated at registration and execution time. See DD-WE-006. |
+| `spec.execution` | object | No | Execution engine configuration retained for KA/execution; not part of the LLM workflow-selection projection |
+| `spec.dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Retained for execution and not exposed to the LLM. See DD-WE-006. |
 | `spec.parameters` | array | Yes | Workflow input parameters (at least one required) |
 | `spec.rollbackParameters` | array | No | Parameters needed for rollback |
 
@@ -302,7 +302,7 @@ Each parameter is an object with the following fields:
 | `name` | string | Yes | Parameter name (UPPER_SNAKE_CASE per DD-WORKFLOW-003) |
 | `type` | string | Yes | One of: `string`, `integer`, `boolean`, `array` |
 | `required` | boolean | Yes | Whether the parameter must be provided |
-| `description` | string | Yes | Human-readable description (shown to LLM) |
+| `description` | string | Yes | Human-readable description (shown to LLM for operational parameters; KA-managed target parameter definitions are stripped per DD-WORKFLOW-003/DD-KA-006) |
 | `enum` | array of strings | No | Allowed values (for string type) |
 | `pattern` | string | No | Regex pattern for validation (for string type) |
 | `minimum` | integer | No | Minimum value (for integer type) |

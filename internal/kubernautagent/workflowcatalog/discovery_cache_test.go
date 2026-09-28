@@ -71,7 +71,7 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1677 Phase 2b)", func() 
 		got, err := filterAndScoreCachedWorkflows(workflows, filters)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(got).To(HaveLen(1))
-		Expect(got[0].WorkflowName).To(Equal("wf-critical"))
+		Expect(got[0].Workflow.WorkflowName).To(Equal("wf-critical"))
 	})
 
 	It("UT-KA-1677-614-002: nil filters matches every workflow (unconstrained discovery)", func() {
@@ -95,8 +95,25 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1677 Phase 2b)", func() 
 		got, err := filterAndScoreCachedWorkflows([]rwv1alpha1.RemediationWorkflow{wfNoBoost, wfBoosted}, &models.WorkflowDiscoveryFilters{DetectedLabels: gitOpsDetected})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(got).To(HaveLen(2))
-		Expect(got[0].WorkflowName).To(Equal("wf-boosted"), "higher final_score (gitOpsManaged boost) sorts first")
-		Expect(got[1].WorkflowName).To(Equal("wf-no-boost"))
+		Expect(got[0].Workflow.WorkflowName).To(Equal("wf-boosted"), "higher final_score (gitOpsManaged boost) sorts first")
+		Expect(got[1].Workflow.WorkflowName).To(Equal("wf-no-boost"))
+	})
+
+	It("UT-KA-2459-002: preserves the exact cache score used to order returned candidates", func() {
+		filter := &models.DetectedLabels{GitOpsManaged: true}
+		noBoost := rwFixture("wf-no-boost", nil)
+		noBoost.Status.WorkflowID = "zzz-no-boost"
+		boosted := rwFixture("wf-boosted", nil)
+		boosted.Status.WorkflowID = "aaa-boosted"
+		boosted.Spec.DetectedLabels = rawDetectedLabelsJSON(`{"gitOpsManaged":true}`)
+
+		got, err := filterAndScoreCachedWorkflows([]rwv1alpha1.RemediationWorkflow{noBoost, boosted}, &models.WorkflowDiscoveryFilters{DetectedLabels: filter})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(HaveLen(2))
+		Expect(got[0].Workflow.WorkflowID).To(Equal("aaa-boosted"))
+		Expect(got[0].FinalScore).To(BeNumerically("~", 0.51, 1e-9))
+		Expect(got[1].Workflow.WorkflowID).To(Equal("zzz-no-boost"))
+		Expect(got[1].FinalScore).To(BeNumerically("~", 0.49, 1e-9))
 	})
 
 	It("UT-KA-1677-614-004: propagates a converter error (e.g. malformed detectedLabels JSON) instead of silently dropping the workflow", func() {

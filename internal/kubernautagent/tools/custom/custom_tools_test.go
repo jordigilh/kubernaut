@@ -29,9 +29,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // toolCtx returns a context with a representative SignalContext attached.
@@ -62,6 +63,7 @@ type fakeWorkflowDS struct {
 	listWorkflowsOffset     int
 	listWorkflowsLimit      int
 	listWorkflowsEntries    []models.RemediationWorkflow
+	listScoredWorkflows     []workflowcatalog.ScoredWorkflow
 	listWorkflowsTotal      int
 	listWorkflowsErr        error
 
@@ -84,6 +86,21 @@ func (f *fakeWorkflowDS) ListWorkflowsByActionType(_ context.Context, actionType
 	f.listWorkflowsOffset = offset
 	f.listWorkflowsLimit = limit
 	return f.listWorkflowsEntries, f.listWorkflowsTotal, f.listWorkflowsErr
+}
+
+func (f *fakeWorkflowDS) ListScoredWorkflowsByActionType(_ context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]workflowcatalog.ScoredWorkflow, int, error) {
+	f.listWorkflowsActionType = actionType
+	f.listWorkflowsFilters = filters
+	f.listWorkflowsOffset = offset
+	f.listWorkflowsLimit = limit
+	if f.listScoredWorkflows != nil {
+		return f.listScoredWorkflows, f.listWorkflowsTotal, f.listWorkflowsErr
+	}
+	candidates := make([]workflowcatalog.ScoredWorkflow, 0, len(f.listWorkflowsEntries))
+	for _, workflow := range f.listWorkflowsEntries {
+		candidates = append(candidates, workflowcatalog.ScoredWorkflow{Workflow: workflow, FinalScore: 0.5})
+	}
+	return candidates, f.listWorkflowsTotal, f.listWorkflowsErr
 }
 
 func (f *fakeWorkflowDS) GetWorkflowWithContextFilters(_ context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
@@ -607,6 +624,150 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			Expect(fake.listWorkflowsLimit).To(Equal(10), "Limit should default to 10 (decoded from invalid cursor with fallback)")
 
 			Expect(result).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-2466: LLM-facing workflow projection", func() {
+		It("UT-KA-2466-001: list_workflows includes candidate identity and description but no execution metadata", func() {
+			bundle := "registry.example/workflows/oom@sha256:1234"
+			schemaImage := "registry.example/workflows/oom-schema:v1"
+			serviceAccount := "workflow-runner"
+			fake := &fakeWorkflowDS{
+				listWorkflowsTotal: 1,
+				listWorkflowsEntries: []models.RemediationWorkflow{{
+					WorkflowID:         uuid.NewString(),
+					WorkflowName:       "oom-increase-memory-v1",
+					Name:               "OOM Increase Memory",
+					Version:            "1.0.0",
+					Description:        models.StructuredDescription{What: "Increase a pod memory limit", WhenToUse: "OOMKilled due to insufficient memory"},
+					ExecutionEngine:    models.ExecutionEngine("tekton"),
+					ExecutionBundle:    &bundle,
+					SchemaImage:        &schemaImage,
+					ServiceAccountName: &serviceAccount,
+				}},
+			}
+
+			result, err := newTestTools(fake)[1].Execute(toolCtx(), json.RawMessage(`{"action_type":"IncreaseMemoryLimits"}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			var response struct {
+				Workflows []map[string]json.RawMessage `json:"workflows"`
+			}
+			Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+			Expect(response.Workflows).To(HaveLen(1))
+			candidate := response.Workflows[0]
+			Expect(candidate).To(HaveKey("workflowId"))
+			Expect(candidate).To(HaveKey("workflowName"))
+			Expect(candidate).To(HaveKey("name"))
+			Expect(candidate).To(HaveKey("version"))
+			Expect(candidate).To(HaveKey("description"))
+			Expect(candidate).NotTo(HaveKey("schemaImage"))
+			Expect(candidate).NotTo(HaveKey("executionBundle"))
+			Expect(candidate).NotTo(HaveKey("executionEngine"))
+			Expect(candidate).NotTo(HaveKey("serviceAccountName"))
+			Expect(result).NotTo(ContainSubstring(bundle))
+			Expect(result).NotTo(ContainSubstring(schemaImage))
+			Expect(result).NotTo(ContainSubstring(serviceAccount))
+		})
+
+		It("UT-KA-2466-002: get_workflow exposes only the description and operational parameter schema", func() {
+			workflowID := uuid.NewString()
+			bundle := "registry.example/workflows/oom@sha256:5678"
+			schemaImage := "registry.example/workflows/oom-schema:v1"
+			serviceAccount := "workflow-runner"
+			engineConfig := json.RawMessage(`{"playbookPath":"private-playbook.yml"}`)
+			content := `{"metadata":{"annotations":{"test.kubernaut.ai/audit-sentinel":"synthetic-sensitive-audit-sentinel-2459"}},"spec":{"execution":{"engine":"ansible","bundle":"registry.example/workflows/oom@sha256:5678"},"dependencies":{"secrets":[{"name":"git-creds"}]},"serviceAccountName":"workflow-runner"}}`
+			parameters := json.RawMessage(`{"schema":{"parameters":[
+				{"name":"TARGET_RESOURCE_NAME","type":"string","required":true,"description":"KA injects this"},
+				{"name":"TARGET_RESOURCE_KIND","type":"string","required":true,"description":"KA injects this"},
+				{"name":"TARGET_RESOURCE_NAMESPACE","type":"string","required":true,"description":"KA injects this"},
+				{"name":"TARGET_RESOURCE_API_VERSION","type":"string","required":false,"description":"KA injects this"},
+				{"name":"MEMORY_LIMIT_BASELINE","type":"string","required":true,"description":"Current pod memory limit"},
+				{"name":"MEMORY_LIMIT_NEW","type":"string","required":true,"description":"New pod memory limit","enum":["512Mi","1Gi"],"pattern":"^[0-9]+(Mi|Gi)$","default":"512Mi","dependsOn":["TARGET_RESOURCE_KIND","MEMORY_LIMIT_BASELINE"]},
+				{"name":"RESTART_AFTER_UPDATE","type":"boolean","required":false,"description":"Restart the workload after updating memory","dependsOn":["TARGET_RESOURCE_NAME"]}
+			]}}`)
+			fake := &fakeWorkflowDS{getWorkflowResult: &models.RemediationWorkflow{
+				WorkflowID:         workflowID,
+				WorkflowName:       "oom-increase-memory-v1",
+				Name:               "OOM Increase Memory",
+				Version:            "1.0.0",
+				Description:        models.StructuredDescription{What: "Increase a pod memory limit", WhenToUse: "OOMKilled due to insufficient memory"},
+				Content:            content,
+				ContentHash:        "sensitive-content-hash",
+				ActionType:         "IncreaseMemoryLimits",
+				Parameters:         &parameters,
+				ExecutionEngine:    models.ExecutionEngine("tekton"),
+				SchemaImage:        &schemaImage,
+				ExecutionBundle:    &bundle,
+				EngineConfig:       &engineConfig,
+				ServiceAccountName: &serviceAccount,
+			}}
+
+			result, err := newTestTools(fake)[2].Execute(toolCtx(), json.RawMessage(fmt.Sprintf(`{"workflow_id":%q}`, workflowID)))
+			Expect(err).NotTo(HaveOccurred())
+
+			var response map[string]json.RawMessage
+			Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+			Expect(response).To(HaveKey("description"))
+			Expect(response).To(HaveKey("parameters"))
+			Expect(response).To(HaveLen(2), "get_workflow should return only the selection description and permitted parameter schema")
+			Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_NAME"))
+			Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_KIND"))
+			Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_NAMESPACE"))
+			Expect(result).NotTo(ContainSubstring("TARGET_RESOURCE_API_VERSION"))
+			Expect(result).NotTo(ContainSubstring("synthetic-sensitive-audit-sentinel-2459"),
+				"raw CRD content outside the allowed projection must stay hidden")
+			Expect(result).NotTo(ContainSubstring("executionEngine"))
+			Expect(result).NotTo(ContainSubstring("executionBundle"))
+			Expect(result).NotTo(ContainSubstring("serviceAccountName"))
+			Expect(result).NotTo(ContainSubstring("dependencies"))
+			Expect(result).NotTo(ContainSubstring("contentHash"))
+			Expect(result).NotTo(ContainSubstring("private-playbook.yml"))
+			Expect(result).NotTo(ContainSubstring("git-creds"))
+
+			var parameterResponse struct {
+				Schema struct {
+					Parameters []map[string]json.RawMessage `json:"parameters"`
+				} `json:"schema"`
+			}
+			Expect(json.Unmarshal(response["parameters"], &parameterResponse)).To(Succeed())
+			Expect(parameterResponse.Schema.Parameters).To(HaveLen(3))
+			Expect(parameterResponse.Schema.Parameters[0]).To(HaveKeyWithValue("name", json.RawMessage(`"MEMORY_LIMIT_BASELINE"`)))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKeyWithValue("name", json.RawMessage(`"MEMORY_LIMIT_NEW"`)))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("type"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("required"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("description"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("enum"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("pattern"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("default"))
+			Expect(parameterResponse.Schema.Parameters[1]).To(HaveKey("dependsOn"))
+			var dependsOn []string
+			Expect(json.Unmarshal(parameterResponse.Schema.Parameters[1]["dependsOn"], &dependsOn)).To(Succeed())
+			Expect(dependsOn).To(Equal([]string{"MEMORY_LIMIT_BASELINE"}))
+			Expect(parameterResponse.Schema.Parameters[2]).To(HaveKeyWithValue("name", json.RawMessage(`"RESTART_AFTER_UPDATE"`)))
+			Expect(parameterResponse.Schema.Parameters[2]).NotTo(HaveKey("dependsOn"),
+				"a reference to a hidden KA-managed target parameter must not leak through an operational definition")
+			Expect(*fake.getWorkflowResult.Parameters).To(Equal(parameters), "LLM projection must not mutate the full Catalog record")
+		})
+
+		It("UT-KA-2466-004: fails closed when the stored parameter schema is malformed", func() {
+			workflowID := uuid.NewString()
+			invalidSchemas := []json.RawMessage{
+				json.RawMessage(`{"schema":`),
+				json.RawMessage(`{"schema":{}}`),
+				json.RawMessage(`{"schema":{"parameters":[{"type":"string"}]}}`),
+				json.RawMessage(`{"schema":{"parameters":[{"name":"MEMORY_LIMIT_NEW","dependsOn":"TARGET_RESOURCE_NAME"}]}}`),
+			}
+			for _, invalidSchema := range invalidSchemas {
+				fake := &fakeWorkflowDS{getWorkflowResult: &models.RemediationWorkflow{
+					WorkflowID: workflowID,
+					Parameters: &invalidSchema,
+				}}
+				result, err := newTestTools(fake)[2].Execute(toolCtx(), json.RawMessage(fmt.Sprintf(`{"workflow_id":%q}`, workflowID)))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("projecting workflow parameters for LLM"))
+				Expect(result).To(BeEmpty(), "malformed schema content must never be returned as a fallback")
+			}
 		})
 	})
 })

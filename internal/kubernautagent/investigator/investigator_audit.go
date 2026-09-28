@@ -275,7 +275,7 @@ func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
 	for i, m := range messages {
 		entry := map[string]interface{}{
 			"role":    m.Role,
-			"content": m.Content,
+			"content": auditSafeToolResult(m.ToolName, m.Content),
 		}
 		if m.ToolCallID != "" {
 			entry["tool_call_id"] = m.ToolCallID

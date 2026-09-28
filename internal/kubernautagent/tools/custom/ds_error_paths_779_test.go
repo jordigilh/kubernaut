@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -42,6 +43,9 @@ func (e *errorDS) ListActions(_ context.Context, _ *models.WorkflowDiscoveryFilt
 	return nil, 0, e.actionsErr
 }
 func (e *errorDS) ListWorkflowsByActionType(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters, _, _ int) ([]models.RemediationWorkflow, int, error) {
+	return nil, 0, e.workflowsErr
+}
+func (e *errorDS) ListScoredWorkflowsByActionType(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters, _, _ int) ([]workflowcatalog.ScoredWorkflow, int, error) {
 	return nil, 0, e.workflowsErr
 }
 func (e *errorDS) GetWorkflowWithContextFilters(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {

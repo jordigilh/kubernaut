@@ -2,6 +2,8 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
   name: oomkill-increase-memory-v1
+  annotations:
+    test.kubernaut.ai/audit-sentinel: synthetic-sensitive-audit-sentinel-2459
 spec:
   # OOMKill Increase Memory Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E

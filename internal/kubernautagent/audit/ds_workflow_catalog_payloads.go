@@ -16,13 +16,45 @@ limitations under the License.
 
 package audit
 
-import ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+import (
+	"github.com/google/uuid"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+)
+
+// WorkflowActionAuditResult is the minimized Step 1 action choice captured
+// for Data Storage audit. Keep it separate from the LLM response DTO so audit
+// payload changes cannot accidentally change model-visible data.
+type WorkflowActionAuditResult struct {
+	ActionType    string                         `json:"action_type"`
+	Description   WorkflowActionAuditDescription `json:"description"`
+	WorkflowCount int                            `json:"workflow_count"`
+}
+
+// WorkflowActionAuditDescription contains only the taxonomy guidance shown
+// to the agent during Step 1.
+type WorkflowActionAuditDescription struct {
+	What          string `json:"what"`
+	WhenToUse     string `json:"when_to_use"`
+	WhenNotToUse  string `json:"when_not_to_use,omitempty"`
+	Preconditions string `json:"preconditions,omitempty"`
+}
+
+// WorkflowCandidateAuditResult is the minimized Step 2 ranking evidence.
+// Parameters and execution details are intentionally not represented.
+type WorkflowCandidateAuditResult struct {
+	WorkflowID uuid.UUID `json:"workflow_id"`
+	Title      string    `json:"title"`
+	Version    string    `json:"version,omitempty"`
+	Rank       int       `json:"rank"`
+	FinalScore float64   `json:"final_score"`
+}
 
 // ========================================
 // WORKFLOW CATALOG DISCOVERY AUDIT PAYLOADS (Issue #1677 Phase 2c)
 // ========================================
-// Authority: DD-WORKFLOW-019 (KA owns discovery directly), amending
-// BR-AUDIT-023/DD-WORKFLOW-014's "who generates" language: KA, not DS, now
+// Authority: DD-AUDIT-009 (event-specific typed result variants),
+// DD-WORKFLOW-019 (KA owns discovery directly), amending BR-AUDIT-023/
+// DD-WORKFLOW-014's "who generates" language: KA, not DS, now
 // emits these 4 events (workflow.catalog.{actions_listed,workflows_listed,
 // workflow_retrieved,selection_validated}). Reimplemented independently of
 // DS's pkg/datastorage/audit/workflow_discovery_event.go constructors
@@ -37,13 +69,42 @@ import ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 // ========================================
 
 func buildActionsListedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
-	payload := buildWorkflowDiscoveryPayload(event, ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed)
-	return ogenclient.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(payload)
+	returned := dataInt(event.Data, "returned")
+	if _, ok := event.Data["returned"]; !ok {
+		returned = dataInt(event.Data, "total_count")
+	}
+	payload := ogenclient.WorkflowActionsListedAuditPayload{
+		EventType: ogenclient.WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed,
+		Query:     buildDiscoveryQueryMetadata(event),
+		Results: ogenclient.WorkflowActionsResultsMetadata{
+			TotalFound: int32(dataInt(event.Data, "total_count")),
+			Returned:   int32(returned),
+			Actions:    workflowActionResults(event.Data["actions"]),
+		},
+		SearchMetadata: buildSearchExecutionMetadata(event),
+	}
+	return ogenclient.NewWorkflowActionsListedAuditPayloadAuditEventRequestEventData(payload)
 }
 
 func buildWorkflowsListedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
-	payload := buildWorkflowDiscoveryPayload(event, ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed)
-	return ogenclient.NewAuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData(payload)
+	returned := dataInt(event.Data, "returned")
+	if _, ok := event.Data["returned"]; !ok {
+		returned = dataInt(event.Data, "total_count")
+	}
+	payload := ogenclient.WorkflowCandidatesListedAuditPayload{
+		EventType: ogenclient.WorkflowCandidatesListedAuditPayloadEventTypeWorkflowCatalogWorkflowsListed,
+		Query:     buildDiscoveryQueryMetadata(event),
+		Results: ogenclient.WorkflowCandidatesResultsMetadata{
+			TotalFound: int32(dataInt(event.Data, "total_count")),
+			Returned:   int32(returned),
+			Workflows:  workflowCandidateResults(event.Data["workflows"]),
+		},
+		SearchMetadata: buildSearchExecutionMetadata(event),
+	}
+	if actionType := dataString(event.Data, "action_type"); actionType != "" {
+		payload.ActionType.SetTo(actionType)
+	}
+	return ogenclient.NewWorkflowCandidatesListedAuditPayloadAuditEventRequestEventData(payload)
 }
 
 func buildWorkflowRetrievedPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {
@@ -56,8 +117,8 @@ func buildSelectionValidatedPayload(event *AuditEvent) ogenclient.AuditEventRequ
 	return ogenclient.NewAuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData(payload)
 }
 
-// buildWorkflowDiscoveryPayload builds the WorkflowDiscoveryAuditPayload
-// shared by all 4 discovery events, mirroring DS's buildDiscoveryPayload
+// buildWorkflowDiscoveryPayload builds the legacy WorkflowDiscoveryAuditPayload
+// shared by the two Step 3 discovery events, mirroring DS's buildDiscoveryPayload
 // (pkg/datastorage/audit/workflow_discovery_event.go) field-for-field, but
 // reading from the flat event.Data map instead of a typed
 // *models.WorkflowDiscoveryFilters (KA's audit package does not import
@@ -65,34 +126,89 @@ func buildSelectionValidatedPayload(event *AuditEvent) ogenclient.AuditEventRequ
 func buildWorkflowDiscoveryPayload(event *AuditEvent, eventType ogenclient.WorkflowDiscoveryAuditPayloadEventType) ogenclient.WorkflowDiscoveryAuditPayload {
 	totalCount := dataInt(event.Data, "total_count")
 
-	var searchFilters ogenclient.OptWorkflowSearchFilters
+	return ogenclient.WorkflowDiscoveryAuditPayload{
+		EventType: eventType,
+		Query:     buildDiscoveryQueryMetadata(event),
+		Results: ogenclient.ResultsMetadata{
+			TotalFound: int32(totalCount),
+			Returned:   int32(totalCount),
+		},
+		SearchMetadata: buildSearchExecutionMetadata(event),
+	}
+}
+
+func buildDiscoveryQueryMetadata(event *AuditEvent) ogenclient.QueryMetadata {
+	pageLimit := dataInt(event.Data, "limit")
+	if pageLimit == 0 {
+		pageLimit = dataInt(event.Data, "total_count")
+	}
+	query := ogenclient.QueryMetadata{TopK: int32(pageLimit)}
+	if _, ok := event.Data["offset"]; ok {
+		query.Offset.SetTo(int32(dataInt(event.Data, "offset")))
+	}
 	if hasDiscoveryFilters(event.Data) {
-		wsf := ogenclient.WorkflowSearchFilters{
+		filters := ogenclient.WorkflowSearchFilters{
 			Severity:    ogenclient.WorkflowSearchFiltersSeverity(dataString(event.Data, "severity")),
 			Component:   dataString(event.Data, "component"),
 			Environment: dataString(event.Data, "environment"),
 			Priority:    ogenclient.WorkflowSearchFiltersPriority(dataString(event.Data, "priority")),
 		}
 		if labels, ok := detectedLabelsFromJSON(event.Data); ok {
-			wsf.DetectedLabels.SetTo(labels)
+			filters.DetectedLabels.SetTo(labels)
 		}
-		searchFilters.SetTo(wsf)
+		query.Filters.SetTo(filters)
 	}
+	return query
+}
 
-	return ogenclient.WorkflowDiscoveryAuditPayload{
-		EventType: eventType,
-		Query: ogenclient.QueryMetadata{
-			TopK:    int32(totalCount),
-			Filters: searchFilters,
-		},
-		Results: ogenclient.ResultsMetadata{
-			TotalFound: int32(totalCount),
-			Returned:   int32(totalCount),
-		},
-		SearchMetadata: ogenclient.SearchExecutionMetadata{
-			DurationMs: int64(dataInt(event.Data, "duration_ms")),
-		},
+func buildSearchExecutionMetadata(event *AuditEvent) ogenclient.SearchExecutionMetadata {
+	return ogenclient.SearchExecutionMetadata{DurationMs: int64(dataInt(event.Data, "duration_ms"))}
+}
+
+func workflowActionResults(value interface{}) []ogenclient.WorkflowActionResultAudit {
+	actions, ok := value.([]WorkflowActionAuditResult)
+	if !ok {
+		return []ogenclient.WorkflowActionResultAudit{}
 	}
+	results := make([]ogenclient.WorkflowActionResultAudit, 0, len(actions))
+	for _, action := range actions {
+		description := ogenclient.WorkflowActionDescriptionAudit{
+			What:      action.Description.What,
+			WhenToUse: action.Description.WhenToUse,
+		}
+		if action.Description.WhenNotToUse != "" {
+			description.WhenNotToUse.SetTo(action.Description.WhenNotToUse)
+		}
+		if action.Description.Preconditions != "" {
+			description.Preconditions.SetTo(action.Description.Preconditions)
+		}
+		results = append(results, ogenclient.WorkflowActionResultAudit{
+			ActionType: action.ActionType, Description: description, WorkflowCount: int32(action.WorkflowCount),
+		})
+	}
+	return results
+}
+
+func workflowCandidateResults(value interface{}) []ogenclient.WorkflowResultAudit {
+	candidates, ok := value.([]WorkflowCandidateAuditResult)
+	if !ok {
+		return []ogenclient.WorkflowResultAudit{}
+	}
+	results := make([]ogenclient.WorkflowResultAudit, 0, len(candidates))
+	for _, candidate := range candidates {
+		workflow := ogenclient.WorkflowResultAudit{
+			WorkflowID: candidate.WorkflowID,
+			Title:      candidate.Title,
+			Rank:       int32(candidate.Rank),
+			Scoring:    ogenclient.ScoringV1Audit{Confidence: candidate.FinalScore},
+		}
+		if candidate.Version != "" {
+			workflow.Version.SetTo(candidate.Version)
+		}
+		workflow.FinalScore.SetTo(candidate.FinalScore)
+		results = append(results, workflow)
+	}
+	return results
 }
 
 func detectedLabelsFromJSON(data map[string]interface{}) (ogenclient.DetectedLabels, bool) {
