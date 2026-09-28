@@ -62,8 +62,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		}
 	})
 
-	Describe("IT-KA-433-033: list_available_actions queries real DataStorage API", func() {
-		It("should return action types from the real DataStorage", func() {
+	Describe("IT-KA-433-033: list_available_actions queries the KA Catalog", func() {
+		It("should return action types from the Catalog", func() {
 			result, err := reg.Execute(itToolCtx(), "list_available_actions",
 				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -72,8 +72,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433-034: list_workflows searches real DataStorage with criteria", func() {
-		It("should return seeded workflows from real DataStorage", func() {
+	Describe("IT-KA-433-034: list_workflows searches the KA Catalog with criteria", func() {
+		It("should return seeded workflows from the Catalog", func() {
 			result, err := reg.Execute(itToolCtx(), "list_workflows",
 				json.RawMessage(`{"action_type":"IncreaseMemory"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -82,18 +82,27 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433-035: get_workflow retrieves specific workflow from real DataStorage", func() {
-		It("should return the seeded workflow definition by UUID", func() {
+	Describe("IT-KA-433-035: get_workflow retrieves a specific workflow from the Catalog", func() {
+		It("should resolve the full Catalog record by UUID and return its LLM-safe projection", func() {
 			Expect(workflowUUIDs).NotTo(BeEmpty(), "workflow UUIDs must be seeded")
 
 			wfUUID, ok := workflowUUIDs["oom-recovery-v1:production"]
 			Expect(ok).To(BeTrue(), "oom-recovery-v1:production must be seeded")
 			Expect(wfUUID).NotTo(BeEmpty())
 
+			workflow, err := wfCatalog.GetByID(itToolCtx(), wfUUID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(workflow).NotTo(BeNil())
+			Expect(workflow.WorkflowID).To(Equal(wfUUID))
+			Expect(workflow.WorkflowName).To(Equal("oom-recovery-v1"))
+
 			result, err := reg.Execute(itToolCtx(), "get_workflow",
 				json.RawMessage(fmt.Sprintf(`{"workflow_id":"%s"}`, wfUUID)))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(ContainSubstring("oom-recovery"))
+			Expect(result).To(ContainSubstring(workflow.Description.What))
+			Expect(result).To(ContainSubstring("DEPLOYMENT_NAME"))
+			Expect(result).NotTo(ContainSubstring(workflow.WorkflowName),
+				"the LLM-facing projection must not expose the workflow identity")
 		})
 	})
 })
