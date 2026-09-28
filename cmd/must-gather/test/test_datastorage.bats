@@ -189,6 +189,57 @@ EOF
     assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "data-storage-service.kubernaut-system.svc.cluster.local"
 }
 
+@test "UT-MG-2463-003: DataStorage collection retries through the Kubernetes API proxy after Service DNS failure" {
+    # BR-PLATFORM-001.6a / issue #2463: the local must-gather container shares
+    # the Kind network but not cluster DNS. curl exit 6 must therefore switch
+    # to the authenticated Kubernetes Service proxy so the audit trail remains
+    # collectible while the Agent pod is still alive.
+    create_mock_datastorage_workflows
+
+    cat > "${TEST_TEMP_DIR}/bin/kubectl" <<'EOF'
+#!/bin/bash
+echo "$*" >> "${TEST_TEMP_DIR}/kubectl-proxy-calls.log"
+if [[ "$1" == "proxy" ]]; then
+    trap 'exit 0' TERM INT
+    while :; do
+        read -r -t 1 _ || true
+    done
+fi
+exit 0
+EOF
+    chmod +x "${TEST_TEMP_DIR}/bin/kubectl"
+
+    cat > "${TEST_TEMP_DIR}/bin/curl" <<'EOF'
+#!/bin/bash
+count_file="${TEST_TEMP_DIR}/curl-count"
+count=0
+if [ -f "${count_file}" ]; then
+    count=$(cat "${count_file}")
+fi
+count=$((count + 1))
+echo "${count}" > "${TEST_TEMP_DIR}/curl-count"
+url="${@: -1}"
+echo "${url}" >> "${TEST_TEMP_DIR}/curl-calls.log"
+if [ "${count}" -eq 1 ]; then
+    exit 6
+fi
+if [[ "${url}" == "http://127.0.0.1:8001/version" ]]; then
+    echo '{"gitVersion":"v1.36.2"}'
+    exit 0
+fi
+cat "${TEST_TEMP_DIR}/workflows.json"
+EOF
+    chmod +x "${TEST_TEMP_DIR}/bin/curl"
+    export PATH="${TEST_TEMP_DIR}/bin:${PATH}"
+
+    run bash "${COLLECTORS_DIR}/datastorage.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/datastorage/audit-events.json"
+    assert_file_contains "${TEST_TEMP_DIR}/kubectl-proxy-calls.log" "proxy"
+    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "/api/v1/namespaces/kubernaut-system/services/http:data-storage-service:8080/proxy/api/v1/audit/events"
+}
+
 @test "BR-PLATFORM-001.6a: Support engineer can identify DataStorage network timeouts" {
     # Edge Case: API request times out (slow network, overloaded service)
     # Business Outcome: Timeout is documented as diagnostic clue
@@ -207,4 +258,3 @@ EOF
     assert_file_exists "${MOCK_COLLECTION_DIR}/datastorage/error.json"
     assert_file_contains "${MOCK_COLLECTION_DIR}/datastorage/error.json" "timed out"
 }
-

@@ -228,7 +228,7 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 		// propagated as err (Issue #1546 Tier 3).
 		return llm.ChatResponse{}, buildCancelledResult(p.messages, p.turn, p.phase, p.tokens), nil
 	}
-	failEvent := audit.NewEvent(audit.EventTypeResponseFailed, p.correlationID)
+	failEvent := newInvestigationAuditEvent(ctx, audit.EventTypeResponseFailed, p.correlationID)
 	failEvent.EventAction = audit.ActionResponseFailed
 	failEvent.EventOutcome = audit.OutcomeFailure
 	failEvent.Data["error_message"] = err.Error()
@@ -250,7 +250,7 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 // emitLLMRequestAudit records the per-turn LLM request audit event (AU-3:
 // model, prompt length/preview, enabled toolsets, full message history).
 func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, messages []llm.Message, toolDefs []llm.ToolDefinition) {
-	reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	reqEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMRequest, correlationID)
 	reqEvent.EventAction = audit.ActionLLMRequest
 	reqEvent.EventOutcome = audit.OutcomeSuccess
 	reqEvent.Data["model"] = modelName
@@ -264,7 +264,7 @@ func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID,
 // emitLLMResponseAudit records the per-turn LLM response audit event (AU-3:
 // token usage, analysis content/preview, tool-call count, finish reason).
 func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID string, resp llm.ChatResponse) {
-	respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+	respEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMResponse, correlationID)
 	respEvent.EventAction = audit.ActionLLMResponse
 	respEvent.EventOutcome = audit.OutcomeSuccess
 	respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
@@ -343,7 +343,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			"result_preview": truncatePreview(toolResults[i], 200),
 		})
 
-		tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
+		tcEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMToolCall, correlationID)
 		tcEvent.EventAction = audit.ActionToolExecution
 		tcEvent.EventOutcome = audit.OutcomeSuccess
 		tcEvent.Data["tool_call_index"] = i
@@ -371,7 +371,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 // MaxTokens. truncationRetried/maxTokens mutation stays loop-local state in
 // the caller — this helper is a pure audit-emit + message-builder.
 func (inv *Investigator) buildTruncationRetryMessages(ctx context.Context, resp llm.ChatResponse, correlationID string, escalatedMaxTokens int) []llm.Message {
-	truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+	truncEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMResponse, correlationID)
 	truncEvent.EventAction = "truncation_detected"
 	truncEvent.EventOutcome = audit.OutcomeFailure
 	truncEvent.Data["has_analysis"] = resp.Message.Content != ""

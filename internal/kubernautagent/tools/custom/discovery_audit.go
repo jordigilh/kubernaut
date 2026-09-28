@@ -20,6 +20,7 @@ import (
 	"context"
 
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -65,7 +66,8 @@ func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.Wo
 		return
 	}
 	ev := kaaudit.NewEvent(kaaudit.EventTypeActionsListed, correlationIDFromFilters(filters, ""),
-		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory))
+		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory),
+		kaaudit.WithSessionID(session.SessionIDFromContext(ctx)))
 	ev.EventAction = kaaudit.ActionDiscovery
 	ev.EventOutcome = kaaudit.OutcomeSuccess
 	ev.Data["total_count"] = totalCount
@@ -80,7 +82,8 @@ func (t *listWorkflowsTool) emitAuditEvent(ctx context.Context, actionType strin
 		return
 	}
 	ev := kaaudit.NewEvent(kaaudit.EventTypeWorkflowsListed, correlationIDFromFilters(filters, ""),
-		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory))
+		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory),
+		kaaudit.WithSessionID(session.SessionIDFromContext(ctx)))
 	ev.EventAction = kaaudit.ActionDiscovery
 	ev.EventOutcome = kaaudit.OutcomeSuccess
 	ev.Data["total_count"] = totalCount
@@ -104,6 +107,7 @@ func (t *getWorkflowTool) emitAuditEvents(ctx context.Context, workflowID string
 
 	retrieved := kaaudit.NewEvent(kaaudit.EventTypeWorkflowRetrieved, correlationIDFromFilters(filters, workflowID),
 		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory),
+		kaaudit.WithSessionID(session.SessionIDFromContext(ctx)),
 		kaaudit.WithResource("Workflow", workflowID))
 	retrieved.EventAction = kaaudit.ActionRetrieve
 	retrieved.EventOutcome = kaaudit.OutcomeSuccess
@@ -114,6 +118,7 @@ func (t *getWorkflowTool) emitAuditEvents(ctx context.Context, workflowID string
 
 	validated := kaaudit.NewEvent(kaaudit.EventTypeSelectionValidated, correlationIDFromFilters(filters, workflowID),
 		kaaudit.WithEventCategory(kaaudit.WorkflowCatalogEventCategory),
+		kaaudit.WithSessionID(session.SessionIDFromContext(ctx)),
 		kaaudit.WithResource("Workflow", workflowID))
 	validated.EventAction = kaaudit.ActionValidate
 	validated.EventOutcome = kaaudit.OutcomeSuccess

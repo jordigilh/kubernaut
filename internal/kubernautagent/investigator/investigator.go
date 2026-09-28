@@ -451,7 +451,7 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 // available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
-	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
 		{
@@ -477,11 +477,19 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	// so a keepalive is required to prevent AF from falsely reporting
 	// completion.
 	emitGateRetryKeepalive(ctx, "extracting_rca_from_conversation")
+	inv.emitLLMRequestAudit(ctx, correlationID, modelName, messages, submitOnlyTools)
+	extractionStart := time.Now()
 
 	resp, err := llm.ChatWithParams(ctx, client, req, runtimeParams)
 	if err != nil {
+		inv.emitRCAExtractionFailure(ctx, correlationID, "llm_call", err, time.Since(extractionStart).Seconds())
+		inv.logger.Error(err, "conversation RCA extraction LLM call failed",
+			"stage", "rca_extraction.llm_call",
+			"correlation_id", correlationID,
+			"session_id", session.SessionIDFromContext(ctx))
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
 	}
+	inv.emitLLMResponseAudit(ctx, correlationID, resp)
 
 	var content string
 	if len(resp.ToolCalls) > 0 && resp.ToolCalls[0].Name == SubmitResultToolName {
@@ -492,6 +500,12 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
+		inv.emitRCAExtractionFailure(ctx, correlationID, "parse", parseErr, time.Since(extractionStart).Seconds())
+		inv.logger.Error(parseErr, "conversation RCA extraction response parse failed",
+			"stage", "rca_extraction.parse",
+			"correlation_id", correlationID,
+			"session_id", session.SessionIDFromContext(ctx),
+			"response_content_length", len(content))
 		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
 	}
 	// #2387: this single submit-only extraction call is one LLM turn with no
@@ -501,6 +515,18 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	// per-RR scope; this leg carries no TokenAccumulator of its own.
 	inv.metricsFor(correlationID).IncLLMTurns()
 	inv.recordTokenUsage(correlationID, resp.Usage)
+	extractionTokens := &TokenAccumulator{}
+	extractionTokens.Add(resp.Usage)
+	inv.emitRCAComplete(ctx, result, extractionTokens, correlationID)
+	inv.logger.Info("conversation RCA extraction completed",
+		"stage", "rca_extraction.complete",
+		"correlation_id", correlationID,
+		"session_id", session.SessionIDFromContext(ctx),
+		"target_kind", result.RemediationTarget.Kind,
+		"target_api_version", result.RemediationTarget.APIVersion,
+		"target_name", result.RemediationTarget.Name,
+		"target_namespace", result.RemediationTarget.Namespace,
+		"duration_seconds", time.Since(extractionStart).Seconds())
 	return result, nil
 }
 

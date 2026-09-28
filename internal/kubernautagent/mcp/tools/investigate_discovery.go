@@ -38,7 +38,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		return InvestigateOutput{}, authErr
 	}
 	if t.catalog == nil {
-		return InvestigateOutput{}, fmt.Errorf("workflow catalog not configured: cannot enrich discovery names")
+		return InvestigateOutput{}, withDiagnosticStage("workflow_catalog_validate", fmt.Errorf("workflow catalog not configured: cannot enrich discovery names"))
 	}
 
 	// Reset inactivity timer before the (potentially long) LLM calls.
@@ -55,10 +55,16 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
 	defer cancelInactivity()
 
+	// Attach the HTTP investigation session before RCA reconstruction or
+	// fallback extraction. Those paths emit their own audit events, so delaying
+	// this enrichment until workflow discovery loses the session cross-reference
+	// precisely when the flaky path is being diagnosed (BR-AUDIT-005, #2463).
+	ctx = t.enrichLiveEventContext(ctx, input.RRID, "discover_workflows")
+
 	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
 	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID, user)
 	if err != nil {
-		return InvestigateOutput{}, err
+		return InvestigateOutput{}, withDiagnosticStage("resolve_rca", err)
 	}
 
 	// Step 2: Resolve signal context for Phase 3. Enrichment is handled
@@ -66,20 +72,15 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	// only resolve the signal here.
 	signal, err := t.resolveDiscoverySignal(ctx, input.RRID)
 	if err != nil {
-		return InvestigateOutput{}, err
+		return InvestigateOutput{}, withDiagnosticStage("resolve_signal", err)
 	}
-
-	// Step 3: Enrich context with the HTTP investigation session so that
-	// workflow discovery can emit audit events with session_id and stream
-	// events to the subscriber (#1384: Bug A fix).
-	ctx = t.enrichLiveEventContext(ctx, input.RRID, "discover_workflows")
 
 	// Step 4: Run Phase 3 workflow discovery using the structured RCA.
 	// The investigator resolves enrichment internally when its enricher is wired,
 	// falling back to nil when not available.
 	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, nil, input.RRID)
 	if err != nil {
-		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
+		return InvestigateOutput{}, withDiagnosticStage("workflow_discovery", fmt.Errorf("workflow discovery failed: %w", err))
 	}
 
 	// #2013: When discovery concludes with no_matching_workflows, nothing
@@ -121,7 +122,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	// Build the JSON response for the user.
 	discoveryJSON, err := json.Marshal(sess.DiscoveryResult)
 	if err != nil {
-		return InvestigateOutput{}, fmt.Errorf("marshal discovery result: %w", err)
+		return InvestigateOutput{}, withDiagnosticStage("marshal_discovery_result", fmt.Errorf("marshal discovery result: %w", err))
 	}
 
 	return InvestigateOutput{
@@ -260,7 +261,9 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string, user mcpinternal.UserInfo) (*katypes.InvestigationResult, error) {
 	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
 		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+			"stage", "resolve_rca.stored_result",
 			"rr_id", rrID,
+			"session_id", sessionID,
 			"rca_target_kind", storedResult.RemediationTarget.Kind,
 			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
 			"rca_target_name", storedResult.RemediationTarget.Name)
@@ -286,11 +289,37 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 			"rr_id", rrID)
 		return t.triggerFreshInvestigationForDiscovery(ctx, rrID, user)
 	}
+	t.logger.Info("discover_workflows: extracting RCA from reconstructed conversation",
+		"stage", "resolve_rca.conversation_extraction",
+		"rr_id", rrID,
+		"session_id", sessionID,
+		"message_count", len(messages))
 
 	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, rrID)
 	if err != nil {
+		t.logger.Error(err, "discover_workflows: conversation RCA extraction failed",
+			"stage", "resolve_rca.conversation_extraction",
+			"rr_id", rrID,
+			"session_id", sessionID)
 		return nil, fmt.Errorf("rca extraction failed: %w", err)
 	}
+	if rcaResult == nil {
+		err := fmt.Errorf("rca extraction returned nil result")
+		t.logger.Error(err, "discover_workflows: conversation RCA extraction returned no result",
+			"stage", "resolve_rca.conversation_extraction",
+			"rr_id", rrID,
+			"session_id", sessionID)
+		return nil, err
+	}
+	extractedTarget := rcaResult.RemediationTarget
+	t.logger.Info("discover_workflows: RCA target received before fallback target transition",
+		"stage", "resolve_rca.target_received",
+		"rr_id", rrID,
+		"session_id", sessionID,
+		"target_kind", extractedTarget.Kind,
+		"target_api_version", extractedTarget.APIVersion,
+		"target_name", extractedTarget.Name,
+		"target_namespace", extractedTarget.Namespace)
 
 	// Phase 2 extraction from conversation reconstructs a best-effort RCA,
 	// but its RemediationTarget is unreliable: the conversation messages lack
@@ -299,6 +328,15 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 	// the signal resolver's authoritative identity instead of overwriting it
 	// via SyncSignalFromRCA with the extraction's guess.
 	rcaResult.RemediationTarget = katypes.RemediationTarget{}
+	t.logger.Info("discover_workflows: cleared fallback RCA target before signal-authoritative discovery",
+		"stage", "resolve_rca.target_cleared",
+		"rr_id", rrID,
+		"session_id", sessionID,
+		"reason", "reconstructed conversation lacks the original system prompt",
+		"previous_target_kind", extractedTarget.Kind,
+		"previous_target_api_version", extractedTarget.APIVersion,
+		"previous_target_name", extractedTarget.Name,
+		"previous_target_namespace", extractedTarget.Namespace)
 	return rcaResult, nil
 }
 
@@ -372,6 +410,14 @@ func (t *InvestigateTool) resolveDiscoverySignal(ctx context.Context, rrID strin
 	} else if resolved != nil {
 		signal = *resolved
 	}
+	t.logger.Info("discover_workflows: signal context resolved",
+		"stage", "resolve_signal.complete",
+		"rr_id", rrID,
+		"resource_kind", signal.ResourceKind,
+		"resource_api_version", signal.ResourceAPIVersion,
+		"resource_name", signal.ResourceName,
+		"namespace", signal.Namespace,
+		"remediation_id", signal.RemediationID)
 	return signal, nil
 }
 

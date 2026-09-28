@@ -29,6 +29,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -106,6 +107,8 @@ type mockInvestigatorRunner struct {
 	rcaResult               *katypes.InvestigationResult
 	workflowDiscoveryResult *katypes.InvestigationResult
 	capturedCtx             context.Context
+	rcaCapturedCtx          context.Context
+	capturedRCA             *katypes.InvestigationResult
 	// totals seeds InvestigationTotals for Gap-2 assembly tests (#2387).
 	totals katypes.InvestigationTotals
 }
@@ -126,14 +129,16 @@ func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katyp
 	return &katypes.InvestigationResult{RCASummary: "mock autonomous result", Confidence: 0.8}, m.err
 }
 
-func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+func (m *mockInvestigatorRunner) RunRCAExtraction(ctx context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	m.rcaCapturedCtx = ctx
 	if m.rcaResult != nil {
 		return m.rcaResult, m.err
 	}
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", Confidence: 0.9}, nil
 }
 
-func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, rca *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	m.capturedRCA = rca
 	if m.workflowDiscoveryResult != nil {
 		return m.workflowDiscoveryResult, nil
 	}
@@ -777,6 +782,48 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 
 			Expect(sess.RCAResult).NotTo(BeNil(), "RCA result should be stored on session")
 			Expect(sess.DiscoveryResult).NotTo(BeNil(), "Discovery result should be stored on session")
+		})
+	})
+
+	Describe("IT-KA-2463-002: discover_workflows propagates the interactive session before RCA extraction", func() {
+		It("should make the HTTP investigation session available to the fallback extraction call", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-2463",
+				CorrelationID: "rr-2463",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{isActive: true, getDriverResult: sess}
+			runner := &mockInvestigatorRunner{
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary: "AuthorizationPolicy denies traffic",
+					RemediationTarget: katypes.RemediationTarget{
+						Kind: "AuthorizationPolicy", Name: "istio-authz-fix-v1", Namespace: "demo",
+					},
+				},
+			}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "the pod cannot reach the service"},
+			}}
+			httpCompleter := &mockHTTPCompleter{foundID: "sess-2463", found: true}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				runner,
+				recon,
+				mcptools.NopAutonomousManager{},
+				mcptools.WithHTTPCompleter(httpCompleter),
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID: "rr-2463", Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(runner.rcaCapturedCtx).NotTo(BeNil())
+			Expect(session.SessionIDFromContext(runner.rcaCapturedCtx)).To(Equal("sess-2463"))
 		})
 	})
 

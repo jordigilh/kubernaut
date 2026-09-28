@@ -30,9 +30,9 @@ import (
 	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var listAvailableActionsSchema = json.RawMessage(`{
@@ -190,6 +190,9 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	}
 
 	if t.catalog == nil {
+		t.logger.Error(fmt.Errorf("workflow catalog unavailable"), "workflow catalog action query cannot run",
+			"stage", "workflow_catalog.list_actions",
+			"remediation_id", signal.RemediationID)
 		return "", fmt.Errorf("listing action types: workflow catalog unavailable")
 	}
 
@@ -197,8 +200,20 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	entries, totalCount, err := t.catalog.ListActions(ctx, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog action query failed",
+			"stage", "workflow_catalog.list_actions",
+			"component", filters.Component,
+			"remediation_id", signal.RemediationID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
+	t.logger.Info("workflow catalog action query completed",
+		"stage", "workflow_catalog.list_actions",
+		"component", filters.Component,
+		"remediation_id", signal.RemediationID,
+		"result_count", len(entries),
+		"total_count", totalCount,
+		"duration_ms", durationMs)
 
 	t.emitAuditEvent(ctx, filters, totalCount, durationMs)
 
@@ -257,6 +272,11 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	}
 
 	if t.catalog == nil {
+		t.logger.Error(fmt.Errorf("workflow catalog unavailable"), "workflow catalog workflow query cannot run",
+			"stage", "workflow_catalog.list_workflows",
+			"action_type", a.ActionType,
+			"component", filters.Component,
+			"remediation_id", signal.RemediationID)
 		return "", fmt.Errorf("listing workflows: workflow catalog unavailable")
 	}
 
@@ -264,8 +284,22 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	workflows, totalCount, err := t.catalog.ListWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog workflow query failed",
+			"stage", "workflow_catalog.list_workflows",
+			"action_type", a.ActionType,
+			"component", filters.Component,
+			"remediation_id", signal.RemediationID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("listing workflows: %w", err)
 	}
+	t.logger.Info("workflow catalog workflow query completed",
+		"stage", "workflow_catalog.list_workflows",
+		"action_type", a.ActionType,
+		"component", filters.Component,
+		"remediation_id", signal.RemediationID,
+		"result_count", len(workflows),
+		"total_count", totalCount,
+		"duration_ms", durationMs)
 
 	t.emitAuditEvent(ctx, a.ActionType, filters, totalCount, durationMs)
 
@@ -356,6 +390,9 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	}
 
 	if t.catalog == nil {
+		t.logger.Error(fmt.Errorf("workflow catalog unavailable"), "workflow catalog get query cannot run",
+			"stage", "workflow_catalog.get_workflow",
+			"workflow_id", a.WorkflowID)
 		return "", fmt.Errorf("getting workflow: workflow catalog unavailable")
 	}
 
@@ -363,8 +400,16 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	wf, err := t.catalog.GetWorkflowWithContextFilters(ctx, a.WorkflowID, filters)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog get query failed",
+			"stage", "workflow_catalog.get_workflow",
+			"workflow_id", a.WorkflowID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("getting workflow: %w", err)
 	}
+	t.logger.Info("workflow catalog get query completed",
+		"stage", "workflow_catalog.get_workflow",
+		"workflow_id", a.WorkflowID,
+		"duration_ms", durationMs)
 
 	t.emitAuditEvents(ctx, a.WorkflowID, filters, durationMs)
 

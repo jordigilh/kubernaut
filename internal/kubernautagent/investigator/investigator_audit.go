@@ -24,29 +24,59 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
+// newInvestigationAuditEvent attaches the interactive session ID to every
+// investigator event when one is present in the context. Fallback RCA
+// extraction runs from an MCP action rather than the autonomous session
+// manager, so preserving this cross-reference is necessary to reconstruct
+// the complete interactive trace (BR-AUDIT-005, issue #2463).
+func newInvestigationAuditEvent(ctx context.Context, eventType, correlationID string) *audit.AuditEvent {
+	return audit.NewEvent(eventType, correlationID,
+		audit.WithSessionID(session.SessionIDFromContext(ctx)))
+}
+
 func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
-	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
+	completeEvent := newInvestigationAuditEvent(ctx, audit.EventTypeResponseComplete, correlationID)
 	completeEvent.EventAction = audit.ActionResponseSent
 	completeEvent.EventOutcome = audit.OutcomeSuccess
-	for k, v := range tokens.AuditData() {
-		completeEvent.Data[k] = v
+	if tokens != nil {
+		for k, v := range tokens.AuditData() {
+			completeEvent.Data[k] = v
+		}
 	}
 	inv.marshalAuditResponseData(completeEvent, result)
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.auditLog())
 }
 
 func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
-	ev := audit.NewEvent(audit.EventTypeRCAComplete, correlationID)
+	ev := newInvestigationAuditEvent(ctx, audit.EventTypeRCAComplete, correlationID)
 	ev.EventAction = audit.ActionLLMResponse
 	ev.EventOutcome = audit.OutcomeSuccess
-	for k, v := range tokens.AuditData() {
-		ev.Data[k] = v
+	if tokens != nil {
+		for k, v := range tokens.AuditData() {
+			ev.Data[k] = v
+		}
 	}
 	inv.marshalAuditResponseData(ev, result)
+	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.auditLog())
+}
+
+// emitRCAExtractionFailure records a failure from the conversation fallback
+// path before the MCP error boundary redacts it for the caller. The stage and
+// raw error remain available to operators through the audit trail (BR-AUDIT-005,
+// AU-3; issue #2463).
+func (inv *Investigator) emitRCAExtractionFailure(ctx context.Context, correlationID, stage string, err error, durationSeconds float64) {
+	ev := newInvestigationAuditEvent(ctx, audit.EventTypeResponseFailed, correlationID)
+	ev.EventAction = audit.ActionResponseFailed
+	ev.EventOutcome = audit.OutcomeFailure
+	ev.Data["phase"] = string(katypes.PhaseRCA)
+	ev.Data["stage"] = stage
+	ev.Data["error_message"] = err.Error()
+	ev.Data["duration_seconds"] = durationSeconds
 	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.auditLog())
 }
 
@@ -74,11 +104,15 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	applyCollectionFields(m, r)
 
 	if r.RemediationTarget.Kind != "" {
-		m["remediation_target"] = map[string]interface{}{
+		target := map[string]interface{}{
 			"kind":      r.RemediationTarget.Kind,
 			"name":      r.RemediationTarget.Name,
 			"namespace": r.RemediationTarget.Namespace,
 		}
+		if r.RemediationTarget.APIVersion != "" {
+			target["api_version"] = r.RemediationTarget.APIVersion
+		}
+		m["remediation_target"] = target
 	}
 	if len(r.AlternativeWorkflows) > 0 {
 		m["alternative_workflows"] = alternativeWorkflowsToAuditJSON(r.AlternativeWorkflows)
@@ -223,7 +257,7 @@ func dueDiligenceToAuditJSON(dd *katypes.DueDiligenceReview) map[string]interfac
 }
 
 func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAttempts int, isValid bool, errors []string, workflowID, correlationID string) {
-	valEvent := audit.NewEvent(audit.EventTypeValidationAttempt, correlationID)
+	valEvent := newInvestigationAuditEvent(ctx, audit.EventTypeValidationAttempt, correlationID)
 	valEvent.EventAction = audit.ActionValidation
 	if isValid {
 		valEvent.EventOutcome = audit.OutcomeSuccess

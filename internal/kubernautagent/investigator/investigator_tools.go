@@ -169,7 +169,7 @@ type retryAuditParams struct {
 // attempt/max, phase, retry reason) stays byte-identical between both call
 // sites.
 func (inv *Investigator) emitRetryAudit(ctx context.Context, p retryAuditParams) {
-	retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, p.correlationID)
+	retryEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMRequest, p.correlationID)
 	retryEvent.EventAction = audit.ActionLLMRequest
 	retryEvent.EventOutcome = audit.OutcomeSuccess
 	retryEvent.Data["model"] = p.modelName

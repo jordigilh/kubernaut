@@ -238,7 +238,7 @@ func (inv *Investigator) sameKindValidationGate(
 	// #1777 (BR-AUDIT-005, FedRAMP AU-3): prompt_length/prompt_preview are
 	// populated in retryForSameKind, once the actual retry prompt exists —
 	// see the audit.StoreBestEffort call there for why.
-	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMRequest, correlationID)
 	gateEvent.EventAction = audit.ActionSameKindGate
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	gateEvent.Data["model"] = modelName
@@ -442,7 +442,7 @@ func (inv *Investigator) apiVersionValidationGate(
 	// #1777 (BR-AUDIT-005, FedRAMP AU-3): prompt_length/prompt_preview are
 	// populated in retryForAPIVersion, once the actual retry prompt exists —
 	// see the audit.StoreBestEffort call there for why.
-	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent := newInvestigationAuditEvent(ctx, audit.EventTypeLLMRequest, correlationID)
 	gateEvent.EventAction = audit.ActionAPIVersionGate
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	gateEvent.Data["model"] = modelName
@@ -732,7 +732,7 @@ func CheckWorkflowTargetAlignment(ctx context.Context, result *katypes.Investiga
 
 	aligned := meta.MatchesTargetKind(result.RemediationTarget.Kind)
 
-	ev := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	ev := newInvestigationAuditEvent(ctx, audit.EventTypeLLMRequest, correlationID)
 	ev.EventAction = audit.ActionWorkflowAlignmentGate
 	if aligned {
 		ev.EventOutcome = audit.OutcomeSuccess

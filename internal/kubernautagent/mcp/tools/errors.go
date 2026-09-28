@@ -23,6 +23,33 @@ import (
 	"github.com/go-logr/logr"
 )
 
+// diagnosticStageError preserves the internal stage that produced an error
+// without changing the error text returned to callers. ErrorBoundary uses it
+// to make generic internal_error responses actionable in service logs while
+// retaining the information-leak boundary (BR-INTERACTIVE-004, SEC-5).
+type diagnosticStageError struct {
+	stage string
+	err   error
+}
+
+func (e *diagnosticStageError) Error() string { return e.err.Error() }
+func (e *diagnosticStageError) Unwrap() error { return e.err }
+
+func withDiagnosticStage(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &diagnosticStageError{stage: stage, err: err}
+}
+
+func diagnosticStage(err error) string {
+	var staged *diagnosticStageError
+	if errors.As(err, &staged) {
+		return staged.stage
+	}
+	return "unknown"
+}
+
 // MCPError represents a structured error returned to MCP clients.
 // Contains a machine-readable code, a human-readable message, and optional
 // contextual details. Satisfies the error interface for seamless propagation
@@ -164,6 +191,9 @@ func ErrorBoundary(logger logr.Logger, toolName string, err error) error {
 	if errors.As(err, &mcpErr) {
 		return err
 	}
-	logger.Error(err, "tool handler error redacted", "tool", toolName)
+	logger.Error(err, "tool handler error redacted",
+		"tool", toolName,
+		"stage", diagnosticStage(err),
+		"error_type", fmt.Sprintf("%T", err))
 	return ErrCodeInternalError
 }

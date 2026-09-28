@@ -161,7 +161,7 @@ func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, co
 // tool overlay resolution (see prescopeFleetOverlay). Best-effort: an audit
 // store failure must never hide the investigation-aborting resolution error.
 func (inv *Investigator) emitFleetOverlayFailedAudit(ctx context.Context, clusterID, correlationID string, resolveErr error) {
-	event := audit.NewEvent(audit.EventTypeFleetOverlayFailed, correlationID)
+	event := newInvestigationAuditEvent(ctx, audit.EventTypeFleetOverlayFailed, correlationID)
 	event.EventAction = audit.ActionFleetOverlayFailed
 	event.EventOutcome = audit.OutcomeFailure
 	event.ClusterID = clusterID
@@ -175,7 +175,7 @@ func (inv *Investigator) emitFleetOverlayFailedAudit(ctx context.Context, cluste
 // FleetOverlayResolver configured at all (see prescopeFleetOverlay).
 // Best-effort, same rationale as emitFleetOverlayFailedAudit.
 func (inv *Investigator) emitFleetOverlayUnavailableAudit(ctx context.Context, clusterID, correlationID string) {
-	event := audit.NewEvent(audit.EventTypeFleetOverlayUnavailable, correlationID)
+	event := newInvestigationAuditEvent(ctx, audit.EventTypeFleetOverlayUnavailable, correlationID)
 	event.EventAction = audit.ActionFleetOverlayUnavailable
 	event.EventOutcome = audit.OutcomeFailure
 	event.ClusterID = clusterID
