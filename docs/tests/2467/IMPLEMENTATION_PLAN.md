@@ -3,7 +3,7 @@
 **Status**: Implemented; local verification recorded below; runtime integration/E2E remain environment-blocked; Option A selected for AF<br>
 **Issue**: [#2467](https://github.com/jordigilh/kubernaut/issues/2467)<br>
 **Branch**: `fix/2467-sp-classification-source-of-truth`<br>
-**Stack base / future PR target**: `fix/2459-workflow-discovery-audit` at `579234d5cf3dd004168a1a98c79eb4c3777d30f0`<br>
+**Stack base / PR target**: `main` at `d212e216d421401bc1372d80d7099fee0d8dc115` (PR #2468 merge)<br>
 **Business requirements**: BR-SP-105, BR-SP-106, BR-SEVERITY-001, BR-SP-051–053, BR-SP-070–072, BR-SP-002/080/081, BR-ORCH-025, BR-AI-008, BR-AI-084<br>
 **Test plan**: [TP-2467-v1.0](TEST_PLAN.md)
 
@@ -13,7 +13,7 @@
 
 - Dedicated worktree: `/Users/jgil/go/src/github.com/jordigilh/kubernaut-issue-2467`.
 - Branch is clean at PR #2468 / `fix/2459-workflow-discovery-audit` head `579234d5cf3dd004168a1a98c79eb4c3777d30f0`; no implementation changes existed when preflight began.
-- The shared checkout remains untouched. The future stacked PR must target `fix/2459-workflow-discovery-audit`, not `main`.
+- The shared checkout remains untouched. At preflight, this branch was stacked on `fix/2459-workflow-discovery-audit`; PR #2468 has since merged into `main` at `d212e216d421401bc1372d80d7099fee0d8dc115`, so the closing PR now targets `main`. The original stack base is an ancestor of the merged commit.
 - Engram's index is pinned to the registered Kubernaut project; the sibling worktree has no workspace manifest. Engram recall and indexed search were used against the registered project, with source-level verification in this worktree. This did not block preflight.
 
 ### 1.2 Component/data-flow map

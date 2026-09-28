@@ -8,7 +8,7 @@
 **Created**: 2026-09-27<br>
 **Author**: Kubernaut Team<br>
 **Status**: Implemented; local unit validation complete; runtime integration/E2E blocked by Podman storage<br>
-**Branch**: `fix/2467-sp-classification-source-of-truth` (stacked on `fix/2459-workflow-discovery-audit`)
+**Branch**: `fix/2467-sp-classification-source-of-truth` (based on PR #2468's merge into `main`)
 
 ---
 
