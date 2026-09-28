@@ -31,6 +31,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // ============================================================================
@@ -606,7 +607,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			deleteTestNamespace(namespace)
 		})
 
-		It("IT-RO-2467-001: does not create AIA when completed SP severity is unknown", func() {
+		It("IT-RO-2467-001: rejects completed SP severity unknown without creating AIA", func() {
 			rrName := fmt.Sprintf("rr-2467-%s", uuid.New().String()[:13])
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
@@ -638,8 +639,18 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func(g Gomega) {
 				var updatedRR remediationv1.RemediationRequest
 				g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, &updatedRR)).To(Succeed())
-				g.Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
-					"RO must fail the RR instead of creating AIA from unknown SP severity")
+
+				var aiReady *metav1.Condition
+				for i := range updatedRR.Status.Conditions {
+					if updatedRR.Status.Conditions[i].Type == rrconditions.ConditionAIAnalysisReady {
+						aiReady = &updatedRR.Status.Conditions[i]
+						break
+					}
+				}
+				g.Expect(aiReady).NotTo(BeNil(), "RO should record the rejected AIAnalysis creation")
+				g.Expect(aiReady.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(aiReady.Reason).To(Equal(rrconditions.ReasonAIAnalysisCreationFailed))
+				g.Expect(aiReady.Message).To(ContainSubstring("unusable severity classification"))
 
 				var aaList aianalysisv1.AIAnalysisList
 				g.Expect(k8sManager.GetAPIReader().List(ctx, &aaList, client.InNamespace(ROControllerNamespace))).To(Succeed())

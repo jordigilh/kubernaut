@@ -574,8 +574,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		Expect(final.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"))
 	})
 
-	// TDD RED: This test will FAIL until controller defaults to unknown
-	It("BR-SP-053: should default to unknown for unclassifiable namespaces", func() {
+	It("BR-SP-053: should use the explicit operator default for unclassifiable namespaces", func() {
 		By("Creating namespace without environment label")
 		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-env")
 
@@ -609,7 +608,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		}
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-		By("Waiting for default environment classification")
+		By("Waiting for the explicit operator default environment classification")
 		Eventually(func() string {
 			var updated signalprocessingv1alpha1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
@@ -619,7 +618,11 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				return ""
 			}
 			return string(updated.Status.EnvironmentClassification.Environment)
-		}, timeout, interval).Should(Equal(string(signalprocessingv1alpha1.EnvironmentUnknown)))
+		}, timeout, interval).Should(Equal(string(signalprocessingv1alpha1.EnvironmentDevelopment)))
+
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+		Expect(final.Status.EnvironmentClassification.Source).To(Equal("default"))
 	})
 })
 
