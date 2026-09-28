@@ -371,7 +371,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 import rego.v1
 
 # ========== Environment (BR-SP-051-053) ==========
-default environment := {"environment": "unknown", "source": "default"}
+default environment := {"environment": "development", "source": "default"}
 
 environment := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]

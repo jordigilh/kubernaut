@@ -612,11 +612,14 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: ROControllerNamespace},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: hex.EncodeToString(sha256.New().Sum([]byte(uuid.New().String()))),
-					SignalName:        "OOMKilled",
-					Severity:          "Sev1",
-					SignalType:        "alert",
-					TargetType:        "kubernetes",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
+					SignalName: "OOMKilled",
+					Severity:   "Sev1",
+					SignalType: "alert",
+					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind: "Deployment", Name: "api-server", Namespace: namespace,
 					},

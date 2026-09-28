@@ -69,6 +69,7 @@ var _ = Describe("E2E-KA-SNAP: AgentSession Forensic Snapshot", Label("e2e", "ka
 					ErrorMessage:          "Container OOMKilled",
 					Environment:           "production",
 					Priority:              "P1",
+					SignalMode:            "reactive",
 					RiskTolerance:         "medium",
 					BusinessCategory:      "standard",
 				},

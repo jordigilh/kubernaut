@@ -93,6 +93,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 						Fingerprint:      fmt.Sprintf("fp-%s", uuid.New().String()[:8]),
 						Severity:         severity,
 						SignalName:       signalType,
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P1",
 						TargetResource: aianalysisv1.TargetResource{

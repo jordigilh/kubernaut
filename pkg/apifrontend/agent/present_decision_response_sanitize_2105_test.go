@@ -25,6 +25,7 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
@@ -149,6 +150,49 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105, v1.
 			"trusted severity is projected only into the server-built artifact, not model arguments")
 		Expect(rcaMap).NotTo(HaveKey("provisional"),
 			"provenance metadata is projected only into the server-built artifact")
+	})
+
+	It("IT-AF-2467-001b: restores trusted severity when presentation uses a later streaming request", func() {
+		state := newMapState()
+		firstRequest := launcher.WithEventBridge(context.Background(), nil, "task-2467-grounding", "ctx-2467", nil)
+		firstCtx := statefulToolContext{
+			fakeToolContext: fakeToolContext{Context: firstRequest},
+			state:           state,
+		}
+		_, after := NewPhaseGuardForTest()
+		_, err := after(firstCtx, fakeTool{name: investigateTool}, nil, map[string]any{
+			"session_id": "sess-2467",
+			"rr_id":      "rr-2467",
+			"summary":    "The deployment is exceeding its memory limit.",
+			"rca": map[string]any{
+				"severity":    "warning",
+				"confidence":  0.8,
+				"target":      "Deployment/api",
+				"provisional": true,
+			},
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		secondRequest := launcher.WithEventBridge(context.Background(), nil, "task-2467-presentation", "ctx-2467", nil)
+		secondCtx := statefulToolContext{
+			fakeToolContext: fakeToolContext{Context: secondRequest},
+			state:           state,
+		}
+		resp := presentDecisionResponse()
+		_, err = sanitizePresentDecisionResponse(secondCtx, resp, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		severity, provisional := launcher.DecisionRCAClassificationSafe(secondCtx)
+		Expect(severity).To(Equal("warning"),
+			"trusted severity must survive the request boundary into the new bridge")
+		Expect(provisional).To(BeTrue(),
+			"trusted provisional provenance must survive the request boundary")
+		rcaMap, ok := resp.Content.Parts[0].FunctionCall.Args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rcaMap).NotTo(HaveKey("severity"),
+			"the model-facing arguments must remain unable to author severity")
+		Expect(rcaMap).NotTo(HaveKey("provisional"),
+			"the model-facing arguments must remain unable to author provenance")
 	})
 
 	It("UT-AF-2105-004 (regression guard): handles a nil/errored/contentless response without panicking", func() {

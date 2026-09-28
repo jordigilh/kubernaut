@@ -118,6 +118,7 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 							// deterministic delay, not burst size, is what reliably
 							// forces capacity overlap.
 							SignalName:       "brief-investigation-test",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{

@@ -68,7 +68,8 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		Expect(rr.Spec.Severity).NotTo(BeEmpty())
 		Expect(rr.Spec.SignalLabels["severity_source"]).To(BeElementOf(
 			"pending_alert", "firing_alert", "ns_pending_alert", "ns_firing_alert",
-			"cluster_pending_alert", "cluster_firing_alert", "llm_rule_informed", "llm_triage"))
+			"cluster_pending_alert", "cluster_firing_alert", "rule_label", "rule_evaluation",
+			"llm_rule_informed", "llm_triage"))
 	})
 
 	It("E2E-AF-FLEET-2462-001c [BR-FLEET-054, BR-INTEGRATION-065]: inactive rules with live metric data retain Tier 2 triage", func() {
@@ -81,7 +82,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		rr := invokeFleetAFRemediate(ctx, authToken,
 			"fleet e2e severity tier 2", "sev-tier2-ns", "test-inactive-target")
 		Expect(rr.Spec.ClusterID).To(Equal("hub"))
-		Expect(rr.Spec.SignalLabels["severity_source"]).To(BeElementOf("rule_evaluation", "llm_rule_informed"))
+		Expect(rr.Spec.SignalLabels["severity_source"]).To(BeElementOf("rule_label", "rule_evaluation", "llm_rule_informed"))
 	})
 
 	It("E2E-AF-FLEET-2462-001d [BR-FLEET-054, BR-INTEGRATION-065]: no-data severity fallback remains attributed to the hub", func() {
@@ -90,7 +91,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		rr := invokeFleetAFRemediate(ctx, authToken,
 			"fleet e2e severity tier 25", "no-data-ns", "test-nodata-target")
 		Expect(rr.Spec.ClusterID).To(Equal("hub"))
-		Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("severity_source", "llm_rule_informed"))
+		Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("severity_source", "rule_label"))
 	})
 
 	It("E2E-AF-FLEET-2462-001e [BR-FLEET-054, BR-AI-056]: missing alert and rule evidence fails closed", func() {

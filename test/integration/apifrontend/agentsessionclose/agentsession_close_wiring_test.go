@@ -80,15 +80,16 @@ func (e *recordingEmitter) eventsOfType(t audit.EventType) []*audit.Event {
 }
 
 // FedRAMP control mapping for this suite (#2214, DD-AA-KA-001 Amendment):
-//   AU-2/AU-3 -- audit events, content of audit records: FinalizeSessionByRR
-//     -> UpdatePhase emits IS transition audit events with actor attribution;
-//     asserted explicitly below rather than assumed "covered elsewhere".
-//   CC7.2 -- monitoring/reconstruction: a correlation_id (RR)-driven
-//     "AgentSession terminal -> IS terminal" reconstruction must hold with
-//     AA removed from the path, proven end-to-end against a real envtest
-//     apiserver (not a manual claim).
-//   AC-6 -- least privilege: this reconciler needs no RBAC beyond AF's
-//     existing get/list/watch on agentsessions.
+//
+//	AU-2/AU-3 -- audit events, content of audit records: FinalizeSessionByRR
+//	  -> UpdatePhase emits IS transition audit events with actor attribution;
+//	  asserted explicitly below rather than assumed "covered elsewhere".
+//	CC7.2 -- monitoring/reconstruction: a correlation_id (RR)-driven
+//	  "AgentSession terminal -> IS terminal" reconstruction must hold with
+//	  AA removed from the path, proven end-to-end against a real envtest
+//	  apiserver (not a manual claim).
+//	AC-6 -- least privilege: this reconciler needs no RBAC beyond AF's
+//	  existing get/list/watch on agentsessions.
 var _ = Describe("AgentSessionTerminalCloseReconciler wiring (#2214) [AU-2, AU-3, CC7.2]", func() {
 
 	newScheme := func() *runtime.Scheme {
@@ -138,6 +139,9 @@ var _ = Describe("AgentSessionTerminalCloseReconciler wiring (#2214) [AU-2, AU-3
 				RemediationID:         "rr-uid-" + rrName,
 				SignalName:            "OOMKilled",
 				Severity:              "warning",
+				Environment:           "test",
+				Priority:              "P1",
+				SignalMode:            "reactive",
 			},
 		}
 	}

@@ -191,6 +191,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						Fingerprint:      "test-fingerprint",
 						Severity:         "warning",
 						SignalName:       "OOMKilled",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

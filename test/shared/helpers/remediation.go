@@ -259,6 +259,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 				SignalContext: aianalysisv1.SignalContextInput{
 					Fingerprint:      "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 					Severity:         "warning",
+					SignalMode:       "reactive",
 					Environment:      "production",
 					BusinessPriority: "P1",
 				},

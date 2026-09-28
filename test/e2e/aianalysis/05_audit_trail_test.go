@@ -174,6 +174,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 							Fingerprint:      "e2e-audit-fingerprint",
 							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -322,6 +323,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 							Fingerprint:      "e2e-audit-phases",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -393,6 +395,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 							Fingerprint:      "e2e-audit-ka",
 							Severity:         "warning",
 							SignalName:       "HighMemory",
+							SignalMode:       "reactive",
 							Environment:      "development",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -469,6 +472,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 							Fingerprint:      "e2e-audit-rego",
 							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging", // Auto-approve in staging
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -542,6 +546,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 							Fingerprint:      "e2e-audit-approval",
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production", // Production requires approval
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

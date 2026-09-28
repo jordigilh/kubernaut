@@ -18,6 +18,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -377,8 +378,8 @@ func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any
 
 // recordInvestigateGroundingState persists whether a kubernaut_investigate
 // call produced groundable RCA content, for present_decision's before-callback
-// (enforceGroundingGuard) to read immediately before it runs. Two state keys
-// are set unconditionally -- including on a hard failure -- so a
+// (enforceGroundingGuard) to read immediately before it runs. Grounding and
+// server-owned presentation state are set unconditionally -- including on a
 // rejected/rca-less call correctly overwrites a stale value left by an
 // earlier successful one in the same session:
 //
@@ -395,6 +396,9 @@ func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any
 //     "extracted from the KA complete event" the way this struct's own doc
 //     comment describes, so it must not be cached as an authoritative fact --
 //     same treatment as "no structured rca at all".
+//   - StateKeyDecisionRCAClassification: the trusted severity and provisional
+//     provenance projected into the server-built decision artifact, including
+//     when present_decision runs on a later request with a new EventBridge.
 func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isSuccess bool) {
 	state := ctx.State()
 	if state == nil {
@@ -410,6 +414,10 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 	rca, artifactSeverity, provisional := groundedInvestigateRCA(resp, grounded)
 	if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_rca state")
+	}
+	classification := decisionRCAClassificationState(artifactSeverity, provisional)
+	if err := state.Set(session.StateKeyDecisionRCAClassification, classification); err != nil {
+		logger.Error(err, "phase-guard failed to persist decision RCA classification state")
 	}
 	launcher.SetDecisionRCAClassificationSafe(ctx, artifactSeverity, provisional)
 	var payload map[string]any
@@ -446,6 +454,36 @@ func groundedInvestigateRCA(resp map[string]any, grounded bool) (*tools.Investig
 		return nil, decoded.Severity, true
 	}
 	return decoded, decoded.Severity, false
+}
+
+func decisionRCAClassificationState(severity string, provisional bool) map[string]any {
+	if severity == "" || strings.EqualFold(strings.TrimSpace(severity), "unknown") {
+		return nil
+	}
+	return map[string]any{
+		"severity":    severity,
+		"provisional": provisional,
+	}
+}
+
+// restoreDecisionRCAClassification rehydrates the server-owned decision
+// classification into the current request's EventBridge. StreamingExecutor
+// intentionally creates a fresh bridge for every request, while ADK session
+// state spans requests; restoring here keeps the artifact projection
+// authoritative when grounding and presentation occur on different turns.
+func restoreDecisionRCAClassification(ctx agent.Context, state adksession.State) {
+	severity := ""
+	provisional := false
+	value, err := state.Get(session.StateKeyDecisionRCAClassification)
+	if err == nil {
+		if classification, ok := value.(map[string]any); ok {
+			severity, _ = classification["severity"].(string)
+			provisional, _ = classification["provisional"].(bool)
+		}
+	} else if !errors.Is(err, adksession.ErrStateKeyNotExist) {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to restore decision RCA classification state")
+	}
+	launcher.SetDecisionRCAClassificationSafe(ctx, severity, provisional)
 }
 
 // toolCallSucceeded reports whether a tool call completed without a Go error
@@ -993,6 +1031,7 @@ func enforceGroundingGuard(ctx agent.Context, args map[string]any) {
 	if state == nil {
 		return
 	}
+	restoreDecisionRCAClassification(ctx, state)
 
 	grounded := false
 	if v, err := state.Get(session.StateKeyGroundedContentAvailable); err == nil {

@@ -78,6 +78,7 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 						Fingerprint:      "test-fingerprint-prc",
 						Severity:         "warning",
 						SignalName:       "OOMKilled",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

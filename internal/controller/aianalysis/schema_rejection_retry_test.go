@@ -196,6 +196,7 @@ func newSchemaRejectionTestAnalysis(name, phase string) *aianalysisv1.AIAnalysis
 					Fingerprint:      "fp-" + name,
 					Severity:         "critical",
 					SignalName:       "TestSignal2030",
+					SignalMode:       "reactive",
 					Environment:      "staging",
 					BusinessPriority: "P1",
 					TargetResource: aianalysisv1.TargetResource{

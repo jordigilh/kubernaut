@@ -63,6 +63,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							Fingerprint:      "test-fingerprint-001",
 							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -174,6 +175,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							Fingerprint:      "test-fingerprint-002",
 							Severity:         "high", // DD-SEVERITY-001: Match crashloop-config-fix-v1 fixture
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -238,6 +240,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							Fingerprint:      "test-fp-462-001",
 							Severity:         "high",
 							SignalName:       "OOMKilled",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -298,6 +301,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							Fingerprint:      "test-fp-462-002",
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

@@ -66,6 +66,20 @@ func NewKubeconfigAgentSessionClient(kubeconfigPath string) (client.Client, erro
 // ensureAWXPodTypeHealthy) of not depending on the Ginkgo/Gomega test
 // framework in test/infrastructure.
 func InvestigateViaAgentSession(ctx context.Context, k8sClient client.Client, namespace string, spec agentsessionv1.AgentSessionSpec, timeout time.Duration) (*agentsessionv1.AgentSessionResult, error) {
+	// KA-focused E2E suites create AgentSession objects directly instead of
+	// exercising the production SP -> RO -> AIA path. Keep those behavior tests
+	// compatible with the SP-owned fields introduced by #2467 while leaving
+	// schema-validation tests (which call k8sClient.Create directly) strict.
+	if spec.Environment == "" {
+		spec.Environment = "test"
+	}
+	if spec.Priority == "" {
+		spec.Priority = "P3"
+	}
+	if spec.SignalMode == "" {
+		spec.SignalMode = "reactive"
+	}
+
 	name := "as-" + spec.IncidentID
 	as := &agentsessionv1.AgentSession{
 		ObjectMeta: metav1.ObjectMeta{

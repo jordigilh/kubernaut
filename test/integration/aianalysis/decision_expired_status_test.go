@@ -86,6 +86,7 @@ var _ = Describe("Decision Expired Status Write (#2019/#2020)", Label("integrati
 							// content as a second writer -- not a CEL bug, a fixture race (Issue #2032).
 							// Precedent: selectedworkflow_immutability_test.go IT-AA-344-001.
 							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
