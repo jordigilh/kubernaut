@@ -14,13 +14,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
-// wiringTestRuleGroups returns a Tier 2.5 setup: one inactive rule whose
+// wiringTestRuleGroups returns a Tier 2 setup: one inactive rule whose
 // query label-matches the target resource, but with no live data behind it
 // (podCorrelationPromClient.InstantQuery always returns an empty result).
-// This forces the pipeline through Tier 2.5 (LLM-with-rule-context) rather
-// than Tier 1/1.5/2, which is what these tests exist to prove is wired to
-// the LLM implementation under test (#1839 removed the old Tier 3 route to
-// the same LLM.TriageWithRules/classify() code path these tests rely on).
+// This forces the pipeline through the explicit rule-label path. DD-AF-016
+// requires this source-owned severity to win without invoking an LLM.
 func wiringTestRuleGroups() []prom.RuleGroup {
 	return []prom.RuleGroup{
 		{
@@ -54,8 +52,8 @@ func (s *spyContentGenerator) GenerateContent(_ context.Context, _ string, _ []*
 	}, nil
 }
 
-var _ = Describe("Severity Triage LLM Wiring", func() {
-	It("IT-AF-SEV-W01: GenAITriager routes triage calls to the LLM generator (not noop)", func() {
+var _ = Describe("Severity Triage Source Wiring", func() {
+	It("IT-AF-SEV-W01: explicit rule severity bypasses the LLM triager (DD-AF-016)", func() {
 		spy := &spyContentGenerator{}
 		triager := severity.NewGenAITriager(severity.GenAITriagerConfig{
 			Generator: spy,
@@ -81,13 +79,14 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 			Labels:      map[string]string{"namespace": defaultFixture, "kind": "Deployment", "name": "test-workload"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(spy.callCount.Load()).To(BeNumerically(">", 0),
-			"GenAITriager must delegate to the ContentGenerator — 0 calls means noop was used")
-		Expect(result.Severity).To(Equal("critical"),
-			"severity must come from the LLM response, not the noop default of 'medium'")
+		Expect(spy.callCount.Load()).To(Equal(int32(0)),
+			"explicit rule severity must not invoke the LLM triager")
+		Expect(result.Severity).To(Equal("high"),
+			"severity must come unchanged from the explicit rule label")
+		Expect(result.Source).To(Equal(severity.SourceRuleLabel))
 	})
 
-	It("IT-AF-SEV-W01b: NoopLLMTriager always returns medium (control test)", func() {
+	It("IT-AF-SEV-W01b: noop triager cannot override explicit rule severity (control test)", func() {
 		noop := severity.NewNoopLLMTriager(logr.Discard())
 
 		promClient := &podCorrelationPromClient{alerts: nil, ruleGroups: wiringTestRuleGroups()}
@@ -108,7 +107,8 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 			Labels:      map[string]string{"namespace": defaultFixture, "kind": "Deployment", "name": "test-workload"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Severity).To(Equal("warning"),
-			"NoopLLMTriager must return 'warning' — this is the control case")
+		Expect(result.Severity).To(Equal("high"),
+			"the explicit rule label must win over the noop triager")
+		Expect(result.Source).To(Equal(severity.SourceRuleLabel))
 	})
 })

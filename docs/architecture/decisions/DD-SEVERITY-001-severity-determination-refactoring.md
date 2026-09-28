@@ -1,17 +1,27 @@
 # DD-SEVERITY-001: Severity Determination Refactoring
 
-> **Partially superseded by [ADR-060](ADR-060-unified-signalprocessing-rego-policy.md)**: Severity is now a rule within the unified `policy.rego` instead of a standalone `severity.rego` with a separate classifier. The severity determination principles (operator-controlled fallback, enum values) remain unchanged.
+> **Partially superseded by [ADR-060](ADR-060-unified-signalprocessing-rego-policy.md)**: Severity is now a rule within the unified `policy.rego` instead of a standalone `severity.rego` with a separate classifier.
+>
+> **#2467 amendment (2026-09-27)**: Rego remains authoritative, but a required severity result of empty or `unknown` is not a successful classification. SP MUST fail the Classifying phase rather than complete with an unclassified value. Operators may define concrete catch-all results in Rego; SP MUST NOT supply a Go fallback, and downstream LLMs MUST NOT guess. This amendment supersedes earlier statements and examples in this document that treat `unknown` as a successful unmapped-severity fallback. See the amended [BR-SP-105](../../services/crd-controllers/01-signalprocessing/BUSINESS_REQUIREMENTS.md) and [BR-SEVERITY-001](../../requirements/BR-SEVERITY-001-standardized-severity-levels.md).
 
 ## Status
 **✅ APPROVED** (2026-01-09)
-**Last Reviewed**: 2026-01-16 (v1.2 - Documentation restructuring)
+**Last Reviewed**: 2026-09-27 (v1.3 - #2467 fail-closed amendment)
 **Confidence**: 95%
 **Priority**: P0 (Blocks customer onboarding with custom severity schemes)
-**Version**: 1.2
+**Version**: 1.3
 
 ---
 
 ## 📝 **Changelog**
+
+### **v1.3 (2026-09-27) - #2467 Fail-Closed Classification Amendment**
+**Change**: Required severity results of empty or `unknown` now fail SignalProcessing classification. Operators own concrete Rego catch-all values; no SP Go fallback or LLM guess is permitted.
+
+**Rationale**:
+- Workflow discovery depends on a usable SP classification.
+- An enum-valid `unknown` does not identify a workflow category and must not be treated as successful classification.
+- Concrete defaults remain an explicit OPA policy decision.
 
 ### **v1.2 (2026-01-16) - Documentation Restructuring**
 **Change**: Extracted detailed implementation and test scenarios to dedicated documents

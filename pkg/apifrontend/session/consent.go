@@ -98,6 +98,12 @@ const (
 	// text from an authoritative investigation summary.
 	StateKeyGroundedSummaryProvisional = "af_grounded_summary_provisional"
 
+	// StateKeyDecisionRCAClassification stores the trusted severity and
+	// provisional provenance that the server projects into the final decision
+	// artifact. Unlike the EventBridge copy, this state survives the new bridge
+	// created for each subsequent streaming request.
+	StateKeyDecisionRCAClassification = "af_decision_rca_classification"
+
 	// StateKeyDiscoveryResult stores the successful canonical discovery result
 	// for completion recovery when ADK trims older events.
 	StateKeyDiscoveryResult = "af_discovery_result"

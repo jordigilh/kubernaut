@@ -28,8 +28,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
@@ -66,7 +66,6 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"root_cause_analysis": {
 						"summary": "OOMKilled due to memory limit exceeded on api-server container",
-						"severity": "high",
 						"contributing_factors": ["memory leak in api-server container", "no HPA configured"],
 						"remediation_target": {"kind": "Deployment", "name": "api-server", "namespace": "production"}
 					},
@@ -95,8 +94,8 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 			wdSystemPrompt := mockClient.calls[1].Messages[0].Content
 			Expect(wdSystemPrompt).To(ContainSubstring("Phase 1 Assessment"),
 				"IT-KA-715-001: Phase 3 prompt must contain Phase 1 Assessment section")
-			Expect(wdSystemPrompt).To(ContainSubstring("high"),
-				"IT-KA-715-001: Phase 3 prompt must contain Phase 1 severity")
+			Expect(wdSystemPrompt).To(ContainSubstring("critical"),
+				"IT-KA-715-001: Phase 3 prompt must contain trusted Phase 1 severity")
 			Expect(wdSystemPrompt).To(ContainSubstring("memory leak"),
 				"IT-KA-715-001: Phase 3 prompt must contain Phase 1 contributing factors")
 		})

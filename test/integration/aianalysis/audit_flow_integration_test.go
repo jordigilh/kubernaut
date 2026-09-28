@@ -201,6 +201,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							// Match the seeded crashloop-config-fix-v1 fixture.
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -482,6 +483,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							// Match the seeded crashloop-config-fix-v1 fixture.
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -599,6 +601,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							// Match the seeded crashloop-config-fix-v1 fixture.
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -692,6 +695,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							// Match the seeded crashloop-config-fix-v1 fixture.
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production", // Production requires approval
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -808,6 +812,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							Fingerprint:      fmt.Sprintf("fp-rego-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
+							SignalMode:       "reactive",
 							Environment:      "production", // Mock Rego requires approval for production
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -924,6 +929,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							Fingerprint:      fmt.Sprintf("fp-phases-%s", uuid.New().String()[:8]),
 							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "HighMemoryUsage",
+							SignalMode:       "reactive",
 							Environment:      "development",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
@@ -1015,6 +1021,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 							Fingerprint:      fmt.Sprintf("fp-ka-error-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
 							SignalName:       "InvalidSignalType", // This may cause KA to error
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{

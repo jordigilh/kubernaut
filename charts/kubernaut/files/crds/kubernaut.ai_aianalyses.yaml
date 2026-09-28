@@ -343,6 +343,7 @@ spec:
                     - environment
                     - fingerprint
                     - severity
+                    - signalMode
                     - signalName
                     - targetResource
                     type: object

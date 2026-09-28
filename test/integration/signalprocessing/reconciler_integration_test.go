@@ -426,8 +426,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 	// ========================================
 
 	Context("Edge Cases", func() {
-		// Default environment fallback when no labels present
-		It("BR-SP-053: should default to unknown environment when no labels", func() {
+		// Concrete operator-policy default when no labels are present
+		It("BR-SP-053: should default to development environment when no labels", func() {
 			By("Creating namespace without environment label")
 			ns := createTestNamespace(ctx, "unknown-env")
 			defer deleteTestNamespace(ns)
@@ -456,7 +456,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentUnknown))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentDevelopment))
 			Expect(final.Status.EnvironmentClassification.Source).To(Equal("default"))
 		})
 

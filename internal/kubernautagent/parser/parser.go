@@ -56,6 +56,9 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 		coerced := coerceKnownFields(jsonStr)
 		var result katypes.InvestigationResult
 		if err := json.Unmarshal([]byte(coerced), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+			// Severity is read-only SignalProcessing context. The result field is
+			// populated later by the investigator from trusted AgentSession input.
+			result.Severity = ""
 			// BR-KA-200: Clear any HR fields populated by json.Unmarshal via
 			// the "human_review_reason" tag match. HR is parser-derived only.
 			result.HumanReviewNeeded = false

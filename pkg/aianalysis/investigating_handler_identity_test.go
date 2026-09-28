@@ -62,6 +62,7 @@ var _ = Describe("InvestigatingHandler Identity Propagation — #774, BR-INTERAC
 						Fingerprint:      "test-fingerprint-774",
 						Severity:         "high",
 						SignalName:       "OOMKilled",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

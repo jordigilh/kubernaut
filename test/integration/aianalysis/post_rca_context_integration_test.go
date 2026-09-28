@@ -80,6 +80,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 						Fingerprint:      "fp-it-aa-056-" + suffix,
 						Severity:         "critical",
 						SignalName:       "CrashLoopBackOff",
+						SignalMode:       "reactive",
 						Environment:      "staging",
 						BusinessPriority: "P1",
 						TargetResource: aianalysisv1.TargetResource{

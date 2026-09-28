@@ -261,20 +261,17 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 
 	It("IT-AF-1282-W04: severity triage wires through HandleCreateRR in envtest", func() {
 		ctx := context.Background()
-		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 		cfg := severity.DefaultConfig()
-		// #1839: Tier 3 (pure-LLM, zero-evidence) fallback was removed, so
-		// this must supply a real firing alert to reach a resolvable
-		// severity through the production pipeline -- an ungrounded call
-		// now correctly fails closed (see IT-AF-1839-001 below).
+		// DD-AF-016: preserve the external label exactly for SP Rego; do not
+		// canonicalize or infer it in AF.
 		promClient := &podCorrelationPromClient{
 			alerts: []prom.Alert{
 				{State: "firing", Labels: map[string]string{
-					"alertname": "HighErrorRate", "namespace": defaultFixture, "kind": "Deployment", "name": "web-w04", "severity": "critical",
+					"alertname": "HighErrorRate", "namespace": defaultFixture, "kind": "Deployment", "name": "web-w04", "severity": "Sev1",
 				}},
 			},
 		}
-		triager := severity.NewTriager(promClient, noopLLM, cfg, logr.Discard())
+		triager := severity.NewTriager(promClient, nil, cfg, logr.Discard())
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager, ScopeChecker: alwaysManagedScopeChecker()}, &tools.CreateRRArgs{ClusterID: hubClusterID,
 			Namespace:   defaultFixture,
@@ -284,11 +281,67 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
-		Expect(result.Severity).To(Equal("critical"), "severity must come from the real firing alert via the production Triager wiring")
+		Expect(result.Severity).To(Equal("Sev1"), "BR-SEVERITY-001: severity must preserve the explicit external alert label exactly")
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Get(ctx, result.RRID, metav1.GetOptions{})
+		Expect(getErr).NotTo(HaveOccurred())
+		persistedSeverity, found, nestedErr := unstructured.NestedString(created.Object, "spec", "severity")
+		Expect(nestedErr).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(persistedSeverity).To(Equal("Sev1"), "BR-SEVERITY-001: the raw source label must cross the AF→SP boundary unchanged")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
+	})
+
+	It("IT-AF-2467-002: HandleCreateRR creates no RR when source severity is missing or ambiguous", func() {
+		ctx := context.Background()
+		scenarios := []struct {
+			name       string
+			promClient *podCorrelationPromClient
+		}{
+			{
+				name: "missing-alert-severity",
+				promClient: &podCorrelationPromClient{alerts: []prom.Alert{{
+					State: "firing",
+					Labels: map[string]string{
+						"alertname": "MissingSeverity", "namespace": defaultFixture,
+						"kind": "Deployment", "name": "web-af-2467-missing",
+					},
+				}}},
+			},
+			{
+				name: "conflicting-rule-severity",
+				promClient: &podCorrelationPromClient{ruleGroups: []prom.RuleGroup{{Name: "potential-issues", Rules: []prom.Rule{
+					{Name: "PotentialHigh", Query: `up{namespace="` + defaultFixture + `"}`, State: "inactive", Labels: map[string]string{"severity": "P1"}},
+					{Name: "PotentialLow", Query: `up{namespace="` + defaultFixture + `"}`, State: "inactive", Labels: map[string]string{"severity": "P3"}},
+				}}}},
+			},
+		}
+
+		for _, scenario := range scenarios {
+			resourceName := "web-af-2467-" + scenario.name
+			if scenario.name == "missing-alert-severity" {
+				resourceName = "web-af-2467-missing"
+			}
+			triager := severity.NewTriager(scenario.promClient, nil, severity.DefaultConfig(), logr.Discard())
+			result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{
+				Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture,
+				Triager: triager, ScopeChecker: alwaysManagedScopeChecker(),
+			}, &tools.CreateRRArgs{
+				ClusterID: hubClusterID, Namespace: defaultFixture, Kind: "Deployment",
+				Name: resourceName, Description: "explicit severity source integration test",
+			}, "it-user")
+			Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue(), scenario.name)
+			Expect(result.RRID).To(BeEmpty(), scenario.name)
+
+			list, listErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).List(ctx, metav1.ListOptions{})
+			Expect(listErr).NotTo(HaveOccurred())
+			for _, item := range list.Items {
+				targetName, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "name")
+				Expect(targetName).NotTo(Equal(resourceName), "no RR may be persisted without one unambiguous explicit source severity")
+			}
+		}
 	})
 
 	It("IT-AF-1839-001: HandleCreateRR fails closed via envtest when no alert or rule correlates to the resource", func() {

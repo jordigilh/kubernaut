@@ -11,24 +11,25 @@ Go-level fallback logic creates **silent behavior mismatch** when operator-defin
 ### Replacement
 
 - **Rego `default` keyword**: Operators define their own catch-all defaults directly in their Rego policies
-- **Mandatory policies**: All classification policies (priority, environment, business) are now MANDATORY
+- **Mandatory policies**: Policies for required workflow-driving classifications (such as severity, environment, and priority) are mandatory; optional business dimensions remain optional per BR-SP-081
 - **No Go fallbacks**: Go code returns errors if Rego policy evaluation fails
+- **#2467 fail-closed clarification**: Empty or `unknown` results for required workflow classifications fail SP classification; only concrete values explicitly returned by Rego (for example, `P3`) are successful defaults
 
 ### Migration
 
 Replace hardcoded Go fallbacks with Rego `default` rules:
 
 ```rego
-# Old approach (Go code fallback):
-# if rego fails → return P2 (hardcoded in Go)
+package signalprocessing
 
-# New approach (Rego default):
-default result := {"priority": "P2", "policy_name": "operator-default"}
+import rego.v1
 
-# Operators can customize to their needs:
-default result := {"priority": "P3", "policy_name": "low-priority-default"}
-default result := {"priority": "", "policy_name": "unclassified"}  # Empty = no priority
+# Concrete operator-selected catch-all for priority inputs not covered below.
+# SP does not inject this value; OPA returns it as the policy result.
+default priority := {"priority": "P3", "policy_name": "operator-default"}
 ```
+
+Everything under **Original Document (Archived)** below is historical and non-normative. In particular, its severity-based Go fallback matrix and "Never Fail" requirement were superseded: a Rego evaluation error or unusable required classification must not be converted into a priority by Go code.
 
 ### See Also
 
@@ -338,4 +339,3 @@ func (p *PriorityEngine) fallbackBySeverity(severity string) *PriorityAssignment
 **Priority**: **P1 - High**
 **Target Version**: **Kubernaut v1.0**
 **Implementation Status**: **✅ COMPLETE** (v1.0)
-

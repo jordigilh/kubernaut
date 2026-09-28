@@ -260,11 +260,14 @@ func (e *Evaluator) EvaluateEnvironment(ctx context.Context, input PolicyInput) 
 
 	environment, _ := resultMap["environment"].(string)
 	source, _ := resultMap["source"].(string)
+	if strings.TrimSpace(environment) == "" || strings.EqualFold(strings.TrimSpace(environment), string(signalprocessingv1alpha1.EnvironmentUnknown)) {
+		return nil, fmt.Errorf("environment policy returned unusable classification %q", environment)
+	}
 	if source == "" {
 		source = "default"
 	}
 
-	normalized, ok := normalizeEnv[strings.ToLower(environment)]
+	normalized, ok := normalizeEnv[strings.ToLower(strings.TrimSpace(environment))]
 	if !ok {
 		normalized = signalprocessingv1alpha1.Environment(environment)
 	}
@@ -312,6 +315,9 @@ func (e *Evaluator) EvaluateSeverity(ctx context.Context, input PolicyInput) (*S
 
 	if !isValidSeverity(severityValue) {
 		return nil, fmt.Errorf("policy returned invalid severity %q - must be critical/high/warning/info/unknown", severityValue)
+	}
+	if strings.TrimSpace(severityValue) == "" || strings.EqualFold(strings.TrimSpace(severityValue), signalprocessingv1alpha1.SeverityUnknown) {
+		return nil, fmt.Errorf("severity policy returned unusable classification %q", severityValue)
 	}
 
 	return &SeverityResult{

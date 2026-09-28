@@ -79,6 +79,7 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 							Fingerprint:      "e2e-fingerprint-607",
 							Severity:         "info",
 							SignalName:       "MOCK_NOT_ACTIONABLE",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{

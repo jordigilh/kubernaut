@@ -3,6 +3,7 @@ package severity
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/go-logr/logr"
 
@@ -14,20 +15,19 @@ import (
 
 const fleetClusterLabelKey = "cluster"
 
-// ErrSeverityUndetermined is returned when no real Prometheus alert or rule
-// correlates to the investigated resource (Tier 1/1.5/2/2.5 all miss).
+// ErrSeverityUndetermined is returned when correlated Prometheus evidence
+// cannot supply one explicit, unambiguous severity for the investigated resource.
 //
-// #1839: this used to fall through to a "Tier 3" pure-LLM classification
-// that asked the model to invent a severity from namespace/kind/name/
-// description alone -- zero confirming evidence. That value fed directly
-// into RemediationRequest.Spec.Severity (with SignalType "alert" hardcoded
-// regardless of tier, making it indistinguishable from a real
-// Alertmanager-sourced signal) and drove KA's workflow-catalog severity
-// filter. An LLM has no grounds to reconstruct alert semantics that only
-// exist in real, user-authored Prometheus rules, so a wrong guess could
-// steer remediation toward the wrong workflow. Failing closed instead of
-// guessing is the fix; see DD-AF-010.
-var ErrSeverityUndetermined = errors.New("cannot determine severity: no active alert or prometheus rule correlates to this resource")
+// DD-AF-010/#1839 removed the no-evidence LLM fallback. DD-AF-016 also
+// prohibits LLM-derived severity and local defaults; a source label must be
+// present and unambiguous before AF creates an RR.
+var ErrSeverityUndetermined = errors.New("cannot determine severity: no correlated alert or rule supplies one explicit, unambiguous severity")
+
+// LLMTriager is retained for source compatibility with existing AF wiring and
+// tests. DD-AF-016 makes it deliberately unused by severity triage.
+type LLMTriager interface {
+	TriageWithRules(ctx context.Context, rules []prom.Rule, input TriageInput) (TriageResult, error)
+}
 
 // AmbiguousSeverityError is returned by Triage when the only correlating
 // evidence found is a cluster-scoped alert with no verified relationship to
@@ -44,18 +44,15 @@ func (e *AmbiguousSeverityError) Error() string {
 	return "severity triage ambiguous: only a cluster-scoped alert (" + e.Candidate.AlertName + ") correlates, with no verified relationship to this resource"
 }
 
-// LLMTriager defines the interface for LLM-based severity classification.
-type LLMTriager interface {
-	TriageWithRules(ctx context.Context, rules []prom.Rule, input TriageInput) (TriageResult, error)
-}
-
 // Config holds configuration for the triage pipeline.
 type Config struct {
 	Enabled           bool
 	MaxQueriesPerCall int
 	MaxRulesEvaluated int
 	CacheTTLSeconds   int
-	LLMConfidence     float64
+	// LLMConfidence is retained for configuration compatibility only. Severity
+	// triage no longer calls an LLM or applies a confidence-based fallback.
+	LLMConfidence float64
 }
 
 // DefaultConfig returns the default triage config.
@@ -65,14 +62,12 @@ func DefaultConfig() Config {
 		MaxQueriesPerCall: 10,
 		MaxRulesEvaluated: 100,
 		CacheTTLSeconds:   30,
-		LLMConfidence:     0.7,
 	}
 }
 
 // Triager orchestrates the multi-tier severity triage pipeline.
 type Triager struct {
 	promClient  prom.Client
-	llm         LLMTriager
 	config      Config
 	logger      logr.Logger
 	cache       *RulesCache
@@ -94,19 +89,15 @@ func WithPodResolver(r PodResolver) TriagerOption {
 	return func(t *Triager) { t.podResolver = r }
 }
 
-// NewTriager creates a new Triager instance.
-// Panics if llm is nil — Tier 2.5 requires an LLM to interpret a correlated
-// but not-currently-true Prometheus rule.
-func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger, opts ...TriagerOption) *Triager {
-	if llm == nil {
-		panic("NewTriager: LLMTriager must not be nil — Tier 2.5 requires an LLM to interpret rule context")
-	}
+// NewTriager creates a Prometheus-backed Triager. The llm argument is retained
+// for source compatibility but intentionally ignored: severity is sourced
+// only from explicit alert/rule labels (DD-AF-016).
+func NewTriager(promClient prom.Client, _ LLMTriager, cfg Config, logger logr.Logger, opts ...TriagerOption) *Triager {
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
 	t := &Triager{
 		promClient: promClient,
-		llm:        llm,
 		config:     cfg,
 		logger:     logger,
 		cache:      NewRulesCache(cfg.CacheTTLSeconds),
@@ -117,10 +108,9 @@ func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.
 	return t
 }
 
-// Triage runs the severity triage pipeline: Tier 1 -> 1.5 -> 2 -> 2.5.
+// Triage runs firing-alert, pending-rule, then correlated-rule severity checks.
 // Returns a zero TriageResult if triage is disabled. Returns
-// ErrSeverityUndetermined if no real alert or rule correlates to the
-// resource (#1839 -- no ungrounded LLM fallback).
+// ErrSeverityUndetermined if no explicit, unambiguous source severity exists.
 func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, error) {
 	if !t.config.Enabled {
 		return TriageResult{}, nil
@@ -136,6 +126,9 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 	}
 
 	result, err := t.triagePipeline(ctx, input)
+	if err == nil && strings.TrimSpace(result.Severity) == "" {
+		err = ErrSeverityUndetermined
+	}
 	if err != nil {
 		if t.auditor != nil {
 			t.auditor.Emit(ctx, &audit.Event{
@@ -174,9 +167,6 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		return result, &AmbiguousSeverityError{Candidate: result}
 	}
 
-	if result.Severity != "" {
-		result.Severity = NormalizeSeverity(result.Severity)
-	}
 	if result.Severity != "" && t.auditor != nil {
 		t.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventSeverityTriageCompleted,
@@ -200,6 +190,9 @@ func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (Triage
 	// Tier 1: Check firing alerts
 	result, done := t.runTier1(ctx, input)
 	if done {
+		if strings.TrimSpace(result.Severity) == "" {
+			return result, ErrSeverityUndetermined
+		}
 		return result, nil
 	}
 
@@ -214,34 +207,29 @@ func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (Triage
 	if rulesErr == nil {
 		result, done = t.runTier15(input, ruleGroups)
 		if done {
+			if strings.TrimSpace(result.Severity) == "" {
+				return result, ErrSeverityUndetermined
+			}
 			return result, nil
 		}
 	} else {
 		t.logger.Info("skipping Tier 1.5: rules fetch failed", "error", rulesErr.Error())
 	}
 
-	// Tier 2: Evaluate inactive matching rules
-	var matchedRules []prom.Rule
+	// Tier 2: Evaluate matching rules, then use only their explicit labels.
 	if rulesErr == nil {
-		result, matchedRules, done = t.runTier2(ctx, input, ruleGroups)
+		result, done = t.runTier2(ctx, input, ruleGroups)
 		if done {
+			if strings.TrimSpace(result.Severity) == "" {
+				return result, ErrSeverityUndetermined
+			}
 			return result, nil
 		}
 	} else {
 		t.logger.Info("skipping Tier 2: rules fetch failed", "error", rulesErr.Error())
 	}
 
-	// Tier 2.5: LLM with rule context (only if rules matched but data was empty)
-	if len(matchedRules) > 0 {
-		result, done = t.runTier25(ctx, input, matchedRules)
-		if done {
-			return result, nil
-		}
-	}
-
-	// #1839: no real alert or rule correlates to this resource -- fail
-	// closed rather than asking the LLM to invent a severity from zero
-	// evidence (removed Tier 3; see ErrSeverityUndetermined).
+	// No matching source evidence can supply severity; do not infer a value.
 	return TriageResult{}, ErrSeverityUndetermined
 }
 
@@ -264,7 +252,9 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace, input.ClusterID, input.FleetMode)
 }
 
-// matchCandidate tracks the best alert match at a given priority tier.
+// matchCandidate tracks all alert matches in one specificity/state bucket.
+// Severity is usable only when every candidate carries the same non-empty raw
+// label; source labels are never ordered by AF's canonical severity table.
 type matchCandidate struct {
 	found    bool
 	severity string
@@ -272,10 +262,14 @@ type matchCandidate struct {
 }
 
 func (m *matchCandidate) update(sev, alertName string) {
-	if !m.found || CompareSeverity(sev, m.severity) > 0 {
+	if !m.found {
 		m.found = true
 		m.severity = sev
 		m.alert = alertName
+		return
+	}
+	if strings.TrimSpace(sev) == "" || strings.TrimSpace(m.severity) == "" || sev != m.severity {
+		m.severity = ""
 	}
 }
 
@@ -342,8 +336,8 @@ func classifyAlertTier(alert prom.Alert, targetLabels map[string]string, podName
 	return tier, firing, sev, name
 }
 
-// updateTierCandidate records sev/name into the firing or pending candidate
-// for a tier, keeping the highest-severity match seen so far (matchCandidate.update).
+// updateTierCandidate records a correlated source alert in its specificity
+// and state bucket; conflicting source severities make that bucket unusable.
 func updateTierCandidate(firing bool, sev, name string, firingCand, pendingCand *matchCandidate) {
 	if firing {
 		firingCand.update(sev, name)
@@ -394,60 +388,101 @@ func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]
 }
 
 func (t *Triager) runTier15(input TriageInput, ruleGroups []prom.RuleGroup) (TriageResult, bool) {
-	var bestSeverity string
-	var bestRule string
+	matchedRules := make([]prom.Rule, 0)
 	for _, g := range ruleGroups {
 		for _, r := range g.Rules {
-			if r.State != "pending" {
-				continue
-			}
-			if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
-				continue
-			}
-			matchers, err := prom.ExtractLabelMatchers(r.Query)
-			if err != nil {
-				continue
-			}
-			if !prom.MatchesResource(matchers, input.Labels) {
-				continue
-			}
-			sev := r.Labels["severity"]
-			if bestSeverity == "" || CompareSeverity(sev, bestSeverity) > 0 {
-				bestSeverity = sev
-				bestRule = r.Name
+			if matchesRule(r, input, "pending") {
+				matchedRules = append(matchedRules, r)
 			}
 		}
 	}
-	if bestSeverity != "" {
-		return TriageResult{
-			Severity: bestSeverity,
-			Source:   SourcePendingAlert,
-			RuleName: bestRule,
-		}, true
+	if len(matchedRules) == 0 {
+		return TriageResult{}, false
 	}
-	return TriageResult{}, false
+	result, ok := ruleSeverity(matchedRules, SourcePendingAlert)
+	if !ok {
+		return TriageResult{}, true
+	}
+	return result, true
 }
 
-func (t *Triager) runTier2(ctx context.Context, input TriageInput, ruleGroups []prom.RuleGroup) (TriageResult, []prom.Rule, bool) {
-	var matchedRules []prom.Rule
+func (t *Triager) runTier2(ctx context.Context, input TriageInput, ruleGroups []prom.RuleGroup) (TriageResult, bool) {
 	queryCount := 0
+	matchedRules, queryMatched, activeRuleName, maxRulesExceeded := t.collectTier2Rules(ctx, input, ruleGroups, &queryCount)
+	if len(matchedRules) == 0 {
+		return TriageResult{}, false
+	}
+	if maxRulesExceeded {
+		return TriageResult{}, true
+	}
 
-	for _, g := range ruleGroups {
-		for _, r := range g.Rules {
-			if len(matchedRules) >= t.config.MaxRulesEvaluated {
-				break
-			}
-			result, matched, found := t.evaluateTier2Rule(ctx, r, input, &queryCount)
-			if !matched {
+	source := SourceRuleLabel
+	if queryMatched > 0 {
+		source = SourceRuleEval
+	}
+	result, ok := ruleSeverity(matchedRules, source)
+	if !ok {
+		return TriageResult{}, true
+	}
+	if queryMatched == 1 {
+		result.RuleName = activeRuleName
+	}
+	return result, true
+}
+
+func (t *Triager) collectTier2Rules(ctx context.Context, input TriageInput, ruleGroups []prom.RuleGroup, queryCount *int) ([]prom.Rule, int, string, bool) {
+	matchedRules := make([]prom.Rule, 0)
+	queryMatched := 0
+	activeRuleName := ""
+
+	for _, group := range ruleGroups {
+		for _, rule := range group.Rules {
+			if !matchesRule(rule, input, "inactive") {
 				continue
 			}
-			matchedRules = append(matchedRules, r)
+			if len(matchedRules) >= t.config.MaxRulesEvaluated {
+				return matchedRules, queryMatched, activeRuleName, true
+			}
+			matchedRules = append(matchedRules, rule)
+			result, _, found := t.evaluateTier2Rule(ctx, rule, input, queryCount)
 			if found {
-				return result, matchedRules, true
+				queryMatched++
+				if activeRuleName == "" {
+					activeRuleName = result.RuleName
+				}
 			}
 		}
 	}
-	return TriageResult{}, matchedRules, false
+	return matchedRules, queryMatched, activeRuleName, false
+}
+
+func matchesRule(r prom.Rule, input TriageInput, state string) bool {
+	if r.State != state || !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
+		return false
+	}
+	matchers, err := prom.ExtractLabelMatchers(r.Query)
+	return err == nil && prom.MatchesResource(matchers, input.Labels)
+}
+
+func ruleSeverity(candidates []prom.Rule, source Source) (TriageResult, bool) {
+	if len(candidates) == 0 {
+		return TriageResult{}, false
+	}
+	severity := candidates[0].Labels["severity"]
+	if strings.TrimSpace(severity) == "" {
+		return TriageResult{}, false
+	}
+	for _, candidate := range candidates[1:] {
+		candidateSeverity := candidate.Labels["severity"]
+		if strings.TrimSpace(candidateSeverity) == "" || candidateSeverity != severity {
+			return TriageResult{}, false
+		}
+	}
+	result := TriageResult{Severity: severity, Source: source}
+	if len(candidates) == 1 {
+		result.RuleName = candidates[0].Name
+	}
+	return result, true
 }
 
 // evaluateTier2Rule checks whether a single Prometheus alerting rule
@@ -457,17 +492,7 @@ func (t *Triager) runTier2(ctx context.Context, input TriageInput, ruleGroups []
 // query outcome; found indicates a firing match was found and result is
 // populated with the resolved severity.
 func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input TriageInput, queryCount *int) (result TriageResult, matched, found bool) {
-	if r.State != "inactive" {
-		return TriageResult{}, false, false
-	}
-	matchers, err := prom.ExtractLabelMatchers(r.Query)
-	if err != nil {
-		return TriageResult{}, false, false
-	}
-	if !matchesCluster(r.Labels, input.ClusterID, input.FleetMode) {
-		return TriageResult{}, false, false
-	}
-	if !prom.MatchesResource(matchers, input.Labels) {
+	if !matchesRule(r, input, "inactive") {
 		return TriageResult{}, false, false
 	}
 
@@ -500,21 +525,6 @@ func matchesCluster(labels map[string]string, clusterID string, fleetMode bool) 
 		return true
 	}
 	return clusterID != "" && labels[fleetClusterLabelKey] == clusterID
-}
-
-func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules []prom.Rule) (TriageResult, bool) {
-	result, err := t.llm.TriageWithRules(ctx, matchedRules, input)
-	if err != nil {
-		t.logger.Info("Tier 2.5 LLM failed", "error", err.Error())
-		return TriageResult{}, false
-	}
-	result.Source = SourceLLMRuleInform
-	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
-		t.logger.Info("LLM confidence below threshold, defaulting to warning",
-			"tier", "2.5", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = SeverityWarning
-	}
-	return result, true
 }
 
 func (t *Triager) fetchRules(ctx context.Context) ([]prom.RuleGroup, error) {

@@ -109,6 +109,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// human_review_reason="workflow_not_found"
 							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Severity:         "critical",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							Fingerprint:      "test-fingerprint-" + testID,
@@ -288,6 +289,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// with confidence >= 0.7 and selected_workflow=null
 							SignalName:       "MOCK_PROBLEM_RESOLVED",
 							Severity:         "info", // ADR-066: Use canonical severity (critical, high, warning, info)
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      "test-fingerprint-" + testID,
@@ -463,6 +465,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 						SignalContext: aianalysisv1.SignalContextInput{
 							SignalName:       "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
 							Severity:         "info",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      fmt.Sprintf("fp-contra-%s", shortID),
@@ -533,6 +536,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 						SignalContext: aianalysisv1.SignalContextInput{
 							SignalName:       "MOCK_RCA_PERMANENT_ERROR",
 							Severity:         "critical",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							Fingerprint:      "test-fingerprint-" + testID,

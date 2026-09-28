@@ -117,6 +117,9 @@ var _ = Describe("#2244 AgentSession Admission Existence Gate (BR-AA-KA-065.13)"
 				RemediationID: rrName,
 				SignalName:    "OOMKilled",
 				Severity:      "critical",
+				Environment:   "test",
+				Priority:      "P1",
+				SignalMode:    "reactive",
 			},
 		}
 	}

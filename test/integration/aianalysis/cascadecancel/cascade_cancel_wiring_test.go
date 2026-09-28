@@ -86,6 +86,7 @@ func newCascadeCancelledAnalysis(ns, name string) *aianalysisv1.AIAnalysis {
 					Fingerprint:      "fp-" + name,
 					Severity:         "critical",
 					SignalName:       "TestSignalCascadeCancelIT",
+					SignalMode:       "reactive",
 					Environment:      "staging",
 					BusinessPriority: "P1",
 					TargetResource: aianalysisv1.TargetResource{

@@ -105,6 +105,9 @@ var _ = Describe("IT-KA-1818-RACE: AgentSession existence race guard", Label("in
 				RemediationID:         rrID,
 				SignalName:            "OOMKilled",
 				Severity:              "warning",
+				Environment:           "test",
+				Priority:              "P3",
+				SignalMode:            "reactive",
 			},
 		}
 		Expect(sharedK8sClient.Create(ctx, as)).To(Succeed())

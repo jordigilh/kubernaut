@@ -643,7 +643,13 @@ var _ = Describe("Session ID Forwarding (#1452)", Label("integration", "session-
 						Name:      "rr-it-1452-001",
 						Namespace: "kubernaut-system",
 					},
+					IncidentID:    "aia-it-1452-001",
 					RemediationID: "rr-it-1452-001",
+					SignalName:    "CrashLoopBackOff",
+					Severity:      "warning",
+					Environment:   "test",
+					Priority:      "P1",
+					SignalMode:    "reactive",
 				},
 				Status: agentsessionv1.AgentSessionStatus{
 					SessionID: aiaSessionID,

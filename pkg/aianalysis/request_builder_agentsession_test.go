@@ -164,8 +164,13 @@ var _ = Describe("RequestBuilder.BuildAgentSessionSpec", func() {
 			Expect(spec.SignalMode).To(Equal("reactive"))
 		})
 
-		It("UT-AA-KA-065-110: should leave SignalMode empty when unset (backwards compatible)", func() {
+		It("UT-AA-KA-065-110: should preserve an explicitly empty mode on an in-memory object", func() {
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			// SignalMode is required by the AIAnalysis and AgentSession CRD
+			// schemas. Clear it explicitly here to verify that this mapper
+			// remains lossless; the apiserver rejects such an object before
+			// this mapper is reached in production.
+			analysis.Spec.AnalysisRequest.SignalContext.SignalMode = ""
 
 			spec := builder.BuildAgentSessionSpec(analysis)
 

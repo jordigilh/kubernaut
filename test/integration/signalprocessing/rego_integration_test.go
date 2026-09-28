@@ -262,9 +262,9 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			// Should complete with default environment
+			// Should complete with the concrete operator-policy default environment.
 			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentUnknown))
+			Expect(final.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentDevelopment))
 		})
 	})
 

@@ -60,6 +60,7 @@ var _ = Describe("Escalation Status Write (#1449)", Label("integration", "escala
 							Fingerprint:      "test-fingerprint-escalation",
 							Severity:         "critical",
 							SignalName:       "OperatorEscalation",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

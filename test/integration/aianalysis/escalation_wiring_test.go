@@ -94,6 +94,7 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 						Fingerprint:      "fp-escalation-wiring",
 						Severity:         "critical",
 						SignalName:       "OperatorEscalationWiringTest",
+						SignalMode:       "reactive",
 						Environment:      "staging",
 						BusinessPriority: "P1",
 						TargetResource: aianalysisv1.TargetResource{

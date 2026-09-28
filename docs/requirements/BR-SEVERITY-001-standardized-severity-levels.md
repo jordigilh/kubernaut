@@ -26,7 +26,7 @@
 
 Kubernaut uses severity levels across multiple components and boundaries:
 
-1. **External systems** (Prometheus, PagerDuty, custom alerting) produce severity values in arbitrary schemes (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.)
+1. **External systems** (Prometheus, PagerDuty, custom alerting) produce severity values in arbitrary schemes (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.); these are source values, not yet canonical Kubernaut classifications
 2. **SignalProcessing** normalizes external severity to an internal canonical set via Rego policy (DD-SEVERITY-001)
 3. **Kubernaut Agent (KA)** receives the SignalProcessing classification and MUST preserve it in the RCA; the LLM does not independently classify or override severity
 4. **AIAnalysis CRD** validates severity against a `kubebuilder:validation:Enum`
@@ -55,7 +55,7 @@ Without a single authoritative definition of what each canonical severity level 
 
 ### **Canonical Severity Levels**
 
-Kubernaut defines exactly **five** canonical severity levels. All internal components (CRDs, LLM prompts, workflow catalog labels, metrics, audit events) MUST use one of these values.
+Kubernaut defines exactly **five** canonical severity levels. Canonical classification fields (including SP outputs, AIA context, KA context, workflow labels, metrics, and audit events) MUST use one of these values. Raw external source values may remain in the incoming RR severity only until SP Rego normalizes them (DD-AF-016).
 
 The levels are ordered from most to least severe:
 
@@ -151,7 +151,7 @@ The system has a **minor or informational issue** that does not affect users or 
 
 ### **unknown** — Human triage required
 
-The investigation **could not determine the severity** due to insufficient data, ambiguous signals, or conflicting evidence. A human operator must review the situation and assign the appropriate severity.
+The severity classification is **unavailable** due to insufficient data, ambiguous signals, conflicting evidence, or an unmapped external value. `unknown` remains accepted by CRD enums as a sentinel, but it is not a successful SP classification: SP MUST fail the Classifying phase, and the remediation pipeline MUST NOT route to a workflow or ask an LLM to invent a replacement. An operator must correct the policy/input before processing can continue.
 
 **Characteristics**:
 - Root cause could not be determined
@@ -178,6 +178,7 @@ This table documents where each component enforces or references the canonical s
 | **Kubernaut Agent (KA) Incident Prompt** | Pass-through instruction for SP-classified input | Same severity values as SignalProcessing | `internal/kubernautagent/prompt/templates/incident_investigation.tmpl` |
 | **KA Workflow Selection Prompt** | Pass-through instruction for SP-classified input | Same severity values as SignalProcessing | `internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl` |
 | **SignalProcessing Rego** | Rego policy output | `critical`, `high`, `medium`, `low`, `unknown` | `config/rego/severity.rego` |
+| **API Frontend** | Requires and passes through explicit correlated alert/rule severity before RR creation; does not infer, default, or canonicalize it | Operator-defined source values until SP normalization | `pkg/apifrontend/severity/triage.go`; [DD-AF-016](../architecture/decisions/DD-AF-016-explicit-alert-severity-source.md) |
 | **Workflow Catalog** | DataStorage label filter (JSONB array, ? operator) | `[critical, high, medium, low]` | `api/openapi/data-storage-v1.yaml` |
 | **Prometheus Metrics** | Label cardinality | `critical`, `high`, `medium`, `low`, `unknown` | Various `metrics.go` files |
 
@@ -195,11 +196,25 @@ The 5-level set is deliberately constrained to maintain acceptable Prometheus me
 
 ### LLM Prompt Alignment
 
-SignalProcessing Rego is the **source of the severity classification**. KA prompts MUST identify the supplied severity as authoritative and instruct the LLM to copy it unchanged into RCA and response fields; prompts MUST NOT ask the LLM to reassess or override it. Severity definitions may be provided as context, but do not transfer classification authority to the LLM.
+SignalProcessing Rego is the **source of the severity classification**. KA may receive a valid SP severity as read-only investigation context, but LLM prompts and response schemas MUST NOT ask the model to copy, produce, reassess, or override that classification. Any final severity-bearing result must be populated from trusted SP-derived server state.
 
 ### Rego Policy Mapping Target
 
-Operators writing Rego policies for SignalProcessing MUST map external severity values to one of these five canonical levels. The `unknown` level serves as the default fallback for unmapped values.
+Operators writing Rego policies for SignalProcessing MUST map external severity values to a concrete supported severity. If unmapped inputs are expected, the operator's Rego policy MUST define a concrete catch-all value appropriate to workflow routing. `unknown` is an enum-compatible sentinel, not a successful fallback; an empty or `unknown` policy result MUST fail SP classification. SP MUST NOT supply a Go fallback, and downstream LLMs MUST NOT guess.
+
+### API Frontend Source-Severity Gate
+
+Before SP runs, API Frontend MUST source a `RemediationRequest` severity from
+an explicit, correlated Prometheus alert or alerting-rule `severity` label.
+For a rule-only potential-issue investigation, matching candidate rules must
+all provide the same non-empty raw severity; missing or conflicting values
+fail closed and create no RR. Multiple alert instances in the selected
+specificity/state bucket must likewise agree on one non-empty raw value. AF
+MUST pass the raw source value unchanged:
+it MUST NOT ask an LLM to infer severity, map an unrecognized value to
+`warning`, or supply another local fallback. SP Rego then owns canonical
+normalization and fails classification if it cannot produce usable required
+outputs (DD-AF-016).
 
 ### CRD Validation
 
@@ -212,12 +227,13 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | # | Criterion | Verification |
 |---|-----------|-------------|
 | AC-1 | All five levels (`critical`, `high`, `medium`, `low`, `unknown`) are accepted by the AIAnalysis CRD | CRD validation test |
-| AC-2 | KA incident prompt instructs the model to preserve the supplied SignalProcessing severity in RCA output | Prompt unit test |
-| AC-3 | KA workflow-selection prompt instructs the model to preserve the supplied SignalProcessing severity in RCA/output fields | Prompt unit test |
-| AC-4 | SignalProcessing default Rego policy maps to all five levels | Rego unit test |
-| AC-5 | No component uses severity values outside this set (e.g., `warning`, `info`, `error`) | `grep` audit across codebase |
+| AC-2 | KA incident prompt treats valid SP severity as read-only context and does not request it in model-authored RCA output | Prompt/schema unit test |
+| AC-3 | KA workflow-selection prompt does not request or accept model-authored SP severity | Prompt/schema unit test |
+| AC-4 | SignalProcessing Rego catch-all returns a concrete policy-defined value; empty or `unknown` output transitions SP to `PhaseFailed` rather than completing | Rego and controller integration tests |
+| AC-5 | No canonical classification field uses a severity outside this set (e.g., `warning`, `info`, `error`); raw external source labels may remain arbitrary only until SP Rego normalization | `grep` audit across canonical fields and pass-through tests |
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |
 | AC-7 | Workflow catalog stores severity as a JSONB array in labels; `"*"` wildcard supported (DD-WORKFLOW-001 v2.8); search uses the JSONB `?` operator with wildcard fallback | Schema inspection + integration test |
+| AC-8 | AF creates no RR without explicit, unambiguous correlated alert/rule severity; otherwise it passes the raw source value unchanged, leaving canonical mapping or failure to SP Rego | AF triage unit/integration tests and SP classification test |
 
 ---
 
@@ -227,9 +243,10 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 - [DD-SEVERITY-001 Implementation Plan](../implementation/DD-SEVERITY-001-implementation-plan.md) — Week-by-week implementation status
 - [BR-SP-105](../services/crd-controllers/01-signalprocessing/BUSINESS_REQUIREMENTS.md) — SignalProcessing Rego severity determination
 - [BR-GATEWAY-111](../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md) — Gateway severity pass-through
+- [DD-AF-016](../architecture/decisions/DD-AF-016-explicit-alert-severity-source.md) — AF requires an explicit source label and never infers/defaults severity
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.3 (updated for #2467 / DD-AF-016, 2026-09-27)
 **Author**: AI Assistant (reviewed by Jordi Gil)
 **Next Review**: After E2E severity scenarios (Sprint N+1)

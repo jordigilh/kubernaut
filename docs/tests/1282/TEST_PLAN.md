@@ -1,5 +1,12 @@
 # Test Plan: AF Agent Quality — Namespace, Signal Grounding, Output Suppression (Issue #1282)
 
+> **Severity-source supersession (DD-AF-016 / #2467):** Any expectation in this
+> plan that treats an LLM-only Tier 2.5/3 triage result as current behavior is
+> historical. AF now requires explicit, unambiguous alert/rule severity,
+> preserves its raw value, and creates no RR when severity is missing or
+> conflicting. The K8s-event signal-name fallback remains separate from
+> severity sourcing.
+
 ## 1. Test Plan Identifier
 
 TP-AF-1282-v1.0
@@ -63,7 +70,7 @@ AF = infrastructure expert (namespace, signal, severity, source).
 
 - F-SIG-01: When Triager Tier 1 returns a firing alert, signalName = TriageResult.AlertName
 - F-SIG-02: When Triager Tier 1.5/2 returns a rule match, signalName = TriageResult.RuleName
-- F-SIG-03: When Triager returns LLM-only (Tier 2.5/3), fall back to K8s events
+- F-SIG-03 (superseded by DD-AF-016): Historical LLM-only (Tier 2.5/3) result fell back to K8s events; no current severity path may produce an LLM-only triage result
 - F-SIG-04: K8s events fallback picks dominant Warning event reason (tier-ranked)
 - F-SIG-05: When no events exist, signalName = "unknown"
 - F-SIG-06: Signal name is never synthetic (no "af-manual-*" prefix)

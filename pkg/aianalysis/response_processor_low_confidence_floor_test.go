@@ -61,6 +61,7 @@ func buildLowConfidenceFloorTestAnalysis() *aianalysisv1.AIAnalysis {
 					Fingerprint:      "test-fingerprint-1828",
 					Severity:         "warning",
 					SignalName:       "OOMKilled",
+					SignalMode:       "reactive",
 					Environment:      "production",
 					BusinessPriority: "P0",
 					TargetResource: aianalysisv1.TargetResource{

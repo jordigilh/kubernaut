@@ -95,7 +95,8 @@ spec:
                   schema -- same raw-JSON precedent as AgentSessionResult's fields.
                 x-kubernetes-preserve-unknown-fields: true
               environment:
-                description: Environment is the deployment environment.
+                description: Environment is the required SP-owned deployment environment.
+                minLength: 1
                 type: string
               errorMessage:
                 description: ErrorMessage is an optional error message associated
@@ -123,7 +124,8 @@ spec:
                   occurred.
                 type: integer
               priority:
-                description: Priority is the business priority.
+                description: Priority is the required SP-owned business priority.
+                minLength: 1
                 type: string
               receivedTime:
                 description: ReceivedTime is the ISO timestamp kubernaut received
@@ -238,10 +240,13 @@ spec:
                 format: date-time
                 type: string
             required:
+            - environment
             - incidentID
+            - priority
             - remediationID
             - remediationRequestRef
             - severity
+            - signalMode
             - signalName
             type: object
             x-kubernetes-validations:

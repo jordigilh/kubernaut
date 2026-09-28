@@ -34,7 +34,6 @@ type llmResponse struct {
 	RCAAlt               *llmRCA                `json:"rootCauseAnalysis,omitempty"`
 	Workflow             *llmWorkflow           `json:"selected_workflow"`
 	AlternativeWorkflows []llmAlternative       `json:"alternative_workflows,omitempty"`
-	Severity             string                 `json:"severity,omitempty"`
 	Confidence           float64                `json:"confidence,omitempty"`
 	Actionable           *bool                  `json:"actionable,omitempty"`
 	InvestigationOutcome string                 `json:"investigation_outcome,omitempty"`
@@ -59,7 +58,6 @@ type llmAlternative struct {
 
 type llmRCA struct {
 	Summary               string                      `json:"summary"`
-	Severity              string                      `json:"severity,omitempty"`
 	SignalName            string                      `json:"signal_name,omitempty"`
 	ContributingFactors   []string                    `json:"contributing_factors,omitempty"`
 	RemediationTarget     *llmRemTarget               `json:"remediation_target,omitempty"`
@@ -252,7 +250,6 @@ func coerceStringifiedNumberFieldIfQuoted(raw map[string]json.RawMessage, key st
 // flatLLMFields captures top-level fields that may appear alongside the flat
 // InvestigationResult format (rca_summary, workflow_id, confidence, etc.).
 type flatLLMFields struct {
-	Severity             string `json:"severity,omitempty"`
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
 }

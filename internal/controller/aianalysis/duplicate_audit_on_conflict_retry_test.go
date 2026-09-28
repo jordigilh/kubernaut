@@ -209,6 +209,7 @@ var _ = Describe("Duplicate audit emission on AtomicStatusUpdate conflict-retry 
 						Fingerprint:      "fp-ut-2204-101",
 						Severity:         "warning",
 						SignalName:       "TestSignal2204",
+						SignalMode:       "reactive",
 						Environment:      "staging",
 						BusinessPriority: "P2",
 						TargetResource: aianalysisv1.TargetResource{
@@ -278,7 +279,7 @@ var _ = Describe("Duplicate audit emission on AtomicStatusUpdate conflict-retry 
 				RemediationID:         "rr-ut-2204-102",
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
-						Fingerprint: "fp-ut-2204-102", Severity: "warning", SignalName: "TestSignal2204",
+						Fingerprint: "fp-ut-2204-102", Severity: "warning", SignalName: "TestSignal2204", SignalMode: "reactive",
 						Environment: "staging", BusinessPriority: "P2",
 						TargetResource:    aianalysisv1.TargetResource{Kind: "Deployment", Name: "test-deploy", Namespace: "default"},
 						EnrichmentResults: sharedtypes.EnrichmentResults{},

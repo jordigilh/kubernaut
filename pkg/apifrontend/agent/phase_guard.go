@@ -18,6 +18,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -86,7 +87,6 @@ const noGroundedContentSummary = "No investigation content is available for this
 // preserve. CausalChain is omitted (its json tag carries omitempty) rather
 // than an empty slice, matching RCAData's own zero value.
 var emptyRCAPayload = map[string]any{
-	"severity":         "",
 	"confidence":       0,
 	"target":           "",
 	"tool_calls_count": 0,
@@ -378,8 +378,8 @@ func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any
 
 // recordInvestigateGroundingState persists whether a kubernaut_investigate
 // call produced groundable RCA content, for present_decision's before-callback
-// (enforceGroundingGuard) to read immediately before it runs. Two state keys
-// are set unconditionally -- including on a hard failure -- so a
+// (enforceGroundingGuard) to read immediately before it runs. Grounding and
+// server-owned presentation state are set unconditionally -- including on a
 // rejected/rca-less call correctly overwrites a stale value left by an
 // earlier successful one in the same session:
 //
@@ -396,6 +396,9 @@ func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any
 //     "extracted from the KA complete event" the way this struct's own doc
 //     comment describes, so it must not be cached as an authoritative fact --
 //     same treatment as "no structured rca at all".
+//   - StateKeyDecisionRCAClassification: the trusted severity and provisional
+//     provenance projected into the server-built decision artifact, including
+//     when present_decision runs on a later request with a new EventBridge.
 func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isSuccess bool) {
 	state := ctx.State()
 	if state == nil {
@@ -408,15 +411,15 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 		logger.Error(err, "phase-guard failed to persist grounded_content_available state")
 	}
 
-	var rca *tools.InvestigateRCA
-	if isSuccess {
-		if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil && !decoded.Provisional {
-			rca = decoded
-		}
-	}
+	rca, artifactSeverity, provisional := groundedInvestigateRCA(resp, grounded)
 	if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_rca state")
 	}
+	classification := decisionRCAClassificationState(artifactSeverity, provisional)
+	if err := state.Set(session.StateKeyDecisionRCAClassification, classification); err != nil {
+		logger.Error(err, "phase-guard failed to persist decision RCA classification state")
+	}
+	launcher.SetDecisionRCAClassificationSafe(ctx, artifactSeverity, provisional)
 	var payload map[string]any
 	if rca != nil {
 		payload = canonicalGroundedRCA(rca)
@@ -428,13 +431,8 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 		logger.Error(err, "phase-guard failed to persist grounded_rca_payload state")
 	}
 	summary, _ := resp["summary"].(string)
-	provisional := false
-	if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil {
-		provisional = decoded.Provisional
-	}
 	if !grounded {
 		summary = ""
-		provisional = false
 	}
 	if err := state.Set(session.StateKeyGroundedSummary, summary); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_summary state")
@@ -442,6 +440,50 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 	if err := state.Set(session.StateKeyGroundedSummaryProvisional, provisional); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_summary_provisional state")
 	}
+}
+
+func groundedInvestigateRCA(resp map[string]any, grounded bool) (*tools.InvestigateRCA, string, bool) {
+	if !grounded {
+		return nil, "", false
+	}
+	decoded := decodeInvestigateRCA(resp["rca"])
+	if decoded == nil {
+		return nil, "", false
+	}
+	if decoded.Provisional {
+		return nil, decoded.Severity, true
+	}
+	return decoded, decoded.Severity, false
+}
+
+func decisionRCAClassificationState(severity string, provisional bool) map[string]any {
+	if severity == "" || strings.EqualFold(strings.TrimSpace(severity), "unknown") {
+		return nil
+	}
+	return map[string]any{
+		"severity":    severity,
+		"provisional": provisional,
+	}
+}
+
+// restoreDecisionRCAClassification rehydrates the server-owned decision
+// classification into the current request's EventBridge. StreamingExecutor
+// intentionally creates a fresh bridge for every request, while ADK session
+// state spans requests; restoring here keeps the artifact projection
+// authoritative when grounding and presentation occur on different turns.
+func restoreDecisionRCAClassification(ctx agent.Context, state adksession.State) {
+	severity := ""
+	provisional := false
+	value, err := state.Get(session.StateKeyDecisionRCAClassification)
+	if err == nil {
+		if classification, ok := value.(map[string]any); ok {
+			severity, _ = classification["severity"].(string)
+			provisional, _ = classification["provisional"].(bool)
+		}
+	} else if !errors.Is(err, adksession.ErrStateKeyNotExist) {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to restore decision RCA classification state")
+	}
+	launcher.SetDecisionRCAClassificationSafe(ctx, severity, provisional)
 }
 
 // toolCallSucceeded reports whether a tool call completed without a Go error
@@ -880,6 +922,9 @@ func substituteGroundedRCA(state adksession.State, args map[string]any) {
 	if v, err := state.Get(session.StateKeyGroundedRCA); err == nil {
 		if rca, ok := v.(*tools.InvestigateRCA); ok {
 			if canonical := canonicalGroundedRCA(rca); canonical != nil {
+				// Severity is inserted only into the server-built artifact. The
+				// LLM-facing RCAData schema deliberately has no severity property.
+				delete(canonical, "severity")
 				args["rca"] = canonical
 				canonicalSubstituted = true
 			}
@@ -887,6 +932,8 @@ func substituteGroundedRCA(state adksession.State, args map[string]any) {
 	}
 	if !canonicalSubstituted {
 		if rcaMap, ok := args["rca"].(map[string]any); ok {
+			delete(rcaMap, "severity")
+			delete(rcaMap, "provisional")
 			rcaMap["tool_calls_count"] = 0
 			rcaMap["llm_turns"] = 0
 			// #2387 tokens: same honest-zero rule as the two bookkeeping
@@ -984,6 +1031,7 @@ func enforceGroundingGuard(ctx agent.Context, args map[string]any) {
 	if state == nil {
 		return
 	}
+	restoreDecisionRCAClassification(ctx, state)
 
 	grounded := false
 	if v, err := state.Get(session.StateKeyGroundedContentAvailable); err == nil {

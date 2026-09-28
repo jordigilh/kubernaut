@@ -91,6 +91,7 @@ var _ = Describe("NotificationCreator", func() {
 			Spec: aianalysisv1.AIAnalysisSpec{
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
+						SignalMode:       "reactive",
 						BusinessPriority: "P1",
 					},
 				},

@@ -413,8 +413,9 @@ func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Lo
 	logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
 }
 
-// buildSeverityTriageDeps wires the optional severity-triage subsystem
-// (Prometheus client, LLM triager, rule engine config). No-op when disabled.
+// buildSeverityTriageDeps wires the optional Prometheus-backed severity-triage
+// subsystem. Severity is sourced from explicit alert/rule labels; no LLM
+// severity triager is constructed or invoked (DD-AF-016).
 func buildSeverityTriageDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, auditor audit.Emitter, logger logr.Logger) error {
 	if !cfg.SeverityTriage.Enabled {
 		return nil
@@ -426,7 +427,6 @@ func buildSeverityTriageDeps(ctx context.Context, cfg *config.Config, deps *back
 	}
 	deps.PromClient = promClient
 
-	llmTriager := buildTriageLLMTriager(ctx, cfg, logger)
 	severityCfg := buildTriageSeverityConfig(cfg)
 
 	var triagerOpts []severity.TriagerOption
@@ -437,7 +437,7 @@ func buildSeverityTriageDeps(ctx context.Context, cfg *config.Config, deps *back
 		))
 	}
 
-	deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
+	deps.Triager = severity.NewTriager(promClient, nil, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
 	logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL,
 		"podResolverEnabled", deps.k8sDynClient != nil)
 	return nil
@@ -476,33 +476,6 @@ func buildTriagePrometheusClient(ctx context.Context, cfg *config.Config, deps *
 	}
 
 	return prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient), nil
-}
-
-// buildTriageLLMTriager resolves the effective triage LLM config (BR-AI-1404:
-// independent or inherited from the agent) and constructs the corresponding
-// triager, falling back to a noop triager when no provider is configured or
-// construction fails.
-func buildTriageLLMTriager(ctx context.Context, cfg *config.Config, logger logr.Logger) severity.LLMTriager {
-	triageLLMCfg := cfg.Agent.LLM
-	if cfg.SeverityTriage.LLM != nil {
-		triageLLMCfg = *cfg.SeverityTriage.LLM
-	}
-
-	if triageLLMCfg.Provider == "" {
-		logger.Info("LLM severity triage disabled (no LLM provider configured), using noop triager")
-		return severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
-	}
-
-	triager, triageErr := newLLMTriagerFromConfig(ctx, triageLLMCfg, logger.WithName("llm-triage"))
-	if triageErr != nil {
-		logger.Error(triageErr, "failed to create LLM triager, falling back to noop")
-		return severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
-	}
-	logger.Info("LLM severity triage enabled",
-		"provider", triageLLMCfg.Provider,
-		"model", triageLLMCfg.Model,
-		"source", triageLLMSource(cfg))
-	return triager
 }
 
 // buildTriageSeverityConfig resolves severity.Config from cfg.SeverityTriage,

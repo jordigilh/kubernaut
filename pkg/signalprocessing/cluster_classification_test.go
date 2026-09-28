@@ -71,6 +71,7 @@ var _ = Describe("UT-SP-1511: Cluster classification persistence (BR-FLEET-003, 
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint: "test-fingerprint-" + name,
+					Name:        "TestSignal",
 					Severity:    "critical",
 					ClusterID:   "prod-east-1",
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

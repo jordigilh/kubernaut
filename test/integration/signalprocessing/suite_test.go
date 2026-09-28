@@ -371,7 +371,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 import rego.v1
 
 # ========== Environment (BR-SP-051-053) ==========
-default environment := {"environment": "unknown", "source": "default"}
+default environment := {"environment": "development", "source": "default"}
 
 environment := {"environment": lower(env), "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
@@ -404,6 +404,9 @@ severity := "info" if { input.signal.severity == "sev4" }
 severity := "info" if { input.signal.severity == "p4" }
 severity := "invalid-severity-enum" if {
     input.signal.severity == "trigger-error"
+}
+severity := "unknown" if {
+    input.signal.severity == "unknown-policy-result-2467"
 }
 
 # ========== Priority (BR-SP-070) ==========

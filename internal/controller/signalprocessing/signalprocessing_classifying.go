@@ -22,6 +22,7 @@ package signalprocessing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -91,6 +92,12 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// Determines if the signal is proactive or reactive, and normalizes the signal name
 	// for downstream workflow catalog matching.
 	signalModeResult := r.resolveSignalMode(signal)
+	if err := validateSignalModeResult(signalModeResult); err != nil {
+		return r.failClassifyingPhase(ctx, sp, classifyingStart,
+			fmt.Sprintf("signal mode classification failed: %v", err),
+			"Failed to transition to PhaseFailed on signal mode classification error",
+		err, logger)
+	}
 	logger.V(1).Info("Signal mode classified",
 		"signalMode", signalModeResult.SignalMode,
 		"signalName", signalModeResult.SignalName,
@@ -112,6 +119,16 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		clusterClassification: clusterClassification,
 		classificationMessage: classificationMessage,
 	}, classifyingStart, logger)
+}
+
+func validateSignalModeResult(result classifier.SignalModeResult) error {
+	if result.SignalMode != signalprocessingv1alpha1.SignalModeReactive && result.SignalMode != signalprocessingv1alpha1.SignalModeProactive {
+		return fmt.Errorf("signal mode policy returned unusable classification %q", result.SignalMode)
+	}
+	if strings.TrimSpace(result.SignalName) == "" || strings.EqualFold(strings.TrimSpace(result.SignalName), "unknown") {
+		return fmt.Errorf("signal mode policy returned unusable normalized signal name %q", result.SignalName)
+	}
+	return nil
 }
 
 // evaluateClusterOrSkip runs the optional BR-FLEET-003 (#1511) cluster
