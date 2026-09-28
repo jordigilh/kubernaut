@@ -31,8 +31,8 @@ func InvestigationResultSchema() json.RawMessage {
 
 // RCAResultSchema returns the JSON Schema for the RCA-only phase (Phase 1).
 // It excludes workflow selection and escalation fields that belong in Phase 3.
-// Aligned with HAPI v1.2.1 PHASE1_SECTIONS: root_cause_analysis, confidence,
-// investigation_outcome, actionable, severity, detected_labels.
+// Aligned with HAPI v1.2.1 PHASE1_SECTIONS, excluding severity because it is
+// trusted read-only SignalProcessing context, not a model response field.
 func RCAResultSchema() json.RawMessage {
 	return json.RawMessage(rcaResultSchemaJSON)
 }
@@ -58,7 +58,6 @@ const noWorkflowResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -75,7 +74,6 @@ const noWorkflowResultSchemaJSON = `{
       "required": ["summary"]
     },
     "reasoning": { "type": "string", "description": "Explanation of why no workflow matches the incident" },
-    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] }
   },
@@ -89,7 +87,6 @@ const rcaResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -127,7 +124,6 @@ const rcaResultSchemaJSON = `{
       },
       "required": ["summary", "causal_chain", "due_diligence"]
     },
-    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },
@@ -143,7 +139,6 @@ const investigationResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -184,7 +179,6 @@ const investigationResultSchemaJSON = `{
         "required": ["workflow_id", "confidence"]
       }
     },
-    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },

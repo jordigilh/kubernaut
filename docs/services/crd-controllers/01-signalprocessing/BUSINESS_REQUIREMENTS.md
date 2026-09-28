@@ -239,17 +239,18 @@ result := {"environment": "staging", "source": "namespace-pattern"} if {
 **Category**: Environment Classification
 **Status**: ⚠️ **DEPRECATED** (2025-12-20)
 
-> **Deprecation Notice**: Go-level hardcoded defaults have been removed. Operators now define their own default values using the Rego `default` keyword in their environment.rego policy. This gives operators full control over what "default" means for their organization.
+> **Deprecation Notice**: Go-level hardcoded defaults have been removed. Operators define concrete default values using the Rego `default` keyword in their unified SignalProcessing `policy.rego` (ADR-060). This gives operators full control over what a catch-all means for their organization.
 >
-> **Migration**: Add a `default result := {...}` rule to your `environment.rego` policy.
-> See: `deploy/signalprocessing/policies/environment.rego`
+> **Migration**: Add a concrete `default environment := {...}` rule to the unified policy. See `charts/kubernaut/examples/signalprocessing-policy.rego`.
+>
+> **#2467 clarification (current contract)**: A Rego default is an operator-authored classification, not a Go fallback. If the required environment result is empty or `Unknown`/`unknown`, SignalProcessing MUST fail the Classifying phase; it MUST NOT complete with an unclassified value. A concrete environment catch-all must be selected in Rego.
 
 **Original Description**: The SignalProcessing controller MUST use a default environment when all detection methods fail.
 
-**Original Acceptance Criteria** (Superseded):
+**Original Acceptance Criteria** (Superseded; the historical "never fail" criterion is not current):
 - [x] ~~Default to `unknown` when no label or ConfigMap mapping found~~ → Operators define via Rego `default`
 - [x] Log warning when default is used → Logged as "unclassified" from Rego
-- [x] Never fail classification - always return a value → Rego `default` guarantees a result
+- [x] ~~Never fail classification - always return a value~~ → #2467 requires PhaseFailed when a required Rego result is empty or `Unknown`/`unknown`
 - [x] ~~Confidence: 0.0 for default~~ → Confidence field removed per DD-SP-001
 
 **Rationale** (Updated): Hardcoded Go defaults create silent behavior mismatch when operator Rego policies don't match. Operators have varied environment taxonomies, so they should define their own defaults.
@@ -288,7 +289,7 @@ result := {"environment": "staging", "source": "namespace-pattern"} if {
 
 ---
 
-### BR-SP-071: Priority Fallback Matrix
+### BR-SP-071: Priority Fallback Matrix — DEPRECATED
 
 > 📋 **Standalone Document**: [BR-SP-071-priority-fallback-matrix.md](../../../requirements/BR-SP-071-priority-fallback-matrix.md)
 >
@@ -297,24 +298,15 @@ result := {"environment": "staging", "source": "namespace-pattern"} if {
 **Priority**: P1 (High)
 **Category**: Priority Assignment
 
-**Description**: The SignalProcessing controller MUST use a severity-based fallback when Rego policy fails or times out.
+**Status**: The severity-based Go fallback matrix below is archived and is not normative. The standalone BR-SP-071 is deprecated in favor of operator-authored Rego defaults and no Go fallback.
 
-**Acceptance Criteria**:
-- [ ] Fallback triggers on: Rego timeout (>100ms), policy error, missing policy
-- [ ] Fallback based on signal severity ONLY (environment is not considered in fallback)
-- [ ] Log when fallback is used
-- [ ] Never fail - always return a valid priority
+**Current #2467 contract**:
+- Rego evaluation failure, missing required policy output, or an empty/`unknown` required classification MUST transition SP to `PhaseFailed`; SP MUST NOT publish successful classification completion.
+- A concrete priority catch-all such as `P3` is valid only when explicitly returned by the operator's Rego policy.
+- SP MUST NOT invent or substitute a priority in Go when Rego fails or returns an unusable required result.
+- RO MUST consume the resulting SP status and MUST NOT create an AIA from failed or incomplete classification state.
 
-**Fallback Matrix** (Severity-Based Only, DD-SEVERITY-001 v1.1):
-| Severity | Priority | Rationale |
-|----------|----------|-----------|
-| critical | P1 | Conservative - high but not highest without context |
-| high | P1 | Same as critical in fallback (no Rego context) |
-| medium | P2 | Standard priority for medium severity |
-| low | P3 | Lowest priority for low severity |
-| unknown | P2 | Default when severity is also unknown |
-
-**Rationale**: When Rego policy fails, we don't have reliable environment classification. Using severity-only fallback is more predictable and avoids compounding uncertainty from potentially incorrect environment detection.
+The matrix and acceptance criteria in the archived standalone BR-SP-071 document describe superseded behavior and must not be used as implementation guidance.
 
 **Test Coverage**: `priority_engine_test.go` (Unit)
 
@@ -375,7 +367,7 @@ volumeMounts:
 **Acceptance Criteria**:
 - [ ] Source `"namespace-labels"`: Explicit label from namespace (operator-defined via `kubernaut.ai/environment`)
 - [ ] Source `"rego-inference"`: Pattern matching by Rego policy (e.g., namespace name patterns like `prod-*`, `staging-*`)
-- [ ] Source `"default"`: No detection method succeeded (fallback to "unknown")
+- [ ] Source `"default"`: An operator-authored Rego catch-all supplied a concrete classification because no more-specific rule matched; an empty/`unknown` required result is an error, not successful fallback
 - [ ] Include `source` field in status for each classification (environment, priority, business)
 - [ ] **SECURITY**: Do NOT trust signal labels from external sources (Prometheus, K8s events)
 
@@ -386,7 +378,7 @@ volumeMounts:
 **Priority Order** (Security-Hardened):
 1. Namespace labels (operator-controlled via RBAC, checked by Rego policy) ✅
 2. Rego pattern matching (deterministic logic on namespace name) ✅
-3. Default fallback ("unknown") ✅
+3. Operator-authored Rego catch-all with a concrete policy value; no Go fallback and no successful `unknown` result for required workflow classifications
 4. ~~Signal labels~~ ❌ **REMOVED** - Security risk (untrusted external source)
 
 **Breaking Change**: Removed `confidence` field from V1.0 (pre-release). No backwards compatibility impact.
@@ -691,92 +683,29 @@ volumeMounts:
 
 **Priority**: P0 (Critical)
 **Category**: Classification
-**Status**: 🆕 NEW (January 2026)
+**Status**: Updated for #2467 (September 2026)
 
-**Description**: SignalProcessing MUST determine normalized severity from external signal severity using operator-configurable Rego policies. This enables customers to use ANY severity naming scheme (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.) without code changes.
+**Description**: SignalProcessing MUST determine normalized severity from external signal severity using operator-configurable Rego policies. This enables customers to use supported operator severity naming schemes without code changes. Rego is authoritative for specific mappings and concrete catch-all values; SP MUST NOT invent a Go fallback.
+
+**#2467 amendment — required classification is fail-closed**:
+- An operator-authored Rego catch-all MUST return a concrete, supported severity when specific mappings do not match; the example policy documents its catch-all behavior and illustrative value.
+- Empty or `unknown` is an enum-compatible sentinel, not an actionable classification. If Rego returns it for a required severity result, SP MUST set the classification/processing conditions to failed and transition to `PhaseFailed`.
+- Rego evaluation errors or no policy result likewise fail classification; SP MUST NOT replace the result with a Go default. Concrete values such as `warning` are policy outputs only when the operator's Rego rule explicitly returns them.
+- AIA/RO and later consumers MUST NOT ask an LLM to infer a replacement severity.
 
 **Acceptance Criteria**:
-- [ ] Rego policy file: `severity.rego` (operator-provided ConfigMap)
+- [ ] Rego policy: operator-provided unified SignalProcessing policy (ADR-060)
 - [ ] Policy input: `input.signal.severity` (external value from Gateway, e.g., "Sev1", "P0", "HIGH")
-- [ ] Policy output: `result.severity` (normalized to `critical`, `high`, `medium`, `low`, or `unknown` per DD-SEVERITY-001 v1.1)
-- [ ] Status field: `Status.SeverityClassification` (struct similar to `EnvironmentClassification`)
-- [ ] Fallback: If Rego evaluation fails or severity unmapped → `"unknown"` (NOT `"warning"`)
-- [ ] Audit trail: Log severity determination (external → normalized, source: rego/fallback)
-- [ ] Observability: Emit event/log when Rego policy fails to map severity
+- [ ] Policy output: a concrete value from the currently admitted classification enum
+- [ ] Status field: `SignalProcessing.Status.SignalClassification.Severity`
+- [ ] Catch-all: an operator-authored Rego rule returns a concrete supported severity for unmapped inputs; no Go fallback is permitted
+- [ ] Audit trail: record the successful policy classification or the existing classification-failure event with correlation context
+- [ ] Observability: expose policy/classification failure; do not silently continue with an unclassified value
 - [ ] Hot-reload: Support ConfigMap updates without pod restart (per BR-SP-072 pattern)
 
-**SeverityClassification Status Field**:
-```go
-type SeverityClassification struct {
-    Severity      string      `json:"severity"`              // Normalized: critical, high, medium, low, or unknown (DD-SEVERITY-001 v1.1)
-    Source        string      `json:"source"`                // rego-policy, fallback
-    ClassifiedAt  metav1.Time `json:"classifiedAt"`
-    ExternalValue string      `json:"externalValue"`         // Original value from Gateway (e.g., "Sev1")
-}
-```
+**Status contract**: The current API stores the result in `SignalProcessing.Status.SignalClassification.Severity`. The field's enum admits `unknown` for schema compatibility, but successful SP classification MUST contain a concrete value.
 
-**Default Rego Policy** (DD-SEVERITY-001 v1.1 values):
-```rego
-package signalprocessing.severity
-
-import rego.v1
-
-# 1:1 mapping for standard severity values (DD-SEVERITY-001 v1.1)
-result := {"severity": "critical", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "critical"
-}
-
-result := {"severity": "high", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "high"
-}
-
-result := {"severity": "medium", "source": "rego-policy"} if {
-    lower(input.signal.severity) in ["medium", "warning"]
-}
-
-result := {"severity": "low", "source": "rego-policy"} if {
-    lower(input.signal.severity) in ["low", "info"]
-}
-
-# Fallback: unmapped severity → unknown
-default result := {"severity": "unknown", "source": "fallback"}
-```
-
-**Operator Customization Example**:
-```rego
-package signalprocessing.severity
-
-import rego.v1
-
-# Enterprise "Sev" scheme
-result := {"severity": "critical", "source": "rego-policy"} if {
-    input.signal.severity in ["Sev1", "SEV1", "sev1"]
-}
-
-result := {"severity": "warning", "source": "rego-policy"} if {
-    input.signal.severity in ["Sev2", "SEV2", "sev2"]
-}
-
-result := {"severity": "info", "source": "rego-policy"} if {
-    input.signal.severity in ["Sev3", "SEV3", "sev3", "Sev4", "SEV4", "sev4"]
-}
-
-# PagerDuty "P" scheme
-result := {"severity": "critical", "source": "rego-policy"} if {
-    input.signal.severity in ["P0", "P1"]
-}
-
-result := {"severity": "warning", "source": "rego-policy"} if {
-    input.signal.severity in ["P2", "P3"]
-}
-
-result := {"severity": "info", "source": "rego-policy"} if {
-    input.signal.severity in ["P4"]
-}
-
-# Fallback
-default result := {"severity": "unknown", "source": "fallback"}
-```
+**Policy example**: See [`charts/kubernaut/examples/signalprocessing-policy.rego`](../../../../charts/kubernaut/examples/signalprocessing-policy.rego) for the unified ADR-060 policy shape. Per #2467, this example MUST use specific rules for recognized inputs and a concrete `default severity` catch-all, with comments explaining both its matching behavior and workflow-routing impact. In Rego, `default` applies when none of the more-specific rules matches; it is an explicit policy decision, not a value invented by the SP controller. Operators must choose a catch-all appropriate to their environment. If a policy returns no result, an empty value, or `unknown`, SP fails classification.
 
 **Rationale**:
 - **Customer Extensibility**: Operators define severity mappings based on their organization's standards
@@ -785,15 +714,14 @@ default result := {"severity": "unknown", "source": "fallback"}
 - **Observability**: Operators can monitor unmapped severities and adjust policies
 
 **Implementation**:
-- `pkg/signalprocessing/classifier/severity.go`: Severity classifier with Rego evaluation
-- `internal/controller/signalprocessing/signalprocessing_controller.go`: Add severity classification in `reconcileClassifying` phase
-- `api/signalprocessing/v1alpha1/signalprocessing_types.go`: Add `Status.SeverityClassification` field
-- `deploy/signalprocessing/policies/severity.rego`: Default policy ConfigMap
+- `pkg/signalprocessing/evaluator/evaluator.go`: Severity Rego evaluation and output validation
+- `internal/controller/signalprocessing/signalprocessing_classifying.go`: Required classification and fail-closed phase handling
+- `api/signalprocessing/v1alpha1/signalprocessing_types.go`: `Status.SignalClassification.Severity`
+- `charts/kubernaut/examples/signalprocessing-policy.rego`: Example operator policy and catch-all
 
 **Tests**:
-- `test/unit/signalprocessing/severity_classifier_test.go`: Unit tests for classifier
-- `test/integration/signalprocessing/severity_policy_test.go`: Custom severity mapping E2E
-- `test/unit/signalprocessing/controller_test.go`: Status field population
+- `pkg/signalprocessing/evaluator/evaluator_test.go`: Rego severity policy evaluation
+- `test/integration/signalprocessing/reconciler_integration_test.go`: Classification phase completion/failure behavior
 
 **Related BRs**:
 - BR-GATEWAY-111 (Gateway Pass-Through Architecture)
@@ -802,8 +730,8 @@ default result := {"severity": "unknown", "source": "fallback"}
 - BR-SP-090 (Audit Trail)
 
 **Consumer Impact**:
-- BR-AI-XXX: AIAnalysis MUST read `sp.Status.SeverityClassification.Severity` (NOT `sp.Spec.Severity`)
-- BR-RO-XXX: RemediationOrchestrator MUST read `sp.Status.SeverityClassification.Severity` (NOT `sp.Spec.Severity`)
+- BR-AI-XXX: AIAnalysis MUST read `sp.Status.SignalClassification.Severity` (NOT `sp.Spec.Severity`)
+- BR-RO-XXX: RemediationOrchestrator MUST read `sp.Status.SignalClassification.Severity` (NOT `sp.Spec.Severity`)
 
 **Decision Reference**:
 - [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
@@ -885,9 +813,9 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | 2026-09-27 | #2467: Required SP severity fails closed on empty/`unknown`; operators define concrete Rego catch-alls; no Go or LLM fallback. Updated deprecated environment/priority summaries to match. |
 | 1.4 | 2026-02-08 | **NEW BR-SP-106**: Proactive Signal Mode Classification. Enables preemptive remediation via Prometheus `predict_linear()` alerts. Signal type normalization + `SignalMode` status field. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
-| 1.3 | 2026-01-09 | **NEW BR-SP-105**: Severity Determination via Rego Policy. Enables customer extensibility (Sev1-4, P0-P4 schemes). Operator-configurable severity mappings. Fallback to "unknown" (not "warning"). Observability for unmapped severities. |
+| 1.3 | 2026-01-09 | **NEW BR-SP-105**: Severity Determination via Rego Policy. Enables customer extensibility (Sev1-4, P0-P4 schemes). Operator-configurable severity mappings. Historical fallback wording superseded by v1.5. |
 | 1.2 | 2025-12-06 | BR-SP-071: Changed to severity-only fallback (not environment × severity matrix) |
 | 1.1 | 2025-12-06 | BR-SP-072: Updated to fsnotify-based hot-reload per DD-INFRA-001, added FileWatcher reference |
 | 1.0 | 2025-12-03 | Initial release - 19 BRs defined |
-

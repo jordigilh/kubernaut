@@ -51,6 +51,7 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	spconditions "github.com/jordigilh/kubernaut/pkg/signalprocessing"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
@@ -444,6 +445,31 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 	// ========================================
 
 	Context("BR-SP-105: Error Handling Integration", func() {
+		It("IT-SP-2467-001: fails classification when a required Rego output is unknown", func() {
+			// Make environment classification concrete so this test isolates the
+			// unknown severity result from the policy's required severity rule.
+			ns := &corev1.Namespace{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)).To(Succeed())
+			ns.Labels = map[string]string{"kubernaut.ai/environment": "production"}
+			Expect(k8sClient.Update(ctx, ns)).To(Succeed())
+
+			sp := createTestSignalProcessingCRD(namespace, "test-unknown-classification-2467")
+			sp.Spec.Signal.Severity = "unknown-policy-result-2467"
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace}, &updated)).To(Succeed())
+				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseFailed),
+					"a required Rego classification of unknown must fail the SP Classifying phase")
+				g.Expect(updated.Status.GetSignalClassification().Severity).To(BeEmpty(),
+					"SP must not publish unknown as a successful severity classification")
+				g.Expect(updated.Status.GetFailureInfo().Error).To(ContainSubstring("unknown"))
+				g.Expect(spconditions.IsConditionTrue(&updated, spconditions.ConditionClassificationComplete)).To(BeFalse())
+				g.Expect(spconditions.IsConditionTrue(&updated, spconditions.ConditionProcessingComplete)).To(BeFalse())
+			}, "60s", "1s").Should(Succeed())
+		})
+
 		// DD-SEVERITY-001 REFACTOR NOTE: This test validates graceful degradation
 		// when Rego policy evaluation fails. While Strategy B includes fallback clauses,
 		// this test ensures the controller properly handles policy errors when they occur

@@ -210,7 +210,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 	})
 
 	Describe("SignalProcessing severity authority [BR-SP-105]", func() {
-		It("UT-KA-SP-105-003: tells both investigation phases to preserve SP severity", func() {
+		It("UT-KA-2467-003: presents SP severity as read-only context in both investigation phases", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -228,9 +228,9 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			for _, rendered := range []string{investigation, workflowSelection} {
-				Expect(rendered).To(ContainSubstring("SignalProcessing Rego policy is authoritative"))
-				Expect(rendered).To(ContainSubstring("Do not reassess or change this severity"))
-				Expect(rendered).To(ContainSubstring("Copy the exact input severity"))
+				Expect(rendered).To(ContainSubstring("normalized classification owned by SignalProcessing Rego"))
+				Expect(rendered).To(ContainSubstring("do not emit a `severity` field in your response"))
+				Expect(rendered).To(ContainSubstring("server attaches trusted severity after parsing"))
 			}
 		})
 	})

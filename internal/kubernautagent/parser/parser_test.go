@@ -401,13 +401,35 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(props).To(HaveKey("root_cause_analysis"))
 			Expect(props).To(HaveKey("selected_workflow"))
 			Expect(props).To(HaveKey("confidence"))
-			Expect(props).To(HaveKey("severity"))
+			Expect(props).NotTo(HaveKey("severity"),
+				"severity is SP-owned context and must not be model-authored output")
 			Expect(props).To(HaveKey("actionable"))
 			Expect(props).NotTo(HaveKey("needs_human_review"),
 				"needs_human_review is parser-derived, not exposed to LLM (BR-KA-200)")
 			Expect(props).NotTo(HaveKey("human_review_reason"),
 				"human_review_reason is parser-derived, not exposed to LLM (BR-KA-200)")
 			Expect(props).To(HaveKey("detected_labels"))
+		})
+	})
+
+	Describe("Issue #2467: SP-owned classification authority", func() {
+		It("UT-KA-2467-001: ignores model severity while retaining the distinct RCA signal_name finding", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"root_cause_analysis": {
+					"summary": "Memory pressure caused the pod to be evicted",
+					"severity": "info",
+					"signal_name": "PodEvicted"
+				},
+				"severity": "critical",
+				"confidence": 0.91
+			}`
+
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(BeEmpty(), "neither top-level nor nested model severity is authoritative")
+			Expect(result.SignalName).To(Equal("PodEvicted"),
+				"RCA signal_name remains an effect finding, distinct from the SP input signal name")
 		})
 	})
 
@@ -498,7 +520,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 				"execution_engine from selected_workflow must propagate")
 
 			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
-			Expect(result.Severity).To(Equal("high"))
+			Expect(result.Severity).To(BeEmpty(), "model-supplied severity is not accepted as an SP classification")
 			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
 
 			Expect(result.AlternativeWorkflows).To(HaveLen(1))
@@ -529,7 +551,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 
 			By("RCA fields extracted")
 			Expect(result.RCASummary).To(ContainSubstring("Bad Deployment rollout"))
-			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.Severity).To(BeEmpty(), "model-supplied severity is not accepted as an SP classification")
 			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
 			Expect(result.RemediationTarget.Name).To(Equal("worker"))
 			Expect(result.RemediationTarget.Namespace).To(Equal("demo-crashloop"))
@@ -767,8 +789,8 @@ false
 				Expect(result).NotTo(BeNil())
 				Expect(result.RCASummary).To(Equal("ResourceQuota memory limit exceeded"),
 					"#746: camelCase rootCauseAnalysis.summary must be extracted")
-				Expect(result.Severity).To(Equal("medium"),
-					"#746: camelCase rootCauseAnalysis.severity must be extracted")
+				Expect(result.Severity).To(BeEmpty(),
+					"#2467: camelCase rootCauseAnalysis.severity must not set the SP-owned classification")
 				Expect(result.ContributingFactors).To(ConsistOf("quota ceiling", "pod request size"),
 					"#746: camelCase rootCauseAnalysis.contributing_factors must be extracted")
 			})

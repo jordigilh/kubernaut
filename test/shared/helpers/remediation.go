@@ -224,8 +224,9 @@ func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.Si
 	// BR-SP-106: Set default signal mode and normalized type for downstream consumers
 	// Defaults to reactive with Spec.Signal.Type as the normalized type
 	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = signalprocessingv1.SeverityCritical
 	classification.SignalMode = "reactive"
-	classification.SignalName = sp.Spec.Signal.Type
+	classification.SignalName = sp.Spec.Signal.Name
 	return sp
 }
 

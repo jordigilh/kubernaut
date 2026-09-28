@@ -27,8 +27,8 @@ import (
 
 var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 
-	Describe("UT-KA-700-001: RCAResultSchema contains only RCA fields", func() {
-		It("should include root_cause_analysis, confidence, investigation_outcome, actionable, severity, detected_labels", func() {
+	Describe("UT-KA-2467-001: RCAResultSchema excludes SP-owned classifications", func() {
+		It("includes RCA fields but excludes model-writable severity", func() {
 			schema := parser.RCAResultSchema()
 			Expect(schema).NotTo(BeEmpty(), "RCAResultSchema must not be empty")
 
@@ -44,7 +44,7 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 			Expect(props).To(HaveKey("confidence"))
 			Expect(props).To(HaveKey("investigation_outcome"))
 			Expect(props).To(HaveKey("actionable"))
-			Expect(props).To(HaveKey("severity"))
+			Expect(props).NotTo(HaveKey("severity"), "SP severity is read-only context, not an LLM response field")
 			Expect(props).To(HaveKey("detected_labels"))
 
 			By("excluding workflow and escalation fields")
@@ -89,6 +89,7 @@ var _ = Describe("Phase Separation: Schema Contracts — #700", func() {
 			rcaProps := rca["properties"].(map[string]interface{})
 			Expect(rcaProps).To(HaveKey("investigation_analysis"),
 				"RCA schema must include investigation_analysis property for Phase 1 narrative field")
+			Expect(rcaProps).NotTo(HaveKey("severity"), "SP severity must not be model-writable within RCA")
 		})
 	})
 

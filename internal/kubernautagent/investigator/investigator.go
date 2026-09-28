@@ -907,14 +907,10 @@ func countTrueLabels(flags ...bool) int {
 }
 
 // applySignalSeverity makes the SignalProcessing classification authoritative
-// over any severity supplied by the LLM. If SP did not provide a classification,
-// use "unknown" rather than accepting a model-generated value.
+// over any severity supplied by the LLM. When the trusted input is absent,
+// leave the result empty rather than inventing an unknown classification.
 func applySignalSeverity(result *katypes.InvestigationResult, signal katypes.SignalContext) {
-	if signal.Severity != "" {
-		result.Severity = signal.Severity
-		return
-	}
-	result.Severity = "unknown"
+	result.Severity = signal.Severity
 }
 
 // ResolveEnrichmentTarget determines the K8s resource to enrich.

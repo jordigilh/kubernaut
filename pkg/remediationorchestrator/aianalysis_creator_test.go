@@ -37,6 +37,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+const (
+	issue2467SignalNameOOMKilled   = "OOMKilled"
+	issue2467UnknownClassification = "unknown"
+)
+
 // tierCriticalLabelFixture is a cost/business-tier custom label value used in
 // the CustomLabels pass-through test below. Unrelated to SignalProcessing's
 // Severity enum despite sharing the same text (goconst dedup).
@@ -171,18 +176,16 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 			It("should pass through enrichment results from SignalProcessing.Status", func() {
 				// Arrange - use testutil factory with KubernetesContext
-				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
-					Phase: signalprocessingv1.PhaseCompleted,
-					KubernetesContext: &signalprocessingv1.KubernetesContext{
-						Namespace: &signalprocessingv1.NamespaceContext{
-							Name: "default",
-							Labels: map[string]string{
-								"kubernetes.io/metadata.name": "default",
-								"environment":                 "production",
-							},
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.KubernetesContext = &signalprocessingv1.KubernetesContext{
+					Namespace: &signalprocessingv1.NamespaceContext{
+						Name: "default",
+						Labels: map[string]string{
+							"kubernetes.io/metadata.name": "default",
+							"environment":                 "production",
 						},
 					},
-				})
+				}
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -209,9 +212,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// DD-SEVERITY-001: AIAnalysis uses normalized severity from SignalProcessing Rego policy
 				// BR-SP-105: Severity Determination via Rego Policy
 				// Arrange - RR has external severity "Sev1", SP has normalized severity "critical"
-				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
-					Phase: signalprocessingv1.PhaseCompleted,
-				})
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				// Set normalized severity in SP status (determined by SignalProcessing Rego policy)
 				completedSP.Status.EnsureSignalClassification().Severity = signalprocessingv1.SeverityCritical
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -242,6 +243,101 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Verify RR still has external severity (for notifications/operator messages)
 				Expect(rr.Spec.Severity).To(Equal("Sev1"),
 					"RemediationRequest should preserve external severity for operator-facing messages")
+			})
+
+			It("UT-RO-2467-001: copies concrete SP policy classifications verbatim despite conflicting RR values", func() {
+				completedSP := helpers.NewCompletedSignalProcessing("sp-2467-authority", "default")
+				classification := completedSP.Status.EnsureSignalClassification()
+				classification.Severity = signalprocessingv1.SeverityWarning
+				classification.SignalName = issue2467SignalNameOOMKilled
+				classification.SignalMode = signalprocessingv1.SignalModeProactive
+				completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentDevelopment
+				completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP3
+
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("rr-2467-authority", "default", helpers.RemediationRequestOpts{
+					Severity:   "Sev1",
+					SignalType: "PredictedOOMKill",
+				})
+
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+				Expect(err).NotTo(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)).To(Succeed())
+				got := createdAI.Spec.AnalysisRequest.SignalContext
+				Expect(got.Severity).To(Equal("warning"))
+				Expect(got.Environment).To(Equal("Development"))
+				Expect(got.BusinessPriority).To(Equal("P3"))
+				Expect(got.SignalName).To(Equal(issue2467SignalNameOOMKilled))
+				Expect(got.SignalMode).To(Equal("proactive"))
+				Expect(rr.Spec.Severity).To(Equal("Sev1"), "the RR's external severity remains separate")
+			})
+
+			It("UT-RO-2467-002: refuses to create an AIA from completed SP with any missing or unknown required classification", func() {
+				cases := []struct {
+					name   string
+					mutate func(*signalprocessingv1.SignalProcessing)
+				}{
+					{name: "empty severity", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().Severity = ""
+					}},
+					{name: "unknown severity", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().Severity = signalprocessingv1.SeverityUnknown
+					}},
+					{name: "empty environment", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnvironmentClassification.Environment = ""
+					}},
+					{name: "unknown environment", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentUnknown
+					}},
+					{name: "empty priority", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.PriorityAssignment.Priority = ""
+					}},
+					{name: "unknown priority", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.PriorityAssignment.Priority = issue2467UnknownClassification
+					}},
+					{name: "empty normalized signal name", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().SignalName = ""
+					}},
+					{name: "unknown normalized signal name", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().SignalName = issue2467UnknownClassification
+					}},
+					{name: "empty signal mode", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().SignalMode = ""
+					}},
+					{name: "unknown signal mode", mutate: func(sp *signalprocessingv1.SignalProcessing) {
+						sp.Status.EnsureSignalClassification().SignalMode = issue2467UnknownClassification
+					}},
+				}
+
+				for i, tc := range cases {
+					By(tc.name)
+					completedSP := helpers.NewCompletedSignalProcessing(fmt.Sprintf("sp-2467-invalid-%d", i), "default")
+					classification := completedSP.Status.EnsureSignalClassification()
+					classification.Severity = signalprocessingv1.SeverityWarning
+					classification.SignalName = issue2467SignalNameOOMKilled
+					classification.SignalMode = signalprocessingv1.SignalModeReactive
+					completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentProduction
+					completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP1
+					tc.mutate(completedSP)
+
+					fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+						WithStatusSubresource(completedSP).Build()
+					aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+					rr := helpers.NewRemediationRequest(fmt.Sprintf("rr-2467-invalid-%d", i), "default", helpers.RemediationRequestOpts{
+						Severity:   "RR-must-not-fallback",
+						SignalType: "RRSignalTypeMustNotFallback",
+					})
+
+					_, err := aiCreator.Create(ctx, rr, completedSP)
+					Expect(err).To(HaveOccurred(), "%s must be rejected", tc.name)
+					createdAI := &aianalysisv1.AIAnalysis{}
+					getErr := fakeClient.Get(ctx, client.ObjectKey{Name: "ai-" + rr.Name, Namespace: rr.Namespace}, createdAI)
+					Expect(getErr).To(HaveOccurred(), "%s must not persist an AIA", tc.name)
+				}
 			})
 		})
 
@@ -276,10 +372,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 		Context("BR-ORCH-025: Edge cases for enrichment data pass-through", func() {
 			It("should handle SignalProcessing with nil KubernetesContext gracefully", func() {
 				// Arrange - SP completed but without KubernetesContext (edge case)
-				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
-					Phase:             signalprocessingv1.PhaseCompleted,
-					KubernetesContext: nil, // Explicitly nil
-				})
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.KubernetesContext = nil // Explicitly nil enrichment context.
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -303,14 +397,12 @@ var _ = Describe("AIAnalysisCreator", func() {
 			It("should not propagate OwnerChain from SP to AIAnalysis (ADR-055)", func() {
 				// ADR-055: OwnerChain is no longer propagated from SP to AIAnalysis.
 				// KA resolves its own chain post-RCA via get_namespaced_resource_context / get_cluster_resource_context.
-				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
-					Phase: signalprocessingv1.PhaseCompleted,
-					KubernetesContext: &signalprocessingv1.KubernetesContext{
-						Namespace: &signalprocessingv1.NamespaceContext{
-							Labels: map[string]string{"env": "test"},
-						},
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.KubernetesContext = &signalprocessingv1.KubernetesContext{
+					Namespace: &signalprocessingv1.NamespaceContext{
+						Labels: map[string]string{"env": "test"},
 					},
-				})
+				}
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -331,12 +423,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 			It("should handle SignalProcessing with partial/incomplete enrichment data", func() {
 				// Arrange - SP with only some enrichment fields populated (simulates partial failure)
-				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
-					Phase:             signalprocessingv1.PhaseCompleted,
-					KubernetesContext: &signalprocessingv1.KubernetesContext{
-						// Namespace nil - empty enrichment
-					},
-				})
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.KubernetesContext = &signalprocessingv1.KubernetesContext{
+					// Namespace nil - empty enrichment.
+				}
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -407,8 +497,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				spClassification := completedSP.Status.EnsureSignalClassification()
 				spClassification.SignalMode = "proactive"
-				spClassification.SignalName = "OOMKilled"              // normalized
-				spClassification.SourceSignalName = "PredictedOOMKill" // preserved for audit
+				spClassification.SignalName = issue2467SignalNameOOMKilled // normalized
+				spClassification.SourceSignalName = "PredictedOOMKill"     // preserved for audit
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
@@ -436,7 +526,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				spClassification := completedSP.Status.EnsureSignalClassification()
 				spClassification.SignalMode = "proactive"
-				spClassification.SignalName = "OOMKilled" // Normalized by SP
+				spClassification.SignalName = issue2467SignalNameOOMKilled // Normalized by SP
 				spClassification.SourceSignalName = "PredictedOOMKill"
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -457,7 +547,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// SignalType should come from SP status (normalized), NOT from RR spec
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(issue2467SignalNameOOMKilled))
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).ToNot(Equal("PredictedOOMKill"))
 			})
 
@@ -482,8 +572,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"))
-				// SignalType for reactive comes from SP status (which mirrors Spec.Signal.Type)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("alert"))
+				// Reactive SignalName is still an SP classification, not Spec.Signal.Type.
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Spec.Signal.Name))
 			})
 		})
 	})

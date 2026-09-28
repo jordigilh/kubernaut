@@ -405,6 +405,9 @@ severity := "info" if { input.signal.severity == "p4" }
 severity := "invalid-severity-enum" if {
     input.signal.severity == "trigger-error"
 }
+severity := "unknown" if {
+    input.signal.severity == "unknown-policy-result-2467"
+}
 
 # ========== Priority (BR-SP-070) ==========
 default priority := {"priority": "P3", "policy_name": "default-catch-all"}

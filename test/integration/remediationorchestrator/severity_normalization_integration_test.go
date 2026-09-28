@@ -594,4 +594,57 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			GinkgoWriter.Printf("✅ Standard severity validated: critical → critical (1:1 mapping)\n")
 		})
 	})
+
+	Context("Issue #2467: RO rejects unusable completed SP classifications", func() {
+		var namespace string
+
+		BeforeEach(func() {
+			namespace = createTestNamespace(ctx, "ro-classification-2467")
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("IT-RO-2467-001: does not create AIA when completed SP severity is unknown", func() {
+			rrName := fmt.Sprintf("rr-2467-%s", uuid.New().String()[:13])
+			now := metav1.Now()
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: rrName, Namespace: ROControllerNamespace},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: hex.EncodeToString(sha256.New().Sum([]byte(uuid.New().String()))),
+					SignalName:        "OOMKilled",
+					Severity:          "Sev1",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "api-server", Namespace: namespace,
+					},
+					FiringTime: now, ReceivedTime: now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			spName := "sp-" + rrName
+			sp := &signalprocessingv1.SignalProcessing{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+			}, timeout, interval).Should(Succeed(), "RO should create SignalProcessing")
+			Expect(updateSPStatus(spName, "unknown")).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				var updatedRR remediationv1.RemediationRequest
+				g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, &updatedRR)).To(Succeed())
+				g.Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
+					"RO must fail the RR instead of creating AIA from unknown SP severity")
+
+				var aaList aianalysisv1.AIAnalysisList
+				g.Expect(k8sManager.GetAPIReader().List(ctx, &aaList, client.InNamespace(ROControllerNamespace))).To(Succeed())
+				for i := range aaList.Items {
+					g.Expect(aaList.Items[i].Spec.RemediationRequestRef.Name).NotTo(Equal(rrName),
+						"no AIA may be persisted for unusable completed SP classifications")
+				}
+			}, timeout, interval).Should(Succeed())
+		})
+	})
 })

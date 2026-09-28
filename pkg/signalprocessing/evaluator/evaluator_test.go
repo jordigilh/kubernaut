@@ -18,6 +18,9 @@ package evaluator_test
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,7 +38,7 @@ const testPolicy = `package signalprocessing
 import rego.v1
 
 # ========== Environment ==========
-default environment := {"environment": "unknown", "source": "default"}
+default environment := {"environment": "development", "source": "operator-catch-all"}
 
 environment := {"environment": "production", "source": "namespace-labels"} if {
     input.namespace.labels["env"] == "production"
@@ -48,7 +51,7 @@ environment := {"environment": "development", "source": "namespace-labels"} if {
 }
 
 # ========== Severity ==========
-default severity := "unknown"
+default severity := "warning"
 
 severity := "critical" if {
     input.signal.severity == "critical"
@@ -64,7 +67,7 @@ severity := "info" if {
 }
 
 # ========== Priority ==========
-default priority := {"priority": "P3", "policy_name": "default"}
+default priority := {"priority": "P3", "policy_name": "operator-catch-all"}
 
 priority := {"priority": "P0", "policy_name": "production-critical"} if {
     environment.environment == "production"
@@ -174,7 +177,7 @@ default labels := {}
 			Entry("production namespace", map[string]string{"env": "production"}, signalprocessingv1alpha1.EnvironmentProduction, "namespace-labels"),
 			Entry("staging namespace", map[string]string{"env": "staging"}, signalprocessingv1alpha1.EnvironmentStaging, "namespace-labels"),
 			Entry("development namespace", map[string]string{"env": "development"}, signalprocessingv1alpha1.EnvironmentDevelopment, "namespace-labels"),
-			Entry("unlabeled namespace (default)", map[string]string{}, signalprocessingv1alpha1.EnvironmentUnknown, "default"),
+Entry("unmatched namespace (concrete operator catch-all)", map[string]string{}, signalprocessingv1alpha1.EnvironmentDevelopment, "operator-catch-all"),
 		)
 
 		It("should fail when policy not loaded", func() {
@@ -204,13 +207,69 @@ default labels := {}
 			Entry("high", "high", "high"),
 			Entry("medium", "medium", "warning"),
 			Entry("low (normalized to info)", "low", "info"),
-			Entry("unmapped (default)", "Warning", "unknown"),
+			Entry("unmapped (concrete operator catch-all)", "Warning", "warning"),
 		)
 
 		It("should fail when policy not loaded", func() {
 			unloaded := evaluator.New("/tmp/nope.rego", zap.New(zap.UseDevMode(true)))
 			_, err := unloaded.EvaluateSeverity(ctx, evaluator.PolicyInput{})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("Issue #2467: required classifications fail closed", func() {
+		It("UT-SP-2467-001: evaluates the chart example's concrete operator catch-alls", func() {
+			policy, err := os.ReadFile("../../../charts/kubernaut/examples/signalprocessing-policy.rego")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.ToLower(string(policy))).To(ContainSubstring("catch-all"),
+				"the example must explain its operator-owned catch-all behavior")
+			Expect(strings.ToLower(string(policy))).To(ContainSubstring("specific"),
+				"the example must explain that the catch-all applies when specific rules do not match")
+			Expect(strings.ToLower(string(policy))).To(ContainSubstring("workflow"),
+				"the example must explain that catch-all values affect workflow routing")
+
+			Expect(eval.LoadPolicy(string(policy))).To(Succeed())
+			input := evaluator.PolicyInput{
+				Namespace: types.NamespaceContext{Labels: map[string]string{}},
+				Signal:    evaluator.SignalInput{Severity: "operator-unmapped-severity-2467"},
+			}
+
+			environment, err := eval.EvaluateEnvironment(ctx, input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(environment.Environment).To(Equal(signalprocessingv1alpha1.EnvironmentDevelopment),
+				"the chart's illustrative environment catch-all must be concrete")
+
+			severity, err := eval.EvaluateSeverity(ctx, input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(severity.Severity).To(Equal(signalprocessingv1alpha1.SeverityWarning),
+				"the chart's illustrative severity catch-all must be concrete")
+
+			priority, err := eval.EvaluatePriority(ctx, input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(priority.Priority).To(Equal(signalprocessingv1alpha1.PriorityP3),
+				"a concrete P3 returned by Rego remains a valid operator policy result")
+		})
+
+		It("UT-SP-2467-002: rejects empty or unknown required severity and environment outputs", func() {
+			for _, output := range []string{"unknown", ""} {
+				policy := fmt.Sprintf(`package signalprocessing
+import rego.v1
+default environment := {"environment": %q, "source": "default"}
+default severity := %q
+default priority := {"priority": %q, "policy_name": "operator-default"}
+default labels := {}
+`, output, output, output)
+				Expect(eval.LoadPolicy(policy)).To(Succeed())
+
+				_, severityErr := eval.EvaluateSeverity(ctx, evaluator.PolicyInput{})
+				Expect(severityErr).To(HaveOccurred(), "severity output %q must fail closed", output)
+
+				_, environmentErr := eval.EvaluateEnvironment(ctx, evaluator.PolicyInput{})
+				Expect(environmentErr).To(HaveOccurred(), "environment output %q must fail closed", output)
+
+				_, priorityErr := eval.EvaluatePriority(ctx, evaluator.PolicyInput{})
+				Expect(priorityErr).To(HaveOccurred(), "priority output %q must fail closed", output)
+			}
 		})
 	})
 
@@ -324,7 +383,7 @@ default labels := {}
 			result, err := eval.EvaluatePriority(ctx, input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Priority).To(Equal(signalprocessingv1alpha1.PriorityP3))
-			Expect(result.PolicyName).To(Equal("default"))
+			Expect(result.PolicyName).To(Equal("operator-catch-all"))
 		})
 
 		It("should fail when policy not loaded", func() {

@@ -156,8 +156,7 @@ type SignalContextInput struct {
 	// Copied from SignalProcessing status by RemediationOrchestrator.
 	// Used by Kubernaut Agent to switch investigation prompt (RCA vs. predict & prevent).
 	// +kubebuilder:validation:Enum=reactive;proactive
-	// +optional
-	SignalMode string `json:"signalMode,omitempty"`
+	SignalMode string `json:"signalMode"`
 
 	// Environment classification
 	// GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)
