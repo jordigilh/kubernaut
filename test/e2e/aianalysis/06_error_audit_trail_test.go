@@ -69,6 +69,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							Fingerprint:      "e2e-error-ka-fingerprint",
 							Severity:         "critical",
 							SignalName:       "UnknownError", // Potentially problematic signal type
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -143,6 +144,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							Fingerprint:      "e2e-error-retry-fp",
 							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -221,6 +223,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							Fingerprint:      "e2e-error-investigation-fp",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -306,6 +309,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							Fingerprint:      "e2e-restart-fp",
 							Severity:         "warning",
 							SignalName:       "HighMemoryUsage",
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -391,6 +395,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							Fingerprint:      "e2e-metadata-fp",
 							Severity:         "critical",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{

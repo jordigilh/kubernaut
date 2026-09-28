@@ -63,6 +63,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 						Fingerprint:      "test-fingerprint",
 						Severity:         "high",
 						SignalName:       "OOMKilled",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

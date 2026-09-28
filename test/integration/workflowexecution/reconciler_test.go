@@ -851,13 +851,20 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				now := metav1.Now()
-				wfeStatus.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				wfeStatus.Status.CompletionTime = &now
-				Expect(k8sClient.Status().Update(ctx, wfeStatus)).To(Succeed())
+				// RetryOnConflict: the live reconciler can update status between the
+				// test's Get and Status().Update while it observes the WFE's active
+				// execution. Refresh the object on each retry rather than treating a
+				// stale resourceVersion as a test failure.
+				Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					wfeStatus, getErr := getWFE(wfe.Name, wfe.Namespace)
+					if getErr != nil {
+						return getErr
+					}
+					now := metav1.Now()
+					wfeStatus.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					wfeStatus.Status.CompletionTime = &now
+					return k8sClient.Status().Update(ctx, wfeStatus)
+				})).To(Succeed())
 
 				By("Waiting for cooldown to expire and checking for LockReleased event")
 				// Test reconciler uses 10s cooldown + event emission takes time

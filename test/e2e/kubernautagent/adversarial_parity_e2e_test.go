@@ -69,6 +69,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			Environment:           "production",
 			// generic-restart-v1 is cataloged at P2; OOM workflows use a wildcard.
 			Priority:         "P2",
+			SignalMode:       "reactive",
 			RiskTolerance:    "medium",
 			BusinessCategory: "test",
 		}

@@ -107,6 +107,9 @@ func newAgentSession(name string) *agentsessionv1.AgentSession {
 			RemediationID:         "rr-" + name,
 			SignalName:            "OOMKilled",
 			Severity:              "critical",
+			Environment:           "test",
+			Priority:              "P3",
+			SignalMode:            "reactive",
 		},
 	}
 }

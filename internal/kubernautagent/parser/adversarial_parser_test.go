@@ -558,22 +558,22 @@ End of analysis.`
 		})
 	})
 
-	Describe("CI-1058-SEV: Severity extraction for AA CRD compliance", func() {
-		It("should extract top-level severity from flat response", func() {
+	Describe("UT-KA-2467-002: model severity cannot set the SP-owned classification", func() {
+		It("ignores top-level severity in a flat response", func() {
 			input := `{"rca_summary": "OOM detected", "severity": "critical", "confidence": 0.9}`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.Severity).To(BeEmpty())
 		})
 
-		It("should extract nested severity from root_cause_analysis", func() {
+		It("ignores nested severity from root_cause_analysis", func() {
 			input := `{"root_cause_analysis": {"summary": "OOM", "severity": "high"}, "confidence": 0.8}`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("high"))
+			Expect(result.Severity).To(BeEmpty())
 		})
 
-		It("should prefer top-level severity over nested when both present", func() {
+		It("ignores conflicting top-level and nested severity values", func() {
 			input := `{
 				"root_cause_analysis": {"summary": "OOM", "severity": "info"},
 				"severity": "critical",
@@ -581,11 +581,11 @@ End of analysis.`
 			}`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("critical"),
-				"top-level severity should take precedence")
+			Expect(result.Severity).To(BeEmpty(),
+				"neither model field may take precedence over trusted SP context")
 		})
 
-		It("should handle Mock LLM response format with both paths", func() {
+		It("ignores model severity in the Mock LLM response format", func() {
 			input := `{
 				"root_cause_analysis": {
 					"summary": "Container exceeded memory limits",
@@ -604,7 +604,7 @@ End of analysis.`
 			}`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.Severity).To(BeEmpty())
 			Expect(result.IsActionable).NotTo(BeNil())
 			Expect(*result.IsActionable).To(BeTrue())
 			Expect(result.WorkflowID).To(Equal("oomkill-increase-memory-v1"))

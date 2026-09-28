@@ -211,6 +211,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							Fingerprint:      fmt.Sprintf("fp-hybrid-%s", uuid.New().String()[:8]),
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff", // KA mock will return deterministic response
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -381,6 +382,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							Fingerprint:      fmt.Sprintf("fp-recon-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
 							SignalName:       "OOMKilled", // Different signal type for variety
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -498,6 +500,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 							Fingerprint:      fmt.Sprintf("fp-corr-%s", uuid.New().String()[:8]),
 							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "ImagePullBackOff",
+							SignalMode:       "reactive",
 							Environment:      "development",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{

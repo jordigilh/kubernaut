@@ -17,9 +17,7 @@ A **{{ .Severity }} {{ .SignalName }}** event {{ if eq .SignalMode "proactive" }
 
 ## Severity Authority (BR-SP-105)
 
-The SignalProcessing Rego policy is authoritative for severity; the value above is its normalized classification.
-Do not reassess or change this severity based on RCA findings or workflow selection.
-Copy the exact input severity into `root_cause_analysis.severity` and, when present, the top-level `severity` field.
+The value above is the normalized classification owned by SignalProcessing Rego. Treat it as read-only context: do not reassess it, and do not emit a `severity` field in your response. The server attaches trusted severity after parsing.
 
 **Business Impact Assessment**:
 - **Priority**: {{ .PriorityDescription }}
@@ -91,7 +89,6 @@ Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (conf
 {
   "root_cause_analysis": {
     "summary": "Unable to determine root cause with sufficient confidence",
-    "severity": "unknown",
     "signal_name": "SignalName",
     "contributing_factors": ["factor1"],
     "remediation_target": {
@@ -101,7 +98,6 @@ Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (conf
     }
   },
   "selected_workflow": null,
-  "severity": "unknown",
   "confidence": 0.3,
   "investigation_outcome": "inconclusive",
   "actionable": false
@@ -123,7 +119,6 @@ Set `selected_workflow` to None, include `actionable: false`.
 {
   "root_cause_analysis": {
     "summary": "Brief summary from Phase 1 RCA",
-    "severity": "critical|high|warning|info|unknown",
     "signal_name": "SignalName",
     "contributing_factors": ["factor1", "factor2"],
     "remediation_target": {
@@ -142,7 +137,6 @@ Set `selected_workflow` to None, include `actionable: false`.
   "alternative_workflows": [
     {"workflow_id": "alt-id", "confidence": 0.75, "rationale": "Why considered", "parameters": {"PARAM_NAME": "value"}}
   ],
-  "severity": "high",
   "confidence": 0.95,
   "investigation_outcome": "actionable",
   "actionable": true
@@ -154,7 +148,6 @@ Set `selected_workflow` to None, include `actionable: false`.
 {
   "root_cause_analysis": {
     "summary": "Brief summary from Phase 1 RCA",
-    "severity": "critical|high|warning|info|unknown",
     "signal_name": "SignalName",
     "contributing_factors": ["factor1", "factor2"],
     "remediation_target": {
@@ -173,6 +166,5 @@ Set `selected_workflow` to None, include `actionable: false`.
 - Select ONE workflow per incident as `selected_workflow`
 - Include up to 2-3 `alternative_workflows` ONLY if `list_workflows` returned other distinct workflows besides the selected one. Never repeat the selected workflow in alternatives. If only one workflow was returned by the tool call, leave `alternative_workflows` empty.
 - All fields in root_cause_analysis.summary and selected_workflow are required when actionable
-- Top-level severity must match root_cause_analysis.severity
 - Top-level confidence must match selected_workflow.confidence
 - parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)

@@ -224,8 +224,9 @@ func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.Si
 	// BR-SP-106: Set default signal mode and normalized type for downstream consumers
 	// Defaults to reactive with Spec.Signal.Type as the normalized type
 	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = signalprocessingv1.SeverityCritical
 	classification.SignalMode = "reactive"
-	classification.SignalName = sp.Spec.Signal.Type
+	classification.SignalName = sp.Spec.Signal.Name
 	return sp
 }
 
@@ -258,6 +259,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 				SignalContext: aianalysisv1.SignalContextInput{
 					Fingerprint:      "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 					Severity:         "warning",
+					SignalMode:       "reactive",
 					Environment:      "production",
 					BusinessPriority: "P1",
 				},

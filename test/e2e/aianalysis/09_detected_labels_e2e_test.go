@@ -139,6 +139,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 						Fingerprint:      "e2e-fp-056-" + suffix,
 						Severity:         "critical",
 						SignalName:       "CrashLoopBackOff",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

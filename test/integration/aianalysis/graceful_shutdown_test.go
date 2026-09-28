@@ -103,6 +103,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							Fingerprint:      fmt.Sprintf("shutdown-test-%s", uniqueSuffix),
 							Severity:         "critical",
 							SignalName:       "TestSignal",
+							SignalMode:       "reactive",
 							Environment:      "test",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -156,7 +157,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),
@@ -203,6 +204,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
 							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "TestSignal",
+							SignalMode:       "reactive",
 							Environment:      "test",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
@@ -235,7 +237,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+				// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
 			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),
@@ -284,6 +286,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),
 							Severity:         "critical",
 							SignalName:       "AuditTest",
+							SignalMode:       "reactive",
 							Environment:      "test",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -315,11 +318,11 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					return ""
 				}
 				return analysis.Status.Phase
-			// #2204: bumped 60s->90s. A per-process KA container serves every
-			// spec run against it; when several specs' AgentSessions land on
-			// it in a short burst, KA legitimately runs multiple real
-			// LLM-tool-loop investigations concurrently, and any one of them
-			// can take longer than a short fixed timeout waits for.
+				// #2204: bumped 60s->90s. A per-process KA container serves every
+				// spec run against it; when several specs' AgentSessions land on
+				// it in a short burst, KA legitimately runs multiple real
+				// LLM-tool-loop investigations concurrently, and any one of them
+				// can take longer than a short fixed timeout waits for.
 			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal(aianalysisv1.PhaseCompleted),
 				Equal(aianalysisv1.PhaseFailed),

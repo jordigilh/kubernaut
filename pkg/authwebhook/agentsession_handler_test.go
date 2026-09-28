@@ -66,6 +66,9 @@ func buildAgentSession(rrName string) *agentsessionv1alpha1.AgentSession {
 			RemediationID: rrName,
 			SignalName:    "OOMKilled",
 			Severity:      "critical",
+			Environment:   "test",
+			Priority:      "P1",
+			SignalMode:    "reactive",
 		},
 	}
 }

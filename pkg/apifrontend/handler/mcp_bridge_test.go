@@ -726,7 +726,6 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 					"session_id": "sess-1",
 					"summary":    "RCA complete",
 					"rca": map[string]any{
-						"severity":         "high",
 						"confidence":       0.85,
 						"target":           "pod/nginx-abc123",
 						"tool_calls_count": 3,

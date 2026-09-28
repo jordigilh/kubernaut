@@ -180,6 +180,16 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 // This shared helper is called from many other _test.go files in this package.
 func newSignalProcessingCompleted(name, rrName string) *signalprocessingv1.SignalProcessing {
 	sp := newSignalProcessing(name, defaultFixture, rrName, signalprocessingv1.PhaseCompleted)
+	classification := sp.Status.EnsureSignalClassification()
+	classification.Severity = signalprocessingv1.SeverityWarning
+	classification.SignalName = "TestSignal"
+	classification.SignalMode = signalprocessingv1.SignalModeReactive
+	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+		Environment: signalprocessingv1.EnvironmentDevelopment,
+	}
+	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+		Priority: signalprocessingv1.PriorityP3,
+	}
 	now := metav1.Now()
 	sp.Status.CompletionTime = &now
 	return sp

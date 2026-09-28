@@ -3,40 +3,38 @@
 **Alert:** `ApifrontendSeverityTriageErrorRate`
 **Severity:** warning
 **Service:** kubernaut-apifrontend
-**Packages:** `internal/severity/`, `internal/prometheus/`
+**Packages:** `pkg/apifrontend/severity/`, `pkg/apifrontend/tools/`, Prometheus client
 
 ---
 
 ## Symptoms
 
 - `af_severity_triage_errors_total` counter rising
-- `af_create_rr` returning errors when the severity triage pipeline fails (severity is always AF-resolved via triage, never LLM-supplied — see #1282)
+- `af_create_rr` returning errors when no explicit, unambiguous alert/rule severity is available
 - Audit events `severity.triage.failed` appearing in the audit trail
 - Users reporting "triage failed" errors when creating remediations without explicit severity
 
 ## Triage Pipeline Overview
 
-The severity triage pipeline runs four tiers in order:
+The severity triage pipeline accepts only explicit Prometheus severity labels:
 
 ```
-Tier 1: Prometheus /api/v1/alerts (firing alerts)
+Tier 1: Prometheus /api/v1/alerts (firing alerts; selected matches must agree on one exact label)
   ↓ miss
-Tier 1.5: Prometheus /api/v1/rules (pending rules, cached)
+Tier 1.5: Prometheus /api/v1/rules (pending rules; matching candidates must agree on one exact label)
   ↓ miss
-Tier 2: Prometheus /api/v1/query (instant query per matching rule)
-  ↓ miss
-Tier 2.5: LLM with rule context
-  ↓ miss → ErrSeverityUndetermined, propagated to caller
+Tier 2: Correlated rule-only candidates for potential-issue investigation
+  (all relevant rules must carry the same non-empty raw severity)
+  ↓ no match / missing or conflicting severity → ErrSeverityUndetermined; no RR
 ```
 
-> **#1839 (DD-AF-010)**: Tier 3 (pure-LLM fallback with zero grounding
-> evidence — no alert, no rule) was removed. Asking the LLM to invent a
-> severity from bare resource identity alone risked steering remediation
-> toward the wrong workflow. When Tier 2.5 also misses (i.e. no real
-> Prometheus alert or rule correlates to the resource), `Triage()` now
-> returns `severity.ErrSeverityUndetermined` and `af_create_rr` creates no
-> `RemediationRequest`. **This is expected behavior, not an incident** —
-> see the updated Resolution guidance below before escalating.
+> **DD-AF-010 / DD-AF-016:** Tier 3's ungrounded LLM fallback and Tier 2.5's
+> rule-context LLM inference are both removed. AF passes an explicit raw
+> alert/rule severity unchanged; it does not infer severity or map unknown
+> source labels to `warning`. SP Rego owns canonical normalization. If no
+> correlated alert/rule provides usable, unambiguous source evidence,
+> `Triage()` returns `severity.ErrSeverityUndetermined` and AF creates no RR.
+> This is expected fail-closed behavior, not an incident.
 
 ## Diagnostic Steps
 
@@ -50,10 +48,8 @@ rate(af_severity_triage_errors_total[5m])
 | Tier | Failure Meaning |
 |------|----------------|
 | 1 | Prometheus `/api/v1/alerts` unreachable or returning errors |
-| 1.5 | Prometheus `/api/v1/rules` unreachable (or cache miss + fetch failed) |
-| 2 | Prometheus `/api/v1/query` failing for instant queries |
-| 2.5 | LLM call with rule context failed — **this is the terminal error** |
-| — | `ErrSeverityUndetermined`: no alert/rule correlates to the resource — **expected fail-closed result, not a failure to diagnose** (see #1839) |
+| 1.5/2 | Prometheus `/api/v1/rules` unreachable, or candidate rule severity is missing/conflicting |
+| — | `ErrSeverityUndetermined`: no correlated alert/rule supplies one explicit source severity — **expected fail-closed result, not a failure to diagnose** (DD-AF-016) |
 
 ### 2. Check Prometheus connectivity
 
@@ -69,27 +65,26 @@ Expected: HTTP 200. If not:
 - Check bearer token validity
 - Check Prometheus health
 
-### 3. Check LLM connectivity
+### 3. Check rule severity labels
 
-If Tier 2.5 is failing, the LLM provider is unreachable:
-- Check Vertex AI credentials (Workload Identity, ADC)
-- Check GCP project/region configuration
-- Check LLM circuit breaker state: `af_circuit_breaker_state{dependency="llm"}`
+For a potential issue without a firing alert, inspect all Prometheus rules
+correlated to the target. Every relevant candidate must carry the same,
+non-empty `severity` label. Correct missing/conflicting labels, or retry once
+the alert is pending/firing so the specific source is identified. Do not add an
+AF-side default; the raw value is passed to SP Rego for canonical mapping.
 
 ### 4. Check AF logs
 
 ```bash
 kubectl logs -l app.kubernetes.io/name=kubernaut-apifrontend -c apifrontend | \
-  grep -E "Tier [0-9].*failed|LLM.*failed|triage"
+  grep -E "Tier [0-9].*failed|triage"
 ```
 
 Key log messages:
 - `"Tier 1 failed, continuing"` — Prometheus alerts API error (non-fatal)
 - `"skipping Tier 1.5: rules fetch failed"` — Rules fetch failed (non-fatal)
-- `"skipping Tier 2: rules fetch failed"` — Same as above
-- `"Tier 2 query failed"` — Individual instant query failed (non-fatal)
-- `"Tier 2.5 LLM failed"` — LLM with rule context failed — terminal error (propagated to caller)
-- `cannot determine severity: no active alert or prometheus rule correlates to this resource` (`ErrSeverityUndetermined`) — all tiers missed; **not an error to fix**, this is the fail-closed design (#1839)
+- `"skipping Tier 2: rules fetch failed"` — Same as above; no rule-only severity can be established
+- `cannot determine severity: no correlated alert or rule supplies one explicit, unambiguous severity` (`ErrSeverityUndetermined`) — **expected fail-closed result, not an error to fix**; configure rule labels or retry when a specific alert becomes pending/firing (DD-AF-016)
 
 ### 5. Check configuration
 
@@ -111,18 +106,16 @@ Verify:
 | Prometheus returning 5xx | Check Prometheus health, disk space, memory |
 | Bearer token expired | Check projected volume mount, kubelet token rotation |
 | TLS certificate mismatch | Verify `prometheus.tlsCaFile` matches Prometheus server cert |
-| LLM provider down | Check Vertex AI status, credentials, circuit breaker state |
-| LLM rate limited | Check `MaxLLMConcurrency` configuration |
 | Config missing `prometheusURL` | AF won't start if triage is enabled without URL |
-| `ErrSeverityUndetermined` (no alert/rule correlates) | **Not a bug** — the target resource has no real Prometheus alert or rule behind it. Ask the user to specify severity explicitly, or add/verify an Alertmanager rule for that workload. Do not "fix" this by re-adding an LLM guess — see DD-AF-010. |
+| `ErrSeverityUndetermined` (no explicit, unambiguous severity) | **Expected fail-closed behavior** — no correlated alert/rule supplies a usable raw severity, or rule-only candidates are missing/conflicting. Correct rule labels or retry when the specific alert is pending/firing. Do not add an AF fallback; see DD-AF-016. |
 
 ## Escalation
 
-If both Prometheus and LLM are healthy but triage still fails (excluding the expected `ErrSeverityUndetermined` fail-closed case above):
+If Prometheus is healthy but triage still fails (excluding the expected `ErrSeverityUndetermined` fail-closed case above):
 1. Check `af_severity_triage_duration_seconds` for timeouts
 2. Check for PromQL parsing errors in Tier 2 (may indicate rule format changes)
 3. Escalate to the kubernaut team with AF logs and `af_severity_triage_*` metric snapshots
 
 ---
 
-*Related: `docs/tests/1282/TEST_PLAN.md` (signal grounding + triage), [DD-AF-010](../../../../architecture/decisions/DD-AF-010-remove-ungrounded-severity-inference.md) (Tier 3 removal rationale)*
+*Related: `docs/tests/1282/TEST_PLAN.md` (signal grounding), [DD-AF-010](../../../../architecture/decisions/DD-AF-010-remove-ungrounded-severity-inference.md) (Tier 3 removal), [DD-AF-016](../../../../architecture/decisions/DD-AF-016-explicit-alert-severity-source.md) (explicit severity source)*

@@ -25,7 +25,6 @@ graph TB
         DS[data-storage<br/>REST]
         K8s[Kubernetes API<br/>Dynamic Client]
         PromAPI[Prometheus<br/>Query API]
-        LLMProv[LLM Provider<br/>Vertex AI]
     end
 
     Agent -->|POST /mcp| Router
@@ -36,8 +35,7 @@ graph TB
     Bridge -->|KA tools| KA
     Bridge -->|DS tools| DS
     Bridge -->|af_create_rr| Triager
-    Triager -->|/api/v1/alerts,rules,query| PromAPI
-    Triager -->|Tier 2.5 fallback| LLMProv
+    Triager -->|alerts/rules; raw severity only| PromAPI
     Bridge --> Audit
     PromScrape -->|GET /metrics| Metrics
 ```

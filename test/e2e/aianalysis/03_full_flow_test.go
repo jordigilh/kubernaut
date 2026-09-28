@@ -80,6 +80,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 							Fingerprint:      "e2e-fingerprint-001",
 							Severity:         "high",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -204,6 +205,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 							Fingerprint:      "e2e-fingerprint-002",
 							Severity:         "warning",
 							SignalName:       "OOMKilled",
+							SignalMode:       "reactive",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -263,6 +265,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 							Fingerprint:      "e2e-fingerprint-004",
 							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
+							SignalMode:       "reactive",
 							Environment:      "production",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -323,6 +326,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 							Fingerprint:      "e2e-fingerprint-low-conf",
 							Severity:         "warning",
 							SignalName:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -400,6 +404,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 							Fingerprint:      "e2e-fingerprint-max-retries",
 							Severity:         "high",
 							SignalName:       "MOCK_MAX_RETRIES_EXHAUSTED", // Triggers mock scenario with 3 failed validation attempts
+							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

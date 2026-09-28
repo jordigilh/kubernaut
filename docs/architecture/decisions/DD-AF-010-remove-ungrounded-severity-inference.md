@@ -1,9 +1,15 @@
 # DD-AF-010: Remove Ungrounded LLM Severity Inference (Tier 3)
 
-**Status**: ✅ Accepted
+**Status**: ✅ Accepted — Tier 3 removal remains active; Tier 2.5 allowance superseded by [DD-AF-016](DD-AF-016-explicit-alert-severity-source.md)
 **Date**: 2026-08-01
 **Author**: AI Assistant
 **Related**: Issue [#1839](https://github.com/jordigilh/kubernaut/issues/1839), issue #92 (original three-tier design), PR #1830
+
+> **Supersession note (2026-09-27):** DD-AF-016 removes the Tier 2.5 LLM
+> severity-inference allowance described below. The Tier 3 removal and the
+> requirement for grounded alert/rule evidence remain active. Current AF
+> behavior requires explicit, unambiguous alert/rule severity and never uses
+> an LLM or local fallback to derive it.
 
 ---
 
@@ -115,19 +121,21 @@ Consequences.
 
 ## Decision
 
-**Alternative C**: Tier 3 is removed. Tier 1/1.5/2 (real alert/rule
-evidence) and Tier 2.5 (a real, label-correlated Prometheus rule exists,
-just not currently true — there is something concrete to derive from) are
-unaffected. `severity.ErrSeverityUndetermined` is the new fail-closed
-signal when nothing correlates.
+**Historical decision (Tier 3 removal remains active):** Tier 3 is removed.
+This decision originally left Tier 2.5 unaffected when a real,
+label-correlated rule existed. That Tier 2.5 LLM allowance is superseded by
+DD-AF-016, which permits only direct, unambiguous rule-label severity on that
+path. `severity.ErrSeverityUndetermined` remains the fail-closed signal when
+no usable alert/rule severity can be established.
 
 ## Consequences
 
 **Positive**:
 - Eliminates a real, currently-shipping risk of LLM-fabricated severities
   silently steering remediation-workflow selection.
-- Simpler pipeline (four tiers instead of five) and interface (`LLMTriager`
-  now has one method).
+- At acceptance time, removing Tier 3 simplified the pipeline. DD-AF-016
+  subsequently removed the remaining Tier 2.5 severity-inference path; the
+  active AF pipeline uses explicit alert/rule evidence only.
 - Failure is explicit and user-facing rather than a silent low-confidence
   guess baked into a CRD.
 
@@ -135,19 +143,20 @@ signal when nothing correlates.
 - `kubernaut_investigate`/`kubernaut_remediate` against a resource with no
   Prometheus alert or rule coverage now fails instead of creating an RR with
   a best-effort severity. Operators whose resources lack any Prometheus rule
-  coverage will need to add one (even a non-firing rule with a `severity`
-  label) for AF-driven remediation to work, or invoke the K8s-native tools
-  directly without going through severity-gated RR creation.
-- `NoopLLMTriager` (used when no LLM is configured at all) still satisfies
-  `LLMTriager` for Tier 2.5, but Tier 2.5 now can't be exercised without at
-  least one correlated rule — this was already true before this change.
+  coverage will need to add one with an explicit `severity` label for
+  AF-driven remediation to work, or invoke the K8s-native tools directly
+  without going through severity-gated RR creation. If multiple rule-only
+  candidates have missing or conflicting labels, the caller must retry after
+  a specific alert becomes pending/firing (DD-AF-016).
+- **Historical consequence superseded by DD-AF-016:** the implementation
+  retained `NoopLLMTriager` for Tier 2.5 after this decision. The later
+  decision removes LLM severity inference, so severity triage no longer
+  requires an LLM triager.
 
 **Neutral**:
-- `BuildTriagePrompt`'s no-rules code path (`types.go`) is retained as a
-  general-purpose prompt-builder capability, even though production no
-  longer calls it with empty rules (only Tier 2.5 calls it now, always with
-  non-empty matched rules). Low-risk to keep; removing it added no safety
-  value.
+- **Historical implementation note superseded by DD-AF-016:** the severity
+  prompt builder was retained for Tier 2.5 when this decision was accepted.
+  Current severity triage must not invoke a severity-inference prompt.
 
 ## Authority
 

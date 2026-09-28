@@ -135,6 +135,7 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 						Fingerprint:      "test-fingerprint",
 						Severity:         "high",
 						SignalName:       "OOMKilled",
+						SignalMode:       "reactive",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

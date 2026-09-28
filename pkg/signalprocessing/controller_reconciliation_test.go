@@ -51,8 +51,8 @@ import (
 	controller "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -78,8 +78,6 @@ func (m *mockAuditStore) Close() error {
 }
 
 var _ audit.AuditStore = &mockAuditStore{}
-
-
 
 var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() {
 	var (
@@ -594,6 +592,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-classify",
+							Name:        "TestSignal",
 							Severity:    "critical",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 								Kind:      "Deployment",
@@ -624,12 +623,12 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:           fakeClient,
-					Scheme:           scheme,
-					StatusManager:    spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:          spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:     spaudit.NewManager(auditClient),
-					PolicyEvaluator:  newDefaultMockPolicyEvaluator(),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -956,7 +955,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-categorize",
-							Severity: "high",
+							Severity:    "high",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 								Kind:      "Pod",
 								Name:      "test-pod",

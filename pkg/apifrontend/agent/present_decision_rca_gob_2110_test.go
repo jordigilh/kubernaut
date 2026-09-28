@@ -181,7 +181,7 @@ var _ = Describe("present_decision rca gob-encodability (#2110, v1.6 clone #2111
 		Expect(ok).To(BeTrue(), "rca must be a map[string]any -- the concrete type a2a-go's own "+
 			"internal/taskstore/store.go registers for gob -- not a *tools.RCAData struct pointer, "+
 			"which is never gob.Register'd anywhere in this repo")
-		Expect(rca["severity"]).To(Equal("critical"))
+		Expect(rca).NotTo(HaveKey("severity"), "SP severity is not part of the model-facing tool arguments")
 		Expect(rca["confidence"]).To(Equal(0.9))
 		Expect(rca["target"]).To(Equal("pod/checkout-service"))
 		Expect(rca["causal_chain"]).To(Equal([]string{"MemoryPressure", "Evicted"}))

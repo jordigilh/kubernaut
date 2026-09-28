@@ -908,7 +908,7 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 				"SP-classified severity must override model-provided severity")
 		})
 
-		It("UT-KA-SP-105-002: should use unknown rather than model severity when SP severity is absent", func() {
+		It("UT-KA-2467-004: does not invent a severity when SP context is absent", func() {
 			result := &katypes.InvestigationResult{
 				Severity:   "critical",
 				RCASummary: "test rca",
@@ -916,8 +916,8 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 
 			investigator.FinalizeWorkflowResult(result, katypes.SignalContext{}, &katypes.InvestigationResult{}, nil)
 
-			Expect(result.Severity).To(Equal("unknown"),
-				"model-provided severity must not replace missing SP classification")
+			Expect(result.Severity).To(BeEmpty(),
+				"model-provided severity and an unknown sentinel must not replace missing SP classification")
 		})
 	})
 

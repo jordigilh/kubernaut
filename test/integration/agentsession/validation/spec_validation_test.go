@@ -43,6 +43,9 @@ func baseSpec(name string) agentsessionv1.AgentSessionSpec {
 		RemediationID:         "rem-" + name,
 		SignalName:            "TestSignal",
 		Severity:              "high",
+		Environment:           "test",
+		Priority:              "P1",
+		SignalMode:            "reactive",
 	}
 }
 

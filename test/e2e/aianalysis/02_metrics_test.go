@@ -74,6 +74,7 @@ func seedMetricsWithAnalysis() {
 					Fingerprint:      "metrics-seed-fp",
 					Severity:         "warning",
 					SignalName:       "PodCrashLooping",
+					SignalMode:       "reactive",
 					Environment:      "staging",
 					BusinessPriority: "P2",
 					TargetResource: aianalysisv1.TargetResource{
@@ -119,6 +120,7 @@ func seedMetricsWithAnalysis() {
 					Fingerprint:      "TRIGGER_WORKFLOW_RESOLUTION_FAILURE", // Special fingerprint to trigger failure
 					Severity:         "critical",
 					SignalName:       "TestFailureScenario",
+					SignalMode:       "reactive",
 					Environment:      "staging",
 					BusinessPriority: "P1",
 					TargetResource: aianalysisv1.TargetResource{

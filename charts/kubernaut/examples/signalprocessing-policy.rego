@@ -30,9 +30,11 @@ import rego.v1
 
 # ========== Environment Classification (BR-SP-051-053) ==========
 # Returns: {"environment": string, "source": string}
-# Priority: namespace label > namespace name prefix > default
+# Specific namespace rules take precedence over this concrete catch-all.
+# The value is illustrative: operators should choose a safe environment that
+# reflects their workflow-routing policy. It is not a Go/SP fallback.
 
-default environment := {"environment": "Unknown", "source": "default"}
+default environment := {"environment": "Development", "source": "operator-catch-all"}
 
 # Normalize known tier names to PascalCase for output; pass through other label values (evaluator normalizes at boundary).
 environment := {"environment": env_out, "source": "namespace-labels"} if {
@@ -60,9 +62,11 @@ environment := {"environment": "Development", "source": "namespace-labels"} if {
 # ========== Severity Determination (BR-SP-105) ==========
 # Returns: string (critical/high/warning/info/unknown)
 # Maps external monitoring severity values to kubernaut-normalized values (ADR-066).
-# Add else clauses for your monitoring tool's severity scheme.
+# Specific mappings take precedence over this concrete catch-all. The value is
+# illustrative: operators should choose a safe severity for workflow routing.
+# It is a policy result, not an SP/controller fallback.
 
-default severity := "unknown"
+default severity := "warning"
 
 severity := "critical" if { lower(input.signal.severity) == "critical" }
 severity := "critical" if { lower(input.signal.severity) == "sev1" }
@@ -80,8 +84,11 @@ severity := "info" if { lower(input.signal.severity) == "sev4" }
 # ========== Priority Assignment (BR-SP-070) ==========
 # Returns: {"priority": string, "policy_name": string}
 # References `environment` and `severity` rules above -- Rego resolves internally.
+# This concrete catch-all applies when no specific priority rule matches. P3 is
+# illustrative; operators should choose a workflow-routing priority appropriate
+# to their policy. The controller does not supply or substitute this value.
 
-default priority := {"priority": "P3", "policy_name": "default"}
+default priority := {"priority": "P3", "policy_name": "operator-catch-all"}
 
 priority := {"priority": "P0", "policy_name": "production-critical"} if {
     environment.environment == "Production"
@@ -107,14 +114,17 @@ priority := {"priority": "P2", "policy_name": "staging-any"} if {
 
 default labels := {}
 
-labels := result if {
+labels := {"team": [team], "tier": [tier]} if {
+    team := input.namespace.labels["kubernaut.ai/team"]
+    tier := input.namespace.labels["kubernaut.ai/tier"]
+    team != ""
+    tier != ""
+}
+
+labels := {"team": [team]} if {
     team := input.namespace.labels["kubernaut.ai/team"]
     team != ""
-    tier := object.get(input.namespace.labels, "kubernaut.ai/tier", "")
-    result := object.union(
-        {"team": [team]},
-        {"tier": [tier]} if { tier != "" } else {}
-    )
+    not input.namespace.labels["kubernaut.ai/tier"]
 }
 
 # ========== Cluster Classification (BR-FLEET-003, #1511) ==========

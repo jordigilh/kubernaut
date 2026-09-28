@@ -20,6 +20,7 @@ package creator
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -131,6 +132,10 @@ func (c *AIAnalysisCreator) Create(
 		logger.Error(err, "Failed to check existing AIAnalysis")
 		return "", fmt.Errorf("failed to check existing AIAnalysis: %w", err)
 	}
+	if err := validateSignalProcessingClassifications(sp); err != nil {
+		logger.Error(err, "SignalProcessing completed without usable required classifications")
+		return "", err
+	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
@@ -171,32 +176,15 @@ func (c *AIAnalysisCreator) buildSignalContext(
 	rr *remediationv1.RemediationRequest,
 	sp *signalprocessingv1.SignalProcessing,
 ) aianalysisv1.SignalContextInput {
-	// Environment and Priority come from SP status only (no longer on RR.Spec)
-	environment := "Unknown"
-	priority := "P2"
-	if sp.Status.EnvironmentClassification != nil && sp.Status.EnvironmentClassification.Environment != "" {
-		environment = string(sp.Status.EnvironmentClassification.Environment)
-	}
-	if sp.Status.PriorityAssignment != nil && sp.Status.PriorityAssignment.Priority != "" {
-		priority = string(sp.Status.PriorityAssignment.Priority)
-	}
-
-	// BR-SP-106: SignalType from SP status (normalized by signal mode classifier)
-	// For proactive signals: SP normalizes e.g. "PredictedOOMKill" -> "OOMKilled"
-	// For reactive signals: SP copies Spec.Signal.Type unchanged
-	// Fallback to RR spec if SP status field is empty (backwards compatibility)
-	signalType := sp.Status.GetSignalClassification().SignalName
-	if signalType == "" {
-		signalType = rr.Spec.SignalType
-	}
+	classification := sp.Status.GetSignalClassification()
 
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
-		Severity:         sp.Status.GetSignalClassification().Severity,   // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
-		SignalName:       signalType,                                     // BR-SP-106: Normalized by SP (not raw from RR)
-		SignalMode:       sp.Status.GetSignalClassification().SignalMode, // BR-AI-084: Proactive signal mode for KA prompt switching
-		Environment:      environment,
-		BusinessPriority: priority,
+		Severity:         classification.Severity,   // BR-SP-105: exact SP/Rego output; RR severity remains distinct external context
+		SignalName:       classification.SignalName, // BR-SP-106: normalized by SP; never replaced with RR signal type
+		SignalMode:       classification.SignalMode, // BR-AI-084: SP-owned prompt strategy
+		Environment:      string(sp.Status.EnvironmentClassification.Environment),
+		BusinessPriority: string(sp.Status.PriorityAssignment.Priority),
 		TargetResource: aianalysisv1.TargetResource{
 			Kind:       rr.Spec.TargetResource.Kind,
 			Name:       rr.Spec.TargetResource.Name,
@@ -212,6 +200,46 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		// clusters -- a normal outcome, not an error.
 		Cluster: sp.Status.GetSignalClassification().ClusterClassification,
 	}
+}
+
+func validateSignalProcessingClassifications(sp *signalprocessingv1.SignalProcessing) error {
+	if sp == nil {
+		return fmt.Errorf("signalprocessing classification source is required")
+	}
+	classification := sp.Status.GetSignalClassification()
+	required := []struct {
+		name  string
+		value string
+	}{
+		{name: "severity", value: classification.Severity},
+		{name: "normalized signal name", value: classification.SignalName},
+		{name: "signal mode", value: classification.SignalMode},
+		{name: "environment", value: string(valueOrEmptyEnvironment(sp.Status.EnvironmentClassification))},
+		{name: "priority", value: string(valueOrEmptyPriority(sp.Status.PriorityAssignment))},
+	}
+	for _, item := range required {
+		if strings.TrimSpace(item.value) == "" || strings.EqualFold(strings.TrimSpace(item.value), "unknown") {
+			return fmt.Errorf("signalprocessing %s/%s has unusable %s classification %q", sp.Namespace, sp.Name, item.name, item.value)
+		}
+	}
+	if classification.SignalMode != signalprocessingv1.SignalModeReactive && classification.SignalMode != signalprocessingv1.SignalModeProactive {
+		return fmt.Errorf("signalprocessing %s/%s has invalid signal mode classification %q", sp.Namespace, sp.Name, classification.SignalMode)
+	}
+	return nil
+}
+
+func valueOrEmptyEnvironment(classification *signalprocessingv1.EnvironmentClassification) signalprocessingv1.Environment {
+	if classification == nil {
+		return ""
+	}
+	return classification.Environment
+}
+
+func valueOrEmptyPriority(assignment *signalprocessingv1.PriorityAssignment) signalprocessingv1.Priority {
+	if assignment == nil {
+		return ""
+	}
+	return assignment.Priority
 }
 
 // buildEnrichmentResults converts SignalProcessing status to shared EnrichmentResults.

@@ -137,12 +137,7 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 				Name:      "sp-completed",
 				Namespace: defaultFixture,
 			}
-			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed", Namespace: defaultFixture},
-				Status: signalprocessingv1.SignalProcessingStatus{
-					Phase: signalprocessingv1.PhaseCompleted,
-				},
-			}
+			sp := newSignalProcessingCompleted("sp-completed", rr.Name)
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &signalprocessingv1.SignalProcessing{}).
 				WithObjects(rr, sp).Build()
@@ -166,12 +161,7 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 				Name:      "sp-completed-err",
 				Namespace: defaultFixture,
 			}
-			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed-err", Namespace: defaultFixture},
-				Status: signalprocessingv1.SignalProcessingStatus{
-					Phase: signalprocessingv1.PhaseCompleted,
-				},
-			}
+			sp := newSignalProcessingCompleted("sp-completed-err", rr.Name)
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &signalprocessingv1.SignalProcessing{}).
 				WithObjects(rr, sp).

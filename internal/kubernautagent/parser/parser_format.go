@@ -34,7 +34,6 @@ func applyLLMRCA(result *katypes.InvestigationResult, rca *llmRCA, logger logr.L
 		return
 	}
 	result.RCASummary = rca.Summary
-	result.Severity = rca.Severity
 	result.SignalName = rca.SignalName
 	result.ContributingFactors = rca.ContributingFactors
 	result.InvestigationAnalysis = rca.InvestigationAnalysis
@@ -94,10 +93,6 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	result := &katypes.InvestigationResult{}
 	applyLLMRCA(result, resp.resolvedRCA(), logger)
 
-	// Top-level severity takes precedence over nested (allows Mock LLM to set both)
-	if resp.Severity != "" {
-		result.Severity = resp.Severity
-	}
 	// Top-level confidence serves as fallback when selected_workflow is absent
 	// (e.g., not-actionable outcomes where the LLM still provides a confidence score).
 	if resp.Confidence > 0 {
@@ -115,7 +110,6 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	}
 
 	applyFlatFields(result, flatLLMFields{
-		Severity:             resp.Severity,
 		Actionable:           resp.Actionable,
 		InvestigationOutcome: resp.InvestigationOutcome,
 	})
@@ -343,10 +337,6 @@ func mergeNestedSelectedWorkflow(result *katypes.InvestigationResult, jsonStr st
 // - actionable: sets IsActionable, synthesizes warning, applies confidence floor
 // - investigation_outcome: maps to outcome routing fields (HR is derived, not propagated)
 func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
-	if flat.Severity != "" && result.Severity == "" {
-		result.Severity = flat.Severity
-	}
-
 	if flat.Actionable != nil && !*flat.Actionable {
 		falseVal := false
 		result.IsActionable = &falseVal

@@ -121,7 +121,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 			"pending_alert", "firing_alert",
 			"ns_pending_alert", "ns_firing_alert",
 			"cluster_pending_alert", "cluster_firing_alert",
-			"llm_rule_informed", "llm_triage"),
+			"rule_label", "rule_evaluation", "llm_rule_informed", "llm_triage"),
 			"expected Prometheus-informed source, got: %s", src)
 	})
 
@@ -138,7 +138,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		a2aCreateRRAndWait("sev-tier2-ns", "test-inactive-target", "")
 		rr := findRRByTarget("sev-tier2-ns", "test-inactive-target")
 		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed"),
+		Expect(src).To(BeElementOf("rule_label", "rule_evaluation", "llm_rule_informed"),
 			"expected Tier 2 or Tier 2.5 source, got: %s", src)
 	})
 
@@ -146,7 +146,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		a2aCreateRRAndWait("no-data-ns", "test-nodata-target", "")
 		rr := findRRByTarget("no-data-ns", "test-nodata-target")
 		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(Equal("llm_rule_informed"), "expected Tier 2.5 source, got: %s", src)
+		Expect(src).To(Equal("rule_label"), "expected explicit Tier 2.5 rule source, got: %s", src)
 	})
 
 	It("TC-E2E-SEV-05: No alert or rule correlates — fails closed instead of an ungrounded LLM guess (#1839)", func() {

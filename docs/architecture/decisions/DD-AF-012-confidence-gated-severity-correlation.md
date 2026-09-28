@@ -147,10 +147,11 @@ Key clarifying facts established during discussion:
 
 ## Decision
 
-1. `severity.Triager`/`bestOverallMatch` gains an explicit confidence notion per tier (the
-   `TriageResult.Confidence float64` field already exists but is currently only populated by the
-   Tier 2.5 LLM path) — resource-scoped ≈ high, namespace-scoped ≈ medium, cluster-scoped-with-zero-
-   correlation ≈ low/ambiguous.
+1. `severity.Triager`/`bestOverallMatch` gains an explicit confidence notion per tier. The
+   `TriageResult.Confidence float64` field was historically populated by the Tier 2.5 LLM path;
+   that inference path is superseded by DD-AF-016. Confidence is not a source of severity and must
+   not replace explicit alert/rule labels. Resource-scoped ≈ high, namespace-scoped ≈ medium,
+   cluster-scoped-with-zero-correlation ≈ low/ambiguous.
 2. When Tier 1's *only* candidate is cluster-scoped (no resource/namespace-scoped candidate found at
    all), `Triage()`/`HandleCreateRR` does **not** silently write that candidate into the RR's
    `severity`/`signalName` as fact. It returns a structured "ambiguous — needs clarification" result

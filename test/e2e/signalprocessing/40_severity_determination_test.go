@@ -181,14 +181,14 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		// Serial: This test MUST NOT run in parallel with other E2E tests.
 		//
 		// It overwrites the shared signalprocessing-policy ConfigMap with a stripped-down
-		// Rego policy that only defines default rules (environment="unknown", priority="P3").
+		// Rego policy that only defines default rules (environment="development", severity="warning", priority="P3").
 		// The SP controller is a single pod shared across all parallel Ginkgo processes,
 		// so any SP CR created by another process during the ~15-30s hot-reload window
 		// (kubelet ConfigMap sync + FileWatcher reload + DeferCleanup restore) will be
 		// classified with the stripped policy instead of the production policy.
 		//
 		// Root cause of Issue #437: BR-SP-070 priority tests were intermittently classified
-		// as "P3 unknown" because they ran concurrently with this test while the stripped
+		// as "P3 development" because they ran concurrently with this test while the stripped
 		// policy was active. Moving to Serial eliminates the shared-state contamination.
 		It("should handle ConfigMap policy updates affecting in-flight workflows", Serial, func() {
 			// BUSINESS CONTEXT:
@@ -264,7 +264,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 
 			// Save original policy so we can restore it after the test.
 			// Without this, the stripped-down hot-reload policy contaminates subsequent tests
-			// (environment always "unknown", priority always "P3").
+			// (environment always "development", severity always "warning", priority always "P3").
 			originalPolicyRego := policyConfigMap.Data["policy.rego"]
 			DeferCleanup(func() {
 				restoreCM := &corev1.ConfigMap{}
@@ -332,8 +332,8 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 
 			policyConfigMap.Data["policy.rego"] = `package signalprocessing
 import rego.v1
-default environment := {"environment": "unknown", "source": "default"}
-default severity := "unknown"
+default environment := {"environment": "development", "source": "default"}
+default severity := "warning"
 severity := "high" if { lower(input.signal.severity) == "custom_value" }
 severity := "critical" if { not lower(input.signal.severity) == "custom_value" }
 default priority := {"priority": "P3", "policy_name": "default"}

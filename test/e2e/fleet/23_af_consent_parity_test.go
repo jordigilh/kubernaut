@@ -44,15 +44,13 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		turnID := "fleet-cg2-1-" + uuid.NewString()[:8]
-		contextID := "ctx-" + turnID
-		task := fleetSendTurn(turnID, "create and investigate then sneak workflow discovery")
+		task, contextID := fleetSendInitialTurnUntilRR(targetNS, "fleet-cg2-1", "create and investigate then sneak workflow discovery")
 		rrName := fleetWaitForRR(targetNS)
 		fleetAssertNoWorkflowExecution(rrName)
 
-		fleetSendTurnWithTask(turnID+"-2", task.ID, contextID, "confirm discovery of workflows")
-		fleetSendTurnWithTask(turnID+"-3", task.ID, contextID, "select the discovered workflow")
-		fleetSendTurnWithTask(turnID+"-4", task.ID, contextID, "watch this remediation now")
+		fleetSendTurnWithTask("fleet-cg2-2", task.ID, contextID, "confirm discovery of workflows")
+		fleetSendTurnWithTask("fleet-cg2-3", task.ID, contextID, "select the discovered workflow")
+		fleetSendTurnWithTask("fleet-cg2-4", task.ID, contextID, "watch this remediation now")
 		fleetWaitForWorkflowExecution(rrName)
 	})
 
@@ -61,14 +59,12 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		turnID := "fleet-cg3-1-" + uuid.NewString()[:8]
-		contextID := "ctx-" + turnID
-		task := fleetSendTurn(turnID, "create and investigate then sneak workflow selection")
+		task, contextID := fleetSendInitialTurnUntilRR(targetNS, "fleet-cg3-1", "create and investigate then sneak workflow selection")
 		rrName := fleetWaitForRR(targetNS)
 		fleetAssertNoWorkflowExecution(rrName)
 
-		fleetSendTurnWithTask(turnID+"-2", task.ID, contextID, "select the discovered workflow")
-		fleetSendTurnWithTask(turnID+"-3", task.ID, contextID, "watch this remediation now")
+		fleetSendTurnWithTask("fleet-cg3-2", task.ID, contextID, "select the discovered workflow")
+		fleetSendTurnWithTask("fleet-cg3-3", task.ID, contextID, "watch this remediation now")
 		fleetWaitForWorkflowExecution(rrName)
 	})
 
@@ -77,15 +73,11 @@ var _ = Describe("AF Fleet Consent and Completion Parity", Label("fleet", "af", 
 		Expect(targetNS).NotTo(BeEmpty())
 		fleetDeployConsentTarget(targetNS)
 
-		fleetSendTurn("fleet-autonomous-2365-"+uuid.NewString()[:8], "investigate and fix remediation for deployment memory-eater")
+		_, _ = fleetSendInitialTurnUntilRR(targetNS, "fleet-autonomous-2365", "investigate and fix remediation for deployment memory-eater")
 		rrName := fleetWaitForRR(targetNS)
 		fleetWaitForWorkflowExecution(rrName)
 	})
 })
-
-func fleetSendTurn(id, text string) afA2ATaskResult {
-	return fleetSendTurnWithBody(afA2ATasksSend(id, text), 180*time.Second)
-}
 
 func fleetSendTurnWithTask(id, taskID, contextID, text string) {
 	fleetSendTurnWithBody(afA2ATasksSendWithTask(id, taskID, contextID, text), 180*time.Second)
@@ -103,6 +95,73 @@ func fleetSendTurnWithBody(body string, timeout time.Duration) afA2ATaskResult {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(task.ID).NotTo(BeEmpty())
 	return task
+}
+
+// fleetSendInitialTurnUntilRR sends a fresh A2A session until the remote
+// target's RR exists. FMC's scope cache is refreshed periodically, so a newly
+// created managed Deployment can be rejected by AF's federated scope check
+// before the next cache cycle. A rejected tool call is safely retryable because
+// checkRRScope runs before RR creation; each attempt therefore uses a fresh
+// session rather than resuming a session that has no RR attached.
+func fleetSendInitialTurnUntilRR(targetNS, idPrefix, text string) (afA2ATaskResult, string) {
+	var task afA2ATaskResult
+	var contextID string
+	attempt := 0
+
+	Eventually(func(g Gomega) {
+		attempt++
+		turnID := fmt.Sprintf("%s-%d-%s", idPrefix, attempt, uuid.NewString()[:8])
+		contextID = "ctx-" + turnID
+
+		resp, err := afA2AInvokeWithTimeout(afA2ATasksSend(turnID, text), 180*time.Second)
+		if err != nil {
+			g.Expect(err).NotTo(HaveOccurred())
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		if resp.StatusCode != http.StatusOK {
+			return
+		}
+		rpc, err := afParseRPC(resp)
+		if err != nil {
+			g.Expect(err).NotTo(HaveOccurred())
+			return
+		}
+		g.Expect(rpc.Error).To(BeNil())
+		if rpc.Error != nil {
+			return
+		}
+		task, err = afExtractTask(rpc.Result)
+		if err != nil {
+			g.Expect(err).NotTo(HaveOccurred())
+			return
+		}
+		g.Expect(task.ID).NotTo(BeEmpty())
+		if task.ID == "" {
+			return
+		}
+
+		list := &remediationv1.RemediationRequestList{}
+		if err := apiReader.List(ctx, list, client.InNamespace(namespace)); err != nil {
+			g.Expect(err).NotTo(HaveOccurred())
+			return
+		}
+		created := false
+		for _, rr := range list.Items {
+			if rr.Spec.ClusterID == remoteCluster &&
+				rr.Spec.TargetResource.Namespace == targetNS &&
+				rr.Spec.TargetResource.Name == "memory-eater" {
+				created = true
+				break
+			}
+		}
+		g.Expect(created).To(BeTrue(),
+			"initial A2A attempt %d must create an RR for %s (retrying expected FMC scope-cache lag)", attempt, targetNS)
+	}, fmcSyncTimeout, 2*time.Second).Should(Succeed())
+
+	return task, contextID
 }
 
 func fleetDeployConsentTarget(targetNS string) {

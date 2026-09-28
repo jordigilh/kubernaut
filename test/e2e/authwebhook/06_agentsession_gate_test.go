@@ -63,6 +63,9 @@ func buildAgentSessionCRD(crdName, rrName string) *agentsessionv1alpha1.AgentSes
 			RemediationID: rrName,
 			SignalName:    "OOMKilled",
 			Severity:      "critical",
+			Environment:   "test",
+			Priority:      "P1",
+			SignalMode:    "reactive",
 		},
 	}
 }

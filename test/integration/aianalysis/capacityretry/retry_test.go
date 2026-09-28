@@ -117,6 +117,7 @@ func newCapacityRetryAnalysis(ns, name string, kaSessionGeneration int32, sessio
 					Fingerprint:      "fp-" + name,
 					Severity:         "critical",
 					SignalName:       "TestSignalCapacityRetryIT",
+					SignalMode:       "reactive",
 					Environment:      "staging",
 					BusinessPriority: "P1",
 					TargetResource: aianalysisv1.TargetResource{

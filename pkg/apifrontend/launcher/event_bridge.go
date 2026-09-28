@@ -116,6 +116,8 @@ type EventBridge struct {
 	contextID string
 	metrics   BridgeMetrics
 	rrCtx     *RRContext
+	decisionSeverity    string
+	decisionProvisional bool
 }
 
 const (
@@ -197,6 +199,46 @@ func (b *EventBridge) RRContext() *RRContext {
 	}
 	rc := *b.rrCtx
 	return &rc
+}
+
+// SetDecisionRCAClassification stores trusted server-side severity for the
+// final decision artifact. It is separate from model arguments so the
+// LLM-facing present_decision schema never grants severity write access.
+func (b *EventBridge) SetDecisionRCAClassification(severity string, provisional bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if severity == "" || strings.EqualFold(strings.TrimSpace(severity), "unknown") {
+		b.decisionSeverity = ""
+		b.decisionProvisional = false
+		return
+	}
+	b.decisionSeverity = severity
+	b.decisionProvisional = provisional
+}
+
+// DecisionRCAClassification returns trusted severity and its provenance flag
+// for artifact projection, or an empty severity when none is available.
+func (b *EventBridge) DecisionRCAClassification() (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.decisionSeverity, b.decisionProvisional
+}
+
+// SetDecisionRCAClassificationSafe stores decision severity when ctx carries
+// an EventBridge; non-streaming callers are intentionally a no-op.
+func SetDecisionRCAClassificationSafe(ctx context.Context, severity string, provisional bool) {
+	if bridge := EventBridgeFromContext(ctx); bridge != nil {
+		bridge.SetDecisionRCAClassification(severity, provisional)
+	}
+}
+
+// DecisionRCAClassificationSafe reads the artifact classification from the
+// EventBridge in ctx, returning empty values when no streaming bridge exists.
+func DecisionRCAClassificationSafe(ctx context.Context) (string, bool) {
+	if bridge := EventBridgeFromContext(ctx); bridge != nil {
+		return bridge.DecisionRCAClassification()
+	}
+	return "", false
 }
 
 // RRContextSafe is a nil-safe helper that returns a copy of the RR context

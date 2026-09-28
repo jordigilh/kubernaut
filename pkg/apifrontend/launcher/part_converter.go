@@ -390,10 +390,11 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 // Falls back to EmitStructuredMeta on schema validation failure for graceful
 // degradation (SI-17).
 func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
-	data := fc.Args
-	if data == nil {
-		data = map[string]any{}
+	data := make(map[string]any, len(fc.Args)+1)
+	for key, value := range fc.Args {
+		data[key] = value
 	}
+	projectDecisionRCAClassification(bridge, data)
 
 	// SI-10: caller-supplied cluster_id (already present in the LLM-produced
 	// payload) takes precedence over the server-side RRContext value.
@@ -416,6 +417,27 @@ func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.Funct
 	}
 
 	_ = bridge.EmitArtifact(ctx, data, textFallback, meta)
+}
+
+func projectDecisionRCAClassification(bridge *EventBridge, data map[string]any) {
+	rawRCA, ok := data["rca"].(map[string]any)
+	if !ok {
+		return
+	}
+	rca := make(map[string]any, len(rawRCA)+2)
+	for key, value := range rawRCA {
+		if key != "severity" && key != "provisional" {
+			rca[key] = value
+		}
+	}
+	severity, provisional := bridge.DecisionRCAClassification()
+	if severity != "" {
+		rca["severity"] = severity
+		if provisional {
+			rca["provisional"] = true
+		}
+	}
+	data["rca"] = rca
 }
 
 // emitStructuredOutput emits the FunctionResponse from kubernaut_watch as a

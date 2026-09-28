@@ -171,12 +171,12 @@ type AgentSessionSpec struct {
 	// Description is an optional additional description.
 	// +optional
 	Description string `json:"description,omitempty"`
-	// Environment is the deployment environment.
-	// +optional
-	Environment string `json:"environment,omitempty"`
-	// Priority is the business priority.
-	// +optional
-	Priority string `json:"priority,omitempty"`
+	// Environment is the required SP-owned deployment environment.
+	// +kubebuilder:validation:MinLength=1
+	Environment string `json:"environment"`
+	// Priority is the required SP-owned business priority.
+	// +kubebuilder:validation:MinLength=1
+	Priority string `json:"priority"`
 	// RiskTolerance is the configured risk tolerance.
 	// +optional
 	RiskTolerance string `json:"riskTolerance,omitempty"`
@@ -226,8 +226,7 @@ type AgentSessionSpec struct {
 	// SignalMode controls KA's prompt strategy: "reactive" or "proactive"
 	// (ADR-054).
 	// +kubebuilder:validation:Enum=reactive;proactive
-	// +optional
-	SignalMode string `json:"signalMode,omitempty"`
+	SignalMode string `json:"signalMode"`
 
 	// TimesOutAt is the absolute deadline for this investigation, propagated
 	// verbatim from AIAnalysis.Spec.TimesOutAt (itself propagated from

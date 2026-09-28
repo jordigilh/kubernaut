@@ -69,6 +69,7 @@ var _ = Describe("DD-TIMEOUT-002: AIAnalysis self-enforces Spec.TimesOutAt", Lab
 						Fingerprint:      "fp-2176-timeout",
 						Severity:         "warning",
 						SignalName:       "slow-investigation-test",
+						SignalMode:       "reactive",
 						Environment:      "staging",
 						BusinessPriority: "P2",
 						TargetResource: aianalysisv1.TargetResource{

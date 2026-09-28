@@ -992,10 +992,11 @@ func mapWarningsToSubReason(warnings []string) string {
 	}
 }
 
-// ExtractRootCauseAnalysis decodes RCA from an AgentSessionResult's raw-JSON
-// RootCauseAnalysis field, including remediationTarget. It preserves the
-// response's severity; use extractRootCauseAnalysisWithSPSeverity when storing
-// an RCA on AIAnalysis so SignalProcessing remains authoritative.
+// ExtractRootCauseAnalysis decodes narrative RCA fields from an
+// AgentSessionResult's raw-JSON RootCauseAnalysis field, including
+// remediationTarget. Severity is intentionally not read from model-controlled
+// RCA JSON; use extractRootCauseAnalysisWithSPSeverity when storing an RCA on
+// AIAnalysis so the only persisted value comes from SignalProcessing.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions).
 // BR-496 v2: remediationTarget is KA-injected from K8s-verified root_owner, not LLM-provided.
 // #542: KA emits "remediationTarget" in JSON; CRD stores it as RemediationTarget.
@@ -1004,13 +1005,8 @@ func ExtractRootCauseAnalysis(rcaData *apiextensionsv1.JSON) *aianalysisv1.RootC
 	if rcaMap == nil {
 		return nil
 	}
-	severity := GetStringFromMap(rcaMap, "severity")
-	if severity == "" {
-		severity = "unknown"
-	}
 	rca := &aianalysisv1.RootCauseAnalysis{
 		Summary:             GetStringFromMap(rcaMap, "summary"),
-		Severity:            severity,
 		SignalType:          GetStringFromMap(rcaMap, "signal_name"),
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
@@ -1037,16 +1033,15 @@ func ExtractRootCauseAnalysis(rcaData *apiextensionsv1.JSON) *aianalysisv1.RootC
 }
 
 // extractRootCauseAnalysisWithSPSeverity decodes the RCA narrative from KA but
-// takes severity from AIAnalysis.Spec, which carries SignalProcessing's Rego
-// classification. A missing signal classification is represented as unknown;
-// the model-provided severity is never used as a substitute.
+// takes severity only from AIAnalysis.Spec, which carries SignalProcessing's
+// Rego classification. An absent spec value remains absent; neither model
+// output nor an invented unknown sentinel can substitute for SP.
 func extractRootCauseAnalysisWithSPSeverity(analysis *aianalysisv1.AIAnalysis, rcaData *apiextensionsv1.JSON) *aianalysisv1.RootCauseAnalysis {
 	rca := ExtractRootCauseAnalysis(rcaData)
 	if rca == nil {
 		return nil
 	}
 
-	rca.Severity = "unknown"
 	if analysis != nil && analysis.Spec.AnalysisRequest.SignalContext.Severity != "" {
 		rca.Severity = analysis.Spec.AnalysisRequest.SignalContext.Severity
 	}

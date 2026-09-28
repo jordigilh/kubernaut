@@ -251,6 +251,39 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 				"SP-classified severity must replace the mapper's unknown fallback")
 		})
 
+		It("UT-AA-2467-001: ignores model severity and keeps RCA signal_name distinct from normalized SP SignalName", func() {
+			analysis := createAnalysis()
+			analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
+			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "SPNormalizedMemoryPressure"
+			resp := buildNoMatchingWorkflowsResp()
+			resp.RootCauseAnalysis = rawJSON(map[string]interface{}{
+				"summary":              "A deployment exceeded its memory limit",
+				"severity":             "info",
+				"signal_name":          "OOMKilled",
+				"contributing_factors": []string{"memory limit exceeded"},
+			})
+
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+			Expect(err).NotTo(HaveOccurred())
+
+			rca := analysis.Status.GetRCAResult().RootCauseAnalysis
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.Severity).To(Equal("critical"), "only AIA's SP-derived spec value may populate RCA severity")
+			Expect(rca.SignalType).To(Equal("OOMKilled"), "LLM RCA signal_name remains an effect finding")
+			Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("SPNormalizedMemoryPressure"),
+				"the LLM effect finding must not replace SP's normalized input signal name")
+		})
+
+		It("UT-AA-2467-002: does not invent unknown severity when an invalid AIA input lacks SP severity", func() {
+			analysis := createAnalysis()
+			resp := buildNoMatchingWorkflowsResp()
+
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis.Severity).To(BeEmpty(),
+				"invalid AIA input must not be completed with model severity or an invented unknown classification")
+		})
+
 		It("UT-AA-769-003: handles nil RCA gracefully — no panic, fields remain empty", func() {
 			analysis := createAnalysis()
 			resp := buildNoMatchingWorkflowsResp()

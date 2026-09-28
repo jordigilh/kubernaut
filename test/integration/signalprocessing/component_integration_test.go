@@ -474,9 +474,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(final.Status.PriorityAssignment.Source).To(ContainSubstring("rego"))
 		})
 
-		// Severity fallback when environment unknown
-		It("BR-SP-071: should fall back to severity-only priority when environment unknown", func() {
-			By("Creating namespace without environment classification")
+		// Concrete environment fallback from the operator policy
+		It("BR-SP-071: should apply the policy default environment to priority", func() {
+			By("Creating namespace without an environment label")
 			ns := createTestNamespace(ctx, "priority-severity-fallback")
 			defer deleteTestNamespace(ns)
 
@@ -504,9 +504,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
-			// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
-			// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP2))))
+			// The concrete development default contributes one point: critical (3) + development (1) = P2.
 		})
 
 		// Rego policy load
