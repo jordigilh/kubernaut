@@ -70,6 +70,10 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		"signal_kind", signal.ResourceKind,
 		"signal_api_version", signal.ResourceAPIVersion,
 		"signal_namespace", signal.Namespace,
+		"signal_severity", signal.Severity,
+		"signal_environment", signal.Environment,
+		"signal_priority", signal.Priority,
+		"signal_cluster", signal.ClusterClassification,
 		"correlation_id", correlationID)
 
 	// F5 (#1374): Resolve enrichment when the enricher is wired, mirroring

@@ -272,19 +272,6 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
-			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
-				ServiceName:    "kubernautagent",
-				ClusterName:    clusterName,
-				DeploymentName: "kubernaut-agent",
-				Namespace:      sharedNamespace,
-				KubeconfigPath: kubeconfigPath,
-			}, GinkgoWriter); err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to collect E2E binary coverage (non-fatal): %v\n", err)
-			}
-		}
-
 		// DD-TESTING-003 / Issue #2036: production must-gather image as a local
 		// podman container on the cluster's "kind" network, replacing the old
 		// in-process kubectl-log-scraping (MustGatherPodLogs, previously invoked
@@ -305,6 +292,21 @@ var _ = SynchronizedAfterSuite(
 				}, GinkgoWriter); err != nil {
 					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
 				}
+			}
+		}
+
+		// DD-TEST-007: Collect E2E binary coverage AFTER must-gather. Coverage
+		// collection scales kubernaut-agent to zero to flush GOCOVERDIR, so it
+		// must never run before diagnostics are captured (Issue #2463).
+		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "kubernautagent",
+				ClusterName:    clusterName,
+				DeploymentName: "kubernaut-agent",
+				Namespace:      sharedNamespace,
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to collect E2E binary coverage (non-fatal): %v\n", err)
 			}
 		}
 

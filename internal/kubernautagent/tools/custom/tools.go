@@ -198,8 +198,33 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	entries, totalCount, err := t.catalog.ListActions(ctx, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog action query failed",
+			"stage", "workflow_catalog.list_actions",
+			"severity", filters.Severity,
+			"component", filters.Component,
+			"environment", filters.Environment,
+			"priority", filters.Priority,
+			"cluster", filters.Cluster,
+			"remediation_id", signal.RemediationID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
+	actionTypes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		actionTypes = append(actionTypes, entry.ActionType)
+	}
+	t.logger.Info("workflow catalog action query completed",
+		"stage", "workflow_catalog.list_actions",
+		"severity", filters.Severity,
+		"component", filters.Component,
+		"environment", filters.Environment,
+		"priority", filters.Priority,
+		"cluster", filters.Cluster,
+		"remediation_id", signal.RemediationID,
+		"result_count", len(entries),
+		"total_count", totalCount,
+		"action_types", actionTypes,
+		"duration_ms", durationMs)
 
 	t.emitAuditEvent(ctx, filters, entries, models.PaginationMetadata{
 		Offset: offset, Limit: limit, TotalCount: totalCount,
@@ -267,12 +292,37 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	candidates, totalCount, err := t.catalog.ListScoredWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog workflow query failed",
+			"stage", "workflow_catalog.list_workflows",
+			"action_type", a.ActionType,
+			"severity", filters.Severity,
+			"component", filters.Component,
+			"environment", filters.Environment,
+			"priority", filters.Priority,
+			"cluster", filters.Cluster,
+			"remediation_id", signal.RemediationID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("listing workflows: %w", err)
 	}
 	workflows := make([]models.RemediationWorkflow, 0, len(candidates))
+	workflowIDs := make([]string, 0, len(candidates))
 	for i := range candidates {
 		workflows = append(workflows, candidates[i].Workflow)
+		workflowIDs = append(workflowIDs, candidates[i].Workflow.WorkflowID)
 	}
+	t.logger.Info("workflow catalog workflow query completed",
+		"stage", "workflow_catalog.list_workflows",
+		"action_type", a.ActionType,
+		"severity", filters.Severity,
+		"component", filters.Component,
+		"environment", filters.Environment,
+		"priority", filters.Priority,
+		"cluster", filters.Cluster,
+		"remediation_id", signal.RemediationID,
+		"result_count", len(workflows),
+		"total_count", totalCount,
+		"workflow_ids", workflowIDs,
+		"duration_ms", durationMs)
 	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
 		for i := range workflows {
 			state.Add(workflows[i].WorkflowID)
