@@ -101,6 +101,7 @@
 | DD-PLATFORM-002 | [Fix ArgoCD PostSync/Health Deadlock for post-install Hook Jobs](./DD-PLATFORM-002-argocd-postsync-health-deadlock.md) | Helm chart (db-migration, interservice-ca-sync) | ✅ Approved | 2026-07-07 | argocd.argoproj.io/hook: Sync override breaks PostSync/health circular dependency |
 | DD-PLATFORM-003 | [Infra-First ArgoCD Sync Wave (Phased Deployment)](./DD-PLATFORM-003-argocd-infra-first-sync-wave.md) | Helm chart (PostgreSQL, Valkey, DataStorage, certs, hook Jobs) | ✅ Approved | 2026-07-07 | sync-wave "-1" for infra/certs/DataStorage reduces CI contention and closes TLS-cert mount race |
 | DD-PLATFORM-004 | [Anti-Affinity and PDB Enabled by Default](./DD-PLATFORM-004-chart-default-hardening.md) | Helm chart (all services) | ✅ Approved | 2026-07-08 | Soft anti-affinity + PDB (maxUnavailable: 1) on by default, matching Kubernaut Operator parity |
+| DD-PLATFORM-011 | [Helm Policy ConfigMap Ownership Boundary](./DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md) | Helm chart (AIAnalysis and SignalProcessing policy ConfigMaps) | ✅ Approved | 2026-09-28 | Reserved chart-owned identities; distinct external ConfigMap names prevent unsafe Helm pruning |
 
 **Note**: DD-* prefix is used for detailed design decisions with comprehensive alternatives analysis, implementation strategy, and validation plans. ADR-* prefix is used for architectural records.
 

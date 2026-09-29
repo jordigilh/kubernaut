@@ -78,7 +78,11 @@ This deploys the full platform with:
 - Monitoring integrations disabled (enable when kube-prometheus-stack is installed)
 
 > **Note**: The chart does not bundle default Rego policies. You must provide your own
-> via `--set-file` or by specifying an `existingConfigMap`. For reference policies, see
+> via `--set-file` or by specifying an `existingConfigMap` with a **distinct name**.
+> `aianalysis-policies` and `signalprocessing-policy` are reserved for chart-managed
+> ConfigMaps; using either reserved name as `existingConfigMap` is rejected to prevent
+> Helm from pruning a ConfigMap still mounted by a controller (Issue #2460,
+> DD-PLATFORM-011). For reference policies, see
 > the [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) repository.
 
 Verify:
@@ -971,6 +975,50 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --version <new-version> \
   -n kubernaut-system -f my-values.yaml
 ```
+
+#### Policy ConfigMap ownership during upgrades (#2460)
+
+The chart-managed policy identities are stable and reserved:
+
+| Policy | Chart-managed ConfigMap | External key |
+|---|---|---|
+| AIAnalysis approval | `aianalysis-policies` | `approval.rego` |
+| SignalProcessing classification | `signalprocessing-policy` | `policy.rego` |
+
+When using `existingConfigMap`, choose a different ConfigMap name and create it
+before the Helm upgrade. The external ConfigMap is not part of the Helm release and
+will not be pruned when the old chart-managed policy ConfigMap is removed from the
+release manifest. Use `--wait` and verify both controller rollouts after the change:
+
+```bash
+kubectl create configmap aianalysis-policies-external \
+  --from-file=approval.rego=path/to/approval.rego \
+  -n kubernaut-system
+kubectl create configmap signalprocessing-policy-external \
+  --from-file=policy.rego=path/to/policy.rego \
+  -n kubernaut-system
+
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --version <new-version> \
+  -n kubernaut-system -f my-values.yaml \
+  --set aianalysis.policies.content="" \
+  --set aianalysis.policies.existingConfigMap=aianalysis-policies-external \
+  --set signalprocessing.policies.content="" \
+  --set signalprocessing.policies.existingConfigMap=signalprocessing-policy-external \
+  --wait --timeout 5m
+
+kubectl rollout status deployment/aianalysis-controller -n kubernaut-system --timeout=5m
+kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=5m
+```
+
+Do not set `existingConfigMap` to `aianalysis-policies` or
+`signalprocessing-policy`; Helm rejects that ownership transition before applying
+the upgrade. If an earlier upgrade already removed a chart-managed policy ConfigMap,
+recover in two phases: first restore chart ownership with valid `--set-file` policy
+content and empty `existingConfigMap` values, wait for both controller rollouts,
+then create a distinct external ConfigMap and perform the migration above. Do not
+rely on `helm.sh/resource-policy: keep`, labels, or live `lookup` checks as a
+replacement for the distinct-name boundary.
 
 > **Warning — Do not `kubectl patch` Helm-managed ConfigMaps** (#539):
 > Using `kubectl patch` on chart-managed ConfigMaps (e.g., `kubernaut-agent-config`,

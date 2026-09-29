@@ -16,7 +16,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `pdb.minAvailable` | object |  | `` | No |
 | `podSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `policies.content` | string |  | `""` | No |
-| `policies.existingConfigMap` | string |  | `""` | No |
+| `policies.existingConfigMap` | string | Pre-existing ConfigMap with key 'approval.rego'. It must use a name distinct from the chart-managed 'aianalysis-policies' identity. | `""` | No |
 | `rego.confidenceThreshold` | object | BR-AI-076: nil = use Rego default (0.8) | `` | No |
 | `rego.lowConfidenceFloor` | object | BR-AI-088.4, Issue #1828: Investigating-phase floor for auto-proceeding with a KA-selected workflow (distinct from confidenceThreshold above, which tunes the later Rego auto-approval gate). nil = use the built-in 70% default. | `` | No |
 | `replicas` | integer |  | `1` | No |
@@ -628,7 +628,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `pdb.minAvailable` | object |  | `` | No |
 | `podSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
 | `policies.content` | string | Raw Rego policy content. Inject via --set-file signalprocessing.policies.content=policy.rego | `""` | No |
-| `policies.existingConfigMap` | string | Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'content'. | `""` | No |
+| `policies.existingConfigMap` | string | Pre-existing ConfigMap with key 'policy.rego'. It must use a name distinct from the chart-managed 'signalprocessing-policy' identity. | `""` | No |
 | `proactiveSignalMappings.content` | string |  | `""` | No |
 | `proactiveSignalMappings.existingConfigMap` | string |  | `""` | No |
 | `replicas` | integer |  | `1` | No |
