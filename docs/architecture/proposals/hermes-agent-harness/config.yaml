@@ -1,0 +1,35 @@
+# Kubernaut Investigator - Hermes Agent Configuration
+# Deployed in kubernaut-system namespace alongside the existing platform
+
+model:
+  # Option A: Via LlamaStack (no API key needed, cluster-internal)
+  default: "gemini/models/gemini-2.5-pro"
+  base_url: "http://llamastack-service.llamastack.svc:8321/v1"
+  provider: "custom"
+  api_key: "not-needed"
+
+  # Option B: Direct Vertex AI (uncomment and configure)
+  # default: "claude-opus-4-6"
+  # provider: "anthropic"
+  # base_url: "https://global-aiplatform.googleapis.com/v1/..."
+
+tools:
+  code_execution:
+    enabled: true
+    backend: "local"  # Execute Python code locally for K8s API calls
+  file_operations:
+    enabled: false    # Not needed for investigation
+  web_search:
+    enabled: false    # Not needed for investigation
+
+memory:
+  enabled: true       # Persist remediation history context across sessions
+
+skills:
+  enabled: true
+  directory: "/workspace/skills"  # Mounted from ConfigMaps
+
+# Hermes-specific settings
+iteration_budget: 40            # Max LLM turns (matches current Kubernaut maxTurns)
+max_concurrent_tools: 4         # Parallel kubectl calls for faster investigation
+child_timeout: 300              # 5 min timeout per subagent (if delegation used)
