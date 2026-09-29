@@ -2,7 +2,7 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-05-29
-**Version**: 1.2
+**Version**: 1.3
 **Confidence**: 88%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-apifrontend, kubernaut-agent, data-storage
@@ -24,6 +24,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2026-09-29 | AI-assisted | Use the native certified Go Cryptographic Module selected by `GOFIPS140=certified`; replace the legacy BoringCrypto build path, which is incompatible with native FIPS mode. |
 | 1.2 | 2026-08-03 | AI-assisted | Session findings from #1900 scoping discussion: (1) tempered the "DS blindness" motivation with the actual current DS audit footprint (DD-AUDIT-003: DS emits exactly one event today) and existing `Event.UserID`/`CorrelationID`-based reconstruction; (2) added a Threat Model Note clarifying that fail-open vs. fail-closed is orthogonal to the already-excluded compromised-AF case; (3) added Alternative D (Fail-Closed Enforcement Mode) as an explicitly deferred alternative, tracked separately in #1907. No change to the Alternative B decision or its status. |
 | 1.1 | 2026-06-29 | AI-assisted | Added: Cryptographic Key Management (rotation lifecycle, key hierarchy), Audit Event Binding (JWT-to-event integrity), FedRAMP/SOC2 control mapping. Addresses AU-9, SC-12, CC8.1 compliance gaps. |
 | 1.0 | 2026-05-29 | AI-assisted | Initial enhancement proposal |
@@ -308,9 +309,9 @@ The verification Secret holds a JWKS-format array of public keys, each identifie
 | Key storage | K8s Secret with RBAC (only AF SA reads private key) | Moderate |
 | Key storage (High) | K8s Secret backed by KMS provider (e.g., AWS KMS, HashiCorp Vault) | High |
 | Key destruction | Previous private key overwritten in Secret; garbage collected by etcd compaction | Moderate+ |
-| Crypto library | Go stdlib `crypto/rsa`, `crypto/ecdsa` (BoringCrypto build tag for FIPS mode) | High |
+| Crypto library | Go stdlib `crypto/rsa`, `crypto/ecdsa` with the native certified Go Cryptographic Module selected by `GOFIPS140=certified` | High |
 
-**FIPS 140-2/140-3 path**: For FedRAMP High, compile AF/KA/DS with `GOEXPERIMENT=boringcrypto` to use the BoringSSL-backed crypto module (FIPS 140-2 validated, certificate #4407). No code changes required — the BoringCrypto module is a drop-in replacement activated at build time.
+**FIPS 140-3 path**: For FedRAMP High, compile production Go binaries with `GOFIPS140=certified` to select the latest Go Cryptographic Module with a CMVP validation certificate and enable native FIPS mode by default. The legacy `GOEXPERIMENT=boringcrypto` path is not combined with native FIPS mode because the Go toolchain rejects the combination.
 
 ### Audit Event Binding (AU-9)
 

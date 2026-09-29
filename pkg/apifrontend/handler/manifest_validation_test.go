@@ -408,24 +408,26 @@ var _ = Describe("Impersonation ClusterRole manifests", func() {
 })
 
 // ---------------------------------------------------------------------------
-// TC-P3-07: Dockerfile FIPS boringcrypto (MED-10, BAC-14)
+// TC-P3-07: Dockerfile native certified FIPS module (MED-10, BAC-14)
 // ---------------------------------------------------------------------------
 
 var _ = Describe("Dockerfile FIPS Compliance", func() {
-	It("TC-P3-07a: Dockerfile sets GOEXPERIMENT=boringcrypto", func() {
+	It("TC-P3-07a: Dockerfile selects the certified Go Cryptographic Module", func() {
 		dockerfilePath := filepath.Join(repoRoot(), "docker", "apifrontend.Dockerfile")
 		content, err := os.ReadFile(dockerfilePath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(content)).To(ContainSubstring("GOEXPERIMENT=boringcrypto"),
-			"TC-P3-07a: Dockerfile must set GOEXPERIMENT=boringcrypto for FIPS compliance")
+		Expect(string(content)).To(ContainSubstring("ENV GOFIPS140=certified"),
+			"TC-P3-07a: Dockerfile must select the certified Go Cryptographic Module")
 	})
 
-	It("TC-P3-07b: Dockerfile disables Go 1.26 FIPS mode for the BoringCrypto experiment", func() {
+	It("TC-P3-07b: production build uses the certified Go FIPS mode", func() {
 		dockerfilePath := filepath.Join(repoRoot(), "docker", "apifrontend.Dockerfile")
 		content, err := os.ReadFile(dockerfilePath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(content)).To(ContainSubstring("GOFIPS140=off GOEXPERIMENT=boringcrypto"),
-			"TC-P3-07b: Dockerfile must disable Go 1.26 FIPS mode before enabling BoringCrypto")
+		Expect(string(content)).To(ContainSubstring("GOFIPS140=certified go build"),
+			"TC-P3-07b: production build must use the certified Go FIPS module")
+		Expect(string(content)).NotTo(ContainSubstring("GOEXPERIMENT=boringcrypto"),
+			"TC-P3-07b: production build must not enable the incompatible legacy BoringCrypto experiment")
 	})
 
 	It("TC-P3-07c: Dockerfile uses a writable Go build cache", func() {

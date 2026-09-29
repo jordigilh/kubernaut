@@ -2,15 +2,15 @@
 // It wraps the kubernaut shared TLS package with AF-specific logic for
 // conditional server TLS and per-dependency outbound transports.
 //
-// FedRAMP / FIPS 140-2 Compliance Notes (CK-01):
+// FedRAMP / FIPS 140-3 Compliance Notes (CK-01):
 //   - Server TLS is configured with MinVersion TLS 1.2 and only AEAD cipher suites
 //     (AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305) with ECDHE key exchange.
-//   - For FIPS 140-2 Level 1 compliance, build with GOEXPERIMENT=boringcrypto which
-//     restricts the crypto backend to BoringSSL (FIPS-validated module).
+//   - For native FIPS 140-3 mode, production binaries are built with
+//     GOFIPS140=certified, selecting the validated Go Cryptographic Module.
 //   - Outbound transports also enforce TLS 1.2+ with system-default cipher selection.
-//   - ChaCha20-Poly1305 is not FIPS-approved; when building with boringcrypto it is
-//     automatically excluded by the runtime. In non-FIPS builds it provides good
-//     performance on platforms without AES-NI hardware acceleration.
+//   - ChaCha20-Poly1305 is not FIPS-approved; native FIPS mode excludes it from
+//     TLS negotiation. In non-FIPS builds it provides good performance on platforms
+//     without AES-NI hardware acceleration.
 package tlswiring
 
 import (
