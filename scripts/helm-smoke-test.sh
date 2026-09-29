@@ -993,6 +993,141 @@ run_upg_001() {
   assert_pods_ready 13 "ST-CHART-UPG-001d: 13 pods healthy after upgrade"
 }
 
+# Issue #2460 / BR-PLATFORM-005 / DD-PLATFORM-011: policy ConfigMap ownership
+# must not switch from chart-managed to external under the same Kubernetes
+# identity. The first upgrade deliberately attempts the unsafe values and must
+# fail at values.schema.json validation without changing the release. The second
+# upgrade proves the supported migration: pre-created, distinctly named external
+# ConfigMaps survive Helm's removal of the old chart-managed identities and both
+# controller Deployments roll out against the new mounts.
+run_policy_ownership_001() {
+  local pass=true
+  local invalid_output
+
+  # ST-CHART-POLICY-OWNERSHIP-001: a same-name ownership transition is rejected
+  # before Helm applies or prunes the release's chart-managed ConfigMaps.
+  # shellcheck disable=SC2046
+  invalid_output=$(helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" \
+    --reuse-values \
+    --set aianalysis.policies.existingConfigMap=aianalysis-policies \
+    --set signalprocessing.policies.existingConfigMap=signalprocessing-policy \
+    --timeout 2m 2>&1)
+  local invalid_rc=$?
+  if [[ $invalid_rc -ne 0 ]] && \
+     grep -q "/aianalysis/policies" <<< "$invalid_output" && \
+     grep -q "/signalprocessing/policies" <<< "$invalid_output"; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-001: reserved policy ConfigMap names are rejected before upgrade"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-001: reserved policy ConfigMap names are rejected before upgrade" \
+      "helm upgrade did not report both policy schema violations (rc=${invalid_rc}): ${invalid_output:0:400}"
+    pass=false
+  fi
+
+  local aia_key sp_key
+  aia_key=$(kubectl get configmap aianalysis-policies -n "$NAMESPACE" \
+    -o jsonpath='{.data.approval\.rego}' 2>/dev/null || echo "")
+  sp_key=$(kubectl get configmap signalprocessing-policy -n "$NAMESPACE" \
+    -o jsonpath='{.data.policy\.rego}' 2>/dev/null || echo "")
+  if [[ -n "$aia_key" && -n "$sp_key" ]]; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-001a: chart-managed policy ConfigMaps survive rejected upgrade"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-001a: chart-managed policy ConfigMaps survive rejected upgrade" \
+      "approval.rego or policy.rego is missing after rejected upgrade"
+    pass=false
+  fi
+
+  if kubectl rollout status deployment/aianalysis-controller -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1 && \
+     kubectl rollout status deployment/signalprocessing-controller -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-001b: both policy consumers remain healthy after rejected upgrade"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-001b: both policy consumers remain healthy after rejected upgrade" \
+      "one or more policy controller rollouts failed"
+    pass=false
+  fi
+
+  # Create external resources before the valid migration. They are deliberately
+  # distinct from the names Helm currently tracks in the release manifest.
+  if ! kubectl create configmap aianalysis-policies-external \
+    --from-file=approval.rego="$POLICY_AA_FILE" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1; then
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002: create distinct AIAnalysis external policy ConfigMap" \
+      "failed to create aianalysis-policies-external"
+    return 1
+  fi
+  if ! kubectl create configmap signalprocessing-policy-external \
+    --from-file=policy.rego="$POLICY_SP_FILE" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1; then
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002: create distinct SignalProcessing external policy ConfigMap" \
+      "failed to create signalprocessing-policy-external"
+    return 1
+  fi
+
+  # shellcheck disable=SC2046
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" \
+    --reuse-values \
+    --set 'aianalysis.policies.content=' \
+    --set aianalysis.policies.existingConfigMap=aianalysis-policies-external \
+    --set 'signalprocessing.policies.content=' \
+    --set signalprocessing.policies.existingConfigMap=signalprocessing-policy-external \
+    --wait --timeout 5m >/dev/null 2>&1; then
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002: distinct-name policy migration succeeds" \
+      "helm upgrade to external policy ConfigMaps failed"
+    return 1
+  fi
+
+  local external_aia_key external_sp_key
+  external_aia_key=$(kubectl get configmap aianalysis-policies-external -n "$NAMESPACE" \
+    -o jsonpath='{.data.approval\.rego}' 2>/dev/null || echo "")
+  external_sp_key=$(kubectl get configmap signalprocessing-policy-external -n "$NAMESPACE" \
+    -o jsonpath='{.data.policy\.rego}' 2>/dev/null || echo "")
+  if [[ -n "$external_aia_key" && -n "$external_sp_key" ]]; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-002a: external policy ConfigMaps survive Helm migration"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002a: external policy ConfigMaps survive Helm migration" \
+      "one or more external policy keys is missing"
+    pass=false
+  fi
+
+  local pruned=()
+  kubectl get configmap aianalysis-policies -n "$NAMESPACE" >/dev/null 2>&1 && pruned+=(aianalysis-policies)
+  kubectl get configmap signalprocessing-policy -n "$NAMESPACE" >/dev/null 2>&1 && pruned+=(signalprocessing-policy)
+  if [[ ${#pruned[@]} -eq 0 ]]; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-002b: obsolete chart-managed policy identities are pruned"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002b: obsolete chart-managed policy identities are pruned" \
+      "still present after migration: ${pruned[*]}"
+    pass=false
+  fi
+
+  local aia_mount sp_mount
+  aia_mount=$(kubectl get deployment aianalysis-controller -n "$NAMESPACE" \
+    -o jsonpath='{range .spec.template.spec.volumes[*]}{.name}={.configMap.name}{"\n"}{end}' 2>/dev/null | \
+    awk -F= '$1 == "rego-policies" {print $2}')
+  sp_mount=$(kubectl get deployment signalprocessing-controller -n "$NAMESPACE" \
+    -o jsonpath='{range .spec.template.spec.volumes[*]}{.name}={.configMap.name}{"\n"}{end}' 2>/dev/null | \
+    awk -F= '$1 == "policy" {print $2}')
+  if [[ "$aia_mount" == "aianalysis-policies-external" && "$sp_mount" == "signalprocessing-policy-external" ]]; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-002c: controller volumes mount distinct external policy identities"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002c: controller volumes mount distinct external policy identities" \
+      "AIAnalysis=${aia_mount:-unset}, SignalProcessing=${sp_mount:-unset}"
+    pass=false
+  fi
+
+  if kubectl rollout status deployment/aianalysis-controller -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1 && \
+     kubectl rollout status deployment/signalprocessing-controller -n "$NAMESPACE" --timeout=2m >/dev/null 2>&1; then
+    tap_ok "ST-CHART-POLICY-OWNERSHIP-002d: both policy controllers roll out healthy after migration"
+  else
+    tap_not_ok "ST-CHART-POLICY-OWNERSHIP-002d: both policy controllers roll out healthy after migration" \
+      "one or more policy controller rollouts failed"
+    pass=false
+  fi
+
+  $pass
+}
+
 # BR-PLATFORM-004 / DD-018: a second `helm install` on a cluster that already has a
 # Kubernaut release must fail fast with the single-install guard's message, before any
 # resources are applied — not with Helm's generic ownership-conflict error. Requires a
@@ -1815,6 +1950,7 @@ flow_a_production() {
   run_audithmac_001 || flow_failed=true
 
   run_upg_001 || flow_failed=true
+  run_policy_ownership_001 || flow_failed=true
   run_audithmac_002
 
   run_edge_001
