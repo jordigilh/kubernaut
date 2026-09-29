@@ -3177,6 +3177,9 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	}
 	if apiServerOIDCConfigurationIsCurrent(ctx, nodeName, kubeconfigPath, issuerServiceNamespace, cfg, caPEM) {
 		_, _ = fmt.Fprintln(writer, "  ✅ Existing API server OIDC config and trust root already match; reusing retained cluster")
+		if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, 60*time.Second, writer); err != nil {
+			return fmt.Errorf("in-cluster API server readiness failed: %w", err)
+		}
 		return nil
 	}
 
