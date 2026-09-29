@@ -91,4 +91,14 @@ var _ = Describe("Retry-safe API server OIDC configuration", func() {
 		cfg.IssuerURL = "https://keycloak:8443/realms/other"
 		Expect(apiServerOIDCManifestMatches(manifest, cfg, "keycloak", "10.96.241.125")).To(BeFalse())
 	})
+
+	It("UT-INFRA-FLEET-OIDC-005 [BR-REL-006]: builds a validated in-cluster API probe", func() {
+		command, err := buildInClusterAPIServerProbeCommand(" 10.96.0.1 ")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(command).To(Equal("exec 3<>/dev/tcp/10.96.0.1/443"))
+
+		_, err = buildInClusterAPIServerProbeCommand("10.96.0.1; touch /tmp/unexpected")
+		Expect(err).To(HaveOccurred())
+	})
 })
