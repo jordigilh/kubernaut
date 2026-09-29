@@ -162,6 +162,10 @@ func setupFleetAFInfrastructure(
 		finishAFBeforeSuiteStep("configure Fleet AF mock-LLM and deploy Fleet Prometheus", fleetSeverityStarted)
 		return fmt.Errorf("deploy fleet AF severity Prometheus: %w", err)
 	}
+	if err := kinfra.WaitForPrometheusReady(ctx, fleetAFPrometheusURL, 90*time.Second, writer); err != nil {
+		finishAFBeforeSuiteStep("configure Fleet AF mock-LLM and deploy Fleet Prometheus", fleetSeverityStarted)
+		return fmt.Errorf("wait for fleet AF Prometheus readiness: %w", err)
+	}
 	finishAFBeforeSuiteStep("configure Fleet AF mock-LLM and deploy Fleet Prometheus", fleetSeverityStarted)
 
 	fleetMetricsStarted := startAFBeforeSuiteStep("inject Fleet AF severity and grounding metrics")

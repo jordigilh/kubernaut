@@ -198,8 +198,33 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	entries, totalCount, err := t.catalog.ListActions(ctx, filters, offset, limit)
 	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
+		t.logger.Error(err, "workflow catalog action query failed",
+			"stage", "workflow_catalog.list_actions",
+			"severity", filters.Severity,
+			"component", filters.Component,
+			"environment", filters.Environment,
+			"priority", filters.Priority,
+			"cluster", filters.Cluster,
+			"remediation_id", signal.RemediationID,
+			"duration_ms", durationMs)
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
+	actionTypes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		actionTypes = append(actionTypes, entry.ActionType)
+	}
+	t.logger.Info("workflow catalog action query completed",
+		"stage", "workflow_catalog.list_actions",
+		"severity", filters.Severity,
+		"component", filters.Component,
+		"environment", filters.Environment,
+		"priority", filters.Priority,
+		"cluster", filters.Cluster,
+		"remediation_id", signal.RemediationID,
+		"result_count", len(entries),
+		"total_count", totalCount,
+		"action_types", actionTypes,
+		"duration_ms", durationMs)
 
 	t.emitAuditEvent(ctx, filters, entries, models.PaginationMetadata{
 		Offset: offset, Limit: limit, TotalCount: totalCount,
@@ -227,6 +252,53 @@ type listWorkflowsTool struct {
 	catalog    WorkflowCatalog
 	auditStore kaaudit.AuditStore
 	logger     logr.Logger
+}
+
+type workflowCatalogQuery struct {
+	actionType string
+	filters    *models.WorkflowDiscoveryFilters
+	signal     katypes.SignalContext
+	offset     int
+	limit      int
+}
+
+func (t *listWorkflowsTool) listCandidates(ctx context.Context, query workflowCatalogQuery) ([]workflowcatalog.ScoredWorkflow, int, int64, error) {
+	start := time.Now()
+	candidates, totalCount, err := t.catalog.ListScoredWorkflowsByActionType(
+		ctx, query.actionType, query.filters, query.offset, query.limit)
+	durationMs := time.Since(start).Milliseconds()
+	if err != nil {
+		t.logger.Error(err, "workflow catalog workflow query failed",
+			"stage", "workflow_catalog.list_workflows",
+			"action_type", query.actionType,
+			"severity", query.filters.Severity,
+			"component", query.filters.Component,
+			"environment", query.filters.Environment,
+			"priority", query.filters.Priority,
+			"cluster", query.filters.Cluster,
+			"remediation_id", query.signal.RemediationID,
+			"duration_ms", durationMs)
+		return nil, 0, durationMs, err
+	}
+
+	workflowIDs := make([]string, 0, len(candidates))
+	for i := range candidates {
+		workflowIDs = append(workflowIDs, candidates[i].Workflow.WorkflowID)
+	}
+	t.logger.Info("workflow catalog workflow query completed",
+		"stage", "workflow_catalog.list_workflows",
+		"action_type", query.actionType,
+		"severity", query.filters.Severity,
+		"component", query.filters.Component,
+		"environment", query.filters.Environment,
+		"priority", query.filters.Priority,
+		"cluster", query.filters.Cluster,
+		"remediation_id", query.signal.RemediationID,
+		"result_count", len(candidates),
+		"total_count", totalCount,
+		"workflow_ids", workflowIDs,
+		"duration_ms", durationMs)
+	return candidates, totalCount, durationMs, nil
 }
 
 func (t *listWorkflowsTool) Name() string { return "list_workflows" }
@@ -263,9 +335,13 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		return "", fmt.Errorf("listing workflows: workflow catalog unavailable")
 	}
 
-	start := time.Now()
-	candidates, totalCount, err := t.catalog.ListScoredWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
-	durationMs := time.Since(start).Milliseconds()
+	candidates, totalCount, durationMs, err := t.listCandidates(ctx, workflowCatalogQuery{
+		actionType: a.ActionType,
+		filters:    filters,
+		signal:     signal,
+		offset:     offset,
+		limit:      limit,
+	})
 	if err != nil {
 		return "", fmt.Errorf("listing workflows: %w", err)
 	}
