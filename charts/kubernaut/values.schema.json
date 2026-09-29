@@ -1554,6 +1554,20 @@
               }
             }
           ],
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "existingConfigMap"
+                ],
+                "properties": {
+                  "existingConfigMap": {
+                    "const": "aianalysis-policies"
+                  }
+                }
+              }
+            }
+          ],
           "properties": {
             "content": {
               "type": "string",
@@ -1561,7 +1575,8 @@
             },
             "existingConfigMap": {
               "type": "string",
-              "default": ""
+              "default": "",
+              "description": "Pre-existing ConfigMap with key 'approval.rego'. It must use a name distinct from the chart-managed 'aianalysis-policies' identity."
             }
           }
         },
@@ -1627,6 +1642,20 @@
               }
             }
           ],
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "existingConfigMap"
+                ],
+                "properties": {
+                  "existingConfigMap": {
+                    "const": "signalprocessing-policy"
+                  }
+                }
+              }
+            }
+          ],
           "properties": {
             "content": {
               "type": "string",
@@ -1636,7 +1665,7 @@
             "existingConfigMap": {
               "type": "string",
               "default": "",
-              "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'content'."
+              "description": "Pre-existing ConfigMap with key 'policy.rego'. It must use a name distinct from the chart-managed 'signalprocessing-policy' identity."
             }
           }
         },

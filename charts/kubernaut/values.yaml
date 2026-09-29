@@ -292,11 +292,13 @@ aianalysis:
   rego: {}
   # -- Approval policy externalization.
   # Option A: provide policy content via --set-file (chart creates ConfigMap).
-  # Option B: reference a pre-existing ConfigMap.
+  # Option B: reference a pre-existing ConfigMap under a DISTINCT name.
+  # The chart-managed identity aianalysis-policies is reserved and cannot be used
+  # as existingConfigMap (Issue #2460 / DD-PLATFORM-011).
   # One of the two is required; the chart will fail at install if neither is set.
   policies:
     content: ""           # --set-file aianalysis.policies.content=approval.rego
-    existingConfigMap: "" # name of pre-existing ConfigMap with key "approval.rego"
+    existingConfigMap: "" # distinct name of pre-existing ConfigMap with key "approval.rego"
   resources:
     requests:
       cpu: 100m
@@ -314,11 +316,13 @@ signalprocessing:
   # (environment, severity, priority, custom labels).
   # Option A: provide raw .rego content via --set-file (chart creates ConfigMap).
   #   helm install ... --set-file signalprocessing.policies.content=policy.rego
-  # Option B: reference a pre-existing ConfigMap with key "policy.rego".
+  # Option B: reference a pre-existing ConfigMap with key "policy.rego" under a
+  # distinct name. signalprocessing-policy is reserved for chart ownership
+  # (Issue #2460 / DD-PLATFORM-011).
   # One of the two is required; the chart will fail at install if neither is set.
   policies:
     content: ""            # --set-file signalprocessing.policies.content=policy.rego
-    existingConfigMap: ""  # name of pre-existing ConfigMap with key "policy.rego"
+    existingConfigMap: ""  # distinct name of pre-existing ConfigMap with key "policy.rego"
   # -- Proactive signal mappings (YAML, not Rego).
   # Maps proactive signal names to their reactive equivalents (ADR-054).
   # Optional: when neither is set, all signals default to reactive mode.
