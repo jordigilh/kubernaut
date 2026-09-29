@@ -33,8 +33,10 @@ REQUIRED_OVERRIDES=(
   --set global.llmProfiles.primary.provider=openai
   --set global.llmProfiles.primary.model=gpt-4
   --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary
-  --set aianalysis.policies.existingConfigMap=aianalysis-policies
-  --set signalprocessing.policies.existingConfigMap=signalprocessing-policies
+  # Issue #2460 / DD-PLATFORM-011: these are external policy fixtures, so they
+  # must not reuse either chart-managed reserved ConfigMap identity.
+  --set aianalysis.policies.existingConfigMap=aianalysis-policies-external
+  --set signalprocessing.policies.existingConfigMap=signalprocessing-policy-external
 )
 
 echo "==> Extracting full schema-defaults tree from ${GENERATED_DEFAULTS}..."

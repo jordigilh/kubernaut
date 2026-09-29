@@ -92,6 +92,10 @@ per BR-PLATFORM-003/004's OCP-removal scope).
    `additionalClusterRoles` on `global`/`gateway`/`effectivenessmonitor`/`kubernautAgent` — the field
    holds ClusterRole names, not `ClusterRoleBinding` objects (FR-8). Breaking, pre-GA rename with no
    deprecated alias.
+10. Policy externalization (Issue #2460) does not switch ownership of a chart-managed ConfigMap
+    identity: `aianalysis.policies.existingConfigMap` and `signalprocessing.policies.existingConfigMap`
+    reject their reserved chart-managed names, while distinct external ConfigMap names remain
+    upgrade-safe and controller rollouts remain healthy (FR-9).
 
 ---
 
@@ -147,6 +151,13 @@ per BR-PLATFORM-003/004's OCP-removal scope).
   contents. Breaking, pre-GA schema change with no migration path (clean-break rename, no deprecated
   alias). The `kubernaut.additionalClusterRoleBindings` named template (`_helpers.tpl`) keeps its name
   unchanged, since it accurately describes what it renders (one `ClusterRoleBinding` per name).
+- **FR-9** (added 2026-09-28, Issue #2460): `aianalysis.policies.existingConfigMap` MUST NOT equal
+  `aianalysis-policies`, and `signalprocessing.policies.existingConfigMap` MUST NOT equal
+  `signalprocessing-policy`. The schema-level guard prevents a chart-managed ConfigMap from being
+  omitted from the target manifest while its identity remains mounted by a controller. External
+  policy ConfigMaps MUST use distinct names; structural Helm tests and a live upgrade smoke test
+  prove rejection, safe pruning of the obsolete chart-owned identities, external ConfigMap
+  preservation, and healthy controller rollouts.
 
 ---
 
@@ -167,6 +178,7 @@ per BR-PLATFORM-003/004's OCP-removal scope).
   triage after the initial Helm/Operator parity pass covering BR-PLATFORM-003/004).
 - **Builds on**: BR-PLATFORM-003 (observability/autoscaling parity), BR-PLATFORM-004 (single-install
   guard) — same Issue #1589 initiative, same Operator-vs-Helm triage methodology.
+- **Policy ownership hardening**: Issue #2460, [DD-PLATFORM-011](../architecture/decisions/DD-PLATFORM-011-helm-policy-configmap-ownership-boundary.md).
 
 ---
 

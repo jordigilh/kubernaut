@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -3176,6 +3177,9 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	}
 	if apiServerOIDCConfigurationIsCurrent(ctx, nodeName, kubeconfigPath, issuerServiceNamespace, cfg, caPEM) {
 		_, _ = fmt.Fprintln(writer, "  ✅ Existing API server OIDC config and trust root already match; reusing retained cluster")
+		if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, 60*time.Second, writer); err != nil {
+			return fmt.Errorf("in-cluster API server readiness failed: %w", err)
+		}
 		return nil
 	}
 
@@ -3263,6 +3267,9 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 			consecutiveOK++
 			if consecutiveOK >= 5 {
 				_, _ = fmt.Fprintln(writer, "  ✅ API server restarted with OIDC enabled (readyz stable)")
+				if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, 60*time.Second, writer); err != nil {
+					return fmt.Errorf("in-cluster API server readiness failed: %w", err)
+				}
 				return nil
 			}
 		} else {
@@ -3271,6 +3278,68 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("API server did not recover after OIDC patching within 120s")
+}
+
+// waitForInClusterAPIServer verifies the API server through the well-known
+// kubernetes Service VIP, not only through the host-facing kubeconfig endpoint.
+// The OIDC patch restarts the host-networked static pod; kube-proxy's Service
+// path can remain briefly unavailable after /readyz is stable. Pods such as
+// Envoy Gateway's Helm certgen hook use this Service path and would otherwise
+// fail with a misleading connection-refused error.
+func waitForInClusterAPIServer(ctx context.Context, nodeName, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
+	serviceIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "service", "kubernetes", "-n", "default", "-o", "jsonpath={.spec.clusterIP}")
+	serviceIPOutput, err := serviceIPCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to resolve Kubernetes Service ClusterIP: %w", err)
+	}
+	serviceIP, err := buildInClusterAPIServerProbeCommand(string(serviceIPOutput))
+	if err != nil {
+		return fmt.Errorf("failed to build in-cluster API server probe: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  Waiting for in-cluster Kubernetes Service readiness (%s)...\n", strings.TrimSpace(string(serviceIPOutput)))
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		probeCmd := exec.CommandContext(probeCtx, "podman", "exec", nodeName, "bash", "-c", serviceIP)
+		var probeOutput bytes.Buffer
+		probeCmd.Stdout = &probeOutput
+		probeCmd.Stderr = &probeOutput
+		probeErr := probeCmd.Run()
+		cancel()
+		if probeErr == nil {
+			_, _ = fmt.Fprintln(writer, "  ✅ In-cluster Kubernetes Service is accepting connections")
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("in-cluster Kubernetes Service probe canceled: %w", ctx.Err())
+		}
+		lastErr = probeErr
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("in-cluster Kubernetes Service probe canceled: %w", ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("probe did not run")
+	}
+	return fmt.Errorf("in-cluster Kubernetes Service did not accept connections within %v: %w", timeout, lastErr)
+}
+
+// buildInClusterAPIServerProbeCommand validates the Service ClusterIP before
+// embedding it in the node-side bash TCP probe. The address comes from the
+// Kubernetes API, but validation keeps this shell command constrained to an
+// IPv4 literal and prevents accidental command injection if a test fixture is
+// ever changed to provide the value from another source.
+func buildInClusterAPIServerProbeCommand(serviceIP string) (string, error) {
+	ip := net.ParseIP(strings.TrimSpace(serviceIP))
+	if ip == nil || ip.To4() == nil {
+		return "", fmt.Errorf("invalid Kubernetes Service IPv4 address %q", strings.TrimSpace(serviceIP))
+	}
+	return fmt.Sprintf("exec 3<>/dev/tcp/%s/443", ip.To4().String()), nil
 }
 
 // apiServerOIDCConfigurationIsCurrent is the retry-safe fast path for a

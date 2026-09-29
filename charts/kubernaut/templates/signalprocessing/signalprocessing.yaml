@@ -65,7 +65,7 @@ enrichment:
   cacheTtl: {{ $v.config.enrichment.cacheTtl | quote }}
   timeout: "10s"
 classifier:
-  regoConfigMapName: "signalprocessing-policy"
+  regoConfigMapName: {{ .Values.signalprocessing.policies.existingConfigMap | default "signalprocessing-policy" | quote }}
   regoConfigMapKey: "policy.rego"
   hotReloadInterval: {{ $v.config.classifier.hotReloadInterval | quote }}
 datastorage:

@@ -58,6 +58,105 @@ tests:
       - failedTemplate: {}
 
   # ---------------------------------------------------------------------
+  # Issue #2460: an external policy ConfigMap must not reuse the identity
+  # reserved for a ConfigMap previously managed by this chart. These cases
+  # select NOTES.txt deliberately so the failure can only come from the
+  # values.schema.json ownership constraint.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-2460-001: schema rejects aianalysis.policies.existingConfigMap equal to the reserved chart-managed identity"
+    set:
+      aianalysis:
+        policies:
+          existingConfigMap: aianalysis-policies
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-2460-002: schema rejects signalprocessing.policies.existingConfigMap equal to the reserved chart-managed identity"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: signalprocessing-policy
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-2460-003: a distinct AIAnalysis external policy name is mounted by the controller"
+    set:
+      aianalysis:
+        policies:
+          existingConfigMap: aianalysis-policies-external
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[1].configMap.name
+          value: aianalysis-policies-external
+
+  - it: "IT-HELM-2460-004: a distinct SignalProcessing external policy name is mounted by the controller"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: signalprocessing-policy-external
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[1].configMap.name
+          value: signalprocessing-policy-external
+
+  - it: "IT-HELM-2460-005: SignalProcessing generated config records the distinct external policy identity"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: signalprocessing-policy-external
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'regoConfigMapName: "signalprocessing-policy-external"'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'regoConfigMapName: "signalprocessing-policy"'
+
+  - it: "IT-HELM-2460-006: a distinct AIAnalysis external policy name omits the chart-managed ConfigMap"
+    set:
+      aianalysis:
+        policies:
+          existingConfigMap: aianalysis-policies-external
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: metadata.name
+      value: aianalysis-policies
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  - it: "IT-HELM-2460-007: a distinct SignalProcessing external policy name omits the chart-managed ConfigMap"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: signalprocessing-policy-external
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-policy
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  # ---------------------------------------------------------------------
   # Happy-path renders: unaffected by the anyOf, confirm no regression.
   # ---------------------------------------------------------------------
   - it: "IT-HELM-1984-003: aianalysis renders successfully when policies.content is set"
