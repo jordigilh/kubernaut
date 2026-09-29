@@ -18,6 +18,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
 ENV GOTOOLCHAIN=auto
+ENV GOCACHE=/tmp/go-build-cache
 ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
@@ -25,7 +26,7 @@ ARG BUILD_DATE=unknown
 USER root
 RUN dnf install -y git ca-certificates tzdata && \
 	dnf clean all
-RUN mkdir -p /tmp && chmod 1777 /tmp
+RUN mkdir -p /tmp/go-build-cache && chmod 1777 /tmp && chown 1001:0 /tmp/go-build-cache
 USER 1001
 
 WORKDIR /opt/app-root/src
@@ -33,6 +34,8 @@ COPY --chown=1001:0 go.mod go.sum ./
 RUN go mod download
 COPY --chown=1001:0 . .
 
+# Go 1.26 rejects the BoringCrypto experiment while its newer FIPS mode is enabled.
+# Disable that mode explicitly; GOEXPERIMENT selects the validated BoringCrypto path.
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation + e2e tag..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
@@ -43,7 +46,7 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	./cmd/apifrontend; \
 	else \
 	echo "Building production binary with FIPS (boringcrypto)..."; \
-	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOEXPERIMENT=boringcrypto go build \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFIPS140=off GOEXPERIMENT=boringcrypto go build \
 	-mod=mod \
 	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o apifrontend \

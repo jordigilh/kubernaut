@@ -419,4 +419,20 @@ var _ = Describe("Dockerfile FIPS Compliance", func() {
 		Expect(string(content)).To(ContainSubstring("GOEXPERIMENT=boringcrypto"),
 			"TC-P3-07a: Dockerfile must set GOEXPERIMENT=boringcrypto for FIPS compliance")
 	})
+
+	It("TC-P3-07b: Dockerfile disables Go 1.26 FIPS mode for the BoringCrypto experiment", func() {
+		dockerfilePath := filepath.Join(repoRoot(), "docker", "apifrontend.Dockerfile")
+		content, err := os.ReadFile(dockerfilePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(content)).To(ContainSubstring("GOFIPS140=off GOEXPERIMENT=boringcrypto"),
+			"TC-P3-07b: Dockerfile must disable Go 1.26 FIPS mode before enabling BoringCrypto")
+	})
+
+	It("TC-P3-07c: Dockerfile uses a writable Go build cache", func() {
+		dockerfilePath := filepath.Join(repoRoot(), "docker", "apifrontend.Dockerfile")
+		content, err := os.ReadFile(dockerfilePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(content)).To(ContainSubstring("ENV GOCACHE=/tmp/go-build-cache"),
+			"TC-P3-07c: Dockerfile must place the Go build cache in a writable path")
+	})
 })
