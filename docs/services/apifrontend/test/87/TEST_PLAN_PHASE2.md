@@ -45,7 +45,7 @@ remediates 7 medium findings from the multi-dimensional FedRAMP readiness audit.
 - MED-04: Generic panic message (no value reflection)
 - MED-05: NaN/Inf exp claim rejection
 - MED-06: ReplayCache.Stop idempotency (sync.Once)
-- MED-10: FIPS GOEXPERIMENT=boringcrypto
+- MED-10: FIPS GOFIPS140=certified native Go Cryptographic Module
 
 ### 1.2 Out of Scope
 
@@ -112,7 +112,7 @@ remediates 7 medium findings from the multi-dimensional FedRAMP readiness audit.
 | Panic message | `internal/handler` | `recover.go` | 3 |
 | Expiry NaN/Inf | `internal/auth` | `jwt.go` | 3 |
 | ReplayCache.Stop | `internal/auth` | `replay_cache.go` | 3 |
-| FIPS boringcrypto | build | `Dockerfile` | 3 |
+| FIPS native certified module | build | `Dockerfile` | 3 |
 
 ---
 
@@ -357,11 +357,11 @@ additional edge cases.
 | TC-P3-06a | Double Stop does not panic | Call `Stop()` twice | No panic | Unit |
 | TC-P3-06b | Stop after Seen still returns cleanly | `Seen("jti1")` then `Stop()` | No panic | Unit |
 
-#### TC-P3-07: FIPS boringcrypto (BAC-14)
+#### TC-P3-07: Native certified Go FIPS module (BAC-14)
 
 | TC ID | Description | Input | Expected Result | Type |
 |-------|-------------|-------|-----------------|------|
-| TC-P3-07a | Dockerfile sets GOEXPERIMENT=boringcrypto | Read Dockerfile | Env var present in build stage | Build |
+| TC-P3-07a | Dockerfile selects the certified Go Cryptographic Module | Read Dockerfile | `GOFIPS140=certified` is authoritative in the build stage | Build |
 
 ---
 
@@ -393,7 +393,7 @@ additional edge cases.
 | TC-P2C-02b (SSE write deadline) tests unexported middleware | Requires test in same package or exported wrapper | Test via router behavior instead |
 | TC-P3-01b (trusted proxy) needs config field that doesn't exist | GREEN phase adds `TrustedProxyCIDRs` config | Verify config struct is extensible |
 | TC-P3-02 (CB label hash) changes metric label → dashboard impact | Document migration in CHANGELOG | Operators must update queries |
-| TC-P3-07a (FIPS) may require CGO_ENABLED=1 | Changes build dependencies | Test both paths; document decision |
+| TC-P3-07a (native FIPS) supports CGO_ENABLED=0 | Cross-compilation remains available | Test amd64 and arm64 production builds |
 
 ---
 
