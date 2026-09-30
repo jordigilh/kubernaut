@@ -131,9 +131,10 @@ const (
 // Declared here (not in variant.go) so the *_test.go wiring files that read
 // it (sync_journey_test.go etc.) have a single, obvious source.
 var harness = &shared.Harness{
-	Namespace:        namespace,
-	FMCAPIBaseURL:    fmcAPIBaseURL,
-	FMCHealthBaseURL: fmcHealthBaseURL,
+	Namespace:           namespace,
+	MCPGatewayNamespace: infrastructure.DefaultMCPGatewayNamespace,
+	FMCAPIBaseURL:       fmcAPIBaseURL,
+	FMCHealthBaseURL:    fmcHealthBaseURL,
 }
 
 var (

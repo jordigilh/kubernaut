@@ -112,9 +112,10 @@ const (
 // harness carries the state every shared FMC scenario needs (see
 // shared.Harness); its fields are populated below in SynchronizedBeforeSuite.
 var harness = &shared.Harness{
-	Namespace:        namespace,
-	FMCAPIBaseURL:    fmcAPIBaseURL,
-	FMCHealthBaseURL: fmcHealthBaseURL,
+	Namespace:           namespace,
+	MCPGatewayNamespace: infrastructure.DefaultMCPGatewayNamespace,
+	FMCAPIBaseURL:       fmcAPIBaseURL,
+	FMCHealthBaseURL:    fmcHealthBaseURL,
 }
 
 var (

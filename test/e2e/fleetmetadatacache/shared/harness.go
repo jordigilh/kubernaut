@@ -75,6 +75,10 @@ type Harness struct {
 	K8sClient      client.Client
 	KubeconfigPath string
 	Namespace      string
+	// MCPGatewayNamespace is the namespace watched by FMC for gateway
+	// discovery resources. It is intentionally separate from Namespace,
+	// which contains the FMC application and test resources.
+	MCPGatewayNamespace string
 
 	FMCHTTPClient *http.Client
 	FMCAPIBaseURL string
