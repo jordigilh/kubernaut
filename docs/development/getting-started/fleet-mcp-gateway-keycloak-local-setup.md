@@ -116,6 +116,7 @@ running it as a black box.
 kind create cluster --name fleet-dev
 export KUBECONFIG="$(kind get kubeconfig-path --name=fleet-dev 2>/dev/null || echo ~/.kube/config)"
 kubectl create namespace kubernaut-system
+kubectl create namespace mcp-system
 ```
 
 ### B2. Deploy Keycloak with the kubernaut-demo realm
@@ -141,6 +142,12 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 kubectl create secret tls keycloak-tls \
   --cert=/tmp/keycloak-tls.crt --key=/tmp/keycloak-tls.key \
   -n kubernaut-system
+
+# kube-mcp-server runs in the dedicated MCP namespace and needs a local trust
+# bundle for Keycloak's HTTPS endpoint.
+kubectl create configmap inter-service-ca \
+  --from-file=ca.crt=/tmp/keycloak-tls.crt \
+  -n mcp-system
 
 kubectl apply -n kubernaut-system -f - <<'EOF'
 apiVersion: apps/v1
@@ -190,6 +197,19 @@ spec:
 EOF
 
 kubectl rollout status deployment/keycloak -n kubernaut-system --timeout=180s
+
+# Preserve the kube-mcp-server's stable bare `keycloak` hostname from the
+# dedicated mcp-system namespace.
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: mcp-system
+spec:
+  type: ExternalName
+  externalName: keycloak.kubernaut-system.svc.cluster.local
+EOF
 ```
 
 > `start-dev --import-realm` is deliberate: this is throwaway dev infra
@@ -272,7 +292,7 @@ EOF
 ### B4. Deploy kube-mcp-server (passthrough + token exchange)
 
 ```bash
-kubectl apply -n kubernaut-system -f - <<'EOF'
+kubectl apply -n mcp-system -f - <<'EOF'
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: kube-mcp-server}
@@ -281,7 +301,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata: {name: kube-mcp-server-binding}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view}
-subjects: [{kind: ServiceAccount, name: kube-mcp-server, namespace: kubernaut-system}]
+subjects: [{kind: ServiceAccount, name: kube-mcp-server, namespace: mcp-system}]
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -325,7 +345,7 @@ spec:
         readinessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3, periodSeconds: 5}
       volumes:
       - {name: config, configMap: {name: kube-mcp-server-config}}
-      - {name: tls-ca, secret: {secretName: keycloak-tls}}
+      - {name: tls-ca, configMap: {name: inter-service-ca}}
 ---
 apiVersion: v1
 kind: Service
@@ -335,7 +355,7 @@ spec:
   selector: {app: kube-mcp-server}
 EOF
 
-kubectl rollout status deployment/kube-mcp-server -n kubernaut-system --timeout=120s
+kubectl rollout status deployment/kube-mcp-server -n mcp-system --timeout=120s
 ```
 
 > Skipping `--oidc-username-prefix`-flavored `require_oauth` here would make
@@ -409,7 +429,7 @@ BROKER_TOKEN=$(curl -sk -X POST \
   -d client_secret=e2e-fleet-secret -d scope=kube-mcp-server-audience \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
-kubectl apply -n kubernaut-system -f - <<EOF
+kubectl apply -n mcp-system -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata: {name: kube-mcp-server-broker-cred, labels: {mcp.kuadrant.io/secret: "true"}}
@@ -430,7 +450,7 @@ metadata: {name: loopback-cluster, labels: {kubernaut.ai/managed: "true"}}
 spec:
   prefix: "loopback_cluster_"
   credentialRef: {name: kube-mcp-server-broker-cred}
-  targetRef: {group: gateway.networking.k8s.io, kind: HTTPRoute, name: kube-mcp-server-route, namespace: kubernaut-system}
+  targetRef: {group: gateway.networking.k8s.io, kind: HTTPRoute, name: kube-mcp-server-route, namespace: mcp-system}
 EOF
 ```
 

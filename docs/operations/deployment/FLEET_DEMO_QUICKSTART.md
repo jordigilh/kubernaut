@@ -155,6 +155,13 @@ way to do this before the cluster exists to hold it); then it runs
 RBAC included — and finishes by printing a Console URL, a login, and a suggested
 `/etc/hosts` line (~15 min total).
 
+The demo keeps Kubernaut workloads in `kubernaut-system` and places the hub MCP
+Gateway/server and Gateway registrations in the dedicated `mcp-system` namespace,
+matching the production boundary. The remote MCP server independently defaults to
+`mcp-system`. Override either namespace with `MCP_GATEWAY_NAMESPACE` or
+`REMOTE_MCP_SERVER_NAMESPACE` when invoking the Make target; the generated Helm
+installation receives the matching `global.fleet.mcpGatewayNamespace` value.
+
 Gateway (autonomous, alert-driven remediation) starts **disabled**. Alerts still fire
 in Prometheus, but nothing auto-remediates until you ask Console to investigate — so
 you see how Kubernaut reasons about a problem before opting into the fully autonomous

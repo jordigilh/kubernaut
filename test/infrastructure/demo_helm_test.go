@@ -185,6 +185,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 		args := buildFleetOAuth2HelmArgs(&FleetHelmOptions{
 			MCPGatewayEndpoint:          "http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
 			MCPGatewayType:              "eaigw",
+			MCPGatewayNamespace:         "mcp-system",
 			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			OAuth2CredentialsSecret:     "fleet-oauth2-creds",
 			WEOAuth2CredentialsSecret:   "we-fleet-oauth2-creds",
@@ -197,6 +198,7 @@ var _ = Describe("buildFleetOAuth2HelmArgs", func() {
 			"--set", "global.fleet.enabled=true",
 			"--set", "global.fleet.mcpGatewayEndpoint=http://envoy-ai-gateway.gateway-system.svc:8080/mcp",
 			"--set", "global.fleet.mcpGatewayType=eaigw",
+			"--set", "global.fleet.mcpGatewayNamespace=mcp-system",
 			"--set", "global.fleet.oauth2.enabled=true",
 			"--set", "global.fleet.oauth2.tokenURL=https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
 			"--set", "global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds",

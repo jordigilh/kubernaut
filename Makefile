@@ -1001,7 +1001,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
@@ -1033,6 +1033,8 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
 		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(MCP_GATEWAY_NAMESPACE),-mcp-gateway-namespace "$(MCP_GATEWAY_NAMESPACE)") \
+		$(if $(REMOTE_MCP_SERVER_NAMESPACE),-remote-mcp-server-namespace "$(REMOTE_MCP_SERVER_NAMESPACE)") \
 		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \
 		$(if $(SP_POLICY_FILE),-sp-policy-file "$(SP_POLICY_FILE)") \
 		$(if $(AA_POLICY_FILE),-aa-policy-file "$(AA_POLICY_FILE)") \

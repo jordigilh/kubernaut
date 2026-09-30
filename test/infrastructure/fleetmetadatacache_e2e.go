@@ -119,18 +119,19 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 	)
 	fleetScopes := []string{"kube-mcp-server-audience"}
 	authConfig := KubeMCPServerAuthConfig{
-		Mode:              KubeMCPServerAuthModePassthrough,
-		GatewayType:       registry.GatewayEAIGW,
-		RequireOAuth:      true,
-		AuthorizationURL:  oidcConfig.IssuerURL,
-		KeycloakNamespace: namespace,
-		OAuthAudience:     "kube-mcp-server",
-		StsClientID:       "kube-mcp-server",
-		StsClientSecret:   "e2e-kube-mcp-server-secret",
-		StsAudience:       "k8s-api",
-		StsScopes:         []string{"k8s-api-audience"},
-		CAFilePath:        "/etc/tls-ca/ca.crt",
-		HubClusterID:      "hub",
+		Mode:                KubeMCPServerAuthModePassthrough,
+		GatewayType:         registry.GatewayEAIGW,
+		MCPGatewayNamespace: DefaultMCPGatewayNamespace,
+		RequireOAuth:        true,
+		AuthorizationURL:    oidcConfig.IssuerURL,
+		KeycloakNamespace:   namespace,
+		OAuthAudience:       "kube-mcp-server",
+		StsClientID:         "kube-mcp-server",
+		StsClientSecret:     "e2e-kube-mcp-server-secret",
+		StsAudience:         "k8s-api",
+		StsScopes:           []string{"k8s-api-audience"},
+		CAFilePath:          "/etc/tls-ca/ca.crt",
+		HubClusterID:        "hub",
 	}
 	gatewayStarted := startAFInfraSetupStep(writer, "deploy Fleet-lane Gateway and kube-mcp-server")
 	mcpGatewayEndpoint, err := DeployFleetGatewayInfra(ctx, namespace, kubeconfigPath, authConfig, writer)
@@ -182,13 +183,18 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 	finishAFInfraSetupStep(writer, "deploy Fleet-lane Valkey and Metadata Cache", fmcStarted)
 
 	return &FleetHelmOptions{
-		MCPGatewayEndpoint:          mcpGatewayEndpoint,
-		MCPGatewayType:              string(registry.GatewayEAIGW),
-		OAuth2TokenURL:              keycloakFleetTokenURLFor(namespace, namespace),
-		OAuth2CredentialsSecret:     fleetOAuth2SecretName,
-		OAuth2Scopes:                fleetScopes,
-		WEOAuth2CredentialsSecret:   fleetOAuth2SecretName,
-		SignalProcessingNamespace:   namespace,
+		MCPGatewayEndpoint:        mcpGatewayEndpoint,
+		MCPGatewayType:            string(registry.GatewayEAIGW),
+		MCPGatewayNamespace:       DefaultMCPGatewayNamespace,
+		OAuth2TokenURL:            keycloakFleetTokenURLFor(namespace, namespace),
+		OAuth2CredentialsSecret:   fleetOAuth2SecretName,
+		OAuth2Scopes:              fleetScopes,
+		WEOAuth2CredentialsSecret: fleetOAuth2SecretName,
+		SignalProcessingNamespace: namespace,
+		// Hub-only FMC is deployed by deployValkeyAndFMC in the application
+		// namespace. This field is the FMC service namespace for the AF raw
+		// config; the MCP Gateway watch namespace is carried separately in the
+		// raw FMC config through authConfig.MCPGatewayNamespace.
 		FleetMetadataCacheNamespace: namespace,
 	}, nil
 }
@@ -325,6 +331,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		PrimaryKubeconfigPath: kubeconfigPath,
 		RemoteClusterName:     remoteClusterName,
 		RemoteKubeconfigPath:  remoteKubeconfigPath,
+		MCPServerNamespace:    DefaultRemoteMCPServerNamespace,
 		KeycloakIssuerURL:     oidcCfg.IssuerURL,
 		KeycloakNodePort:      keycloakHostPortFMC,
 		AuthConfig:            remoteKubeMCPAuthConfig,
@@ -333,9 +340,10 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
-	// Issue #2314: SetupRemoteClusterForFMC only creates remoteMCPServerNamespace
-	// (mcp-system) on the remote cluster -- kubernaut-system (namespace) never
-	// existed there. shared/cross_cluster_isolation.go's E2E-FMC-054-015
+	// Issue #2314: SetupRemoteClusterForFMC only creates the configured remote
+	// MCP namespace (mcp-system by default) on the remote cluster --
+	// kubernaut-system (namespace) never existed there.
+	// shared/cross_cluster_isolation.go's E2E-FMC-054-015
 	// creates a Service directly in it on the remote cluster (h.Namespace),
 	// which fails with "namespaces \"kubernaut-system\" not found" now that
 	// the remote cluster is genuinely separate (DD-TEST-013) rather than a
@@ -366,17 +374,18 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	}
 
 	kubeMCPAuthConfig := KubeMCPServerAuthConfig{
-		Mode:             KubeMCPServerAuthModePassthrough,
-		GatewayType:      gatewayType,
-		RequireOAuth:     true,
-		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-demo",
-		OAuthAudience:    "kube-mcp-server",
-		StsClientID:      "kube-mcp-server",
-		StsClientSecret:  "e2e-kube-mcp-server-secret",
-		StsAudience:      "k8s-api",
-		StsScopes:        []string{"k8s-api-audience"},
-		CAFilePath:       "/etc/tls-ca/ca.crt",
-		RemoteBridge:     remoteBridge,
+		Mode:                KubeMCPServerAuthModePassthrough,
+		GatewayType:         gatewayType,
+		MCPGatewayNamespace: DefaultMCPGatewayNamespace,
+		RequireOAuth:        true,
+		AuthorizationURL:    "https://keycloak:8443/realms/kubernaut-demo",
+		OAuthAudience:       "kube-mcp-server",
+		StsClientID:         "kube-mcp-server",
+		StsClientSecret:     "e2e-kube-mcp-server-secret",
+		StsAudience:         "k8s-api",
+		StsScopes:           []string{"k8s-api-audience"},
+		CAFilePath:          "/etc/tls-ca/ca.crt",
+		RemoteBridge:        remoteBridge,
 	}
 
 	// Only Kuadrant needs a static broker credential: its broker maintains
