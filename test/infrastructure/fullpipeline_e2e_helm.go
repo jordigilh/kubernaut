@@ -295,6 +295,9 @@ type FleetHelmOptions struct {
 	MCPGatewayEndpoint string
 	// MCPGatewayType is "kuadrant" or "eaigw" (global.fleet.mcpGatewayType).
 	MCPGatewayType string
+	// MCPGatewayNamespace is the namespace where the MCP Gateway manages its
+	// registration/backend resources (global.fleet.mcpGatewayNamespace).
+	MCPGatewayNamespace string
 	// OAuth2TokenURL is the IdP's client_credentials token endpoint
 	// (global.fleet.oauth2.tokenURL).
 	OAuth2TokenURL string
@@ -317,11 +320,12 @@ type FleetHelmOptions struct {
 	SignalProcessingNamespace string
 	// FleetMetadataCacheNamespace is the namespace where the MCP Gateway
 	// manages its MCPServerRegistration/Backend CRs
-	// (fleetmetadatacache.namespace). Issue #2298: unlike
-	// SignalProcessingNamespace above, this has no safe empty-string
+	// (fleetmetadatacache.namespace) for chart-managed FMC. Issue #2298:
+	// unlike SignalProcessingNamespace above, this has no safe empty-string
 	// fallback -- pkg/fleet/fmc/config.Validate() refuses to start FMC
-	// without it, so callers MUST set this whenever FleetHelmOptions is
-	// non-nil (FMC is chart-managed and effectively enabled in that case).
+	// without it, so chart callers MUST set it. Hub-only AF E2E reuses this
+	// field for the namespace of its raw-manifest FMC Service, because that
+	// path does not pass FleetHelmOptions to Helm.
 	FleetMetadataCacheNamespace string
 
 	ImageTag string
@@ -355,6 +359,9 @@ func buildFleetOAuth2HelmArgs(fleetOpts *FleetHelmOptions) []string {
 		"--set", "global.fleet.oauth2.tokenURL=" + fleetOpts.OAuth2TokenURL,
 		"--set", "global.fleet.oauth2.credentialsSecretRef=" + fleetOpts.OAuth2CredentialsSecret,
 		"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef=" + fleetOpts.WEOAuth2CredentialsSecret,
+	}
+	if fleetOpts.MCPGatewayNamespace != "" {
+		args = append(args, "--set", "global.fleet.mcpGatewayNamespace="+fleetOpts.MCPGatewayNamespace)
 	}
 	for i, scope := range fleetOpts.OAuth2Scopes {
 		args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))

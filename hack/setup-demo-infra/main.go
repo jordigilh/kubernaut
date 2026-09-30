@@ -23,6 +23,8 @@ func main() {
 	clusterName := flag.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)")
 	remoteClusterName := flag.String("remote-cluster-name", "kubernaut-remote-cluster", "fleet spoke Kind cluster name")
 	gatewayTypeFlag := flag.String("gateway-type", string(registry.GatewayEAIGW), "fleet MCP Gateway implementation: eaigw or kuadrant")
+	mcpGatewayNamespace := flag.String("mcp-gateway-namespace", infrastructure.DefaultMCPGatewayNamespace, "fleet MCP Gateway and hub kube-mcp-server namespace")
+	remoteMCPServerNamespace := flag.String("remote-mcp-server-namespace", infrastructure.DefaultRemoteMCPServerNamespace, "fleet remote kube-mcp-server namespace")
 	spokeWorkers := flag.Int("spoke-workers", 0, "number of extra worker nodes for the fleet spoke cluster")
 	autonomous := flag.Bool("autonomous", false, "enable Gateway-driven autonomous remediation")
 	llmProvider := flag.String("llm-provider", "", "required LLM provider")
@@ -101,8 +103,10 @@ func main() {
 		fleetOpts, remoteKubeconfigPath, err = infrastructure.SetupFleetCoreInfrastructureWithGateway(
 			ctx, *clusterName, *remoteClusterName, kubeconfigPath,
 			infrastructure.FleetCoreDemoOptions{
-				GatewayType:  gatewayType,
-				SpokeWorkers: *spokeWorkers,
+				GatewayType:              gatewayType,
+				MCPGatewayNamespace:      *mcpGatewayNamespace,
+				RemoteMCPServerNamespace: *remoteMCPServerNamespace,
+				SpokeWorkers:             *spokeWorkers,
 			}, os.Stdout)
 	} else {
 		err = setupLocalDemoInfrastructure(ctx, *clusterName, kubeconfigPath)

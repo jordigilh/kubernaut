@@ -42,7 +42,10 @@ func DynamicRegistration(h *Harness, v Variant) bool {
 	return Describe(fmt.Sprintf("%s-013: FMC's cluster registry reacts to real %s changes", v.ScenarioPrefix(), v.DynamicResourceKind()), Ordered, func() {
 		It("adds a newly-registered cluster to /api/v1/clusters without an FMC restart", func() {
 			clusterID := fmt.Sprintf("prod-central-%d", time.Now().UnixNano())
-			reg := v.NewDynamicClusterResource(h.Namespace, clusterID)
+			Expect(h.MCPGatewayNamespace).NotTo(BeEmpty(), "the MCP gateway namespace must be configured for dynamic registration")
+			reg := v.NewDynamicClusterResource(h.MCPGatewayNamespace, clusterID)
+			Expect(reg.GetNamespace()).To(Equal(h.MCPGatewayNamespace),
+				"dynamic discovery resources must be created in FMC's configured MCP gateway namespace")
 			Expect(h.K8sClient.Create(h.Ctx, reg)).To(Succeed())
 			DeferCleanup(func() {
 				_ = h.K8sClient.Delete(h.Ctx, reg)
@@ -56,7 +59,10 @@ func DynamicRegistration(h *Harness, v Variant) bool {
 
 		It("removes a deregistered cluster from /api/v1/clusters without an FMC restart", func() {
 			clusterID := fmt.Sprintf("prod-central-%d", time.Now().UnixNano())
-			reg := v.NewDynamicClusterResource(h.Namespace, clusterID)
+			Expect(h.MCPGatewayNamespace).NotTo(BeEmpty(), "the MCP gateway namespace must be configured for dynamic registration")
+			reg := v.NewDynamicClusterResource(h.MCPGatewayNamespace, clusterID)
+			Expect(reg.GetNamespace()).To(Equal(h.MCPGatewayNamespace),
+				"dynamic discovery resources must be created in FMC's configured MCP gateway namespace")
 			Expect(h.K8sClient.Create(h.Ctx, reg)).To(Succeed())
 
 			By("Confirming the cluster is picked up first")

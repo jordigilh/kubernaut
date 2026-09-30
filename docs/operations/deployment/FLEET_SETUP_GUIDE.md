@@ -90,6 +90,11 @@ policies, and fleet demo instructions. It is Console-first by default; set
 `AUTONOMOUS=true` to enable Gateway-driven remediation. Continue with Path A for
 the contributor E2E harness or Path B for the manual architecture walkthrough.
 
+The automated path keeps Kubernaut workloads in `kubernaut-system` and places the
+hub MCP Gateway/server and Gateway-managed registrations in the dedicated
+`mcp-system` namespace. The remote MCP server has its own independently
+configurable namespace and defaults to `mcp-system` as well.
+
 ### Validate the registrations
 
 The setup output must report the hub identity as `hub` and the remote identity as
@@ -97,7 +102,7 @@ The setup output must report the hub identity as `hub` and the remote identity a
 local server from the hub kubeconfig:
 
 ```bash
-kubectl --kubeconfig "$HUB_KUBECONFIG" -n kubernaut-system \
+kubectl --kubeconfig "$HUB_KUBECONFIG" -n mcp-system \
   get deployment/kube-mcp-server backend.gateway.envoyproxy.io/hub \
   backend.gateway.envoyproxy.io/remote-cluster
 ```
@@ -148,6 +153,7 @@ export KUBECONFIG=~/.kube/fleet-e2e-config          # hub
 export REMOTE_KUBECONFIG=~/.kube/fleet-e2e-remote-config  # spoke
 
 kubectl get pods -n kubernaut-system                       # hub: full Kubernaut stack
+kubectl get pods -n mcp-system                             # hub: MCP Gateway/server platform stack
 KUBECONFIG=$REMOTE_KUBECONFIG kubectl get ns kubernaut-workflows  # spoke: dispatch target
 ```
 

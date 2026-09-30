@@ -46,6 +46,10 @@ const (
 	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
 	fleetRemoteClusterID     = "remote-cluster"
 	fleetHubClusterID        = "hub"
+	// DefaultMCPGatewayNamespace mirrors DD-TEST-020's production platform boundary:
+	// MCP Gateway resources and the hub kube-mcp-server are not bundled with
+	// Kubernaut's application namespace.
+	DefaultMCPGatewayNamespace = "mcp-system"
 )
 
 // KubeMCPServerImage is the current Go-native K8s MCP server image.
@@ -130,6 +134,13 @@ type KubeMCPServerAuthConfig struct {
 	// and is identical for both gateways -- only the edge routing/OAuth
 	// validation layer differs (ADR-068 Decision #9).
 	GatewayType registry.MCPGatewayType
+
+	// MCPGatewayNamespace is the namespace containing the local hub
+	// kube-mcp-server and gateway-managed registration resources. Empty keeps
+	// backwards compatibility for callers whose gateway and application share
+	// one namespace; fleet demo/full-pipeline callers set this to
+	// DefaultMCPGatewayNamespace to mirror production.
+	MCPGatewayNamespace string
 
 	// The following fields only apply when Mode == KubeMCPServerAuthModePassthrough.
 
@@ -374,12 +385,14 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		// the CLI entry point, SetupFleetCoreInfrastructureWithGateway,
 		// below -- not this path).
 		fleetOpts, rkp, err := provisionFleetCoreInfra(ctx, FleetCoreInfraOptions{
-			ClusterName:       clusterName,
-			KubeconfigPath:    kubeconfigPath,
-			Namespace:         namespace,
-			KeycloakNamespace: namespace,
-			GatewayType:       registry.GatewayEAIGW,
-			HubClusterID:      "hub",
+			ClusterName:              clusterName,
+			KubeconfigPath:           kubeconfigPath,
+			Namespace:                namespace,
+			MCPGatewayNamespace:      DefaultMCPGatewayNamespace,
+			KeycloakNamespace:        namespace,
+			GatewayType:              registry.GatewayEAIGW,
+			HubClusterID:             "hub",
+			RemoteMCPServerNamespace: DefaultRemoteMCPServerNamespace,
 		}, writer)
 		remoteKubeconfigPath = rkp
 		return fleetOpts, err
@@ -535,6 +548,14 @@ type FleetCoreDemoOptions struct {
 	// empty defaults to Kuadrant. See provisionFleetCoreInfra's doc comment
 	// for what differs between the two.
 	GatewayType registry.MCPGatewayType
+	// MCPGatewayNamespace overrides the dedicated namespace used for the MCP
+	// Gateway, hub kube-mcp-server, and Gateway registration resources. Empty
+	// selects DefaultMCPGatewayNamespace.
+	MCPGatewayNamespace string
+	// RemoteMCPServerNamespace independently overrides the namespace used by
+	// the remote cluster's kube-mcp-server. Empty selects
+	// DefaultRemoteMCPServerNamespace.
+	RemoteMCPServerNamespace string
 	// SpokeWorkers appends this many `role: worker` nodes to the spoke
 	// cluster at creation time (Issue #2333: some E2E demo scenarios taint/
 	// drain/pressure-test a worker node distinct from the control plane,
@@ -599,6 +620,11 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := kubernautSystem
+	mcpGatewayNamespace := opts.MCPGatewayNamespace
+	if mcpGatewayNamespace == "" {
+		mcpGatewayNamespace = DefaultMCPGatewayNamespace
+	}
+	remoteMCPNamespace := effectiveRemoteMCPServerNamespace(opts.RemoteMCPServerNamespace)
 
 	_, _ = fmt.Fprintln(writer, "\n🏗️  Creating hub Kind cluster...")
 	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
@@ -631,14 +657,16 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	// for). See idpNamespace's doc comment (keycloak_e2e.go) for why this
 	// is scoped here only, not the shared Ginkgo-suite provisioner closure.
 	fleetOpts, remoteKubeconfigPath, err = provisionFleetCoreInfra(ctx, FleetCoreInfraOptions{
-		ClusterName:       clusterName,
-		RemoteClusterName: remoteClusterName,
-		KubeconfigPath:    kubeconfigPath,
-		Namespace:         namespace,
-		KeycloakNamespace: idpNamespace,
-		GatewayType:       gatewayType,
-		HubClusterID:      hubClusterID,
-		SpokeWorkers:      opts.SpokeWorkers,
+		ClusterName:              clusterName,
+		RemoteClusterName:        remoteClusterName,
+		KubeconfigPath:           kubeconfigPath,
+		Namespace:                namespace,
+		MCPGatewayNamespace:      mcpGatewayNamespace,
+		RemoteMCPServerNamespace: remoteMCPNamespace,
+		KeycloakNamespace:        idpNamespace,
+		GatewayType:              gatewayType,
+		HubClusterID:             hubClusterID,
+		SpokeWorkers:             opts.SpokeWorkers,
 	}, writer)
 	if err != nil {
 		return nil, remoteKubeconfigPath, fmt.Errorf("fleet-core infrastructure provisioning failed: %w", err)
@@ -664,7 +692,8 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	//
 	// Dedicated "monitoring" namespace on BOTH clusters -- NOT namespace
 	// (kubernaut-system, the Kubernaut app namespace) and NOT
-	// remoteMCPServerNamespace (mcp-system, Kuadrant/MCP's namespace).
+	// the configured remote MCP namespace (mcp-system by default, the
+	// Kuadrant/MCP namespace on the spoke).
 	// Prometheus/Thanos/AlertManager are platform monitoring infrastructure
 	// that predates and outlives any single application (mirrors real
 	// deployments: OCP's "openshift-monitoring", a typical kube-prometheus-
@@ -787,6 +816,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 	_, _ = fmt.Fprintf(writer, "    global.fleet.enabled=true\n")
 	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayEndpoint=%s\n", fleetOpts.MCPGatewayEndpoint)
 	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayType=%s\n", fleetOpts.MCPGatewayType)
+	_, _ = fmt.Fprintf(writer, "    global.fleet.mcpGatewayNamespace=%s\n", fleetOpts.MCPGatewayNamespace)
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.enabled=true\n")
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.tokenURL=%s\n", fleetOpts.OAuth2TokenURL)
 	_, _ = fmt.Fprintf(writer, "    global.fleet.oauth2.credentialsSecretRef=%s\n", fleetOpts.OAuth2CredentialsSecret)
@@ -852,6 +882,16 @@ type FleetCoreInfraOptions struct {
 	// CreateTestNamespace before invoking provisionFleetCoreInfra).
 	Namespace string
 
+	// MCPGatewayNamespace is the dedicated platform namespace for the local
+	// kube-mcp-server and Gateway-managed registration resources. Empty falls
+	// back to Namespace for legacy same-namespace callers.
+	MCPGatewayNamespace string
+
+	// RemoteMCPServerNamespace independently controls the namespace used by
+	// the remote cluster's kube-mcp-server. Empty selects
+	// DefaultRemoteMCPServerNamespace.
+	RemoteMCPServerNamespace string
+
 	// HubClusterID enables a separate MCP Gateway registration for the local
 	// hub kube-mcp-server. Fleet E2E sets this to "hub" so hub-targeted AF
 	// remediations exercise the Gateway path too.
@@ -916,6 +956,8 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	kubeconfigPath := opts.KubeconfigPath
 	namespace := opts.Namespace
 	keycloakNamespace := opts.KeycloakNamespace
+	mcpGatewayNamespace := effectiveMCPGatewayNamespace(namespace, opts.MCPGatewayNamespace)
+	remoteMCPNamespace := effectiveRemoteMCPServerNamespace(opts.RemoteMCPServerNamespace)
 	gatewayType := opts.GatewayType
 	spokeWorkers := opts.SpokeWorkers
 	var remoteKubeconfigPath string
@@ -979,17 +1021,18 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	}
 
 	sharedAuthConfig := KubeMCPServerAuthConfig{
-		Mode:              KubeMCPServerAuthModePassthrough,
-		GatewayType:       gatewayType,
-		RequireOAuth:      true,
-		AuthorizationURL:  oidcCfg.IssuerURL,
-		KeycloakNamespace: keycloakNamespace,
-		OAuthAudience:     "kube-mcp-server",
-		StsClientID:       "kube-mcp-server",
-		StsClientSecret:   "e2e-kube-mcp-server-secret",
-		StsAudience:       "k8s-api",
-		StsScopes:         []string{"k8s-api-audience"},
-		CAFilePath:        "/etc/tls-ca/ca.crt",
+		Mode:                KubeMCPServerAuthModePassthrough,
+		GatewayType:         gatewayType,
+		MCPGatewayNamespace: mcpGatewayNamespace,
+		RequireOAuth:        true,
+		AuthorizationURL:    oidcCfg.IssuerURL,
+		KeycloakNamespace:   keycloakNamespace,
+		OAuthAudience:       "kube-mcp-server",
+		StsClientID:         "kube-mcp-server",
+		StsClientSecret:     "e2e-kube-mcp-server-secret",
+		StsAudience:         "k8s-api",
+		StsScopes:           []string{"k8s-api-audience"},
+		CAFilePath:          "/etc/tls-ca/ca.crt",
 	}
 	var remoteBridge *RemoteClusterBridgeConfig
 	// ── Remote cluster (DD-TEST-013, Spike S19) ──────────────────────────
@@ -1007,6 +1050,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		PrimaryKubeconfigPath: kubeconfigPath,
 		RemoteClusterName:     remoteClusterName,
 		RemoteKubeconfigPath:  remoteKubeconfigPath,
+		MCPServerNamespace:    remoteMCPNamespace,
 		KeycloakIssuerURL:     oidcCfg.IssuerURL,
 		KeycloakNodePort:      keycloakHostPortDemo,
 		AuthConfig:            sharedAuthConfig,
@@ -1016,9 +1060,10 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		return nil, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
-	// Issue #2314: SetupRemoteClusterForFMC only creates remoteMCPServerNamespace
-	// (mcp-system) on the remote cluster -- kubernaut-system (namespace) never
-	// existed there. That was harmless for the FMC-only lane (it never targets
+	// Issue #2314: SetupRemoteClusterForFMC only creates the configured remote
+	// MCP namespace (mcp-system by default) on the remote cluster --
+	// kubernaut-system (namespace) never existed there. That was harmless for
+	// the FMC-only lane (it never targets
 	// kubernaut-system on the remote cluster), but this suite's
 	// SynchronizedBeforeSuite labels kubernaut-system on BOTH kubeconfigs
 	// (suite_test.go) and shared/cross_cluster_isolation.go's
@@ -1200,16 +1245,18 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 	return &FleetHelmOptions{
 		MCPGatewayEndpoint:        mcpGatewayEndpoint,
 		MCPGatewayType:            string(gatewayType),
+		MCPGatewayNamespace:       mcpGatewayNamespace,
 		OAuth2TokenURL:            keycloakFleetTokenURLFor(keycloakNamespace, namespace),
 		OAuth2CredentialsSecret:   fleetOAuth2SecretName,
 		OAuth2Scopes:              fleetScopes,
 		WEOAuth2CredentialsSecret: fleetOAuth2SecretName,
-		SignalProcessingNamespace: namespace,
-		// Issue #2298: MCPServerRegistrations are created in `namespace`
+		SignalProcessingNamespace: mcpGatewayNamespace,
+		// Issue #2298: MCPServerRegistrations are created in the effective MCP
+		// Gateway namespace
 		// by deployKuadrantRegistrations above (via DeployFleetGatewayInfra
 		// -> deployKubeMCPServerAndRegister), so FMC's own watch must be
 		// scoped there too -- there's no safe default to fall back to.
-		FleetMetadataCacheNamespace: namespace,
+		FleetMetadataCacheNamespace: mcpGatewayNamespace,
 	}, remoteKubeconfigPath, nil
 }
 
@@ -1247,6 +1294,17 @@ func keycloakFleetTokenURLFor(keycloakNamespace, appNamespace string) string {
 		return fleetKeycloakTokenURL
 	}
 	return fmt.Sprintf("https://keycloak.%s.svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/token", keycloakNamespace)
+}
+
+// effectiveMCPGatewayNamespace resolves the namespace used by the local MCP
+// server and Gateway-managed registration resources. An explicit value is
+// preferred; an empty value preserves legacy callers that intentionally ran
+// the MCP stack beside the Kubernaut workloads.
+func effectiveMCPGatewayNamespace(appNamespace, configuredNamespace string) string {
+	if namespace := strings.TrimSpace(configuredNamespace); namespace != "" {
+		return namespace
+	}
+	return appNamespace
 }
 
 // buildKeycloakServiceAliasManifest keeps the issuer hostname stable for
@@ -1359,6 +1417,12 @@ func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcIma
 // Returns mcpGatewayEndpoint for wiring into whatever consumes it (chart
 // --set values via FleetHelmOptions, FMCOAuth2Config-adjacent callers, etc.).
 func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) (string, error) {
+	mcpGatewayNamespace, err := prepareMCPGatewayNamespace(ctx, namespace, kubeconfigPath, authConfig, writer)
+	if err != nil {
+		return "", err
+	}
+	authConfig.MCPGatewayNamespace = mcpGatewayNamespace
+
 	// ── Phase 1-2: Gateway (Kuadrant or Envoy AI Gateway) ────────────────
 	if authConfig.GatewayType == "" {
 		authConfig.GatewayType = registry.GatewayKuadrant // backward-compatible default
@@ -1367,13 +1431,13 @@ func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath stri
 	switch authConfig.GatewayType {
 	case registry.GatewayEAIGW:
 		_, _ = fmt.Fprintln(writer, "\n  🌐 Phase 1-2: Deploying Envoy AI Gateway (EAIGW, Spike S18)...")
-		svcFQDN, eaigwErr := deployEnvoyAIGatewayInfra(ctx, namespace, kubeconfigPath, writer)
+		svcFQDN, eaigwErr := deployEnvoyAIGatewayInfra(ctx, mcpGatewayNamespace, kubeconfigPath, writer)
 		if eaigwErr != nil {
 			return "", fmt.Errorf("envoy AI Gateway deployment failed: %w", eaigwErr)
 		}
 		mcpGatewayEndpoint = fmt.Sprintf("http://%s:8080/mcp", svcFQDN)
 	default:
-		if kuadrantErr := deployKuadrantGatewayInfra(ctx, kubeconfigPath, writer); kuadrantErr != nil {
+		if kuadrantErr := deployKuadrantGatewayInfra(ctx, kubeconfigPath, mcpGatewayNamespace, writer); kuadrantErr != nil {
 			return "", fmt.Errorf("kuadrant gateway deployment failed: %w", kuadrantErr)
 		}
 		mcpGatewayEndpoint = "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
@@ -1387,11 +1451,43 @@ func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath stri
 	return mcpGatewayEndpoint, nil
 }
 
+// prepareMCPGatewayNamespace creates the local MCP namespace and places the
+// namespace-local prerequisites needed by kube-mcp-server there. The chart's
+// application namespace remains the source of the shared CA and the home of
+// Kubernaut workloads; the MCP namespace receives a replicated trust bundle
+// and a Keycloak ExternalName alias when the IdP is elsewhere.
+func prepareMCPGatewayNamespace(ctx context.Context, appNamespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) (string, error) {
+	mcpGatewayNamespace := effectiveMCPGatewayNamespace(appNamespace, authConfig.MCPGatewayNamespace)
+	if mcpGatewayNamespace == "" {
+		return "", fmt.Errorf("mcp gateway namespace is required")
+	}
+	if err := CreateTestNamespace(ctx, mcpGatewayNamespace, kubeconfigPath, writer); err != nil {
+		return "", fmt.Errorf("failed to create mcp gateway namespace %s: %w", mcpGatewayNamespace, err)
+	}
+	if mcpGatewayNamespace != appNamespace {
+		if err := ReplicateInterServiceCAConfigMap(ctx, kubeconfigPath, mcpGatewayNamespace, writer); err != nil {
+			return "", fmt.Errorf("failed to replicate inter-service CA to mcp gateway namespace %s: %w", mcpGatewayNamespace, err)
+		}
+	}
+
+	keycloakNamespace := authConfig.KeycloakNamespace
+	if keycloakNamespace == "" {
+		keycloakNamespace = appNamespace
+	}
+	if aliasManifest := buildKeycloakServiceAliasManifest(mcpGatewayNamespace, keycloakNamespace); aliasManifest != "" {
+		if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, aliasManifest); err != nil {
+			return "", fmt.Errorf("failed to create Keycloak alias in MCP Gateway namespace %s: %w", mcpGatewayNamespace, err)
+		}
+	}
+	return mcpGatewayNamespace, nil
+}
+
 // deployKuadrantGatewayInfra installs the Istio-based Kuadrant MCP Gateway
 // stack (CRDs, controller, broker) -- the default/original gateway for the
 // FMC E2E lane. See deployEnvoyAIGatewayInfra for the EAIGW alternative
-// (Spike S18).
-func deployKuadrantGatewayInfra(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+// (Spike S18). The upstream overlay is pinned to mcp-system, so its rendered
+// namespace is rewritten before apply when callers select another namespace.
+func deployKuadrantGatewayInfra(ctx context.Context, kubeconfigPath, mcpGatewayNamespace string, writer io.Writer) error {
 	// ── Phase 1: CRDs and Istio ─────────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
 
@@ -1504,16 +1600,16 @@ spec:
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Deploying Kuadrant MCP Gateway (controller + broker + HTTPRoute)...")
-	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-k", kuadrantOverlayKustomize); err != nil {
+	if err := applyKuadrantOverlay(ctx, kubeconfigPath, mcpGatewayNamespace, writer); err != nil {
 		return fmt.Errorf("kuadrant deployment failed: %w", err)
 	}
 
-	// ReferenceGrant: MCPGatewayExtension in mcp-system references a Gateway
+	// ReferenceGrant: MCPGatewayExtension in the MCP namespace references a Gateway
 	// in gateway-system. Without this grant the controller refuses to create
 	// the broker deployment (status: ReferenceGrantRequired).
 	// Authority: https://docs.kuadrant.io/dev/mcp-gateway/docs/guides/isolated-gateway-deployment/
-	_, _ = fmt.Fprintln(writer, "    Creating ReferenceGrant (mcp-system → gateway-system)...")
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
+	_, _ = fmt.Fprintf(writer, "    Creating ReferenceGrant (%s → gateway-system)...\n", mcpGatewayNamespace)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmt.Sprintf(`
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
@@ -1523,25 +1619,46 @@ spec:
   from:
   - group: mcp.kuadrant.io
     kind: MCPGatewayExtension
-    namespace: mcp-system
+    namespace: %s
   to:
   - group: gateway.networking.k8s.io
     kind: Gateway
-`); err != nil {
+`, mcpGatewayNamespace)); err != nil {
 		return fmt.Errorf("ReferenceGrant creation failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant controller...")
-	if err := waitForDeployment(ctx, "mcp-gateway-controller", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
+	if err := waitForDeployment(ctx, "mcp-gateway-controller", mcpGatewayNamespace, kubeconfigPath, 120*time.Second, writer); err != nil {
 		return fmt.Errorf("kuadrant controller rollout failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant broker (created by controller)...")
-	if err := waitForDeployment(ctx, "mcp-gateway", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
+	if err := waitForDeployment(ctx, "mcp-gateway", mcpGatewayNamespace, kubeconfigPath, 120*time.Second, writer); err != nil {
 		return fmt.Errorf("kuadrant broker rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Kuadrant MCP Gateway ready")
 	return nil
+}
+
+// applyKuadrantOverlay renders the pinned upstream overlay before applying it
+// so the test harness can preserve its namespace configurability. The v0.7.1
+// overlay intentionally hard-codes mcp-system in its namespace transformer,
+// ClusterRoleBinding subject, and namespace resource; replacing the exact
+// namespace literal in rendered YAML keeps those references aligned without
+// maintaining a fork of the upstream manifests.
+func applyKuadrantOverlay(ctx context.Context, kubeconfigPath, mcpGatewayNamespace string, writer io.Writer) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "kustomize", kuadrantOverlayKustomize)
+	cmd.Stderr = writer
+	rendered, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("render kuadrant overlay: %w", err)
+	}
+	manifest := rewriteKuadrantOverlayNamespace(string(rendered), mcpGatewayNamespace)
+	return kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest)
+}
+
+func rewriteKuadrantOverlayNamespace(renderedManifest, mcpGatewayNamespace string) string {
+	return strings.ReplaceAll(renderedManifest, DefaultMCPGatewayNamespace, mcpGatewayNamespace)
 }
 
 // deployTraefikForKind installs Traefik as the hub cluster's Ingress
@@ -1828,6 +1945,7 @@ func isHubOnlyRegistration(authConfig KubeMCPServerAuthConfig) bool {
 // EAIGW auto-prefixes each backend's tools with "{backend name}__".
 
 func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	namespace = effectiveMCPGatewayNamespace(namespace, authConfig.MCPGatewayNamespace)
 	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
 	if isHubOnlyRegistration(authConfig) {
 		return deployEnvoyAIGatewayHubOnlyRegistration(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
@@ -2029,6 +2147,7 @@ spec:
 // points at this cluster's kube-mcp-server; cluster identity is still explicit
 // (`hub`) and requests reach it through the Gateway, not a local AF client.
 func deployEnvoyAIGatewayHubOnlyRegistration(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	namespace = effectiveMCPGatewayNamespace(namespace, authConfig.MCPGatewayNamespace)
 	hubClusterName, _ := fleetHubRegistrationIdentity(authConfig)
 	if hubClusterName == "" {
 		return fmt.Errorf("hub cluster identity is required for hub-only Gateway registration")
@@ -2130,13 +2249,15 @@ spec:
 // authConfig.GatewayType: Kuadrant's HTTPRoute+MCPServerRegistration or
 // EAIGW's Backend+MCPRoute (Spike S18).
 func deployKubeMCPServerAndRegister(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	mcpGatewayNamespace := effectiveMCPGatewayNamespace(namespace, authConfig.MCPGatewayNamespace)
+	authConfig.MCPGatewayNamespace = mcpGatewayNamespace
 	// AllRegistrationsRemote means every registration targets the remote
 	// bridge (see registration deploy functions below), so a local
 	// kube-mcp-server would be deployed but never referenced by any
 	// registration -- skip it entirely (Issue #54: "remove the kube mcp
 	// for the local cluster").
 	if !authConfig.AllRegistrationsRemote || authConfig.HubClusterID != "" {
-		if err := deployKubeMCPServer(ctx, namespace, kubeconfigPath, authConfig, writer); err != nil {
+		if err := deployKubeMCPServer(ctx, mcpGatewayNamespace, kubeconfigPath, authConfig, writer); err != nil {
 			return err
 		}
 	} else {
@@ -2144,9 +2265,9 @@ func deployKubeMCPServerAndRegister(ctx context.Context, namespace, kubeconfigPa
 	}
 
 	if authConfig.GatewayType == registry.GatewayEAIGW {
-		return deployEnvoyAIGatewayRegistrations(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
+		return deployEnvoyAIGatewayRegistrations(ctx, mcpGatewayNamespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
 	}
-	return deployKuadrantRegistrations(ctx, namespace, kubeconfigPath, authConfig, writer)
+	return deployKuadrantRegistrations(ctx, mcpGatewayNamespace, kubeconfigPath, authConfig, writer)
 }
 
 // deployKubeMCPServer deploys the gateway-agnostic kube-mcp-server
@@ -2311,6 +2432,7 @@ spec:
 // MCPServerRegistrations (loopback-cluster, prod-east, prod-west) that
 // register kube-mcp-server with the Kuadrant MCP Gateway broker.
 func deployKuadrantRegistrations(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	namespace = effectiveMCPGatewayNamespace(namespace, authConfig.MCPGatewayNamespace)
 	_, _ = fmt.Fprintln(writer, "    Creating HTTPRoute + MCPServerRegistration...")
 
 	// The broker maintains its own upstream tool-discovery/session-management
@@ -2602,6 +2724,7 @@ spec:
 func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, enableCoverage bool, writer io.Writer) error {
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
+	mcpGatewayNamespace := effectiveMCPGatewayNamespace(namespace, authConfig.MCPGatewayNamespace)
 
 	checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
 		"get", "deployment", "valkey", "-o", "name")
@@ -2796,7 +2919,7 @@ data:
     mcpGateway:
       endpoint: "%[7]s"
       gatewayType: "%[8]s"
-      namespace: "%[1]s"
+      namespace: "%[14]s"
     valkey:
       addr: "valkey.%[1]s.svc:6379"
     sync:
@@ -2933,7 +3056,7 @@ spec:
     targetPort: metrics
   selector:
     app: fleetmetadatacache
-`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML, mcpGatewayEndpoint, string(authConfig.GatewayType), fmcGatewayRBACRules, coverageSecurityContextYAML, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
+`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML, mcpGatewayEndpoint, string(authConfig.GatewayType), fmcGatewayRBACRules, coverageSecurityContextYAML, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, mcpGatewayNamespace)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
 		return fmt.Errorf("fmc deployment failed: %w", err)

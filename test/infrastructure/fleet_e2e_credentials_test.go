@@ -214,6 +214,34 @@ var _ = Describe("kube-mcp-server E2E configuration", func() {
 })
 
 var _ = Describe("fleet gateway cluster registration identities", func() {
+	It("UT-INFRA-FLEET-MCP-002: falls back to the application namespace for legacy callers", func() {
+		Expect(effectiveMCPGatewayNamespace("kubernaut-system", "")).To(Equal("kubernaut-system"))
+	})
+
+	It("UT-INFRA-FLEET-MCP-003: keeps the MCP infrastructure in its dedicated namespace", func() {
+		Expect(effectiveMCPGatewayNamespace("kubernaut-system", "mcp-system")).To(Equal("mcp-system"))
+	})
+
+	It("UT-INFRA-FLEET-MCP-004: resolves the remote MCP server namespace independently", func() {
+		Expect(effectiveRemoteMCPServerNamespace("")).To(Equal(DefaultRemoteMCPServerNamespace))
+		Expect(effectiveRemoteMCPServerNamespace("remote-mcp")).To(Equal("remote-mcp"))
+	})
+
+	It("UT-INFRA-FLEET-MCP-007: rewrites all pinned Kuadrant namespace references together", func() {
+		rendered := `metadata:
+  namespace: mcp-system
+subjects:
+- namespace: mcp-system
+value: mcp-system`
+
+		rewritten := rewriteKuadrantOverlayNamespace(rendered, "fleet-mcp")
+		Expect(rewritten).To(Equal(`metadata:
+  namespace: fleet-mcp
+subjects:
+- namespace: fleet-mcp
+value: fleet-mcp`))
+	})
+
 	It("UT-INFRA-FLEET-2441-001: uses hub and EAIGW's hub__ tool prefix for the demo", func() {
 		clusterID, toolPrefix := fleetHubRegistrationIdentity(KubeMCPServerAuthConfig{
 			GatewayType:  registry.GatewayEAIGW,
@@ -303,6 +331,38 @@ var _ = Describe("fleet gateway cluster registration identities", func() {
 		Expect(manifest).To(ContainSubstring("prefix: \"remote_cluster_\""))
 		Expect(manifest).To(ContainSubstring("name: prod-east"))
 		Expect(manifest).To(ContainSubstring("name: prod-west"))
+		expectValidYAMLDocuments(manifest)
+	})
+
+	It("IT-INFRA-FLEET-MCP-005: renders EAIGW registration resources in the configured MCP namespace", func() {
+		manifest := captureKubectlManifest(func() error {
+			return deployEnvoyAIGatewayRegistrations(context.Background(), "kubernaut-system", "test-kubeconfig", "http://gateway/mcp", KubeMCPServerAuthConfig{
+				GatewayType:         registry.GatewayEAIGW,
+				MCPGatewayNamespace: "mcp-system",
+				AuthorizationURL:    "https://keycloak:8443/realms/kubernaut-demo",
+				OAuthAudience:       "kube-mcp-server",
+				HubClusterID:        "hub",
+			}, io.Discard)
+		})
+
+		Expect(manifest).To(ContainSubstring("namespace: mcp-system"))
+		Expect(manifest).To(ContainSubstring("hostname: kube-mcp-server.mcp-system.svc.cluster.local"))
+		Expect(manifest).NotTo(ContainSubstring("namespace: kubernaut-system"))
+		expectValidYAMLDocuments(manifest)
+	})
+
+	It("IT-INFRA-FLEET-MCP-006: renders Kuadrant registration resources in the configured MCP namespace", func() {
+		manifest := captureKubectlManifest(func() error {
+			return deployKuadrantRegistrations(context.Background(), "kubernaut-system", "test-kubeconfig", KubeMCPServerAuthConfig{
+				GatewayType:           registry.GatewayKuadrant,
+				MCPGatewayNamespace:   "mcp-system",
+				HubClusterID:          "hub",
+				BrokerCredentialToken: "token",
+			}, io.Discard)
+		})
+
+		Expect(manifest).To(ContainSubstring("namespace: mcp-system"))
+		Expect(manifest).NotTo(ContainSubstring("namespace: kubernaut-system"))
 		expectValidYAMLDocuments(manifest)
 	})
 
