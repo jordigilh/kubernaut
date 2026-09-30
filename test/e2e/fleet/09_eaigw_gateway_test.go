@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -104,7 +105,7 @@ var _ = Describe("E2E-FLEET-EAIGW: Envoy AI Gateway Pipeline", Label("fleet"), f
 		By("Verifying EAIGW Backend 'remote-cluster' exists (Kuadrant's MCPServerRegistration equivalent)")
 		regCmd := exec.CommandContext(context.Background(),
 			"kubectl", "get", "backend.gateway.envoyproxy.io", "remote-cluster",
-			"-n", namespace, "--kubeconfig", kubeconfigPath,
+			"-n", infrastructure.DefaultMCPGatewayNamespace, "--kubeconfig", kubeconfigPath,
 			"-o", "name")
 		regOut, regErr := regCmd.Output()
 		Expect(regErr).ToNot(HaveOccurred(), "EAIGW Backend must exist")
@@ -114,7 +115,7 @@ var _ = Describe("E2E-FLEET-EAIGW: Envoy AI Gateway Pipeline", Label("fleet"), f
 		By("Verifying the shared MCPRoute exists")
 		routeCmd := exec.CommandContext(context.Background(),
 			"kubectl", "get", "mcproute.aigateway.envoyproxy.io",
-			"-n", namespace, "--kubeconfig", kubeconfigPath,
+			"-n", infrastructure.DefaultMCPGatewayNamespace, "--kubeconfig", kubeconfigPath,
 			"-o", "name")
 		routeOut, routeErr := routeCmd.Output()
 		Expect(routeErr).ToNot(HaveOccurred(), "kubectl get mcproute must succeed")
