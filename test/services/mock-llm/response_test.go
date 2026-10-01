@@ -86,6 +86,22 @@ var _ = Describe("Response Builders", func() {
 			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
 			Expect(args["action_type"]).To(Equal("IncreaseMemoryLimits"))
 		})
+
+		It("UT-MOCK-2478-001: emits HelmRollback for the helm-managed scenario [BR-KA-017-001, BR-WORKFLOW-004]", func() {
+			registry := scenarios.DefaultRegistry()
+			scenario, ok := registry.Get("helm_managed")
+			Expect(ok).To(BeTrue(), "helm-managed scenario must be registered")
+
+			configured, ok := scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue(), "helm-managed scenario must expose its configuration")
+
+			resp := response.BuildToolCallResponse(
+				"mock-model", openai.ToolListWorkflows, configured.Config())
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args["action_type"]).To(Equal("HelmRollback"),
+				"management-aware discovery must query the seeded HelmRollback action family")
+		})
 	})
 
 	Describe("UT-MOCK-001: OpenAI text response builder", func() {

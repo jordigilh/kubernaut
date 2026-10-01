@@ -292,13 +292,12 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 		return nil, fmt.Errorf("rca extraction failed: %w", err)
 	}
 
-	// Phase 2 extraction from conversation reconstructs a best-effort RCA,
-	// but its RemediationTarget is unreliable: the conversation messages lack
-	// the system prompt (with signal name/resource), so the LLM may fall back
-	// to a generic target. Clear it so RunWorkflowDiscoveryFromRCA preserves
-	// the signal resolver's authoritative identity instead of overwriting it
-	// via SyncSignalFromRCA with the extraction's guess.
-	rcaResult.RemediationTarget = katypes.RemediationTarget{}
+	// Preserve a structured remediation target from the extraction. The Phase 3
+	// investigator reconciles it through SyncSignalFromRCA, which validates the
+	// target identifiers and keeps the signal target when the extracted target
+	// is absent or invalid. Clearing it here loses legitimate cross-resource RCA
+	// targets (for example, an AuthorizationPolicy behind a Pod alert) before
+	// workflow catalog matching can use the correct GVK.
 	return rcaResult, nil
 }
 

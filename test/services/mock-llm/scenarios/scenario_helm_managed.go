@@ -23,7 +23,7 @@ import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 // time through the existing workflow-name override mechanism.
 func helmManagedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "helm_managed", SignalName: "HelmManagedConfigFailure", Severity: "warning",
+		ScenarioName: "helm_managed", SignalName: "HelmManagedConfigFailure", Severity: "warning", ActionType: "HelmRollback",
 		WorkflowName: "helm-rollback-v1", WorkflowID: uuid.DeterministicUUID("helm-rollback-v1"),
 		WorkflowTitle: "HelmManaged Remediation - Rollback Release", Confidence: 0.95,
 		Rationale:    "The target is Helm-managed, so rolling back the release is safer than a generic restart",
