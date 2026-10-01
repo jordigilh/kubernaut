@@ -55,16 +55,16 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
 	defer cancelInactivity()
 
-	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
-	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID, user)
+	// Step 1: Resolve the authoritative signal context. Conversation-based RCA
+	// extraction needs the signal name to select the correct provider scenario
+	// and target cross-resource findings reliably.
+	signal, err := t.resolveDiscoverySignal(ctx, input.RRID)
 	if err != nil {
 		return InvestigateOutput{}, err
 	}
 
-	// Step 2: Resolve signal context for Phase 3. Enrichment is handled
-	// internally by the investigator's enrichment pipeline (F5 #1374), so we
-	// only resolve the signal here.
-	signal, err := t.resolveDiscoverySignal(ctx, input.RRID)
+	// Step 2: Obtain the structured RCA result for Phase 3 workflow discovery.
+	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID, user, signal)
 	if err != nil {
 		return InvestigateOutput{}, err
 	}
@@ -246,10 +246,16 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 // resolveRCAForDiscovery obtains the structured RCA result used for Phase 3
 // workflow discovery.
 //
-// Preferred path: reuse the full InvestigationResult already produced by the
-// autonomous Phase 1 RCA and stored in the session manager. This preserves
-// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
-// the LLM emitted during the original investigation.
+// Preferred path when no user-driven turn has completed: reuse the full
+// InvestigationResult already produced by the autonomous Phase 1 RCA and
+// stored in the session manager. This preserves the complete
+// RemediationTarget (Kind, APIVersion, Name, Namespace) that the LLM emitted
+// during the original investigation.
+//
+// Once the current interactive session has processed a user turn, the
+// conversation takes precedence over that stored result. The user may have
+// supplied new evidence or corrected the autonomous RCA, including a
+// cross-resource remediation target.
 //
 // Fallback: if no stored result exists (e.g. pure interactive session),
 // reconstruct conversation from audit traces and re-extract RCA.
@@ -257,14 +263,20 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 // Dead end (#2259): when neither a stored RCA nor any reconstructable
 // conversation exists, self-heal via triggerFreshInvestigationForDiscovery
 // instead of failing permanently -- see that function's doc comment for why.
-func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string, user mcpinternal.UserInfo) (*katypes.InvestigationResult, error) {
-	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
-		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
-			"rr_id", rrID,
-			"rca_target_kind", storedResult.RemediationTarget.Kind,
-			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
-			"rca_target_name", storedResult.RemediationTarget.Name)
-		return storedResult, nil
+func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string, user mcpinternal.UserInfo, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	_, hasInteractiveTurn := t.interactiveTurns.Load(rrID)
+	if !hasInteractiveTurn {
+		if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
+			t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+				"rr_id", rrID,
+				"rca_target_kind", storedResult.RemediationTarget.Kind,
+				"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
+				"rca_target_name", storedResult.RemediationTarget.Name)
+			return storedResult, nil
+		}
+	} else {
+		t.logger.Info("discover_workflows: using current interactive conversation instead of stored RCA",
+			"rr_id", rrID)
 	}
 
 	messages := t.buildMessagesWithContext(rrID, "")
@@ -287,19 +299,53 @@ func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sess
 		return t.triggerFreshInvestigationForDiscovery(ctx, rrID, user)
 	}
 
+	messages = prependSignalContextForRCAExtraction(messages, signal)
 	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, rrID)
 	if err != nil {
 		return nil, fmt.Errorf("rca extraction failed: %w", err)
 	}
 
-	// Phase 2 extraction from conversation reconstructs a best-effort RCA,
-	// but its RemediationTarget is unreliable: the conversation messages lack
-	// the system prompt (with signal name/resource), so the LLM may fall back
-	// to a generic target. Clear it so RunWorkflowDiscoveryFromRCA preserves
-	// the signal resolver's authoritative identity instead of overwriting it
-	// via SyncSignalFromRCA with the extraction's guess.
-	rcaResult.RemediationTarget = katypes.RemediationTarget{}
+	// Preserve a structured remediation target from the extraction. The Phase 3
+	// investigator reconciles it through SyncSignalFromRCA, which validates the
+	// target identifiers and keeps the signal target when the extracted target
+	// is absent or invalid. Clearing it here loses legitimate cross-resource RCA
+	// targets (for example, an AuthorizationPolicy behind a Pod alert) before
+	// workflow catalog matching can use the correct GVK.
 	return rcaResult, nil
+}
+
+// prependSignalContextForRCAExtraction restores the authoritative signal
+// metadata that is present in the autonomous investigator's system prompt but
+// absent from reconstructed interactive user/assistant turns. Without it, a
+// provider cannot reliably associate a user-driven message with its signal
+// scenario, which can replace a cross-resource RCA target with a generic one.
+func prependSignalContextForRCAExtraction(messages []LLMMessage, signal katypes.SignalContext) []LLMMessage {
+	if signal.Name == "" && signal.ResourceKind == "" && signal.ResourceName == "" && signal.ResourceAPIVersion == "" {
+		return messages
+	}
+
+	contextMessage := LLMMessage{
+		Role: "system",
+		Content: fmt.Sprintf(
+			"Authoritative signal context for RCA extraction:\n"+
+				"signal_name: %q\n"+
+				"severity: %q\n"+
+				"resource_kind: %q\n"+
+				"resource_api_version: %q\n"+
+				"resource_name: %q\n"+
+				"namespace: %q",
+			signal.Name,
+			signal.Severity,
+			signal.ResourceKind,
+			signal.ResourceAPIVersion,
+			signal.ResourceName,
+			signal.Namespace,
+		),
+	}
+
+	withContext := make([]LLMMessage, 0, len(messages)+1)
+	withContext = append(withContext, contextMessage)
+	return append(withContext, messages...)
 }
 
 // triggerFreshInvestigationForDiscovery self-heals the #2259 dead end:

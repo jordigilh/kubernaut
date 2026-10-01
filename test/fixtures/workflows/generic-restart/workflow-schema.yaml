@@ -17,7 +17,10 @@ spec:
   labels:
     severity: [info, warning, high]
     environment: [production, staging, test, development]
-    component: [v1/Pod]
+    # #2478: generic RCA fallback remains available for both common target
+    # shapes and all priorities; management-aware ranking is advisory, not an
+    # exclusion gate.
+    component: [v1/Pod, apps/v1/Deployment]
     priority: "*"
     cluster: ["*"]
   

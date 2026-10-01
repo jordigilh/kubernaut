@@ -566,6 +566,40 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(labels.GitOpsTool.Value).To(Equal(ogenclient.DetectedLabelsGitOpsTool_argocd))
 		})
 
+		It("IT-KA-2478-AUDIT-003: persists bounded action-family ranking evidence", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-2478-actions",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory))
+			event.EventAction = audit.ActionDiscovery
+			event.EventOutcome = audit.OutcomeSuccess
+			event.Data["total_count"] = 2
+			event.Data["returned_count"] = 2
+			event.Data["detected_labels"] = map[string]interface{}{"helmManaged": true}
+			event.Data["action_type_evidence"] = `[{"action_type":"HelmRollback","rank":1,"preferred":true,"workflow_count":1,"best_match_score":0.502,"best_workflow_id":"wf-helm","matched_detected_labels":{"helmManaged":true},"preference_reason":"detected-label match for helmManaged=true"}]`
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetWorkflowActionsListedAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Results.ActionTypes).To(HaveLen(1))
+			action := payload.Results.ActionTypes[0]
+			Expect(action.ActionType).To(Equal("HelmRollback"))
+			Expect(action.Rank).To(Equal(int32(1)))
+			Expect(action.Preferred).To(BeTrue())
+			Expect(action.BestMatchScore).To(BeNumerically("~", 0.502, 0.0001))
+			Expect(action.BestWorkflowID.IsSet()).To(BeTrue())
+			Expect(action.BestWorkflowID.Value).To(Equal("wf-helm"))
+			Expect(action.PreferenceReason).To(Equal("detected-label match for helmManaged=true"))
+			matched, matchedSet := action.MatchedDetectedLabels.Get()
+			Expect(matchedSet).To(BeTrue())
+			helmManaged, helmSet := matched.HelmManaged.Get()
+			Expect(helmSet).To(BeTrue())
+			Expect(helmManaged).To(BeTrue())
+		})
+
 		It("UT-KA-1677-AUDIT-010: builds workflows_listed payload without filters when no signal-context present", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)

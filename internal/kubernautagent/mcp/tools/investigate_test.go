@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -104,7 +105,9 @@ type mockInvestigatorRunner struct {
 	response                string
 	err                     error
 	rcaResult               *katypes.InvestigationResult
+	rcaMessages             []mcptools.LLMMessage
 	workflowDiscoveryResult *katypes.InvestigationResult
+	workflowDiscoveryRCA    *katypes.InvestigationResult
 	capturedCtx             context.Context
 	// totals seeds InvestigationTotals for Gap-2 assembly tests (#2387).
 	totals katypes.InvestigationTotals
@@ -126,14 +129,16 @@ func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katyp
 	return &katypes.InvestigationResult{RCASummary: "mock autonomous result", Confidence: 0.8}, m.err
 }
 
-func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, messages []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	m.rcaMessages = append([]mcptools.LLMMessage(nil), messages...)
 	if m.rcaResult != nil {
 		return m.rcaResult, m.err
 	}
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", Confidence: 0.9}, nil
 }
 
-func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, rca *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	m.workflowDiscoveryRCA = rca
 	if m.workflowDiscoveryResult != nil {
 		return m.workflowDiscoveryResult, nil
 	}
@@ -670,6 +675,77 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				"reconnect error should include existing session_id for diagnostics")
 		})
 	})
+
+	Describe("UT-KA-DW-017: interactive RCA extraction receives authoritative signal context [BR-INTERACTIVE-010, BR-WORKFLOW-004]", func() {
+		It("should include the signal name in the extraction conversation so scenario routing preserves cross-resource RCA", func() {
+			const rrID = "rr-dw-017"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-017",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{
+				response: "The AuthorizationPolicy is causing the deny rate.",
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary: "interactive RCA identified the AuthorizationPolicy",
+					RemediationTarget: katypes.RemediationTarget{
+						APIVersion: "security.istio.io/v1",
+						Kind:       "AuthorizationPolicy",
+						Name:       "deny-all-traffic",
+						Namespace:  "production",
+					},
+				},
+			}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				Name:               "IstioHighDenyRate",
+				Severity:           "critical",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "api-server",
+				Namespace:          "production",
+			}}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				runner,
+				&mockContextReconstructor{},
+				mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix AuthorizationPolicy"},
+				}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    rrID,
+				Action:  mcptools.ActionMessage,
+				Message: "What is the root cause of the IstioHighDenyRate alert?",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			var hasSignalContext bool
+			for _, message := range runner.rcaMessages {
+				if message.Role == "system" &&
+					strings.Contains(message.Content, "signal_name") &&
+					strings.Contains(message.Content, "IstioHighDenyRate") {
+					hasSignalContext = true
+					break
+				}
+			}
+			Expect(hasSignalContext).To(BeTrue(),
+				"RCA extraction must receive the authoritative signal name so cross-resource scenario routing is deterministic")
+		})
+	})
 })
 
 // mockSignalResolver implements mcptools.SignalContextResolver for UTs.
@@ -1148,6 +1224,72 @@ var _ = Describe("kubernaut_investigate — discover_workflows takeover resilien
 			Expect(sess.DiscoveryResult).NotTo(BeNil())
 		})
 	})
+
+	Describe("UT-KA-DW-016: current interactive conversation supersedes stored autonomous RCA", func() {
+		It("should extract the RCA from the user-driven turn before workflow discovery", func() {
+			const rrID = "rr-dw-016"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-016",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "autonomous RCA identified the alert deployment",
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "api-server",
+					Namespace:  "production",
+				},
+			}
+			interactiveRCA := &katypes.InvestigationResult{
+				RCASummary: "interactive RCA identified the AuthorizationPolicy",
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "security.istio.io/v1",
+					Kind:       "AuthorizationPolicy",
+					Name:       "deny-all-traffic",
+					Namespace:  "production",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+			runner := &mockInvestigatorRunner{
+				response:  "The AuthorizationPolicy is causing the deny rate.",
+				rcaResult: interactiveRCA,
+			}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				runner,
+				&mockContextReconstructor{},
+				autoMgr,
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix AuthorizationPolicy"},
+				}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    rrID,
+				Action:  mcptools.ActionMessage,
+				Message: "What is the root cause?",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(runner.workflowDiscoveryRCA).NotTo(BeNil())
+			Expect(runner.workflowDiscoveryRCA.RCASummary).To(Equal(interactiveRCA.RCASummary))
+			Expect(runner.workflowDiscoveryRCA.RemediationTarget.APIVersion).To(Equal("security.istio.io/v1"))
+			Expect(runner.workflowDiscoveryRCA.RemediationTarget.Kind).To(Equal("AuthorizationPolicy"))
+		})
+	})
 })
 
 var _ = Describe("Issue #1437: discover_workflows target visibility", func() {
@@ -1376,6 +1518,68 @@ var _ = Describe("Issue #1437: discover_workflows target visibility", func() {
 				"fallback path clears RCA target, so searched_target should match signal")
 			Expect(searchedTarget["name"]).To(Equal("api-server"))
 			Expect(searchedTarget["api_version"]).To(Equal("apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-1374-006: extracted RCA target survives workflow discovery", func() {
+		It("should preserve a valid cross-resource target for Phase 3 [BR-INTERACTIVE-010, BR-WORKFLOW-004]", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-016",
+				CorrelationID: "rr-dw-016",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			target := katypes.RemediationTarget{
+				APIVersion: "security.istio.io/v1",
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all-traffic",
+				Namespace:  "production",
+			}
+			runner := &mockInvestigatorRunner{
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary:        "overly restrictive AuthorizationPolicy blocks traffic",
+					Confidence:        0.92,
+					RemediationTarget: target,
+				},
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary:        "overly restrictive AuthorizationPolicy blocks traffic",
+					WorkflowID:        "mock-workflow",
+					Confidence:        0.92,
+					RemediationTarget: target,
+				},
+			}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "high deny rate on the API server"},
+				{Role: "assistant", Content: "the AuthorizationPolicy is too restrictive"},
+			}}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				Severity:           "critical",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "api-server",
+				Namespace:          "production",
+			}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix AuthorizationPolicy"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-016",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+			Expect(runner.workflowDiscoveryRCA).NotTo(BeNil())
+			Expect(runner.workflowDiscoveryRCA.RemediationTarget).To(Equal(target),
+				"interactive RCA extraction must not discard a valid cross-resource target")
 		})
 	})
 })

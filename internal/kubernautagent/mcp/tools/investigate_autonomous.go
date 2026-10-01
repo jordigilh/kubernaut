@@ -66,6 +66,7 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)
+	t.interactiveTurns.Delete(input.RRID)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,

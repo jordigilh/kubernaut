@@ -117,8 +117,8 @@ github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5 h1:HNNPIT0D7
 github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5/go.mod h1:gODRUjNEdGPRGn+LjJQ59H6VJy8qR6V3h1+otlw6zwI=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
-github.com/containers/kubernetes-mcp-server v0.0.67 h1:yITgYtLLAoMgPRS/E+Jnb8JOdZvVHdRzGv0Fyy5H9/8=
-github.com/containers/kubernetes-mcp-server v0.0.67/go.mod h1:zjeNm8WuaPQcg8DgroTE7mK1pZGPW57+Egllapok8zI=
+github.com/containers/kubernetes-mcp-server v0.0.66 h1:4qDTd3viF+IboW3UVZ+1uXmd8B7HX9Owadtnqrsx4oY=
+github.com/containers/kubernetes-mcp-server v0.0.66/go.mod h1:mzSv8j3Ub8VMnYzNQMuTroYv+z7dc1ZLJXv6ydzo/M0=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

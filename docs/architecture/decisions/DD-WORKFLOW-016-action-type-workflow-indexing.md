@@ -6,11 +6,17 @@
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
 **Affects**: Data Storage Service, Kubernaut Agent (KA), Workflow Catalog, Signal Processing
 **Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-KA-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification), BR-WORKFLOW-006 (RemediationWorkflow CRD), ADR-058 (Webhook-Driven Registration)
-**Version**: 1.4
+**Version**: 1.5
 
 ---
 
 ## Changelog
+
+### Version 1.5 (2026-09-30)
+- **Issue #2478**: Step 1 action families are ranked across action types by the best matching workflow's existing `final_score`, descending, with `action_type` ascending as the deterministic tiebreaker. The score formula and Step 2 ordering are unchanged.
+- **LLM-facing evidence**: `rank`, `preferred`, `matchedDetectedLabels`, and `preferenceReason` are returned as bounded advisory catalog evidence. Numeric scores and the best workflow identity remain audit-only.
+- **Model discretion**: Generic action families remain in the response and may be selected when RCA evidence outweighs the catalog preference. A preferred rank is not an authorization or confidence decision.
+- **Auditability**: `workflow.catalog.actions_listed` retains the returned action-family ranking evidence, including internal score, best workflow identity, filters, and correlation.
 
 ### Version 1.4 (2026-04-06)
 - **Issue #688**: LLM-facing pagination replaced from raw `offset`/`limit` to opaque cursor-based navigation.
@@ -448,7 +454,7 @@ On subsequent pages (offset > 0, hasMore still true):
 
 `totalCount`, `offset`, and `limit` are never exposed to the LLM.
 
-**Note**: This response contains only action type taxonomy data (static, structured descriptions) and a `workflow_count` indicating how many workflows are available for each type. No workflow-level details are included -- the LLM uses this clean, consistent information to decide which action type fits the root cause. After selecting an action type, the LLM calls `list_workflows` to see the available workflows.
+**Note (v1.5)**: This response contains action type taxonomy data, `workflow_count`, and bounded catalog preference evidence (`rank`, `preferred`, `matchedDetectedLabels`, and `preferenceReason`). No workflow-level details or numeric scores are included. The LLM should inspect the preferred family first but may choose another action type when the RCA and descriptions justify it; after selecting an action type, it calls `list_workflows` to see the available workflows.
 
 **LLM-Rendered Format** (how the tool presents it to the LLM, optional fields omitted when absent):
 
@@ -551,34 +557,39 @@ FROM (
     GROUP BY t.action_type
 ) AS action_count;
 
--- Data query (paginated -- returns one row per action type with taxonomy description)
+-- Conceptual data query (paginated -- returns one row per action type with
+-- taxonomy description). `scored_workflows` represents the filtered,
+-- per-workflow projection after the existing scoring expressions are applied;
+-- it is not a physical table or persisted catalog column.
 SELECT
     t.action_type,
     t.description,                         -- Structured JSONB from taxonomy table
-    COUNT(w.workflow_id) AS workflow_count
+    COUNT(w.workflow_id) AS workflow_count,
+    MAX(w.final_score) AS best_final_score  -- Existing score formula; audit-only
 FROM action_type_taxonomy t
-INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
-WHERE w.status = 'active'
-  AND w.is_latest_version = true
-  -- Context filters (same filters applied to all three endpoints)
-  -- v1.3: Case-insensitive label matching via EXISTS/LOWER (Issue #595)
-  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'severity') elem WHERE LOWER(elem) = LOWER($1)) OR w.labels->'severity' ? '*')
-  AND (LOWER(w.labels->>'component') = LOWER($2) OR w.labels->>'component' = '*')
-  AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(w.labels->'environment') elem WHERE LOWER(elem) = LOWER($3)) OR w.labels->'environment' ? '*')
-  AND (LOWER(w.labels->>'priority') = LOWER($4) OR w.labels->>'priority' = '*')
-  AND (w.custom_labels @> $5 OR $5 IS NULL)
+INNER JOIN scored_workflows w ON w.action_type = t.action_type
 GROUP BY t.action_type, t.description
-ORDER BY t.action_type
+ORDER BY best_final_score DESC, t.action_type ASC
 LIMIT $6 OFFSET $7;                        -- Default: LIMIT 10 OFFSET 0
 ```
 
-**Note**: This query returns one row per action type with its taxonomy description and count of matching workflows. Pagination is based on action type count. Only action types that have at least one active, matching workflow are returned (INNER JOIN ensures this).
+For each row in the conceptual `scored_workflows` projection:
+
+```text
+final_score = LEAST((5.0 + detected_label_boost + custom_label_boost - label_penalty) / 10.0, 1.0)
+```
+
+The 1.6 KA-owned informer-cache-backed discovery implementation evaluates this
+formula in Go, preserving the existing weights and ordering. DataStorage is
+used for the audit sink, not for workflow discovery.
+
+**Note (v1.5)**: This query returns one row per action type with its taxonomy description, count of matching workflows, and the best matching workflow's existing `final_score` formula result. Pagination is based on action type count, and rank is assigned after the complete ordered result set is built. Only action types that have at least one active, matching workflow are returned (INNER JOIN ensures this).
 
 **Key principle**: The context filter set must be identical across all three endpoints (`list_available_actions`, `list_workflows`, `get_workflow`). This guarantees that (a) every action type from Step 1 has matching workflows in Step 2, (b) every workflow from Step 2 will pass the security gate in Step 3, and (c) the LLM cannot bypass context restrictions by guessing workflow IDs.
 
 **Pagination**: Results are paginated with a default page size of 10. The response includes `total_count`, `offset`, `limit`, and `has_more`. For V1.0 (10 taxonomy types), pagination is unlikely to be needed but is included for consistency with `get_workflow` and future taxonomy growth.
 
-**Sorting**: Results are sorted alphabetically by `action_type` for deterministic, predictable ordering. The LLM selects action types based on structured descriptions and root cause analysis, not list position. Confidence scores are not exposed to the LLM and not used for sorting in this endpoint.
+**Sorting (v1.5)**: Results are ordered by the best matching workflow's `final_score` descending, with `action_type` ascending as the deterministic tiebreaker. Rank is assigned before pagination. Numeric scores remain internal; the LLM receives bounded rank/preference evidence instead. Generic action types are never excluded solely because a detected-label-specific family ranks higher.
 
 ---
 

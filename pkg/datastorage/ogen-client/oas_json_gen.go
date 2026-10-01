@@ -8374,6 +8374,221 @@ func (s *ActionTypeDescriptionPayload) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *ActionTypeResultAudit) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ActionTypeResultAudit) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("action_type")
+		e.Str(s.ActionType)
+	}
+	{
+		e.FieldStart("rank")
+		e.Int32(s.Rank)
+	}
+	{
+		e.FieldStart("preferred")
+		e.Bool(s.Preferred)
+	}
+	{
+		e.FieldStart("workflow_count")
+		e.Int32(s.WorkflowCount)
+	}
+	{
+		e.FieldStart("best_match_score")
+		e.Float64(s.BestMatchScore)
+	}
+	{
+		if s.BestWorkflowID.Set {
+			e.FieldStart("best_workflow_id")
+			s.BestWorkflowID.Encode(e)
+		}
+	}
+	{
+		if s.MatchedDetectedLabels.Set {
+			e.FieldStart("matched_detected_labels")
+			s.MatchedDetectedLabels.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("preference_reason")
+		e.Str(s.PreferenceReason)
+	}
+}
+
+var jsonFieldsNameOfActionTypeResultAudit = [8]string{
+	0: "action_type",
+	1: "rank",
+	2: "preferred",
+	3: "workflow_count",
+	4: "best_match_score",
+	5: "best_workflow_id",
+	6: "matched_detected_labels",
+	7: "preference_reason",
+}
+
+// Decode decodes ActionTypeResultAudit from json.
+func (s *ActionTypeResultAudit) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ActionTypeResultAudit to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "action_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ActionType = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_type\"")
+			}
+		case "rank":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int32()
+				s.Rank = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rank\"")
+			}
+		case "preferred":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Bool()
+				s.Preferred = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preferred\"")
+			}
+		case "workflow_count":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int32()
+				s.WorkflowCount = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_count\"")
+			}
+		case "best_match_score":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Float64()
+				s.BestMatchScore = float64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"best_match_score\"")
+			}
+		case "best_workflow_id":
+			if err := func() error {
+				s.BestWorkflowID.Reset()
+				if err := s.BestWorkflowID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"best_workflow_id\"")
+			}
+		case "matched_detected_labels":
+			if err := func() error {
+				s.MatchedDetectedLabels.Reset()
+				if err := s.MatchedDetectedLabels.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"matched_detected_labels\"")
+			}
+		case "preference_reason":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.PreferenceReason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preference_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ActionTypeResultAudit")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b10011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfActionTypeResultAudit) {
+					name = jsonFieldsNameOfActionTypeResultAudit[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ActionTypeResultAudit) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ActionTypeResultAudit) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ActionTypeWebhookAuditPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -52853,12 +53068,23 @@ func (s *WorkflowActionsResultsMetadata) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.ActionTypes != nil {
+			e.FieldStart("action_types")
+			e.ArrStart()
+			for _, elem := range s.ActionTypes {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkflowActionsResultsMetadata = [3]string{
+var jsonFieldsNameOfWorkflowActionsResultsMetadata = [4]string{
 	0: "total_found",
 	1: "returned",
 	2: "actions",
+	3: "action_types",
 }
 
 // Decode decodes WorkflowActionsResultsMetadata from json.
@@ -52910,6 +53136,23 @@ func (s *WorkflowActionsResultsMetadata) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"actions\"")
+			}
+		case "action_types":
+			if err := func() error {
+				s.ActionTypes = make([]ActionTypeResultAudit, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem ActionTypeResultAudit
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.ActionTypes = append(s.ActionTypes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_types\"")
 			}
 		default:
 			return d.Skip()

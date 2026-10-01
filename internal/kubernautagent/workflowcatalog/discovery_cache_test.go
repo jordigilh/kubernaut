@@ -126,7 +126,7 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1677 Phase 2b)", func() 
 })
 
 var _ = Describe("sortActionTypeEntries (Issue #1677 Phase 2b)", func() {
-	It("UT-KA-1677-615-006: sorts alphabetically by ActionType (mirrors ListActions' ORDER BY t.action_type)", func() {
+	It("UT-KA-1677-615-006: uses ActionType as the deterministic tiebreaker when scores are equal", func() {
 		entries := []models.ActionTypeEntry{
 			{ActionType: "ScaleReplicas"},
 			{ActionType: "DrainNode"},
@@ -136,6 +136,83 @@ var _ = Describe("sortActionTypeEntries (Issue #1677 Phase 2b)", func() {
 		Expect(entries[0].ActionType).To(Equal("DrainNode"))
 		Expect(entries[1].ActionType).To(Equal("RestartPod"))
 		Expect(entries[2].ActionType).To(Equal("ScaleReplicas"))
+	})
+
+	It("UT-KA-2478-001: ranks an exact detected-label action family above a generic family", func() {
+		entries := []models.ActionTypeEntry{
+			{
+				ActionType:       "PatchConfiguration",
+				WorkflowCount:    3,
+				BestMatchScore:   0.5,
+				PreferenceReason: "highest-scoring matching workflow",
+			},
+			{
+				ActionType:     "HelmRollback",
+				WorkflowCount:  1,
+				BestMatchScore: 0.502,
+				MatchedDetectedLabels: &models.DetectedLabels{
+					HelmManaged: true,
+				},
+				PreferenceReason: "detected-label match for helmManaged=true",
+			},
+		}
+
+		sortActionTypeEntries(entries)
+
+		Expect(entries[0].ActionType).To(Equal("HelmRollback"),
+			"BR-KA-017-007 / BR-KA-265: exact helmManaged matches must lead Step 1")
+		Expect(entries[0].Rank).To(Equal(1))
+		Expect(entries[0].Preferred).To(BeTrue())
+		Expect(entries[0].MatchedDetectedLabels.HelmManaged).To(BeTrue())
+		Expect(entries[1].ActionType).To(Equal("PatchConfiguration"),
+			"generic workflows remain available for RCA-driven selection")
+		Expect(entries[1].Rank).To(Equal(2))
+		Expect(entries[1].Preferred).To(BeFalse())
+	})
+
+	It("UT-KA-2478-003: uses deterministic action-type ordering for equal aggregate scores", func() {
+		entries := []models.ActionTypeEntry{
+			{ActionType: "PatchConfiguration", BestMatchScore: 0.5},
+			{ActionType: "HelmRollback", BestMatchScore: 0.5},
+		}
+
+		sortActionTypeEntries(entries)
+
+		Expect(entries[0].ActionType).To(Equal("HelmRollback"))
+		Expect(entries[0].Rank).To(Equal(1))
+		Expect(entries[1].ActionType).To(Equal("PatchConfiguration"))
+		Expect(entries[1].Rank).To(Equal(2))
+	})
+
+	It("UT-KA-2478-003: assigns global rank before pagination", func() {
+		entries := []models.ActionTypeEntry{
+			{ActionType: "PatchConfiguration", BestMatchScore: 0.5},
+			{ActionType: "HelmRollback", BestMatchScore: 0.502},
+			{ActionType: "RestartDeployment", BestMatchScore: 0.501},
+		}
+
+		sortActionTypeEntries(entries)
+		page := paginate(entries, 1, 1)
+
+		Expect(page).To(HaveLen(1))
+		Expect(page[0].ActionType).To(Equal("RestartDeployment"))
+		Expect(page[0].Rank).To(Equal(2))
+		Expect(page[0].Preferred).To(BeFalse())
+	})
+
+	It("UT-KA-2478-005: preserves Step 2 final-score ordering with workflow ID tiebreaking", func() {
+		first := rwFixture("wf-zeta", nil)
+		first.Status.WorkflowID = "workflow-zeta"
+		second := rwFixture("wf-alpha", nil)
+		second.Status.WorkflowID = "workflow-alpha"
+
+		got, err := filterAndScoreCachedWorkflows([]rwv1alpha1.RemediationWorkflow{first, second}, nil)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(HaveLen(2))
+		Expect(got[0].Workflow.WorkflowID).To(Equal("workflow-alpha"),
+			"BR-KA-017-001: equal Step 2 scores must use workflow_id ASC")
+		Expect(got[1].Workflow.WorkflowID).To(Equal("workflow-zeta"))
 	})
 })
 

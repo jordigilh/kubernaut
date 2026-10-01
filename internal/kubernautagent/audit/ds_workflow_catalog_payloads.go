@@ -17,6 +17,8 @@ limitations under the License.
 package audit
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -77,9 +79,10 @@ func buildActionsListedPayload(event *AuditEvent) ogenclient.AuditEventRequestEv
 		EventType: ogenclient.WorkflowActionsListedAuditPayloadEventTypeWorkflowCatalogActionsListed,
 		Query:     buildDiscoveryQueryMetadata(event),
 		Results: ogenclient.WorkflowActionsResultsMetadata{
-			TotalFound: int32(dataInt(event.Data, "total_count")),
-			Returned:   int32(returned),
-			Actions:    workflowActionResults(event.Data["actions"]),
+			TotalFound:  int32(dataInt(event.Data, "total_count")),
+			Returned:    int32(returned),
+			Actions:     workflowActionResults(event.Data["actions"]),
+			ActionTypes: actionTypeAuditResults(event),
 		},
 		SearchMetadata: buildSearchExecutionMetadata(event),
 	}
@@ -125,14 +128,10 @@ func buildSelectionValidatedPayload(event *AuditEvent) ogenclient.AuditEventRequ
 // pkg/datastorage/models, to avoid runtime coupling to DS's domain types).
 func buildWorkflowDiscoveryPayload(event *AuditEvent, eventType ogenclient.WorkflowDiscoveryAuditPayloadEventType) ogenclient.WorkflowDiscoveryAuditPayload {
 	totalCount := dataInt(event.Data, "total_count")
-
 	return ogenclient.WorkflowDiscoveryAuditPayload{
-		EventType: eventType,
-		Query:     buildDiscoveryQueryMetadata(event),
-		Results: ogenclient.ResultsMetadata{
-			TotalFound: int32(totalCount),
-			Returned:   int32(totalCount),
-		},
+		EventType:      eventType,
+		Query:          buildDiscoveryQueryMetadata(event),
+		Results:        ogenclient.ResultsMetadata{TotalFound: int32(totalCount), Returned: int32(totalCount)},
 		SearchMetadata: buildSearchExecutionMetadata(event),
 	}
 }
@@ -155,6 +154,11 @@ func buildDiscoveryQueryMetadata(event *AuditEvent) ogenclient.QueryMetadata {
 		}
 		if labels, ok := detectedLabelsFromJSON(event.Data); ok {
 			filters.DetectedLabels.SetTo(labels)
+		}
+		if raw, exists := event.Data["custom_labels"]; exists {
+			if labels, ok := decodeCustomLabels(raw); ok {
+				filters.CustomLabels.SetTo(labels)
+			}
 		}
 		query.Filters.SetTo(filters)
 	}
@@ -219,6 +223,68 @@ func detectedLabelsFromJSON(data map[string]interface{}) (ogenclient.DetectedLab
 	return detectedLabelsFromJSONText(raw)
 }
 
+func decodeCustomLabels(raw interface{}) (ogenclient.CustomLabels, bool) {
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil, false
+	}
+	var labels ogenclient.CustomLabels
+	if err := json.Unmarshal(encoded, &labels); err != nil {
+		return nil, false
+	}
+	return labels, true
+}
+
+type actionTypeAuditEvidence struct {
+	ActionType            string          `json:"action_type"`
+	Rank                  int32           `json:"rank"`
+	Preferred             bool            `json:"preferred"`
+	WorkflowCount         int32           `json:"workflow_count"`
+	BestMatchScore        float64         `json:"best_match_score"`
+	BestWorkflowID        string          `json:"best_workflow_id"`
+	MatchedDetectedLabels json.RawMessage `json:"matched_detected_labels"`
+	PreferenceReason      string          `json:"preference_reason"`
+}
+
+// actionTypeAuditResults converts the bounded JSON evidence attached by the
+// custom discovery tool into the typed DataStorage audit payload. Malformed
+// evidence is ignored rather than allowed to break an otherwise valid audit
+// event; the producer already validates this payload before emission.
+func actionTypeAuditResults(event *AuditEvent) []ogenclient.ActionTypeResultAudit {
+	raw := dataString(event.Data, "action_type_evidence")
+	if raw == "" {
+		return nil
+	}
+
+	var evidence []actionTypeAuditEvidence
+	if err := json.Unmarshal([]byte(raw), &evidence); err != nil {
+		return nil
+	}
+
+	results := make([]ogenclient.ActionTypeResultAudit, 0, len(evidence))
+	for _, item := range evidence {
+		result := ogenclient.ActionTypeResultAudit{
+			ActionType:       item.ActionType,
+			Rank:             item.Rank,
+			Preferred:        item.Preferred,
+			WorkflowCount:    item.WorkflowCount,
+			BestMatchScore:   item.BestMatchScore,
+			PreferenceReason: item.PreferenceReason,
+		}
+		if item.BestWorkflowID != "" {
+			result.BestWorkflowID.SetTo(item.BestWorkflowID)
+		}
+		if len(item.MatchedDetectedLabels) > 0 && string(item.MatchedDetectedLabels) != "null" {
+			var labels ogenclient.DetectedLabels
+			if err := json.Unmarshal(item.MatchedDetectedLabels, &labels); err == nil {
+				result.MatchedDetectedLabels.SetTo(labels)
+			}
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
 // hasDiscoveryFilters reports whether any signal-context filter dimension
 // was recorded on the event, matching the `if filters != nil` gate DS's
 // buildDiscoveryPayload used against its typed *models.WorkflowDiscoveryFilters.
@@ -227,5 +293,7 @@ func hasDiscoveryFilters(data map[string]interface{}) bool {
 		dataString(data, "component") != "" ||
 		dataString(data, "environment") != "" ||
 		dataString(data, "priority") != "" ||
-		dataBool(data, "detected_labels_present")
+		dataBool(data, "detected_labels_present") ||
+		data["custom_labels"] != nil ||
+		data["detected_labels"] != nil
 }

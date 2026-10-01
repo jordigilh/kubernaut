@@ -4308,6 +4308,41 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkflowResultAudit'
+    ActionTypeResultAudit:
+      type: object
+      required: [action_type, rank, preferred, workflow_count, best_match_score, preference_reason]
+      description: 'Bounded action-family ranking evidence for workflow discovery (BR-AUDIT-027, Issue #2478)'
+      properties:
+        action_type:
+          type: string
+          description: Taxonomy action type identifier
+        rank:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Global Step 1 rank before pagination
+        preferred:
+          type: boolean
+          description: Whether this is the first-ranked action family
+        workflow_count:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Number of matching workflows in this action family
+        best_match_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Internal best-workflow score retained for audit reconstruction only
+        best_workflow_id:
+          type: string
+          description: Identity of the workflow that supplied best_match_score
+        matched_detected_labels:
+          $ref: '#/components/schemas/DetectedLabels'
+        preference_reason:
+          type: string
+          description: Deterministic catalog explanation for the action-family rank
 
     WorkflowActionsResultsMetadata:
       type: object
@@ -4327,6 +4362,13 @@ components:
           description: Action entries actually returned by Step 1; omitted on historical records.
           items:
             $ref: '#/components/schemas/WorkflowActionResultAudit'
+        action_types:
+          type: array
+          description: |
+            Bounded Step 1 action-family ranking evidence. Scores and workflow
+            identities are audit-only and are never shown in the LLM response.
+          items:
+            $ref: '#/components/schemas/ActionTypeResultAudit'
 
     WorkflowActionResultAudit:
       type: object

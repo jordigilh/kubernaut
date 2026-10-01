@@ -235,6 +235,24 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-2478-004: Phase 3 honors advisory action-family ranking", func() {
+		It("should instruct the model to inspect preferred families first while preserving RCA discretion", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "config-crash", Namespace: "production", Severity: "critical", Message: "invalid nginx configuration",
+				},
+				RCASummary: "The RCA identified a Helm-managed configuration failure.",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("preferred"))
+			Expect(rendered).To(ContainSubstring("lower-ranked"))
+			Expect(rendered).To(ContainSubstring("rationale"))
+		})
+	})
+
 	Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 		Describe("UT-KA-715-001: Phase 3 prompt includes structured Phase 1 assessment", func() {
@@ -353,11 +371,11 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				phase1 := &prompt.Phase1Data{
-					Severity:               "high",
-					InvestigationOutcome:    "actionable",
-					Confidence:              0.88,
-					InvestigationAnalysis:   "Memory usage in the api-server container grew steadily from 180Mi to 256Mi over 6 hours. The leak correlates with unclosed gRPC streaming connections.",
-					ContributingFactors:     []string{"memory leak", "gRPC connection leak"},
+					Severity:              "high",
+					InvestigationOutcome:  "actionable",
+					Confidence:            0.88,
+					InvestigationAnalysis: "Memory usage in the api-server container grew steadily from 180Mi to 256Mi over 6 hours. The leak correlates with unclosed gRPC streaming connections.",
+					ContributingFactors:   []string{"memory leak", "gRPC connection leak"},
 					RemediationTarget: prompt.Phase1RemediationTarget{
 						Kind: "Deployment", Name: "api-server", Namespace: "production",
 					},
@@ -385,7 +403,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				phase1 := &prompt.Phase1Data{
-					Severity:            "high",
+					Severity:             "high",
 					InvestigationOutcome: "actionable",
 					Confidence:           0.88,
 					ContributingFactors:  []string{"memory leak"},
@@ -434,15 +452,15 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			count := 3
 			window := 30
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
-				Name:                      "HighMemoryUsage",
-				Namespace:                 "production",
-				Severity:                  "warning",
-				Message:                   "Memory above 90%",
-				IsDuplicate:               &isDup,
-				OccurrenceCount:           &count,
+				Name:                       "HighMemoryUsage",
+				Namespace:                  "production",
+				Severity:                   "warning",
+				Message:                    "Memory above 90%",
+				IsDuplicate:                &isDup,
+				OccurrenceCount:            &count,
 				DeduplicationWindowMinutes: &window,
-				FirstSeen:                 "2026-04-01T10:00:00Z",
-				LastSeen:                  "2026-04-01T10:30:00Z",
+				FirstSeen:                  "2026-04-01T10:00:00Z",
+				LastSeen:                   "2026-04-01T10:30:00Z",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("2026-04-01T10:00:00Z"),

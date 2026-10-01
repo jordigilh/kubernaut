@@ -1,0 +1,40 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: helm-rollback-v1
+spec:
+  version: "1.0.0"
+  description:
+    what: "Rolls a Helm-managed workload back to a known-good release revision"
+    whenToUse: "When the root cause affects a Helm-managed workload and rollback is safer than a direct patch"
+    whenNotToUse: "When the target is not managed by Helm or the release history is unavailable"
+    preconditions: "The target resource is managed by Helm and has a known-good release revision"
+
+  actionType: HelmRollback
+
+  labels:
+    severity: [warning]
+    environment: [production, staging]
+    component: [v1/Pod]
+    priority: P2
+
+  detectedLabels:
+    helmManaged: true
+
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/generic-restart:v1.0.0
+
+  parameters:
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the Helm-managed resource"
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the Helm-managed resource"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the Helm-managed resource"

@@ -357,7 +357,8 @@ func installKAE2ECRDs(ctx context.Context, kubeconfigPath string, writer io.Writ
 // Resources created:
 //
 //	production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
-//	            ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
+//	            ambiguous-pod, failed-analysis-pod, helm-managed-pod (Pods),
+//	            batch-job-pvc-expired (PVC)
 //	staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
 //	            re-enrichment to worker/staging preserves pdbProtected detection)
 //
@@ -540,6 +541,28 @@ spec:
         cpu: "50m"
 ---
 apiVersion: v1
+kind: Pod
+metadata:
+  name: helm-managed-pod
+  namespace: production
+  labels:
+    app: helm-managed-pod
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: test-release-1.0.0
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: batch-job-pvc-expired
@@ -578,7 +601,7 @@ spec:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl apply enrichment fixtures: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 10 resources)")
+	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 11 resources)")
 	return nil
 }
 

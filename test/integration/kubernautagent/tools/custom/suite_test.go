@@ -20,6 +20,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,7 +86,15 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		By("Starting envtest for DataStorage authentication (DD-AUTH-014)")
+		assetsDir := os.Getenv("KUBEBUILDER_ASSETS")
+		if assetsDir == "" {
+			out, err := exec.Command("setup-envtest", "use", "-p", "path").CombinedOutput()
+			if err == nil {
+				assetsDir = strings.TrimSpace(string(out))
+			}
+		}
 		sharedTestEnv := &envtest.Environment{
+			BinaryAssetsDirectory: assetsDir,
 			CRDDirectoryPaths:     []string{"../../../../../config/crd/bases"},
 			ErrorIfCRDPathMissing: true,
 		}
@@ -123,6 +134,8 @@ var _ = SynchronizedBeforeSuite(
 			{FixtureDir: "oom-recovery", Environment: "production"},
 			{FixtureDir: "oomkill-increase-memory", Environment: "production"},
 			{FixtureDir: "oom-recovery-aggressive", Environment: "production"},
+			{FixtureDir: "helm-rollback", Environment: "production"},
+			{FixtureDir: "generic-restart", Environment: "production"},
 		}
 		wfUUIDs, err := infrastructure.SeedWorkflowsViaDirectCRDCreation(
 			context.Background(), seedK8sClient, seedNamespace, testWorkflows, GinkgoWriter,

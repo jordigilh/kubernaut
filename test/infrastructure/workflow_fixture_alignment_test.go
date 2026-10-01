@@ -36,13 +36,13 @@ var _ = Describe("AIAnalysis workflow fixture context", func() {
 		Expect(workflow.Spec.Labels.Priority).To(Equal("*"))
 	})
 
-	It("UT-WORKFLOW-004-003: generic restart workflow matches arbitrary Pod priorities", func() {
+	It("UT-WORKFLOW-004-003: generic restart workflow matches arbitrary priorities and common targets", func() {
 		content, err := readWorkflowFixtureContent("generic-restart")
 		Expect(err).NotTo(HaveOccurred())
 
 		workflow := &rwv1alpha1.RemediationWorkflow{}
 		Expect(yaml.Unmarshal([]byte(content), workflow)).To(Succeed())
-		Expect(workflow.Spec.Labels.Component).To(Equal([]string{"v1/Pod"}))
+		Expect(workflow.Spec.Labels.Component).To(ConsistOf("v1/Pod", "apps/v1/Deployment"))
 		Expect(workflow.Spec.Labels.Environment).To(Equal([]string{"production", "staging", "test", "development"}))
 		Expect(workflow.Spec.Labels.Priority).To(Equal("*"))
 	})

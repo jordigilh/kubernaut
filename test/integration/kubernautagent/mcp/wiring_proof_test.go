@@ -36,8 +36,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -320,8 +320,8 @@ var _ = Describe("Pyramid Invariant: KA MCP Wiring Proofs", Label("integration",
 		})
 	})
 
-	Describe("IT-KA-1374-PF02-001: RemediationTarget cleared after conversation extraction [#1374]", func() {
-		It("should clear RemediationTarget before RunWorkflowDiscovery when RCA is extracted from conversation", func() {
+	Describe("IT-KA-1374-PF02-001: RCA target preserved after conversation extraction [#1374]", func() {
+		It("should preserve a valid RemediationTarget before RunWorkflowDiscovery when RCA is extracted from conversation", func() {
 			nsName := uniqueNamespace("pf02-target-clear")
 			createNamespace(context.Background(), sharedK8sClient, nsName)
 
@@ -359,13 +359,17 @@ var _ = Describe("Pyramid Invariant: KA MCP Wiring Proofs", Label("integration",
 			Expect(decErr).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("workflows_discovered"))
 
-			By("verifying RemediationTarget was empty when passed to RunWorkflowDiscovery")
+			By("verifying the valid RCA RemediationTarget was passed to RunWorkflowDiscovery")
 			targets := capRunner.getTargets()
 			Expect(targets).To(HaveLen(1),
 				"RunWorkflowDiscovery should have been called once")
-			Expect(targets[0]).To(Equal(katypes.RemediationTarget{}),
-				"PF02: RemediationTarget must be cleared after extraction from conversation "+
-					"to prevent SyncSignalFromRCA from overwriting authoritative signal identity")
+			Expect(targets[0]).To(Equal(katypes.RemediationTarget{
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+				APIVersion: "apps/v1",
+			}),
+				"PF02: valid RCA targets must survive extraction so cross-resource workflow discovery can use them")
 		})
 	})
 
