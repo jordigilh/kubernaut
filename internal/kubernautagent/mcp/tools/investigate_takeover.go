@@ -168,6 +168,10 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	// subsequent actions (discover_workflows) can extract RCA from the
 	// full conversation without relying on audit trace reconstruction.
 	t.appendConversationTurn(input.RRID, input.Message, response)
+	// A successful user turn supersedes any autonomous RCA that may have
+	// completed before this interactive request. Discovery must extract from
+	// the current conversation instead of selecting that stale result.
+	t.interactiveTurns.Store(input.RRID, struct{}{})
 
 	// Reset inactivity timer AFTER the LLM call completes. The pre-call reset
 	// (above) prevents timeout during user think-time; this post-call reset
@@ -248,6 +252,7 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)
+	t.interactiveTurns.Delete(input.RRID)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,

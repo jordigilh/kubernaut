@@ -1150,6 +1150,72 @@ var _ = Describe("kubernaut_investigate — discover_workflows takeover resilien
 			Expect(sess.DiscoveryResult).NotTo(BeNil())
 		})
 	})
+
+	Describe("UT-KA-DW-016: current interactive conversation supersedes stored autonomous RCA", func() {
+		It("should extract the RCA from the user-driven turn before workflow discovery", func() {
+			const rrID = "rr-dw-016"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-016",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "autonomous RCA identified the alert deployment",
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "api-server",
+					Namespace:  "production",
+				},
+			}
+			interactiveRCA := &katypes.InvestigationResult{
+				RCASummary: "interactive RCA identified the AuthorizationPolicy",
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "security.istio.io/v1",
+					Kind:       "AuthorizationPolicy",
+					Name:       "deny-all-traffic",
+					Namespace:  "production",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+			runner := &mockInvestigatorRunner{
+				response:  "The AuthorizationPolicy is causing the deny rate.",
+				rcaResult: interactiveRCA,
+			}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				runner,
+				&mockContextReconstructor{},
+				autoMgr,
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix AuthorizationPolicy"},
+				}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    rrID,
+				Action:  mcptools.ActionMessage,
+				Message: "What is the root cause?",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(runner.workflowDiscoveryRCA).NotTo(BeNil())
+			Expect(runner.workflowDiscoveryRCA.RCASummary).To(Equal(interactiveRCA.RCASummary))
+			Expect(runner.workflowDiscoveryRCA.RemediationTarget.APIVersion).To(Equal("security.istio.io/v1"))
+			Expect(runner.workflowDiscoveryRCA.RemediationTarget.Kind).To(Equal("AuthorizationPolicy"))
+		})
+	})
 })
 
 var _ = Describe("Issue #1437: discover_workflows target visibility", func() {

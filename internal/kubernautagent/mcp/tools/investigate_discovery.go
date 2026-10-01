@@ -246,10 +246,16 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 // resolveRCAForDiscovery obtains the structured RCA result used for Phase 3
 // workflow discovery.
 //
-// Preferred path: reuse the full InvestigationResult already produced by the
-// autonomous Phase 1 RCA and stored in the session manager. This preserves
-// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
-// the LLM emitted during the original investigation.
+// Preferred path when no user-driven turn has completed: reuse the full
+// InvestigationResult already produced by the autonomous Phase 1 RCA and
+// stored in the session manager. This preserves the complete
+// RemediationTarget (Kind, APIVersion, Name, Namespace) that the LLM emitted
+// during the original investigation.
+//
+// Once the current interactive session has processed a user turn, the
+// conversation takes precedence over that stored result. The user may have
+// supplied new evidence or corrected the autonomous RCA, including a
+// cross-resource remediation target.
 //
 // Fallback: if no stored result exists (e.g. pure interactive session),
 // reconstruct conversation from audit traces and re-extract RCA.
@@ -258,13 +264,19 @@ func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.Us
 // conversation exists, self-heal via triggerFreshInvestigationForDiscovery
 // instead of failing permanently -- see that function's doc comment for why.
 func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string, user mcpinternal.UserInfo) (*katypes.InvestigationResult, error) {
-	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
-		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
-			"rr_id", rrID,
-			"rca_target_kind", storedResult.RemediationTarget.Kind,
-			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
-			"rca_target_name", storedResult.RemediationTarget.Name)
-		return storedResult, nil
+	_, hasInteractiveTurn := t.interactiveTurns.Load(rrID)
+	if !hasInteractiveTurn {
+		if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
+			t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+				"rr_id", rrID,
+				"rca_target_kind", storedResult.RemediationTarget.Kind,
+				"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
+				"rca_target_name", storedResult.RemediationTarget.Name)
+			return storedResult, nil
+		}
+	} else {
+		t.logger.Info("discover_workflows: using current interactive conversation instead of stored RCA",
+			"rr_id", rrID)
 	}
 
 	messages := t.buildMessagesWithContext(rrID, "")

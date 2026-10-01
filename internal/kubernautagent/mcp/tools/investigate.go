@@ -304,6 +304,7 @@ type InvestigateTool struct {
 	notifyFn           func(sessionID, msg string) // optional: delivers timeout warnings to client
 	sessionMu          sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
 	reconHistory       sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
+	interactiveTurns   sync.Map                    // rrID -> struct{} (current session has a successful user turn)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
