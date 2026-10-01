@@ -138,6 +138,12 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
 				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
 			}},
+		{WorkflowID: "helm-rollback-v1", Name: "HelmManaged Remediation - Rollback Release", Description: "Rolls a Helm-managed workload back to a known-good release revision", ActionType: "HelmRollback", Severity: "warning", Component: []string{"v1/Pod"}, Priority: "P2", ExecutionEngine: "job", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the Helm-managed resource"},
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the Helm-managed resource"},
+				{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the Helm-managed resource"},
+			}},
 		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", Severity: "high", Component: []string{"apps/v1/Deployment"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/memory-optimize:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
@@ -156,7 +162,10 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "DRAIN_TIMEOUT_SECONDS", Type: "integer", Required: false, Description: "Timeout for drain operation in seconds"},
 			}},
 		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", Severity: "high", Component: []string{"v1/Pod"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "warning", Component: []string{"v1/Pod"}, Priority: "*", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
+		// #2478: retain the generic family for both Pod and Deployment targets;
+		// management-aware ranking is advisory and must not remove this RCA
+		// fallback from either common target shape.
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "warning", Component: []string{"apps/v1/Deployment", "v1/Pod"}, Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},

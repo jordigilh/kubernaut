@@ -238,6 +238,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(memoryEaterResourcePressureScenario())
 	r.Register(oomkilledScenario())
 	r.Register(crashloopScenario())
+	r.Register(helmManagedScenario())
 	r.Register(newSignalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
 	r.Register(newSignalScenario("istio_authz", []string{"istiohighdenyrate", "istio_high_deny"}, istioAuthzConfig()))
 
