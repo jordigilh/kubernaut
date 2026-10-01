@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	audittypes "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -39,10 +39,11 @@ import (
 
 func itToolCtx() context.Context {
 	return katypes.WithSignalContext(context.Background(), katypes.SignalContext{
-		Severity:     "critical",
-		ResourceKind: "Deployment",
-		Environment:  "production",
-		Priority:     "P0",
+		Severity:           "critical",
+		ResourceAPIVersion: "apps/v1",
+		ResourceKind:       "Deployment",
+		Environment:        "production",
+		Priority:           "P0",
 	})
 }
 
@@ -62,8 +63,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		}
 	})
 
-	Describe("IT-KA-433-033: list_available_actions queries the KA Catalog", func() {
-		It("should return action types from the Catalog", func() {
+	Describe("IT-KA-433-033: list_available_actions queries KA's informer-backed catalog", func() {
+		It("should return action types from the real workflow catalog", func() {
 			result, err := reg.Execute(itToolCtx(), "list_available_actions",
 				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -72,8 +73,130 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433-034: list_workflows searches the KA Catalog with criteria", func() {
-		It("should return seeded workflows from the Catalog", func() {
+	Describe("IT-KA-2478-002: production discovery dispatch returns ranked action evidence", func() {
+		It("should expose deterministic rank/preference fields without internal scores", func() {
+			result, err := reg.Execute(itToolCtx(), "list_available_actions", json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			var response struct {
+				ActionTypes []struct {
+					Rank      int  `json:"rank"`
+					Preferred bool `json:"preferred"`
+				} `json:"actionTypes"`
+			}
+			Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+			Expect(response.ActionTypes).NotTo(BeEmpty())
+			Expect(response.ActionTypes[0].Rank).To(Equal(1))
+			Expect(response.ActionTypes[0].Preferred).To(BeTrue())
+			Expect(result).NotTo(ContainSubstring("bestMatchScore"),
+				"numeric catalog scores are audit-only")
+		})
+	})
+
+	Describe("IT-KA-2478-003: KA audit store persists ranked discovery evidence", func() {
+		It("should persist bounded ranking evidence with compliance metadata queryable by correlation ID", func() {
+			correlationID := fmt.Sprintf("it-ka-2478-audit-%d", time.Now().UnixNano())
+			ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+				Severity:           "warning",
+				ResourceAPIVersion: "v1",
+				ResourceKind:       "Pod",
+				Environment:        "production",
+				Priority:           "P2",
+				RemediationID:      correlationID,
+				DetectedLabelsJSON: `{"helmManaged":true}`,
+			})
+
+			reg := registry.New()
+			for _, tool := range custom.NewAllTools(wfCatalog, kaaudit.NewDSAuditStore(ogenClient), logr.Discard()) {
+				reg.Register(tool)
+			}
+
+			result, err := reg.Execute(ctx, "list_available_actions", json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred(), "the real KA discovery dispatch must succeed")
+
+			var response struct {
+				ActionTypes []struct {
+					ActionType string `json:"actionType"`
+					Rank       int    `json:"rank"`
+					Preferred  bool   `json:"preferred"`
+				} `json:"actionTypes"`
+			}
+			Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+			Expect(response.ActionTypes).NotTo(BeEmpty())
+			Expect(response.ActionTypes[0].ActionType).To(Equal("HelmRollback"),
+				"BR-KA-017-007: Helm-aware action family must be preferred")
+			Expect(response.ActionTypes[0].Rank).To(Equal(1))
+			Expect(response.ActionTypes[0].Preferred).To(BeTrue())
+			Expect(result).NotTo(ContainSubstring("bestMatchScore"),
+				"ASVS V5.5.2: internal scores must not cross the LLM-facing boundary")
+
+			var persisted *ogenclient.AuditEvent
+			Eventually(func() bool {
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventType:     ogenclient.NewOptString(kaaudit.EventTypeActionsListed),
+					Limit:         ogenclient.NewOptInt(100),
+				}
+				resp, queryErr := ogenClient.QueryAuditEvents(ctx, params)
+				if queryErr != nil {
+					return false
+				}
+				for i := range resp.Data {
+					if resp.Data[i].EventType == kaaudit.EventTypeActionsListed {
+						event := resp.Data[i]
+						persisted = &event
+						return true
+					}
+				}
+				return false
+			}, 15*time.Second, 250*time.Millisecond).Should(BeTrue(),
+				"AU-2 / CC7.2: actions_listed must be queryable by correlation ID")
+
+			Expect(persisted.EventID.IsSet()).To(BeTrue(), "AU-3: persisted events require event_id")
+			Expect(persisted.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflow))
+			Expect(persisted.EventAction).To(Equal(kaaudit.ActionDiscovery))
+			Expect(persisted.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			Expect(persisted.CorrelationID).To(Equal(correlationID))
+			Expect(persisted.ActorType.IsSet()).To(BeTrue(), "AU-3: actor_type is required")
+			Expect(persisted.ActorType.Value).To(Equal("service"))
+			Expect(persisted.ActorID.IsSet()).To(BeTrue(), "AU-3: actor_id is required")
+			Expect(persisted.ActorID.Value).To(Equal("kubernaut-agent"))
+
+			payload, ok := persisted.EventData.GetWorkflowActionsListedAuditPayload()
+			Expect(ok).To(BeTrue(), "AU-3: event_data must use the typed actions-listed payload")
+			Expect(payload.Results.ActionTypes).NotTo(BeEmpty())
+			var helm, generic *ogenclient.ActionTypeResultAudit
+			for i := range payload.Results.ActionTypes {
+				action := &payload.Results.ActionTypes[i]
+				switch action.ActionType {
+				case "HelmRollback":
+					helm = action
+				case "RestartPod":
+					generic = action
+				}
+			}
+			Expect(helm).NotTo(BeNil())
+			Expect(helm.Rank).To(Equal(int32(1)))
+			Expect(helm.Preferred).To(BeTrue())
+			Expect(helm.BestMatchScore).To(BeNumerically(">=", 0))
+			Expect(helm.BestMatchScore).To(BeNumerically("<=", 1))
+			Expect(helm.BestWorkflowID.IsSet()).To(BeTrue())
+			Expect(helm.PreferenceReason).To(ContainSubstring("helmManaged=true"))
+			Expect(generic).NotTo(BeNil(), "generic action families remain auditable and selectable")
+			Expect(generic.Preferred).To(BeFalse())
+
+			filters, filtersSet := payload.Query.Filters.Get()
+			Expect(filtersSet).To(BeTrue(), "AU-3: signal filters must be reconstructable")
+			detected, detectedSet := filters.DetectedLabels.Get()
+			Expect(detectedSet).To(BeTrue())
+			helmManaged, helmManagedSet := detected.HelmManaged.Get()
+			Expect(helmManagedSet).To(BeTrue())
+			Expect(helmManaged).To(BeTrue())
+		})
+	})
+
+	Describe("IT-KA-433-034: list_workflows searches the real workflow catalog with criteria", func() {
+		It("should return seeded workflows from the informer-backed catalog", func() {
 			result, err := reg.Execute(itToolCtx(), "list_workflows",
 				json.RawMessage(`{"action_type":"IncreaseMemory"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -82,8 +205,8 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433-035: get_workflow retrieves a specific workflow from the Catalog", func() {
-		It("should resolve the full Catalog record by UUID and return its LLM-safe projection", func() {
+	Describe("IT-KA-433-035: get_workflow retrieves a specific workflow from the catalog", func() {
+		It("should return the seeded workflow definition by UUID", func() {
 			Expect(workflowUUIDs).NotTo(BeEmpty(), "workflow UUIDs must be seeded")
 
 			wfUUID, ok := workflowUUIDs["oom-recovery-v1:production"]
@@ -169,8 +292,8 @@ var _ = Describe("IT-KA-2459-001: discovery results persist through the buffered
 			Severity: "critical", ResourceKind: "Pod", Environment: "production", Priority: "P1",
 			RemediationID: remediationID,
 		})
-		store, err := audittypes.NewBufferedDSAuditStore(dsAuditClient, logr.Discard(),
-			audittypes.WithFlushInterval(time.Hour), audittypes.WithBufferSize(20), audittypes.WithBatchSize(20))
+		store, err := kaaudit.NewBufferedDSAuditStore(dsAuditClient, logr.Discard(),
+			kaaudit.WithFlushInterval(time.Hour), kaaudit.WithBufferSize(20), kaaudit.WithBatchSize(20))
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			Expect(store.Close()).To(Succeed())
@@ -240,7 +363,7 @@ var _ = Describe("IT-KA-2459-001: discovery results persist through the buffered
 		Expect(json.Unmarshal(rawBody, &rawEnvelope)).To(Succeed())
 		Expect(rawEnvelope.Data).To(HaveLen(2))
 		for _, rawEvent := range rawEnvelope.Data {
-			Expect(rawEvent.EventType).To(Or(Equal(audittypes.EventTypeActionsListed), Equal(audittypes.EventTypeWorkflowsListed)))
+			Expect(rawEvent.EventType).To(Or(Equal(kaaudit.EventTypeActionsListed), Equal(kaaudit.EventTypeWorkflowsListed)))
 			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("parameters"))
 			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("execution_bundle"))
 			Expect(string(rawEvent.EventData)).NotTo(ContainSubstring("synthetic-sensitive-audit-sentinel-2459"))
@@ -258,9 +381,9 @@ var _ = Describe("IT-KA-2459-001: discovery results persist through the buffered
 			Expect(event.ActorID.Value).To(Equal("kubernaut-agent"))
 			Expect(event.EventID.Set).To(BeTrue())
 			switch event.EventType {
-			case audittypes.EventTypeActionsListed:
+			case kaaudit.EventTypeActionsListed:
 				actionsEvent = event
-			case audittypes.EventTypeWorkflowsListed:
+			case kaaudit.EventTypeWorkflowsListed:
 				workflowsEvent = event
 			}
 		}
@@ -356,7 +479,7 @@ var _ = Describe("IT-KA-2459-001: discovery results persist through the buffered
 	})
 })
 
-var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func() {
+var _ = Describe("Cursor-Based Pagination over KA's Workflow Catalog — #688", func() {
 
 	var reg *registry.Registry
 
@@ -369,7 +492,7 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 		}
 	})
 
-	Describe("IT-KA-688-401: list_workflows cursor pagination through real DS HTTP wire", func() {
+	Describe("IT-KA-688-401: list_workflows cursor pagination through the catalog tool wire", func() {
 		// Two seeded IncreaseMemoryLimits workflows match the hardcoded filters
 		// (oomkill-increase-memory-v1 and oom-recovery-aggressive-v1 both have
 		// severity=critical, component=*, environment=production, priority=*).

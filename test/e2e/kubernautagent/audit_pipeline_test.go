@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -38,6 +39,66 @@ import (
 // Business Requirements: BR-AUDIT-005, DD-KA-001 v1.2
 //
 // Purpose: Validate audit event persistence to DataStorage for compliance and debugging
+
+var workflowDiscoveryEventTypes = []string{
+	kaaudit.EventTypeActionsListed,
+	kaaudit.EventTypeWorkflowsListed,
+	kaaudit.EventTypeWorkflowRetrieved,
+	kaaudit.EventTypeSelectionValidated,
+}
+
+func completeWorkflowDiscoveryTrace(events []ogenclient.AuditEvent, correlationID string) (map[string]ogenclient.AuditEvent, bool) {
+	trace := make(map[string]ogenclient.AuditEvent, len(workflowDiscoveryEventTypes))
+	for _, event := range events {
+		if event.CorrelationID != correlationID {
+			continue
+		}
+		for _, eventType := range workflowDiscoveryEventTypes {
+			if event.EventType == eventType {
+				trace[eventType] = event
+				break
+			}
+		}
+	}
+	return trace, len(trace) == len(workflowDiscoveryEventTypes)
+}
+
+func assertWorkflowDiscoveryTrace(trace map[string]ogenclient.AuditEvent, correlationID string) {
+	expectedActions := map[string]string{
+		kaaudit.EventTypeActionsListed:      kaaudit.ActionDiscovery,
+		kaaudit.EventTypeWorkflowsListed:    kaaudit.ActionDiscovery,
+		kaaudit.EventTypeWorkflowRetrieved:  kaaudit.ActionRetrieve,
+		kaaudit.EventTypeSelectionValidated: kaaudit.ActionValidate,
+	}
+	for eventType, eventAction := range expectedActions {
+		event, ok := trace[eventType]
+		Expect(ok).To(BeTrue(), "CC7.2: %s must be reconstructable by correlation ID", eventType)
+		Expect(event.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflow),
+			"AU-3: workflow discovery events must use the workflow category")
+		Expect(event.EventAction).To(Equal(eventAction))
+		Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+		Expect(event.EventID.IsSet()).To(BeTrue(), "AU-3: %s must carry event_id", eventType)
+		Expect(event.ActorType.IsSet()).To(BeTrue(), "AU-3: %s must carry actor_type", eventType)
+		Expect(event.ActorID.IsSet()).To(BeTrue(), "AU-3: %s must carry actor_id", eventType)
+		Expect(event.ActorType.Value).To(Equal("service"))
+		Expect(event.ActorID.Value).To(Equal("kubernaut-agent"))
+		Expect(event.CorrelationID).To(Equal(correlationID))
+		switch eventType {
+		case kaaudit.EventTypeActionsListed:
+			payload, payloadOK := event.EventData.GetWorkflowActionsListedAuditPayload()
+			Expect(payloadOK).To(BeTrue(), "AU-3: %s must use the typed actions-listed payload", eventType)
+			Expect(string(payload.EventType)).To(Equal(eventType))
+		case kaaudit.EventTypeWorkflowsListed:
+			payload, payloadOK := event.EventData.GetWorkflowCandidatesListedAuditPayload()
+			Expect(payloadOK).To(BeTrue(), "AU-3: %s must use the typed candidates-listed payload", eventType)
+			Expect(string(payload.EventType)).To(Equal(eventType))
+		default:
+			payload, payloadOK := event.EventData.GetWorkflowDiscoveryAuditPayload()
+			Expect(payloadOK).To(BeTrue(), "AU-3: %s must use the typed discovery payload", eventType)
+			Expect(string(payload.EventType)).To(Equal(eventType))
+		}
+	}
+}
 
 var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 
@@ -602,9 +663,9 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 				"LLM response event must be persisted (basic audit pipeline)")
 
-			// After #1111 fix, KA forwards remediation_id to DS discovery tools.
-			// DS emits workflow.catalog.* events only when mock LLM issues
-			// tool_call responses that invoke the discovery tools. Best-effort check.
+			// After #1111 fix, KA forwards remediation_id to its cache-backed
+			// discovery tools. KA emits workflow.catalog.* events when mock LLM
+			// tool_call responses invoke the discovery tools. Best-effort check.
 			hasActionsListed := false
 			hasWorkflowsListed := false
 			for _, event := range events {
@@ -627,6 +688,171 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			} else {
 				GinkgoWriter.Println("⚠️  workflow.catalog.workflows_listed not found — mock LLM may not have triggered discovery tools")
 			}
+		})
+	})
+
+	Context("TP-2478: Ranked action-family discovery journey", func() {
+		It("E2E-KA-2478-001: persists ranked action-family evidence for a completed selection", func() {
+			// BR-KA-017-001, BR-AUDIT-005; FedRAMP AU-2/AU-3; SOC 2 CC7.2.
+			remediationID := "test-audit-2478-001-" + time.Now().Format("20060102150405")
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-2478-001",
+				RemediationID:         remediationID,
+				SignalName:            "HelmManagedConfigFailure",
+				Severity:              "warning",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "production",
+				ResourceKind:          "Pod",
+				ResourceName:          "helm-managed-pod",
+				ErrorMessage:          "Helm release introduced an invalid configuration revision",
+				Environment:           "production",
+				Priority:              "P2",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+			}
+
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).NotTo(HaveOccurred(), "the three-step discovery journey should complete")
+			Expect(result).NotTo(BeNil())
+			Expect(result.SelectedWorkflow).NotTo(BeNil(), "selection must complete after ranked discovery")
+
+			var actionPayload *ogenclient.WorkflowActionsListedAuditPayload
+			var discoveryTrace map[string]ogenclient.AuditEvent
+			findRankedActions := func() bool {
+				resp, queryErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if queryErr != nil {
+					return false
+				}
+				for i := range resp.Data {
+					if resp.Data[i].EventType != kaaudit.EventTypeActionsListed {
+						continue
+					}
+					payload, ok := resp.Data[i].EventData.GetWorkflowActionsListedAuditPayload()
+					if ok && len(payload.Results.ActionTypes) > 0 {
+						actionPayload = &payload
+					}
+				}
+				var complete bool
+				discoveryTrace, complete = completeWorkflowDiscoveryTrace(resp.Data, remediationID)
+				return actionPayload != nil && complete
+			}
+			Eventually(findRankedActions, 30*time.Second, time.Second).Should(BeTrue(),
+				"the complete workflow discovery trace must persist by remediation_id")
+
+			Expect(actionPayload).NotTo(BeNil())
+			assertWorkflowDiscoveryTrace(discoveryTrace, remediationID)
+			Expect(actionPayload.Results.ActionTypes).NotTo(BeEmpty())
+			preferred := actionPayload.Results.ActionTypes[0]
+			Expect(preferred.ActionType).To(Equal("HelmRollback"),
+				"the exact management-aware family must be preferred for a Helm-labeled target")
+			Expect(preferred.Rank).To(Equal(int32(1)))
+			Expect(preferred.Preferred).To(BeTrue())
+			Expect(preferred.PreferenceReason).To(ContainSubstring("helmManaged=true"))
+			matched, matchedSet := preferred.MatchedDetectedLabels.Get()
+			Expect(matchedSet).To(BeTrue())
+			helmManaged, helmManagedSet := matched.HelmManaged.Get()
+			Expect(helmManagedSet).To(BeTrue())
+			Expect(helmManaged).To(BeTrue())
+
+			var selected map[string]interface{}
+			Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selected)).To(Succeed())
+			selectedWorkflowID, selectedWorkflowIDSet := selected["workflow_id"].(string)
+			Expect(selectedWorkflowIDSet).To(BeTrue())
+			bestWorkflowID, bestWorkflowIDSet := preferred.BestWorkflowID.Get()
+			Expect(bestWorkflowIDSet).To(BeTrue())
+			Expect(selectedWorkflowID).To(Equal(bestWorkflowID),
+				"the completed selection must use the preferred action family's best workflow")
+
+			genericFound := false
+			for i, action := range actionPayload.Results.ActionTypes {
+				Expect(action.Rank).To(Equal(int32(i+1)), "rank must remain global across the persisted page")
+				Expect(action.BestMatchScore).To(BeNumerically(">=", 0))
+				Expect(action.BestMatchScore).To(BeNumerically("<=", 1))
+				if action.ActionType == "RestartPod" {
+					genericFound = true
+					Expect(action.Preferred).To(BeFalse(), "generic action family remains available but is not preferred")
+				}
+			}
+			Expect(genericFound).To(BeTrue(), "generic RestartPod must remain available for model discretion")
+		})
+
+		It("E2E-KA-2478-002: permits a generic fallback when no management label matches", func() {
+			// BR-KA-017-001, AC-6; FedRAMP AC-6/SI-10; SOC 2 CC7.2.
+			remediationID := "test-audit-2478-002-" + time.Now().Format("20060102150405")
+			spec := agentsessionv1.AgentSessionSpec{
+				RemediationRequestRef: agentsessionv1.ObjectRef{Name: remediationID, Namespace: sharedNamespace},
+				IncidentID:            "test-audit-2478-002",
+				RemediationID:         remediationID,
+				SignalName:            "UnclassifiedSignal2478",
+				Severity:              "warning",
+				SignalSource:          "kubernetes",
+				ResourceNamespace:     "default",
+				ResourceKind:          "Pod",
+				ResourceName:          "test-pod",
+				ErrorMessage:          "No management-specific evidence is present",
+				Environment:           "production",
+				Priority:              "P2",
+				RiskTolerance:         "medium",
+				BusinessCategory:      "standard",
+			}
+
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.SelectedWorkflow).NotTo(BeNil(), "generic fallback should remain selectable")
+
+			var actionPayload *ogenclient.WorkflowActionsListedAuditPayload
+			var discoveryTrace map[string]ogenclient.AuditEvent
+			findRankedActions := func() bool {
+				resp, queryErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if queryErr != nil {
+					return false
+				}
+				for i := range resp.Data {
+					if resp.Data[i].EventType != kaaudit.EventTypeActionsListed {
+						continue
+					}
+					payload, ok := resp.Data[i].EventData.GetWorkflowActionsListedAuditPayload()
+					if ok && len(payload.Results.ActionTypes) > 0 {
+						actionPayload = &payload
+					}
+				}
+				var complete bool
+				discoveryTrace, complete = completeWorkflowDiscoveryTrace(resp.Data, remediationID)
+				return actionPayload != nil && complete
+			}
+			Eventually(findRankedActions, 30*time.Second, time.Second).Should(BeTrue(),
+				"generic fallback discovery and selection must be reconstructable by correlation ID")
+			assertWorkflowDiscoveryTrace(discoveryTrace, remediationID)
+
+			var generic *ogenclient.ActionTypeResultAudit
+			for i := range actionPayload.Results.ActionTypes {
+				if actionPayload.Results.ActionTypes[i].ActionType == "RestartPod" {
+					generic = &actionPayload.Results.ActionTypes[i]
+					break
+				}
+			}
+			Expect(generic).NotTo(BeNil(), "generic RestartPod must remain available for an RCA-driven override")
+			Expect(generic.Preferred).To(BeFalse(), "the model may override a lower-ranked generic family")
+			Expect(generic.PreferenceReason).To(Equal("highest-scoring matching workflow"))
+			selectedWorkflowID, selectedWorkflowIDSet := func() (string, bool) {
+				var selected map[string]interface{}
+				if err := json.Unmarshal(result.SelectedWorkflow.Raw, &selected); err != nil {
+					return "", false
+				}
+				workflowID, ok := selected["workflow_id"].(string)
+				return workflowID, ok
+			}()
+			Expect(selectedWorkflowIDSet).To(BeTrue())
+			bestWorkflowID, bestWorkflowIDSet := generic.BestWorkflowID.Get()
+			Expect(bestWorkflowIDSet).To(BeTrue())
+			Expect(selectedWorkflowID).To(Equal(bestWorkflowID),
+				"the generic workflow remains selectable even when it is not ranked first")
 		})
 	})
 

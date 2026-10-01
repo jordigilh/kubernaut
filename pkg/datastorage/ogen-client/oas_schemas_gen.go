@@ -4221,6 +4221,106 @@ func (s *ActionTypeDescriptionPayload) SetPreconditions(val OptString) {
 	s.Preconditions = val
 }
 
+// Bounded action-family ranking evidence for workflow discovery (BR-AUDIT-027, Issue #2478).
+// Ref: #/components/schemas/ActionTypeResultAudit
+type ActionTypeResultAudit struct {
+	// Taxonomy action type identifier.
+	ActionType string `json:"action_type"`
+	// Global Step 1 rank before pagination.
+	Rank int32 `json:"rank"`
+	// Whether this is the first-ranked action family.
+	Preferred bool `json:"preferred"`
+	// Number of matching workflows in this action family.
+	WorkflowCount int32 `json:"workflow_count"`
+	// Internal best-workflow score retained for audit reconstruction only.
+	BestMatchScore float64 `json:"best_match_score"`
+	// Identity of the workflow that supplied best_match_score.
+	BestWorkflowID        OptString         `json:"best_workflow_id"`
+	MatchedDetectedLabels OptDetectedLabels `json:"matched_detected_labels"`
+	// Deterministic catalog explanation for the action-family rank.
+	PreferenceReason string `json:"preference_reason"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeResultAudit) GetActionType() string {
+	return s.ActionType
+}
+
+// GetRank returns the value of Rank.
+func (s *ActionTypeResultAudit) GetRank() int32 {
+	return s.Rank
+}
+
+// GetPreferred returns the value of Preferred.
+func (s *ActionTypeResultAudit) GetPreferred() bool {
+	return s.Preferred
+}
+
+// GetWorkflowCount returns the value of WorkflowCount.
+func (s *ActionTypeResultAudit) GetWorkflowCount() int32 {
+	return s.WorkflowCount
+}
+
+// GetBestMatchScore returns the value of BestMatchScore.
+func (s *ActionTypeResultAudit) GetBestMatchScore() float64 {
+	return s.BestMatchScore
+}
+
+// GetBestWorkflowID returns the value of BestWorkflowID.
+func (s *ActionTypeResultAudit) GetBestWorkflowID() OptString {
+	return s.BestWorkflowID
+}
+
+// GetMatchedDetectedLabels returns the value of MatchedDetectedLabels.
+func (s *ActionTypeResultAudit) GetMatchedDetectedLabels() OptDetectedLabels {
+	return s.MatchedDetectedLabels
+}
+
+// GetPreferenceReason returns the value of PreferenceReason.
+func (s *ActionTypeResultAudit) GetPreferenceReason() string {
+	return s.PreferenceReason
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeResultAudit) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetRank sets the value of Rank.
+func (s *ActionTypeResultAudit) SetRank(val int32) {
+	s.Rank = val
+}
+
+// SetPreferred sets the value of Preferred.
+func (s *ActionTypeResultAudit) SetPreferred(val bool) {
+	s.Preferred = val
+}
+
+// SetWorkflowCount sets the value of WorkflowCount.
+func (s *ActionTypeResultAudit) SetWorkflowCount(val int32) {
+	s.WorkflowCount = val
+}
+
+// SetBestMatchScore sets the value of BestMatchScore.
+func (s *ActionTypeResultAudit) SetBestMatchScore(val float64) {
+	s.BestMatchScore = val
+}
+
+// SetBestWorkflowID sets the value of BestWorkflowID.
+func (s *ActionTypeResultAudit) SetBestWorkflowID(val OptString) {
+	s.BestWorkflowID = val
+}
+
+// SetMatchedDetectedLabels sets the value of MatchedDetectedLabels.
+func (s *ActionTypeResultAudit) SetMatchedDetectedLabels(val OptDetectedLabels) {
+	s.MatchedDetectedLabels = val
+}
+
+// SetPreferenceReason sets the value of PreferenceReason.
+func (s *ActionTypeResultAudit) SetPreferenceReason(val string) {
+	s.PreferenceReason = val
+}
+
 // AW audit payload for ActionType CRD admission events.
 // Ref: #/components/schemas/ActionTypeWebhookAuditPayload
 type ActionTypeWebhookAuditPayload struct {
@@ -33575,6 +33675,9 @@ type WorkflowActionsResultsMetadata struct {
 	Returned int32 `json:"returned"`
 	// Action entries actually returned by Step 1; omitted on historical records.
 	Actions []WorkflowActionResultAudit `json:"actions"`
+	// Bounded Step 1 action-family ranking evidence. Scores and workflow
+	// identities are audit-only and are never shown in the LLM response.
+	ActionTypes []ActionTypeResultAudit `json:"action_types"`
 }
 
 // GetTotalFound returns the value of TotalFound.
@@ -33592,6 +33695,11 @@ func (s *WorkflowActionsResultsMetadata) GetActions() []WorkflowActionResultAudi
 	return s.Actions
 }
 
+// GetActionTypes returns the value of ActionTypes.
+func (s *WorkflowActionsResultsMetadata) GetActionTypes() []ActionTypeResultAudit {
+	return s.ActionTypes
+}
+
 // SetTotalFound sets the value of TotalFound.
 func (s *WorkflowActionsResultsMetadata) SetTotalFound(val int32) {
 	s.TotalFound = val
@@ -33605,6 +33713,11 @@ func (s *WorkflowActionsResultsMetadata) SetReturned(val int32) {
 // SetActions sets the value of Actions.
 func (s *WorkflowActionsResultsMetadata) SetActions(val []WorkflowActionResultAudit) {
 	s.Actions = val
+}
+
+// SetActionTypes sets the value of ActionTypes.
+func (s *WorkflowActionsResultsMetadata) SetActionTypes(val []ActionTypeResultAudit) {
+	s.ActionTypes = val
 }
 
 // Event-specific audit payload for Step 2 workflow candidates returned

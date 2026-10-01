@@ -18,6 +18,7 @@ package custom
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -59,6 +60,9 @@ func applyDiscoveryFilterData(data map[string]interface{}, filters *models.Workf
 		data["detected_labels_present"] = true
 		data["detected_labels_json"] = string(serialized)
 	}
+	if filters.CustomLabels != nil {
+		data["custom_labels"] = filters.CustomLabels
+	}
 	return nil
 }
 
@@ -70,6 +74,42 @@ func correlationIDFromFilters(filters *models.WorkflowDiscoveryFilters, fallback
 		return filters.RemediationID
 	}
 	return fallback
+}
+
+// actionTypeAuditEvidence is the bounded, structured evidence persisted for
+// each action family returned by Step 1. The score and best workflow identity
+// stay audit-only; the LLM-facing ActionTypeEntry deliberately omits them.
+type actionTypeAuditEvidence struct {
+	ActionType            string                 `json:"action_type"`
+	Rank                  int                    `json:"rank"`
+	Preferred             bool                   `json:"preferred"`
+	WorkflowCount         int                    `json:"workflow_count"`
+	BestMatchScore        float64                `json:"best_match_score"`
+	BestWorkflowID        string                 `json:"best_workflow_id,omitempty"`
+	MatchedDetectedLabels *models.DetectedLabels `json:"matched_detected_labels,omitempty"`
+	PreferenceReason      string                 `json:"preference_reason"`
+}
+
+func encodeActionTypeAuditEvidence(entries []models.ActionTypeEntry) (string, error) {
+	evidence := make([]actionTypeAuditEvidence, 0, len(entries))
+	for _, entry := range entries {
+		evidence = append(evidence, actionTypeAuditEvidence{
+			ActionType:            entry.ActionType,
+			Rank:                  entry.Rank,
+			Preferred:             entry.Preferred,
+			WorkflowCount:         entry.WorkflowCount,
+			BestMatchScore:        entry.BestMatchScore,
+			BestWorkflowID:        entry.BestWorkflowID,
+			MatchedDetectedLabels: entry.MatchedDetectedLabels,
+			PreferenceReason:      entry.PreferenceReason,
+		})
+	}
+
+	raw, err := json.Marshal(evidence)
+	if err != nil {
+		return "", fmt.Errorf("marshaling action type audit evidence: %w", err)
+	}
+	return string(raw), nil
 }
 
 // emitAuditEvent emits workflow.catalog.actions_listed (BR-AUDIT-023, Step 1).
@@ -87,6 +127,11 @@ func (t *listActionsTool) emitAuditEvent(ctx context.Context, filters *models.Wo
 	ev.Data["limit"] = page.Limit
 	ev.Data["actions"] = actionAuditResults(entries)
 	ev.Data["duration_ms"] = durationMs
+	if evidence, err := encodeActionTypeAuditEvidence(entries); err != nil {
+		t.logger.Error(err, "failed to encode action type audit evidence")
+	} else {
+		ev.Data["action_type_evidence"] = evidence
+	}
 	if err := applyDiscoveryFilterData(ev.Data, filters); err != nil {
 		t.logger.Error(err, "workflow discovery audit context unavailable")
 	}

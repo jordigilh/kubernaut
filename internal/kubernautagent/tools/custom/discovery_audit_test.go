@@ -59,7 +59,16 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 	BeforeEach(func() {
 		fake = &fakeWorkflowDS{
 			listActionsEntries: []models.ActionTypeEntry{
-				{ActionType: "ScaleReplicas", Description: models.ActionTypeDescription{What: "test", WhenToUse: "test"}, WorkflowCount: 1},
+				{
+					ActionType:       "ScaleReplicas",
+					Description:      models.ActionTypeDescription{What: "test", WhenToUse: "test"},
+					WorkflowCount:    1,
+					Rank:             1,
+					Preferred:        true,
+					BestMatchScore:   0.5,
+					BestWorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
+					PreferenceReason: "highest-scoring matching workflow",
+				},
 			},
 			listActionsTotal: 1,
 			listWorkflowsEntries: []models.RemediationWorkflow{
@@ -143,6 +152,27 @@ var _ = Describe("IT-KA-1677-AUDIT-001..004: workflow discovery tools emit catal
 			Expect(ev.Data["returned"]).To(Equal(1))
 			Expect(ev.Data["offset"]).To(Equal(1))
 			Expect(ev.Data["limit"]).To(Equal(1))
+		})
+	})
+
+	Describe("IT-KA-2478-AUDIT-001: ranked action-family evidence is preserved", func() {
+		It("should retain rank, score, workflow identity, and preference reason with correlation", func() {
+			allTools := newAuditedTools(fake, store)
+			_, err := allTools[0].Execute(ctx, json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(store.events).To(HaveLen(1))
+			raw, ok := store.events[0].Data["action_type_evidence"].(string)
+			Expect(ok).To(BeTrue(), "bounded action ranking evidence must be attached to the audit event")
+
+			var evidence []map[string]interface{}
+			Expect(json.Unmarshal([]byte(raw), &evidence)).To(Succeed())
+			Expect(evidence).To(HaveLen(1))
+			Expect(evidence[0]).To(HaveKeyWithValue("action_type", "ScaleReplicas"))
+			Expect(evidence[0]).To(HaveKeyWithValue("rank", BeNumerically("==", 1)))
+			Expect(evidence[0]).To(HaveKeyWithValue("best_match_score", BeNumerically("~", 0.5, 0.0001)))
+			Expect(evidence[0]).To(HaveKeyWithValue("best_workflow_id", "550e8400-e29b-41d4-a716-446655440000"))
+			Expect(evidence[0]).To(HaveKeyWithValue("preference_reason", "highest-scoring matching workflow"))
 		})
 	})
 
