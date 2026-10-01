@@ -135,18 +135,46 @@ var detectedBoolWeights = map[string]float64{
 	"cdiManaged":      detectedLabelWeights["cdi_managed"],
 }
 
+var detectedBoolEvidenceFields = []struct {
+	get func(models.DetectedLabels) bool
+	set func(*models.DetectedLabels)
+}{
+	{func(d models.DetectedLabels) bool { return d.GitOpsManaged }, func(d *models.DetectedLabels) { d.GitOpsManaged = true }},
+	{func(d models.DetectedLabels) bool { return d.PDBProtected }, func(d *models.DetectedLabels) { d.PDBProtected = true }},
+	{func(d models.DetectedLabels) bool { return d.HPAEnabled }, func(d *models.DetectedLabels) { d.HPAEnabled = true }},
+	{func(d models.DetectedLabels) bool { return d.Stateful }, func(d *models.DetectedLabels) { d.Stateful = true }},
+	{func(d models.DetectedLabels) bool { return d.HelmManaged }, func(d *models.DetectedLabels) { d.HelmManaged = true }},
+	{func(d models.DetectedLabels) bool { return d.NetworkIsolated }, func(d *models.DetectedLabels) { d.NetworkIsolated = true }},
+	{func(d models.DetectedLabels) bool { return d.VirtualMachine }, func(d *models.DetectedLabels) { d.VirtualMachine = true }},
+	{func(d models.DetectedLabels) bool { return d.LiveMigratable }, func(d *models.DetectedLabels) { d.LiveMigratable = true }},
+	{func(d models.DetectedLabels) bool { return d.CDIManaged }, func(d *models.DetectedLabels) { d.CDIManaged = true }},
+}
+
 // detectedWildcardStringFields describes the three wildcard-capable string
 // detected-label fields, their DD-WORKFLOW-004 weight, and the allowed enum
 // values used to sanitize the query-side value (mirrors
 // appendWildcardStringBoostCase's allowedValues parameter).
 var detectedWildcardStringFields = []struct {
 	get     func(models.DetectedLabels) string
+	set     func(*models.DetectedLabels, string)
 	weight  float64
 	allowed []string
 }{
-	{func(d models.DetectedLabels) string { return d.GitOpsTool }, detectedLabelWeights["git_ops_tool"], []string{"argocd", "flux"}},
-	{func(d models.DetectedLabels) string { return d.ServiceMesh }, detectedLabelWeights["service_mesh"], []string{"istio", "linkerd"}},
-	{func(d models.DetectedLabels) string { return d.StorageBackend }, detectedLabelWeights["storage_backend"], []string{"odf-ceph", "lvms", "local"}},
+	{
+		get:    func(d models.DetectedLabels) string { return d.GitOpsTool },
+		set:    func(d *models.DetectedLabels, value string) { d.GitOpsTool = value },
+		weight: detectedLabelWeights["git_ops_tool"], allowed: []string{"argocd", "flux"},
+	},
+	{
+		get:    func(d models.DetectedLabels) string { return d.ServiceMesh },
+		set:    func(d *models.DetectedLabels, value string) { d.ServiceMesh = value },
+		weight: detectedLabelWeights["service_mesh"], allowed: []string{"istio", "linkerd"},
+	},
+	{
+		get:    func(d models.DetectedLabels) string { return d.StorageBackend },
+		set:    func(d *models.DetectedLabels, value string) { d.StorageBackend = value },
+		weight: detectedLabelWeights["storage_backend"], allowed: []string{"odf-ceph", "lvms", "local"},
+	},
 }
 
 // detectedLabelsBoost computes the scoring boost contributed by
@@ -173,6 +201,105 @@ func detectedLabelsBoost(workflowDetected models.DetectedLabels, filterDetected 
 	}
 
 	return boost
+}
+
+// matchedDetectedLabelsEvidence returns the positive detected-label
+// dimensions that contributed an exact or wildcard-compatible match to the
+// workflow score. The result is deliberately sparse and contains no failed or
+// negative detections, so it is safe to expose as bounded catalog evidence.
+func matchedDetectedLabelsEvidence(workflowDetected models.DetectedLabels, filterDetected *models.DetectedLabels) *models.DetectedLabels {
+	if filterDetected == nil || filterDetected.IsEmpty() {
+		return nil
+	}
+
+	matched := &models.DetectedLabels{}
+	for _, field := range detectedBoolEvidenceFields {
+		if field.get(*filterDetected) && field.get(workflowDetected) {
+			field.set(matched)
+		}
+	}
+
+	for _, field := range detectedWildcardStringFields {
+		filterValue := field.get(*filterDetected)
+		workflowValue := field.get(workflowDetected)
+		if filterValue != "" && wildcardStringMatch(filterValue, workflowValue, field.allowed) {
+			field.set(matched, evidenceStringValue(filterValue, workflowValue))
+		}
+	}
+
+	if matched.IsEmpty() {
+		return nil
+	}
+	return matched
+}
+
+// wildcardStringMatch mirrors wildcardStringFieldBoost's match semantics
+// without returning a score. It is shared by the evidence builder so the
+// explanation cannot claim a label match that did not affect ranking.
+func wildcardStringMatch(filterValue, workflowValue string, allowedValues []string) bool {
+	if filterValue == "*" {
+		return workflowValue != ""
+	}
+	sanitized := sanitizeEnumValue(filterValue, allowedValues)
+	return sanitized != "" && (workflowValue == sanitized || workflowValue == "*")
+}
+
+// evidenceStringValue reports the concrete value that matched. For a
+// workflow-side wildcard, the requested query value is more useful to the
+// LLM/operator than the literal wildcard.
+func evidenceStringValue(filterValue, workflowValue string) string {
+	if workflowValue == "*" {
+		return filterValue
+	}
+	return workflowValue
+}
+
+// actionTypePreferenceReason creates deterministic, bounded text for the
+// model-facing response. It is catalog evidence, not an LLM rationale.
+func actionTypePreferenceReason(matched *models.DetectedLabels) string {
+	if matched == nil || matched.IsEmpty() {
+		return "highest-scoring matching workflow"
+	}
+
+	labels := make([]string, 0, 12)
+	if matched.GitOpsManaged {
+		labels = append(labels, "gitOpsManaged=true")
+	}
+	if matched.GitOpsTool != "" {
+		labels = append(labels, "gitOpsTool="+matched.GitOpsTool)
+	}
+	if matched.PDBProtected {
+		labels = append(labels, "pdbProtected=true")
+	}
+	if matched.HPAEnabled {
+		labels = append(labels, "hpaEnabled=true")
+	}
+	if matched.Stateful {
+		labels = append(labels, "stateful=true")
+	}
+	if matched.HelmManaged {
+		labels = append(labels, "helmManaged=true")
+	}
+	if matched.NetworkIsolated {
+		labels = append(labels, "networkIsolated=true")
+	}
+	if matched.ServiceMesh != "" {
+		labels = append(labels, "serviceMesh="+matched.ServiceMesh)
+	}
+	if matched.VirtualMachine {
+		labels = append(labels, "virtualMachine=true")
+	}
+	if matched.LiveMigratable {
+		labels = append(labels, "liveMigratable=true")
+	}
+	if matched.CDIManaged {
+		labels = append(labels, "cdiManaged=true")
+	}
+	if matched.StorageBackend != "" {
+		labels = append(labels, "storageBackend="+matched.StorageBackend)
+	}
+
+	return "detected-label match for " + strings.Join(labels, ", ")
 }
 
 // boolFieldBoost mirrors appendBoolBoostCase: full weight when the query

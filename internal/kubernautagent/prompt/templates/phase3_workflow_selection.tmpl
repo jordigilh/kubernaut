@@ -67,6 +67,8 @@ If the response includes `pagination.hasNext`, call the tool again with `page: "
 **Action Type Selection Rules** (apply BEFORE calling Step 2):
 - If `cluster_context` shows `gitOpsManaged=true`, MUST prefer git-based action types.
 - If the RCA reveals an error rate spike correlating with a recent deployment revision change, prefer ProactiveRollback.
+- Treat the catalog's `rank`, `preferred`, `matchedDetectedLabels`, and `preferenceReason` fields as objective discovery evidence. Inspect the `preferred` action family first when it is present.
+- Ranking is advisory, not authorization or confidence. You may choose a lower-ranked action family when the RCA, target, preconditions, or action description provide stronger evidence. If you do, the selected workflow `rationale` MUST state the catalog preference you considered and the concrete RCA evidence for overriding it.
 - Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type from Step 1.

@@ -39,6 +39,29 @@ type ActionTypeEntry struct {
 	ActionType    string                `json:"actionType"`
 	Description   ActionTypeDescription `json:"description"`
 	WorkflowCount int                   `json:"workflowCount"`
+
+	// Rank is the deterministic Step 1 position after action families are
+	// ordered by the best matching workflow score. It is advisory evidence for
+	// the LLM, not an authorization or workflow-selection command.
+	Rank int `json:"rank"`
+	// Preferred identifies the first-ranked action family on the complete,
+	// unpaginated result set. Generic action families remain present when they
+	// are not preferred so RCA evidence can override this recommendation.
+	Preferred bool `json:"preferred"`
+	// MatchedDetectedLabels contains only positive detected-label dimensions
+	// that the best matching workflow declared. It is intentionally bounded to
+	// the catalog evidence used for this action-family ranking.
+	MatchedDetectedLabels *DetectedLabels `json:"matchedDetectedLabels"`
+	// PreferenceReason is deterministic catalog evidence, not model-generated
+	// reasoning. It explains why this action family received its position.
+	PreferenceReason string `json:"preferenceReason,omitempty"`
+
+	// BestMatchScore and BestWorkflowID are consumed by KA's audit emitter but
+	// are not exposed to the LLM. DD-WORKFLOW-016 deliberately keeps numeric
+	// scores out of the model-facing discovery response to avoid anchoring the
+	// model on internal scoring values.
+	BestMatchScore float64 `json:"-"`
+	BestWorkflowID string  `json:"-"`
 }
 
 // WorkflowDiscoveryEntry represents a workflow summary in the discovery response (Step 2)

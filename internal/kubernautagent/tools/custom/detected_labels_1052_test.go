@@ -111,6 +111,25 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", f
 		})
 	})
 
+	Describe("UT-KA-2478-006: malformed DetectedLabelsJSON fails closed", func() {
+		It("should reject the discovery request instead of silently dropping label filters", func() {
+			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
+				Severity:           "critical",
+				ResourceKind:       "Deployment",
+				Environment:        "production",
+				Priority:           "P0",
+				DetectedLabelsJSON: `{"helmManaged":`,
+			})
+
+			_, err := newTestTools(fake)[0].Execute(ctx, json.RawMessage(`{}`))
+
+			Expect(err).To(HaveOccurred(), "SI-10 / ASVS V5.1: malformed label input must be rejected")
+			Expect(err.Error()).To(ContainSubstring("parsing detected labels"))
+			Expect(fake.listActionsFilters).To(BeNil(),
+				"the catalog must not be called with silently weakened filters")
+		})
+	})
+
 	Describe("UT-KA-1052-004: list_available_actions omits DetectedLabels when empty", func() {
 		It("should not set filters.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{

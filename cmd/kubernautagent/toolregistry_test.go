@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	infrastructure "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -65,6 +67,23 @@ func toolNames(all []tools.Tool) []string {
 }
 
 var _ = Describe("buildToolRegistry", func() {
+	It("IT-KA-2478-002: production registry wires cache-backed discovery tools when DataStorage is configured", func() {
+		catalog := newFakeWorkflowCatalog(GinkgoTB(), interceptor.Funcs{})
+		reg := buildToolRegistry(&kaconfig.Config{}, logr.Discard(), nil, &dsClients{}, catalog, nil)
+
+		for _, name := range []string{"list_available_actions", "list_workflows", "get_workflow"} {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "production tool registry must expose %q", name)
+		}
+
+		ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+			Severity: "critical", ResourceKind: "Deployment", Environment: "production", Priority: "P0",
+		})
+		result, err := reg.Execute(ctx, "list_available_actions", json.RawMessage(`{}`))
+		Expect(err).NotTo(HaveOccurred(), "ASVS V5.5.2: the registered discovery tool must execute through Registry")
+		Expect(result).To(ContainSubstring("actionTypes"))
+	})
+
 	It("BR-SECURITY-AC6: registers only the baseline tool (least privilege) when no integrations are configured", func() {
 		cfg := &kaconfig.Config{}
 

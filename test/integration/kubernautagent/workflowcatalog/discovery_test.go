@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
@@ -188,6 +189,71 @@ var _ = Describe("IT-KA-1677-DISC Workflow Catalog discovery (Catalog wrapping C
 		}
 	})
 
+	It("IT-KA-2478-001: ListActions ranks management-aware action families across action types", func() {
+		helmActionType := uniquePascalName("HelmRollback")
+		genericActionType := uniquePascalName("PatchConfiguration")
+		helmAT := validAT(uniqueName("it-2478-at-helm"), helmActionType)
+		genericAT := validAT(uniqueName("it-2478-at-generic"), genericActionType)
+		Expect(k8sClient.Create(ctx, helmAT)).To(Succeed())
+		Expect(k8sClient.Create(ctx, genericAT)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, helmAT) })
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, genericAT) })
+		markActive(helmAT)
+		markActive(genericAT)
+
+		helmRW := validRW(uniqueName("it-2478-wf-helm"), helmActionType, []string{"critical"})
+		helmRW.Spec.DetectedLabels = &apiextensionsv1.JSON{Raw: []byte(`{"helmManaged":true}`)}
+		genericRW := validRW(uniqueName("it-2478-wf-generic"), genericActionType, []string{"critical"})
+		Expect(k8sClient.Create(ctx, helmRW)).To(Succeed())
+		Expect(k8sClient.Create(ctx, genericRW)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, helmRW) })
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, genericRW) })
+
+		filters := &models.WorkflowDiscoveryFilters{
+			Severity:    "critical",
+			Component:   "v1/Pod",
+			Environment: "production",
+			Priority:    "P1",
+			DetectedLabels: &models.DetectedLabels{
+				HelmManaged: true,
+			},
+		}
+
+		var entries []models.ActionTypeEntry
+		Eventually(func() bool {
+			var err error
+			entries, _, err = catalog.ListActions(ctx, filters, 0, 100)
+			if err != nil {
+				return false
+			}
+			helmFound, genericFound := false, false
+			for _, entry := range entries {
+				helmFound = helmFound || entry.ActionType == helmActionType
+				genericFound = genericFound || entry.ActionType == genericActionType
+			}
+			return helmFound && genericFound
+		}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "both #2478 action types must be visible through the informer-backed Catalog")
+
+		var helmEntry, genericEntry models.ActionTypeEntry
+		for _, entry := range entries {
+			switch entry.ActionType {
+			case helmActionType:
+				helmEntry = entry
+			case genericActionType:
+				genericEntry = entry
+			}
+		}
+
+		Expect(helmEntry.ActionType).To(Equal(helmActionType))
+		Expect(helmEntry.Rank).To(Equal(1), "BR-KA-017-007: management-aware family must rank first")
+		Expect(helmEntry.Preferred).To(BeTrue())
+		Expect(helmEntry.MatchedDetectedLabels).NotTo(BeNil())
+		Expect(helmEntry.MatchedDetectedLabels.HelmManaged).To(BeTrue())
+		Expect(genericEntry.ActionType).To(Equal(genericActionType), "generic family must remain available")
+		Expect(genericEntry.Rank).To(BeNumerically(">", helmEntry.Rank))
+		Expect(genericEntry.Preferred).To(BeFalse())
+	})
+
 	It("IT-KA-1677-DISC-003: GetByID returns the cache-sourced workflow by its content-hash workflow_id, with spec.parameters populated", func() {
 		actionType := uniquePascalName("CatalogGetByIDAction")
 		name := uniqueName("it-1677-disc-getbyid")
@@ -210,7 +276,10 @@ var _ = Describe("IT-KA-1677-DISC Workflow Catalog discovery (Catalog wrapping C
 		Expect(got.Parameters).ToNot(BeNil(), "spec.parameters[] must be populated -- get_workflow's documented contract for LLM parameter validation")
 	})
 
-	It("IT-KA-1677-DISC-004: GetWorkflowWithContextFilters applies the security gate -- matching context returns the workflow, non-matching returns ErrNotFound without distinguishing not-found from filtered-out", func() {
+	It("IT-KA-2478-004 (regression: IT-KA-1677-DISC-004): lower-ranked workflow retrieval remains behind the context security gate", func() {
+		// FedRAMP AC-6 / OWASP ASVS V4.1.3: the advisory Step 1 rank must
+		// never authorize a workflow retrieval that fails the existing context
+		// gate, and the failure must not disclose whether the ID exists.
 		actionType := uniquePascalName("CatalogContextGateAction")
 		name := uniqueName("it-1677-disc-gate")
 		rw := validRW(name, actionType, []string{"critical"})

@@ -66,7 +66,13 @@ func (c *Catalog) listActionsFromCache(ctx context.Context, filters *models.Work
 			continue
 		}
 
-		entries = append(entries, crdActionTypeToEntry(at, len(matched)))
+		best := matched[0]
+		entry := crdActionTypeToEntry(at, len(matched))
+		entry.BestMatchScore = best.FinalScore
+		entry.BestWorkflowID = best.Workflow.WorkflowID
+		entry.MatchedDetectedLabels = best.matchedDetectedLabels
+		entry.PreferenceReason = actionTypePreferenceReason(best.matchedDetectedLabels)
+		entries = append(entries, entry)
 	}
 
 	sortActionTypeEntries(entries)
@@ -165,8 +171,9 @@ func (c *Catalog) getWorkflowWithContextFiltersFromCache(ctx context.Context, wo
 // workflow. The score is query-specific and is retained for audit evidence;
 // callers must not add it to the LLM-facing WorkflowDiscoveryEntry.
 type ScoredWorkflow struct {
-	Workflow   models.RemediationWorkflow
-	FinalScore float64
+	Workflow              models.RemediationWorkflow
+	FinalScore            float64
+	matchedDetectedLabels *models.DetectedLabels
 }
 
 // filterAndScoreCachedWorkflows converts every CRD in workflows to
@@ -211,7 +218,11 @@ func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, f
 		boost := detectedLabelsBoost(detectedLabels, dl)
 		custom := customLabelsBoost(crdCustomLabelsToModel(rw.Spec.CustomLabels), customLabels)
 		penalty := detectedLabelsPenalty(detectedLabels, dl)
-		scored = append(scored, ScoredWorkflow{Workflow: wf, FinalScore: finalScore(boost, custom, penalty)})
+		scored = append(scored, ScoredWorkflow{
+			Workflow:              wf,
+			FinalScore:            finalScore(boost, custom, penalty),
+			matchedDetectedLabels: matchedDetectedLabelsEvidence(detectedLabels, dl),
+		})
 	}
 
 	sort.SliceStable(scored, func(i, j int) bool {
@@ -223,12 +234,22 @@ func filterAndScoreCachedWorkflows(workflows []rwv1alpha1.RemediationWorkflow, f
 	return scored, nil
 }
 
-// sortActionTypeEntries sorts entries alphabetically by ActionType -- mirrors
-// ListActions' `ORDER BY t.action_type`.
+// sortActionTypeEntries sorts Step 1 entries by the best matching workflow's
+// score, descending, with action type ascending as a deterministic tiebreaker.
+// Rank and Preferred are assigned after the complete result set is ordered and
+// before pagination, so a later page retains its global position.
 func sortActionTypeEntries(entries []models.ActionTypeEntry) {
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].BestMatchScore != entries[j].BestMatchScore {
+			return entries[i].BestMatchScore > entries[j].BestMatchScore
+		}
 		return entries[i].ActionType < entries[j].ActionType
 	})
+
+	for i := range entries {
+		entries[i].Rank = i + 1
+		entries[i].Preferred = i == 0
+	}
 }
 
 // paginate returns items[offset:offset+limit], clamped to items' bounds.

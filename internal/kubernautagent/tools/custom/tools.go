@@ -135,7 +135,7 @@ func componentFromSignal(signal katypes.SignalContext) string {
 // on every list_available_actions/list_workflows call (BR-WORKFLOW-016,
 // #779, #1052, #1511). Unlike get_workflow's best-effort forwarding, these
 // two tools always have a required signal context (signalFromContext).
-func filtersFromSignal(signal katypes.SignalContext) *models.WorkflowDiscoveryFilters {
+func filtersFromSignal(signal katypes.SignalContext) (*models.WorkflowDiscoveryFilters, error) {
 	filters := &models.WorkflowDiscoveryFilters{
 		Severity:      signal.Severity,
 		Component:     componentFromSignal(signal),
@@ -146,11 +146,12 @@ func filtersFromSignal(signal katypes.SignalContext) *models.WorkflowDiscoveryFi
 	}
 	if signal.DetectedLabelsJSON != "" {
 		var dl models.DetectedLabels
-		if err := json.Unmarshal([]byte(signal.DetectedLabelsJSON), &dl); err == nil {
-			filters.DetectedLabels = &dl
+		if err := json.Unmarshal([]byte(signal.DetectedLabelsJSON), &dl); err != nil {
+			return nil, fmt.Errorf("parsing detected labels: %w", err)
 		}
+		filters.DetectedLabels = &dl
 	}
-	return filters
+	return filters, nil
 }
 
 // --- list_available_actions ---
@@ -181,7 +182,10 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	filters := filtersFromSignal(signal)
+	filters, err := filtersFromSignal(signal)
+	if err != nil {
+		return "", fmt.Errorf("listing action types: %w", err)
+	}
 	logr.FromContextOrDiscard(ctx).V(1).Info("list_available_actions: resolved component",
 		"component", filters.Component, "remediation_id", signal.RemediationID)
 
@@ -322,7 +326,10 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	filters := filtersFromSignal(signal)
+	filters, err := filtersFromSignal(signal)
+	if err != nil {
+		return "", fmt.Errorf("listing workflows: %w", err)
+	}
 	logr.FromContextOrDiscard(ctx).V(1).Info("list_workflows: resolved component",
 		"component", filters.Component, "remediation_id", signal.RemediationID)
 
@@ -534,7 +541,11 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	var filters *models.WorkflowDiscoveryFilters
 	signal, ok := katypes.SignalContextFromContext(ctx)
 	if ok && signal.RemediationID != "" {
-		filters = filtersFromSignal(signal)
+		var filterErr error
+		filters, filterErr = filtersFromSignal(signal)
+		if filterErr != nil {
+			return "", fmt.Errorf("getting workflow: %w", filterErr)
+		}
 	}
 
 	if t.catalog == nil {

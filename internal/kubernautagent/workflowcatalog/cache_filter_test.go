@@ -215,6 +215,33 @@ var _ = Describe("detectedLabelsBoost (Issue #1677 Phase 2b)", func() {
 	})
 })
 
+var _ = Describe("matchedDetectedLabelsEvidence (#2478)", func() {
+	It("UT-KA-2478-004: reports only positive exact detected-label matches", func() {
+		filter := &models.DetectedLabels{HelmManaged: true, GitOpsManaged: true}
+		matched := matchedDetectedLabelsEvidence(models.DetectedLabels{HelmManaged: true}, filter)
+
+		Expect(matched).NotTo(BeNil())
+		Expect(matched.HelmManaged).To(BeTrue())
+		Expect(matched.GitOpsManaged).To(BeFalse())
+		Expect(actionTypePreferenceReason(matched)).To(Equal("detected-label match for helmManaged=true"))
+	})
+
+	It("UT-KA-2478-004: reports wildcard-compatible string evidence using the requested value", func() {
+		filter := &models.DetectedLabels{GitOpsTool: "argocd"}
+		matched := matchedDetectedLabelsEvidence(models.DetectedLabels{GitOpsTool: "*"}, filter)
+
+		Expect(matched).NotTo(BeNil())
+		Expect(matched.GitOpsTool).To(Equal("argocd"))
+		Expect(actionTypePreferenceReason(matched)).To(Equal("detected-label match for gitOpsTool=argocd"))
+	})
+
+	It("UT-KA-2478-002: emits no management evidence for an unboosted generic workflow", func() {
+		filter := &models.DetectedLabels{HelmManaged: true}
+		Expect(matchedDetectedLabelsEvidence(models.DetectedLabels{}, filter)).To(BeNil())
+		Expect(actionTypePreferenceReason(nil)).To(Equal("highest-scoring matching workflow"))
+	})
+})
+
 var _ = Describe("detectedLabelsPenalty (Issue #1677 Phase 2b)", func() {
 	// Mirrors buildDetectedLabelsPenaltySQL -- only the two high-impact fields
 	// (gitOpsManaged, gitOpsTool) apply penalties.

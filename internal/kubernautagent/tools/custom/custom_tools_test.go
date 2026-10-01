@@ -132,6 +132,57 @@ var _ = Describe("NewAllTools registration order guard", func() {
 	})
 })
 
+var _ = Describe("list_available_actions ranked evidence — #2478", func() {
+	It("UT-KA-2478-004: renders advisory rank and detected-label evidence without exposing raw score", func() {
+		fake := &fakeWorkflowDS{
+			listActionsEntries: []models.ActionTypeEntry{
+				{
+					ActionType:    "HelmRollback",
+					WorkflowCount: 1,
+					Rank:          1,
+					Preferred:     true,
+					MatchedDetectedLabels: &models.DetectedLabels{
+						HelmManaged: true,
+					},
+					PreferenceReason: "detected-label match for helmManaged=true",
+					BestMatchScore:   0.502,
+				},
+				{
+					ActionType:       "PatchConfiguration",
+					WorkflowCount:    3,
+					Rank:             2,
+					BestMatchScore:   0.5,
+					PreferenceReason: "highest-scoring matching workflow",
+				},
+			},
+			listActionsTotal: 2,
+		}
+
+		result, err := newTestTools(fake)[0].Execute(toolCtx(), json.RawMessage(`{}`))
+		Expect(err).NotTo(HaveOccurred())
+
+		var response struct {
+			ActionTypes []map[string]interface{} `json:"actionTypes"`
+		}
+		Expect(json.Unmarshal([]byte(result), &response)).To(Succeed())
+		Expect(response.ActionTypes).To(HaveLen(2))
+		Expect(response.ActionTypes[0]).To(HaveKeyWithValue("actionType", "HelmRollback"))
+		Expect(response.ActionTypes[0]).To(HaveKeyWithValue("rank", BeNumerically("==", 1)))
+		Expect(response.ActionTypes[0]).To(HaveKeyWithValue("preferred", true))
+		Expect(response.ActionTypes[0]).To(HaveKey("matchedDetectedLabels"))
+		Expect(response.ActionTypes[0]).To(HaveKeyWithValue("preferenceReason", "detected-label match for helmManaged=true"))
+		Expect(response.ActionTypes[0]).NotTo(HaveKey("bestMatchScore"),
+			"numeric ranking scores remain audit-only per DD-WORKFLOW-016")
+		Expect(response.ActionTypes[0]).NotTo(HaveKey("bestWorkflowID"),
+			"best workflow identity remains audit-only per DD-WORKFLOW-016")
+		Expect(response.ActionTypes[1]).To(HaveKeyWithValue("actionType", "PatchConfiguration"),
+			"generic action families must remain available")
+		Expect(response.ActionTypes[1]).To(HaveKeyWithValue("preferred", false))
+		Expect(response.ActionTypes[1]).To(HaveKeyWithValue("matchedDetectedLabels", BeNil()))
+		Expect(response.ActionTypes[1]).To(HaveKeyWithValue("preferenceReason", "highest-scoring matching workflow"))
+	})
+})
+
 // UT-KA-688-001/002/003 (stripPaginationIfComplete) were removed as dead-code
 // coverage (#1677 dead-code sweep, follow-up): stripPaginationIfComplete
 // itself was deleted -- superseded by TransformPagination (DD-WORKFLOW-016
