@@ -165,7 +165,7 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 		// #2478: retain the generic family for both Pod and Deployment targets;
 		// management-aware ranking is advisory and must not remove this RCA
 		// fallback from either common target shape.
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "warning", Component: []string{"apps/v1/Deployment", "v1/Pod"}, Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "warning", Component: []string{"apps/v1/Deployment", "v1/Pod"}, Priority: "*", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
