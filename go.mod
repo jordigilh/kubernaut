@@ -13,7 +13,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.75.0
 	github.com/cloudwego/eino v0.9.21
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.5
-	github.com/containers/kubernetes-mcp-server v0.0.67
+	github.com/containers/kubernetes-mcp-server v0.0.66
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.149.0
