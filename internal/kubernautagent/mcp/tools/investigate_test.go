@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -104,6 +105,7 @@ type mockInvestigatorRunner struct {
 	response                string
 	err                     error
 	rcaResult               *katypes.InvestigationResult
+	rcaMessages             []mcptools.LLMMessage
 	workflowDiscoveryResult *katypes.InvestigationResult
 	workflowDiscoveryRCA    *katypes.InvestigationResult
 	capturedCtx             context.Context
@@ -127,7 +129,8 @@ func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katyp
 	return &katypes.InvestigationResult{RCASummary: "mock autonomous result", Confidence: 0.8}, m.err
 }
 
-func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, messages []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	m.rcaMessages = append([]mcptools.LLMMessage(nil), messages...)
 	if m.rcaResult != nil {
 		return m.rcaResult, m.err
 	}
@@ -670,6 +673,77 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			Expect(mcpErr.Details["driver"]).To(Equal("alice"))
 			Expect(mcpErr.Details["session_id"]).To(Equal("sess-reconnect-007"),
 				"reconnect error should include existing session_id for diagnostics")
+		})
+	})
+
+	Describe("UT-KA-DW-017: interactive RCA extraction receives authoritative signal context [BR-INTERACTIVE-010, BR-WORKFLOW-004]", func() {
+		It("should include the signal name in the extraction conversation so scenario routing preserves cross-resource RCA", func() {
+			const rrID = "rr-dw-017"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-017",
+				CorrelationID: rrID,
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{
+				response: "The AuthorizationPolicy is causing the deny rate.",
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary: "interactive RCA identified the AuthorizationPolicy",
+					RemediationTarget: katypes.RemediationTarget{
+						APIVersion: "security.istio.io/v1",
+						Kind:       "AuthorizationPolicy",
+						Name:       "deny-all-traffic",
+						Namespace:  "production",
+					},
+				},
+			}
+			resolver := &mockSignalResolver{signal: &katypes.SignalContext{
+				Name:               "IstioHighDenyRate",
+				Severity:           "critical",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "api-server",
+				Namespace:          "production",
+			}}
+
+			tool := mcptools.NewInvestigateTool(
+				sessionMgr,
+				runner,
+				&mockContextReconstructor{},
+				mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix AuthorizationPolicy"},
+				}),
+			)
+
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    rrID,
+				Action:  mcptools.ActionMessage,
+				Message: "What is the root cause of the IstioHighDenyRate alert?",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			var hasSignalContext bool
+			for _, message := range runner.rcaMessages {
+				if message.Role == "system" &&
+					strings.Contains(message.Content, "signal_name") &&
+					strings.Contains(message.Content, "IstioHighDenyRate") {
+					hasSignalContext = true
+					break
+				}
+			}
+			Expect(hasSignalContext).To(BeTrue(),
+				"RCA extraction must receive the authoritative signal name so cross-resource scenario routing is deterministic")
 		})
 	})
 })
