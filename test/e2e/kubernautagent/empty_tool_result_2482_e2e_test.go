@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -66,7 +67,23 @@ var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "ll
 		Expect(result).NotTo(BeNil())
 		Expect(result.IncidentID).To(Equal("e2e-ka-2482-empty-tool-result"))
 		Expect(result.Analysis).NotTo(BeEmpty())
+		Expect(result.IsActionable).NotTo(BeNil())
+		Expect(*result.IsActionable).To(BeTrue())
 		Expect(result.SelectedWorkflow).NotTo(BeNil())
+
+		var selectedWorkflow struct {
+			WorkflowID      string            `json:"workflow_id"`
+			WorkflowName    string            `json:"workflow_name"`
+			ActionType      string            `json:"action_type"`
+			ExecutionEngine string            `json:"execution_engine"`
+			Parameters      map[string]string `json:"parameters"`
+		}
+		Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selectedWorkflow)).To(Succeed())
+		Expect(selectedWorkflow.WorkflowID).NotTo(BeEmpty())
+		Expect(selectedWorkflow.WorkflowName).To(Equal("oomkill-increase-memory-v1"))
+		Expect(selectedWorkflow.ActionType).To(Equal("IncreaseMemoryLimits"))
+		Expect(selectedWorkflow.ExecutionEngine).To(Equal("tekton"))
+		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"))
 		Expect(result.Confidence).To(BeNumerically(">", 0))
 	})
 })
