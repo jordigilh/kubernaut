@@ -585,7 +585,7 @@ spec:
   restartPolicy: Never
   containers:
   - name: pause
-    image: registry.k8s.io/pause:3.10
+    image: registry.k8s.io/pause:3.9
     resources:
       requests:
         memory: "8Mi"

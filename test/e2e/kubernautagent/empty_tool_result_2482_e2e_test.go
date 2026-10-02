@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,11 +33,16 @@ import (
 var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "llm", "2482"), func() {
 	It("E2E-KA-2482-001 [BR-KA-263, BR-AI-086, SI-10, SOC2 CC7.2]: completes the AgentSession journey when a Kubernetes tool returns an empty string", func() {
 		By("waiting for the deterministic empty-log fixture to be running")
-		Eventually(func() bool {
+		Eventually(func() error {
 			pod := &corev1.Pod{}
-			err := k8sClient.Get(ctx, client.ObjectKey{Namespace: "default", Name: "test-pod"}, pod)
-			return err == nil && pod.Status.Phase == corev1.PodRunning
-		}, 2*time.Minute, 2*time.Second).Should(BeTrue())
+			if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: "default", Name: "test-pod"}, pod); err != nil {
+				return fmt.Errorf("get default/test-pod: %w", err)
+			}
+			if pod.Status.Phase != corev1.PodRunning {
+				return fmt.Errorf("default/test-pod phase is %s", pod.Status.Phase)
+			}
+			return nil
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		spec := agentsessionv1.AgentSessionSpec{
 			RemediationRequestRef: agentsessionv1.ObjectRef{Name: "req-e2e-ka-2482", Namespace: sharedNamespace},
