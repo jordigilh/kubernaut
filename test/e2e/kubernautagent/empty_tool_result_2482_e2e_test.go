@@ -66,7 +66,7 @@ var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "ll
 		Expect(err).NotTo(HaveOccurred(), "the strict OpenAI-compatible provider must accept content=\"\"")
 		Expect(result).NotTo(BeNil())
 		Expect(result.IncidentID).To(Equal("e2e-ka-2482-empty-tool-result"))
-		Expect(result.Analysis).NotTo(BeEmpty())
+		Expect(result.Analysis).To(Equal("The test workload exceeded its memory limit"))
 		Expect(result.IsActionable).NotTo(BeNil())
 		Expect(*result.IsActionable).To(BeTrue())
 		Expect(result.SelectedWorkflow).NotTo(BeNil())
@@ -76,14 +76,16 @@ var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "ll
 			WorkflowName    string            `json:"workflow_name"`
 			ActionType      string            `json:"action_type"`
 			ExecutionEngine string            `json:"execution_engine"`
+			Confidence      float64           `json:"confidence"`
 			Parameters      map[string]string `json:"parameters"`
 		}
 		Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selectedWorkflow)).To(Succeed())
-		Expect(selectedWorkflow.WorkflowID).NotTo(BeEmpty())
+		Expect(selectedWorkflow.WorkflowID).To(Equal("35665f23-e550-5684-a6c9-c0f7b727b068"))
 		Expect(selectedWorkflow.WorkflowName).To(Equal("oomkill-increase-memory-v1"))
 		Expect(selectedWorkflow.ActionType).To(Equal("IncreaseMemoryLimits"))
 		Expect(selectedWorkflow.ExecutionEngine).To(Equal("tekton"))
-		Expect(selectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"))
-		Expect(result.Confidence).To(BeNumerically(">", 0))
+		Expect(selectedWorkflow.Confidence).To(Equal(0.9))
+		Expect(selectedWorkflow.Parameters).To(Equal(map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}))
+		Expect(result.Confidence).To(Equal(0.9))
 	})
 })
