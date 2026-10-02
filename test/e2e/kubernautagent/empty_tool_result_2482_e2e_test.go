@@ -85,7 +85,13 @@ var _ = Describe("E2E-KA-2482: empty tool-result replay", Label("e2e", "ka", "ll
 		Expect(selectedWorkflow.ActionType).To(Equal("IncreaseMemoryLimits"))
 		Expect(selectedWorkflow.ExecutionEngine).To(Equal("tekton"))
 		Expect(selectedWorkflow.Confidence).To(Equal(0.9))
-		Expect(selectedWorkflow.Parameters).To(Equal(map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}))
+		Expect(selectedWorkflow.Parameters).To(Equal(map[string]string{
+			"MEMORY_LIMIT_NEW":            "512Mi",
+			"TARGET_RESOURCE_API_VERSION": "v1",
+			"TARGET_RESOURCE_KIND":        "Pod",
+			"TARGET_RESOURCE_NAME":        "test-pod",
+			"TARGET_RESOURCE_NAMESPACE":   "default",
+		}))
 		Expect(result.Confidence).To(Equal(0.9))
 	})
 })
