@@ -97,6 +97,11 @@ type MockScenarioConfig struct {
 	// nil = use global default; ptr(false) = return tool calls; ptr(true) = return text.
 	ForceText *bool
 
+	// UseWorkflowDiscovery lets a scenario script RCA-specific tool calls
+	// while still using the normal three-step workflow discovery planner in
+	// the workflow-selection phase.
+	UseWorkflowDiscovery bool
+
 	// ToolCallName, when set, causes the handler to bypass the DAG engine
 	// and return a tool call with this name on the first request.
 	ToolCallName string

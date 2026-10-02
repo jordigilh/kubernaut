@@ -231,12 +231,13 @@ func parallelToolsConfig() MockScenarioConfig {
 	}
 }
 
-// emptyToolResultReplayConfig backs E2E-KA-2482-001. The first response is a
+// emptyToolResultReplayConfig backs E2E-KA-2482-001. The RCA response is a
 // six-tool batch, matching the production replay shape that exposed #2482.
 // The fifth tool (index 4) reads all containers from the existing pause
 // test-pod, so a successful read produces an empty string. The sixth chained
 // response submits the RCA, forcing KA to replay all six results through the
-// OpenAI-compatible serializer.
+// OpenAI-compatible serializer. The subsequent workflow-selection phase uses
+// the normal three-step discovery planner and submits the selected workflow.
 func emptyToolResultReplayConfig() MockScenarioConfig {
 	actionable := true
 	resourceArgs := map[string]interface{}{"kind": "Pod", "name": "test-pod", "namespace": "default"}
@@ -253,8 +254,9 @@ func emptyToolResultReplayConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "empty_tool_result_replay", SignalName: "MOCK_EMPTY_TOOL_RESULT_REPLAY", Severity: "critical",
 		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
-		ActionType:    "IncreaseMemoryLimits",
-		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.9,
+		UseWorkflowDiscovery: true,
+		ActionType:           "IncreaseMemoryLimits",
+		WorkflowTitle:        "OOMKill Recovery - Increase Memory Limits", Confidence: 0.9,
 		Rationale:    "Increasing the memory limit is the safest remediation for this test signal",
 		RootCause:    "The test workload exceeded its memory limit",
 		ResourceKind: "Pod", ResourceNS: "default", ResourceName: "test-pod", APIVersion: "v1",

@@ -57,6 +57,9 @@ func withoutWorkflowSelection(scenario scenarios.MockScenarioConfig) scenarios.M
 }
 
 func hasDiscoveryOverride(scenario scenarios.MockScenarioConfig) bool {
+	if scenario.UseWorkflowDiscovery {
+		return true
+	}
 	if isDiscoveryToolName(scenario.ToolCallName) {
 		return true
 	}
