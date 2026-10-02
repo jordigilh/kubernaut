@@ -191,6 +191,7 @@ Security posture is tracked continuously via [OpenSSF Scorecard](https://scoreca
 | **Architecture Overview** | [Architecture](https://jordigilh.github.io/kubernaut-docs/latest/getting-started/architecture-overview/) |
 | **Developer Guide** | [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) |
 | **Must-Gather Diagnostics** | [cmd/must-gather/README.md](cmd/must-gather/README.md) |
+| **DevConf.US presentation — September 24, 2026** | [When Your Kubernetes Cluster Fixes Itself at 3am](https://jordigilh.github.io/kubernaut-devconf-reference/) |
 
 ---
 
