@@ -58,6 +58,13 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if hasNilToolContent(req.Messages) {
+		const message = "Invalid value for 'content': expected a string, got null."
+		log.Printf("[mock-llm] rejecting tool message with missing content")
+		writeJSON(w, http.StatusBadRequest, response.BuildErrorResponse(message))
+		return
+	}
+
 	model := req.Model
 	if model == "" {
 		model = openai.DefaultModel
@@ -148,6 +155,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
+}
+
+func hasNilToolContent(messages []openai.Message) bool {
+	for _, message := range messages {
+		if message.Role == openAIToolMessageRole && message.Content == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // respondWithText writes a text-only response (no tool calls).

@@ -218,6 +218,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(newKeywordScenario("max_retries_exhausted", "mock_max_retries_exhausted", maxRetriesExhaustedConfig()))
 	r.Register(newKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 	r.Register(newKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
+	r.Register(newKeywordScenario("empty_tool_result_replay", "mock_empty_tool_result_replay", emptyToolResultReplayConfig()))
 	r.Register(newKeywordScenario("alertmanager_node_tools", "mock_alertmanager_node_tools", alertmanagerNodeToolsConfig()))
 	r.Register(newKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
 	r.Register(newKeywordScenario("mock_reasoning_capture", "mock_reasoning_capture", reasoningCaptureConfig()))
