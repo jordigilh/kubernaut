@@ -291,7 +291,7 @@ func buildMessages(messages []Message, mode ReasoningMode) []map[string]any {
 	out := make([]map[string]any, 0, len(messages))
 	for _, m := range messages {
 		msg := map[string]any{"role": m.Role}
-		if m.Content != "" {
+		if m.Content != "" || m.Role == "tool" {
 			msg["content"] = m.Content
 		}
 		if len(m.ToolCalls) > 0 {

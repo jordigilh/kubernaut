@@ -15,7 +15,10 @@ limitations under the License.
 */
 package scenarios
 
-import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
+import (
+	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
+)
 
 func noWorkflowFoundConfig() MockScenarioConfig {
 	return MockScenarioConfig{
@@ -225,6 +228,50 @@ func parallelToolsConfig() MockScenarioConfig {
 			{Name: "kubectl_events", Arguments: map[string]interface{}{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
 			{Name: "kubectl_logs", Arguments: map[string]interface{}{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
 		},
+	}
+}
+
+// emptyToolResultReplayConfig backs E2E-KA-2482-001. The RCA response is a
+// six-tool batch, matching the production replay shape that exposed #2482.
+// The fifth tool (index 4) reads all containers from the existing pause
+// test-pod, so a successful read produces an empty string. The sixth chained
+// response submits the RCA, forcing KA to replay all six results through the
+// OpenAI-compatible serializer. The subsequent workflow-selection phase uses
+// the normal three-step discovery planner and submits the selected workflow.
+func emptyToolResultReplayConfig() MockScenarioConfig {
+	actionable := true
+	resourceArgs := map[string]interface{}{"kind": "Pod", "name": "test-pod", "namespace": "default"}
+	logArgs := map[string]interface{}{"name": "test-pod", "namespace": "default"}
+	toolChain := make([]MultiToolCallEntry, 6)
+	for i := range toolChain {
+		toolChain[i] = MultiToolCallEntry{Name: "kubectl_logs"}
+	}
+	toolChain[len(toolChain)-1] = MultiToolCallEntry{Name: openai.ToolSubmitResult}
+	for i := 0; i < len(toolChain)-1; i++ {
+		toolChain[i].NextToolCall = &toolChain[i+1]
+	}
+
+	return MockScenarioConfig{
+		ScenarioName: "empty_tool_result_replay", SignalName: "MOCK_EMPTY_TOOL_RESULT_REPLAY", Severity: "critical",
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		UseWorkflowDiscovery: true,
+		ActionType:           "IncreaseMemoryLimits",
+		WorkflowTitle:        "OOMKill Recovery - Increase Memory Limits", Confidence: 0.9,
+		Rationale:    "Increasing the memory limit is the safest remediation for this test signal",
+		RootCause:    "The test workload exceeded its memory limit",
+		ResourceKind: "Pod", ResourceNS: "default", ResourceName: "test-pod", APIVersion: "v1",
+		Parameters:           map[string]string{"MEMORY_LIMIT_NEW": "512Mi"},
+		InvestigationOutcome: "actionable", IsActionable: &actionable,
+		ForceText: BoolPtr(false),
+		MultiToolCalls: []MultiToolCallEntry{
+			{Name: "kubectl_describe", Arguments: resourceArgs},
+			{Name: "kubectl_events", Arguments: resourceArgs},
+			{Name: "kubectl_get_yaml", Arguments: resourceArgs},
+			{Name: "kubectl_logs", Arguments: logArgs},
+			{Name: "kubectl_logs_all_containers", Arguments: logArgs},
+			{Name: "kubectl_get_yaml", Arguments: resourceArgs},
+		},
+		NextToolCall: &toolChain[0],
 	}
 }
 

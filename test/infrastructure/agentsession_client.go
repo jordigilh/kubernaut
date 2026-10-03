@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
@@ -41,6 +42,9 @@ func NewKubeconfigAgentSessionClient(kubeconfigPath string) (client.Client, erro
 	}
 
 	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register core Kubernetes scheme: %w", err)
+	}
 	if err := agentsessionv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register AgentSession scheme: %w", err)
 	}
