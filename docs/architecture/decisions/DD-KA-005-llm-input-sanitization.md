@@ -73,8 +73,8 @@ patching individual tool methods (the Go equivalent of the originally-proposed P
 │         │                                          see "Known Gaps")     │
 │         ▼ success                                                       │
 │  sanitization.Pipeline.Run(ctx, result)                                  │
-│    ├─ Stage: CredentialSanitizer (G4) — pkg/shared/sanitization rules   │
-│    ├─ Stage: SecretSanitizer (K8S-SECRET) — redacts Secret data/stringData │
+│    ├─ Stage: SecretSanitizer (K8S-SECRET) — structured Secret redaction  │
+│    ├─ Stage: CredentialSanitizer (G4) — shared credential rules          │
 │    └─ Stage: InjectionSanitizer (I1) — prompt-injection phrase stripping │
 │         │                                                                │
 │         ├─ error ──▶ withhold tool output entirely (fail-closed, SOC2)  │
@@ -88,8 +88,10 @@ Each stage is independently toggleable via config. This is a deliberate simplifi
 original Python design: Go tool results are pre-flattened to `string` by the tool registry before
 `executeTool` runs, so there is no `Any`-dispatching sanitizer branching over `str`/`dict`/`list`/`None`
 like the original `sanitize_for_llm(content: Any)` — the one exception is `SecretSanitizer`, which
-does narrow structure-aware JSON parsing to redact only `data`/`stringData` fields of K8s `Secret`
-objects, then remarshals to a string.
+does narrow structure-aware JSON/YAML parsing to redact only `data`/`stringData` fields of K8s
+`Secret` objects, then serializes changed documents. The KA-specific G4 rule set excludes the
+shared unscoped `k8s-secret-data` heuristic; see
+[DD-KA-2485](DD-KA-2485-context-aware-secret-sanitization.md).
 
 ---
 
@@ -169,7 +171,8 @@ Notification (`BR-NOT-055`). **KA does not call this fallback path** (see Compon
 `injection.go`)
 
 ```go
-// Pipeline chains sanitization stages in order (G4 -> I1 per DD-KA-019-003).
+// Pipeline chains sanitization stages in order (K8S-SECRET -> G4 -> I1 per DD-KA-019-003
+// and DD-KA-2485).
 type Stage interface {
     Name() string
     Sanitize(ctx context.Context, input string) (string, error)
@@ -182,15 +185,17 @@ type Pipeline struct {
 
 Three stages, each independently configurable:
 
-1. **`CredentialSanitizer` (G4)** — wraps `pkg/shared/sanitization.Sanitizer` for the generic
-   pattern set above.
-2. **`SecretSanitizer` (K8S-SECRET)** — narrowly parses tool output as `map[string]json.RawMessage`
-   to redact `data`/`stringData` fields of K8s `Secret`/`SecretList` shapes.
+1. **`SecretSanitizer` (K8S-SECRET)** — parses JSON/YAML Kubernetes `Secret`, `SecretList`, generic
+   `List`, and multi-document shapes to redact every `data`/`stringData` value.
+2. **`CredentialSanitizer` (G4)** — wraps `pkg/shared/sanitization.Sanitizer` for the generic pattern
+   set above, excluding the unscoped `k8s-secret-data` rule and using KA same-line plain-field rules.
 3. **`InjectionSanitizer` (I1)** — strips prompt-injection phrases (unrelated to credentials; shared
    pipeline slot per `DD-KA-019-003`).
 
 `CredentialSanitizer.Sanitize` calls the underlying library's plain `Sanitize(input)` — **not**
-`SanitizeWithFallback` — and always returns a `nil` error from the regex path itself.
+`SanitizeWithFallback` — and always returns a `nil` error from the regex path itself. The shared
+Gateway/Notification sanitizer continues to use its existing default rule set; this decision does
+not establish a cross-service identity masking policy.
 
 ### Component 3: Wiring Into the Investigation Loop
 
@@ -261,12 +266,12 @@ higher-risk path (successful tool output, which is the common case for logs/desc
 
 | Location | Test Count | Coverage |
 |----------|-----------|----------|
-| `pkg/kubernautagent/tools/sanitization/credential_test.go` | 26 (incl. 17-entry `DescribeTable`) | Passwords, API keys, Bearer/GitHub tokens, JWT-via-Bearer, secrets, auth headers, AWS keys, DB URLs, private keys |
+| `pkg/kubernautagent/tools/sanitization/credential_test.go` | 26 (incl. 17-entry `DescribeTable`) plus #2485 regressions | Passwords, API keys, Bearer/GitHub tokens, JWT-via-Bearer, secrets, auth headers, AWS keys, DB URLs, private keys, and Kubernetes identifier preservation |
 | `pkg/kubernautagent/tools/sanitization/injection_test.go` | 17 | Prompt-injection phrase stripping |
-| `pkg/kubernautagent/tools/sanitization/secret_test.go` | 7 | K8s `Secret`/`SecretList` redaction |
+| `pkg/kubernautagent/tools/sanitization/secret_test.go` | 7 plus #2485 regressions | JSON/YAML `Secret`/`SecretList`/`List` redaction, multi-document handling, and non-Secret passthrough |
 | `pkg/kubernautagent/tools/sanitization/pipeline_test.go` | 2 | Stage chaining, fail-closed behavior |
 | `pkg/shared/sanitization/gateway_sanitization_test.go` + fallback tests | 33 | Underlying pattern library (shared with Gateway/Notification) |
-| `test/integration/kubernautagent/investigator/investigator_sanitization_test.go` (`IT-KA-433W-009/010/011`) | 3 | End-to-end: credential/injection stripped from the actual `role:"tool"` message sent to the mock LLM client; raw passthrough when sanitizer is `nil` |
+| `test/integration/kubernautagent/investigator/investigator_sanitization_test.go` (`IT-KA-433W-009/010/011`, `IT-KA-2485-001/002`) | 5 | End-to-end: credential/injection stripped, Kubernetes taint facts preserved, YAML Secret values protected, and raw passthrough when sanitizer is `nil` |
 
 ### Security Verification
 

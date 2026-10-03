@@ -68,7 +68,9 @@ policy and potentially exposing sensitive data.
 
 Implemented via `pkg/shared/sanitization` (25 uniquely-named rules / 28 total, spanning passwords,
 API keys, bearer/GitHub tokens, AWS credentials, database URLs, private keys, authorization headers,
-and PII) plus a K8s-`Secret`-shape-aware stage. See
+and PII) plus a K8s-`Secret`-shape-aware stage. The KA pipeline now performs structure-aware Secret
+parsing before generic credential scrubbing so non-Secret Kubernetes identifiers are not changed by
+a base64-shaped heuristic. See
 [DD-KA-005](../architecture/decisions/DD-KA-005-llm-input-sanitization.md#component-1-shared-credential-pattern-library)
 for the full rule table and the two coverage regressions versus the original 17-category spec
 (no standalone JWT regex, no standalone base64-secret regex).
@@ -87,8 +89,8 @@ for the full rule table and the two coverage regressions versus the original 17-
 See [DD-KA-005](../architecture/decisions/DD-KA-005-llm-input-sanitization.md) for the full pipeline
 diagram and component breakdown. Summary: every LLM-directed tool call is wrapped by
 `executeTool` (`internal/kubernautagent/investigator/investigator_tools.go`), which — on successful
-tool execution — runs the result through a 3-stage `Pipeline` (`CredentialSanitizer` →
-`SecretSanitizer` → `InjectionSanitizer`) before the alignment shadow-agent and LLM ever see it.
+tool execution — runs the result through a 3-stage `Pipeline` (`SecretSanitizer` →
+`CredentialSanitizer` → `InjectionSanitizer`) before the alignment shadow-agent and LLM ever see it.
 
 ---
 
@@ -111,6 +113,8 @@ tool execution — runs the result through a 3-stage `Pipeline` (`CredentialSani
 
 - [x] Successful tool output sanitized before reaching the LLM (`kubernetes` tools, MCP tools, Fleet remote tools)
 - [x] K8s `Secret`/`SecretList` `data`/`stringData` fields specifically redacted
+- [x] YAML and JSON Secret data redacted with object context; non-Secret Kubernetes identifiers are
+  not masked solely because their values resemble base64 (Issue #2485)
 - [x] Shared Go pattern library reused (consistent with Gateway `BR-GATEWAY-042`, Notification `BR-NOT-055`)
 - [x] Fail-closed on sanitization pipeline error (tool output withheld, never leaked unsanitized)
 - [x] Integration test proves credentials/injection phrases stripped from the actual message sent to the LLM
@@ -135,6 +139,7 @@ tool execution — runs the result through a 3-stage `Pipeline` (`CredentialSani
 | Document | Relationship |
 |----------|--------------|
 | [DD-KA-005](../architecture/decisions/DD-KA-005-llm-input-sanitization.md) | Design decision (full architecture, pipeline stages, known gaps) |
+| [DD-KA-2485](../architecture/decisions/DD-KA-2485-context-aware-secret-sanitization.md) | Context-aware Kubernetes Secret redaction and KA-specific G4 rule boundary |
 | `pkg/shared/sanitization/` | Shared Go pattern library (also used by Gateway, Notification) |
 | `pkg/kubernautagent/tools/sanitization/` | KA-specific pipeline stages |
 
@@ -144,5 +149,6 @@ tool execution — runs the result through a 3-stage `Pipeline` (`CredentialSani
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-10-03 | Issue #2485: made KA Kubernetes Secret redaction context-aware for YAML/JSON, isolated the shared unscoped heuristic from G4, and preserved non-Secret Kubernetes identifiers. Identity metadata remains a separate privacy-policy decision. |
 | 2.0 | 2026-08-01 | Renamed `BR-HAPI-211` → `BR-KA-211`. Rewrote against Go implementation: marked FR-1/2/4/5/6 implemented, FR-3 (error-message sanitization) as a tracked gap, corrected fail-safe semantics from fail-open/degrade to fail-closed, documented actual test coverage, removed Python code samples. |
 | 1.1 | 2025-12-09 | Original Python-era specification (proposed, never implemented as specified). |
