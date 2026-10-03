@@ -422,6 +422,11 @@ metadata:
     app: prometheus
 spec:
   replicas: 1
+  # Rule reseeding restarts this single-replica Deployment while the test
+  # runner writes through a NodePort. Recreate prevents an old and new
+  # Prometheus pod from serving different in-memory TSDBs concurrently.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
