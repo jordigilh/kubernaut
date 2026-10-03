@@ -1,9 +1,9 @@
 # Implementation Plan: Issue #2485 Context-Aware Secret Sanitization
 
-**Status**: Implemented; focused validation complete. Investigator integration execution is blocked by the local envtest prerequisite `/usr/local/kubebuilder/bin/etcd`.  
-**Branch**: `fix/2485-context-aware-secret-sanitization`  
-**Business requirement**: BR-KA-211, FR-1/FR-2/FR-4  
-**Test plan**: [TP-2485-v1.2](TEST_PLAN.md)  
+**Status**: Implemented; focused validation complete. Investigator integration execution is blocked by the local envtest prerequisite `/usr/local/kubebuilder/bin/etcd`.
+**Branch**: `fix/2485-context-aware-secret-sanitization`
+**Business requirement**: BR-KA-211, FR-1/FR-2/FR-4
+**Test plan**: [TP-2485-v1.2](TEST_PLAN.md)
 **Design decision**: [DD-KA-2485](../../architecture/decisions/DD-KA-2485-context-aware-secret-sanitization.md)
 
 ## 1. Preflight and decision

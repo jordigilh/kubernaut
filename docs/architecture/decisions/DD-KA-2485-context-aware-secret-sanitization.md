@@ -1,9 +1,9 @@
 # DD-KA-2485: Context-Aware Kubernetes Secret Sanitization
 
-**Status**: ✅ **Approved and implemented**  
-**Date**: 2026-10-03  
-**Decision Makers**: Kubernaut Agent Team  
-**Business Requirement**: [BR-KA-211](../../requirements/BR-KA-211-llm-input-sanitization.md)  
+**Status**: ✅ **Approved and implemented**
+**Date**: 2026-10-03
+**Decision Makers**: Kubernaut Agent Team
+**Business Requirement**: [BR-KA-211](../../requirements/BR-KA-211-llm-input-sanitization.md)
 **Issue**: [#2485](https://github.com/jordigilh/kubernaut/issues/2485)
 
 ## Context

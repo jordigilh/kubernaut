@@ -2,12 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-2485-v1.2  
-**Feature**: Prevent Kubernetes Secret heuristics from corrupting non-secret tool output while preserving Secret redaction  
-**Version**: 1.2  
-**Created**: 2026-10-03  
-**Author**: Kubernaut Team  
-**Status**: Implemented; focused validation complete. Investigator runtime IT is blocked by missing envtest etcd; repository-wide `make test` has unrelated parallel-load timing failures.  
+**Test Plan Identifier**: TP-2485-v1.2
+**Feature**: Prevent Kubernetes Secret heuristics from corrupting non-secret tool output while preserving Secret redaction
+**Version**: 1.2
+**Created**: 2026-10-03
+**Author**: Kubernaut Team
+**Status**: Implemented; focused validation complete. Investigator runtime IT is blocked by missing envtest etcd; repository-wide `make test` has unrelated parallel-load timing failures.
 **Branch**: `fix/2485-context-aware-secret-sanitization`
 
 ---
