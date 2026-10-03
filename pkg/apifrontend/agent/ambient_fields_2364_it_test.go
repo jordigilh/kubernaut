@@ -18,13 +18,14 @@ package agent
 
 import (
 	"context"
-	"time"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	k8sfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -35,6 +36,26 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
+
+// rrWatchReadyClient exposes the point at which the fake RR watch is
+// registered. The fake client does not replay an update that happened before
+// Watch was called, so the test must synchronize the status transition with
+// watch registration instead of relying on a wall-clock delay.
+type rrWatchReadyClient struct {
+	crclient.WithWatch
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (c *rrWatchReadyClient) Watch(ctx context.Context, obj crclient.ObjectList, opts ...crclient.ListOption) (watch.Interface, error) {
+	watcher, err := c.WithWatch.Watch(ctx, obj, opts...)
+	if err == nil {
+		if _, ok := obj.(*remediationv1.RemediationRequestList); ok {
+			c.once.Do(func() { close(c.ready) })
+		}
+	}
+	return watcher, err
+}
 
 // IT #2364: proves fleet-hinted tool calls (ambient cluster_id/rr_id/session_id
 // propagated by the model from console fleet hints and cross-phase
@@ -177,11 +198,13 @@ var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema valida
 			},
 		}
 		rr.Status.OverallPhase = remediationv1.PhasePending
-		wc := k8sfake.NewClientBuilder().
+		baseClient := k8sfake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(rr).
 			WithStatusSubresource(rr).
 			Build()
+		rrWatchReady := make(chan struct{})
+		wc := &rrWatchReadyClient{WithWatch: baseClient, ready: rrWatchReady}
 
 		watchTool, err := tools.NewWatchTool(wc, "payments", nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -189,15 +212,33 @@ var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema valida
 		Expect(ok).To(BeTrue())
 
 		toolCtx := newToolCtx()
+		watchCtx, cancel := context.WithCancel(toolCtx.Context)
+		defer cancel()
+		toolCtx.Context = watchCtx
 		before, _ := NewPhaseGuardForTest()
+		updateErr := make(chan error, 1)
 		go func() {
-			time.Sleep(50 * time.Millisecond)
+			select {
+			case <-rrWatchReady:
+			case <-watchCtx.Done():
+				updateErr <- watchCtx.Err()
+				return
+			}
 			var current remediationv1.RemediationRequest
-			Expect(wc.Get(context.Background(), crclient.ObjectKey{Namespace: "payments", Name: "rr-2364"}, &current)).To(Succeed())
+			if getErr := wc.Get(watchCtx, crclient.ObjectKey{Namespace: "payments", Name: "rr-2364"}, &current); getErr != nil {
+				cancel()
+				updateErr <- getErr
+				return
+			}
 			current.Status.OverallPhase = remediationv1.PhaseCompleted
 			current.Status.EnsureCompletionStatus().Outcome = remediationv1.OutcomeRemediated
 			current.Status.Message = "done"
-			Expect(wc.Status().Update(context.Background(), &current)).To(Succeed())
+			if statusErr := wc.Status().Update(watchCtx, &current); statusErr != nil {
+				cancel()
+				updateErr <- statusErr
+				return
+			}
+			updateErr <- nil
 		}()
 		args := map[string]any{
 			"name": "rr-2364",
@@ -214,5 +255,6 @@ var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema valida
 			"#2364: real ADK schema validation must accept fleet-hinted watch args")
 		Expect(result["status"]).To(Equal("completed"))
 		Expect(result["outcome"]).To(Equal(remediationv1.OutcomeRemediated))
+		Expect(<-updateErr).NotTo(HaveOccurred(), "terminal RR update must complete after watch registration")
 	})
 })

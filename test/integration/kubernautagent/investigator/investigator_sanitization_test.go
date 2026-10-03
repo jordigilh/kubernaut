@@ -28,10 +28,10 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", func() {
@@ -58,6 +58,7 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 		phaseTools = investigator.DefaultPhaseToolMap()
 
 		pipeline = sanitization.NewPipeline(
+			sanitization.NewSecretSanitizer(),
 			sanitization.NewCredentialSanitizer(),
 			sanitization.NewInjectionSanitizer(nil),
 		)
@@ -158,6 +159,69 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 				"raw output should be unchanged when sanitizer is nil")
 			Expect(toolMsg.Content).To(ContainSubstring("ignore all previous instructions"),
 				"injection patterns should pass through when sanitizer is nil")
+		})
+	})
+
+	Describe("IT-KA-2485-001 (BR-KA-211 FR-1/FR-4): executeTool preserves Kubernetes taint facts", func() {
+		It("should deliver the real taint key to the LLM", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{
+				name:   "kubectl_get_node",
+				result: "apiVersion: v1\nkind: Node\nspec:\n  taints:\n  - effect: NoSchedule\n    key: maintenance\n    value: scheduled\n",
+			})
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message:   llm.Message{Role: "assistant", Content: "checking node taints"},
+					ToolCalls: []llm.ToolCall{{ID: "tc_taint", Name: "kubectl_get_node", Arguments: `{}`}},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"taint preserved"}`}},
+				wfToolResp(`{"workflow_id":"remove-taint-v1","confidence":0.7}`),
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "Pending pods",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.calls).To(HaveLen(3))
+			toolMsg := mockClient.calls[1].Messages[len(mockClient.calls[1].Messages)-1]
+			Expect(toolMsg.Role).To(Equal("tool"))
+			Expect(toolMsg.Content).To(ContainSubstring("key: maintenance"))
+			Expect(toolMsg.Content).NotTo(ContainSubstring("key: [REDACTED]"))
+		})
+	})
+
+	Describe("IT-KA-2485-002 (BR-KA-211 FR-1/FR-2): executeTool protects YAML Secret values", func() {
+		It("should withhold original Secret data from the LLM", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{
+				name:   "kubectl_get_secret",
+				result: "apiVersion: v1\nkind: Secret\nmetadata:\n  name: db-creds\ndata:\n  key: c2VjcmV0LWtleQ==\n  tls.crt: Y2VydGlmaWNhdGU=\n",
+			})
+
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message:   llm.Message{Role: "assistant", Content: "checking Secret"},
+					ToolCalls: []llm.ToolCall{{ID: "tc_secret", Name: "kubectl_get_secret", Arguments: `{}`}},
+				},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"secret protected"}`}},
+				wfToolResp(`{"workflow_id":"noop","confidence":0.6}`),
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{Sanitizer: pipeline, AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil)}})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "Secret check",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.calls).To(HaveLen(3))
+			toolMsg := mockClient.calls[1].Messages[len(mockClient.calls[1].Messages)-1]
+			Expect(toolMsg.Role).To(Equal("tool"))
+			Expect(toolMsg.Content).NotTo(ContainSubstring("c2VjcmV0LWtleQ=="))
+			Expect(toolMsg.Content).NotTo(ContainSubstring("Y2VydGlmaWNhdGU="))
+			Expect(toolMsg.Content).To(ContainSubstring("[REDACTED]"))
 		})
 	})
 })

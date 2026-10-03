@@ -190,16 +190,19 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 	return e
 }
 
-// buildSanitizationPipeline creates the sanitization pipeline with G4 (credential scrub),
-// K8S-SECRET (JSON Secret redaction), and I1 (injection patterns) stages per DD-KA-019-003.
+// buildSanitizationPipeline creates the sanitization pipeline with K8S-SECRET
+// (context-aware Secret redaction), G4 (credential scrub), and I1 (injection
+// patterns) stages per DD-KA-019-003. Structure-aware Secret redaction runs
+// first so generic credential rules never decide whether a Kubernetes value is
+// secret based only on its field name or encoding shape.
 // Returns nil when all stages are disabled.
 func buildSanitizationPipeline(cfg *kaconfig.Config, logger logr.Logger) *sanitization.Pipeline {
 	var stages []sanitization.Stage
-	if cfg.AI.Safety.Sanitization.CredentialScrubEnabled {
-		stages = append(stages, sanitization.NewCredentialSanitizer())
-	}
 	if cfg.AI.Safety.Sanitization.SecretRedactionEnabled {
 		stages = append(stages, sanitization.NewSecretSanitizer())
+	}
+	if cfg.AI.Safety.Sanitization.CredentialScrubEnabled {
+		stages = append(stages, sanitization.NewCredentialSanitizer())
 	}
 	if cfg.AI.Safety.Sanitization.InjectionPatternsEnabled {
 		stages = append(stages, sanitization.NewInjectionSanitizer(nil))

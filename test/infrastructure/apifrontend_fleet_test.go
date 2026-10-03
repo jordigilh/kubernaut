@@ -11,9 +11,22 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATION-065]", func() {
+	It("UT-INFRA-AF-2485-001 [BR-INTEGRATION-065]: prevents Prometheus NodePort overlap during rule reseeding", func() {
+		manifest := captureKubectlManifest(func() error {
+			return DeployPrometheus(context.Background(), "kubernaut-system", "test-kubeconfig", io.Discard)
+		})
+
+		deployment := findManifestDocument(manifest, "Deployment", "prometheus")
+		strategyType, found, err := unstructured.NestedString(deployment.Object, "spec", "strategy", "type")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(strategyType).To(Equal("Recreate"))
+	})
+
 	It("UT-INFRA-AF-FLEET-2462-012 [BR-FLEET-054]: renders seeded workflow and remediation arguments in the AF mock-LLM manifest", func() {
 		manifestPath := filepath.Join(getProjectRoot(), "deploy/apifrontend/overlays/e2e/mock-llm.yaml")
 		data, err := os.ReadFile(manifestPath)
