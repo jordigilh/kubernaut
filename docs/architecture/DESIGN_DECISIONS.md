@@ -90,6 +90,7 @@
 | DD-KA-002 | Custom Labels Workflow-Matching Architecture | ✅ Approved | 2025-11-30 | [DD-KA-002-custom-labels-auto-append.md](decisions/DD-KA-002-custom-labels-auto-append.md) |
 | DD-KA-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-KA-003-mandatory-openapi-client-usage.md](decisions/DD-KA-003-mandatory-openapi-client-usage.md) |
 | DD-KA-001 | Workflow Response Validation Architecture (supersedes DD-HAPI-002, now retired; collapses to one validation layer) | ✅ Approved | 2026-07-14 | [DD-KA-001-workflow-response-validation-architecture.md](decisions/DD-KA-001-workflow-response-validation-architecture.md) |
+| DD-KA-2485 | Context-Aware Kubernetes Secret Sanitization | ✅ Approved & Implemented | 2026-10-03 | [DD-KA-2485-context-aware-secret-sanitization.md](decisions/DD-KA-2485-context-aware-secret-sanitization.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
 | DD-INFRA-001 | ConfigMap Hot-Reload Pattern (Shared Infrastructure) | ✅ Approved | 2025-12-06 | [DD-INFRA-001-configmap-hotreload-pattern.md](decisions/DD-INFRA-001-configmap-hotreload-pattern.md) |
