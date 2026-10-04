@@ -18,6 +18,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -50,6 +51,11 @@ import (
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
+
+// activeSessionStatusTimeout bounds the best-effort ownership preflight. A
+// failed or unavailable status probe must never delay the normal investigation
+// path; StartInvestigation remains the authoritative race-safe check.
+const activeSessionStatusTimeout = 2 * time.Second
 
 // Status/warning text emitted during the interactive-investigation await
 // loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
@@ -382,6 +388,12 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 			CandidateSeverity:   ambiguous.CandidateSeverity,
 			Error:               ambiguous.Message,
 		}, nil
+	}
+
+	// BR-INTERACTIVE-004: reject a known interactive lease holder before the
+	// readiness barriers. The barriers remain necessary for new/takeover paths.
+	if earlyResult, active := rejectKnownActiveSession(ctx, cfg, args.RRID, rrSeverity); active {
+		return *earlyResult, nil
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
@@ -801,28 +813,7 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 			logger.Info("session_active from KA: returning structured result instead of error",
 				"rr_id", rrID, "driver", driver)
 
-			if rrSeverity != "" {
-				rca := &InvestigateRCA{
-					Severity:    rrSeverity,
-					Confidence:  0.6,
-					Provisional: true,
-					RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
-				}
-				emitEarlyRCA(ctx, rca)
-				emitFallbackInvestigationArtifact(ctx, rca, rrID)
-				logger.Info("emitted early_rca on session_active path",
-					"rr_id", rrID, "severity", rrSeverity, "driver", driver)
-			}
-
-			return nil, &InvestigateMCPResult{
-				Status: "session_active",
-				RRID:   rrID,
-				Error: fmt.Sprintf(
-					"An investigation for this resource is already in progress, driven by %s. "+
-						"Do not retry kubernaut_investigate. "+
-						"Use kubernaut_get_remediation with rr_id %s to check its status.",
-					driver, rrID),
-			}, nil
+			return nil, sessionActiveInvestigationResult(ctx, rrID, rrSeverity, driver), nil
 		}
 		return nil, nil, fmt.Errorf("start MCP investigation: %w", err)
 	}
@@ -830,6 +821,88 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 		"rr_id", rrID, "session_id", result.SessionID,
 		"status", result.Status, "events_nil", result.Events == nil)
 	return result, nil, nil
+}
+
+type investigationStatusResponse struct {
+	Mode   string `json:"mode"`
+	Driver string `json:"driver,omitempty"`
+}
+
+// activeInteractiveSession performs a short, best-effort status probe. KA's
+// status action reports mode=interactive only while a driver currently holds
+// the investigation lease; mode=autonomous must continue through the normal
+// takeover path. Any probe failure or unrecognised response deliberately falls
+// through to the existing readiness and StartInvestigation race barriers.
+func activeInteractiveSession(ctx context.Context, cfg *InvestigateConfig, rrID string) (string, bool) {
+	statusCtx, cancel := context.WithTimeout(ctx, activeSessionStatusTimeout)
+	defer cancel()
+
+	result, err := cfg.MCPClient.InvokeAction(statusCtx, ka.InvokeActionArgs{
+		RRID:   rrID,
+		Action: "status",
+	})
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).V(1).Info(
+			"interactive session status preflight unavailable; continuing with normal start path",
+			"rr_id", rrID, "error", err)
+		return "", false
+	}
+	if result == nil || result.Response == "" {
+		logr.FromContextOrDiscard(ctx).V(1).Info(
+			"interactive session status preflight returned no response; continuing with normal start path",
+			"rr_id", rrID)
+		return "", false
+	}
+
+	var status investigationStatusResponse
+	if err := json.Unmarshal([]byte(result.Response), &status); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err,
+			"interactive session status preflight returned malformed response; continuing with normal start path",
+			"rr_id", rrID)
+		return "", false
+	}
+	if status.Mode != "interactive" {
+		return "", false
+	}
+	return status.Driver, true
+}
+
+func rejectKnownActiveSession(ctx context.Context, cfg *InvestigateConfig, rrID, rrSeverity string) (*InvestigateMCPResult, bool) {
+	driver, active := activeInteractiveSession(ctx, cfg, rrID)
+	if !active {
+		return nil, false
+	}
+	logr.FromContextOrDiscard(ctx).Info("active interactive session detected before readiness wait",
+		"rr_id", rrID, "driver", driver)
+	return sessionActiveInvestigationResult(ctx, rrID, rrSeverity, driver), true
+}
+
+func sessionActiveInvestigationResult(ctx context.Context, rrID, rrSeverity, driver string) *InvestigateMCPResult {
+	if driver == "" {
+		driver = "another user"
+	}
+	if rrSeverity != "" {
+		rca := &InvestigateRCA{
+			Severity:    rrSeverity,
+			Confidence:  0.6,
+			Provisional: true,
+			RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
+		}
+		emitEarlyRCA(ctx, rca)
+		emitFallbackInvestigationArtifact(ctx, rca, rrID)
+		logr.FromContextOrDiscard(ctx).Info("emitted early_rca on session_active path",
+			"rr_id", rrID, "severity", rrSeverity, "driver", driver)
+	}
+
+	return &InvestigateMCPResult{
+		Status: "session_active",
+		RRID:   rrID,
+		Error: fmt.Sprintf(
+			"An investigation for this resource is already in progress, driven by %s. "+
+				"Do not retry kubernaut_investigate. "+
+				"Use kubernaut_get_remediation with rr_id %s to check its status.",
+			driver, rrID),
+	}
 }
 
 // finalizeInvestigationStart emits the KA-delegation audit event, invokes

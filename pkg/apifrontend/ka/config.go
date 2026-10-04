@@ -337,6 +337,7 @@ type InvokeActionArgs struct {
 type InvokeActionResult struct {
 	SessionID string          `json:"session_id,omitempty"`
 	Status    string          `json:"status"`
+	Response  string          `json:"response,omitempty"`
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
