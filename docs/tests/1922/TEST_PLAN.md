@@ -3,12 +3,12 @@
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
 **Test Plan Identifier**: TP-1922-v1
-**Feature**: `investigation_summary` fallback artifact carries `causal_chain`/`tool_calls_count` so the Console's RCA card renders on `session_active`
+**Feature**: `session_active` is detected before readiness waits and its `investigation_summary` fallback carries `causal_chain`/`tool_calls_count` so the Console's RCA card renders within the caller deadline
 **Version**: 1.0
 **Created**: 2026-08-04
 **Author**: AI Agent
 **Status**: Implemented (UT/IT verified locally; E2E written and passes lint/build but requires a live E2E cluster — see Section 3.3)
-**Branch**: TBD
+**Branch**: `fix/1922-session-active-fallback`
 
 ---
 
@@ -25,6 +25,7 @@ This test plan validates the fix for GitHub issue #1922: when KA rejects a `kube
 3. **Shape consistency**: the fallback artifact uses the exact same JSON field names as the final `present_decision` artifact (`RCAData`), so Console parsing logic does not need a fallback-specific branch (SI-10).
 4. **Wiring proof**: both callers of the shared helper (`session_active` and KA-produced-no-events fallback) route through the fix.
 5. **Journey proof**: a real rejected concurrent driver (`session_active`, BR-INTERACTIVE-004) actually sees a rendered RCA card end-to-end.
+6. **Latency protection**: a known interactive lease holder is rejected before the readiness barriers; autonomous status and probe failures retain the normal takeover/race-safe path.
 
 ### 1.3 Success Metrics
 
@@ -71,6 +72,8 @@ This test plan validates the fix for GitHub issue #1922: when KA rejects a `kube
 | ID | Scenario | Expected | Status |
 |----|----------|----------|--------|
 | UT-AF-WIRE-SESSION-003 | `HandleInvestigationMCPWithRegistry` with triaged severity + KA `session_active` error | Emitted `TaskArtifactUpdateEvent` (schema=`investigation_summary`) has non-empty `rca.causal_chain` | Implemented — PASS |
+| IT-AF-1922-004 | `HandleInvestigationMCPWithRegistry` sees KA `action=status` with `mode=interactive` | Returns `session_active`, emits the fallback artifact, and does not call `action=start` or enter readiness waits | Implemented — PASS |
+| UT-AF-1922-005 | Status preflight returns `mode=autonomous` | Normal takeover/start path remains authoritative | Implemented — PASS |
 
 ### 3.3 E2E Tests
 
@@ -84,7 +87,8 @@ This test plan validates the fix for GitHub issue #1922: when KA rejects a `kube
 
 | Component | Production Entry Point | Wiring Code Location | Test ID |
 |-----------|------------------------|-----------------------|---------|
-| `emitFallbackInvestigationArtifact` (enhanced, pre-existing) | `HandleInvestigationMCPWithRegistry` → `startKAInvestigation` / `runBlockingInvestigation` | `pkg/apifrontend/tools/ka_investigate_mcp.go:513,629` | UT-AF-WIRE-SESSION-003 (IT), E2E-AF-1922-001 (E2E) |
+| `emitFallbackInvestigationArtifact` (enhanced, pre-existing) | `HandleInvestigationMCPWithRegistry` → `sessionActiveInvestigationResult` / `runBlockingInvestigation` | `pkg/apifrontend/tools/ka_investigate_mcp.go:887,1031` | UT-AF-WIRE-SESSION-003 (IT), E2E-AF-1922-001 (E2E) |
+| `activeInteractiveSession` preflight | `HandleInvestigationMCPWithRegistry` → KA `action=status` before readiness | `pkg/apifrontend/tools/ka_investigate_mcp.go` | IT-AF-1922-004 |
 | `EmitFallbackInvestigationArtifact` (new, test-only exported seam) | n/a — test seam, not a production entry point | `pkg/apifrontend/tools/ka_investigate_bridge.go` | UT-AF-1922-001, UT-AF-1922-002 |
 
 ---
@@ -94,5 +98,6 @@ This test plan validates the fix for GitHub issue #1922: when KA rejects a `kube
 ```bash
 go test ./pkg/apifrontend/tools/... -run "UT-AF-1922" -v -count=1
 go test ./pkg/apifrontend/tools/... -run "UT-AF-WIRE-SESSION" -v -count=1
+go test ./pkg/apifrontend/tools/... -run "IT-AF-1922-004" -v -count=1
 make test-e2e-apifrontend GINKGO_FOCUS="1922"
 ```
