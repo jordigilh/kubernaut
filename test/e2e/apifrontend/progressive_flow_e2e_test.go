@@ -169,6 +169,20 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		By("SI-4: status-only outcome must be emitted")
 		Expect(result.severityOnlyEvents).NotTo(BeEmpty(),
 			"SI-4: progressive flow with no RCA findings must emit severity-only status guidance")
+		Expect(result.earlyRCAEvents).To(BeEmpty(),
+			"SI-4: no-RCA progressive flow must not fabricate an early RCA event")
+		for _, event := range result.allArtifacts {
+			artifact, _ := event["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			metadata, _ := artifact["metadata"].(map[string]any)
+			if metadata == nil {
+				continue
+			}
+			Expect(metadata["schema"]).NotTo(Equal(investigationSummarySchema),
+				"SI-4: no-RCA progressive flow must not fabricate an investigation summary artifact")
+		}
 
 		By("SI-4: status-only event carries the standard status classification")
 		statusEvent := result.severityOnlyEvents[0]

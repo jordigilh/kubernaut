@@ -126,6 +126,17 @@ data:
             kind: "Pod"
             cluster_id: "__HUB_CLUSTER_ID__"
 
+      - name: "af_progressive_no_rca"
+        # #1407 intentionally exercises the AF-only no-RCA contract. Scope this
+        # override to KA's RCA extraction request for the dedicated signal so
+        # the initial investigation still runs normally, while the generic
+        # mock-LLM fallback cannot fabricate RCA findings for the fixture.
+        signal_patterns: ["AFProgressiveGrounding"]
+        caller: "ka"
+        phase: "rca"
+        tool_call:
+          name: "submit_result"
+
       - name: "af_structured_artifact_investigate"
         # #1408 has its own target because it runs concurrently with #1407
         # under Ginkgo --procs>1 and must acquire an independent KA lease.
