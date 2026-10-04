@@ -377,7 +377,8 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 // E2E-AF-1922: session_active status visibility
 //
 // Proves the rejected-driver journey: two concurrent "progressive investigate"
-// calls target the same fixture resource (af-investigate-e2e/af-investigate-target),
+// calls target the same dedicated fixture resource
+// (af-session-active-e2e/af-session-active-target),
 // so the fingerprint-based RR reuse (createOrReuseRR) routes both through the
 // same RRID. The first caller acquires KA's single-driver session; the second
 // caller's kubernaut_investigate call is rejected with session_active
@@ -387,8 +388,8 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 // FedRAMP: AC-4 (information flow enforcement — the rejected caller's session
 // is still observable through the same audit-traceable status channel).
 //
-// Mock-LLM scenario: af_progressive_investigate
-// Keyword trigger: "progressive investigate"
+// Mock-LLM scenario: af_session_active_investigate
+// Keyword trigger: "session active investigate"
 // =============================================================================
 
 var _ = Describe("session_active Status Visibility — #1922", Ordered, Label("e2e", "session-active-status", "1922"), func() {
@@ -468,7 +469,7 @@ var _ = Describe("session_active Status Visibility — #1922", Ordered, Label("e
 		firstStarted := make(chan struct{})
 		go func() {
 			defer GinkgoRecover()
-			resp, err := a2aSSEPost(firstCtx, a2aMessageStream("e2e-1922-first", "progressive investigate"))
+			resp, err := a2aSSEPost(firstCtx, a2aMessageStream("e2e-1922-first", "session active investigate"))
 			close(firstStarted)
 			if err != nil {
 				return
@@ -494,7 +495,7 @@ var _ = Describe("session_active Status Visibility — #1922", Ordered, Label("e
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer secondCancel()
-		resp, err := a2aSSEPost(secondCtx, a2aMessageStream("e2e-1922-second", "progressive investigate"))
+		resp, err := a2aSSEPost(secondCtx, a2aMessageStream("e2e-1922-second", "session active investigate"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))

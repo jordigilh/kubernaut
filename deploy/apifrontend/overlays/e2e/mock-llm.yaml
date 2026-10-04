@@ -94,6 +94,21 @@ data:
     # AF-specific selector→tool_call mappings for E2E testing.
     # mock-LLM matches selector constraints and returns the corresponding tool call.
     scenario_selectors:
+      - name: "af_session_active_investigate"
+        # #1922 uses a dedicated target so its intentionally-held interactive
+        # lease cannot make the independent #1407/#1408 progressive RCA specs
+        # inherit session_active under Ginkgo parallel scheduling.
+        keywords: ["session active investigate"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-session-active-e2e"
+            name: "af-session-active-target"
+            kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
+
       - name: "af_progressive_investigate"
         keywords: ["progressive investigate", "investigate progressively"]
         match_last_only: true

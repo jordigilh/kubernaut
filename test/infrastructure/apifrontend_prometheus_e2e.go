@@ -323,6 +323,9 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //   - AFInvestigateGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
 //     the mock-LLM's dedicated "af-investigate-e2e/Pod/af-investigate-target"
 //     investigate fixture (see below)
+//   - AFSessionActiveGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
+//     the isolated session_active concurrency fixture
+//     (namespace="af-session-active-e2e", kind=Pod, name="af-session-active-target")
 //   - UserSeverityHintGrounding: for:0s + vector(1) (never stale) -> tier 1,
 //     grounds severity_triage_test.go's TC-E2E-SEV-06 "user hint does not
 //     bypass triage" fixture (dedicated namespace="sev-userhint-ns",
@@ -484,6 +487,19 @@ groups:
           name: af-investigate-target
         annotations:
           summary: "Synthetic grounding alert for AF investigate E2E fixture (dedicated namespace/name, #1839)"
+      - alert: AFSessionActiveGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: af-session-active-e2e
+          kind: Pod
+          name: af-session-active-target
+        annotations:
+          summary: "Synthetic grounding alert for the isolated session_active status E2E fixture (#1922)"
       - alert: UserSeverityHintGrounding
         expr: vector(1) > 0
         for: 0s

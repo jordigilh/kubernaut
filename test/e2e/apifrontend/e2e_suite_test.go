@@ -252,6 +252,9 @@ var _ = SynchronizedBeforeSuite(
 				Expect(severityFixtureErr).NotTo(HaveOccurred(), "severity fixture Kubernetes client must be available")
 				Expect(prepareSeverityAFFixtures(context.Background(), severityFixtureClient)).To(Succeed(),
 					"retained local severity triage fixtures must be ready")
+				Expect(kinfra.EnsureManagedNamespace(context.Background(), severityFixtureClient, "af-session-active-e2e")).
+					To(Succeed(), "retained session_active namespace must exist and be labeled managed")
+				helpers.EnsureTestPods(context.Background(), severityFixtureClient, "af-session-active-e2e", "af-session-active-target")
 				finishAFBeforeSuiteStep("prepare retained local severity fixtures", fixturesStarted)
 				rulesStarted := startAFBeforeSuiteStep("remove Fleet-only Prometheus rules from retained local cluster")
 				Expect(kinfra.RemoveFleetOnlyPrometheusRules(context.Background(), e2eNamespace, kubeconfigPath, beforeSuiteWriter)).To(Succeed(),
@@ -576,6 +579,14 @@ var _ = SynchronizedBeforeSuite(
 		fixturesStarted := startAFBeforeSuiteStep("ensure local managed namespaces and structured-decision test pods")
 		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-investigate-e2e")).
 			To(Succeed(), "af-investigate-e2e namespace must exist and be labeled managed")
+
+		// #1922 deliberately holds a single-driver session open while another
+		// caller contends for it. Keep that lease on a dedicated target so it
+		// cannot contaminate the independent progressive RCA contracts (#1407/
+		// #1408) when Ginkgo schedules top-level specs concurrently.
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-session-active-e2e")).
+			To(Succeed(), "af-session-active-e2e namespace must exist and be labeled managed")
+		helpers.EnsureTestPods(context.Background(), k8sClient, "af-session-active-e2e", "af-session-active-target")
 
 		// structured_decision_e2e_test.go's groundSession helper uses its own
 		// dedicated namespace/target (StructuredDecisionGrounding alert,
