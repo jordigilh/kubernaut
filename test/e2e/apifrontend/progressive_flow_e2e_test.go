@@ -237,8 +237,9 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 // FedRAMP: SI-4 (structured audit classification), AU-3 (schema traceability),
 // SI-10 (data integrity through schema validation).
 //
-// Mock-LLM scenario: af_progressive_investigate (reuses #1407 scenario since
-// present_decision is called after discovery completes).
+// Mock-LLM scenario: af_structured_artifact_investigate
+// (same investigation-to-decision flow as #1407, but with a dedicated target
+// so the two Ordered containers can run concurrently).
 // =============================================================================
 
 var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e2e", "structured-artifact", "1408"), func() {
@@ -290,7 +291,7 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 			defer cancel()
 
 			taskID := fmt.Sprintf("e2e-artifact-1408-001-%d", attempt)
-			resp, err := a2aSSEPost(readCtx, a2aMessageStream(taskID, "progressive investigate"))
+			resp, err := a2aSSEPost(readCtx, a2aMessageStream(taskID, "structured artifact investigate"))
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))

@@ -255,6 +255,12 @@ var _ = SynchronizedBeforeSuite(
 				Expect(kinfra.EnsureManagedNamespace(context.Background(), severityFixtureClient, "af-session-active-e2e")).
 					To(Succeed(), "retained session_active namespace must exist and be labeled managed")
 				helpers.EnsureTestPods(context.Background(), severityFixtureClient, "af-session-active-e2e", "af-session-active-target")
+				Expect(kinfra.EnsureManagedNamespace(context.Background(), severityFixtureClient, "af-progressive-e2e")).
+					To(Succeed(), "retained progressive namespace must exist and be labeled managed")
+				helpers.EnsureTestPods(context.Background(), severityFixtureClient, "af-progressive-e2e", "af-progressive-target")
+				Expect(kinfra.EnsureManagedNamespace(context.Background(), severityFixtureClient, "af-structured-artifact-e2e")).
+					To(Succeed(), "retained structured-artifact namespace must exist and be labeled managed")
+				helpers.EnsureTestPods(context.Background(), severityFixtureClient, "af-structured-artifact-e2e", "af-structured-artifact-target")
 				finishAFBeforeSuiteStep("prepare retained local severity fixtures", fixturesStarted)
 				rulesStarted := startAFBeforeSuiteStep("remove Fleet-only Prometheus rules from retained local cluster")
 				Expect(kinfra.RemoveFleetOnlyPrometheusRules(context.Background(), e2eNamespace, kubeconfigPath, beforeSuiteWriter)).To(Succeed(),
@@ -566,20 +572,27 @@ var _ = SynchronizedBeforeSuite(
 			finishAFBeforeSuiteStep("build Fleet Kubernetes clients and wait for Fleet AF TLS health", fleetClientStarted)
 		}
 
-		// #2022/#2025/ADR-053: the mock-LLM's dedicated investigate fixture
-		// (af_investigate/af_progressive_investigate scenarios, see
-		// deploy/apifrontend/overlays/e2e/mock-llm.yaml) targets this
-		// namespace, which — unlike sev-tier1-ns et al. — was never actually
-		// created as a real Namespace object (only referenced as a string in
-		// RR specs and Prometheus alert labels). AF's scope check now
-		// fail-closes to unmanaged when neither the target resource nor its
-		// namespace exists/is labeled, so this namespace must exist and
-		// carry the managed label for kubernaut_investigate to proceed past
-		// scope validation, matching a real Kubernaut deployment's setup.
+		// #2022/#2025/ADR-053: the mock-LLM's generic investigate fixture
+		// (af_investigate, see deploy/apifrontend/overlays/e2e/mock-llm.yaml)
+		// targets this namespace, which — unlike sev-tier1-ns et al. — was
+		// never actually created as a real Namespace object (only referenced
+		// as a string in RR specs and Prometheus alert labels). AF's scope
+		// check now fail-closes to unmanaged when neither the target resource
+		// nor its namespace exists/is labeled, so this namespace must exist
+		// and carry the managed label for kubernaut_investigate to proceed
+		// past scope validation, matching a real Kubernaut deployment's
+		// setup. The progressive, structured-artifact, and session_active
+		// scenarios use dedicated fixtures below.
 		fixturesStarted := startAFBeforeSuiteStep("ensure local managed namespaces and APIF test pods")
 		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-investigate-e2e")).
 			To(Succeed(), "af-investigate-e2e namespace must exist and be labeled managed")
 		helpers.EnsureTestPods(context.Background(), k8sClient, "af-investigate-e2e", "af-investigate-target")
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-progressive-e2e")).
+			To(Succeed(), "af-progressive-e2e namespace must exist and be labeled managed")
+		helpers.EnsureTestPods(context.Background(), k8sClient, "af-progressive-e2e", "af-progressive-target")
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-structured-artifact-e2e")).
+			To(Succeed(), "af-structured-artifact-e2e namespace must exist and be labeled managed")
+		helpers.EnsureTestPods(context.Background(), k8sClient, "af-structured-artifact-e2e", "af-structured-artifact-target")
 
 		// #1922 deliberately holds a single-driver session open while another
 		// caller contends for it. Keep that lease on a dedicated target so it
@@ -599,7 +612,7 @@ var _ = SynchronizedBeforeSuite(
 		helpers.EnsureTestPods(context.Background(), k8sClient, "af-structured-decision-e2e",
 			"structured-decision-target", "structured-decision-target-2",
 			"structured-decision-target-3", "structured-decision-target-4")
-		finishAFBeforeSuiteStep("ensure local managed namespaces and structured-decision test pods", fixturesStarted)
+		finishAFBeforeSuiteStep("ensure local managed namespaces and APIF test pods", fixturesStarted)
 
 		healthURL := e2eHostURL("http", 18081)
 		httpHealthStarted := startAFBeforeSuiteStep("wait for local AF HTTP health")

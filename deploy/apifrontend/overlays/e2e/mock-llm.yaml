@@ -116,14 +116,27 @@ data:
           name: "kubernaut_investigate"
           arguments:
             api_version: "v1"
-            # #1839: dedicated namespace/name (not "default"/"nginx") so this
-            # fixture's synthetic grounding alert (AFInvestigateGrounding,
-            # apifrontend_prometheus_e2e.go) can only ever match this exact
-            # target -- generic names would let it silently backstop any
-            # future scenario that forgets to add its own Prometheus
-            # grounding (see PR #1865 discussion).
-            namespace: "af-investigate-e2e"
-            name: "af-investigate-target"
+            # #1839: dedicated namespace/name (not "default"/"nginx") so
+            # this fixture's synthetic grounding alert can only ever match
+            # the #1407 target. Keep it separate from af_investigate and the
+            # #1408 structured-artifact fixture: Ginkgo runs their Ordered
+            # containers concurrently and KA permits only one driver per RR.
+            namespace: "af-progressive-e2e"
+            name: "af-progressive-target"
+            kind: "Pod"
+            cluster_id: "__HUB_CLUSTER_ID__"
+
+      - name: "af_structured_artifact_investigate"
+        # #1408 has its own target because it runs concurrently with #1407
+        # under Ginkgo --procs>1 and must acquire an independent KA lease.
+        keywords: ["structured artifact investigate"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-artifact-e2e"
+            name: "af-structured-artifact-target"
             kind: "Pod"
             cluster_id: "__HUB_CLUSTER_ID__"
 
@@ -135,18 +148,11 @@ data:
         tool_call:
           name: "kubernaut_investigate"
           arguments:
-            # api_version was missing here (unlike af_progressive_investigate
-            # above, its sibling scenario targeting the identical fixture):
-            # kubernaut_investigate's args validation rejects any call
-            # without it ("api_version must not be empty",
-            # pkg/apifrontend/validate/k8s.go), so every call matching this
-            # scenario unconditionally failed before ever reaching KA. A
-            # real LLM self-corrects and retries within ~2-3s (see
-            # DD-AF-012's forensic log excerpt), but mock-llm is
-            # deterministic and never retries, so any test relying on this
-            # scenario actually succeeding (e.g. structured_decision_e2e_
-            # test.go's groundSession helper, #2023 Stage 3) silently never
-            # got real grounding.
+            # api_version is required by kubernaut_investigate's argument
+            # validation ("api_version must not be empty",
+            # pkg/apifrontend/validate/k8s.go). Keep this generic scenario on
+            # its own fixture; the progressive and structured-artifact
+            # scenarios above intentionally use isolated targets.
             api_version: "v1"
             namespace: "af-investigate-e2e"
             name: "af-investigate-target"
