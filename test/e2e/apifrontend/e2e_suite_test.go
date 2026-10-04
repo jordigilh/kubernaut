@@ -576,9 +576,10 @@ var _ = SynchronizedBeforeSuite(
 		// namespace exists/is labeled, so this namespace must exist and
 		// carry the managed label for kubernaut_investigate to proceed past
 		// scope validation, matching a real Kubernaut deployment's setup.
-		fixturesStarted := startAFBeforeSuiteStep("ensure local managed namespaces and structured-decision test pods")
+		fixturesStarted := startAFBeforeSuiteStep("ensure local managed namespaces and APIF test pods")
 		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-investigate-e2e")).
 			To(Succeed(), "af-investigate-e2e namespace must exist and be labeled managed")
+		helpers.EnsureTestPods(context.Background(), k8sClient, "af-investigate-e2e", "af-investigate-target")
 
 		// #1922 deliberately holds a single-driver session open while another
 		// caller contends for it. Keep that lease on a dedicated target so it
