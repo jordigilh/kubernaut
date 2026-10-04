@@ -49,13 +49,23 @@ import (
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
-// Short because the phase transition should follow almost immediately after AA submits.
+// This is a coordination deadline, not a retry interval: AwaitAgentSessionInteractive
+// already watches (or polls) the CRD, and the phase transition should follow almost
+// immediately after AA submits. The known-active preflight skips this barrier.
 const isPhaseActivePollTimeout = 5 * time.Second
 
 // activeSessionStatusTimeout bounds the best-effort ownership preflight. A
 // failed or unavailable status probe must never delay the normal investigation
-// path; StartInvestigation remains the authoritative race-safe check.
+// path, so this is intentionally a single bounded attempt rather than an
+// exponential-backoff retry budget. StartInvestigation remains the authoritative
+// race-safe check.
 const activeSessionStatusTimeout = 2 * time.Second
+
+// provisionalSeverityConfidence is the conservative display score used when
+// AF has only source-provided severity metadata and no KA RCA confidence. It
+// is intentionally fixed rather than presented as a calibrated model score;
+// Provisional=true prevents this value from being treated as authoritative.
+const provisionalSeverityConfidence = 0.6
 
 // Status/warning text emitted during the interactive-investigation await
 // loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
@@ -884,7 +894,7 @@ func sessionActiveInvestigationResult(ctx context.Context, rrID, rrSeverity, dri
 	if rrSeverity != "" {
 		rca := &InvestigateRCA{
 			Severity:    rrSeverity,
-			Confidence:  0.6,
+			Confidence:  provisionalSeverityConfidence,
 			Provisional: true,
 			RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
 		}
@@ -1011,7 +1021,7 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 	if rca == nil && rrSeverity != "" {
 		rca = &InvestigateRCA{
 			Severity:    rrSeverity,
-			Confidence:  0.6,
+			Confidence:  provisionalSeverityConfidence,
 			Provisional: true,
 			RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
 		}
