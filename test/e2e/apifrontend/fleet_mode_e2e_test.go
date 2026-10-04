@@ -178,15 +178,11 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 
 		earlyRCAFound, earlySeverity, earlyConfidence, summaryFound := false, false, false, false
 		for _, event := range readFleetAFEvents(resp) {
-			metadata, _ := event["metadata"].(map[string]any)
+			metadata := event.Metadata
 			if metadata != nil && metadata["schema"] == "early_rca" {
 				earlyRCAFound = true
-				status, _ := event["status"].(map[string]any)
-				message, _ := status["message"].(map[string]any)
-				parts, _ := message["parts"].([]any)
-				if len(parts) > 0 {
-					part, _ := parts[0].(map[string]any)
-					payloadText, _ := part["text"].(string)
+				if event.Status != nil && event.Status.Message != nil && len(event.Status.Message.Parts) > 0 {
+					payloadText := event.Status.Message.Parts[0].Text
 					var payload map[string]any
 					if json.Unmarshal([]byte(payloadText), &payload) == nil {
 						_, earlySeverity = payload["severity"]
@@ -358,43 +354,39 @@ func groundFleetAFSession(ctx context.Context, token, prompt, contextID string) 
 
 func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 	for _, event := range readFleetAFEvents(resp) {
-		if event["kind"] == artifactUpdate {
-			artifact, _ := event["artifact"].(map[string]any)
-			if artifact == nil {
+		if event.Kind == artifactUpdate {
+			if event.Artifact == nil {
 				continue
 			}
-			metadata, _ := artifact["metadata"].(map[string]any)
+			metadata := event.Artifact.Metadata
 			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
-			parts, _ := artifact["parts"].([]any)
-			for _, rawPart := range parts {
-				part, _ := rawPart.(map[string]any)
-				if part == nil {
-					continue
+			for _, part := range event.Artifact.Parts {
+				if len(part.Data) > 0 {
+					var data map[string]any
+					if err := json.Unmarshal(part.Data, &data); err == nil && data != nil {
+						encoded, err := json.Marshal(data)
+						Expect(err).NotTo(HaveOccurred())
+						return string(encoded), metadata
+					}
 				}
-				if data, ok := part["data"].(map[string]any); ok {
-					encoded, err := json.Marshal(data)
-					Expect(err).NotTo(HaveOccurred())
-					return string(encoded), metadata
-				}
-				if text, ok := part["text"].(string); ok && text != "" {
-					return text, metadata
+				if part.Text != "" {
+					return part.Text, metadata
 				}
 			}
 		}
-		if event["kind"] == statusUpdate {
-			metadata, _ := event["metadata"].(map[string]any)
+		if event.Kind == statusUpdate {
+			metadata := event.Metadata
 			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
-			status, _ := event["status"].(map[string]any)
-			message, _ := status["message"].(map[string]any)
-			parts, _ := message["parts"].([]any)
-			if len(parts) > 0 {
-				part, _ := parts[0].(map[string]any)
-				if text, ok := part["text"].(string); ok && text != "" && !strings.Contains(text, "Presenting decision") {
-					return text, metadata
+			if event.Status == nil || event.Status.Message == nil {
+				continue
+			}
+			for _, part := range event.Status.Message.Parts {
+				if part.Text != "" && !strings.Contains(part.Text, "Presenting decision") {
+					return part.Text, metadata
 				}
 			}
 		}
@@ -402,8 +394,8 @@ func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 	return "", nil
 }
 
-func readFleetAFEvents(resp *http.Response) []map[string]any {
-	var events []map[string]any
+func readFleetAFEvents(resp *http.Response) []a2aSSEEvent {
+	var events []a2aSSEEvent
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -416,9 +408,9 @@ func readFleetAFEvents(resp *http.Response) []map[string]any {
 			continue
 		}
 		var envelope struct {
-			Result map[string]any `json:"result"`
+			Result a2aSSEEvent `json:"result"`
 		}
-		if err := json.Unmarshal([]byte(data), &envelope); err == nil && envelope.Result != nil {
+		if err := json.Unmarshal([]byte(data), &envelope); err == nil && envelope.Result.Kind != "" {
 			events = append(events, envelope.Result)
 		}
 	}
@@ -426,23 +418,20 @@ func readFleetAFEvents(resp *http.Response) []map[string]any {
 	return events
 }
 
-func fleetAFHasInvestigationSummary(event map[string]any) bool {
-	if event["kind"] != artifactUpdate {
+func fleetAFHasInvestigationSummary(event a2aSSEEvent) bool {
+	if event.Kind != artifactUpdate || event.Artifact == nil {
 		return false
 	}
-	artifact, _ := event["artifact"].(map[string]any)
-	if artifact == nil {
-		return false
-	}
-	metadata, _ := artifact["metadata"].(map[string]any)
+	metadata := event.Artifact.Metadata
 	if metadata == nil || metadata["schema"] != investigationSummarySchema || metadata["schema_version"] != "1.0" {
 		return false
 	}
-	parts, _ := artifact["parts"].([]any)
-	for _, rawPart := range parts {
-		part, _ := rawPart.(map[string]any)
-		data, _ := part["data"].(map[string]any)
-		if data != nil {
+	for _, part := range event.Artifact.Parts {
+		if len(part.Data) > 0 {
+			var data map[string]any
+			if err := json.Unmarshal(part.Data, &data); err != nil {
+				continue
+			}
 			if _, hasSummary := data["summary"]; hasSummary {
 				return true
 			}
@@ -451,21 +440,15 @@ func fleetAFHasInvestigationSummary(event map[string]any) bool {
 	return false
 }
 
-func fleetAFHasSessionActiveStatus(event map[string]any) bool {
-	if event["kind"] != statusUpdate {
+func fleetAFHasSessionActiveStatus(event a2aSSEEvent) bool {
+	if event.Kind != statusUpdate || event.Metadata == nil || event.Metadata["type"] != "status" {
 		return false
 	}
-	metadata, _ := event["metadata"].(map[string]any)
-	if metadata == nil || metadata["type"] != "status" {
+	if event.Status == nil || event.Status.Message == nil {
 		return false
 	}
-	status, _ := event["status"].(map[string]any)
-	message, _ := status["message"].(map[string]any)
-	parts, _ := message["parts"].([]any)
-	for _, rawPart := range parts {
-		part, _ := rawPart.(map[string]any)
-		text, _ := part["text"].(string)
-		if strings.Contains(text, "already in progress") {
+	for _, part := range event.Status.Message.Parts {
+		if strings.Contains(part.Text, "already in progress") {
 			return true
 		}
 	}
