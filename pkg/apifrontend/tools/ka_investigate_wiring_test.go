@@ -40,6 +40,8 @@ import (
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
+const investigationSummarySchema = "investigation_summary"
+
 var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/C02/C03)", func() {
 
 	Describe("WIRE-C01: investigate auto-RR path uses triager for severity", func() {
@@ -493,7 +495,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			var artifactEvt *a2a.TaskArtifactUpdateEvent
 			for _, evt := range queue.Events() {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					if schema, _ := art.Artifact.Metadata["schema"].(string); schema == "investigation_summary" {
+					if schema, _ := art.Artifact.Metadata["schema"].(string); schema == investigationSummarySchema {
 						artifactEvt = art
 						break
 					}
@@ -508,6 +510,123 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			causalChain, ok := rcaData["causal_chain"].([]string)
 			Expect(ok).To(BeTrue(), "AU-3/SI-10: rca.causal_chain must be present so the Console's hasRCAData guard renders the RCA card (#1922)")
 			Expect(causalChain).NotTo(BeEmpty(), "AU-3/SI-10: rca.causal_chain must be non-empty so the Console's hasRCAData guard renders the RCA card (#1922)")
+		})
+
+		It("IT-AF-1922-004: an active-driver status preflight returns the fallback before readiness waits", func() {
+			origTimeout := tools.AwaitSessionTimeout
+			tools.AwaitSessionTimeout = 10 * time.Second
+			defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+			startCalls := 0
+			mockMCP := &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					Expect(args.RRID).NotTo(BeEmpty())
+					Expect(args.Action).To(Equal("status"))
+					return &ka.InvokeActionResult{
+						Status:   "status",
+						Response: `{"rr_id":"rr-1922-fast","mode":"interactive"}`,
+					}, nil
+				},
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					startCalls++
+					Fail("active-driver preflight must reject before StartInvestigation and readiness waits")
+					return nil, nil
+				},
+			}
+
+			mockProm := &mockPromClientForWiring{
+				alerts: []prom.Alert{{
+					State: "firing",
+					Labels: map[string]string{
+						"alertname": "KubePodCrashLooping",
+						"severity":  "critical",
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "web-app-1922-fast",
+						"cluster":   hubClusterID,
+					},
+				}},
+			}
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "bob",
+					Groups:   []string{"sre"},
+				}),
+				queue, "task-1922-fast", "ctx-1922-fast", nil,
+			)
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient:    mockMCP,
+					Client:       newTypedClientForInvestigate(),
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker(),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app-1922-fast",
+					ClusterID:  hubClusterID,
+				},
+				true, "bob",
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("session_active"))
+			Expect(startCalls).To(Equal(0), "known active ownership must be rejected before action=start")
+
+			var artifactEvt *a2a.TaskArtifactUpdateEvent
+			for _, evt := range queue.Events() {
+				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					if schema, _ := art.Artifact.Metadata["schema"].(string); schema == investigationSummarySchema {
+						artifactEvt = art
+						break
+					}
+				}
+			}
+			Expect(artifactEvt).NotTo(BeNil(), "the preflight rejection must preserve the renderable fallback artifact")
+		})
+
+		It("UT-AF-1922-005: autonomous status continues through the normal takeover/start path", func() {
+			startCalls := 0
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					Expect(args.Action).To(Equal("status"))
+					return &ka.InvokeActionResult{
+						Status:   "status",
+						Response: `{"rr_id":"rr-1922-autonomous","mode":"autonomous"}`,
+					}, nil
+				},
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					startCalls++
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-1922-autonomous",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "bob",
+				Groups:   []string{"sre"},
+			})
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{MCPClient: mockMCP},
+				tools.InvestigateMCPArgs{RRID: "rr-1922-autonomous"},
+				false, "bob",
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("started"))
+			Expect(startCalls).To(Equal(1), "autonomous investigations must retain the existing takeover/start path")
 		})
 	})
 })
@@ -614,7 +733,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 		var artifactEvt *a2a.TaskArtifactUpdateEvent
 		for _, evt := range queue.Events() {
 			if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-				if schema, _ := art.Artifact.Metadata["schema"].(string); schema == "investigation_summary" {
+				if schema, _ := art.Artifact.Metadata["schema"].(string); schema == investigationSummarySchema {
 					artifactEvt = art
 					break
 				}
