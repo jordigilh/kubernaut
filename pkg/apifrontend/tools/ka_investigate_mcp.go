@@ -61,12 +61,6 @@ const isPhaseActivePollTimeout = 5 * time.Second
 // race-safe check.
 const activeSessionStatusTimeout = 2 * time.Second
 
-// provisionalSeverityConfidence is the conservative display score used when
-// AF has only source-provided severity metadata and no KA RCA confidence. It
-// is intentionally fixed rather than presented as a calibrated model score;
-// Provisional=true prevents this value from being treated as authoritative.
-const provisionalSeverityConfidence = 0.6
-
 // Status/warning text emitted during the interactive-investigation await
 // loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
 // and CRD names (IS CRD) — console users must never see internal system
@@ -300,15 +294,11 @@ type InvestigateRCA struct {
 	// stays distinguishable from a genuine computed false.
 	IsActionable *bool `json:"is_actionable,omitempty"`
 	HasWorkflow  bool  `json:"has_workflow,omitempty"`
-	// Provisional marks an RCA synthesized locally by AF from severity-triage
-	// labels alone (no KA investigation occurred yet), as opposed to one
-	// extracted from KA's own EventTypeComplete payload (#2071, forward-port
-	// of release/v1.5's #2068). Progressive UX events (emitEarlyRCA/
-	// emitFallbackInvestigationArtifact) still fire normally for a
-	// provisional RCA -- only phase_guard.go's #2047 anti-fabrication cache
-	// treats this flag specially, since this struct's own doc comment
-	// ("extracted from the KA complete event") never held for the fallback
-	// construction sites below.
+	// Provisional identifies an RCA synthesized from severity-triage metadata
+	// rather than extracted from KA's EventTypeComplete payload (#2071,
+	// forward-port of release/v1.5's #2068). The status-only fallback path does
+	// not construct provisional RCAs, but the field remains part of the result
+	// contract for grounded-summary state and backwards compatibility.
 	Provisional bool `json:"provisional,omitempty"`
 }
 
@@ -476,7 +466,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 // resolveInvestigationRR validates args, optionally creates a new RR from
 // resource args (rr_id vs api_version/kind/name), and seeds the EventBridge
 // RR context (#1423) for Console banner population. Returns the severity
-// assessed during RR creation (if any) for later fallback-RCA use, and
+// assessed during RR creation (if any) for later status guidance, and
 // (#2265) the IS CRD name if createRRForInvestigation's BeforeCreate hook
 // already signaled interactively for a genuinely-new RR -- empty otherwise,
 // so the caller falls back to its own post-hoc signalInteractiveSession call.
@@ -891,28 +881,36 @@ func sessionActiveInvestigationResult(ctx context.Context, rrID, rrSeverity, dri
 	if driver == "" {
 		driver = "another user"
 	}
-	if rrSeverity != "" {
-		rca := &InvestigateRCA{
-			Severity:    rrSeverity,
-			Confidence:  provisionalSeverityConfidence,
-			Provisional: true,
-			RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
-		}
-		emitEarlyRCA(ctx, rca)
-		emitFallbackInvestigationArtifact(ctx, rca, rrID)
-		logr.FromContextOrDiscard(ctx).Info("emitted early_rca on session_active path",
-			"rr_id", rrID, "severity", rrSeverity, "driver", driver)
-	}
+	guidance := sessionActiveGuidance(rrID, rrSeverity, driver)
+	_ = launcher.EmitStatusSafe(ctx, guidance)
 
 	return &InvestigateMCPResult{
 		Status: "session_active",
 		RRID:   rrID,
-		Error: fmt.Sprintf(
-			"An investigation for this resource is already in progress, driven by %s. "+
-				"Do not retry kubernaut_investigate. "+
-				"Use kubernaut_get_remediation with rr_id %s to check its status.",
-			driver, rrID),
+		Error:  guidance,
 	}
+}
+
+func sessionActiveGuidance(rrID, rrSeverity, driver string) string {
+	severityText := ""
+	if rrSeverity != "" {
+		severityText = fmt.Sprintf(" Preliminary severity from resource metadata: %s.", rrSeverity)
+	}
+	return fmt.Sprintf(
+		"An investigation for this resource is already in progress, driven by %s.%s "+
+			"Do not retry kubernaut_investigate. "+
+			"Use kubernaut_get_remediation with rr_id %s to check its status.",
+		driver, severityText, rrID)
+}
+
+func noRCAStatusText(rrID, rrSeverity string) string {
+	severityText := ""
+	if rrSeverity != "" {
+		severityText = fmt.Sprintf(" Preliminary severity from resource metadata: %s.", rrSeverity)
+	}
+	return fmt.Sprintf(
+		"No root-cause findings are available yet.%s Use kubernaut_get_remediation with rr_id %s to check its status.",
+		severityText, rrID)
 }
 
 // finalizeInvestigationStart emits the KA-delegation audit event, invokes
@@ -983,11 +981,11 @@ type blockingInvestigationParams struct {
 }
 
 // runBlockingInvestigation bridges KA events into a collected RCA summary,
-// synthesizes a fallback RCA from severity triage when KA produced none,
-// emits an investigation_summary artifact for every concluded investigation
-// (#2247, SI-10), and hands the MCP session off to the pool (if available)
-// so subsequent tool calls reuse the connection; otherwise it closes the
-// session via cleanup.
+// reports severity-only outcomes through the status channel when KA produced
+// no RCA, emits an investigation_summary artifact for genuine RCA results
+// (#2247, SI-10), and hands the MCP session off to the pool (if available) so
+// subsequent tool calls reuse the connection; otherwise it closes the session
+// via cleanup.
 func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blockingInvestigationParams) InvestigateMCPResult {
 	rrID, username, rrSeverity, result, cleanup, logger := p.RRID, p.Username, p.RRSeverity, p.Result, p.Cleanup, p.Logger
 	logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
@@ -1014,36 +1012,23 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 		})
 	}
 
-	// Fallback: when KA produced no RCA at all (e.g. user-driving mode
-	// with no autonomous session) but severity triage completed during
-	// RR creation, synthesize a provisional RCA from the triage data so
-	// the user gets immediate severity feedback.
-	if rca == nil && rrSeverity != "" {
-		rca = &InvestigateRCA{
-			Severity:    rrSeverity,
-			Confidence:  provisionalSeverityConfidence,
-			Provisional: true,
-			RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
-		}
-		emitEarlyRCA(ctx, rca)
-		logger.Info("emitted fallback early_rca from severity triage",
+	// When KA produced no RCA at all (e.g. user-driving mode with no
+	// autonomous session), report the outcome through the status channel. Any
+	// severity from RR triage is grounded context only. Do not create a
+	// provisional RCA: no root-cause findings or confidence are available.
+	if rca == nil {
+		statusText := noRCAStatusText(rrID, rrSeverity)
+		_ = launcher.EmitStatusSafe(ctx, statusText)
+		logger.Info("emitted no-RCA investigation status",
 			"rr_id", rrID, "severity", rrSeverity)
-		if summary == "" {
-			summary = rca.RCASummary
-		}
 	}
 
-	// SI-10 (#2247): every concluded investigation -- whether KA returned a
-	// genuine RCA (early_rca already emitted above by captureCompleteEventRCA
-	// when the bridge processed EventTypeComplete) or only the severity-triage
-	// fallback synthesized just above -- must also produce a structured,
-	// audit-grade investigation_summary artifact. Previously this call was
-	// gated on rca == nil, so a genuinely-completed investigation (the
-	// common/happy path) never got this artifact at all, only the
-	// lighter-weight early_rca one; confirmed via live E2E repro (helios08)
-	// that this is a real compliance gap, not test/mock nondeterminism.
+	// SI-10 (#2247): a genuine RCA must also produce a structured,
+	// audit-grade investigation_summary artifact. A status-only outcome above
+	// deliberately has no RCA-shaped artifact because it has no root-cause
+	// findings to report.
 	if rca != nil {
-		emitFallbackInvestigationArtifact(ctx, rca, rrID)
+		emitInvestigationSummaryArtifact(ctx, rca, rrID)
 	}
 
 	handoffOrCloseSession(ctx, cfg, rrID, username, result, cleanup, logger)

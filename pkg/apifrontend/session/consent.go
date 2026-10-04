@@ -94,7 +94,7 @@ const (
 	// returns summary content without a non-provisional structured RCA.
 	StateKeyGroundedSummary = "af_grounded_summary"
 
-	// StateKeyGroundedSummaryProvisional distinguishes severity-triage fallback
+	// StateKeyGroundedSummaryProvisional distinguishes legacy severity-triage
 	// text from an authoritative investigation summary.
 	StateKeyGroundedSummaryProvisional = "af_grounded_summary_provisional"
 

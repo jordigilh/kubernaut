@@ -88,11 +88,16 @@ This test plan validates the progressive RCA (Root Cause Analysis) feature where
 
 ### 3.4 E2E Tests
 
+The AF-only progressive E2E fixture has no autonomous investigation controller,
+so it exercises the honest no-RCA status path rather than inventing an RCA from
+severity triage. Genuine KA RCA completions remain covered by the unit and
+integration scenarios above.
+
 | ID | Scenario | Expected | Status |
 |----|----------|----------|--------|
-| E2E-AF-1407-001 | Early RCA decision event emitted during progressive flow | Event in SSE stream | Implemented |
+| E2E-AF-1407-001 | No-RCA progressive flow emits status-only guidance | SSE status event with `metadata.type=status` | Implemented |
 | E2E-AF-1407-002 | Progressive flow reaches terminal state without user intervention | Task completes | Implemented |
-| E2E-AF-1407-003 | early_rca payload contains severity and confidence | Fields present and valid | Implemented |
+| E2E-AF-1407-003 | No-RCA status carries grounded severity without confidence | Severity text present; no confidence claim | Implemented |
 
 ---
 

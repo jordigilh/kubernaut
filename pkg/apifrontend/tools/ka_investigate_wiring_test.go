@@ -436,7 +436,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			Expect(result.Error).To(ContainSubstring("bob@example.com"), "Error field must include the driver name")
 		})
 
-		It("UT-AF-WIRE-SESSION-003: session_active fallback investigation_summary artifact carries non-empty causal_chain (#1922)", func() {
+		It("UT-AF-WIRE-SESSION-003: session_active emits status-only guidance without a synthetic RCA (#1922)", func() {
 			origTimeout := tools.AwaitSessionTimeout
 			tools.AwaitSessionTimeout = 10 * time.Millisecond
 			defer func() { tools.AwaitSessionTimeout = origTimeout }()
@@ -491,28 +491,14 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			)
 			Expect(err).NotTo(HaveOccurred(), "session_active should not propagate as Go error")
 			Expect(result.Status).To(Equal("session_active"))
-
-			var artifactEvt *a2a.TaskArtifactUpdateEvent
-			for _, evt := range queue.Events() {
-				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					if schema, _ := art.Artifact.Metadata["schema"].(string); schema == investigationSummarySchema {
-						artifactEvt = art
-						break
-					}
-				}
-			}
-			Expect(artifactEvt).NotTo(BeNil(), "session_active must emit an investigation_summary fallback artifact")
-
-			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
-			Expect(ok).To(BeTrue(), "artifact must carry a DataPart")
-			rcaData, ok := dp.Data["rca"].(map[string]any)
-			Expect(ok).To(BeTrue(), "artifact data must include an rca object")
-			causalChain, ok := rcaData["causal_chain"].([]string)
-			Expect(ok).To(BeTrue(), "AU-3/SI-10: rca.causal_chain must be present so the Console's hasRCAData guard renders the RCA card (#1922)")
-			Expect(causalChain).NotTo(BeEmpty(), "AU-3/SI-10: rca.causal_chain must be non-empty so the Console's hasRCAData guard renders the RCA card (#1922)")
+			Expect(result.RCA).To(BeNil(), "session_active must not fabricate an RCA for the rejected caller")
+			Expect(statusTextsFrom(queue)).To(ContainElement(ContainSubstring("already in progress")),
+				"BR-INTERACTIVE-004: rejected callers must receive visible status guidance")
+			Expect(statusTextsFrom(queue)).To(ContainElement(ContainSubstring("critical")),
+				"grounded severity may be included in status guidance, but not as an RCA confidence")
 		})
 
-		It("IT-AF-1922-004: an active-driver status preflight returns the fallback before readiness waits", func() {
+		It("IT-AF-1922-004: an active-driver status preflight returns status-only guidance before readiness waits", func() {
 			origTimeout := tools.AwaitSessionTimeout
 			tools.AwaitSessionTimeout = 10 * time.Second
 			defer func() { tools.AwaitSessionTimeout = origTimeout }()
@@ -579,16 +565,9 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			Expect(result.Status).To(Equal("session_active"))
 			Expect(startCalls).To(Equal(0), "known active ownership must be rejected before action=start")
 
-			var artifactEvt *a2a.TaskArtifactUpdateEvent
-			for _, evt := range queue.Events() {
-				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					if schema, _ := art.Artifact.Metadata["schema"].(string); schema == investigationSummarySchema {
-						artifactEvt = art
-						break
-					}
-				}
-			}
-			Expect(artifactEvt).NotTo(BeNil(), "the preflight rejection must preserve the renderable fallback artifact")
+			Expect(result.RCA).To(BeNil(), "preflight rejection must not fabricate an RCA")
+			Expect(statusTextsFrom(queue)).To(ContainElement(ContainSubstring("already in progress")),
+				"the preflight rejection must emit visible status guidance")
 		})
 
 		It("UT-AF-1922-005: autonomous status continues through the normal takeover/start path", func() {
@@ -628,18 +607,91 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			Expect(result.Status).To(Equal("started"))
 			Expect(startCalls).To(Equal(1), "autonomous investigations must retain the existing takeover/start path")
 		})
+
+		It("UT-AF-WIRE-SESSION-004: no-RCA outcome emits severity-only status without a synthetic artifact", func() {
+			origTimeout := tools.AwaitSessionTimeout
+			tools.AwaitSessionTimeout = 10 * time.Millisecond
+			defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-1922-no-rca",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+			mockProm := &mockPromClientForWiring{
+				alerts: []prom.Alert{{
+					State: "firing",
+					Labels: map[string]string{
+						"alertname": "KubePodCrashLooping",
+						"severity":  "critical",
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "web-app-1922-no-rca",
+						"cluster":   hubClusterID,
+					},
+				}},
+			}
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "alice",
+					Groups:   []string{"sre"},
+				}),
+				queue, "task-1922-no-rca", "ctx-1922-no-rca", nil,
+			)
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient:    mockMCP,
+					Client:       newTypedClientForInvestigate(),
+					Namespace:    "kubernaut-system",
+					Triager:      triager,
+					ScopeChecker: testAlwaysManagedScopeChecker(),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app-1922-no-rca",
+					ClusterID:  hubClusterID,
+				},
+				true, "alice",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RCA).To(BeNil(), "no-RCA outcome must not fabricate an RCA")
+			Expect(result.Summary).To(BeEmpty(), "no-RCA outcome must remain ungrounded in the tool result")
+			Expect(statusTextsFrom(queue)).To(ContainElement(ContainSubstring("No root-cause findings are available yet")),
+				"no-RCA outcome must emit visible status guidance")
+			for _, evt := range queue.Events() {
+				if statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					Expect(statusEvt.Metadata).NotTo(HaveKey("schema"),
+						"status-only outcome must not emit an early_rca decision schema")
+				}
+				if artifactEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					Expect(artifactEvt.Artifact.Metadata["schema"]).NotTo(Equal(investigationSummarySchema),
+						"status-only outcome must not emit an investigation_summary artifact")
+				}
+			}
+		})
 	})
 })
 
 // =============================================================================
 // Issue #2247: investigation_summary must be emitted for genuinely-completed
-// investigations, not just the no-RCA fallback path.
+// investigations while no-RCA outcomes remain status-only.
 //
-// Root cause: runBlockingInvestigation only called emitFallbackInvestigationArtifact
+// Root cause: runBlockingInvestigation only emitted the investigation_summary
 // (schema=investigation_summary) when the KA bridge produced NO rca at all
 // (rca == nil). When KA's investigation genuinely completes with a real RCA
 // (EventTypeComplete carrying a non-empty Severity), captureCompleteEventRCA
-// emits an early_rca decision event but runBlockingInvestigation's fallback
+// emits an early_rca decision event but runBlockingInvestigation's artifact
 // block was skipped entirely (its condition requires rca == nil), so the
 // SI-10-required investigation_summary artifact was never produced for the
 // success path -- confirmed via live E2E repro (helios08, #2247 RCA comment).
@@ -682,7 +734,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 		// Severity triage (rrSeverity="warning") deliberately differs from
 		// KA's own RCA severity ("critical") below, so the assertion that
 		// the emitted artifact carries "critical" proves the fix uses KA's
-		// real RCA -- not the rrSeverity-only synthesized fallback -- when
+		// real RCA -- not the rrSeverity-only status outcome -- when
 		// both are available (mirrors the live #2247 repro's RR.spec.severity
 		// of "warning" while KA's investigation concluded a distinct finding).
 		mockProm := &mockPromClientForWiring{
@@ -751,7 +803,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — investigation_summary o
 		causalChain, ok := rcaData["causal_chain"].([]string)
 		Expect(ok).To(BeTrue())
 		Expect(causalChain).To(ConsistOf("Memory leak", "OOMKill"),
-			"investigation_summary must carry KA's real causal_chain, not the fallback placeholder")
+			"investigation_summary must carry KA's real causal_chain")
 	})
 })
 
@@ -872,90 +924,5 @@ var _ = Describe("Progressive RCA Emission Wiring — #1407", func() {
 		}
 		Expect(decisionFound).To(BeTrue(),
 			"IT-AF-1407-001: early RCA decision status-update must flow through production EventBridge wiring")
-	})
-})
-
-// =============================================================================
-// Issue #1922: session_active fallback investigation_summary artifact content
-// =============================================================================
-
-var _ = Describe("Fallback Investigation Artifact Content — #1922", func() {
-
-	It("UT-AF-1922-001: AU-3 empty causal_chain is seeded with a truthful placeholder, never fabricated findings", func() {
-		queue := &bridgeQueue{}
-		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1922-001", "ctx-1922-001", nil)
-
-		rca := &tools.InvestigateRCA{
-			Severity:   "critical",
-			Confidence: 0.6,
-			RCASummary: "Severity assessed from resource metadata (investigation in progress by admin)",
-		}
-		tools.EmitFallbackInvestigationArtifact(ctx, rca, "rr-1922-001")
-
-		var artifactEvt *a2a.TaskArtifactUpdateEvent
-		for _, evt := range queue.Events() {
-			if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-				artifactEvt = art
-				break
-			}
-		}
-		Expect(artifactEvt).NotTo(BeNil(), "fallback artifact must be emitted")
-
-		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
-		Expect(ok).To(BeTrue(), "artifact must carry a DataPart")
-		rcaData, ok := dp.Data["rca"].(map[string]any)
-		Expect(ok).To(BeTrue(), "artifact data must include an rca object")
-		causalChain, ok := rcaData["causal_chain"].([]string)
-		Expect(ok).To(BeTrue(), "rca.causal_chain must be present")
-		Expect(causalChain).NotTo(BeEmpty(),
-			"empty CausalChain input must be seeded with a placeholder so the Console's hasRCAData guard renders the RCA card (#1922)")
-		Expect(causalChain[0]).NotTo(ContainSubstring("OOMKill"),
-			"AU-3: placeholder must not fabricate specific findings that were never observed")
-		Expect(causalChain[0]).To(SatisfyAny(
-			ContainSubstring("progress"),
-			ContainSubstring("pending"),
-		), "AU-3: placeholder must truthfully describe investigation status, not fabricate a root cause")
-	})
-
-	It("UT-AF-1922-002: SI-10 real causal_chain/tool_calls_count pass through unchanged and shape matches present_decision's RCAData", func() {
-		queue := &bridgeQueue{}
-		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1922-002", "ctx-1922-002", nil)
-
-		rca := &tools.InvestigateRCA{
-			Severity:       "critical",
-			Confidence:     0.92,
-			CausalChain:    []string{"Memory leak", "OOMKill"},
-			Target:         "Deployment/worker in production",
-			RCASummary:     "OOMKill caused by memory leak",
-			TotalLLMTurns:  17,
-			TotalToolCalls: 19,
-		}
-		tools.EmitFallbackInvestigationArtifact(ctx, rca, "rr-1922-002")
-
-		var artifactEvt *a2a.TaskArtifactUpdateEvent
-		for _, evt := range queue.Events() {
-			if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-				artifactEvt = art
-				break
-			}
-		}
-		Expect(artifactEvt).NotTo(BeNil(), "fallback artifact must be emitted")
-
-		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
-		Expect(ok).To(BeTrue(), "artifact must carry a DataPart")
-		rcaData, ok := dp.Data["rca"].(map[string]any)
-		Expect(ok).To(BeTrue(), "artifact data must include an rca object")
-
-		causalChain, ok := rcaData["causal_chain"].([]string)
-		Expect(ok).To(BeTrue(), "rca.causal_chain must be present")
-		Expect(causalChain).To(ConsistOf("Memory leak", "OOMKill"),
-			"real CausalChain must pass through unchanged, not be overwritten by a placeholder")
-
-		Expect(rcaData).To(HaveKey("tool_calls_count"),
-			"SI-10: shape must match present_decision's RCAData field names")
-		Expect(rcaData["tool_calls_count"]).To(Equal(19))
-		Expect(rcaData).To(HaveKey("llm_turns"),
-			"SI-10: shape must match present_decision's RCAData field names")
-		Expect(rcaData["llm_turns"]).To(Equal(17))
 	})
 })

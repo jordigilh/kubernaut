@@ -204,7 +204,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		Expect(summaryFound).To(BeTrue(), "SI-10: the stream must include the investigation_summary DataPart")
 	})
 
-	It("E2E-AF-FLEET-2462-004 [BR-INTERACTIVE-004, BR-INTEGRATION-065]: concurrent session_active fallback retains a renderable causal chain", func() {
+	It("E2E-AF-FLEET-2462-004 [BR-INTERACTIVE-004, BR-INTEGRATION-065]: concurrent session_active response carries visible status guidance", func() {
 		firstCtx, firstCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer firstCancel()
 		firstStarted := make(chan error, 1)
@@ -236,16 +236,14 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		foundSummary, hasCausalChain := false, false
+		foundStatus := false
 		for _, event := range readFleetAFEvents(resp) {
-			if fleetAFHasInvestigationSummary(event) {
-				foundSummary = true
-				hasCausalChain = fleetAFSummaryHasCausalChain(event)
+			if fleetAFHasSessionActiveStatus(event) {
+				foundStatus = true
 				break
 			}
 		}
-		Expect(foundSummary).To(BeTrue(), "AC-4: rejected concurrent caller must receive an investigation_summary fallback")
-		Expect(hasCausalChain).To(BeTrue(), "AC-4: fallback RCA must carry a non-empty causal chain")
+		Expect(foundStatus).To(BeTrue(), "AC-4: rejected concurrent caller must receive session_active status guidance")
 	})
 
 	It("E2E-AF-FLEET-2462-005 [BR-FLEET-054, BR-INTEGRATION-065]: unregistered cluster identity fails closed despite a same-named hub target", func() {
@@ -453,18 +451,21 @@ func fleetAFHasInvestigationSummary(event map[string]any) bool {
 	return false
 }
 
-func fleetAFSummaryHasCausalChain(event map[string]any) bool {
-	artifact, _ := event["artifact"].(map[string]any)
-	if artifact == nil {
+func fleetAFHasSessionActiveStatus(event map[string]any) bool {
+	if event["kind"] != statusUpdate {
 		return false
 	}
-	parts, _ := artifact["parts"].([]any)
+	metadata, _ := event["metadata"].(map[string]any)
+	if metadata == nil || metadata["type"] != "status" {
+		return false
+	}
+	status, _ := event["status"].(map[string]any)
+	message, _ := status["message"].(map[string]any)
+	parts, _ := message["parts"].([]any)
 	for _, rawPart := range parts {
 		part, _ := rawPart.(map[string]any)
-		data, _ := part["data"].(map[string]any)
-		rca, _ := data["rca"].(map[string]any)
-		chain, _ := rca["causal_chain"].([]any)
-		if len(chain) > 0 {
+		text, _ := part["text"].(string)
+		if strings.Contains(text, "already in progress") {
 			return true
 		}
 	}

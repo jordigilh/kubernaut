@@ -389,10 +389,8 @@ func phaseGuardAfterTool(ctx agent.Context, toolName string, resp map[string]any
 //     authoritative RCA pass-through, hardening beyond that binary gate so a
 //     technically-grounded session still can't have its structured facts
 //     altered by the model while copying them into present_decision. A
-//     Provisional rca (AF's own severity-triage guess, synthesized when KA
-//     hasn't genuinely investigated yet -- see ka_investigate_mcp.go's
-//     InvestigateRCA fallback construction sites) is deliberately excluded
-//     here (#2071, forward-port of release/v1.5's #2068): it is not
+//     A legacy Provisional rca (AF's own severity-triage guess) is deliberately
+//     excluded here (#2071, forward-port of release/v1.5's #2068): it is not
 //     "extracted from the KA complete event" the way this struct's own doc
 //     comment describes, so it must not be cached as an authoritative fact --
 //     same treatment as "no structured rca at all".
@@ -778,9 +776,9 @@ func interactionModeFromState(state adksession.State) string {
 // the exact success determination already made above in the caller.
 //
 // "session_active" is deliberately excluded from groundedness even though
-// it is a legitimate different-user state with its own dedicated fallback
-// card (#1922): the CALLING agent still has no fresh RCA of its own to
-// report, so present_decision must not fabricate one on its behalf.
+// it is a legitimate different-user state with status-only guidance (#1922):
+// the CALLING agent still has no fresh RCA of its own to report, so
+// present_decision must not fabricate one on its behalf.
 //
 // Hardening beyond the original #2047 gate (#2071, forward-port of
 // release/v1.5's #2034): a summary/rca can be syntactically present yet
