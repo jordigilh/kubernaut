@@ -29,7 +29,8 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -398,10 +399,11 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 // calls target the same dedicated fixture resource
 // (af-session-active-e2e/af-session-active-target),
 // so the fingerprint-based RR reuse (createOrReuseRR) routes both through the
-// same RRID. The first caller acquires KA's single-driver session; the second
-// caller's kubernaut_investigate call is rejected with session_active
-// (BR-INTERACTIVE-004) and must still receive visible status guidance rather
-// than a synthetic RCA-shaped artifact.
+// same RRID. The first caller acquires KA's single-driver session; APIF writes
+// the InvestigationSession correlation only after that action=start succeeds.
+// The second caller's kubernaut_investigate call is then rejected with
+// session_active (BR-INTERACTIVE-004) and must still receive visible status
+// guidance rather than a synthetic RCA-shaped artifact.
 //
 // FedRAMP: AC-4 (information flow enforcement — the rejected caller's session
 // is still observable through the same audit-traceable status channel).
@@ -507,28 +509,37 @@ var _ = Describe("session_active Status Visibility — #1922", Ordered, Label("e
 		case <-time.After(10 * time.Second):
 			Fail("first investigate call did not start streaming within 10s")
 		}
-		// Do not use a fixed sleep here. The first caller must acquire KA's
-		// interactive lease before the second caller is allowed to contend;
-		// otherwise the slower first request can lose the race and the
-		// session_active status is emitted on the wrong stream. Observe the
-		// authoritative AgentSession status instead (BR-INTERACTIVE-004).
-		By("waiting for the first caller to hold the interactive AgentSession lease")
+		// Do not use a fixed sleep here. APIF writes KACorrelationID only after
+		// action=start succeeds, which means KA has acquired the interactive
+		// lease. Match the RR target because #1407 runs in parallel on its own
+		// InvestigationSession (BR-INTERACTIVE-004).
+		By("waiting for the first caller's KA correlation after action=start")
 		Eventually(func() bool {
-			var sessions agentsessionv1alpha1.AgentSessionList
+			var sessions investigationsessionv1alpha1.InvestigationSessionList
 			if err := k8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
 				return false
 			}
 			for i := range sessions.Items {
 				session := &sessions.Items[i]
-				if session.Spec.ResourceNamespace == "af-session-active-e2e" &&
-					session.Spec.ResourceName == "af-session-active-target" &&
-					session.Status.Interactive {
+				if session.Status.KACorrelationID == "" || session.Spec.RemediationRequestRef.Name == "" {
+					continue
+				}
+				var rr remediationv1alpha1.RemediationRequest
+				if err := k8sClient.Get(context.Background(), client.ObjectKey{
+					Namespace: session.Spec.RemediationRequestRef.Namespace,
+					Name:      session.Spec.RemediationRequestRef.Name,
+				}, &rr); err != nil {
+					continue
+				}
+				target := rr.Spec.TargetResource
+				if target.Kind == "Pod" && target.Namespace == "af-session-active-e2e" &&
+					target.Name == "af-session-active-target" {
 					return true
 				}
 			}
 			return false
 		}, 90*time.Second, time.Second).Should(BeTrue(),
-			"the first caller must hold the interactive AgentSession lease before the second caller starts")
+			"the first caller must complete action=start before the second caller starts")
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer secondCancel()
