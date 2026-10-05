@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -32,9 +32,9 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // =============================================================================
@@ -44,9 +44,9 @@ import (
 var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 
 	var (
-		a2aServer  *httptest.Server
-		llmServer  *httptest.Server
-		kaServer   *httptest.Server
+		a2aServer *httptest.Server
+		llmServer *httptest.Server
+		kaServer  *httptest.Server
 	)
 
 	AfterEach(func() {
@@ -204,5 +204,88 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 		// The LLM should have been called at least twice (FunctionCall + final text)
 		Expect(llmCalls.Load()).To(BeNumerically(">=", 2),
 			"LLM must be called at least twice: FunctionCall + final response after tool execution")
+	})
+
+	It("IT-AF-1922-006: session_active status survives the ADK-to-A2A SSE boundary (BR-INTERACTIVE-004)", func() {
+		var llmCalls atomic.Int32
+		llmServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if llmCalls.Add(1) == 1 {
+				_, _ = w.Write([]byte(`{
+					"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"kubernaut_investigate","args":{"rr_id":"rr-1922-stream"}}}]},"finishReason":"STOP"}],
+					"modelVersion":"mock-model"
+				}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{
+				"candidates":[{"content":{"role":"model","parts":[{"text":"The investigation is already being driven by another user."}]},"finishReason":"STOP"}],
+				"modelVersion":"mock-model"
+			}`))
+		}))
+
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return nil, fmt.Errorf("kubernaut_investigate start_autonomous: session_active: Investigation is being driven by another user (map[driver:admin session_id:sess-1922-stream])")
+			},
+		}
+
+		ctx := context.Background()
+		llmModel, err := launcher.NewModelFromConfig(ctx, types.LLMConfig{
+			Provider: types.LLMProviderGemini,
+			Model:    "mock-model",
+			Endpoint: llmServer.URL,
+			APIKey:   "test-key",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
+			Instruction:        "You are a test agent. Report investigation status to the user.",
+			LLMModel:           llmModel,
+			MCPClient:          mockMCP,
+			InteractiveEnabled: true,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
+			Agent:          rootAgent,
+			SessionService: adksession.InMemoryService(),
+			AppName:        "kubernaut-apifrontend-it-1922",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		a2aServer = httptest.NewServer(h)
+
+		rpcBody, err := json.Marshal(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      "1922-006",
+			"method":  "message/stream",
+			"params": map[string]any{
+				"message": map[string]any{
+					"messageId": "msg-1922-006",
+					"contextId": "ctx-1922-006",
+					"role":      "user",
+					"parts":     []map[string]any{{"kind": "text", "text": "investigate rr-1922-stream"}},
+				},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, a2aServer.URL, bytes.NewReader(rpcBody))
+		Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		bodyStr := string(body)
+
+		Expect(bodyStr).To(ContainSubstring("already in progress"),
+			"BR-INTERACTIVE-004: rejected callers must receive active-investigation guidance")
+		Expect(bodyStr).To(ContainSubstring(`"type":"status"`),
+			"BR-INTERACTIVE-004: active-investigation guidance must be a status metadata event")
+		Expect(bodyStr).NotTo(ContainSubstring(`"schema":"investigation_summary"`),
+			"a rejected caller must not receive a fabricated RCA artifact")
 	})
 })

@@ -910,6 +910,12 @@ func countTrueLabels(flags ...bool) int {
 // over any severity supplied by the LLM. When the trusted input is absent,
 // leave the result empty rather than inventing an unknown classification.
 func applySignalSeverity(result *katypes.InvestigationResult, signal katypes.SignalContext) {
+	// An exhausted RCA parse is not an RCA result. Do not let the trusted
+	// signal severity make an unparsed response look like a genuine finding.
+	if result != nil && result.HumanReviewNeeded &&
+		result.HumanReviewReason == "llm_parsing_error" && result.RCASummary == "" {
+		return
+	}
 	result.Severity = signal.Severity
 }
 

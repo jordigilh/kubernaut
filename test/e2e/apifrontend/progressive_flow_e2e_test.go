@@ -27,6 +27,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -504,11 +507,30 @@ var _ = Describe("session_active Status Visibility — #1922", Ordered, Label("e
 		case <-time.After(10 * time.Second):
 			Fail("first investigate call did not start streaming within 10s")
 		}
-		// Give the first call time to create/reuse the RR and acquire KA's
-		// single-driver session before the second (contending) call arrives.
-		time.Sleep(3 * time.Second)
+		// Do not use a fixed sleep here. The first caller must acquire KA's
+		// interactive lease before the second caller is allowed to contend;
+		// otherwise the slower first request can lose the race and the
+		// session_active status is emitted on the wrong stream. Observe the
+		// authoritative AgentSession status instead (BR-INTERACTIVE-004).
+		By("waiting for the first caller to hold the interactive AgentSession lease")
+		Eventually(func() bool {
+			var sessions agentsessionv1alpha1.AgentSessionList
+			if err := k8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
+				return false
+			}
+			for i := range sessions.Items {
+				session := &sessions.Items[i]
+				if session.Spec.ResourceNamespace == "af-session-active-e2e" &&
+					session.Spec.ResourceName == "af-session-active-target" &&
+					session.Status.Interactive {
+					return true
+				}
+			}
+			return false
+		}, 90*time.Second, time.Second).Should(BeTrue(),
+			"the first caller must hold the interactive AgentSession lease before the second caller starts")
 
-		secondCtx, secondCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		secondCtx, secondCancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer secondCancel()
 		resp, err := a2aSSEPost(secondCtx, a2aMessageStream("e2e-1922-second", "session active investigate"))
 		Expect(err).NotTo(HaveOccurred())

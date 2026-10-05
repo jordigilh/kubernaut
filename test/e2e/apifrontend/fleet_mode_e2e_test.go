@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
@@ -222,7 +223,26 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		case <-time.After(15 * time.Second):
 			Fail("first Fleet investigation did not begin streaming within 15 seconds")
 		}
-		time.Sleep(3 * time.Second)
+		// Wait for the authoritative KA lease before starting the contending
+		// request. A fixed delay can let both callers race through readiness,
+		// which makes session_active belong to the wrong SSE stream.
+		By("waiting for the first Fleet caller to hold the interactive AgentSession lease")
+		Eventually(func() bool {
+			var sessions agentsessionv1alpha1.AgentSessionList
+			if err := fleetAFK8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
+				return false
+			}
+			for i := range sessions.Items {
+				session := &sessions.Items[i]
+				if session.Spec.ResourceNamespace == "fleet-session-active-e2e" &&
+					session.Spec.ResourceName == "fleet-session-active-target" &&
+					session.Status.Interactive {
+					return true
+				}
+			}
+			return false
+		}, 90*time.Second, time.Second).Should(BeTrue(),
+			"the first Fleet caller must hold the interactive AgentSession lease before the second caller starts")
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer secondCancel()
