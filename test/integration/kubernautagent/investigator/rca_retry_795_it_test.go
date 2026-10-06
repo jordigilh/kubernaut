@@ -28,10 +28,10 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
@@ -111,8 +111,8 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 		})
 	})
 
-	Describe("IT-KA-795-R02: RCA parse failure, retry also fails, falls back to summary", func() {
-		It("should send correction message and then fall back to raw content when retry also fails", func() {
+	Describe("IT-KA-795-R02: RCA parse failure, retry also fails, fails closed", func() {
+		It("should request human review without preserving unparsed RCA content", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
 			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
@@ -131,15 +131,6 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 						Message:   llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{{ID: "tc_rca2", Name: "submit_result", Arguments: `{"invalid":"still wrong"}`}},
 					},
-					// Workflow phase: list_available_actions returns empty, LLM declines
-					{
-						Message:   llm.Message{Role: "assistant", Content: ""},
-						ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
-					},
-					{
-						Message:   llm.Message{Role: "assistant", Content: ""},
-						ToolCalls: []llm.ToolCall{{ID: "tc_no", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"fallback"},"reasoning":"no workflows"}`}},
-					},
 				},
 			}
 
@@ -154,17 +145,25 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 
-			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "OOMKilled", Namespace: "production", Severity: "critical",
 				Message: "Pod api-pod OOMKilled", ResourceKind: "Pod", ResourceName: "api-pod",
 				Environment: "production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
 
-			// Without retry: 1 RCA call + workflow calls.
-			// With retry: 2 RCA calls (initial + retry) + workflow calls.
-			Expect(len(mockClient.calls)).To(BeNumerically(">=", 4),
-				"IT-KA-795-R02: RCA retry must issue at least one extra LLM call (expect >= 4 total calls)")
+			// RCA parse exhaustion is terminal: the workflow phase must not run.
+			Expect(len(mockClient.calls)).To(Equal(2),
+				"IT-KA-795-R02: exactly one parse retry must occur before fail-closed human review")
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+			Expect(result.RCASummary).To(BeEmpty(),
+				"IT-KA-795-R02: unparsed LLM content must not become an RCA summary")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"IT-KA-795-R02: workflow selection must not run after RCA parse exhaustion")
+			Expect(result.Severity).To(BeEmpty(),
+				"IT-KA-795-R02: signal severity must not make an unparsed RCA look valid")
 
 			// Verify correction message was sent to the LLM
 			Expect(allMessageContent(mockClient.calls[1].Messages)).To(ContainSubstring("could not be parsed"),
