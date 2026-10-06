@@ -370,7 +370,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(len(mockClient.calls)).To(Equal(2),
+			Expect(mockClient.calls).To(HaveLen(2),
 				"IT-KA-760-010: valid RCA message content must proceed directly to workflow selection")
 			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"),
 				"structured RCA message content should be parsed as the summary")

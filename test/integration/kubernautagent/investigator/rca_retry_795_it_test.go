@@ -154,7 +154,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 			Expect(result).NotTo(BeNil())
 
 			// RCA parse exhaustion is terminal: the workflow phase must not run.
-			Expect(len(mockClient.calls)).To(Equal(2),
+			Expect(mockClient.calls).To(HaveLen(2),
 				"IT-KA-795-R02: exactly one parse retry must occur before fail-closed human review")
 			Expect(result.HumanReviewNeeded).To(BeTrue())
 			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
