@@ -147,12 +147,11 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		By("AU-3/SI-4: verifying the RCA was actually displayed to the user during turn 2, not just a blank ack")
 		// A real Console user reads the RCA (severity/confidence/root cause) before
 		// deciding which workflow to run. Production emits this either as a
-		// progressive early_rca status-update (emitEarlyRCA, the normal path once
-		// KA's investigation completes) or, if the bridge produced no events, as a
-		// fallback investigation_summary artifact (emitFallbackInvestigationArtifact)
-		// — see pkg/apifrontend/tools/ka_investigate_bridge.go. Either satisfies "the
-		// user waited for the RCA to render"; accepting both avoids coupling this
-		// test to which of the two internal paths KA happened to take.
+		// progressive early_rca status-update (emitEarlyRCA) or as the genuine
+		// investigation_summary artifact (emitInvestigationSummaryArtifact) — see
+		// pkg/apifrontend/tools/ka_investigate_bridge.go. Either satisfies "the user
+		// waited for the RCA to render"; accepting both avoids coupling this test to
+		// which genuine-RCA path KA happened to take.
 		//
 		// #1795 (AF->KA streaming MCP dial timeout) is fixed, and #1811 (KA
 		// dropped every event emitted between InteractiveHold's fast RCA
@@ -180,7 +179,7 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		} else {
 			data := fpArtifactDataPart(rcaArtifacts[0])
 			Expect(data).NotTo(BeNil(), "investigation_summary artifact must carry a DataPart")
-			GinkgoWriter.Printf("  Turn 2 (SSE) — RCA displayed (investigation_summary fallback): %v\n", data)
+			GinkgoWriter.Printf("  Turn 2 (SSE) — RCA displayed (investigation_summary): %v\n", data)
 		}
 
 		By("Turn 3 (SSE): discover available workflows")

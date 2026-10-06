@@ -1565,8 +1565,8 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(Equal("rr-takeover-it-004"))
 
-		// The takeover path itself emits no automatic status/artifact event
-		// (no RR creation -> no severity-triage fallback RCA). Emit one
+		// The takeover path itself emits no automatic severity status
+		// (no RR creation -> no severity triage is available). Emit one
 		// explicitly, mirroring UT-AF-1423-020/030's established pattern, to
 		// surface the RRContext HandleInvestigationMCPWithRegistry set on the
 		// EventBridge during the call.

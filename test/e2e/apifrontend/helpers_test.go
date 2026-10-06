@@ -207,6 +207,36 @@ type a2aTaskResult struct {
 	} `json:"status"`
 }
 
+// a2aSSEEvent models the shared A2A SSE result shape used by the streaming
+// contract tests. Status and artifact payloads use the same event envelope;
+// keeping their nested parts typed avoids repeating map assertions in each
+// test suite.
+type a2aSSEEvent struct {
+	Kind     string          `json:"kind"`
+	Metadata map[string]any  `json:"metadata,omitempty"`
+	Status   *a2aSSEStatus   `json:"status,omitempty"`
+	Artifact *a2aSSEArtifact `json:"artifact,omitempty"`
+}
+
+type a2aSSEStatus struct {
+	State   string         `json:"state,omitempty"`
+	Message *a2aSSEMessage `json:"message,omitempty"`
+}
+
+type a2aSSEMessage struct {
+	Parts []a2aSSEPart `json:"parts,omitempty"`
+}
+
+type a2aSSEArtifact struct {
+	Metadata map[string]any `json:"metadata,omitempty"`
+	Parts    []a2aSSEPart   `json:"parts,omitempty"`
+}
+
+type a2aSSEPart struct {
+	Data json.RawMessage `json:"data,omitempty"`
+	Text string          `json:"text,omitempty"`
+}
+
 // parseRPCResponse reads and parses a JSON-RPC response from an http.Response.
 func parseRPCResponse(resp *http.Response) (rpcResponse, error) {
 	body, err := io.ReadAll(resp.Body)

@@ -4,7 +4,7 @@
 
 **Test Plan Identifier**: TP-1407-v1
 **Feature**: Early RCA emission and auto-proceed investigate-to-discover behavior
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-06-13
 **Author**: AI Agent
 **Status**: Implemented
@@ -88,11 +88,18 @@ This test plan validates the progressive RCA (Root Cause Analysis) feature where
 
 ### 3.4 E2E Tests
 
+The AF-only progressive E2E fixture has no autonomous investigation controller.
+It covers the honest no-RCA status path, including fail-closed outcomes when
+the KA RCA response cannot be parsed. It must never turn a parse failure into
+an RCA or confidence claim; grounded preliminary severity is allowed only as
+status guidance. Genuine KA RCA completions remain covered by the unit and
+integration scenarios above.
+
 | ID | Scenario | Expected | Status |
 |----|----------|----------|--------|
-| E2E-AF-1407-001 | Early RCA decision event emitted during progressive flow | Event in SSE stream | Implemented |
+| E2E-AF-1407-001 | No-RCA progressive flow emits status-only guidance | SSE status event with `metadata.type=status` | Implemented |
 | E2E-AF-1407-002 | Progressive flow reaches terminal state without user intervention | Task completes | Implemented |
-| E2E-AF-1407-003 | early_rca payload contains severity and confidence | Fields present and valid | Implemented |
+| E2E-AF-1407-003 | No-RCA outcome remains status-only and fail-closed | Status-channel outcome is observable; no `early_rca`, `investigation_summary`, or confidence claim; grounded preliminary severity may remain status guidance | Implemented |
 
 ---
 

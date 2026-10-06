@@ -343,7 +343,7 @@ func fpArtifactsByMetaType(artifacts []fpTaskArtifactUpdate, metaType string) []
 // matches the given value. Unlike fpArtifactsByMetaType (which filters on the
 // coarse-grained metadata.type, e.g. "execution_progress"), this targets the
 // finer-grained "schema" key production uses to distinguish sibling payloads
-// that share the same type -- e.g. emitFallbackInvestigationArtifact
+// that share the same type -- e.g. investigation_summary artifacts
 // (pkg/apifrontend/tools/ka_investigate_bridge.go) tags its artifact
 // metadata.type="decision" + metadata.schema="investigation_summary", the
 // same "decision" type emitEarlyRCA uses for its early_rca status-update.
