@@ -356,11 +356,15 @@ func installKAE2ECRDs(ctx context.Context, kubeconfigPath string, writer io.Writ
 //
 // Resources created:
 //
+// The staging capacity-retry-target Pod is a real kubectl_get_by_name target
+// for E2E-AA-065's deterministic capacity-retry scenario.
+//
 //	production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
 //	            ambiguous-pod, failed-analysis-pod, helm-managed-pod (Pods),
 //	            batch-job-pvc-expired (PVC)
 //	staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
-//	            re-enrichment to worker/staging preserves pdbProtected detection)
+//	            re-enrichment to worker/staging preserves pdbProtected detection),
+//	            capacity-retry-target (Pod)
 //
 // Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
 // HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E
@@ -577,6 +581,26 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
+  name: capacity-retry-target
+  namespace: staging
+  labels:
+    app: capacity-retry-target
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        memory: "8Mi"
+        cpu: "10m"
+      limits:
+        memory: "16Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
   name: test-pod
   namespace: default
   labels:
@@ -601,7 +625,7 @@ spec:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl apply enrichment fixtures: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 11 resources)")
+	_, _ = fmt.Fprintln(writer, "  ✅ Enrichment fixtures created (2 namespaces + 12 resources)")
 	return nil
 }
 
