@@ -84,12 +84,14 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}, nil
 	}
 	if parseErr != nil {
-		inv.logger.Info("RCA parse failed after retry, treating as summary",
+		inv.logger.Info("RCA parse failed after retry, requesting human review",
 			"error", parseErr.Error(),
 			"correlation_id", correlationID)
 		return &katypes.InvestigationResult{
-			RCASummary: content,
-			Reasoning:  toReasoningSummary(reasoning),
+			HumanReviewNeeded: true,
+			HumanReviewReason: "llm_parsing_error",
+			Reason:            "RCA response could not be parsed after retry",
+			Warnings:          []string{"RCA response could not be parsed after retry; human review is required"},
 		}, nil
 	}
 	result.Reasoning = toReasoningSummary(reasoning)

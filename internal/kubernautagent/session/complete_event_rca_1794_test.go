@@ -33,7 +33,7 @@ import (
 // RCA result -- only the reconnect/terminalSessionSSE path did, because
 // Manager.runInvestigation emits the complete event before Store.Update
 // persists the result (manager.go), and emitCompleteEvent never received the
-// result to attach in the first place. AF's emitEarlyRCA/emitFallbackInvestigationArtifact
+// result to attach in the first place. AF's emitEarlyRCA/investigation_summary
 // (pkg/apifrontend/tools/ka_investigate_bridge.go) key off this event's Data
 // field, so a live-streaming Console user never saw the RCA rendered -- an
 // AU-3/SI-4 gap. Root-caused via E2E-FP-1189-005.

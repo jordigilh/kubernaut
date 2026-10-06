@@ -182,7 +182,7 @@ This v2 plan validates a two-pronged fix:
 | BR-HAPI-197 | Unrecognized JSON triggers retry | P0 | Integration | IT-KA-760-007 | Pending |
 | BR-HAPI-197 | Retry succeeds on 2nd attempt | P0 | Integration | IT-KA-760-008 | Pending |
 | BR-HAPI-197 | Retries exhausted → `no_matching_workflows` | P0 | Integration | IT-KA-760-009 | Pending |
-| BR-HAPI-197 | RCA phase still uses single `submit_result` | P0 | Integration | IT-KA-760-010 | Pending |
+| BR-HAPI-197 | RCA phase parses structured message content independently of workflow submit-tool splitting | P0 | Integration | IT-KA-760-010 | Pending |
 | BR-HAPI-197 | Catalog self-correction still works with split tools | P1 | Integration | IT-KA-760-011 | Pending |
 | BR-HAPI-197 | `NoWorkflowResultSchema` is valid JSON Schema | P1 | Unit | UT-KA-760-010 | Pending |
 | BR-HAPI-197 | `WithWorkflowResultSchema` is valid JSON Schema | P1 | Unit | UT-KA-760-011 | Pending |
@@ -218,7 +218,7 @@ This v2 plan validates a two-pronged fix:
 | `IT-KA-760-007` | LLM returns unrecognized JSON → correction retry → LLM uses `submit_result_no_workflow` → `no_matching_workflows` | Pending |
 | `IT-KA-760-008` | LLM returns text on 1st attempt, uses `submit_result_with_workflow` on 2nd → workflow parsed | Pending |
 | `IT-KA-760-009` | LLM returns text on all 3 attempts → exhaustion → `no_matching_workflows` (not `llm_parsing_error`) | Pending |
-| `IT-KA-760-010` | RCA phase: LLM returns text content → parsed as RCA summary (unaffected by split) | Pending |
+| `IT-KA-760-010` | RCA phase: structured JSON in message content is parsed as an RCA summary without an RCA retry (unaffected by workflow submit-tool splitting) | Pending |
 | `IT-KA-760-011` | LLM calls `submit_result_with_workflow` with invalid workflow → catalog self-correction still works | Pending |
 
 ### Tier Skip Rationale
@@ -401,3 +401,4 @@ go build ./...
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-21 | Initial v2 test plan — split submit tools + parse-level retry |
+| 1.1 | 2026-10-05 | Updated IT-KA-760-010 for the structured RCA message contract; the former plain-text fallback expectation is superseded by fail-closed RCA parsing |

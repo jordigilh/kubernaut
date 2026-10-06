@@ -28,8 +28,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
@@ -347,12 +347,11 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 		})
 	})
 
-	Describe("IT-KA-760-010: RCA phase text → parsed as summary (unaffected by split)", func() {
-		It("should parse RCA text as summary without triggering split tool logic", func() {
+	Describe("IT-KA-760-010: structured RCA message content is independent of split tools", func() {
+		It("should parse structured RCA content without triggering an RCA retry", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
-					{Message: llm.Message{Role: "assistant", Content: "The pod is OOMKilled due to memory limits being too low."}},
-					{Message: llm.Message{Role: "assistant", Content: "still text, retry also fails"}},
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"The pod is OOMKilled due to memory limits being too low.","confidence":0.9}`}},
 					{
 						Message: llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{
@@ -371,8 +370,10 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
+			Expect(mockClient.calls).To(HaveLen(2),
+				"IT-KA-760-010: valid RCA message content must proceed directly to workflow selection")
 			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"),
-				"RCA text should be treated as summary")
+				"structured RCA message content should be parsed as the summary")
 		})
 	})
 

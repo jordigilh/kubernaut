@@ -1003,10 +1003,10 @@ keyword_scenarios:
 				Model: "gpt-4",
 				Messages: []openai.Message{
 					{Role: "user", Content: content("brief-investigation-test signal")},
-					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
-					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target"}}`)},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get_by_name", Arguments: `{"kind":"Pod","namespace":"staging","name":"capacity-retry-target"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"namespace":"staging","name":"capacity-retry-target"}}`)},
 				},
-				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_by_name"}}},
 			}
 
 			body, err := json.Marshal(reqBody)
@@ -1022,8 +1022,8 @@ keyword_scenarios:
 			Expect(oaiResp.Choices).To(HaveLen(1))
 			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1),
 				"second turn must emit NextToolCall (brief_investigation scenario)")
-			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get"),
-				"NextToolCall must be kubectl_get per briefInvestigationConfig")
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get_by_name"),
+				"NextToolCall must be kubectl_get_by_name per briefInvestigationConfig")
 		})
 	})
 
@@ -1039,12 +1039,12 @@ keyword_scenarios:
 				Model: "gpt-4",
 				Messages: []openai.Message{
 					{Role: "user", Content: content("brief-investigation-test signal")},
-					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
-					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target"}}`)},
-					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
-					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target-2"}}`)},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get_by_name", Arguments: `{"kind":"Pod","namespace":"staging","name":"capacity-retry-target"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"namespace":"staging","name":"capacity-retry-target"}}`)},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get_by_name", Arguments: `{"kind":"Pod","namespace":"staging","name":"capacity-retry-target"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"namespace":"staging","name":"capacity-retry-target"}}`)},
 				},
-				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_by_name"}}},
 			}
 
 			body, err := json.Marshal(reqBody)
@@ -1062,6 +1062,22 @@ keyword_scenarios:
 				"third turn (2 tool results) must NOT emit NextToolCall — guard prevents infinite loops")
 			Expect(oaiResp.Choices[0].Message.Content).NotTo(BeNil(),
 				"third turn should produce text response via DAG final_analysis")
+
+			var terminalPayload map[string]interface{}
+			Expect(json.Unmarshal([]byte(*oaiResp.Choices[0].Message.Content), &terminalPayload)).To(Succeed(),
+				"brief-investigation terminal response must be structured JSON")
+			Expect(terminalPayload["investigation_outcome"]).To(Equal("inconclusive"),
+				"AA-065 fixture must terminate as an inconclusive, no-workflow investigation")
+			rca, ok := terminalPayload["root_cause_analysis"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "brief-investigation terminal response must include root_cause_analysis")
+			Expect(rca["summary"]).To(Equal("Deterministic capacity-retry investigation fixture"),
+				"AA-065 fixture must provide a parseable RCA summary")
+			Expect(rca["remediation_target"]).To(Equal(map[string]interface{}{
+				"kind":        "Pod",
+				"name":        "capacity-retry-target",
+				"namespace":   "staging",
+				"api_version": "v1",
+			}), "AA-065 fixture RCA must target the real staging Pod")
 		})
 	})
 
@@ -1078,7 +1094,7 @@ keyword_scenarios:
 				Messages: []openai.Message{
 					{Role: "user", Content: content("brief-investigation-test signal")},
 				},
-				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get_by_name"}}},
 			}
 
 			body, err := json.Marshal(reqBody)
@@ -1094,8 +1110,54 @@ keyword_scenarios:
 			Expect(oaiResp.Choices).To(HaveLen(1))
 			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1),
 				"first turn must emit ToolCallName, not NextToolCall")
-			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get"),
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get_by_name"),
 				"first turn must use the primary ToolCallName from briefInvestigationConfig")
+		})
+	})
+
+	Describe("UT-ML-AA-065-001: brief capacity-retry scenario workflow phase", func() {
+		It("should return structured no-workflow text without running discovery tools", func() {
+			content := func(s string) *string { return &s }
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model: "gpt-4",
+				Messages: []openai.Message{{
+					Role:    "user",
+					Content: content("brief-investigation-test RCA findings; select the appropriate remediation workflow"),
+				}},
+				Tools: []openai.Tool{
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolListAvailableActions}},
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolListWorkflows}},
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolGetWorkflow}},
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResultWithWorkflow}},
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResultNoWorkflow}},
+				},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices).To(HaveLen(1))
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(BeEmpty(),
+				"AA-065 workflow selection must not call get_workflow with an empty workflow ID")
+			Expect(oaiResp.Choices[0].Message.Content).NotTo(BeNil(),
+				"AA-065 workflow selection must return a structured terminal response")
+
+			var terminalPayload map[string]interface{}
+			Expect(json.Unmarshal([]byte(*oaiResp.Choices[0].Message.Content), &terminalPayload)).To(Succeed())
+			Expect(terminalPayload["investigation_outcome"]).To(Equal("inconclusive"))
+			Expect(terminalPayload["selected_workflow"]).To(BeNil())
 		})
 	})
 })

@@ -18,6 +18,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -48,8 +49,17 @@ import (
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
-// Short because the phase transition should follow almost immediately after AA submits.
+// This is a coordination deadline, not a retry interval: AwaitAgentSessionInteractive
+// already watches (or polls) the CRD, and the phase transition should follow almost
+// immediately after AA submits. The known-active preflight skips this barrier.
 const isPhaseActivePollTimeout = 5 * time.Second
+
+// activeSessionStatusTimeout bounds the best-effort ownership preflight. A
+// failed or unavailable status probe must never delay the normal investigation
+// path, so this is intentionally a single bounded attempt rather than an
+// exponential-backoff retry budget. StartInvestigation remains the authoritative
+// race-safe check.
+const activeSessionStatusTimeout = 2 * time.Second
 
 // Status/warning text emitted during the interactive-investigation await
 // loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
@@ -284,15 +294,11 @@ type InvestigateRCA struct {
 	// stays distinguishable from a genuine computed false.
 	IsActionable *bool `json:"is_actionable,omitempty"`
 	HasWorkflow  bool  `json:"has_workflow,omitempty"`
-	// Provisional marks an RCA synthesized locally by AF from severity-triage
-	// labels alone (no KA investigation occurred yet), as opposed to one
-	// extracted from KA's own EventTypeComplete payload (#2071, forward-port
-	// of release/v1.5's #2068). Progressive UX events (emitEarlyRCA/
-	// emitFallbackInvestigationArtifact) still fire normally for a
-	// provisional RCA -- only phase_guard.go's #2047 anti-fabrication cache
-	// treats this flag specially, since this struct's own doc comment
-	// ("extracted from the KA complete event") never held for the fallback
-	// construction sites below.
+	// Provisional identifies an RCA synthesized from severity-triage metadata
+	// rather than extracted from KA's EventTypeComplete payload (#2071,
+	// forward-port of release/v1.5's #2068). The status-only fallback path does
+	// not construct provisional RCAs, but the field remains part of the result
+	// contract for grounded-summary state and backwards compatibility.
 	Provisional bool `json:"provisional,omitempty"`
 }
 
@@ -384,6 +390,12 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		}, nil
 	}
 
+	// BR-INTERACTIVE-004: reject a known interactive lease holder before the
+	// readiness barriers. The barriers remain necessary for new/takeover paths.
+	if earlyResult, active := rejectKnownActiveSession(ctx, cfg, args.RRID, rrSeverity); active {
+		return *earlyResult, nil
+	}
+
 	identity := auth.UserIdentityFromContext(ctx)
 	// #2265: for a genuinely-new RR, createRRForInvestigation's BeforeCreate
 	// hook already signaled interactively -- strictly before the RR became
@@ -454,7 +466,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 // resolveInvestigationRR validates args, optionally creates a new RR from
 // resource args (rr_id vs api_version/kind/name), and seeds the EventBridge
 // RR context (#1423) for Console banner population. Returns the severity
-// assessed during RR creation (if any) for later fallback-RCA use, and
+// assessed during RR creation (if any) for later status guidance, and
 // (#2265) the IS CRD name if createRRForInvestigation's BeforeCreate hook
 // already signaled interactively for a genuinely-new RR -- empty otherwise,
 // so the caller falls back to its own post-hoc signalInteractiveSession call.
@@ -801,28 +813,7 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 			logger.Info("session_active from KA: returning structured result instead of error",
 				"rr_id", rrID, "driver", driver)
 
-			if rrSeverity != "" {
-				rca := &InvestigateRCA{
-					Severity:    rrSeverity,
-					Confidence:  0.6,
-					Provisional: true,
-					RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
-				}
-				emitEarlyRCA(ctx, rca)
-				emitFallbackInvestigationArtifact(ctx, rca, rrID)
-				logger.Info("emitted early_rca on session_active path",
-					"rr_id", rrID, "severity", rrSeverity, "driver", driver)
-			}
-
-			return nil, &InvestigateMCPResult{
-				Status: "session_active",
-				RRID:   rrID,
-				Error: fmt.Sprintf(
-					"An investigation for this resource is already in progress, driven by %s. "+
-						"Do not retry kubernaut_investigate. "+
-						"Use kubernaut_get_remediation with rr_id %s to check its status.",
-					driver, rrID),
-			}, nil
+			return nil, sessionActiveInvestigationResult(ctx, rrID, rrSeverity, driver), nil
 		}
 		return nil, nil, fmt.Errorf("start MCP investigation: %w", err)
 	}
@@ -830,6 +821,96 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 		"rr_id", rrID, "session_id", result.SessionID,
 		"status", result.Status, "events_nil", result.Events == nil)
 	return result, nil, nil
+}
+
+type investigationStatusResponse struct {
+	Mode   string `json:"mode"`
+	Driver string `json:"driver,omitempty"`
+}
+
+// activeInteractiveSession performs a short, best-effort status probe. KA's
+// status action reports mode=interactive only while a driver currently holds
+// the investigation lease; mode=autonomous must continue through the normal
+// takeover path. Any probe failure or unrecognised response deliberately falls
+// through to the existing readiness and StartInvestigation race barriers.
+func activeInteractiveSession(ctx context.Context, cfg *InvestigateConfig, rrID string) (string, bool) {
+	statusCtx, cancel := context.WithTimeout(ctx, activeSessionStatusTimeout)
+	defer cancel()
+
+	result, err := cfg.MCPClient.InvokeAction(statusCtx, ka.InvokeActionArgs{
+		RRID:   rrID,
+		Action: "status",
+	})
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).V(1).Info(
+			"interactive session status preflight unavailable; continuing with normal start path",
+			"rr_id", rrID, "error", err)
+		return "", false
+	}
+	if result == nil || result.Response == "" {
+		logr.FromContextOrDiscard(ctx).V(1).Info(
+			"interactive session status preflight returned no response; continuing with normal start path",
+			"rr_id", rrID)
+		return "", false
+	}
+
+	var status investigationStatusResponse
+	if err := json.Unmarshal([]byte(result.Response), &status); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err,
+			"interactive session status preflight returned malformed response; continuing with normal start path",
+			"rr_id", rrID)
+		return "", false
+	}
+	if status.Mode != "interactive" {
+		return "", false
+	}
+	return status.Driver, true
+}
+
+func rejectKnownActiveSession(ctx context.Context, cfg *InvestigateConfig, rrID, rrSeverity string) (*InvestigateMCPResult, bool) {
+	driver, active := activeInteractiveSession(ctx, cfg, rrID)
+	if !active {
+		return nil, false
+	}
+	logr.FromContextOrDiscard(ctx).Info("active interactive session detected before readiness wait",
+		"rr_id", rrID, "driver", driver)
+	return sessionActiveInvestigationResult(ctx, rrID, rrSeverity, driver), true
+}
+
+func sessionActiveInvestigationResult(ctx context.Context, rrID, rrSeverity, driver string) *InvestigateMCPResult {
+	if driver == "" {
+		driver = "another user"
+	}
+	guidance := sessionActiveGuidance(rrID, rrSeverity, driver)
+	_ = launcher.EmitStatusSafe(ctx, guidance)
+
+	return &InvestigateMCPResult{
+		Status: "session_active",
+		RRID:   rrID,
+		Error:  guidance,
+	}
+}
+
+func sessionActiveGuidance(rrID, rrSeverity, driver string) string {
+	severityText := ""
+	if rrSeverity != "" {
+		severityText = fmt.Sprintf(" Preliminary severity from resource metadata: %s.", rrSeverity)
+	}
+	return fmt.Sprintf(
+		"An investigation for this resource is already in progress, driven by %s.%s "+
+			"Do not retry kubernaut_investigate. "+
+			"Use kubernaut_get_remediation with rr_id %s to check its status.",
+		driver, severityText, rrID)
+}
+
+func noRCAStatusText(rrID, rrSeverity string) string {
+	severityText := ""
+	if rrSeverity != "" {
+		severityText = fmt.Sprintf(" Preliminary severity from resource metadata: %s.", rrSeverity)
+	}
+	return fmt.Sprintf(
+		"No root-cause findings are available yet.%s Use kubernaut_get_remediation with rr_id %s to check its status.",
+		severityText, rrID)
 }
 
 // finalizeInvestigationStart emits the KA-delegation audit event, invokes
@@ -900,11 +981,11 @@ type blockingInvestigationParams struct {
 }
 
 // runBlockingInvestigation bridges KA events into a collected RCA summary,
-// synthesizes a fallback RCA from severity triage when KA produced none,
-// emits an investigation_summary artifact for every concluded investigation
-// (#2247, SI-10), and hands the MCP session off to the pool (if available)
-// so subsequent tool calls reuse the connection; otherwise it closes the
-// session via cleanup.
+// reports severity-only outcomes through the status channel when KA produced
+// no RCA, emits an investigation_summary artifact for genuine RCA results
+// (#2247, SI-10), and hands the MCP session off to the pool (if available) so
+// subsequent tool calls reuse the connection; otherwise it closes the session
+// via cleanup.
 func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blockingInvestigationParams) InvestigateMCPResult {
 	rrID, username, rrSeverity, result, cleanup, logger := p.RRID, p.Username, p.RRSeverity, p.Result, p.Cleanup, p.Logger
 	logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
@@ -931,36 +1012,23 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 		})
 	}
 
-	// Fallback: when KA produced no RCA at all (e.g. user-driving mode
-	// with no autonomous session) but severity triage completed during
-	// RR creation, synthesize a provisional RCA from the triage data so
-	// the user gets immediate severity feedback.
-	if rca == nil && rrSeverity != "" {
-		rca = &InvestigateRCA{
-			Severity:    rrSeverity,
-			Confidence:  0.6,
-			Provisional: true,
-			RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
-		}
-		emitEarlyRCA(ctx, rca)
-		logger.Info("emitted fallback early_rca from severity triage",
+	// When KA produced no RCA at all (e.g. user-driving mode with no
+	// autonomous session), report the outcome through the status channel. Any
+	// severity from RR triage is grounded context only. Do not create a
+	// provisional RCA: no root-cause findings or confidence are available.
+	if rca == nil {
+		statusText := noRCAStatusText(rrID, rrSeverity)
+		_ = launcher.EmitStatusSafe(ctx, statusText)
+		logger.Info("emitted no-RCA investigation status",
 			"rr_id", rrID, "severity", rrSeverity)
-		if summary == "" {
-			summary = rca.RCASummary
-		}
 	}
 
-	// SI-10 (#2247): every concluded investigation -- whether KA returned a
-	// genuine RCA (early_rca already emitted above by captureCompleteEventRCA
-	// when the bridge processed EventTypeComplete) or only the severity-triage
-	// fallback synthesized just above -- must also produce a structured,
-	// audit-grade investigation_summary artifact. Previously this call was
-	// gated on rca == nil, so a genuinely-completed investigation (the
-	// common/happy path) never got this artifact at all, only the
-	// lighter-weight early_rca one; confirmed via live E2E repro (helios08)
-	// that this is a real compliance gap, not test/mock nondeterminism.
+	// SI-10 (#2247): a genuine RCA must also produce a structured,
+	// audit-grade investigation_summary artifact. A status-only outcome above
+	// deliberately has no RCA-shaped artifact because it has no root-cause
+	// findings to report.
 	if rca != nil {
-		emitFallbackInvestigationArtifact(ctx, rca, rrID)
+		emitInvestigationSummaryArtifact(ctx, rca, rrID)
 	}
 
 	handoffOrCloseSession(ctx, cfg, rrID, username, result, cleanup, logger)

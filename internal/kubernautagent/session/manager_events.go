@@ -58,7 +58,7 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 // to signal the SSE consumer that the investigation has finished. When result
 // is non-nil, its bounded RCA subset (MarshalRCASubset) is attached as the
 // event's Data so a live-streaming consumer (AF's emitEarlyRCA/
-// emitFallbackInvestigationArtifact) can render the RCA immediately, matching
+// investigation_summary artifact path) can render the RCA immediately, matching
 // what a reconnecting client already gets from terminalSessionSSE (#1794:
 // previously this always sent an empty-Data event, since it fired before
 // Store.Update persisted the result -- a live Console user never saw the RCA).

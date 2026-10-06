@@ -323,6 +323,14 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //   - AFInvestigateGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
 //     the mock-LLM's dedicated "af-investigate-e2e/Pod/af-investigate-target"
 //     investigate fixture (see below)
+//   - AFProgressiveGrounding: same deterministic grounding for E2E-AF-1407's
+//     isolated "af-progressive-e2e/Pod/af-progressive-target" fixture
+//   - AFStructuredArtifactGrounding: same deterministic grounding for
+//     E2E-AF-1408's isolated "af-structured-artifact-e2e/Pod/af-structured-artifact-target"
+//     fixture
+//   - AFSessionActiveGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
+//     the isolated session_active concurrency fixture
+//     (namespace="af-session-active-e2e", kind=Pod, name="af-session-active-target")
 //   - UserSeverityHintGrounding: for:0s + vector(1) (never stale) -> tier 1,
 //     grounds severity_triage_test.go's TC-E2E-SEV-06 "user hint does not
 //     bypass triage" fixture (dedicated namespace="sev-userhint-ns",
@@ -393,14 +401,15 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 // triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
 // + MatchesResource to correlate rules with the target resource.
 //
-// #1839 RCA: deploy/apifrontend/overlays/e2e/mock-llm.yaml's "af_investigate"/
-// "af_progressive_investigate"/"af_investigate_resume" scenarios target a
-// fixed resource via kubernaut_investigate, which (like kubernaut_remediate)
-// now runs through the fail-closed severity triage pipeline. Before Tier 3
-// was removed, an ungrounded call like this silently fell back to the
-// pure-LLM tier and always "succeeded". The fixture originally used
-// namespace="default",kind="Pod",name="nginx" with no dedicated rule, so
-// calls degraded to Triager's namespace-level correlation fallback (any
+// #1839 RCA: deploy/apifrontend/overlays/e2e/mock-llm.yaml's generic
+// "af_investigate"/"af_investigate_resume" scenarios target a fixed resource
+// via kubernaut_investigate, which (like kubernaut_remediate) now runs through
+// the fail-closed severity triage pipeline. The progressive and
+// structured-artifact scenarios use their own dedicated targets and rules.
+// Before Tier 3 was removed, an ungrounded call like this silently fell back
+// to the pure-LLM tier and always "succeeded". The generic fixture originally
+// used namespace="default",kind="Pod",name="nginx" with no dedicated rule,
+// so calls degraded to Triager's namespace-level correlation fallback (any
 // firing alert sharing namespace="default", e.g. HighCPU) — which is
 // timing-dependent: HighCPU's injected OTLP metric goes Prometheus-stale
 // (default 5m) if not re-injected, so tests running late in a parallel E2E
@@ -484,6 +493,45 @@ groups:
           name: af-investigate-target
         annotations:
           summary: "Synthetic grounding alert for AF investigate E2E fixture (dedicated namespace/name, #1839)"
+      - alert: AFProgressiveGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: af-progressive-e2e
+          kind: Pod
+          name: af-progressive-target
+        annotations:
+          summary: "Synthetic grounding alert for the isolated progressive RCA fixture (#1407)"
+      - alert: AFStructuredArtifactGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: af-structured-artifact-e2e
+          kind: Pod
+          name: af-structured-artifact-target
+        annotations:
+          summary: "Synthetic grounding alert for the isolated structured-artifact fixture (#1408)"
+      - alert: AFSessionActiveGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          cluster: "__HUB_CLUSTER_ID__"
+          route_skip_gateway: "true"
+          namespace: af-session-active-e2e
+          kind: Pod
+          name: af-session-active-target
+        annotations:
+          summary: "Synthetic grounding alert for the isolated session_active status E2E fixture (#1922)"
       - alert: UserSeverityHintGrounding
         expr: vector(1) > 0
         for: 0s
