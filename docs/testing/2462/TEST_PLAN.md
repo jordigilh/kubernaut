@@ -2,7 +2,7 @@
 
 **Test Plan Identifier**: TP-2462-v1.0
 **Feature**: Exercise local and Fleet-mode APIFrontend contracts in isolated AF E2E CI lanes
-**Version**: 1.4
+**Version**: 1.5
 **Created**: 2026-09-23
 **Author**: Kubernaut development team
 **Status**: Approved
@@ -133,7 +133,7 @@ Keep the standalone APIFrontend (AF) E2E baseline in local mode, while proving c
 | E2E-AF-FLEET-2462-001 | `TC-E2E-SEV-01..06` | Preserve firing, pending, inactive-rule/live-data, no-data, fail-closed/no-correlation, and user-hint triage outcomes for `cluster_id=hub`; filter cluster-labeled alert collisions. |
 | E2E-AF-FLEET-2462-002 | `E2E-AF-1395-001`, `1396-001/002` | Structured decision >512 characters, RCA fields, and workflow options arrive intact over Fleet AF SSE. |
 | E2E-AF-FLEET-2462-003 | `E2E-AF-1407-001..003`, `1408-001` | `early_rca` carries severity/confidence; `investigation_summary` has the expected DataPart and schema version. |
-| E2E-AF-FLEET-2462-004 | `E2E-AF-1922-001` | Concurrent `session_active` rejection still returns a renderable summary with non-empty causal chain. |
+| E2E-AF-FLEET-2462-004 | `E2E-AF-1922-001` | The first direct-MCP caller acquires the driver lease; a concurrent caller receives visible `session_active` status guidance (`metadata.type=status`) without a synthetic RCA, summary, confidence, or causal chain. |
 | E2E-AF-FLEET-2462-005 | New negative contract | An unregistered cluster ID fails closed despite a same-named Fleet-cluster object; no implicit local fallback. |
 
 ### 7.1 Failure diagnostic collection

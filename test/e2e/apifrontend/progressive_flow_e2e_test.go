@@ -39,6 +39,7 @@ const (
 	completed                  = "completed"
 	artifactUpdate             = "artifact-update"
 	failed                     = "failed"
+	statusMetadataType         = "status"
 	investigationSummarySchema = "investigation_summary"
 )
 
@@ -192,7 +193,7 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		statusEvent := result.severityOnlyEvents[0]
 		meta, ok := statusEvent["metadata"].(map[string]any)
 		Expect(ok).To(BeTrue(), "status-only event must have metadata")
-		Expect(meta["type"]).To(Equal("status"), "metadata.type must be 'status'")
+		Expect(meta["type"]).To(Equal(statusMetadataType), "metadata.type must be 'status'")
 	})
 
 	It("E2E-AF-1407-002: AU-3 — progressive flow reaches terminal state without user intervention", func() {
@@ -216,7 +217,7 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 			"AU-3: progressive flow must produce events from both investigation and discovery phases")
 	})
 
-	It("E2E-AF-1407-003: AU-3 — severity-only status contains grounded severity without confidence", func() {
+	It("E2E-AF-1407-003: AU-3 — no-RCA outcome remains status-only and fail-closed", func() {
 		readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
@@ -227,21 +228,43 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 		result := scanProgressiveSSE(resp)
-		Expect(result.severityOnlyEvents).NotTo(BeEmpty(), "need severity-only status for payload analysis")
-
-		statusEvent := result.severityOnlyEvents[0]
-		status, _ := statusEvent["status"].(map[string]any)
-		Expect(status).NotTo(BeNil(), "status-only event must have status field")
-		msg, _ := status["message"].(map[string]any)
-		Expect(msg).NotTo(BeNil(), "status must have message field")
-		parts, _ := msg["parts"].([]any)
-		Expect(parts).NotTo(BeEmpty(), "message must have parts")
-		firstPart, _ := parts[0].(map[string]any)
-		text, _ := firstPart["text"].(string)
-		Expect(text).To(ContainSubstring("Preliminary severity from resource metadata:"),
-			"AU-3: status must carry grounded severity information")
-		Expect(strings.ToLower(text)).NotTo(ContainSubstring("confidence"),
-			"AU-3: status-only outcome must not claim a confidence value")
+		Expect(result.allStatuses).NotTo(BeEmpty(),
+			"AU-3: no-RCA investigation must remain observable through terminal status events")
+		Expect(result.reachedEnd).To(BeTrue(),
+			"AU-3: no-RCA investigation must reach a terminal state")
+		Expect(result.earlyRCAEvents).To(BeEmpty(),
+			"AU-3: no-RCA investigation must not emit an early RCA decision")
+		statusOnly := false
+		for _, event := range result.allStatuses {
+			metadata, _ := event["metadata"].(map[string]any)
+			if metadata == nil || metadata["type"] != statusMetadataType {
+				continue
+			}
+			statusOnly = true
+			status, _ := event["status"].(map[string]any)
+			message, _ := status["message"].(map[string]any)
+			parts, _ := message["parts"].([]any)
+			for _, rawPart := range parts {
+				part, _ := rawPart.(map[string]any)
+				text, _ := part["text"].(string)
+				Expect(strings.ToLower(text)).NotTo(ContainSubstring("confidence"),
+					"AU-3: status-only outcome must not claim an RCA confidence value")
+			}
+		}
+		Expect(statusOnly).To(BeTrue(),
+			"AU-3: no-RCA outcome must be visible through the status channel")
+		for _, event := range result.allArtifacts {
+			artifact, _ := event["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			metadata, _ := artifact["metadata"].(map[string]any)
+			if metadata == nil {
+				continue
+			}
+			Expect(metadata["schema"]).NotTo(Equal(investigationSummarySchema),
+				"AU-3: no-RCA outcome must not emit an investigation summary artifact")
+		}
 	})
 })
 

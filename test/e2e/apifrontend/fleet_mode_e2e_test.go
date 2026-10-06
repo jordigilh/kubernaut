@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	agentsessionv1alpha1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
@@ -223,26 +223,38 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		case <-time.After(15 * time.Second):
 			Fail("first Fleet investigation did not begin streaming within 15 seconds")
 		}
-		// Wait for the authoritative KA lease before starting the contending
-		// request. A fixed delay can let both callers race through readiness,
-		// which makes session_active belong to the wrong SSE stream.
-		By("waiting for the first Fleet caller to hold the interactive AgentSession lease")
+		// APIF's interactive Fleet path uses a direct MCP session. It does not
+		// create an AgentSession CRD; status.kaCorrelationID is written only
+		// after KA action=start succeeds and the driver lease is acquired. A
+		// fixed delay can let both callers race through readiness, which makes
+		// session_active belong to the wrong SSE stream.
+		By("waiting for the first Fleet caller's KA correlation after action=start")
 		Eventually(func() bool {
-			var sessions agentsessionv1alpha1.AgentSessionList
+			var sessions investigationsessionv1alpha1.InvestigationSessionList
 			if err := fleetAFK8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
 				return false
 			}
 			for i := range sessions.Items {
 				session := &sessions.Items[i]
-				if session.Spec.ResourceNamespace == "fleet-session-active-e2e" &&
-					session.Spec.ResourceName == "fleet-session-active-target" &&
-					session.Status.Interactive {
+				if session.Status.KACorrelationID == "" || session.Spec.RemediationRequestRef.Name == "" {
+					continue
+				}
+				var rr remediationv1alpha1.RemediationRequest
+				if err := fleetAFK8sClient.Get(context.Background(), client.ObjectKey{
+					Namespace: session.Spec.RemediationRequestRef.Namespace,
+					Name:      session.Spec.RemediationRequestRef.Name,
+				}, &rr); err != nil {
+					continue
+				}
+				target := rr.Spec.TargetResource
+				if target.Kind == "Pod" && target.Namespace == "fleet-session-active-e2e" &&
+					target.Name == "fleet-session-active-target" {
 					return true
 				}
 			}
 			return false
 		}, 90*time.Second, time.Second).Should(BeTrue(),
-			"the first Fleet caller must hold the interactive AgentSession lease before the second caller starts")
+			"the first Fleet caller must complete action=start before the second caller starts")
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer secondCancel()
