@@ -280,7 +280,7 @@ The deployable Kubernaut Agent production image is published to the upstream
 Kubernaut Quay organization for live `operator-oomkill-informer` validation:
 
 - **Image**: `quay.io/kubernaut-ai/kubernautagent:pr-2491-edf54ee70`
-- **Immutable OCI index digest**: `sha256:9560565744c0491fbbebd4caadcc5babe62384cbe01d1b5a2a3d1c8178678b02`
+- **Immutable OCI index digest**: `sha256:318c5563454ae23fd79edacbc9f3537b9812dc967414a3ca64df1a1ea6a569dd`
 - **Platforms**: `linux/amd64`, `linux/arm64/v8`
 - **amd64 child manifest**: `sha256:bb42137252114aa2b4e8bd172d423e56727043899bf71ff614f62e91c1f9ae12`
 - **arm64 child manifest**: `sha256:3c10b68035cc9146d62f05b7e30f6b5a183c4a73604f1bbf3f8d92a7b211beef`
