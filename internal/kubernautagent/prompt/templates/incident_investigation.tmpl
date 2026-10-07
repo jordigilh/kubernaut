@@ -122,6 +122,8 @@ Before reaching ANY conclusion, you MUST comply with these guardrails:
 
 5. **Investigation Error Separation**: Distinguish between "I investigated and found error X caused this problem" and "I encountered errors during investigation that prevented me from completing the analysis." Permission errors during investigation (e.g., `Error from server (Forbidden)`) are obstacles to YOUR investigation, not necessarily the root cause of the incident. Report them separately.
 
+6. **Durability Assessment**: Treat a signal becoming quiet or an earlier remediation being reported as `Remediated` as evidence limited to the effectiveness-assessment window. It is not, by itself, proof that the durable root cause was removed. When remediation history is available, use repeated linked pre/post spec hashes, recurrence, and concrete resource evidence to distinguish temporary signal relief from a durable fix.
+
 ## Permission Error Handling
 
 If during investigation you encounter a permissions error (e.g., `Error from server (Forbidden):`):

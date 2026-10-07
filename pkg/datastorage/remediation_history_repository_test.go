@@ -16,13 +16,14 @@ limitations under the License.
 
 // Package datastorage contains unit tests for the DataStorage service.
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// DD-KA-016 v1.7: Both tiers query by spec hash for causal chain integrity (#586).
 package datastorage_test
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -225,7 +226,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 	// =========================================================================
 	// UT-RH-009 to UT-RH-012: QueryROEventsBySpecHash
-	// BR-KA-016: Both Tier 1 and Tier 2 query by spec hash (DD-KA-016 v1.4, #586)
+	// BR-KA-016: Both Tier 1 and Tier 2 query by spec hash (DD-KA-016 v1.7, #586)
 	// =========================================================================
 	Describe("QueryROEventsBySpecHash", func() {
 		var (
@@ -241,7 +242,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 			clusterID = ""
 			specHash = "sha256:aabb1122"
 			since = time.Now().Add(-90 * 24 * time.Hour) // 90 days ago
-			until = time.Now().Add(-24 * time.Hour)       // 24h ago (beyond tier 1)
+			until = time.Now().Add(-24 * time.Hour)      // 24h ago (beyond tier 1)
 		})
 
 		Context("when historical events match the spec hash", func() {
@@ -249,18 +250,18 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"action_type":             "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created", eventData,
-					time.Now().Add(-21*24*time.Hour), "rr-old-001",
+					time.Now().Add(-21*24*time.Hour), "rr-old-001", 1,
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -275,11 +276,11 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("when no historical events match", func() {
 			It("UT-RH-010: should return empty slice", func() {
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				})
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -291,8 +292,8 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 		Context("when database returns an error", func() {
 			It("UT-RH-011: should propagate the error", func() {
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -306,16 +307,16 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("when row scanning fails", func() {
 			It("UT-RH-012: should return error on malformed event_data", func() {
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created",
 					[]byte(`{invalid json`),
 					time.Now().Add(-21*24*time.Hour),
-					"rr-bad-001",
+					"rr-bad-001", 1,
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -330,11 +331,11 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("deterministic ordering (#211)", func() {
 			It("UT-DS-211-003: should order by event_timestamp ASC, event_id ASC", func() {
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				})
 
 				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -351,19 +352,19 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"action_type":             "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created", eventData,
-					time.Now().Add(-21*24*time.Hour), "rr-old-002",
+					time.Now().Add(-21*24*time.Hour), "rr-old-002", 1,
 				)
 
 				// Regex requires event_type filter - without it, query would leak EM events
 				sqlMock.ExpectQuery(`event_type = 'remediation\.workflow_created'`).
-					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
@@ -389,18 +390,18 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created", eventData,
-					time.Now().Add(-21*24*time.Hour), "rr-ns-a-001",
+					time.Now().Add(-21*24*time.Hour), "rr-ns-a-001", 1,
 				)
 
 				sqlMock.ExpectQuery(`event_data->>'target_resource' = \$1`).
-					WithArgs("ns-a/Deployment/app", "", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs("ns-a/Deployment/app", "", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, "ns-a/Deployment/app", "", specHash, since, until)
@@ -414,18 +415,18 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created", eventData,
-					time.Now().Add(-21*24*time.Hour), "rr-cluster-a-001",
+					time.Now().Add(-21*24*time.Hour), "rr-cluster-a-001", 1,
 				)
 
 				sqlMock.ExpectQuery(`cluster_id = \$2`).
-					WithArgs("ns-a/Deployment/app", "cluster-a", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs("ns-a/Deployment/app", "cluster-a", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, "ns-a/Deployment/app", "cluster-a", specHash, since, until)
@@ -439,18 +440,18 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"event_type", "event_data", "event_timestamp", "correlation_id",
+					"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
 				}).AddRow(
 					"remediation.workflow_created", eventData,
-					time.Now().Add(-21*24*time.Hour), "rr-any-cluster-001",
+					time.Now().Add(-21*24*time.Hour), "rr-any-cluster-001", 1,
 				)
 
-				sqlMock.ExpectQuery(`\(\$2 = '' OR cluster_id = \$2\)`).
-					WithArgs("ns-a/Deployment/app", "", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`\(\$2 = '' OR ro\.cluster_id = \$2\)`).
+					WithArgs("ns-a/Deployment/app", "", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, "ns-a/Deployment/app", "", specHash, since, until)
@@ -458,6 +459,51 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results).To(HaveLen(1), "empty clusterID must not exclude any cluster (unscoped, matches release/v1.5 behavior)")
 			})
+		})
+
+		It("UT-DS-2490-RESOURCE-001: returns a resource-limit error instead of partial rows", func() {
+			rows := sqlmock.NewRows([]string{
+				"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
+			})
+			for i := 0; i <= repository.MaxROEventsBySpecHashResults; i++ {
+				rows.AddRow(
+					"remediation.workflow_created",
+					[]byte(`{"target_resource":"prod/Deployment/my-app"}`),
+					time.Now().Add(-time.Duration(i+1)*time.Minute),
+					"rr-overflow",
+					1,
+				)
+			}
+
+			sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+				WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				WillReturnRows(rows)
+
+			results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
+
+			Expect(errors.Is(err, repository.ErrRemediationHistoryResourceLimit)).To(BeTrue())
+			Expect(results).To(BeNil())
+		})
+
+		It("UT-DS-2490-RESOURCE-003: rejects a row at the traversal-depth boundary", func() {
+			rows := sqlmock.NewRows([]string{
+				"event_type", "event_data", "event_timestamp", "correlation_id", "chain_depth",
+			}).AddRow(
+				"remediation.workflow_created",
+				[]byte(`{"target_resource":"prod/Deployment/my-app"}`),
+				time.Now().Add(-time.Minute),
+				"rr-depth-limit",
+				repository.MaxRemediationHistoryTraversalDepth,
+			)
+
+			sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth FROM deduplicated_chain`).
+				WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+				WillReturnRows(rows)
+
+			results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, clusterID, specHash, since, until)
+
+			Expect(errors.Is(err, repository.ErrRemediationHistoryResourceLimit)).To(BeTrue())
+			Expect(results).To(BeNil())
 		})
 	})
 })

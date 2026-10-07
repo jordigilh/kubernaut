@@ -32,11 +32,21 @@ Consider a different remediation approach.
 {{ . }}
 
 {{ end -}}
+{{ range .RecurrenceDurabilityGuidance -}}
+{{ . }}
+
+{{ end -}}
 **Reasoning Guidance:**
 Use the above remediation history to inform your workflow selection.
 Avoid repeating workflows that previously failed or had poor effectiveness.
-If a workflow completed successfully multiple times but the same signal keeps
-recurring, escalate to human review — the workflow is not addressing the root cause.
+Treat recurrence and durability qualitatively: a completed or `Remediated`
+outcome, including a resolved signal, describes the effectiveness-assessment
+window and is not proof of durable root-cause resolution. Use the linked
+pre/post spec hashes, repeated signal evidence, and RCA findings together.
+Do not apply an arbitrary retry-count threshold when interpreting this history.
+If a workflow completed successfully but the same signal keeps recurring,
+consider a different root-cause approach or human review according to platform
+policy.
 If regression is detected, consider alternative approaches.
 {{ if .HasSpecDrift }}
 **Note on spec drift entries:** Some remediation assessments were inconclusive
