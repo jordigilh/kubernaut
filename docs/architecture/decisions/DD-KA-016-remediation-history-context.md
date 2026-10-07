@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.5
+**Version**: 1.6
 **Confidence**: 95%
 **Applies To**: Kubernaut Agent (KA, `internal/kubernautagent/`), Remediation Orchestrator (RO), DataStorage Service (DS)
 
@@ -18,6 +18,7 @@
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 | 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
 | 1.5 | 2026-07-31 | Architecture Team | **Issue #1802**: v1.4's spec-hash-only query key let two unrelated resources sharing an identical Pod/container spec (e.g., templated Deployments from the same Helm chart/GitOps repo) collide — both RO's ineffective-chain blocking (BR-ORCH-042.5) and KA's history-based prompt enrichment could attribute one target's remediation chain to another. Both Tier 1 and Tier 2 now additionally scope by `target_resource` (exact match on the existing `{namespace}/{kind}/{name}` composite), and — **main branch only** — by optional `cluster_id` for fleet deployments where identically-named/-namespaced/-spec'd resources can exist on different clusters (`release/v1.5` has no `cluster_id` concept; that branch's port is target-resource-only). Added **RO** as a formal consumer of this DD: RO's `RoutingEngine.CheckIneffectiveRemediationChain` calls the same DS endpoint/query path KA's enrichment does, so both now share identical target/cluster scoping semantics. New index: `idx_audit_events_cluster_id` (migration 017, main only). |
+| 1.6 | 2026-10-07 | Architecture Team | **Issue #2490**: Approved Option A, a PostgreSQL recursive CTE for complete chained pre/post spec-hash traversal. Preserve #616 dual-hash anchors; recurse only through a candidate EM post-hash equal to the current RO pre-hash, require strictly older RO timestamps, scope every hop by target/optional cluster and history window, deduplicate by audit event identity with recursive `UNION`, and query Tier 2 through the full lookback before partitioning disjoint response windows. Preserve F1 time-unbounded EM correlation. Prompt guidance remains qualitative and does not add an arbitrary retry threshold or workflow Job policy. |
 
 ---
 
@@ -290,7 +291,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `pre_remediation_spec_hash` matching `currentSpecHash` (JSONB expression index `idx_audit_events_pre_remediation_spec_hash`) **AND** `target_resource` matching the requested `{namespace}/{kind}/{name}` **AND** (main only, when supplied) `cluster_id` matching the requesting cluster, within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`. Querying by spec hash alone (v1.4, Issue #586) preserved causal chain integrity across a *single* target's own history, but let two *different* targets with identical specs collide; adding `target_resource` (+ `cluster_id` on main) scoping (v1.5, Issue #1802) closes that gap while keeping the spec-hash match for chain integrity.
+1. **Query the linked RO chain**: Anchor `remediation.workflow_created` audit events when either `pre_remediation_spec_hash` matches `currentSpecHash` or a correlated EM event has `post_remediation_spec_hash` matching `currentSpecHash` (#616). Each recursive step considers only a candidate whose correlated EM post-hash equals the current node's RO `pre_remediation_spec_hash` and whose RO timestamp is strictly earlier than the current node. Anchor and recursive candidates are scoped by the requested `target_resource`, optional `cluster_id`, and RO history window; when `cluster_id` is supplied, the correlated EM hash event must carry the same top-level cluster ID as well. Querying by spec hash alone (v1.4, Issue #586) preserved causal chain integrity across a *single* target's own history, but let two *different* targets with identical specs collide; adding `target_resource` (+ `cluster_id` on main) scoping (v1.5, Issue #1802) closes that gap while keeping the spec-hash match for chain integrity.
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)
@@ -298,12 +299,12 @@ DS performs the following when serving this endpoint:
    - `effectiveness.hash.computed` — `pre_remediation_spec_hash`, `post_remediation_spec_hash`, `hash_match` (boolean)
    - `effectiveness.assessment.completed` — lifecycle marker with `reason` ("full", "partial", "expired")
 3. **Correlate**: Join RO and EM events by `correlation_id` (the RemediationRequest name). For each RO event, compute the weighted effectiveness score using `ComputeWeightedScore()` from `effectiveness_handler.go` (DD-017 v2.1 formula). Read `signalResolved` from `alert_resolution.alert_resolved`. Read `healthChecks` and `metricDeltas` from the typed ogen sub-objects on the corresponding EM component events.
-4. **Query Tier 2**: If `regressionDetected` (any entry's `preRemediationSpecHash` matches `currentSpecHash`), search audit events beyond Tier 1 (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash` **AND** `target_resource` (+ `cluster_id` on main, when supplied) matching, using expression index `idx_audit_events_pre_remediation_spec_hash` combined with `idx_audit_events_cluster_id` (migration 017, main only). Return the full chain from that historical window in summary form.
+4. **Query Tier 2**: Always query the linked chain across the full Tier 2 lookback (up to 90 days) through the current time so a recent entry can bridge to an older linked entry. Then retain only rows older than the Tier 1 boundary for the Tier 2 response. Apply the same target/cluster scoping and return the historical rows in summary form.
 5. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`. The `preRemediationSpecHash` match signals configuration regression.
 6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
-7. **Order by completedAt descending**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` descending (most recent first). *V1.0 implementation sorts most-recent-first to prioritize recent effectiveness data for LLM context window optimization.*
+7. **Order by completedAt ascending**: Both Tier 1 and Tier 2 chains are ordered oldest-first (`event_timestamp ASC`, `event_id ASC`) so the complete causal progression is deterministic and readable.
 
-DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both Tier 1 and Tier 2 query performance (migration 027). The `idx_audit_events_target_resource` index exists but is no longer used by the remediation history endpoint (v1.4, Issue #586).
+DS retains the existing pre/post spec-hash expression indexes, target-resource index, correlation index, and main-branch cluster index as planner candidates for the bounded CTE and its correlated EM lookups. The final `LIMIT` preserves the existing result bound (`MaxROEventsBySpecHashResults`).
 
 ---
 
@@ -312,7 +313,7 @@ DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both T
 ### Tier 1: Recent History (24h, Detailed)
 
 - **Purpose**: Full effectiveness data for recent remediations on the same target
-- **Query key**: `pre_remediation_spec_hash` matching `currentSpecHash` (v1.4, Issue #586) **AND** `target_resource` matching (+ optional `cluster_id` on main) (v1.5, Issue #1802) + 24h window
+- **Query key**: recursive dual-hash anchor (`pre_remediation_spec_hash` or correlated EM `post_remediation_spec_hash`) followed by causal post-hash links, with `target_resource` (+ optional `cluster_id` on main) and 24h RO window
 - **Additional filter**: Signal fingerprint (for exact recurrence detection)
 - **Returns**: Full remediation chain with all fields — effectiveness scores, metric deltas, health checks, dual hashes
 - **Prompt framing**: Strong signal — "these remediations were attempted recently"
@@ -320,7 +321,7 @@ DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both T
 ### Tier 2: Historical Hash Lookup (Beyond 24h, Summary)
 
 - **Purpose**: Detect configuration regressions that cross the 24h TTL boundary
-- **Query key**: `preRemediationSpecHash` match against `currentSpecHash`, **AND** `target_resource` matching (+ optional `cluster_id` on main) (v1.5, Issue #1802), up to 90 days
+- **Query key**: same recursive dual-hash chain as Tier 1, with `target_resource` (+ optional `cluster_id` on main), queried through the full 90-day lookback and partitioned after traversal
 - **Returns**: Full remediation chain from the matched historical window, in summary form (no metric deltas or health check details)
 - **Prompt framing**: Softer lead — "this configuration was previously observed N days ago, here is the complete remediation sequence that followed"
 - **Lookback cap**: 90 days (hardcoded, can be made configurable if needed)
@@ -337,8 +338,8 @@ Both tiers additionally scope by the existing `target_resource` composite string
 ### Fallthrough Logic
 
 1. KA calls DS with target resource + current spec hash
-2. DS runs Tier 1 query (by `pre_remediation_spec_hash`, 24h window) → correlates with EM events, detects regression
-3. If regression detected: DS runs Tier 2 query (by `pre_remediation_spec_hash`, 90d window) → builds summary chain
+2. DS runs the Tier 1 recursive dual-hash query (24h window) → correlates with EM events, detects regression
+3. DS runs the Tier 2 recursive dual-hash query through the full 90-day lookback → filters rows older than the Tier 1 boundary and builds the summary chain
 4. If no matches in either tier → return empty response (fresh investigation, no history context injected into prompt)
 
 ---
@@ -513,5 +514,5 @@ No architectural change to KA, DS endpoint contract, or query design. The enhanc
 
 ---
 
-**Status**: ✅ APPROVED — V1.5
+**Status**: ✅ APPROVED — V1.6
 **Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026); or when issue #1806 (KA → Kubernaut Agent rename) lands, whichever is sooner

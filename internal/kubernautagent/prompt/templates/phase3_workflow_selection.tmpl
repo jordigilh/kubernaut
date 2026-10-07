@@ -56,6 +56,14 @@ enrichment context provided.
 
 {{ .EnrichmentContext }}
 {{ end }}
+## Recurrence and Durability Guidance
+
+Use remediation history as qualitative evidence when selecting a workflow. A
+`Remediated` outcome or a resolved signal means the observed signal cleared
+during the effectiveness-assessment window; it does not establish durable
+root-cause resolution. Weigh repeated linked pre/post spec-hash history and
+RCA evidence together, and do not apply an arbitrary retry-count threshold.
+
 ## Workflow Discovery Protocol (Three-Step — MANDATORY)
 
 **Step 1**: Call `list_available_actions` to discover available remediation action types.

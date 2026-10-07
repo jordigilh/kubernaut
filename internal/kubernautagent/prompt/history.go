@@ -31,10 +31,6 @@ import (
 // absent, inconclusive, or not populated for the given history entry.
 const notAvailable = "N/A"
 
-// RepeatedRemediationEscalationThreshold is the minimum count of completed-but-recurring
-// remediations before the LLM is warned to escalate (KA constants.py:92).
-const RepeatedRemediationEscalationThreshold = 2
-
 // completedOutcomes defines which RR outcome values indicate a remediation that
 // "completed" from the orchestrator's perspective. Used by recurring detection and
 // all-zero-effectiveness logic to identify remediations that ran to completion.
@@ -52,6 +48,7 @@ type HistoryEntry struct {
 	Outcome            string
 	EffectivenessScore *float64
 	SignalResolved     *bool
+	HashMatch          string
 	AssessmentReason   string
 }
 
@@ -72,12 +69,14 @@ type remediationHistoryTemplateData struct {
 	Tier2Window                    string
 	DecliningEffectivenessWarnings []string
 	RecurringRemediationWarnings   []string
+	RecurrenceDurabilityGuidance   []string
 	HasSpecDrift                   bool
 }
 
 // BuildRemediationHistorySection renders the full remediation history prompt section.
-// 1:1 port of KA build_remediation_history_section().
-func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult, escalationThreshold int) string {
+// Recurrence is inferred from the linked history itself; callers must not
+// provide a retry-count threshold that changes the prompt's interpretation.
+func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult) string {
 	if result == nil {
 		return ""
 	}
@@ -96,7 +95,8 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 		Tier2Entries:                   renderTier2Entries(result.Tier2),
 		Tier2Window:                    result.Tier2Window,
 		DecliningEffectivenessWarnings: buildDecliningEffectivenessWarnings(result.Tier1),
-		RecurringRemediationWarnings:   buildRecurringRemediationWarnings(allEntries, escalationThreshold),
+		RecurringRemediationWarnings:   buildRecurringRemediationWarnings(allEntries),
+		RecurrenceDurabilityGuidance:   buildRecurrenceDurabilityGuidance(allEntries),
 		HasSpecDrift:                   anyAssessmentReasonSpecDrift(allEntries),
 	}
 
@@ -141,9 +141,11 @@ func buildDecliningEffectivenessWarnings(tier1 []enrichment.Tier1Entry) []string
 // buildRecurringRemediationWarnings builds one warning string per detected
 // completed-but-recurring remediation pattern, escalating to a MANDATORY
 // warning when the pattern shows zero effectiveness across every occurrence.
-func buildRecurringRemediationWarnings(allEntries []HistoryEntry, escalationThreshold int) []string {
+// The pattern is based on repeated linked history, not a configurable retry
+// threshold.
+func buildRecurringRemediationWarnings(allEntries []HistoryEntry) []string {
 	var warnings []string
-	for _, r := range DetectCompletedButRecurring(allEntries, escalationThreshold) {
+	for _, r := range DetectCompletedButRecurring(allEntries) {
 		if AllZeroEffectiveness(allEntries, r.ActionType, r.SignalType) {
 			warnings = append(warnings, fmt.Sprintf(
 				"**MANDATORY: You MUST NOT re-select '%s' for signal "+
@@ -164,6 +166,38 @@ func buildRecurringRemediationWarnings(allEntries []HistoryEntry, escalationThre
 		}
 	}
 	return warnings
+}
+
+// buildRecurrenceDurabilityGuidance renders qualitative evidence for the LLM.
+// A successful/Remediated outcome and a resolved signal describe what happened
+// during the effectiveness-assessment window; neither proves that the root
+// cause was durably removed. Repeated linked entries are evidence to weigh with
+// the RCA and spec-hash chain, not a numeric escalation rule.
+func buildRecurrenceDurabilityGuidance(entries []HistoryEntry) []string {
+	patterns := DetectCompletedButRecurring(entries)
+	guidance := make([]string, 0, len(patterns)+1)
+
+	for _, entry := range entries {
+		if isRemediatedOutcome(entry.Outcome) || (entry.SignalResolved != nil && *entry.SignalResolved) {
+			guidance = append(guidance,
+				"**DURABILITY CONTEXT:** A `Remediated` outcome or a resolved signal records symptom resolution during the effectiveness-assessment window; it does not by itself prove durable root-cause resolution. Use the RCA, recurrence evidence, and linked pre/post spec hashes to assess durability.",
+			)
+			break
+		}
+	}
+
+	for _, pattern := range patterns {
+		guidance = append(guidance, fmt.Sprintf(
+			"**RECURRENCE CONTEXT:** Linked history shows completed `%s` remediations for signal `%s` on multiple observations (%d recorded entries). Treat this as qualitative recurrence evidence; do not apply an arbitrary retry-count threshold or infer durability from a single successful or `Remediated` assessment.",
+			pattern.ActionType, pattern.SignalType, pattern.Count,
+		))
+	}
+
+	return guidance
+}
+
+func isRemediatedOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "remediated")
 }
 
 // anyAssessmentReasonSpecDrift reports whether any entry was assessed as
@@ -410,9 +444,10 @@ func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 }
 
 // DetectCompletedButRecurring finds workflows that completed successfully
-// multiple times for the same signal type across all tiers.
-// 1:1 port of KA _detect_completed_but_recurring().
-func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []RecurringPattern {
+// multiple times for the same signal type across all tiers. Repetition is a
+// property of the linked history; it is intentionally not controlled by a
+// prompt retry threshold.
+func DetectCompletedButRecurring(entries []HistoryEntry) []RecurringPattern {
 
 	type key struct{ actionType, signalType string }
 	counts := make(map[key]int)
@@ -431,7 +466,7 @@ func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []Recurr
 
 	var result []RecurringPattern
 	for k, count := range counts {
-		if count >= threshold {
+		if count > 1 {
 			result = append(result, RecurringPattern{
 				ActionType: k.actionType,
 				Count:      count,
@@ -535,6 +570,7 @@ func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Sum
 			Outcome:            e.Outcome,
 			EffectivenessScore: e.EffectivenessScore,
 			SignalResolved:     e.SignalResolved,
+			HashMatch:          e.HashMatch,
 			AssessmentReason:   e.AssessmentReason,
 		})
 	}
@@ -545,6 +581,7 @@ func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Sum
 			Outcome:            e.Outcome,
 			EffectivenessScore: e.EffectivenessScore,
 			SignalResolved:     e.SignalResolved,
+			HashMatch:          e.HashMatch,
 			AssessmentReason:   e.AssessmentReason,
 		})
 	}

@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package datastorage contains unit tests for the DataStorage service.
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// DD-KA-016 v1.6: Both tiers query by spec hash for causal chain integrity (#586).
 package datastorage_test
 
 import (
@@ -225,7 +225,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 	// =========================================================================
 	// UT-RH-009 to UT-RH-012: QueryROEventsBySpecHash
-	// BR-KA-016: Both Tier 1 and Tier 2 query by spec hash (DD-KA-016 v1.4, #586)
+	// BR-KA-016: Both Tier 1 and Tier 2 query by spec hash (DD-KA-016 v1.6, #586)
 	// =========================================================================
 	Describe("QueryROEventsBySpecHash", func() {
 		var (
@@ -241,7 +241,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 			clusterID = ""
 			specHash = "sha256:aabb1122"
 			since = time.Now().Add(-90 * 24 * time.Hour) // 90 days ago
-			until = time.Now().Add(-24 * time.Hour)       // 24h ago (beyond tier 1)
+			until = time.Now().Add(-24 * time.Hour)      // 24h ago (beyond tier 1)
 		})
 
 		Context("when historical events match the spec hash", func() {
@@ -249,7 +249,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"action_type":             "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -259,7 +259,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					time.Now().Add(-21*24*time.Hour), "rr-old-001",
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM remediation_chain`).
 					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -278,7 +278,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					"event_type", "event_data", "event_timestamp", "correlation_id",
 				})
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM remediation_chain`).
 					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -291,7 +291,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 		Context("when database returns an error", func() {
 			It("UT-RH-011: should propagate the error", func() {
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM remediation_chain`).
 					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
@@ -314,7 +314,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					"rr-bad-001",
 				)
 
-				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
+				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM remediation_chain`).
 					WithArgs(targetResource, clusterID, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -351,7 +351,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",
-					"action_type":             "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -389,7 +389,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -414,7 +414,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -439,7 +439,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "ns-a/Deployment/app",
 					"pre_remediation_spec_hash": specHash,
-					"action_type":              "ScaleUp",
+					"action_type":               "ScaleUp",
 				})
 
 				rows := sqlmock.NewRows([]string{
@@ -449,7 +449,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					time.Now().Add(-21*24*time.Hour), "rr-any-cluster-001",
 				)
 
-				sqlMock.ExpectQuery(`\(\$2 = '' OR cluster_id = \$2\)`).
+				sqlMock.ExpectQuery(`\(\$2 = '' OR ro\.cluster_id = \$2\)`).
 					WithArgs("ns-a/Deployment/app", "", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 

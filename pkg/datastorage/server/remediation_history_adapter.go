@@ -19,7 +19,7 @@ limitations under the License.
 // (repository package) to EffectivenessEvent (server package).
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity.
+// DD-KA-016 v1.6: Both tiers query the complete causal chain by spec hash (#2490).
 package server
 
 import (

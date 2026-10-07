@@ -17,7 +17,7 @@ limitations under the License.
 // Package repository provides data access for the DataStorage service.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// DD-KA-016 v1.6: Recursive dual-hash traversal for complete causal history (#2490).
 package repository
 
 import (
@@ -34,6 +34,67 @@ import (
 // MaxROEventsBySpecHashResults caps the number of rows returned by
 // QueryROEventsBySpecHash to prevent unbounded result sets (PERF-H2).
 const MaxROEventsBySpecHashResults = 10000
+
+// queryROEventsBySpecHash traverses the linked RO chain from a dual-hash
+// anchor. Recursive candidates must have a correlated EM post-hash equal to
+// the current RO pre-hash and an earlier RO timestamp. UNION deduplicates the
+// stable event_id carried by the recursive working set.
+const queryROEventsBySpecHash = `WITH RECURSIVE remediation_chain (
+			event_id, event_type, event_data, event_timestamp, correlation_id, pre_hash
+		) AS (
+			SELECT ro.event_id,
+				ro.event_type,
+				ro.event_data,
+				ro.event_timestamp,
+				ro.correlation_id,
+				ro.event_data->>'pre_remediation_spec_hash'
+			FROM audit_events ro
+			WHERE ro.event_type = 'remediation.workflow_created'
+				AND ro.event_data->>'target_resource' = $1
+				AND ($2 = '' OR ro.cluster_id = $2)
+				AND ro.event_timestamp >= $4
+				AND ro.event_timestamp < $5
+				AND (
+					ro.event_data->>'pre_remediation_spec_hash' = $3
+					OR EXISTS (
+						SELECT 1
+						FROM audit_events em
+						WHERE em.event_category = 'effectiveness'
+							AND em.correlation_id = ro.correlation_id
+							AND ($2 = '' OR em.cluster_id = $2)
+							AND em.event_data->>'post_remediation_spec_hash' = $3
+					)
+				)
+
+			UNION
+
+			SELECT ro.event_id,
+				ro.event_type,
+				ro.event_data,
+				ro.event_timestamp,
+				ro.correlation_id,
+				ro.event_data->>'pre_remediation_spec_hash'
+			FROM audit_events ro
+			JOIN remediation_chain previous
+				ON EXISTS (
+					SELECT 1
+					FROM audit_events em
+					WHERE em.event_category = 'effectiveness'
+						AND em.correlation_id = ro.correlation_id
+						AND ($2 = '' OR em.cluster_id = $2)
+						AND em.event_data->>'post_remediation_spec_hash' = previous.pre_hash
+				)
+			WHERE ro.event_type = 'remediation.workflow_created'
+				AND ro.event_data->>'target_resource' = $1
+				AND ($2 = '' OR ro.cluster_id = $2)
+				AND ro.event_timestamp >= $4
+				AND ro.event_timestamp < $5
+				AND ro.event_timestamp < previous.event_timestamp
+		)
+		SELECT event_type, event_data, event_timestamp, correlation_id
+		FROM remediation_chain
+		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $6`
 
 // RawAuditRow represents a single audit event row from the database.
 // Used as an intermediate representation before correlation logic in the handler.
@@ -52,9 +113,12 @@ type EffectivenessEventRow struct {
 }
 
 // RemediationHistoryRepository provides queries for remediation history context.
-// DD-KA-016 v1.4, Issue #616: Both tiers query RO events by spec hash, matching
+// DD-KA-016 v1.6, Issue #616/#2490: Both tiers query RO events by spec hash, matching
 // BOTH pre_remediation_spec_hash (direct) and post_remediation_spec_hash (via EM correlation).
-//  1. Query RO events by spec hash (Tier 1: 24h window, Tier 2: 90d window)
+// The spec-hash query recursively follows each matched remediation's
+// pre_remediation_spec_hash so callers receive the complete causal chain, not
+// only the latest event whose post hash matches the current resource state.
+//  1. Query the linked RO chain by spec hash (Tier 1: 24h window, Tier 2: 90d window)
 //  2. Batch query EM component events by correlation_id
 type RemediationHistoryRepository struct {
 	db     *sql.DB
@@ -156,24 +220,28 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	return results, rows.Err()
 }
 
-// QueryROEventsBySpecHash queries remediation.workflow_created audit events
-// matching a specific target resource and spec hash within a time window.
-// The hash is matched against BOTH pre_remediation_spec_hash (direct) and
-// post_remediation_spec_hash (via EM correlation_id subquery). An OR combines
-// both paths in a single scan; no DISTINCT is needed because each event_id
-// appears at most once regardless of which OR branch matched.
+// QueryROEventsBySpecHash queries the complete remediation.workflow_created
+// causal chain for a target resource and current spec hash within a time
+// window. The anchor hash is matched against BOTH pre_remediation_spec_hash
+// (direct) and post_remediation_spec_hash (via EM correlation). Each matched
+// remediation then contributes its pre-remediation hash as the next link to
+// follow. This exposes every prior remediation connected by the chained
+// pre/post hashes, rather than only the latest current-hash match.
 //
 // The EM subquery is intentionally time-unbounded: effectiveness assessments
 // may arrive after the RO event's tier boundary (e.g., RO in tier 2, EM in tier 1).
 // Constraining the subquery to the same window causes false negatives at tier
 // boundaries (F1 due diligence finding). The idx_audit_events_post_remediation_spec_hash
-// partial index limits scan scope despite the lack of time constraint. The
-// subquery does not need its own target_resource/cluster_id filter: correlation_id
-// ties it back to the same remediation attempt as the outer (already-scoped) row.
+// partial index limits scan scope despite the lack of time constraint. The EM
+// subquery is scoped by cluster when the request is fleet-scoped. EM events do
+// not carry the RO target-resource string, so correlation_id remains the
+// attempt-level join key while cluster_id prevents same-ID cross-cluster edges.
 //
 // Issue #616: Original query only matched pre_remediation_spec_hash, missing
 // cases where the current resource state matches a previous remediation's
 // post-remediation state (the normal successful-remediation cycle).
+// The recursive query also preserves that post-hash behavior while walking
+// backward through earlier forward changes.
 //
 // Issue #1802: Matching purely on spec_hash (with no target scoping) let two
 // unrelated resources sharing an identical Pod spec (e.g., templated
@@ -189,8 +257,9 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 //   - idx_audit_events_post_remediation_spec_hash (migration 004)
 //   - idx_audit_events_cluster_id (migration 017, main only)
 //
-// DD-KA-016 v1.4: Both tiers query by spec hash (#586).
-// DD-KA-016 v1.5: Both tiers additionally scope by target_resource (+ cluster_id on main) (#1802).
+// DD-KA-016 v1.6: Both tiers recursively traverse causal post-hash links,
+// scope every hop by target_resource (+ cluster_id on main), and bound the
+// result by the requested time window and result cap (#2490).
 //
 // PERF-H2 Monitoring: Run EXPLAIN ANALYZE periodically in production to verify
 // idx_audit_events_pre_remediation_spec_hash and idx_audit_events_post_remediation_spec_hash
@@ -206,25 +275,10 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 ) ([]RawAuditRow, error) {
 	// PERF-H2: LIMIT prevents unbounded result sets.
 	const maxROResults = MaxROEventsBySpecHashResults
-	query := `SELECT event_type, event_data, event_timestamp, correlation_id
-		FROM audit_events
-		WHERE event_type = 'remediation.workflow_created'
-		AND event_data->>'target_resource' = $1
-		AND ($2 = '' OR cluster_id = $2)
-		AND event_timestamp >= $4
-		AND event_timestamp < $5
-		AND (
-			event_data->>'pre_remediation_spec_hash' = $3
-			OR correlation_id IN (
-				SELECT correlation_id FROM audit_events
-				WHERE event_category = 'effectiveness'
-				AND event_data->>'post_remediation_spec_hash' = $3
-			)
-		)
-		ORDER BY event_timestamp ASC, event_id ASC
-		LIMIT $6`
+	// EM hash lookups intentionally remain time-unbounded: an assessment may be
+	// recorded after the RO event's tier boundary (F1 due-diligence finding).
 
-	rows, err := r.db.QueryContext(ctx, query, targetResource, clusterID, specHash, since, until, maxROResults)
+	rows, err := r.db.QueryContext(ctx, queryROEventsBySpecHash, targetResource, clusterID, specHash, since, until, maxROResults)
 	if err != nil {
 		r.logger.Error(err, "Failed to query RO events by spec hash",
 			"target_resource", targetResource, "cluster_id", clusterID,

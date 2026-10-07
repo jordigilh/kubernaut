@@ -17,7 +17,7 @@ limitations under the License.
 // Package datastorage contains unit tests for the DataStorage service.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: HTTP handler tests for GET /api/v1/remediation-history/context.
+// DD-KA-016 v1.6: HTTP handler tests for GET /api/v1/remediation-history/context.
 package datastorage_test
 
 import (
@@ -55,7 +55,7 @@ func (m *mockRemediationHistoryQuerier) QueryEffectivenessEventsBatch(ctx contex
 	return nil, nil
 }
 
-var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
+var _ = Describe("Remediation History Handler (DD-KA-016 v1.6)", func() {
 	var (
 		handler *server.Handler
 		rec     *httptest.ResponseRecorder
@@ -192,11 +192,11 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 						EventTimestamp: fixedTime,
 						EventData: map[string]interface{}{
 							"pre_remediation_spec_hash": "sha256:pre111",
-							"outcome":                  "success",
-							"signal_type":              "alert",
-							"signal_fingerprint":       "fp-001",
-							"action_type":            "restart",
-							"target_resource":          "default/Deployment/nginx",
+							"outcome":                   "success",
+							"signal_type":               "alert",
+							"signal_fingerprint":        "fp-001",
+							"action_type":               "restart",
+							"target_resource":           "default/Deployment/nginx",
 						},
 					},
 				}, nil
@@ -287,11 +287,11 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 							EventTimestamp: fixedTime,
 							EventData: map[string]interface{}{
 								"pre_remediation_spec_hash": "sha256:abc123",
-								"outcome":                  "success",
-								"signal_type":              "alert",
-								"signal_fingerprint":       "fp-reg",
-								"action_type":              "restart",
-								"target_resource":          "default/Deployment/nginx",
+								"outcome":                   "success",
+								"signal_type":               "alert",
+								"signal_fingerprint":        "fp-reg",
+								"action_type":               "restart",
+								"target_resource":           "default/Deployment/nginx",
 							},
 						},
 					}, nil
@@ -328,7 +328,10 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 		// When Tier 1 has no events, regression can still be detected from Tier 2 (24h-90d window).
 		It("UT-RH-HANDLER-010: should run Tier 2 and detect regression when Tier 1 is empty (BR-KA-016)", func() {
 			specHashCallCount := 0
-			tier2FixedTime := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
+			// The Tier 2 query now spans the full lookback so recent chain
+			// entries can bridge to older links. Keep the fixture inside that
+			// lookback and outside the default 24-hour Tier 1 window.
+			tier2FixedTime := time.Now().UTC().Add(-48 * time.Hour)
 
 			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				Expect(specHash).To(Equal("sha256:abc123"))
@@ -344,10 +347,10 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 						EventTimestamp: tier2FixedTime,
 						EventData: map[string]interface{}{
 							"pre_remediation_spec_hash": "sha256:abc123",
-							"outcome":                  "success",
-							"signal_type":              "alert",
-							"action_type":              "ScaleUp",
-							"target_resource":          "default/Deployment/nginx",
+							"outcome":                   "success",
+							"signal_type":               "alert",
+							"action_type":               "ScaleUp",
+							"target_resource":           "default/Deployment/nginx",
 						},
 					},
 				}, nil
@@ -385,6 +388,76 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 			t2chain := tier2["chain"].([]interface{})
 			Expect(t2chain).To(HaveLen(1))
 			Expect(t2chain[0].(map[string]interface{})["remediationUID"]).To(Equal("rr-old-tier2"))
+		})
+
+		It("UT-DS-2490-004: should partition Tier 2 after traversing through a recent bridge", func() {
+			now := time.Now().UTC()
+			recentTime := now.Add(-12 * time.Hour)
+			olderTime := now.Add(-48 * time.Hour)
+			queryCount := 0
+
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, since, until time.Time) ([]repository.RawAuditRow, error) {
+				queryCount++
+				Expect(until).To(BeTemporally("~", now, 5*time.Second))
+				if queryCount == 1 {
+					Expect(since).To(BeTemporally("~", now.Add(-24*time.Hour), 5*time.Second))
+					return []repository.RawAuditRow{{
+						EventType:      "remediation.workflow_created",
+						CorrelationID:  "rr-recent-bridge",
+						EventTimestamp: recentTime,
+						EventData: map[string]interface{}{
+							"pre_remediation_spec_hash": "sha256:bridge",
+							"outcome":                   "success",
+							"action_type":               "increase_memory",
+							"signal_type":               "OOMKilled",
+						},
+					}}, nil
+				}
+
+				Expect(since).To(BeTemporally("~", now.Add(-72*time.Hour), 5*time.Second))
+				return []repository.RawAuditRow{
+					{
+						EventType:      "remediation.workflow_created",
+						CorrelationID:  "rr-older-history",
+						EventTimestamp: olderTime,
+						EventData: map[string]interface{}{
+							"pre_remediation_spec_hash": "sha256:initial",
+							"outcome":                   "success",
+							"action_type":               "increase_memory",
+							"signal_type":               "OOMKilled",
+						},
+					},
+					{
+						EventType:      "remediation.workflow_created",
+						CorrelationID:  "rr-recent-bridge",
+						EventTimestamp: recentTime,
+						EventData: map[string]interface{}{
+							"pre_remediation_spec_hash": "sha256:bridge",
+							"outcome":                   "success",
+							"action_type":               "increase_memory",
+							"signal_type":               "OOMKilled",
+						},
+					},
+				}, nil
+			}
+			mock.queryEffectivenessEventsFn = func(_ context.Context, _ []string) (map[string][]*server.EffectivenessEvent, error) {
+				return nil, nil
+			}
+
+			req := httptest.NewRequest("GET", baseURL+"&tier1Window=24h&tier2Window=72h", nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(queryCount).To(Equal(2))
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			tier1Chain := resp["tier1"].(map[string]interface{})["chain"].([]interface{})
+			Expect(tier1Chain).To(HaveLen(1))
+			Expect(tier1Chain[0].(map[string]interface{})["remediationUID"]).To(Equal("rr-recent-bridge"))
+			tier2Chain := resp["tier2"].(map[string]interface{})["chain"].([]interface{})
+			Expect(tier2Chain).To(HaveLen(1))
+			Expect(tier2Chain[0].(map[string]interface{})["remediationUID"]).To(Equal("rr-older-history"))
 		})
 	})
 
