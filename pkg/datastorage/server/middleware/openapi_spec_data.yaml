@@ -1220,6 +1220,24 @@ paths:
                     status: 400
                     detail: "Query parameter 'targetKind' is required"
                     instance: "/api/v1/remediation-history/context"
+        '503':
+          description: |
+            Service Unavailable - the complete causal history exceeded the
+            configured traversal, query-time, or result-size safety budget.
+            The service fails closed rather than returning partial history.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                resource_limit:
+                  summary: Complete history exceeds the safety budget
+                  value:
+                    type: "https://kubernaut.ai/problems/resource-limit"
+                    title: "Service Unavailable"
+                    status: 503
+                    detail: "Remediation history is temporarily unavailable because the complete chain exceeds the configured resource limits"
+                    instance: "/api/v1/remediation-history/context"
         '500':
           description: |
             Internal Server Error - database query failure.

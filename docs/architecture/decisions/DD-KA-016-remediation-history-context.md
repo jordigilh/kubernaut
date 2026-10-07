@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.6
+**Version**: 1.7
 **Confidence**: 95%
 **Applies To**: Kubernaut Agent (KA, `internal/kubernautagent/`), Remediation Orchestrator (RO), DataStorage Service (DS)
 
@@ -18,7 +18,8 @@
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 | 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
 | 1.5 | 2026-07-31 | Architecture Team | **Issue #1802**: v1.4's spec-hash-only query key let two unrelated resources sharing an identical Pod/container spec (e.g., templated Deployments from the same Helm chart/GitOps repo) collide — both RO's ineffective-chain blocking (BR-ORCH-042.5) and KA's history-based prompt enrichment could attribute one target's remediation chain to another. Both Tier 1 and Tier 2 now additionally scope by `target_resource` (exact match on the existing `{namespace}/{kind}/{name}` composite), and — **main branch only** — by optional `cluster_id` for fleet deployments where identically-named/-namespaced/-spec'd resources can exist on different clusters (`release/v1.5` has no `cluster_id` concept; that branch's port is target-resource-only). Added **RO** as a formal consumer of this DD: RO's `RoutingEngine.CheckIneffectiveRemediationChain` calls the same DS endpoint/query path KA's enrichment does, so both now share identical target/cluster scoping semantics. New index: `idx_audit_events_cluster_id` (migration 017, main only). |
-| 1.6 | 2026-10-07 | Architecture Team | **Issue #2490**: Approved Option A, a PostgreSQL recursive CTE for complete chained pre/post spec-hash traversal. Preserve #616 dual-hash anchors; recurse only through a candidate EM post-hash equal to the current RO pre-hash, require strictly older RO timestamps, scope every hop by target/optional cluster and history window, deduplicate by audit event identity with recursive `UNION`, and query Tier 2 through the full lookback before partitioning disjoint response windows. Preserve F1 time-unbounded EM correlation. Prompt guidance remains qualitative and does not add an arbitrary retry threshold or workflow Job policy. |
+| 1.6 | 2026-10-07 | Architecture Team | **Issue #2490**: Approved Option A, a PostgreSQL recursive CTE for complete chained pre/post spec-hash traversal. Preserve #616 dual-hash anchors; recurse only through a candidate EM post-hash equal to the current RO pre-hash, require strictly older RO timestamps, scope every hop by target/optional cluster and history window, deduplicate recursive states with `UNION` and returned event identities with `DISTINCT ON`, and query Tier 2 through the full lookback before partitioning disjoint response windows. Preserve F1 time-unbounded EM correlation. Prompt guidance remains qualitative and does not add an arbitrary retry threshold or workflow Job policy. |
+| 1.7 | 2026-10-07 | Architecture Team | **Issue #2490 security and availability hardening**: bound recursive traversal at depth 256, apply a repository-local 10-second query deadline, request one sentinel row beyond the 10,000-event result cap, and fail closed with a resource-limit error/HTTP 503 rather than return partial history. Sanitize audit-derived recurrence and history fields through the existing prompt injection filter. Add control-mapped coverage for strict temporal traversal, large branching overflow, fail-closed HTTP behavior, and prompt sanitization. |
 
 ---
 
@@ -303,8 +304,9 @@ DS performs the following when serving this endpoint:
 5. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`. The `preRemediationSpecHash` match signals configuration regression.
 6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
 7. **Order by completedAt ascending**: Both Tier 1 and Tier 2 chains are ordered oldest-first (`event_timestamp ASC`, `event_id ASC`) so the complete causal progression is deterministic and readable.
+8. **Resource safety and completeness**: The recursive CTE carries traversal depth and stops expanding beyond 256 hops. The repository applies a 10-second query-local deadline and requests one sentinel row beyond `MaxROEventsBySpecHashResults` (10,000) to detect overflow. If the depth, query-time, or complete-result budget is exceeded, DS returns `ErrRemediationHistoryResourceLimit`; the HTTP handler returns RFC 7807 `503 Service Unavailable` and never returns a partial `200` history response. This fail-closed behavior addresses FedRAMP SC-5 and preserves complete-chain semantics for BR-KA-016/BR-ORCH-042.5.
 
-DS retains the existing pre/post spec-hash expression indexes, target-resource index, correlation index, and main-branch cluster index as planner candidates for the bounded CTE and its correlated EM lookups. The final `LIMIT` preserves the existing result bound (`MaxROEventsBySpecHashResults`).
+DS retains the existing pre/post spec-hash expression indexes, target-resource index, correlation index, and main-branch cluster index as planner candidates for the bounded CTE and its correlated EM lookups. The query requests `MaxROEventsBySpecHashResults + 1` rows only as an overflow sentinel; no sentinel row is exposed to callers. EM correlation remains time-unbounded for F1, while the RO traversal remains window-bounded and query-time-bounded.
 
 ---
 
@@ -449,6 +451,15 @@ workload. Use available observability data to correlate before recommending
 the same remediation again.
 ```
 
+### Audit-Derived Prompt Safety
+
+Action types, signal types, outcomes, resource identifiers, and other values
+originating in audit events are untrusted prompt data. Before history values are
+interpolated into the KA prompt, the prompt builder applies the existing
+`sanitizeField` injection-pattern filter. This is defense in depth for
+DD-KA-005 and FedRAMP SI-10/AC-4; it does not replace structured validation at
+the audit-ingestion boundary.
+
 ---
 
 ## V1.1 Enhancement Path
@@ -492,7 +503,9 @@ No architectural change to KA, DS endpoint contract, or query design. The enhanc
 - Prompt grows larger when history exists (additional tokens)
   - **Mitigation**: In practice, chains are short (5-10 entries max per target within 24h given cooldown periods). Token cost is minimal.
 - Tier 2 query (90-day hash scan) could be slow at scale
-  - **Mitigation**: DS indexes hash columns; capped at 90 days; summary-only response (no metric deltas)
+  - **Mitigation**: DS indexes hash columns; capped at 90 days; summary-only response (no metric deltas); depth, query-time, and complete-result budgets fail closed with HTTP 503 rather than silently truncating history
+- Audit-derived action/signal values could influence workflow-selection instructions
+  - **Mitigation**: sanitize history fields with the existing prompt injection filter and cover malicious recurrence values with a control-mapped unit test
 
 ---
 
@@ -514,5 +527,5 @@ No architectural change to KA, DS endpoint contract, or query design. The enhanc
 
 ---
 
-**Status**: ✅ APPROVED — V1.6
+**Status**: ✅ APPROVED — V1.7
 **Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026); or when issue #1806 (KA → Kubernaut Agent rename) lands, whichever is sooner

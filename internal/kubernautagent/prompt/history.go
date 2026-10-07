@@ -88,7 +88,7 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult)
 	allEntries := toHistoryEntries(result.Tier1, result.Tier2)
 
 	data := remediationHistoryTemplateData{
-		TargetResource:                 result.TargetResource,
+		TargetResource:                 sanitizeField(result.TargetResource),
 		RegressionDetected:             result.RegressionDetected,
 		Tier1Entries:                   renderTier1Entries(result.Tier1, causalChains),
 		Tier1Window:                    result.Tier1Window,
@@ -132,7 +132,7 @@ func buildDecliningEffectivenessWarnings(tier1 []enrichment.Tier1Entry) []string
 			"**WARNING: DECLINING EFFECTIVENESS for '%s' workflow** -- "+
 				"Each successive application is less effective, suggesting the workflow "+
 				"treats the symptom rather than the root cause. Consider a different approach.",
-			actionType,
+			sanitizeField(actionType),
 		))
 	}
 	return warnings
@@ -153,7 +153,7 @@ func buildRecurringRemediationWarnings(allEntries []HistoryEntry) []string {
 					"zero effectiveness -- the signal continues to recur. Set "+
 					"`investigation_outcome` to `inconclusive` and omit `selected_workflow`, "+
 					"or select a fundamentally different remediation approach.",
-				r.ActionType, r.SignalType, r.Count,
+				sanitizeField(r.ActionType), sanitizeField(r.SignalType), r.Count,
 			))
 		} else {
 			warnings = append(warnings, fmt.Sprintf(
@@ -161,7 +161,7 @@ func buildRecurringRemediationWarnings(allEntries []HistoryEntry) []string {
 					"Completed %d times for signal '%s' but the issue continues "+
 					"to recur. Set `investigation_outcome` to `inconclusive` and omit "+
 					"`selected_workflow`, or select an alternative approach.",
-				r.ActionType, r.Count, r.SignalType,
+				sanitizeField(r.ActionType), r.Count, sanitizeField(r.SignalType),
 			))
 		}
 	}
@@ -189,7 +189,7 @@ func buildRecurrenceDurabilityGuidance(entries []HistoryEntry) []string {
 	for _, pattern := range patterns {
 		guidance = append(guidance, fmt.Sprintf(
 			"**RECURRENCE CONTEXT:** Linked history shows completed `%s` remediations for signal `%s` on multiple observations (%d recorded entries). Treat this as qualitative recurrence evidence; do not apply an arbitrary retry-count threshold or infer durability from a single successful or `Remediated` assessment.",
-			pattern.ActionType, pattern.SignalType, pattern.Count,
+			sanitizeField(pattern.ActionType), sanitizeField(pattern.SignalType), pattern.Count,
 		))
 	}
 
@@ -231,12 +231,13 @@ func renderRemediationHistoryTemplate(data remediationHistoryTemplateData) strin
 // 1:1 port of KA _format_tier1_entry().
 func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]string) string {
 	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
-	workflow := withDefault(entry.ActionType, "unknown")
-	outcome := withDefault(entry.Outcome, "unknown")
-	signal := entry.SignalType
+	workflow := withDefault(sanitizeField(entry.ActionType), "unknown")
+	outcome := withDefault(sanitizeField(entry.Outcome), "unknown")
+	signal := sanitizeField(entry.SignalType)
+	remediationUID := sanitizeField(entry.RemediationUID)
 
 	lines := []string{
-		fmt.Sprintf("- **Remediation %s** (%s)", entry.RemediationUID, completed),
+		fmt.Sprintf("- **Remediation %s** (%s)", remediationUID, completed),
 		fmt.Sprintf("  Workflow: %s | Outcome: %s | Signal: %s", workflow, outcome, signal),
 	}
 
@@ -249,7 +250,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 						"remediation (%s) was triggered from the resulting state. This suggests "+
 						"the outcome was unstable, but the workflow may still work under different "+
 						"conditions. Use with caution.",
-					followupUID,
+					sanitizeField(followupUID),
 				))
 				return strings.Join(lines, "\n")
 			}
@@ -270,7 +271,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 	}
 
 	if entry.HashMatch != "" && entry.HashMatch != "none" {
-		lines = append(lines, fmt.Sprintf("  Hash match: %s", entry.HashMatch))
+		lines = append(lines, fmt.Sprintf("  Hash match: %s", sanitizeField(entry.HashMatch)))
 	}
 
 	if entry.SignalResolved != nil {
@@ -296,8 +297,8 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 // 1:1 port of KA _format_tier2_entry().
 func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
-	workflow := withDefault(entry.ActionType, "unknown")
-	outcome := withDefault(entry.Outcome, "unknown")
+	workflow := withDefault(sanitizeField(entry.ActionType), "unknown")
+	outcome := withDefault(sanitizeField(entry.Outcome), "unknown")
 
 	var scoreText string
 	switch {
@@ -310,10 +311,10 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 		scoreText = notAvailable
 	}
 
-	hashMatch := withDefault(entry.HashMatch, "none")
+	hashMatch := withDefault(sanitizeField(entry.HashMatch), "none")
 
 	return fmt.Sprintf("- %s (%s): %s -> %s, effectiveness=%s, hashMatch=%s",
-		entry.RemediationUID, completed, workflow, outcome, scoreText, hashMatch)
+		sanitizeField(entry.RemediationUID), completed, workflow, outcome, scoreText, hashMatch)
 }
 
 // FormatHealthChecks formats health check results into readable text.

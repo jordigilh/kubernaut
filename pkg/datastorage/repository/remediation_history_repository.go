@@ -17,13 +17,14 @@ limitations under the License.
 // Package repository provides data access for the DataStorage service.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.6: Recursive dual-hash traversal for complete causal history (#2490).
+// DD-KA-016 v1.7: Recursive dual-hash traversal for complete causal history (#2490).
 package repository
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,23 +32,40 @@ import (
 	"github.com/lib/pq"
 )
 
-// MaxROEventsBySpecHashResults caps the number of rows returned by
-// QueryROEventsBySpecHash to prevent unbounded result sets (PERF-H2).
-const MaxROEventsBySpecHashResults = 10000
+var (
+	// ErrRemediationHistoryResourceLimit indicates that a complete history could
+	// not be returned within the repository's safety budget. Callers must not
+	// treat this as an empty or partial history response.
+	ErrRemediationHistoryResourceLimit = errors.New("remediation history resource limit exceeded")
+)
+
+const (
+	// MaxROEventsBySpecHashResults caps the number of rows returned by
+	// QueryROEventsBySpecHash to prevent unbounded result sets (PERF-H2).
+	MaxROEventsBySpecHashResults = 10000
+	// MaxRemediationHistoryTraversalDepth bounds recursive CTE expansion. A
+	// query that reaches this depth fails closed rather than returning a prefix.
+	MaxRemediationHistoryTraversalDepth = 256
+	// remediationHistoryQueryTimeout bounds database work independently of the
+	// connection-wide PostgreSQL statement_timeout.
+	remediationHistoryQueryTimeout = 10 * time.Second
+)
 
 // queryROEventsBySpecHash traverses the linked RO chain from a dual-hash
 // anchor. Recursive candidates must have a correlated EM post-hash equal to
-// the current RO pre-hash and an earlier RO timestamp. UNION deduplicates the
-// stable event_id carried by the recursive working set.
+// the current RO pre-hash and an earlier RO timestamp. Recursive UNION removes
+// duplicate recursive states; the final DISTINCT ON removes duplicate event
+// identities reached through convergent paths.
 const queryROEventsBySpecHash = `WITH RECURSIVE remediation_chain (
-			event_id, event_type, event_data, event_timestamp, correlation_id, pre_hash
+			event_id, event_type, event_data, event_timestamp, correlation_id, pre_hash, chain_depth
 		) AS (
 			SELECT ro.event_id,
 				ro.event_type,
 				ro.event_data,
 				ro.event_timestamp,
 				ro.correlation_id,
-				ro.event_data->>'pre_remediation_spec_hash'
+				ro.event_data->>'pre_remediation_spec_hash',
+				1
 			FROM audit_events ro
 			WHERE ro.event_type = 'remediation.workflow_created'
 				AND ro.event_data->>'target_resource' = $1
@@ -73,7 +91,8 @@ const queryROEventsBySpecHash = `WITH RECURSIVE remediation_chain (
 				ro.event_data,
 				ro.event_timestamp,
 				ro.correlation_id,
-				ro.event_data->>'pre_remediation_spec_hash'
+				ro.event_data->>'pre_remediation_spec_hash',
+				previous.chain_depth + 1
 			FROM audit_events ro
 			JOIN remediation_chain previous
 				ON EXISTS (
@@ -90,9 +109,16 @@ const queryROEventsBySpecHash = `WITH RECURSIVE remediation_chain (
 				AND ro.event_timestamp >= $4
 				AND ro.event_timestamp < $5
 				AND ro.event_timestamp < previous.event_timestamp
+				AND previous.chain_depth < $7
+		),
+		deduplicated_chain AS (
+			SELECT DISTINCT ON (event_id)
+				event_id, event_type, event_data, event_timestamp, correlation_id, chain_depth
+			FROM remediation_chain
+			ORDER BY event_id, chain_depth DESC
 		)
-		SELECT event_type, event_data, event_timestamp, correlation_id
-		FROM remediation_chain
+		SELECT event_type, event_data, event_timestamp, correlation_id, chain_depth
+		FROM deduplicated_chain
 		ORDER BY event_timestamp ASC, event_id ASC
 		LIMIT $6`
 
@@ -113,7 +139,7 @@ type EffectivenessEventRow struct {
 }
 
 // RemediationHistoryRepository provides queries for remediation history context.
-// DD-KA-016 v1.6, Issue #616/#2490: Both tiers query RO events by spec hash, matching
+// DD-KA-016 v1.7, Issue #616/#2490: Both tiers query RO events by spec hash, matching
 // BOTH pre_remediation_spec_hash (direct) and post_remediation_spec_hash (via EM correlation).
 // The spec-hash query recursively follows each matched remediation's
 // pre_remediation_spec_hash so callers receive the complete causal chain, not
@@ -134,14 +160,19 @@ func NewRemediationHistoryRepository(db *sql.DB, logger logr.Logger) *Remediatio
 }
 
 // scanRawRows scans sql.Rows into a slice of RawAuditRow.
-// Each row must have columns: event_type, event_data (JSONB), event_timestamp, correlation_id.
+// Each row must have columns: event_type, event_data (JSONB), event_timestamp,
+// correlation_id, chain_depth.
 func scanRawRows(rows *sql.Rows) ([]RawAuditRow, error) {
 	var results []RawAuditRow
 	for rows.Next() {
 		var row RawAuditRow
 		var eventDataJSON []byte
-		if err := rows.Scan(&row.EventType, &eventDataJSON, &row.EventTimestamp, &row.CorrelationID); err != nil {
+		var chainDepth int
+		if err := rows.Scan(&row.EventType, &eventDataJSON, &row.EventTimestamp, &row.CorrelationID, &chainDepth); err != nil {
 			return nil, err
+		}
+		if chainDepth >= MaxRemediationHistoryTraversalDepth {
+			return nil, fmt.Errorf("%w: traversal depth reached %d", ErrRemediationHistoryResourceLimit, MaxRemediationHistoryTraversalDepth)
 		}
 		if err := json.Unmarshal(eventDataJSON, &row.EventData); err != nil {
 			return nil, err
@@ -257,7 +288,7 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 //   - idx_audit_events_post_remediation_spec_hash (migration 004)
 //   - idx_audit_events_cluster_id (migration 017, main only)
 //
-// DD-KA-016 v1.6: Both tiers recursively traverse causal post-hash links,
+// DD-KA-016 v1.7: Both tiers recursively traverse causal post-hash links,
 // scope every hop by target_resource (+ cluster_id on main), and bound the
 // result by the requested time window and result cap (#2490).
 //
@@ -273,13 +304,18 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	since time.Time,
 	until time.Time,
 ) ([]RawAuditRow, error) {
-	// PERF-H2: LIMIT prevents unbounded result sets.
+	// PERF-H2: the query requests one extra row so a complete-chain overflow
+	// can be detected and rejected instead of silently returning a prefix.
 	const maxROResults = MaxROEventsBySpecHashResults
 	// EM hash lookups intentionally remain time-unbounded: an assessment may be
 	// recorded after the RO event's tier boundary (F1 due-diligence finding).
 
-	rows, err := r.db.QueryContext(ctx, queryROEventsBySpecHash, targetResource, clusterID, specHash, since, until, maxROResults)
+	queryCtx, cancel := context.WithTimeout(ctx, remediationHistoryQueryTimeout)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(queryCtx, queryROEventsBySpecHash, targetResource, clusterID, specHash, since, until, maxROResults+1, MaxRemediationHistoryTraversalDepth)
 	if err != nil {
+		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
 		r.logger.Error(err, "Failed to query RO events by spec hash",
 			"target_resource", targetResource, "cluster_id", clusterID,
 			"spec_hash", specHash, "since", since, "until", until)
@@ -293,6 +329,25 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 
 	results, err := scanRawRows(rows)
 	if err != nil {
+		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
+		r.logger.Error(err, "Failed to scan RO events by spec hash",
+			"target_resource", targetResource, "cluster_id", clusterID,
+			"spec_hash", specHash, "since", since, "until", until)
+		return nil, err
+	}
+	if err := queryCtx.Err(); err != nil {
+		err = wrapRemediationHistoryQueryTimeout(ctx, queryCtx, err)
+		r.logger.Error(err, "RO events by spec hash query exceeded its context deadline",
+			"target_resource", targetResource, "cluster_id", clusterID,
+			"spec_hash", specHash, "since", since, "until", until)
+		return nil, err
+	}
+	if len(results) > maxROResults {
+		err := fmt.Errorf("%w: result count exceeded %d", ErrRemediationHistoryResourceLimit, maxROResults)
+		r.logger.Error(err, "RO events by spec hash result budget exceeded",
+			"target_resource", targetResource, "cluster_id", clusterID,
+			"spec_hash", specHash, "result_count", len(results),
+			"max_results", maxROResults)
 		return nil, err
 	}
 
@@ -304,4 +359,17 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 		"window", until.Sub(since).String())
 
 	return results, nil
+}
+
+// wrapRemediationHistoryQueryTimeout distinguishes the repository's own
+// traversal deadline from cancellation/deadlines inherited from the request.
+// Only the repository deadline is classified as a resource-limit failure;
+// callers that cancel their request should receive the original context error.
+func wrapRemediationHistoryQueryTimeout(parentCtx, queryCtx context.Context, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) &&
+		errors.Is(queryCtx.Err(), context.DeadlineExceeded) &&
+		parentCtx.Err() == nil {
+		return fmt.Errorf("%w: query exceeded %s: %w", ErrRemediationHistoryResourceLimit, remediationHistoryQueryTimeout, err)
+	}
+	return err
 }

@@ -2,12 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-2490-v1.0
+**Test Plan Identifier**: TP-2490-v1.1
 **Feature**: Preserve the complete target-scoped remediation chain across linked pre/post spec hashes
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-10-07
 **Author**: Kubernaut Team
-**Status**: Implementation and release artifact complete; live validation pending
+**Status**: Implementation and blocker-remediation validation complete; live validation pending
 **Branch**: `fix/2490-remediation-history`
 
 ---
@@ -25,9 +25,11 @@ The approved implementation is **Option A: a PostgreSQL recursive CTE** inside
 the existing `QueryROEventsBySpecHash` contract. The CTE preserves the #616
 dual-hash anchor, follows only causal EM post-hash edges backward in time,
 scopes every hop by target and optional cluster, deduplicates event identities,
-and retains the existing time and result bounds. Tier 2 performs the broad
-lookback needed for bridge traversal and partitions the response into disjoint
-Tier 1 and Tier 2 windows.
+and retains the existing time and result bounds. The repository also applies a
+256-hop depth guard, a 10-second query-local deadline, and a one-row overflow
+sentinel; resource exhaustion fails closed instead of returning partial history.
+Tier 2 performs the broad lookback needed for bridge traversal and partitions
+the response into disjoint Tier 1 and Tier 2 windows.
 
 ## 2. Objectives and Success Metrics
 
@@ -43,6 +45,9 @@ Tier 1 and Tier 2 windows.
    completed remediation is not labeled recurrence and no arbitrary retry
    threshold or Job policy is introduced.
 6. Existing #616, #1802, F1, RO, KA, and prompt regression suites remain green.
+7. A depth, timeout, or result-overflow guard never returns partial history as a
+   successful response; the HTTP contract is RFC 7807 `503 Service Unavailable`.
+8. Audit-derived recurrence fields are sanitized before prompt interpolation.
 
 | Metric | Target | Measurement |
 |---|---:|---|
@@ -51,6 +56,7 @@ Tier 1 and Tier 2 windows.
 | Regression count | 0 | Existing #616/#1802/F1 and prompt suites |
 | Complete-chain behavior | 3/3 linked rows | `IT-DS-2490-001` |
 | Tier partition behavior | Disjoint bridge windows | `IT-DS-2490-002` |
+| Resource safety | Overflow fails closed with no partial response | `IT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-002` |
 
 ## 3. Authority, Requirements, and Controls
 
@@ -71,20 +77,23 @@ Tier 1 and Tier 2 windows.
 |---|---|---|
 | Complete remediation reconstruction by correlation and causal chain | `IT-DS-2490-001`, `IT-DS-F1-001` | FedRAMP AU-3, AU-9; SOC 2 CC7.2 |
 | Target/cluster information-flow isolation on every recursive hop | `IT-DS-2490-003`, existing #1802 tests | FedRAMP AC-4, AC-6; OWASP ASVS V5.1, V5.5.2 |
-| Malformed/cyclic input terminates safely and remains bounded | `IT-DS-2490-004`, result-cap regression | FedRAMP SI-10; OWASP ASVS V5.5.2, V7.1.1 |
+| Malformed/temporal-cycle/branching input terminates safely and remains bounded | `IT-DS-2490-004`, `IT-DS-2490-RESOURCE-001` | FedRAMP SI-10, SC-5; OWASP API4:2023, ASVS V5.5.2, V7.1.1 |
+| Complete history is not silently truncated when a safety budget is exceeded | `IT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-002`, `UT-DS-2490-RESOURCE-003` | FedRAMP AU-3, SC-5; SOC 2 CC7.2; OWASP API4:2023 |
 | Effectiveness evidence remains attributable and queryable | Existing audit schema tests and `IT-DS-F1-001` | FedRAMP AU-2, AU-3; SOC 2 CC7.2 |
 | Prompt does not turn history into an arbitrary retry policy | `UT-KA-2490-001`, `UT-KA-2490-002`, prompt builder tests | BR-INS-001/002; SOC 2 CC8.1 change evidence |
+| Audit-derived history fields cannot inject workflow-selection instructions | `UT-KA-2490-SEC-001` | DD-KA-005; FedRAMP SI-10, AC-4; OWASP LLM01:2025 |
 
 ## 4. Risks and Mitigations
 
 | ID | Risk | Impact | Affected tests | Mitigation |
 |---|---|---|---|---|
 | R1 | Recursive SQL follows a same-pre-hash sibling instead of a causal post-hash edge | False recurrence and incorrect RO/LLM context | `IT-DS-2490-003` | Recursive term joins only on candidate EM post-hash = current RO pre-hash and requires an older RO timestamp |
-| R2 | A cycle or malformed link causes unbounded work | Database saturation or request failure | `IT-DS-2490-004` | `UNION`/event identity deduplication, null-safe joins, time/result bounds |
+| R2 | A malformed link, temporal cycle, or high-fan-out branch causes unbounded work | Database saturation or incomplete history | `IT-DS-2490-004`, `IT-DS-2490-RESOURCE-001` | Strictly earlier timestamps, recursive `UNION`, final event-identity deduplication, 256-hop depth cap, 10s query deadline, max+1 overflow sentinel, fail-closed 503 |
 | R3 | Tier 2 query stops at the Tier 1 boundary and misses an older link | Incomplete historical context | `IT-DS-2490-002` | Query full Tier 2 lookback through now, then filter the response window |
 | R4 | EM assessment timestamp falls outside the RO tier | False negative post-hash anchor | `IT-DS-F1-001` | Keep EM correlation lookup time-unbounded while the RO rows remain window-bounded |
 | R5 | Cross-target or cross-cluster identical hashes contaminate history | Incorrect ineffective-chain blocking or prompt bias | `IT-DS-2490-003`, existing #1802 tests | Apply target and optional cluster predicates to anchor and recursive candidates |
 | R6 | Prompt guidance implies successful assessment proves durable resolution | Unsafe workflow selection | `UT-KA-2490-001`, `UT-KA-2490-002` | State qualitative assessment-window semantics and require RCA/linked-history reasoning |
+| R7 | Audit-derived action/signal text injects instructions into the workflow-selection prompt | Incorrect or unsafe workflow selection | `UT-KA-2490-SEC-001` | Apply the existing `sanitizeField` injection-pattern filter before interpolation |
 
 ## 5. Scope and Design Decisions
 
@@ -99,6 +108,7 @@ Tier 1 and Tier 2 windows.
 - DataStorage integration coverage using real PostgreSQL.
 - Unit coverage for pure prompt and window-partition behavior.
 - Documentation amendment to DD-KA-016.
+- OpenAPI and generated-client coverage for the fail-closed `503` response.
 
 ### 5.2 Out of scope
 
@@ -118,15 +128,19 @@ Tier 1 and Tier 2 windows.
 | Anchor | RO pre-hash OR correlated EM post-hash | Preserves #616 behavior |
 | Recursive edge | Candidate EM post-hash equals current node RO pre-hash | Represents the forward remediation transition being walked backward |
 | Temporal direction | Candidate RO timestamp strictly earlier than current node | Prevents future/sibling links and guarantees backward traversal |
-| Deduplication | Stable audit event identity with recursive `UNION` | Prevents duplicate rows and terminates cycles |
+| Deduplication | Recursive `UNION` plus final event-identity deduplication | Removes duplicate recursive states and returned event identities; strict earlier timestamps make traversal temporally acyclic |
+| Resource guard | Depth 256, query-local 10s deadline, max+1 result sentinel | Prevents unbounded work and rejects incomplete history rather than returning a partial prefix |
+| Prompt safety | Existing `sanitizeField` injection-pattern filter | Keeps audit-derived recurrence values from becoming workflow-selection instructions |
 | Tier 2 | Full lookback query, then response filtering | Allows a recent bridge to reach older history while keeping windows disjoint |
 
 ## 6. TDD Phases and Wiring Manifest
 
 ### 6.1 RED
 
-- Add the five DataStorage integration scenarios below before refining the
+- Add the DataStorage integration scenarios below before refining the
   recursive predicate.
+- Add failing safety tests for depth/result overflow and the fail-closed HTTP
+  response, plus a prompt-injection sanitization test.
 - Add/retain prompt unit scenarios for durability and recurrence semantics.
 - Record the initial failing result; infrastructure failures are reported
   separately from assertion failures.
@@ -136,8 +150,11 @@ Tier 1 and Tier 2 windows.
 - Refine the existing CTE to carry the current node's pre-hash and timestamp.
 - Restrict recursion to earlier candidates whose correlated EM post-hash equals
   that pre-hash; preserve target/cluster/window predicates and result cap.
+- Add the 256-hop/10-second/max+1 guards and return resource-limit failures
+  through RFC 7807 `503` instead of partial `200` history.
 - Keep Tier 2's full-lookback traversal and explicit response filtering.
-- Wire qualitative prompt guidance through the existing prompt builder/templates.
+- Wire qualitative prompt guidance and sanitized audit-derived fields through the
+  existing prompt builder/templates.
 
 ### 6.3 REFACTOR
 
@@ -151,6 +168,8 @@ Tier 1 and Tier 2 windows.
 | Component | Production entry point | Wiring location | Proof |
 |---|---|---|---|
 | Complete causal RO chain | DS repository query used by Tier 1/Tier 2 | `pkg/datastorage/repository/remediation_history_repository.go:QueryROEventsBySpecHash` | `IT-DS-2490-001`, `IT-DS-2490-003`, `IT-DS-2490-004` |
+| Complete-chain resource guard | DS repository and HTTP error mapping | `pkg/datastorage/repository/remediation_history_repository.go` and `pkg/datastorage/server/remediation_history_handler.go` | `IT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-002` |
+| Fail-closed API contract | OpenAPI source, embedded copies, and generated client | `api/openapi/data-storage-v1.yaml`, `pkg/datastorage/server/middleware/openapi_spec_data.yaml`, `pkg/datastorage/ogen-client/` | `go generate ./pkg/datastorage/server/middleware/... ./pkg/audit/... ./pkg/datastorage/ogen-client/...` |
 | Tier 2 bridge partition | History HTTP handler and RO/KA adapters | `pkg/datastorage/server/remediation_history_handler.go:queryTier2History` | `IT-DS-2490-002` |
 | Qualitative history interpretation | KA workflow-selection prompt rendering | `internal/kubernautagent/prompt/builder.go:RenderWorkflowSelection` | `UT-KA-2490-001`, `UT-KA-2490-002`, `UT-KA-2490-003` |
 
@@ -161,12 +180,15 @@ Tier 1 and Tier 2 windows.
 | BR-ORCH-042.5 / #2490 | Current post-hash exposes the complete linked chain | Integration | `IT-DS-2490-001` | PASS |
 | BR-KA-016 / #2490 | Tier 2 bridge discovers older linked history without overlap | Integration | `IT-DS-2490-002` | PASS |
 | #616 + #1802 + #2490 | Only causal, prior, target/cluster-scoped rows are returned | Integration | `IT-DS-2490-003` | PASS |
-| #2490 safety | Cycles/malformed links terminate and deduplicate | Integration | `IT-DS-2490-004` | PASS |
+| #2490 safety | Strict temporal traversal excludes a temporal cycle and malformed links | Integration | `IT-DS-2490-004` | PASS |
+| #2490 safety | Large branching overflow fails closed instead of returning a partial prefix | Integration | `IT-DS-2490-RESOURCE-001` | PASS |
 | BR-ORCH-042.5 / #1802 | Recursive candidates remain isolated by requested cluster | Integration | `IT-DS-2490-005` | PASS |
 | F1 / BR-KA-016 | EM post-hash remains discoverable outside RO tier window | Integration | `IT-DS-F1-001` | PASS (regression) |
 | BR-KA-016 / BR-INS-001/002 | Two linked completed entries produce qualitative recurrence/durability context | Unit | `UT-KA-2490-001` | PASS |
 | BR-KA-016 / BR-INS-001/002 | One completed entry is not labeled recurrence | Unit | `UT-KA-2490-002` | PASS |
 | BR-KA-016 / #2490 | Tier 2 bridge partition is disjoint at the handler boundary | Unit | `UT-DS-2490-004` | PASS |
+| BR-KA-016 / #2490 | Repository resource limits produce a typed error and HTTP 503, never partial history | Unit | `UT-DS-2490-RESOURCE-001`, `UT-DS-2490-RESOURCE-002` | PASS |
+| DD-KA-005 / #2490 | Audit-derived recurrence fields are sanitized before prompt interpolation | Unit | `UT-KA-2490-SEC-001` | PASS |
 
 ## 8. Test Scenarios
 
@@ -178,6 +200,10 @@ Tier 1 and Tier 2 windows.
 | `UT-KA-2490-002` | A single completed remediation produces durability guidance but no recurrence label or numeric retry policy | `internal/kubernautagent/prompt/history_test.go` | PASS |
 | `UT-KA-2490-003` | Workflow-selection rendering carries the same qualitative recurrence/durability guidance into the production prompt entry point | `internal/kubernautagent/prompt/builder_test.go` | PASS |
 | `UT-DS-2490-004` | Handler queries Tier 2 through `now` for bridge traversal and partitions recent rows out of the historical response | `pkg/datastorage/remediation_history_handler_test.go` | PASS |
+| `UT-DS-2490-RESOURCE-001` | Repository rejects a result set beyond the complete-history cap instead of returning rows | `pkg/datastorage/remediation_history_repository_test.go` | PASS |
+| `UT-DS-2490-RESOURCE-003` | Repository rejects a row at the traversal-depth boundary instead of returning a depth-limited prefix | `pkg/datastorage/remediation_history_repository_test.go` | PASS |
+| `UT-DS-2490-RESOURCE-002` | Handler maps a repository resource-limit error to RFC 7807 `503 Service Unavailable` | `pkg/datastorage/remediation_history_handler_test.go` | PASS |
+| `UT-KA-2490-SEC-001` | Malicious audit-derived action/signal values are sanitized before recurrence guidance is rendered | `internal/kubernautagent/prompt/history_test.go` | PASS |
 
 ### Tier 2: Integration
 
@@ -186,8 +212,9 @@ Tier 1 and Tier 2 windows.
 | `IT-DS-2490-001` | Three forward changes `H0→H1→H2→H3` return R1, R2, R3 for `currentSpecHash=H3`, oldest first | `test/integration/datastorage/remediation_history_query_fix_integration_test.go` | PASS |
 | `IT-DS-2490-002` | A recent Tier 1 bridge discovers an older Tier 2 row; response chains are disjoint | same as above | PASS |
 | `IT-DS-2490-003` | Same-pre-hash sibling, future link, malformed link, other target, and other cluster are excluded | same as above | PASS |
-| `IT-DS-2490-004` | A cyclic A↔B chain returns each event once and terminates | same as above | PASS |
+| `IT-DS-2490-004` | A temporal A↔B fixture proves recursive edges only move to strictly earlier RO timestamps and terminates safely | same as above | PASS |
 | `IT-DS-2490-005` | A same-target chain from another cluster, including mismatched EM cluster edges, is excluded during recursive traversal | same as above | PASS |
+| `IT-DS-2490-RESOURCE-001` | A large branching chain exceeds the complete-result budget and returns a resource-limit error instead of a partial prefix | same as above | PASS |
 | `IT-DS-F1-001` | EM post-hash correlation outside the RO query window still matches | `test/integration/datastorage/ds_due_diligence_integration_test.go` | PASS (regression) |
 
 ### Tier 3: E2E
@@ -208,12 +235,14 @@ live recurrence validation remain release deliverables after implementation.
 ## 9. Pass/Fail and Environment
 
 **PASS** requires all P0 scenarios to pass, existing #616/#1802/F1 tests to
-remain green, the wiring manifest to be complete, and no prompt text to add an
-arbitrary retry threshold or Job-level recurrence policy.
+remain green, the wiring manifest to be complete, resource exhaustion to fail
+closed with RFC 7807 `503` (never partial `200` history), and no prompt text to
+add an arbitrary retry threshold or Job-level recurrence policy.
 
 **FAIL** includes any incomplete chain, overlapping windows, cross-target leak,
-unbounded/cyclic query behavior, F1 regression, or prompt guidance that treats
-one successful assessment as durable resolution.
+unbounded/cyclic query behavior, silent result truncation, a missing resource
+guard, F1 regression, unsanitized audit-derived prompt text, or prompt guidance
+that treats one successful assessment as durable resolution.
 
 Required validation:
 
@@ -272,7 +301,8 @@ permission issue; both child images are scratch production runtimes and were
 verified in the published OCI index.
 
 Implementation confidence: **96%**. The approved architecture is implemented
-and verified with real PostgreSQL chain, bridge, cycle, target/cluster, #616,
-and F1 scenarios plus DataStorage/RO/KA package tests. Remaining release risks
-are the repository-wide pre-existing lint findings, the parallel full-suite
-timeout in unrelated ApiFrontend tests, and unavailable KA envtest tooling.
+and verified with real PostgreSQL chain, bridge, strict-temporal-cycle,
+large-branching-overflow, target/cluster, #616, and F1 scenarios plus
+DataStorage/RO/KA package tests. Remaining release risks are the
+repository-wide pre-existing lint findings, the parallel full-suite timeout in
+unrelated ApiFrontend tests, and unavailable KA envtest tooling.

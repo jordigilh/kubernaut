@@ -17,7 +17,7 @@ limitations under the License.
 // Package datastorage contains unit tests for the DataStorage service.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.6: HTTP handler tests for GET /api/v1/remediation-history/context.
+// DD-KA-016 v1.7: HTTP handler tests for GET /api/v1/remediation-history/context.
 package datastorage_test
 
 import (
@@ -55,7 +55,7 @@ func (m *mockRemediationHistoryQuerier) QueryEffectivenessEventsBatch(ctx contex
 	return nil, nil
 }
 
-var _ = Describe("Remediation History Handler (DD-KA-016 v1.6)", func() {
+var _ = Describe("Remediation History Handler (DD-KA-016 v1.7)", func() {
 	var (
 		handler *server.Handler
 		rec     *httptest.ResponseRecorder
@@ -505,6 +505,28 @@ var _ = Describe("Remediation History Handler (DD-KA-016 v1.6)", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rec.Body.Bytes(), &problem)).To(Succeed())
 			Expect(problem["title"]).To(Equal("Internal Server Error"))
+		})
+
+		It("UT-DS-2490-RESOURCE-002: should return 503 when history exceeds repository resource limits", func() {
+			queryCount := 0
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+				queryCount++
+				if queryCount == 1 {
+					return nil, nil
+				}
+				return nil, repository.ErrRemediationHistoryResourceLimit
+			}
+
+			req := httptest.NewRequest("GET", baseURL, nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(rec.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+
+			var problem map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &problem)).To(Succeed())
+			Expect(problem["type"]).To(ContainSubstring("resource-limit"))
+			Expect(problem["title"]).To(Equal("Service Unavailable"))
 		})
 	})
 

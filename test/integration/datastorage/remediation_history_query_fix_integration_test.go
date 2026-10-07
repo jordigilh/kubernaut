@@ -29,6 +29,7 @@ package datastorage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -413,7 +414,7 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		Expect([]string{rows[0].CorrelationID, rows[1].CorrelationID}).To(Equal([]string{priorCID, anchorCID}))
 	})
 
-	It("IT-DS-2490-004: deduplicates and terminates a cyclic hash chain", func() {
+	It("IT-DS-2490-004: rejects a temporal cycle through the strict earlier-timestamp invariant", func() {
 		now := time.Now().UTC()
 		hashA := "sha256:cycle-a-004-" + testID
 		hashB := "sha256:cycle-b-004-" + testID
@@ -431,7 +432,9 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2))
-		Expect([]string{rows[0].CorrelationID, rows[1].CorrelationID}).To(ConsistOf(cidA, cidB))
+		Expect([]string{rows[0].CorrelationID, rows[1].CorrelationID}).To(Equal([]string{cidA, cidB}))
+		Expect(rows[0].EventTimestamp).To(BeTemporally("<", rows[1].EventTimestamp),
+			"recursive edges must always move to a strictly earlier RO event")
 	})
 
 	It("IT-DS-2490-005: applies cluster isolation to recursive candidates", func() {
@@ -458,5 +461,69 @@ var _ = Describe("Issue #616/#2490: QueryROEventsBySpecHash Causal Chain", Label
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "recursive traversal must exclude the same-target candidate from another cluster")
 		Expect([]string{rows[0].CorrelationID, rows[1].CorrelationID}).To(Equal([]string{priorA, anchorA}))
+	})
+
+	It("IT-DS-2490-RESOURCE-001: rejects a large branching chain instead of returning a partial prefix", func() {
+		now := time.Now().UTC()
+		currentHash := "sha256:current-resource-001-" + testID
+		bridgeHash := "sha256:bridge-resource-001-" + testID
+		leafHash := "sha256:leaf-resource-001-" + testID
+		anchorCID := fmt.Sprintf("corr-2490-resource-anchor-%s", testID)
+		branchCount := repository.MaxROEventsBySpecHashResults + 1
+
+		insertROEvent(anchorCID, targetResource, bridgeHash, "IncreaseMemoryLimits", now.Add(-time.Hour))
+		insertEMHashEvent(anchorCID, bridgeHash, currentHash, now.Add(-59*time.Minute))
+
+		_, err := db.ExecContext(testCtx, `
+			INSERT INTO audit_events (
+				event_id, event_date, event_timestamp, event_type, event_version,
+				event_category, event_action, event_outcome, correlation_id,
+				resource_type, resource_id, actor_id, actor_type,
+				retention_days, is_sensitive, event_data
+			)
+			SELECT gen_random_uuid(),
+				($1::timestamptz - interval '2 hours' - (series * interval '1 microsecond'))::date,
+				$1::timestamptz - interval '2 hours' - (series * interval '1 microsecond'),
+				'remediation.workflow_created', '1.0', 'remediation', 'create', 'success',
+				format('corr-2490-resource-child-%s-%s', $2::text, series),
+				'test', 'test', 'test', 'system', 90, false,
+				jsonb_build_object(
+					'target_resource', $3::text,
+					'pre_remediation_spec_hash', $4::text,
+					'action_type', 'Branching',
+					'signal_type', 'HighCPULoad',
+					'signal_fingerprint', 'fp-' || $2::text,
+					'outcome', 'success'
+				)
+			FROM generate_series(1, $5::integer) AS series`,
+			now, testID, targetResource, leafHash, branchCount)
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = db.ExecContext(testCtx, `
+			INSERT INTO audit_events (
+				event_id, event_date, event_timestamp, event_type, event_version,
+				event_category, event_action, event_outcome, correlation_id,
+				resource_type, resource_id, actor_id, actor_type,
+				retention_days, is_sensitive, event_data
+			)
+			SELECT gen_random_uuid(),
+				($1::timestamptz - interval '2 hours' - (series * interval '1 microsecond'))::date,
+				$1::timestamptz - interval '2 hours' - (series * interval '1 microsecond'),
+				'effectiveness.hash.computed', '1.0', 'effectiveness', 'assess', 'success',
+				format('corr-2490-resource-child-%s-%s', $2::text, series),
+				'test', 'test', 'test', 'system', 90, false,
+				jsonb_build_object(
+					'pre_remediation_spec_hash', $3::text,
+					'post_remediation_spec_hash', $4::text,
+					'hash_match', false
+				)
+			FROM generate_series(1, $5::integer) AS series`,
+			now, testID, leafHash, bridgeHash, branchCount)
+		Expect(err).ToNot(HaveOccurred())
+
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", currentHash, now.Add(-4*time.Hour), now)
+
+		Expect(errors.Is(err, repository.ErrRemediationHistoryResourceLimit)).To(BeTrue())
+		Expect(rows).To(BeNil())
 	})
 })
