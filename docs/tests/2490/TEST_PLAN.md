@@ -279,12 +279,12 @@ envtest/E2E prerequisite is currently unavailable when
 The deployable Kubernaut Agent production image is published to the upstream
 Kubernaut Quay organization for live `operator-oomkill-informer` validation:
 
-- **Image**: `quay.io/kubernaut-ai/kubernautagent:pr-2491-c004cb08c`
-- **Immutable OCI index digest**: `sha256:dbfda2bc26c77f010d681acb449922db889e1d812fca47883c719b311bf24a09`
+- **Image**: `quay.io/kubernaut-ai/kubernautagent:pr-2491-edf54ee70`
+- **Immutable OCI index digest**: `sha256:9560565744c0491fbbebd4caadcc5babe62384cbe01d1b5a2a3d1c8178678b02`
 - **Platforms**: `linux/amd64`, `linux/arm64/v8`
-- **amd64 child manifest**: `sha256:234ff9a3488f327a9cb8be318587877a5e1372f43c60d9feacef9254b9ebc35e`
-- **arm64/v8 child manifest**: `sha256:ae4665c66ad92a891c67f58765c01d69f173a8c525b32ae4c051bc8ab345493f`
-- **Source**: PR #2491, commit `c004cb08c`
+- **amd64 child manifest**: `sha256:bb42137252114aa2b4e8bd172d423e56727043899bf71ff614f62e91c1f9ae12`
+- **arm64 child manifest**: `sha256:3c10b68035cc9146d62f05b7e30f6b5a183c4a73604f1bbf3f8d92a7b211beef`
+- **Source**: PR #2491, commit `edf54ee70`
 - **Runtime**: production scratch image; consume the index by digest rather than
   relying on a mutable tag.
 
@@ -294,11 +294,9 @@ PR, and `quay.io/kubernaut-ai` image publication. The
 scenario validation; that validation does not transfer production code or image
 ownership to the demo repository.
 
-The arm64 image was built from the production Dockerfile target. The amd64 image
-used the repository's cross-compiled binary plus the production runtime-only
-Dockerfile after the multi-stage amd64 builder hit its existing Go-cache
-permission issue; both child images are scratch production runtimes and were
-verified in the published OCI index.
+Both child images were cross-compiled with `CGO_ENABLED=0` from commit
+`edf54ee70` and assembled with the production runtime-only Dockerfile; both are
+scratch production runtimes and were verified in the published OCI index.
 
 Implementation confidence: **96%**. The approved architecture is implemented
 and verified with real PostgreSQL chain, bridge, strict-temporal-cycle,
