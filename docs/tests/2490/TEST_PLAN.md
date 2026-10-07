@@ -7,8 +7,8 @@
 **Version**: 1.0
 **Created**: 2026-10-07
 **Author**: Kubernaut Team
-**Status**: Active
-**Branch**: `fix/2482-empty-tool-result-serialization`
+**Status**: Implementation and release artifact complete; live validation pending
+**Branch**: `fix/2490-remediation-history`
 
 ---
 
@@ -238,12 +238,38 @@ envtest/E2E prerequisite is currently unavailable when
 
 | Deliverable | Location | Status |
 |---|---|---|
-| Test plan | `docs/tests/2490/TEST_PLAN.md` | Active |
+| Test plan | `docs/tests/2490/TEST_PLAN.md` | Complete for implementation; live validation pending |
 | Recursive traversal | `pkg/datastorage/repository/remediation_history_repository.go` | Implemented and validated |
 | Tier bridge partition | `pkg/datastorage/server/remediation_history_handler.go` | Implemented and validated |
 | Prompt guidance | `internal/kubernautagent/prompt/` | Implemented and validated |
 | DD amendment | `docs/architecture/decisions/DD-KA-016-remediation-history-context.md` | Complete |
-| Upstream PR/image digest/ownership | Issue #2490 follow-up | Pending release validation |
+| Upstream PR/image digest/ownership | PR [#2491](https://github.com/jordigilh/kubernaut/pull/2491) and image evidence below | Published; live validation pending |
+
+## 11. Release Image and Ownership Evidence
+
+The deployable Kubernaut Agent production image is published to the upstream
+Kubernaut Quay organization for live `operator-oomkill-informer` validation:
+
+- **Image**: `quay.io/kubernaut-ai/kubernautagent:pr-2491-c004cb08c`
+- **Immutable OCI index digest**: `sha256:dbfda2bc26c77f010d681acb449922db889e1d812fca47883c719b311bf24a09`
+- **Platforms**: `linux/amd64`, `linux/arm64/v8`
+- **amd64 child manifest**: `sha256:234ff9a3488f327a9cb8be318587877a5e1372f43c60d9feacef9254b9ebc35e`
+- **arm64/v8 child manifest**: `sha256:ae4665c66ad92a891c67f58765c01d69f173a8c525b32ae4c051bc8ab345493f`
+- **Source**: PR #2491, commit `c004cb08c`
+- **Runtime**: production scratch image; consume the index by digest rather than
+  relying on a mutable tag.
+
+**Ownership boundary:** upstream Kubernaut maintainers own the production fix,
+PR, and `quay.io/kubernaut-ai` image publication. The
+`operator-oomkill-informer` demo/validation owner consumes the digest for live
+scenario validation; that validation does not transfer production code or image
+ownership to the demo repository.
+
+The arm64 image was built from the production Dockerfile target. The amd64 image
+used the repository's cross-compiled binary plus the production runtime-only
+Dockerfile after the multi-stage amd64 builder hit its existing Go-cache
+permission issue; both child images are scratch production runtimes and were
+verified in the published OCI index.
 
 Implementation confidence: **96%**. The approved architecture is implemented
 and verified with real PostgreSQL chain, bridge, cycle, target/cluster, #616,
