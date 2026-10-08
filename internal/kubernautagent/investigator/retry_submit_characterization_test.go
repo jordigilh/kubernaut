@@ -220,7 +220,7 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 	})
 
 	Describe("UT-KA-WAVE5-R05: retryRCASubmit — submit_result tool-call still fails to parse, single retry exhausts", func() {
-		It("appends the failed retry response and falls back to treating the original content as the summary", func() {
+		It("appends the failed retry response and requests human review without treating the original content as an RCA summary", func() {
 			const originalContent = "not valid json at all"
 			mockClient := &scriptedMockClient{
 				steps: []scriptedStep{
@@ -240,14 +240,15 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.RCASummary).To(Equal(originalContent))
-			Expect(result.HumanReviewNeeded).To(BeFalse())
+			Expect(result.RCASummary).To(BeEmpty())
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
 			Expect(mockClient.callIdx).To(Equal(2), "the single RCA parse-retry attempt (maxRCAParseRetries=1) must have fired")
 		})
 	})
 
 	Describe("UT-KA-WAVE5-R06: retryRCASubmit — the retry's own LLM call errors", func() {
-		It("logs the error, exhausts the single retry attempt, and falls back to treating the original content as the summary", func() {
+		It("logs the error, exhausts the single retry attempt, and requests human review", func() {
 			const originalContent = "not valid json at all"
 			mockClient := &scriptedMockClient{
 				steps: []scriptedStep{
@@ -264,8 +265,39 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.RCASummary).To(Equal(originalContent))
+			Expect(result.RCASummary).To(BeEmpty())
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
 			Expect(mockClient.callIdx).To(Equal(2))
+		})
+	})
+
+	Describe("UT-KA-1922-001: exhausted RCA parsing fails closed", func() {
+		It("requests human review without fabricating RCA fields or applying trusted signal severity", func() {
+			mockClient := &scriptedMockClient{
+				steps: []scriptedStep{
+					{resp: llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: "not valid json at all"}}},
+					{resp: llm.ChatResponse{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_rca_retry", Name: "submit_result", Arguments: `still-not-valid-json`}},
+					}},
+				},
+			}
+			inv := loopCharTestInvestigator(mockClient, audit.NopAuditStore{}, 15, investigator.Pipeline{}, nil)
+
+			sig := testSignal
+			sig.Interactive = true
+
+			result, err := inv.Investigate(context.Background(), sig)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal("llm_parsing_error"))
+			Expect(result.RCASummary).To(BeEmpty())
+			Expect(result.Confidence).To(BeZero())
+			Expect(result.Severity).To(BeEmpty(), "an unparsed RCA must not inherit trusted signal severity")
+			Expect(result.Warnings).To(ContainElement(ContainSubstring("RCA response could not be parsed")))
 		})
 	})
 })

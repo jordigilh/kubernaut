@@ -97,6 +97,36 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			Expect(rendered).To(ContainSubstring("oom-increase-memory"),
 				"workflow selection prompt should include remediation history")
 		})
+
+		It("UT-KA-2490-003: should include qualitative recurrence and durability guidance in workflow selection", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			resolved := true
+			enrichData := &prompt.EnrichmentData{
+				HistoryResult: &enrichment.RemediationHistoryResult{
+					TargetResource: "production/Deployment/api-server",
+					Tier1: []enrichment.Tier1Entry{
+						{RemediationUID: "oom-1", ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated", SignalResolved: &resolved, CompletedAt: time.Now().Add(-time.Hour)},
+						{RemediationUID: "oom-2", ActionType: "increase_memory", SignalType: "OOMKilled", Outcome: "Remediated", SignalResolved: &resolved, CompletedAt: time.Now()},
+					},
+					Tier1Window: "24h",
+				},
+			}
+
+			rendered, err := builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
+				Signal: prompt.SignalData{
+					Name: "api-server", Namespace: "production", Severity: "warning",
+					Message: "OOMKilled",
+				},
+				RCASummary: "OOMKilled root cause",
+				EnrichData: enrichData,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("Recurrence and Durability Guidance"))
+			Expect(rendered).To(ContainSubstring("effectiveness-assessment window"))
+			Expect(rendered).To(ContainSubstring("arbitrary retry-count threshold"))
+		})
 	})
 
 	Describe("UT-KA-433-019: Prompt template handles missing optional enrichment", func() {

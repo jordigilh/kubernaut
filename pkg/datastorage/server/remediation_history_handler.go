@@ -17,15 +17,16 @@ limitations under the License.
 // HTTP handler for GET /api/v1/remediation-history/context.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity.
+// DD-KA-016 v1.7: Both tiers query the complete causal chain by spec hash (#2490).
 //
 // This handler orchestrates the full remediation history query flow:
 //  1. Parse and validate required query parameters
-//  2. Query RO events by spec hash (Tier 1)
+//  2. Query the linked RO chain by spec hash (Tier 1)
 //  3. Batch query EM component events by correlation_id
 //  4. Correlate into detailed Tier 1 entries
 //  5. Detect regression (preRemediation hash match)
-//  6. If regression: query Tier 2 by spec hash
+//  6. Query Tier 2 across the full lookback so it can bridge from recent
+//     entries into older links, then retain only the historical window
 //  7. Return JSON response
 package server
 
@@ -33,12 +34,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -94,7 +97,11 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 
 	// GAP-DS-1: Tier 2 runs regardless of Tier 1 results — regression can be
 	// detected from Tier 2 alone when Tier 1 is empty but historical events exist.
-	tier2Summaries := h.queryTier2History(ctx, req, now, tier1Since)
+	tier2Summaries, err := h.queryTier2History(ctx, req, now, tier1Since)
+	if err != nil {
+		h.writeRemediationHistoryQueryError(w, err)
+		return
+	}
 	if !regressionDetected && len(tier2Summaries) > 0 {
 		regressionDetected = DetectRegressionFromTier2(tier2Summaries)
 	}
@@ -203,21 +210,17 @@ func (h *Handler) parseHistoryWindow(w http.ResponseWriter, q url.Values, param 
 	return parsed, true
 }
 
-// queryTier1History executes DD-KA-016 v1.4 Tier 1 query steps: query RO
-// events by spec hash (Issue #586), batch query EM events by correlation_id,
-// and correlate into detailed Tier 1 entries. Returns ok=false (after writing
-// the RFC 7807 error response) on any query failure. Extracted from
-// HandleGetRemediationHistoryContext (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
-// — pure code motion, no behavior change.
+// queryTier1History executes DD-KA-016 v1.7 Tier 1 query steps: query the
+// complete RO chain by spec hash, batch query EM events by correlation_id, and
+// correlate into detailed Tier 1 entries. Returns ok=false (after writing the
+// RFC 7807 error response) on any query failure.
 func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, req remediationHistoryRequest, now time.Time) ([]api.RemediationHistoryEntry, time.Time, bool) {
 	tier1Since := now.Add(-req.tier1Window)
 	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier1Since, now)
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 1 RO events",
 			"spec_hash", req.currentSpecHash, "since", tier1Since, "until", now)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError,
-			"query-error", "Internal Server Error",
-			"Failed to query remediation history", h.logger)
+		h.writeRemediationHistoryQueryError(w, err)
 		return nil, tier1Since, false
 	}
 
@@ -232,9 +235,7 @@ func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, 
 		if err != nil {
 			h.logger.Error(err, "Failed to query EM events",
 				"correlation_id_count", len(correlationIDs))
-			response.WriteRFC7807Error(w, http.StatusInternalServerError,
-				"query-error", "Internal Server Error",
-				"Failed to query effectiveness events", h.logger)
+			h.writeRemediationHistoryQueryError(w, err)
 			return nil, tier1Since, false
 		}
 	}
@@ -242,22 +243,26 @@ func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, 
 	return CorrelateTier1Chain(roEvents, emEvents, req.currentSpecHash), tier1Since, true
 }
 
-// queryTier2History executes the GAP-DS-1 Tier 2 query: always query by spec
-// hash regardless of Tier 1 results, batch query EM events, and build
-// summaries. Errors are non-fatal (logged, continuing with an empty Tier 2)
-// since Tier 2 is supplementary context. Extracted from
-// HandleGetRemediationHistoryContext (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
-// — pure code motion, no behavior change.
-func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryRequest, now, tier1Since time.Time) []api.RemediationHistorySummary {
+// queryTier2History executes the Tier 2 query: query the complete linked chain
+// across the full lookback so a recent remediation can bridge to an older
+// pre/post hash link, then retain only entries older than the Tier 1 boundary.
+// It batches EM events and builds summaries. Errors are returned so the handler
+// never emits an apparently complete 200 response with incomplete history.
+func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryRequest, now, tier1Since time.Time) ([]api.RemediationHistorySummary, error) {
 	tier2Since := now.Add(-req.tier2Window)
-	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier2Since, tier1Since)
+	// Query through 'now', rather than stopping at tier1Since, because the
+	// recursive history query needs recent entries as bridge nodes to reach
+	// older remediations. The response remains disjoint by filtering the
+	// recent entries before building Tier 2 summaries.
+	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier2Since, now)
 	if err != nil {
-		h.logger.Error(err, "Failed to query Tier 2 events (non-fatal, continuing with empty Tier 2)",
-			"spec_hash", req.currentSpecHash, "since", tier2Since, "until", tier1Since)
-		return nil
+		h.logger.Error(err, "Failed to query Tier 2 events",
+			"spec_hash", req.currentSpecHash, "since", tier2Since, "until", now)
+		return nil, err
 	}
+	tier2RO = filterRemediationHistoryWindow(tier2RO, tier2Since, tier1Since)
 	if len(tier2RO) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	t2CorrelationIDs := make([]string, 0, len(tier2RO))
@@ -266,10 +271,44 @@ func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryR
 	}
 	t2EMEvents, err := h.remediationHistoryRepo.QueryEffectivenessEventsBatch(ctx, t2CorrelationIDs)
 	if err != nil {
-		h.logger.Error(err, "Failed to query Tier 2 EM events (non-fatal)",
+		h.logger.Error(err, "Failed to query Tier 2 EM events",
 			"correlation_id_count", len(t2CorrelationIDs))
+		return nil, err
 	}
-	return BuildTier2Summaries(tier2RO, t2EMEvents, req.currentSpecHash)
+	return BuildTier2Summaries(tier2RO, t2EMEvents, req.currentSpecHash), nil
+}
+
+// writeRemediationHistoryQueryError converts repository failures into a safe
+// RFC 7807 response. Resource-limit failures are service unavailability, not
+// successful empty history: returning 200 would hide an incomplete chain.
+func (h *Handler) writeRemediationHistoryQueryError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	errorType := "query-error"
+	title := "Internal Server Error"
+	detail := "Failed to query remediation history"
+	if errors.Is(err, repository.ErrRemediationHistoryResourceLimit) {
+		status = http.StatusServiceUnavailable
+		errorType = "resource-limit"
+		title = "Service Unavailable"
+		detail = "Remediation history is temporarily unavailable because the complete chain exceeds the configured resource limits"
+	}
+	response.WriteRFC7807Error(w, status, errorType, title, detail, h.logger)
+}
+
+// filterRemediationHistoryWindow keeps the response tiers disjoint while the
+// repository query is allowed to traverse bridge entries across the Tier 1/Tier
+// 2 boundary. The repository already applies this same broad lower/upper
+// bound; keeping the check here makes the handler contract explicit and keeps
+// the helper safe for alternate querier implementations.
+func filterRemediationHistoryWindow(events []repository.RawAuditRow, since, until time.Time) []repository.RawAuditRow {
+	filtered := make([]repository.RawAuditRow, 0, len(events))
+	for _, event := range events {
+		if event.EventTimestamp.Before(since) || !event.EventTimestamp.Before(until) {
+			continue
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered
 }
 
 // writeRemediationHistoryResponse encodes and writes the JSON response body

@@ -324,7 +324,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Brief investigation scenario for IT tests that need a non-instant session
 	// but don't require the full 30s window. 5s delay is enough for IS creation
 	// and upgrade detection before the session completes naturally.
-	r.Register(newKeywordScenario("brief_investigation", "brief-investigation-test", briefInvestigationConfig()))
+	r.Register(newBriefInvestigationScenario())
 
 	// E2E-FLEET-016 (issue #1768, Gaps A+C): real AF binary calls
 	// list_clusters + kubectl_get(cluster_id) via a real A2A request.

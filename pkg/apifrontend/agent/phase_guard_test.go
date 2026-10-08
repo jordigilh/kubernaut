@@ -706,8 +706,8 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 
 	It("UT-AF-2047-008: overrides present_decision content when kubernaut_investigate returned session_active", func() {
 		// session_active means a DIFFERENT user is already driving; this
-		// caller has no fresh RCA of its own to report even though
-		// session_active has its own dedicated fallback card (#1922).
+		// caller has no fresh RCA of its own to report; #1922 surfaces
+		// status-only guidance to that caller instead.
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
 			"status": "session_active", "error": "investigation already in progress, driven by bob",
 		}, nil)

@@ -281,46 +281,21 @@ func emitEarlyRCA(ctx context.Context, rca *InvestigateRCA) {
 	_ = launcher.EmitStructuredMetaSafe(ctx, payload, meta)
 }
 
-// EmitFallbackInvestigationArtifact is the exported entry point for
-// emitFallbackInvestigationArtifact. It is used by unit tests to verify the
-// artifact's content in isolation, without driving the full
-// HandleInvestigationMCPWithRegistry wiring path.
-func EmitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA, rrID string) {
-	emitFallbackInvestigationArtifact(ctx, rca, rrID)
-}
+// emitInvestigationSummaryArtifact emits the investigation_summary artifact
+// for a genuine RCA returned by KA. The field names match the final
+// present_decision RCAData shape (SI-10), while values remain exactly those
+// observed in KA's complete event (AU-3). The existing truthful status
+// placeholder is retained for a KA RCA that contains no causal-chain entries;
+// only the locally synthesized no-RCA path is excluded from this artifact.
+const missingCausalChainStatus = "Full investigation in progress; preliminary severity assessed from resource metadata only"
 
-// fallbackCausalChainPlaceholder is the truthful, non-fabricating
-// causal_chain entry used when a fallback InvestigateRCA carries no real
-// causal chain (severity-triage-only data). It must never describe a
-// specific root cause that was not actually observed (AU-3).
-const fallbackCausalChainPlaceholder = "Full investigation in progress; preliminary severity assessed from resource metadata only"
-
-// emitFallbackInvestigationArtifact emits an artifact-update event with the
-// investigation_summary schema for any concluded investigation, whether rca
-// is KA's own genuine result or a severity-triage-only value synthesized by
-// the caller when KA produced none (e.g. user-driving mode with no
-// autonomous session, or KA slow/unavailable). Despite the name (kept for
-// compatibility with existing call sites/tests), this is the single
-// terminal producer of the investigation_summary artifact for BOTH cases as
-// of #2247 -- it is not itself a "fallback-only" code path; SI-10 requires
-// every concluded investigation to leave behind this structured record.
-//
-// The emitted rca object always includes causal_chain/tool_calls_count/
-// llm_turns using the same field names as the final present_decision
-// artifact's RCAData (ka_tools.go), even when rca carries no real causal
-// chain yet: an empty causal_chain leaves the Console's hasRCAData render
-// guard (AgentBubble.tsx) permanently false, silently dropping the fallback
-// message instead of showing a renderable RCA card (#1922).
-// FedRAMP: AU-3 (truthful content, no fabricated findings), SI-10 (data
-// integrity through schema self-identification consistent with the final
-// artifact's shape).
-func emitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA, rrID string) {
+func emitInvestigationSummaryArtifact(ctx context.Context, rca *InvestigateRCA, rrID string) {
 	if rca == nil {
 		return
 	}
 	causalChain := rca.CausalChain
 	if len(causalChain) == 0 {
-		causalChain = []string{fallbackCausalChainPlaceholder}
+		causalChain = []string{missingCausalChainStatus}
 	}
 	data := map[string]any{
 		"session_id": rrID,

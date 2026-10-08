@@ -21062,6 +21062,10 @@ type GetRemediationHistoryContextInternalServerError RFC7807Problem
 
 func (*GetRemediationHistoryContextInternalServerError) getRemediationHistoryContextRes() {}
 
+type GetRemediationHistoryContextServiceUnavailable RFC7807Problem
+
+func (*GetRemediationHistoryContextServiceUnavailable) getRemediationHistoryContextRes() {}
+
 // Pre/post remediation spec hash comparison data per DD-EM-002.
 // Supplementary signal (not part of scoring formula).
 // Ref: #/components/schemas/HashComparisonData

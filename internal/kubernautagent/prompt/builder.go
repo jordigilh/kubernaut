@@ -283,8 +283,7 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		// GAP-012: Phase 3 gets full remediation history (not abbreviated counts)
 		// so LLM can make informed workflow selection based on past outcomes.
 		if in.EnrichData.HistoryResult != nil && (len(in.EnrichData.HistoryResult.Tier1) > 0 || len(in.EnrichData.HistoryResult.Tier2) > 0) {
-			parts = append(parts, BuildRemediationHistorySection(
-				in.EnrichData.HistoryResult, RepeatedRemediationEscalationThreshold))
+			parts = append(parts, BuildRemediationHistorySection(in.EnrichData.HistoryResult))
 		}
 		data.EnrichmentContext = strings.Join(parts, "\n\n")
 	}

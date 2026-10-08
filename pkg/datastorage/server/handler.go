@@ -32,7 +32,7 @@ import (
 // history context queries. Used by HandleGetRemediationHistoryContext.
 //
 // BR-KA-016: Remediation history context for LLM prompt enrichment.
-// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// DD-KA-016 v1.7: Both tiers query the complete causal chain by spec hash (#2490).
 type RemediationHistoryQuerier interface {
 	QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
@@ -52,8 +52,8 @@ type RemediationHistoryQuerier interface {
 type Handler struct {
 	sqlDB                  *sql.DB // For reconstruction queries (BR-AUDIT-006)
 	logger                 logr.Logger
-	auditStore             audit.AuditStore           // BR-AUDIT-023: Workflow search audit
-	schemaExtractor        *oci.SchemaExtractor       // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
+	auditStore             audit.AuditStore          // BR-AUDIT-023: Workflow search audit
+	schemaExtractor        *oci.SchemaExtractor      // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
 	remediationHistoryRepo RemediationHistoryQuerier // BR-KA-016: Remediation history context (DD-KA-016 v1.1)
 }
 

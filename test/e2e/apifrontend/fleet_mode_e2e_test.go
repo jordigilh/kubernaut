@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
@@ -178,15 +179,11 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 
 		earlyRCAFound, earlySeverity, earlyConfidence, summaryFound := false, false, false, false
 		for _, event := range readFleetAFEvents(resp) {
-			metadata, _ := event["metadata"].(map[string]any)
+			metadata := event.Metadata
 			if metadata != nil && metadata["schema"] == "early_rca" {
 				earlyRCAFound = true
-				status, _ := event["status"].(map[string]any)
-				message, _ := status["message"].(map[string]any)
-				parts, _ := message["parts"].([]any)
-				if len(parts) > 0 {
-					part, _ := parts[0].(map[string]any)
-					payloadText, _ := part["text"].(string)
+				if event.Status != nil && event.Status.Message != nil && len(event.Status.Message.Parts) > 0 {
+					payloadText := event.Status.Message.Parts[0].Text
 					var payload map[string]any
 					if json.Unmarshal([]byte(payloadText), &payload) == nil {
 						_, earlySeverity = payload["severity"]
@@ -204,7 +201,7 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		Expect(summaryFound).To(BeTrue(), "SI-10: the stream must include the investigation_summary DataPart")
 	})
 
-	It("E2E-AF-FLEET-2462-004 [BR-INTERACTIVE-004, BR-INTEGRATION-065]: concurrent session_active fallback retains a renderable causal chain", func() {
+	It("E2E-AF-FLEET-2462-004 [BR-INTERACTIVE-004, BR-INTEGRATION-065]: concurrent session_active response carries visible status guidance", func() {
 		firstCtx, firstCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer firstCancel()
 		firstStarted := make(chan error, 1)
@@ -226,7 +223,38 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		case <-time.After(15 * time.Second):
 			Fail("first Fleet investigation did not begin streaming within 15 seconds")
 		}
-		time.Sleep(3 * time.Second)
+		// APIF's interactive Fleet path uses a direct MCP session. It does not
+		// create an AgentSession CRD; status.kaCorrelationID is written only
+		// after KA action=start succeeds and the driver lease is acquired. A
+		// fixed delay can let both callers race through readiness, which makes
+		// session_active belong to the wrong SSE stream.
+		By("waiting for the first Fleet caller's KA correlation after action=start")
+		Eventually(func() bool {
+			var sessions investigationsessionv1alpha1.InvestigationSessionList
+			if err := fleetAFK8sClient.List(context.Background(), &sessions, client.InNamespace(e2eNamespace)); err != nil {
+				return false
+			}
+			for i := range sessions.Items {
+				session := &sessions.Items[i]
+				if session.Status.KACorrelationID == "" || session.Spec.RemediationRequestRef.Name == "" {
+					continue
+				}
+				var rr remediationv1alpha1.RemediationRequest
+				if err := fleetAFK8sClient.Get(context.Background(), client.ObjectKey{
+					Namespace: session.Spec.RemediationRequestRef.Namespace,
+					Name:      session.Spec.RemediationRequestRef.Name,
+				}, &rr); err != nil {
+					continue
+				}
+				target := rr.Spec.TargetResource
+				if target.Kind == "Pod" && target.Namespace == "fleet-session-active-e2e" &&
+					target.Name == "fleet-session-active-target" {
+					return true
+				}
+			}
+			return false
+		}, 90*time.Second, time.Second).Should(BeTrue(),
+			"the first Fleet caller must complete action=start before the second caller starts")
 
 		secondCtx, secondCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer secondCancel()
@@ -236,16 +264,14 @@ var _ = Describe("Fleet-mode API Frontend contracts [BR-FLEET-054, BR-INTEGRATIO
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		foundSummary, hasCausalChain := false, false
+		foundStatus := false
 		for _, event := range readFleetAFEvents(resp) {
-			if fleetAFHasInvestigationSummary(event) {
-				foundSummary = true
-				hasCausalChain = fleetAFSummaryHasCausalChain(event)
+			if fleetAFHasSessionActiveStatus(event) {
+				foundStatus = true
 				break
 			}
 		}
-		Expect(foundSummary).To(BeTrue(), "AC-4: rejected concurrent caller must receive an investigation_summary fallback")
-		Expect(hasCausalChain).To(BeTrue(), "AC-4: fallback RCA must carry a non-empty causal chain")
+		Expect(foundStatus).To(BeTrue(), "AC-4: rejected concurrent caller must receive session_active status guidance")
 	})
 
 	It("E2E-AF-FLEET-2462-005 [BR-FLEET-054, BR-INTEGRATION-065]: unregistered cluster identity fails closed despite a same-named hub target", func() {
@@ -360,43 +386,39 @@ func groundFleetAFSession(ctx context.Context, token, prompt, contextID string) 
 
 func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 	for _, event := range readFleetAFEvents(resp) {
-		if event["kind"] == artifactUpdate {
-			artifact, _ := event["artifact"].(map[string]any)
-			if artifact == nil {
+		if event.Kind == artifactUpdate {
+			if event.Artifact == nil {
 				continue
 			}
-			metadata, _ := artifact["metadata"].(map[string]any)
+			metadata := event.Artifact.Metadata
 			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
-			parts, _ := artifact["parts"].([]any)
-			for _, rawPart := range parts {
-				part, _ := rawPart.(map[string]any)
-				if part == nil {
-					continue
+			for _, part := range event.Artifact.Parts {
+				if len(part.Data) > 0 {
+					var data map[string]any
+					if err := json.Unmarshal(part.Data, &data); err == nil && data != nil {
+						encoded, err := json.Marshal(data)
+						Expect(err).NotTo(HaveOccurred())
+						return string(encoded), metadata
+					}
 				}
-				if data, ok := part["data"].(map[string]any); ok {
-					encoded, err := json.Marshal(data)
-					Expect(err).NotTo(HaveOccurred())
-					return string(encoded), metadata
-				}
-				if text, ok := part["text"].(string); ok && text != "" {
-					return text, metadata
+				if part.Text != "" {
+					return part.Text, metadata
 				}
 			}
 		}
-		if event["kind"] == statusUpdate {
-			metadata, _ := event["metadata"].(map[string]any)
+		if event.Kind == statusUpdate {
+			metadata := event.Metadata
 			if metadata == nil || metadata["type"] != decision {
 				continue
 			}
-			status, _ := event["status"].(map[string]any)
-			message, _ := status["message"].(map[string]any)
-			parts, _ := message["parts"].([]any)
-			if len(parts) > 0 {
-				part, _ := parts[0].(map[string]any)
-				if text, ok := part["text"].(string); ok && text != "" && !strings.Contains(text, "Presenting decision") {
-					return text, metadata
+			if event.Status == nil || event.Status.Message == nil {
+				continue
+			}
+			for _, part := range event.Status.Message.Parts {
+				if part.Text != "" && !strings.Contains(part.Text, "Presenting decision") {
+					return part.Text, metadata
 				}
 			}
 		}
@@ -404,8 +426,8 @@ func findFleetAFDecisionEvent(resp *http.Response) (string, map[string]any) {
 	return "", nil
 }
 
-func readFleetAFEvents(resp *http.Response) []map[string]any {
-	var events []map[string]any
+func readFleetAFEvents(resp *http.Response) []a2aSSEEvent {
+	var events []a2aSSEEvent
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -418,9 +440,9 @@ func readFleetAFEvents(resp *http.Response) []map[string]any {
 			continue
 		}
 		var envelope struct {
-			Result map[string]any `json:"result"`
+			Result a2aSSEEvent `json:"result"`
 		}
-		if err := json.Unmarshal([]byte(data), &envelope); err == nil && envelope.Result != nil {
+		if err := json.Unmarshal([]byte(data), &envelope); err == nil && envelope.Result.Kind != "" {
 			events = append(events, envelope.Result)
 		}
 	}
@@ -428,23 +450,20 @@ func readFleetAFEvents(resp *http.Response) []map[string]any {
 	return events
 }
 
-func fleetAFHasInvestigationSummary(event map[string]any) bool {
-	if event["kind"] != artifactUpdate {
+func fleetAFHasInvestigationSummary(event a2aSSEEvent) bool {
+	if event.Kind != artifactUpdate || event.Artifact == nil {
 		return false
 	}
-	artifact, _ := event["artifact"].(map[string]any)
-	if artifact == nil {
-		return false
-	}
-	metadata, _ := artifact["metadata"].(map[string]any)
+	metadata := event.Artifact.Metadata
 	if metadata == nil || metadata["schema"] != investigationSummarySchema || metadata["schema_version"] != "1.0" {
 		return false
 	}
-	parts, _ := artifact["parts"].([]any)
-	for _, rawPart := range parts {
-		part, _ := rawPart.(map[string]any)
-		data, _ := part["data"].(map[string]any)
-		if data != nil {
+	for _, part := range event.Artifact.Parts {
+		if len(part.Data) > 0 {
+			var data map[string]any
+			if err := json.Unmarshal(part.Data, &data); err != nil {
+				continue
+			}
 			if _, hasSummary := data["summary"]; hasSummary {
 				return true
 			}
@@ -453,18 +472,15 @@ func fleetAFHasInvestigationSummary(event map[string]any) bool {
 	return false
 }
 
-func fleetAFSummaryHasCausalChain(event map[string]any) bool {
-	artifact, _ := event["artifact"].(map[string]any)
-	if artifact == nil {
+func fleetAFHasSessionActiveStatus(event a2aSSEEvent) bool {
+	if event.Kind != statusUpdate || event.Metadata == nil || event.Metadata["type"] != "status" {
 		return false
 	}
-	parts, _ := artifact["parts"].([]any)
-	for _, rawPart := range parts {
-		part, _ := rawPart.(map[string]any)
-		data, _ := part["data"].(map[string]any)
-		rca, _ := data["rca"].(map[string]any)
-		chain, _ := rca["causal_chain"].([]any)
-		if len(chain) > 0 {
+	if event.Status == nil || event.Status.Message == nil {
+		return false
+	}
+	for _, part := range event.Status.Message.Parts {
+		if strings.Contains(part.Text, "already in progress") {
 			return true
 		}
 	}
