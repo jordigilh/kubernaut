@@ -1,12 +1,9 @@
 package infrastructure
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,51 +14,15 @@ import (
 
 var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 	It("UT-INFRA-FLEETDEMO-OPERATOR-001: pins the operator Helm chart", func() {
-		Expect(prometheusOperatorHelmChart).To(Equal("prometheus-community/kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmChart).To(Equal("kube-prometheus-stack"))
 		Expect(prometheusOperatorHelmVersion).To(Equal("88.1.5"))
 		Expect(prometheusOperatorNamespace).To(Equal("prometheus-operator"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-OPERATOR-002: uses an operator-only chart configuration", func() {
-		Expect(prometheusOperatorHelmChart).To(Equal("prometheus-community/kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmChart).To(Equal("kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmRepoURL).To(Equal("https://prometheus-community.github.io/helm-charts"))
 		Expect(prometheusOperatorNamespace).To(Equal("prometheus-operator"))
-	})
-
-	It("UT-INFRA-FLEETDEMO-OPERATOR-003 [BR-PLATFORM-014]: bootstraps the Prometheus Community Helm repository", func() {
-		tempDir, err := os.MkdirTemp("", "prometheus-operator-helm-")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			Expect(os.RemoveAll(tempDir)).To(Succeed())
-		})
-
-		callLog := filepath.Join(tempDir, "helm.calls")
-		helmStub := `#!/bin/sh
-set -eu
-printf '%s\n' "$*" >> "$PROMETHEUS_OPERATOR_HELM_CALL_LOG"
-`
-		Expect(os.WriteFile(filepath.Join(tempDir, "helm"), []byte(helmStub), 0o755)).To(Succeed())
-
-		originalPath := os.Getenv("PATH")
-		originalCallLog, hadCallLog := os.LookupEnv("PROMETHEUS_OPERATOR_HELM_CALL_LOG")
-		Expect(os.Setenv("PATH", tempDir+string(os.PathListSeparator)+originalPath)).To(Succeed())
-		Expect(os.Setenv("PROMETHEUS_OPERATOR_HELM_CALL_LOG", callLog)).To(Succeed())
-		DeferCleanup(func() {
-			Expect(os.Setenv("PATH", originalPath)).To(Succeed())
-			if hadCallLog {
-				Expect(os.Setenv("PROMETHEUS_OPERATOR_HELM_CALL_LOG", originalCallLog)).To(Succeed())
-			} else {
-				Expect(os.Unsetenv("PROMETHEUS_OPERATOR_HELM_CALL_LOG")).To(Succeed())
-			}
-		})
-
-		Expect(ensurePrometheusOperatorHelmRepository(context.Background(), io.Discard)).To(Succeed())
-
-		calls, err := os.ReadFile(callLog)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(string(calls)).To(Equal(
-			"repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update\n" +
-				"repo update prometheus-community\n",
-		))
 	})
 
 	It("UT-INFRA-FLEETDEMO-PROMETHEUS-001: selects monitoring CRDs across namespaces", func() {
