@@ -31,6 +31,16 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    # Investigator tools query Prometheus and Alertmanager directly during RCA.
+    # Keep these ports aligned with EffectivenessMonitor and the shared
+    # networkPolicies.monitoring configuration (Issue #2484).
+    {{- $npV := include "kubernaut.mergedValues" (dict "root" . "service" "networkPolicies") | fromYaml }}
+    - ports:
+        - port: {{ $npV.monitoring.prometheusPort }}
+          protocol: TCP
+    - ports:
+        - port: {{ $npV.monitoring.alertManagerPort }}
+          protocol: TCP
     {{- /* Issue #1819 gap found: KA's ai.llm.endpoint (mandatory config) is
     called directly by the investigator's LLM client, and, since #1729, KA's
     own MCP client (registerFleetTools, cmd/kubernautagent/toolregistry.go)
