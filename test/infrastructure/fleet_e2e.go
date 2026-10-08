@@ -66,6 +66,7 @@ const (
 	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
 	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
 	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
+	istioHelmVersion         = "1.30.2"
 	// traefikHelmRepoURL: ingress controller for manual setup-e2e-fleet-infra
 	// Console access only (SetupFleetCoreInfrastructure). ingress-nginx was
 	// considered but is EOL (best-effort maintenance ended March 2026, no
@@ -1496,19 +1497,6 @@ func deployKuadrantGatewayInfra(ctx context.Context, kubeconfigPath, mcpGatewayN
 		return fmt.Errorf("gateway API CRDs install failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "    Adding Istio Helm repo...")
-	addRepo := exec.CommandContext(ctx, "helm", "repo", "add", "istio", istioHelmRepoURL)
-	addRepo.Stdout = writer
-	addRepo.Stderr = writer
-	_ = addRepo.Run() // ignore if already exists
-
-	updateRepo := exec.CommandContext(ctx, "helm", "repo", "update", "istio")
-	updateRepo.Stdout = writer
-	updateRepo.Stderr = writer
-	if err := updateRepo.Run(); err != nil {
-		return fmt.Errorf("helm repo update failed: %w", err)
-	}
-
 	// Create istio-system namespace before applying Istio base CRDs.
 	// helm template renders namespaced resources (e.g. ValidatingWebhookConfiguration
 	// with service references) that fail if the namespace doesn't exist yet.
@@ -1523,18 +1511,19 @@ metadata:
 
 	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
 	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"istio-base", "istio/base", "istio-system",
-		"--version", "1.30.2",
+		"istio-base", "base", "istio-system",
+		istioHelmInstallArgs()...,
 	); err != nil {
 		return fmt.Errorf("istio base install failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Installing Istio control plane (mesh disabled)...")
 	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"istiod", "istio/istiod", "istio-system",
-		"--version", "1.30.2",
-		"--set", "global.proxy.autoInject=disabled",
-		"--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false",
+		"istiod", "istiod", "istio-system",
+		append(istioHelmInstallArgs(),
+			"--set", "global.proxy.autoInject=disabled",
+			"--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false",
+		)...,
 	); err != nil {
 		return fmt.Errorf("istio istiod install failed: %w", err)
 	}
@@ -1661,6 +1650,21 @@ func rewriteKuadrantOverlayNamespace(renderedManifest, mcpGatewayNamespace strin
 	return strings.ReplaceAll(renderedManifest, DefaultMCPGatewayNamespace, mcpGatewayNamespace)
 }
 
+func istioHelmInstallArgs() []string {
+	return []string{"--repo", istioHelmRepoURL, "--version", istioHelmVersion}
+}
+
+func traefikHelmInstallArgs() []string {
+	return []string{
+		"--repo", traefikHelmRepoURL,
+		"--set", "service.type=NodePort",
+		fmt.Sprintf("--set=ports.web.nodePort=%d", traefikWebNodePort),
+		fmt.Sprintf("--set=ports.websecure.nodePort=%d", traefikWebsecureNodePort),
+		"--set", "ingressClass.enabled=true",
+		"--set", "ingressClass.isDefaultClass=true",
+	}
+}
+
 // deployTraefikForKind installs Traefik as the hub cluster's Ingress
 // controller, exposed via a fixed-NodePort Service matching the
 // kind-fullpipeline-config.yaml host port mappings (8880/8843, deliberately
@@ -1673,19 +1677,6 @@ func rewriteKuadrantOverlayNamespace(renderedManifest, mcpGatewayNamespace strin
 // SetupFleetCoreInfrastructure, never from provisionFleetCoreInfra (shared
 // with the "fleet"/"fullpipeline" Ginkgo suites, which don't use Console).
 func deployTraefikForKind(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "    Adding Traefik Helm repo...")
-	addRepo := exec.CommandContext(ctx, "helm", "repo", "add", "traefik", traefikHelmRepoURL)
-	addRepo.Stdout = writer
-	addRepo.Stderr = writer
-	_ = addRepo.Run() // ignore if already exists
-
-	updateRepo := exec.CommandContext(ctx, "helm", "repo", "update", "traefik")
-	updateRepo.Stdout = writer
-	updateRepo.Stderr = writer
-	if err := updateRepo.Run(); err != nil {
-		return fmt.Errorf("helm repo update failed: %w", err)
-	}
-
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
 apiVersion: v1
 kind: Namespace
@@ -1697,12 +1688,8 @@ metadata:
 
 	_, _ = fmt.Fprintln(writer, "    Installing Traefik (web→NodePort "+fmt.Sprint(traefikWebNodePort)+"→host 8880, websecure→NodePort "+fmt.Sprint(traefikWebsecureNodePort)+"→host 8843)...")
 	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"traefik", "traefik/traefik", "traefik-system",
-		"--set", "service.type=NodePort",
-		fmt.Sprintf("--set=ports.web.nodePort=%d", traefikWebNodePort),
-		fmt.Sprintf("--set=ports.websecure.nodePort=%d", traefikWebsecureNodePort),
-		"--set", "ingressClass.enabled=true",
-		"--set", "ingressClass.isDefaultClass=true",
+		"traefik", "traefik", "traefik-system",
+		traefikHelmInstallArgs()...,
 	); err != nil {
 		return fmt.Errorf("traefik install failed: %w", err)
 	}

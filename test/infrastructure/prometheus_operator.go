@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -14,9 +13,8 @@ import (
 const (
 	// The chart installs the Prometheus Operator and its CRDs without requiring
 	// client-side annotation storage for the large CRD definitions.
-	prometheusOperatorHelmChart   = "prometheus-community/kube-prometheus-stack"
+	prometheusOperatorHelmChart   = "kube-prometheus-stack"
 	prometheusOperatorHelmVersion = "88.1.5"
-	prometheusOperatorHelmRepo    = "prometheus-community"
 	prometheusOperatorHelmRepoURL = "https://prometheus-community.github.io/helm-charts"
 	prometheusOperatorNamespace   = "prometheus-operator"
 	managedPrometheusName         = "fleet-spoke"
@@ -25,22 +23,18 @@ const (
 	localPrometheusStatefulSet    = "prometheus-local"
 )
 
-func ensurePrometheusOperatorHelmRepository(ctx context.Context, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  Ensuring Helm repository %s...\n", prometheusOperatorHelmRepo)
-	add := exec.CommandContext(ctx, "helm", "repo", "add", prometheusOperatorHelmRepo, prometheusOperatorHelmRepoURL, "--force-update")
-	add.Stdout = writer
-	add.Stderr = writer
-	if err := add.Run(); err != nil {
-		return fmt.Errorf("prometheus community helm repository add failed: %w", err)
+func prometheusOperatorHelmInstallArgs() []string {
+	return []string{
+		"--repo", prometheusOperatorHelmRepoURL,
+		"--version", prometheusOperatorHelmVersion,
+		"--set", "prometheusOperator.fullnameOverride=prometheus-operator",
+		"--set", "defaultRules.create=false",
+		"--set", "alertmanager.enabled=false",
+		"--set", "grafana.enabled=false",
+		"--set", "kubeStateMetrics.enabled=false",
+		"--set", "nodeExporter.enabled=false",
+		"--set", "prometheus.enabled=false",
 	}
-
-	update := exec.CommandContext(ctx, "helm", "repo", "update", prometheusOperatorHelmRepo)
-	update.Stdout = writer
-	update.Stderr = writer
-	if err := update.Run(); err != nil {
-		return fmt.Errorf("prometheus community helm repository update failed: %w", err)
-	}
-	return nil
 }
 
 type managedPrometheusOptions struct {
@@ -55,19 +49,9 @@ type managedPrometheusOptions struct {
 // demo monitoring clusters. Both hub and spoke use this same path.
 func InstallPrometheusOperator(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  Installing Prometheus Operator in namespace %s...\n", prometheusOperatorNamespace)
-	if err := ensurePrometheusOperatorHelmRepository(ctx, writer); err != nil {
-		return fmt.Errorf("prometheus operator helm repository setup failed: %w", err)
-	}
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "prometheus-operator",
 		prometheusOperatorHelmChart, prometheusOperatorNamespace,
-		"--version", prometheusOperatorHelmVersion,
-		"--set", "prometheusOperator.fullnameOverride=prometheus-operator",
-		"--set", "defaultRules.create=false",
-		"--set", "alertmanager.enabled=false",
-		"--set", "grafana.enabled=false",
-		"--set", "kubeStateMetrics.enabled=false",
-		"--set", "nodeExporter.enabled=false",
-		"--set", "prometheus.enabled=false",
+		prometheusOperatorHelmInstallArgs()...,
 	); err != nil {
 		return fmt.Errorf("prometheus operator Helm install failed: %w", err)
 	}
