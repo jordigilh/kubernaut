@@ -9,7 +9,7 @@ name: Must-Gather Tests
 #   - Manual workflow dispatch (for on-demand testing)
 #
 # Test Strategy:
-#   - Unit Tests: 45 bats tests in containerized environment
+#   - Unit Tests: Bats suite in containerized environment
 #   - Container Build: Validates Dockerfile for target architecture
 #   - Architecture: amd64 on GitHub Actions, arm64 locally
 #
@@ -100,7 +100,7 @@ jobs:
         if: always()
         run: |
           if [ $? -eq 0 ]; then
-            echo "✅ All 52 unit tests passed!"
+            echo "✅ All containerized unit tests passed!"
           else
             echo "❌ Unit tests failed"
             exit 1
@@ -130,7 +130,7 @@ jobs:
         working-directory: cmd/must-gather
         run: |
           echo "🐳 Building must-gather container for amd64..."
-          echo "   Base: UBI9 standard"
+          echo "   Base: UBI10 standard"
           echo "   Tools: kubectl, jq, tar, gzip"
           echo "   Scripts: collectors, sanitizers, utils"
           echo ""
@@ -152,17 +152,31 @@ jobs:
             -c "test -x /usr/bin/gather"
           echo "✅ Main script present"
 
-          # Verify collectors
-          COUNT=$(podman run --rm --platform linux/amd64 \
+          # BR-PLATFORM-001 / #2502: validate the required scripts, not a stale
+          # magic count that can accept an image missing Fleet diagnostics.
+          EXPECTED=$(for collector in cmd/must-gather/collectors/*.sh; do
+            printf '%s\n' "${collector##*/}"
+          done | LC_ALL=C sort)
+          ACTUAL=$(podman run --rm --platform linux/amd64 \
             --entrypoint sh \
             localhost/must-gather:ci-test \
-            -c "ls /usr/share/must-gather/collectors/ | wc -l")
-          if [ "$COUNT" -eq 10 ]; then
-            echo "✅ All 10 collectors present"
-          else
-            echo "❌ Expected 10 collectors, found $COUNT"
+            -c 'for collector in /usr/share/must-gather/collectors/*.sh; do
+              printf "%s\n" "${collector##*/}"
+            done | LC_ALL=C sort')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            printf '❌ Collector inventory mismatch\nExpected:\n%s\nActual:\n%s\n' "$EXPECTED" "$ACTUAL"
             exit 1
           fi
+          podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c 'for collector in /usr/share/must-gather/collectors/*.sh; do
+              test -x "$collector" || {
+                printf "Required collector is not executable: %s\n" "${collector##*/}" >&2
+                exit 1
+              }
+            done'
+          echo "✅ All required collectors present and executable"
 
           # Verify sanitizers
           podman run --rm --platform linux/amd64 \
@@ -238,4 +252,3 @@ jobs:
           else
             echo "✅ All must-gather tests passed!"
           fi
-

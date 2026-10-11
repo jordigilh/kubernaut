@@ -41,6 +41,39 @@ teardown() {
 # Business Outcome: Configurable Timeframe
 # ========================================
 
+@test "IT-MG-2493-002 [BR-PLATFORM-001.6a]: real gather archives sanitized partial evidence after DataStorage failure" {
+    create_mock_crd_response
+    create_mock_crd_list
+    create_mock_pod_names_list
+    create_mock_events
+    mock_kubectl "${TEST_TEMP_DIR}/crd-response.yaml"
+    create_mock_datastorage_workflows
+    create_mock_datastorage_audit
+    local credential="synthetic-partial-archive-credential-2493"
+    printf '%s' "$credential" > "${TEST_TEMP_DIR}/read-only-token"
+    export DATASTORAGE_TOKEN_FILE="${TEST_TEMP_DIR}/read-only-token"
+    mock_curl "${TEST_TEMP_DIR}/workflows.json" "${TEST_TEMP_DIR}/audit-events.json" \
+        "000" 7 "connection refused with credential=${credential}"
+
+    run timeout 30 bash "${GATHER_SCRIPT}" --dest-dir="${TEST_TEMP_DIR}"
+
+    assert_success
+    [[ "$output" == *"Warning: DataStorage API collection had errors"* ]]
+    [[ "$output" != *"${credential}"* ]]
+    local collection_dir
+    collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+    assert_file_exists "${collection_dir}/collection-metadata.json"
+    assert_file_exists "${collection_dir}/SHA256SUMS"
+    assert_file_exists "${collection_dir}/logs/kubernaut-system/gateway-abc123/current.log"
+    assert_file_exists "${collection_dir}.tar.gz"
+    run tar -xOf "${collection_dir}.tar.gz" "${collection_dir##*/}/datastorage/error.json"
+    assert_success
+    [[ "$output" != *"${credential}"* ]]
+    printf '%s' "$output" | jq -e '.exit_code == 7 and .http_status == "000" and (.stderr | contains("[REDACTED]"))'
+    jq -e '.sanitization_enabled == true' "${collection_dir}/collection-metadata.json"
+    ! grep -rF "$credential" "${collection_dir}"
+}
+
 @test "BR-PLATFORM-001.3: Support engineer can collect extended time windows for intermittent issues" {
     # Business Outcome: --since flag allows capturing longer history
     # Edge Case: Issue occurred 48 hours ago, need extended logs
@@ -257,4 +290,3 @@ teardown() {
     local collection_dirs=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" 2>/dev/null | wc -l)
     [ "$collection_dirs" -ge 1 ] # At least one was created (partial is OK for unit test)
 }
-
