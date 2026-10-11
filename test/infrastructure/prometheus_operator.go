@@ -13,14 +13,29 @@ import (
 const (
 	// The chart installs the Prometheus Operator and its CRDs without requiring
 	// client-side annotation storage for the large CRD definitions.
-	prometheusOperatorHelmChart   = "prometheus-community/kube-prometheus-stack"
+	prometheusOperatorHelmChart   = "kube-prometheus-stack"
 	prometheusOperatorHelmVersion = "88.1.5"
+	prometheusOperatorHelmRepoURL = "https://prometheus-community.github.io/helm-charts"
 	prometheusOperatorNamespace   = "prometheus-operator"
 	managedPrometheusName         = "fleet-spoke"
 	managedPrometheusStatefulSet  = "prometheus-fleet-spoke"
 	localPrometheusName           = "local"
 	localPrometheusStatefulSet    = "prometheus-local"
 )
+
+func prometheusOperatorHelmInstallArgs() []string {
+	return []string{
+		"--repo", prometheusOperatorHelmRepoURL,
+		"--version", prometheusOperatorHelmVersion,
+		"--set", "prometheusOperator.fullnameOverride=prometheus-operator",
+		"--set", "defaultRules.create=false",
+		"--set", "alertmanager.enabled=false",
+		"--set", "grafana.enabled=false",
+		"--set", "kubeStateMetrics.enabled=false",
+		"--set", "nodeExporter.enabled=false",
+		"--set", "prometheus.enabled=false",
+	}
+}
 
 type managedPrometheusOptions struct {
 	clusterLabel       string
@@ -36,14 +51,7 @@ func InstallPrometheusOperator(ctx context.Context, kubeconfigPath string, write
 	_, _ = fmt.Fprintf(writer, "  Installing Prometheus Operator in namespace %s...\n", prometheusOperatorNamespace)
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "prometheus-operator",
 		prometheusOperatorHelmChart, prometheusOperatorNamespace,
-		"--version", prometheusOperatorHelmVersion,
-		"--set", "prometheusOperator.fullnameOverride=prometheus-operator",
-		"--set", "defaultRules.create=false",
-		"--set", "alertmanager.enabled=false",
-		"--set", "grafana.enabled=false",
-		"--set", "kubeStateMetrics.enabled=false",
-		"--set", "nodeExporter.enabled=false",
-		"--set", "prometheus.enabled=false",
+		prometheusOperatorHelmInstallArgs()...,
 	); err != nil {
 		return fmt.Errorf("prometheus operator Helm install failed: %w", err)
 	}

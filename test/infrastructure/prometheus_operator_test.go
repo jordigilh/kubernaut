@@ -14,13 +14,14 @@ import (
 
 var _ = Describe("fleet spoke Prometheus Operator manifests", func() {
 	It("UT-INFRA-FLEETDEMO-OPERATOR-001: pins the operator Helm chart", func() {
-		Expect(prometheusOperatorHelmChart).To(Equal("prometheus-community/kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmChart).To(Equal("kube-prometheus-stack"))
 		Expect(prometheusOperatorHelmVersion).To(Equal("88.1.5"))
 		Expect(prometheusOperatorNamespace).To(Equal("prometheus-operator"))
 	})
 
 	It("UT-INFRA-FLEETDEMO-OPERATOR-002: uses an operator-only chart configuration", func() {
-		Expect(prometheusOperatorHelmChart).To(Equal("prometheus-community/kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmChart).To(Equal("kube-prometheus-stack"))
+		Expect(prometheusOperatorHelmRepoURL).To(Equal("https://prometheus-community.github.io/helm-charts"))
 		Expect(prometheusOperatorNamespace).To(Equal("prometheus-operator"))
 	})
 
