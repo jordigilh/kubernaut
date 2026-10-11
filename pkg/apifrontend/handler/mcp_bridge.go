@@ -501,7 +501,9 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 // metrics/audit/logging as a side effect.
 func denyRBAC(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, err error) *mcp.CallToolResult {
 	recordMetrics(cfg, toolName, "denied", start)
-	emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, nil)
+	// BR-AUDIT-005 / AU-3, SI-10 (#2500): preserve protocol provenance for
+	// every MCP denial path without weakening the fail-closed guard.
+	emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, map[string]string{"endpoint": "mcp"})
 	cfg.Logger.Info("tool call denied by RBAC", "tool", toolName, "user", usernameFromCtx(ctx))
 	return toolErrorResult(err.Error())
 }

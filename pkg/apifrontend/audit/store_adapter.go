@@ -580,6 +580,9 @@ func buildAuthAccessDeniedPayload(e *Event) ogenclient.AuditEventRequestEventDat
 		ToolName:  detailStr(d, "tool_name"),
 		UserRole:  detailStr(d, "user_role"),
 		Endpoint:  ogenclient.ApifrontendAuthAccessDeniedPayloadEndpoint(detailStr(d, "endpoint")),
+		// Required by the schema. SAR answers allow/deny, not policy roles;
+		// serialize an empty array rather than inventing roles or sending null.
+		RequiredRoles: []string{},
 	})
 }
 
