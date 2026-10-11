@@ -20,12 +20,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,7 +33,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/health"
@@ -777,6 +774,69 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 		})
 	})
 
+	Context("BR-STORAGE-028: independent shutdown fixture ownership (#2499)", func() {
+		It("IT-DS-2499-001: cannot observe another fixture's pending notifications before drain", func() {
+			aHTTP, aHealth, a := createTestServerWithAccess()
+			defer aHTTP.Close()
+			defer aHealth.Close()
+			bHTTP, bHealth, b := createTestServerWithAccess()
+			defer bHTTP.Close()
+			defer bHealth.Close()
+			DeferCleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cleanupCancel()
+				Expect(a.Shutdown(cleanupCtx)).To(Succeed())
+				Expect(b.Shutdown(cleanupCtx)).To(Succeed())
+			})
+
+			for i := 0; i < 3; i++ {
+				Expect(a.GetDLQClient().EnqueueNotificationAudit(ctx, &models.NotificationAudit{
+					RemediationID: generateTestID(), NotificationID: generateTestID(),
+					Recipient: "owned@example.com", Channel: "slack", Status: "sent",
+					MessageSummary: "fixture-owned shutdown notification", SentAt: time.Now(),
+				}, fmt.Errorf("test-owned external database failure"))).To(Succeed())
+			}
+			Eventually(func(g Gomega) {
+				depth, err := a.GetDLQClient().GetDLQDepth(ctx, "notifications")
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(depth).To(Equal(int64(3)))
+			}, 2*time.Second, 20*time.Millisecond).Should(Succeed())
+			depth, err := b.GetDLQClient().GetDLQDepth(ctx, "notifications")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(depth).To(BeZero(), "a new fixture must not share another fixture's Redis stream")
+		})
+
+		It("IT-DS-2499-003: empty shutdown cannot consume another owner's queue (BR-AUDIT-005)", func() {
+			aHTTP, aHealth, a := createTestServerWithAccess()
+			defer aHTTP.Close()
+			defer aHealth.Close()
+			bHTTP, bHealth, b := createTestServerWithAccess()
+			defer bHTTP.Close()
+			defer bHealth.Close()
+			DeferCleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cleanupCancel()
+				Expect(a.Shutdown(cleanupCtx)).To(Succeed())
+			})
+			Expect(a.GetDLQClient().EnqueueNotificationAudit(ctx, &models.NotificationAudit{
+				RemediationID: generateTestID(), NotificationID: generateTestID(),
+				Recipient: "owned@example.com", Channel: "slack", Status: "sent",
+				MessageSummary: "must remain owned until A shuts down", SentAt: time.Now(),
+			}, fmt.Errorf("test-owned external database failure"))).To(Succeed())
+			Eventually(func(g Gomega) {
+				depth, err := a.GetDLQClient().GetDLQDepth(ctx, "notifications")
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(depth).To(Equal(int64(1)))
+			}, 2*time.Second, 20*time.Millisecond).Should(Succeed())
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+			Expect(b.Shutdown(shutdownCtx)).To(Succeed())
+			depth, err := a.GetDLQClient().GetDLQDepth(ctx, "notifications")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(depth).To(Equal(int64(1)), "B's shutdown must not drain A's records")
+		})
+	})
+
 	Context("DD-008: DLQ Drain During Graceful Shutdown", func() {
 		It("MUST drain DLQ messages to database before shutdown completes", func() {
 			// Business Requirement: BR-AUDIT-001 - Complete audit trail (no data loss during shutdown)
@@ -785,8 +845,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			// Scenario: Service has DLQ messages when graceful shutdown is triggered
 			// Expected: DLQ messages are persisted to database before shutdown completes
 
-			// ARRANGE: Create test server with real PostgreSQL + Redis
-			testServer, healthServer, srv := createTestServerWithAccess()
+			// ARRANGE: Create test server with owned PostgreSQL + Redis
+			testServer, healthServer, srv, backend := createTestServerWithBackends()
 			defer testServer.Close()
 			defer healthServer.Close()
 
@@ -834,8 +894,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 					return 0
 				}
 				return depth
-			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 3),
-				"DLQ should have at least 3 messages after async Redis operations complete")
+			}, 2*time.Second, 100*time.Millisecond).Should(Equal(int64(3)),
+				"owned DLQ should have exactly 3 messages after async Redis operations complete")
 
 			// Capture final depth for test logging
 			initialDLQDepth, err := dlqClient.GetDLQDepth(ctx, "notifications")
@@ -855,30 +915,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			GinkgoWriter.Printf("Shutdown completed in %v\n", shutdownDuration)
 
-			// ASSERT: DLQ was drained (should be empty or significantly reduced)
-			// Note: We can't query DLQ depth after shutdown since Redis connection is closed
-			// But we can verify through database that messages were persisted
-
-			// Create new DB connection to verify messages were persisted
-			pgHost := os.Getenv("POSTGRES_HOST")
-			if pgHost == "" {
-				pgHost = localhost
-			}
-			pgPort := os.Getenv("POSTGRES_PORT")
-			if pgPort == "" {
-				pgPort = "5433"
-			}
-			dbConnStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
-
-			testDB, err := sql.Open("pgx", dbConnStr)
+			// Verification clients belong to the same fixture and outlive server shutdown.
+			depth, err := backend.verifyRedis.XLen(ctx, "audit:dlq:notifications").Result()
 			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = testDB.Close() }()
+			Expect(depth).To(BeZero(), "owned notification stream must be completely drained")
 
 			// Query database to verify DLQ messages were persisted
 			// Check for our test notification IDs in the database
 			for _, tc := range testEvents {
 				var count int
-				err = testDB.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1", tc.notificationID).Scan(&count)
+				err = backend.verifyDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1", tc.notificationID).Scan(&count)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(count).To(Equal(1),
 					fmt.Sprintf("Notification %s should be persisted in database after DLQ drain", tc.notificationID))
@@ -902,44 +948,15 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			defer testServer.Close()
 			defer healthServer.Close()
 
-			// Ensure DLQ is empty (clean up from previous tests)
+			// A new owned fixture is genuinely empty; never drain another test's leftovers.
 			ctx := context.Background()
 			dlqClient := srv.GetDLQClient()
 			Expect(dlqClient).ToNot(BeNil(), "DLQ client must be available on server")
 
-			// Check DLQ depth and drain if necessary
+			// Check DLQ depth before entering the real shutdown path.
 			dlqDepth, err := dlqClient.GetDLQDepth(ctx, "notifications")
 			Expect(err).ToNot(HaveOccurred())
-			if dlqDepth > 0 {
-				GinkgoWriter.Printf("⚠️  DLQ not empty (depth: %d), draining before test...\n", dlqDepth)
-
-				// Drain the DLQ to clean up from previous tests
-				// Use a short timeout (5s) since we just need to clean up
-				drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				defer cancel()
-
-				// Create a temporary DB connection for draining
-				pgHost := os.Getenv("POSTGRES_HOST")
-				if pgHost == "" {
-					pgHost = localhost
-				}
-				pgPort := os.Getenv("POSTGRES_PORT")
-				if pgPort == "" {
-					pgPort = "5433"
-				}
-				dbConnStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
-
-				tempDB, err := sql.Open("pgx", dbConnStr)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = tempDB.Close() }()
-
-				notificationRepo := repository.NewNotificationAuditRepository(tempDB, logger)
-				auditEventsRepo := repository.NewAuditEventsRepository(tempDB, logger)
-				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, auditEventsRepo)
-				Expect(err).ToNot(HaveOccurred(), "DLQ drain should succeed")
-
-				GinkgoWriter.Printf("✅ DLQ drained successfully\n")
-			}
+			Expect(dlqDepth).To(BeZero())
 
 			// ACT: Trigger graceful shutdown with empty DLQ
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1045,6 +1062,23 @@ func makeAuthenticatedRequest(url string) (*http.Response, error) {
 }
 
 func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.Server) {
+	httpServer, healthServer, srv, _ := createTestServerWithBackends()
+	return httpServer, healthServer, srv
+}
+
+// Every caller, including shared-port readiness tests, owns a migrated database
+// and a private Redis endpoint. Unique notification IDs alone do not isolate drains.
+func createTestServerWithBackends() (*httptest.Server, *httptest.Server, *server.Server, *shutdownBackend) {
+	provisionCtx, provisionCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer provisionCancel()
+	backend, err := newShutdownBackend(provisionCtx, "quay.io/jordigilh/redis:7-alpine")
+	Expect(err).ToNot(HaveOccurred(), "provisioning owned shutdown backends")
+	DeferCleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cleanupCancel()
+		Expect(backend.cleanup(cleanupCtx)).To(Succeed(), "cleanup owner %s", backend.name)
+	})
+
 	// Create server config
 	serverCfg := &server.Config{
 		Port:         18090, // DD-TEST-001
@@ -1052,31 +1086,6 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 		WriteTimeout: 30 * time.Second,
 		TLS:          datastorageIntegrationTLSConfig(),
 	}
-
-	// Connection string for shared PostgreSQL infrastructure
-	// Use environment variables for Docker Compose compatibility
-	pgHost := os.Getenv("POSTGRES_HOST")
-	if pgHost == "" {
-		pgHost = localhost
-	}
-	pgPort := os.Getenv("POSTGRES_PORT")
-	if pgPort == "" {
-		pgPort = "5433"
-	}
-	dbConnStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
-
-	// Redis connection details for shared infrastructure
-	// Use environment variables for Docker Compose compatibility
-	redisHost := os.Getenv("REDIS_HOST")
-	if redisHost == "" {
-		redisHost = localhost
-	}
-	redisPort := os.Getenv("REDIS_PORT")
-	if redisPort == "" {
-		redisPort = "6379"
-	}
-	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
-	redisPassword := "" // No password in test environment
 
 	// Create application config with database pool settings.
 	// EndpointPropagationDelay is set explicitly so the test documents
@@ -1118,9 +1127,8 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 	// DD-AUTH-014: Pass mock authenticator/authorizer for test environment
 	// authNamespace is "datastorage-test" for SAR checks (mock authorizer allows all)
 	srv, err := server.NewServer(server.ServerDeps{
-		DBConnStr:     dbConnStr,
-		RedisAddr:     redisAddr,
-		RedisPassword: redisPassword,
+		DBConnStr:     backend.connStr,
+		RedisAddr:     backend.redisAddr,
 		Logger:        logger,
 		AppConfig:     appCfg,
 		ServerConfig:  serverCfg,
@@ -1137,6 +1145,22 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 	// Dedicated health server (Issue #753: health probes on separate port)
 	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler(), false)
 	healthTestServer := httptest.NewServer(healthSrv.Handler)
+	backend.stopServer = func(cleanupCtx context.Context) error {
+		httpServer.Close()
+		healthTestServer.Close()
+		// Shutdown tests already called the real lifecycle. Only call it here
+		// for callers (e.g. readiness tests) that leave the server running.
+		probe := httptest.NewRecorder()
+		srv.ReadinessHandler()(probe, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		var readiness models.ReadinessResponse
+		if err := json.Unmarshal(probe.Body.Bytes(), &readiness); err != nil {
+			return fmt.Errorf("decode cleanup readiness for %s: %w", backend.name, err)
+		}
+		if readiness.Reason == "shutting_down" {
+			return nil
+		}
+		return srv.Shutdown(cleanupCtx)
+	}
 
-	return httpServer, healthTestServer, srv
+	return httpServer, healthTestServer, srv, backend
 }
