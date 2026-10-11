@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,6 +35,136 @@ type persona struct {
 	Email    string
 	Password string
 	Role     string
+}
+
+// BR-AUDIT-005: this fixture's existing AF provider records the DEX subject.
+// Decode only for test attribution, never for authentication; the subsequent
+// real MCP initialize/call must still pass AF's signature/issuer/audience checks.
+func auditOIDCSubject(token string) (string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("audit OIDC fixture token is not a jwt")
+	}
+	claims, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("decode audit OIDC fixture claims: %w", err)
+	}
+	var identity struct {
+		Subject string `json:"sub"`
+	}
+	if err := json.Unmarshal(claims, &identity); err != nil {
+		return "", fmt.Errorf("parse audit OIDC fixture claims: %w", err)
+	}
+	if identity.Subject == "" {
+		return "", fmt.Errorf("audit OIDC fixture has no subject")
+	}
+	return identity.Subject, nil
+}
+
+// BR-AUDIT-005 (#2501): clone only the existing test SRE identity; preserve
+// issuer, clients, password hash and groups. This never changes AF auth policy.
+func addAuditOIDCActor(config, actor string) (string, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal([]byte(config), &document); err != nil {
+		return "", fmt.Errorf("parse audit OIDC fixture: %w", err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return "", fmt.Errorf("audit OIDC fixture requires a mapping")
+	}
+	root := document.Content[0]
+	var passwords *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "staticPasswords" {
+			passwords = root.Content[i+1]
+			break
+		}
+	}
+	if passwords == nil || passwords.Kind != yaml.SequenceNode {
+		return "", fmt.Errorf("audit OIDC fixture requires staticPasswords")
+	}
+	var template *yaml.Node
+	for _, entry := range passwords.Content {
+		for i := 0; i+1 < len(entry.Content); i += 2 {
+			if entry.Content[i].Value == "email" && entry.Content[i+1].Value == "sre@kubernaut.ai" {
+				template = entry
+				break
+			}
+		}
+		if template != nil {
+			break
+		}
+	}
+	if template == nil {
+		return "", fmt.Errorf("audit OIDC fixture has no existing SRE identity")
+	}
+	encoded, err := yaml.Marshal(template)
+	if err != nil {
+		return "", fmt.Errorf("clone SRE OIDC fixture: %w", err)
+	}
+	var clone yaml.Node
+	if err := yaml.Unmarshal(encoded, &clone); err != nil {
+		return "", fmt.Errorf("parse cloned SRE OIDC fixture: %w", err)
+	}
+	identity := clone.Content[0]
+	for i := 0; i+1 < len(identity.Content); i += 2 {
+		switch identity.Content[i].Value {
+		case "email", "username", "userID":
+			identity.Content[i+1].Value = actor
+		}
+	}
+	passwords.Content = append(passwords.Content, identity)
+	result, err := yaml.Marshal(&document)
+	if err != nil {
+		return "", fmt.Errorf("marshal audit OIDC fixture: %w", err)
+	}
+	return string(result), nil
+}
+
+func prepareAuditOIDCActor(ctx context.Context, kubeconfigPath, actor string, writer io.Writer) error {
+	fixtureClient, err := newFleetAFSetupClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("build audit OIDC fixture client: %w", err)
+	}
+	configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "dex-config", Namespace: e2eNamespace}}
+	if err := fixtureClient.Get(ctx, client.ObjectKeyFromObject(configMap), configMap); err != nil {
+		return fmt.Errorf("get audit OIDC fixture: %w", err)
+	}
+	config, err := addAuditOIDCActor(configMap.Data["config.yaml"], actor)
+	if err != nil {
+		return err
+	}
+	configMap.Data["config.yaml"] = config
+	if err := fixtureClient.Update(ctx, configMap); err != nil {
+		return fmt.Errorf("update audit OIDC fixture: %w", err)
+	}
+	// BeforeSuite only: never restart the issuer while parallel specs run.
+	// DEX's existing PVC retains its signing keys and issuer identity.
+	for _, args := range [][]string{
+		{"--kubeconfig", kubeconfigPath, "-n", e2eNamespace, "rollout", "restart", "deployment/dex"},
+		{"--kubeconfig", kubeconfigPath, "-n", e2eNamespace, "rollout", "status", "deployment/dex", "--timeout=120s"},
+	} {
+		cmd := exec.CommandContext(ctx, "kubectl", args...) //nolint:gosec // G204: owned E2E fixture
+		cmd.Stdout, cmd.Stderr = writer, writer
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("restart audit OIDC fixture before specs: %w", err)
+		}
+	}
+	return nil
+}
+
+func afFailureMarkerPath(cluster string) string {
+	return filepath.Join(os.TempDir(), "apifrontend-e2e-failures", cluster)
+}
+
+func markAFFailure(cluster string) error {
+	path := afFailureMarkerPath(cluster)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create owned AF failure marker directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte("1"), 0600); err != nil {
+		return fmt.Errorf("write owned AF failure marker: %w", err)
+	}
+	return nil
 }
 
 type dexPersonaTokenCacheKey struct {

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
@@ -50,6 +51,7 @@ var (
 	e2eClusterName        = getEnvOrDefault("AF_E2E_CLUSTER_NAME", kinfra.AFDefaultClusterName)
 	setupSucceeded        bool
 	anyTestFailed         bool
+	auditActorEmail       string
 	fleetAFSetupAttempted bool
 	kubeconfigPath        string
 	k8sClient             client.Client
@@ -217,7 +219,9 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
 		for _, cluster := range apifrontendE2EClusterNames(afE2ELaneFromEnv(), fleetAFSetupAttempted || fleetAFEnabled) {
-			kinfra.MarkTestFailure(cluster)
+			if err := markAFFailure(cluster); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: AF failure marker write failed for %s: %v\n", cluster, err)
+			}
 		}
 	}
 })
@@ -247,6 +251,11 @@ var _ = SynchronizedBeforeSuite(
 			}
 			setupSucceeded = true
 			if !helperTestsOnly {
+				auditActorEmail = "audit-observer-" + uuid.NewString() + "@kubernaut.invalid"
+				identityCtx, identityCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				identityErr := prepareAuditOIDCActor(identityCtx, kubeconfigPath, auditActorEmail, beforeSuiteWriter)
+				identityCancel()
+				Expect(identityErr).NotTo(HaveOccurred(), "prepare unique OIDC audit actor before specs")
 				fixturesStarted := startAFBeforeSuiteStep("prepare retained local severity fixtures")
 				severityFixtureClient, severityFixtureErr := newFleetAFSetupClient(kubeconfigPath)
 				Expect(severityFixtureErr).NotTo(HaveOccurred(), "severity fixture Kubernetes client must be available")
@@ -301,6 +310,7 @@ var _ = SynchronizedBeforeSuite(
 			}
 			setup, marshalErr := json.Marshal(afE2ESuiteSetup{
 				LocalKubeconfigPath: kubeconfigPath,
+				AuditActorEmail:     auditActorEmail,
 				LocalCertDir:        getEnvOrDefault("AF_E2E_CERT_DIR", filepath.Join(os.TempDir(), "apifrontend-e2e-certs", e2eClusterName)),
 				FleetKubeconfigPath: fleetKubeconfigPath,
 				FleetCertDir:        fleetCertDir,
@@ -457,6 +467,8 @@ var _ = SynchronizedBeforeSuite(
 		}
 
 		// Acquire persona tokens once before Ginkgo fans specs out across worker processes.
+		auditActorEmail = "audit-observer-" + uuid.NewString() + "@kubernaut.invalid"
+		Expect(prepareAuditOIDCActor(ctx, kubeconfigPath, auditActorEmail, beforeSuiteWriter)).To(Succeed(), "prepare unique OIDC audit actor before specs")
 		// This avoids concurrent cold logins through the single DEX NodePort during the suite.
 		dexURL = e2eHostURL("https", 5556) + "/dex"
 		clientID = "kubernaut-apifrontend"
@@ -482,6 +494,7 @@ var _ = SynchronizedBeforeSuite(
 			LocalCertDir:        localCertDir,
 			LocalHostPortOffset: localHostPortOffset,
 			PersonaTokens:       personaTokens,
+			AuditActorEmail:     auditActorEmail,
 		}
 		if lane == afE2ELaneCombined {
 			fleetSetup.FleetKubeconfigPath = fleetKubeconfigPath
@@ -499,6 +512,7 @@ var _ = SynchronizedBeforeSuite(
 		var setup afE2ESuiteSetup
 		Expect(json.Unmarshal(data, &setup)).To(Succeed(), "suite setup context must decode")
 		kubeconfigPath = setup.LocalKubeconfigPath
+		auditActorEmail = setup.AuditActorEmail
 		Expect(os.Setenv("KUBECONFIG", kubeconfigPath)).To(Succeed())
 		Expect(os.Setenv("AF_E2E_HOST_PORT_OFFSET", strconv.Itoa(setup.LocalHostPortOffset))).To(Succeed())
 		baseURL = e2eHostURL("https", 18443)
@@ -658,8 +672,16 @@ var _ = SynchronizedAfterSuite(
 		clusters := apifrontendE2EClusterNames(lane, fleetAFSetupAttempted)
 		anyFailure := setupFailed || anyTestFailed
 		for _, cluster := range clusters {
-			clusterFailure := kinfra.ResolveAnyFailure(cluster, setupFailed, anyTestFailed, GinkgoWriter)
-			defer kinfra.CleanupFailureMarker(cluster)
+			_, markerErr := os.Stat(afFailureMarkerPath(cluster))
+			if markerErr != nil && !os.IsNotExist(markerErr) {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: AF failure marker read failed: %v\n", markerErr)
+			}
+			clusterFailure := kinfra.ResolveAnyFailure(cluster, setupFailed, anyTestFailed || markerErr == nil, GinkgoWriter)
+			defer func() {
+				if err := os.Remove(afFailureMarkerPath(cluster)); err != nil && !os.IsNotExist(err) {
+					_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: AF failure marker cleanup failed: %v\n", err)
+				}
+			}()
 			anyFailure = anyFailure || clusterFailure
 		}
 
@@ -680,17 +702,33 @@ var _ = SynchronizedAfterSuite(
 					_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to build must-gather image (non-fatal): %v\n", buildErr)
 				} else {
 					for _, cluster := range existingClusters {
-						mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "apifrontend", cluster)
-						if err := kinfra.RunMustGatherImage(context.Background(), kinfra.RunMustGatherImageOptions{
+						mustGatherOutputDir := filepath.Join(os.TempDir(), "kubernaut-must-gather", "apifrontend", cluster)
+						gatherCtx, gatherCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+						opts := kinfra.RunMustGatherImageOptions{
 							ClusterName:     cluster,
 							Image:           mustGatherImage,
 							OutputDir:       mustGatherOutputDir,
 							Namespace:       e2eNamespace,
 							UsePodman:       true,
 							ExtraNamespaces: apifrontendMustGatherExtraNamespaces(cluster, fleetAFSetupAttempted),
-						}, GinkgoWriter); err != nil {
+						}
+						kubeconfig := getEnvOrDefault("AF_E2E_KUBECONFIG", os.Getenv("HOME")+"/.kube/"+cluster+"-config")
+						// Match BeforeSuite even if setup fails before workers receive
+						// their synchronized AF_E2E_KUBECONFIG.
+						if cluster == fleetAFClusterName {
+							kubeconfig = getEnvOrDefault("AF_E2E_FLEET_KUBECONFIG", os.Getenv("HOME")+"/.kube/"+cluster+"-config")
+						}
+						cleanup, prepareErr := kinfra.PrepareMustGatherDataStorage(gatherCtx, &opts, kubeconfig, kinfra.InterServiceCAPath(kubeconfig))
+						if prepareErr != nil {
+							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: DS collector transport preparation failed (other diagnostics continue): %v\n", prepareErr)
+						}
+						if err := kinfra.RunMustGatherImage(gatherCtx, opts, GinkgoWriter); err != nil {
 							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to collect must-gather from %s (non-fatal): %v\n", cluster, err)
 						}
+						if err := cleanup(); err != nil {
+							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: DS collector credential cleanup failed: %v\n", err)
+						}
+						gatherCancel()
 					}
 				}
 			}
