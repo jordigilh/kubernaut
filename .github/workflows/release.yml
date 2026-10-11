@@ -378,8 +378,8 @@ jobs:
         uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
-          # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
-          # with no fix available yet in any published kubectl release.
+          # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
+          # acceptance until 2027-04-11, scoped to must-gather (not service images).
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
@@ -433,8 +433,8 @@ jobs:
         uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
-          # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
-          # with no fix available yet in any published kubectl release.
+          # DD-PLATFORM-003 / BR-SECURITY-2493: user-approved kubectl risk
+          # acceptance until 2027-04-11, scoped to must-gather (not service images).
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
