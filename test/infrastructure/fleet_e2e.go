@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -29,6 +30,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -3410,28 +3413,58 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 // Envoy Gateway's Helm certgen hook use this Service path and would otherwise
 // fail with a misleading connection-refused error.
 func waitForInClusterAPIServer(ctx context.Context, nodeName, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
-	serviceIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+	serviceIPOutput, err := runBoundedFleetCommand(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "service", "kubernetes", "-n", "default", "-o", "jsonpath={.spec.clusterIP}")
-	serviceIPOutput, err := serviceIPCmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to resolve Kubernetes Service ClusterIP: %w", err)
+		return fmt.Errorf("failed to resolve Kubernetes Service ClusterIP: %w: %s", err, serviceIPOutput)
 	}
-	serviceIP, err := buildInClusterAPIServerProbeCommand(string(serviceIPOutput))
+	serviceIP, err := buildInClusterAPIServerProbeCommand(serviceIPOutput)
 	if err != nil {
 		return fmt.Errorf("failed to build in-cluster API server probe: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "  Waiting for in-cluster Kubernetes Service readiness (%s)...\n", strings.TrimSpace(string(serviceIPOutput)))
+	_, _ = fmt.Fprintf(writer, "  Waiting for in-cluster Kubernetes Service readiness (%s)...\n", strings.TrimSpace(serviceIPOutput))
 	deadline := time.Now().Add(timeout)
+	diagnosticParent, stopDiagnostics := context.WithDeadline(ctx, deadline)
 	var lastErr error
+	var diagnostics <-chan string
+	defer func() {
+		// Never wait past successful readiness or the original gate deadline
+		// for a secondary command. WaitDelay bounds executor pipe teardown.
+		stopDiagnostics()
+		if diagnostics == nil {
+			return
+		}
+		// Only this goroutine writes to writer. Snapshot collection is bounded
+		// and runs concurrently with the original probe/cadence, not instead of it.
+		snapshot := <-diagnostics
+		_, _ = fmt.Fprintln(writer, snapshot)
+		if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`).MatchString(nodeName) {
+			_, _ = fmt.Fprintln(writer, "diagnostic artifact not saved: invalid owned node name")
+			return
+		}
+		artifactDir := filepath.Join(os.TempDir(), "kubernaut-must-gather", "fleet-api", nodeName)
+		if err := os.MkdirAll(artifactDir, 0755); err != nil {
+			_, _ = fmt.Fprintf(writer, "diagnostic artifact directory failed (primary readiness error preserved): %v\n", err)
+			return
+		}
+		path := filepath.Join(artifactDir, "service-path-"+time.Now().UTC().Format("20060102T150405.000000000Z")+".log")
+		if err := os.WriteFile(path, []byte(snapshot), 0600); err != nil {
+			_, _ = fmt.Fprintf(writer, "diagnostic artifact write failed (primary readiness error preserved): %v\n", err)
+		}
+	}()
+	attempt := 0
 	for time.Now().Before(deadline) {
-		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		probeCmd := exec.CommandContext(probeCtx, "podman", "exec", nodeName, "bash", "-c", serviceIP)
-		var probeOutput bytes.Buffer
-		probeCmd.Stdout = &probeOutput
-		probeCmd.Stderr = &probeOutput
-		probeErr := probeCmd.Run()
+		attempt++
+		started := time.Now().UTC()
+		probeBudget := min(5*time.Second, time.Until(deadline))
+		probeCtx, cancel := context.WithTimeout(ctx, probeBudget)
+		probeOutput, probeErr := runBoundedFleetCommand(probeCtx, "podman", "exec", nodeName, "bash", "-c", serviceIP)
+		probeContextErr := probeCtx.Err()
 		cancel()
+		probeRecord := fmt.Sprintf("  VIP attempt=%d start=%s elapsed=%s node=%s command=%s error=%v context=%v output=%q\n",
+			attempt, started.Format(time.RFC3339Nano), time.Since(started), nodeName, serviceIP, probeErr, probeContextErr, probeOutput)
+		_, _ = fmt.Fprint(writer, probeRecord)
 		if probeErr == nil {
 			_, _ = fmt.Fprintln(writer, "  ✅ In-cluster Kubernetes Service is accepting connections")
 			return nil
@@ -3439,17 +3472,110 @@ func waitForInClusterAPIServer(ctx context.Context, nodeName, kubeconfigPath str
 		if ctx.Err() != nil {
 			return fmt.Errorf("in-cluster Kubernetes Service probe canceled: %w", ctx.Err())
 		}
-		lastErr = probeErr
+		lastErr = fmt.Errorf("command %q on owned node %s: %w: %s", serviceIP, nodeName, probeErr, probeOutput)
+		if diagnostics == nil {
+			result := make(chan string, 1)
+			diagnostics = result
+			go func() {
+				diagnosticCtx, diagnosticCancel := context.WithTimeout(diagnosticParent, 10*time.Second)
+				defer diagnosticCancel()
+				// Preserve the already-observed failure even when secondary
+				// commands are canceled before they can run.
+				result <- "First-failure authoritative probe:\n" + probeRecord + collectFleetServicePathDiagnostics(diagnosticCtx, nodeName, kubeconfigPath, serviceIP)
+			}()
+		}
+		retryDelay := min(2*time.Second, time.Until(deadline))
+		timer := time.NewTimer(max(0, retryDelay))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return fmt.Errorf("in-cluster Kubernetes Service probe canceled: %w", ctx.Err())
-		case <-time.After(2 * time.Second):
+		case <-timer.C:
 		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("probe did not run")
 	}
 	return fmt.Errorf("in-cluster Kubernetes Service did not accept connections within %v: %w", timeout, lastErr)
+}
+
+// boundedFleetOutput caps allocation as bytes arrive, rather than truncating
+// an already-unbounded CombinedOutput buffer after a child exits.
+type boundedFleetOutput struct {
+	data      []byte
+	truncated bool
+}
+
+func (b *boundedFleetOutput) Write(p []byte) (int, error) {
+	remaining := max(0, 8192-len(b.data))
+	b.data = append(b.data, p[:min(len(p), remaining)]...)
+	b.truncated = b.truncated || len(p) > remaining
+	return len(p), nil
+}
+
+func runBoundedFleetCommand(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	var output boundedFleetOutput
+	cmd.Stdout, cmd.Stderr = &output, &output
+	cmd.WaitDelay = 250 * time.Millisecond
+	err := cmd.Run()
+	text := string(output.data)
+	// Diagnostic children can echo auth headers in errors/logs. Keep common
+	// bearer credential forms out of both the primary error and durable bundle.
+	text = regexp.MustCompile(`(?i)(bearer[\t ]+)[A-Za-z0-9._-]+`).ReplaceAllString(text, "${1}[REDACTED]")
+	if output.truncated {
+		text += " [truncated at 8192 bytes]"
+	}
+	if ctx.Err() != nil {
+		return text, fmt.Errorf("fleet executor canceled: %w", errors.Join(ctx.Err(), err))
+	}
+	return text, err
+}
+
+func collectFleetServicePathDiagnostics(ctx context.Context, nodeName, kubeconfigPath, vipCommand string) string {
+	var evidence strings.Builder
+	fmt.Fprintf(&evidence, "Fleet Service-path diagnostic snapshot start=%s owned_node=%s (direct success is diagnostic only)\n", time.Now().UTC().Format(time.RFC3339Nano), nodeName)
+	query := func(label string, args ...string) string {
+		started := time.Now().UTC()
+		output, err := runBoundedFleetCommand(ctx, args...)
+		fmt.Fprintf(&evidence, "%s start=%s elapsed=%s command=%q error=%v context=%v output=%q\n",
+			label, started.Format(time.RFC3339Nano), time.Since(started), args, err, ctx.Err(), output)
+		return output
+	}
+	query("failure-time VIP", "podman", "exec", nodeName, "bash", "-c", vipCommand)
+	// EndpointSlice is already part of this diagnostic contract. Avoid the
+	// deprecated Endpoints API, whose warning can contaminate a parsed address.
+	backend := strings.TrimSpace(query("direct backend endpoint", "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "endpointslices", "-n", "default", "-l", "kubernetes.io/service-name=kubernetes", "-o", "jsonpath={.items[0].endpoints[0].addresses[0]}:{.items[0].ports[0].port}"))
+	ipText, portText, err := net.SplitHostPort(backend)
+	port, portErr := strconv.Atoi(portText)
+	ip := net.ParseIP(ipText)
+	if err == nil && portErr == nil && ip != nil && ip.To4() != nil && port > 0 && port <= 65535 {
+		query("direct backend (diagnostic only)", "podman", "exec", nodeName, "bash", "-c",
+			fmt.Sprintf("exec 3<>/dev/tcp/%s/%d", ip.To4().String(), port))
+	} else {
+		fmt.Fprintln(&evidence, "direct backend diagnostic unavailable: invalid or missing endpoint")
+	}
+	// Deliberately select networking/status fields, never raw kubeconfigs,
+	// Secrets, static-pod manifests or unrelated clusters/host namespaces.
+	for _, command := range []struct {
+		label string
+		args  []string
+	}{
+		{"kubernetes Service", []string{"get", "service", "kubernetes", "-n", "default", "-o", "jsonpath={.spec}"}},
+		{"kubernetes EndpointSlices", []string{"get", "endpointslices", "-n", "default", "-l", "kubernetes.io/service-name=kubernetes", "-o", "jsonpath={range .items[*]}{.endpoints}{.ports}{end}"}},
+		{"API server status", []string{"get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "wide"}},
+		{"API server log", []string{"logs", "-n", "kube-system", "-l", "component=kube-apiserver", "--tail=80", "--since=2m", "--timestamps=true"}},
+		{"kube-proxy log", []string{"logs", "-n", "kube-system", "-l", "k8s-app=kube-proxy", "--tail=120", "--since=2m", "--timestamps=true"}},
+		{"kube-proxy config", []string{"get", "configmap", "kube-proxy", "-n", "kube-system", "-o", "jsonpath={.data.config\\.conf}"}},
+	} {
+		query(command.label, append([]string{"kubectl", "--kubeconfig", kubeconfigPath}, command.args...)...)
+	}
+	for _, command := range []string{"ip -4 route", "iptables-save -t nat", "nft list ruleset"} {
+		query("owned node routing", "podman", "exec", nodeName, "bash", "-c", command)
+	}
+	fmt.Fprintf(&evidence, "snapshot finished=%s context=%v\n", time.Now().UTC().Format(time.RFC3339Nano), ctx.Err())
+	return evidence.String()
 }
 
 // buildInClusterAPIServerProbeCommand validates the Service ClusterIP before

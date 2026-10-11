@@ -82,6 +82,8 @@ type RunMustGatherImageOptions struct {
 	// DataStorage separates verified service identity from external-node routing.
 	// Credentials are read-only files, never values in argv or the archive tree.
 	DataStorage *MustGatherDataStorageOptions
+	// FleetDiagnosticsDir contains only this lane's bounded Service-path logs.
+	FleetDiagnosticsDir string
 }
 
 type MustGatherDataStorageOptions struct {
@@ -253,6 +255,10 @@ func buildMustGatherPodmanArgs(opts RunMustGatherImageOptions, kubeconfigPath st
 		if ds.ConnectTo != "" {
 			args = append(args, "-e", "DATASTORAGE_CONNECT_TO="+ds.ConnectTo)
 		}
+	}
+	if opts.FleetDiagnosticsDir != "" {
+		args = append(args, "-e", "FLEET_DIAGNOSTICS_DIR=/fleet-diagnostics",
+			"-v", opts.FleetDiagnosticsDir+":/fleet-diagnostics:ro,Z")
 	}
 	args = append(args, opts.Image, "--dest-dir=/must-gather", "--namespace="+namespace,
 		"--workflow-namespace="+workflowNamespace, "--since="+since)

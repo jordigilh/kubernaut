@@ -108,7 +108,7 @@ func apifrontendMustGatherExtraNamespaces(clusterName string, fleetSetupAttempte
 	if !fleetSetupAttempted || clusterName != fleetAFClusterName {
 		return nil
 	}
-	return []string{fleetAFEnvoyGatewayNamespace, fleetAFAIGatewayNamespace}
+	return []string{fleetAFEnvoyGatewayNamespace, fleetAFAIGatewayNamespace, "kube-system"}
 }
 
 func setupFleetAFInfrastructure(
@@ -721,6 +721,10 @@ var _ = SynchronizedAfterSuite(
 						cleanup, prepareErr := kinfra.PrepareMustGatherDataStorage(gatherCtx, &opts, kubeconfig, kinfra.InterServiceCAPath(kubeconfig))
 						if prepareErr != nil {
 							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: DS collector transport preparation failed (other diagnostics continue): %v\n", prepareErr)
+						}
+						ownedDiagnostics := filepath.Join(os.TempDir(), "kubernaut-must-gather", "fleet-api", cluster+"-control-plane")
+						if info, err := os.Stat(ownedDiagnostics); err == nil && info.IsDir() {
+							opts.FleetDiagnosticsDir = ownedDiagnostics
 						}
 						if err := kinfra.RunMustGatherImage(gatherCtx, opts, GinkgoWriter); err != nil {
 							_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to collect must-gather from %s (non-fatal): %v\n", cluster, err)
