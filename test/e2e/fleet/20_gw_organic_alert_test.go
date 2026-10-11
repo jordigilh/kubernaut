@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -49,9 +50,10 @@ import (
 // RemediationRequest appears WITHOUT ever calling Gateway's HTTP API itself.
 //
 // Ordering matters here in a way it doesn't for the direct-POST tests: the
-// target Deployment must exist BEFORE the alert first fires, since Gateway's
-// owner-resolution does a live lookup and drops the signal if the target is
-// missing (same constraint 01_signal_ingestion_test.go documents). The
+// target Deployment must exist and be visible to FMC BEFORE the alert first
+// fires. Gateway rejects a scope-cache miss without asking AlertManager to
+// retry; a successful notification is not repeated for an unchanged alert
+// until repeat_interval. Owner resolution also requires a live target. The
 // alerting rule's expr is gated on a synthetic metric (never vector(1) > 0)
 // specifically so it stays inactive until this test injects it, after the
 // fixture already exists.
@@ -89,6 +91,22 @@ var _ = Describe("E2E-FLEET-021 [AC-4, AU-3]: real AlertManager webhook forward 
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create %s fixture", targetName)
 		}
 		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
+
+		By("Waiting for the exact hub Deployment to be managed by FMC BEFORE firing the organic alert")
+		// Use Gateway's existing FMC client identity and CA-verified Service path;
+		// this read-only fixture precondition creates no RemediationRequest.
+		fmcToken, tokenErr := infrastructure.GetServiceAccountToken(ctx, namespace, "gateway", kubeconfigPath)
+		Expect(tokenErr).NotTo(HaveOccurred(), "failed to obtain the already-authorized FMC scope client token")
+		targetResource := scope.ResourceIdentity{
+			ClusterID: "hub", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: targetNS, Name: targetName,
+		}
+		Eventually(func(g Gomega) {
+			managed, scopeErr := infrastructure.CheckFleetResourceScope(ctx, clusterName+"-control-plane", kubeconfigPath, namespace, fmcToken, targetResource)
+			GinkgoWriter.Printf("Organic Fleet scope check: time=%s cluster=hub namespace=%s target=%s managed=%t error=%v\n",
+				time.Now().UTC().Format(time.RFC3339Nano), targetNS, targetName, managed, scopeErr)
+			g.Expect(scopeErr).NotTo(HaveOccurred(), "real FMC scope precondition must use verified TLS and existing authorization")
+			g.Expect(managed).To(BeTrue(), "the exact organic fixture must be scope-visible before its first notification")
+		}, fmcSyncTimeout, 2*time.Second).Should(Succeed())
 
 		By("Injecting the synthetic metric that trips fleet-organic-gateway-alert.yml's rule")
 		Expect(infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{

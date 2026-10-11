@@ -151,3 +151,43 @@ push to the existing PR branch, preserving merge `f492991e5` and both closing
 references. The next pipeline result must be attributed to the resulting new SHA,
 not the still-failing `c659819f` cycle. No local cancellation or absent image scan
 is reclassified as a successful CI result.
+
+## Published-head CI result and scoped Fleet follow-up
+
+The normal batched publication reached
+`2dafdc9ce4f714604cf690bac0a9fd9aaf268f98`. CI run **38144393386** completed with
+**76 successful jobs, 3 failed, and 0 skipped**. Fleet E2E is the only underlying
+failure (**46/47** specs); Test Suite Summary and Merge Gate are cascading failures.
+All other integration/E2E lanes and all scan steps across the 28 scan-bearing jobs
+passed. Same-head Must-Gather **38144393373**, Gitleaks **38144393370** and CodeQL
+**38144393368** also passed. Native amd64 Must-Gather proved **73/73** cases,
+including the partial archive and exact executable collector inventory. These
+new-SHA results close the earlier CI artifact gates; the interrupted local
+30/32-image runner remains partial evidence, not a retrospectively complete run.
+
+The remaining Fleet failure and approved test-only correction are documented in
+[FLEET_ORGANIC_ALERT_PLAN.md](FLEET_ORGANIC_ALERT_PLAN.md). Its observed sequence
+is an organic alert emitted before fixture scope readiness is established,
+followed by two unmanaged-resource rejections and no repeat notification during
+the unchanged RR assertion. The exact historical FMC cache transition remains
+unavailable. A real authenticated, CA-verified FMC precondition must pass before
+the test injects its metric; no direct Gateway POST or production scope change.
+
+At this checkpoint the correction passes its full 307-spec infrastructure race
+suite, build, compilation, CI-scoped lint, focused real organic Fleet journey
+and complete **47/47** real Fleet regression (**0 failed/pending/skipped**).
+Both full-run production Must-Gather collections and final runner cleanup pass.
+All 15 verified amd64 images were reused, not rebuilt; only the race-enabled
+Fleet test binary was recompiled. The original and fresh full-run nodes are
+retained stopped, unrelated workloads remain unchanged, and the authorized
+`maxkeys=512` / unchanged `maxbytes=20000` are verified.
+
+Evidence: `fleet-organic-full-real-v30.{json,log}`,
+`fleet-organic-final-verification-v30.json` and
+`fleet-organic-final-original-images-v30.json`. The actual organic dispatch proves
+the test-harness wiring manifest; source-order assertions alone are not the proof.
+The new-head publication/CI gate remains pending, so this is **not yet merge-ready**.
+Existing `Closes #2501` / `Closes #2502` references and fast-forward history are
+preserved. **Confidence: 98%** in the scoped correction, based on the above real
+journeys, full regression and exact-source checks; CI-environment validation of
+the new head remains outstanding.

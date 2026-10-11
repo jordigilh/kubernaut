@@ -39,8 +39,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -3500,23 +3502,98 @@ func (b *boundedFleetOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// sanitizedText also caps redaction expansion, not just the child bytes read.
+func (b *boundedFleetOutput) sanitizedText(token string) string {
+	text := string(b.data)
+	if token != "" {
+		text = strings.ReplaceAll(text, token, "[REDACTED]")
+	}
+	text = regexp.MustCompile(`(?i)(bearer[\t ]+)[A-Za-z0-9._-]+`).ReplaceAllString(text, "${1}[REDACTED]")
+	if len(text) > 8192 {
+		text = text[:8192]
+		b.truncated = true
+	}
+	if b.truncated {
+		text += " [truncated at 8192 bytes]"
+	}
+	return text
+}
+
 func runBoundedFleetCommand(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var output boundedFleetOutput
 	cmd.Stdout, cmd.Stderr = &output, &output
 	cmd.WaitDelay = 250 * time.Millisecond
 	err := cmd.Run()
-	text := string(output.data)
 	// Diagnostic children can echo auth headers in errors/logs. Keep common
 	// bearer credential forms out of both the primary error and durable bundle.
-	text = regexp.MustCompile(`(?i)(bearer[\t ]+)[A-Za-z0-9._-]+`).ReplaceAllString(text, "${1}[REDACTED]")
-	if output.truncated {
-		text += " [truncated at 8192 bytes]"
-	}
+	text := output.sanitizedText("")
 	if ctx.Err() != nil {
 		return text, fmt.Errorf("fleet executor canceled: %w", errors.Join(ctx.Err(), err))
 	}
 	return text, err
+}
+
+// CheckFleetResourceScope establishes the fixture's real FMC eligibility before
+// an organic alert can fire (BR-INTEGRATION-054/065, BR-SCOPE-002).
+// It only reads FMC's existing Service, never seeds its cache or posts a signal.
+// The owned Kind node already trusts the inter-service CA for fleet OIDC.
+func CheckFleetResourceScope(ctx context.Context, nodeName, kubeconfigPath, namespace, token string, resource scope.ResourceIdentity) (bool, error) {
+	if nodeName == "" || namespace == "" || token == "" || strings.ContainsAny(token, "\r\n") {
+		return false, fmt.Errorf("fmc scope probe requires an owned node, namespace and single-line token")
+	}
+	if resource.ClusterID == "" || resource.Kind == "" || resource.Name == "" {
+		return false, fmt.Errorf("fmc scope probe requires cluster, kind and name")
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	serviceIP, err := runBoundedFleetCommand(probeCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "service", "fleetmetadatacache-service", "-n", namespace, "-o", "jsonpath={.spec.clusterIP}")
+	if err != nil {
+		return false, fmt.Errorf("fmc scope service lookup: %w: %s", err, serviceIP)
+	}
+	ip := net.ParseIP(strings.TrimSpace(serviceIP))
+	if ip == nil || ip.To4() == nil {
+		return false, fmt.Errorf("fmc scope service has no valid IPv4 address")
+	}
+	params := make(url.Values, 6)
+	params.Set("cluster", resource.ClusterID)
+	params.Set("group", resource.Group)
+	params.Set("version", resource.Version)
+	params.Set("kind", resource.Kind)
+	params.Set("namespace", resource.Namespace)
+	params.Set("name", resource.Name)
+	authority := "fleetmetadatacache-service." + namespace + ".svc.cluster.local"
+	endpoint := "https://" + authority + ":8080" + fmc.ScopeCheckPath + "?" + params.Encode()
+	cmd := exec.CommandContext(probeCtx, "podman", "exec", "-i", nodeName, "curl",
+		"--silent", "--show-error", "--fail-with-body", "--max-time", "5", "--noproxy", "*",
+		"--cacert", "/etc/kubernetes/pki/oidc-ca.crt",
+		"--resolve", authority+":8080:"+ip.To4().String(), "--header", "@-", endpoint)
+	cmd.Stdin = strings.NewReader("Authorization: Bearer " + token + "\n")
+	var output boundedFleetOutput
+	cmd.Stdout, cmd.Stderr = &output, &output
+	cmd.WaitDelay = 250 * time.Millisecond
+	err = cmd.Run()
+	text := output.sanitizedText(token)
+	if probeCtx.Err() != nil {
+		return false, fmt.Errorf("fmc scope probe canceled: %w: %s", errors.Join(probeCtx.Err(), err), text)
+	}
+	if err != nil {
+		return false, fmt.Errorf("fmc scope probe failed: %w: %s", err, text)
+	}
+	if output.truncated {
+		return false, fmt.Errorf("fmc scope response exceeded its byte limit: %s", text)
+	}
+	var response struct {
+		Managed *bool `json:"managed"`
+	}
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		return false, fmt.Errorf("decode fmc scope response: %w: %s", err, text)
+	}
+	if response.Managed == nil {
+		return false, fmt.Errorf("fmc scope response is missing an explicit managed boolean")
+	}
+	return *response.Managed, nil
 }
 
 func collectFleetServicePathDiagnostics(ctx context.Context, nodeName, kubeconfigPath, vipCommand string) string {

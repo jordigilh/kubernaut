@@ -5,14 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var _ = Describe("BR-FLEET-054 / BR-INTEGRATION-065: Service VIP remains the readiness gate", func() {
@@ -215,6 +219,139 @@ exec sleep 30`, false)
 		Expect(output.String()).To(ContainSubstring("accepting connections"))
 	})
 })
+
+var _ = Describe("BR-INTEGRATION-054/065 / BR-SCOPE-002: organic Fleet scope readiness", func() {
+	const probeToken = "synthetic-scope-credential-2493"
+	resource := scope.ResourceIdentity{ClusterID: "hub", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "fleet-organic-gw-2493", Name: "fleet-organic-gw-target"}
+
+	probe := func(ctx context.Context) (bool, error) {
+		return CheckFleetResourceScope(ctx, "owned-2493-control-plane", "/owned-2493/kubeconfig", "kubernaut-system", probeToken, resource)
+	}
+
+	DescribeTable("UT-FLEET-2493-001/002: only explicit managed scope is ready",
+		func(response string, expected bool) {
+			installFleetScopeProbeExecutor(response, 0)
+			managed, err := probe(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(managed).To(Equal(expected))
+			args, err := os.ReadFile(filepath.Join(os.Getenv("TMPDIR"), "scope-args"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(args)).To(ContainSubstring("owned-2493-control-plane\ncurl\n"))
+			Expect(string(args)).To(ContainSubstring("--cacert\n/etc/kubernetes/pki/oidc-ca.crt\n"))
+			Expect(string(args)).To(ContainSubstring("--resolve\nfleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080:10.96.0.1\n"))
+			Expect(string(args)).To(ContainSubstring("--header\n@-\n"))
+			Expect(string(args)).To(ContainSubstring("--max-time\n5\n"))
+			Expect(string(args)).NotTo(ContainSubstring(probeToken))
+			Expect(string(args)).NotTo(ContainSubstring("--insecure"))
+			lines := strings.Split(strings.TrimSpace(string(args)), "\n")
+			endpoint, err := url.Parse(lines[len(lines)-1])
+			Expect(err).NotTo(HaveOccurred())
+			Expect(endpoint.Scheme).To(Equal("https"))
+			Expect(endpoint.Path).To(Equal("/api/v1/scope/check"))
+			Expect(endpoint.Query().Get("cluster")).To(Equal(resource.ClusterID))
+			Expect(endpoint.Query().Get("group")).To(Equal(resource.Group))
+			Expect(endpoint.Query().Get("version")).To(Equal(resource.Version))
+			Expect(endpoint.Query().Get("kind")).To(Equal(resource.Kind))
+			Expect(endpoint.Query().Get("namespace")).To(Equal(resource.Namespace))
+			Expect(endpoint.Query().Get("name")).To(Equal(resource.Name))
+			header, err := os.ReadFile(filepath.Join(os.Getenv("TMPDIR"), "scope-stdin"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(header)).To(Equal("Authorization: Bearer " + probeToken + "\n"))
+		},
+		Entry("a cache miss is not readiness", `{"managed":false}`, false),
+		Entry("a managed fixture is ready", `{"managed":true}`, true),
+	)
+
+	DescribeTable("UT-FLEET-2493-002: invalid or failed scope responses remain explicit errors",
+		func(response string, exitCode int) {
+			installFleetScopeProbeExecutor(response, exitCode)
+			managed, err := probe(context.Background())
+			Expect(managed).To(BeFalse())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fmc scope"))
+		},
+		Entry("malformed JSON", `not-json`, 0),
+		Entry("missing managed field", `{}`, 0),
+		Entry("null managed field", `{"managed":null}`, 0),
+		Entry("non-boolean managed field", `{"managed":"true"}`, 0),
+		Entry("trailing response data", `{"managed":true} {}`, 0),
+		Entry("HTTP authorization failure", `curl: (22) The requested URL returned error: 403`, 22),
+		Entry("untrusted certificate", `curl: (60) SSL certificate problem`, 60),
+		Entry("Service unavailable", `curl: (7) Failed to connect`, 7),
+	)
+
+	It("UT-FLEET-2493-001/002: echoed credentials and oversized responses cannot leak or pass", func() {
+		installFleetScopeProbeExecutor("Authorization: Bearer "+probeToken+"\n"+probeToken+strings.Repeat("x", 20000), 22)
+		managed, err := probe(context.Background())
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).NotTo(ContainSubstring(probeToken))
+		Expect(err.Error()).To(ContainSubstring("[REDACTED]"))
+		Expect(err.Error()).To(ContainSubstring("truncated"))
+		Expect(len(err.Error())).To(BeNumerically("<", 9000))
+	})
+
+	It("UT-FLEET-2493-002: cancellation kills a hung external scope probe", func() {
+		installFleetProbeExecutors(`: > "$TMPDIR/scope-started"
+exec sleep 30`, true)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		results := make(chan error, 1)
+		go func() {
+			defer GinkgoRecover()
+			_, err := probe(ctx)
+			results <- err
+		}()
+		Eventually(func() error {
+			_, err := os.Stat(filepath.Join(os.Getenv("TMPDIR"), "scope-started"))
+			return err
+		}, 5*time.Second, 20*time.Millisecond).Should(Succeed())
+		cancel()
+		var err error
+		Eventually(results, 2*time.Second).Should(Receive(&err))
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+	})
+
+	It("UT-FLEET-2493-001/002: redaction expansion cannot exceed the diagnostic byte cap", func() {
+		installFleetScopeProbeExecutor(strings.Repeat("Bearer x\n", 1500), 22)
+		_, err := probe(context.Background())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("[REDACTED]"))
+		Expect(err.Error()).To(ContainSubstring("truncated"))
+		Expect(len(err.Error())).To(BeNumerically("<", 9000))
+	})
+
+	It("UT-FLEET-2493-001: authorization-header injection is rejected before executing the probe", func() {
+		installFleetScopeProbeExecutor(`{"managed":true}`, 0)
+		managed, err := CheckFleetResourceScope(context.Background(), "owned-2493-control-plane", "/owned-2493/kubeconfig", "kubernaut-system", "bad\nX-Injected: true", resource)
+		Expect(managed).To(BeFalse())
+		Expect(err).To(HaveOccurred())
+		_, err = os.Stat(filepath.Join(os.Getenv("TMPDIR"), "scope-args"))
+		Expect(os.IsNotExist(err)).To(BeTrue())
+	})
+
+	It("UT-FLEET-2493-003: organic spec requires readiness before firing and retains zero direct Gateway POSTs", func() {
+		body, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "e2e", "fleet", "20_gw_organic_alert_test.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(body)
+		scopeCheck := strings.Index(text, "infrastructure.CheckFleetResourceScope(")
+		injection := strings.Index(text, "infrastructure.InjectMetrics(")
+		Expect(scopeCheck).To(BeNumerically(">=", 0), "the test must establish real FMC eligibility, not assume creation is scope readiness")
+		Expect(scopeCheck).To(BeNumerically("<", injection))
+		Expect(text).NotTo(ContainSubstring("postFleetAlertUntilAccepted("))
+		Expect(text).NotTo(ContainSubstring("postWithFleetAuth("))
+		Expect(text).To(ContainSubstring(`Spec.ClusterID).To(Equal("hub")`))
+	})
+})
+
+func installFleetScopeProbeExecutor(response string, exitCode int) {
+	GinkgoT().Setenv("FLEET_SCOPE_RESPONSE", response)
+	GinkgoT().Setenv("FLEET_SCOPE_EXIT", strconv.Itoa(exitCode))
+	installFleetProbeExecutors(`printf '%s\n' "$@" > "$TMPDIR/scope-args"
+cat > "$TMPDIR/scope-stdin"
+printf '%s' "$FLEET_SCOPE_RESPONSE"
+exit "$FLEET_SCOPE_EXIT"`, true)
+}
 
 func installFleetProbeExecutors(podmanBody string, diagnosticsFail bool) {
 	dir := GinkgoT().TempDir()
