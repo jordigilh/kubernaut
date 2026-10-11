@@ -2,8 +2,12 @@
 
 **Identifier**: TP-2493-SEC-v1.1
 **Created**: 2026-10-11
-**Status**: Kubectl exception step locally complete; remaining remediation plan is draft
+**Status**: Exception step delivered; remaining remediation approved through TP-2493-CI-v2.0
 **Delivery authorization**: User requested logical commits, push and CI monitoring on 2026-10-11
+**Subsequent request**: User asked to address remaining failures; see the
+[current remediation and collector-verification plan](REMAINING_CI_FAILURES_PLAN.md).
+The user approved that focused scope on 2026-10-11; the earlier application
+experiments were not implemented fixes.
 **Branch**: `fix/2493-ci-followups`
 **Starting head**: `fd0e07825b98077d6196901640f443fdbbe40ef5`
 **Base**: `origin/main` at `84c0af7859c802e2a2fd6a57933c4e1d52ccbfcf`
@@ -70,7 +74,9 @@ change authentication, or lose diagnostic capability.
 of leaving the accepted vulnerabilities unpatched. The configuration-only
 exception step uses existing routing and retained image archives, so it needs
 no new containers or host-capacity change. Application/build-wrapper changes
-remain subject to plan approval and any necessary runner-capacity decision.
+were initially subject to plan approval and a runner-capacity decision. The
+subsequent focused plan and temporary Helios08 capacity window have now been
+explicitly approved; see TP-2493-CI-v2.0 for the current scope and validation.
 
 ## 4. Approved exception decision and rejected alternatives
 
