@@ -110,6 +110,12 @@ regressions, build, lint and whitespace checks remain required validation.
 - UT-SEC-2493-007/008/009 plus IT-SEC-2493-003 retained-image before/after scan
   and unexcepted application-image negative control. No image rebuild is needed
   for an external scanner-configuration change.
+- The user additionally requested assessment/exception handling for review
+  discussion_r4239946051 (Gitleaks alert #42). Recomputing the retained archive
+  digest proves that finding is a public SHA-256, not a credential. Add only
+  an exact-rule/path/digest AND allowance in `.gitleaks.toml`, with defaults
+  retained and real-scanner negative controls. This is separate from CVE risk
+  acceptance; never exempt the whole document or historical commit.
 
 **Remaining draft remediation scope — not approved by the exception request**:
 - `go.mod` / `go.sum`: Go 1.26.9 and the selected x/net v0.60.0; existing
@@ -158,6 +164,7 @@ if verification fails, and retain failed-run evidence.
 | Root patched compiler/modules | Service build and cross-build jobs | Root module; CI/release setup-go; existing service Dockerfiles / Makefile | IT-SEC-2493-001/002 |
 | Isolated goose compiler floor | db-migrate image | `docker/db-migrate.Dockerfile` goose-builder stage | IT-SEC-2493-002 |
 | Approved kubectl CVE exceptions | CI infrastructure scan and both release-architecture scans | Existing `trivyignores` conditional inputs in CI/release; `cmd/must-gather/.trivyignore` | UT-SEC-2493-009 + IT-SEC-2493-003 |
+| Verified archive-checksum false positive | Existing Gitleaks history scan | `.github/workflows/gitleaks.yml` loads root `.gitleaks.toml`; existing fail-if-findings step unchanged | UT-SEC-2493-010/011 + IT-SEC-2493-005 |
 | Visible, fail-closed scanner capture | Actual Build/service/infra image scan steps | `.github/actions/trivy-scan-with-retry/action.yml` scan run block; unchanged workflow uses | IT-SEC-2493-004 |
 
 The approved exception step requires its routing and real image-scan row to pass.
@@ -180,10 +187,13 @@ map to **BR-PLATFORM-001**. New behavior tests use Ginkgo/Gomega.
 | UT-SEC-2493-007 | UT | Exactly the sixteen observed kubectl CVE IDs are accepted without duplicates/permanent entries; each expires six calendar months from the UTC approval date |
 | UT-SEC-2493-008 | UT | Configuration records owner/approval/tracking and accepted risk, without claiming the CVEs are fixed or all published fixes are unavailable |
 | UT-SEC-2493-009 | UT | CI and both release-architecture ignore-file inputs are conditional on must-gather only |
+| UT-SEC-2493-010 | UT | Verified checksum allowance targets only generic-api-key and requires exact file AND extracted digest; defaults retained, no commit/stopword exemptions |
+| UT-SEC-2493-011 | UT | Different values in the same file and the same value in other files are outside the allowance |
 | IT-SEC-2493-001 | IT | Exact real CI govulncheck entry point passes after the root compiler/dependency change |
 | IT-SEC-2493-002 | IT | Both supported-architecture service/fixture images use patched binaries and pass unchanged real image scans; AF certified FIPS metadata is preserved |
 | IT-SEC-2493-003 | IT | Same retained image fails with expired exceptions and passes with the approved file, with detected kubectl binary coverage; unexcepted application image still fails on CVE-2026-78669 |
 | IT-SEC-2493-004 | IT | Real scan report flows through the production action with correct visible exit status; workflow caller wiring remains intact |
+| IT-SEC-2493-005 | IT | CI-pinned Gitleaks reproduces alert #42 on its original commit before the allowance and clears only that finding after; real synthetic-key/path negative controls still fail |
 
 For UT-004/005/006, fake only external Trivy/sleep executables; run the actual
 action's YAML script rather than a reimplementation. Every case uses owned
@@ -281,3 +291,10 @@ whitespace checks pass. Detailed results are in `KUBECTL_EXCEPTIONS_EXECUTION.md
 Application/compiler/wrapper implementation
 has not started; the isolated experiments are not production changes or plan
 approval. No host setting, container, retained image or #2496 file is changed.
+
+Gitleaks addition: RED seed1791717000 has four expected failing scope contracts;
+the real scanner reproduces the exact historical alert at lines107–108. GREEN
+seed1791717100 passes280/280 infrastructure specs with race detection. The
+original-commit scan clears that false positive; different-value/same-file and
+same-value/other-file real-scanner controls remain blocking. Build and affected
+lint pass. Details: `GITLEAKS_CHECKSUM_EXECUTION.md`.

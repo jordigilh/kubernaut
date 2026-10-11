@@ -19,11 +19,13 @@ package infrastructure
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/pelletier/go-toml/v2"
 )
 
 var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", func() {
@@ -79,5 +81,72 @@ var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", f
 		},
 		Entry("CI infrastructure scan", "ci-pipeline.yml", "image_name", 1),
 		Entry("both release architectures", "release.yml", "service", 2),
+	)
+})
+
+type gitleaksChecksumConfig struct {
+	Extend struct {
+		UseDefault    bool     `toml:"useDefault"`
+		DisabledRules []string `toml:"disabledRules"`
+	} `toml:"extend"`
+	Allowlists []gitleaksChecksumAllowance `toml:"allowlists"`
+}
+
+type gitleaksChecksumAllowance struct {
+	Description string   `toml:"description"`
+	Condition   string   `toml:"condition"`
+	TargetRules []string `toml:"targetRules"`
+	RegexTarget string   `toml:"regexTarget"`
+	Paths       []string `toml:"paths"`
+	Regexes     []string `toml:"regexes"`
+	Commits     []string `toml:"commits"`
+	Stopwords   []string `toml:"stopwords"`
+}
+
+var _ = Describe("Verified archive checksum exception [BR-SECURITY-2493]", func() {
+	const archiveDigest = "03ad405812c6f0574da6f89c7e13c063250192db43c517f877b84f3565913a65"
+	var allowance gitleaksChecksumAllowance
+
+	BeforeEach(func() {
+		body, err := os.ReadFile(filepath.Join(getProjectRoot(), ".gitleaks.toml")) //nolint:gosec // G304: known project path
+		Expect(err).NotTo(HaveOccurred())
+		var config gitleaksChecksumConfig
+		Expect(toml.Unmarshal(body, &config)).To(Succeed())
+		Expect(config.Extend.UseDefault).To(BeTrue(), "keep all built-in secret detection rules")
+		Expect(config.Extend.DisabledRules).NotTo(ContainElement("generic-api-key"))
+		var matches []gitleaksChecksumAllowance
+		for _, candidate := range config.Allowlists {
+			if strings.Contains(candidate.Description, "Verified must-gather archive SHA-256") {
+				matches = append(matches, candidate)
+			}
+		}
+		Expect(matches).To(HaveLen(1), "one exact false-positive exception, not a blanket documentation allowance")
+		allowance = matches[0]
+	})
+
+	It("UT-SEC-2493-010: narrows the exception to the rule, file and extracted checksum", func() {
+		Expect(allowance.Condition).To(Equal("AND"))
+		Expect(allowance.TargetRules).To(ConsistOf("generic-api-key"))
+		Expect(allowance.RegexTarget).To(Equal("secret"))
+		Expect(allowance.Paths).To(ConsistOf(`^docs/tests/2502/TEST_PLAN\.md$`))
+		Expect(allowance.Regexes).To(ConsistOf("^" + archiveDigest + "$"))
+		Expect(allowance.Commits).To(BeEmpty(), "do not exempt an entire commit's contents")
+		Expect(allowance.Stopwords).To(BeEmpty())
+	})
+
+	DescribeTable("UT-SEC-2493-011: preserves detection outside the exact false positive",
+		func(path string, digest string, expected bool) {
+			Expect(allowance.Condition).To(Equal("AND"))
+			Expect(allowance.Paths).To(HaveLen(1))
+			Expect(allowance.Regexes).To(HaveLen(1))
+			pathPattern, err := regexp.Compile(allowance.Paths[0])
+			Expect(err).NotTo(HaveOccurred())
+			digestPattern, err := regexp.Compile(allowance.Regexes[0])
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pathPattern.MatchString(path) && digestPattern.MatchString(digest)).To(Equal(expected))
+		},
+		Entry("verified archive digest at its documented path", "docs/tests/2502/TEST_PLAN.md", archiveDigest, true),
+		Entry("different value in the same document", "docs/tests/2502/TEST_PLAN.md", "1"+archiveDigest[1:], false),
+		Entry("same value in another document", "docs/tests/2502/OTHER.md", archiveDigest, false),
 	)
 })
