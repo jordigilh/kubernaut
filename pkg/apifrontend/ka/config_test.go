@@ -10,6 +10,42 @@ import (
 )
 
 var _ = Describe("ParseDiscoverWorkflowsResponse — name mapping", func() {
+	DescribeTable("UT-AF-2496-001: parser preserves typed live selection context, not private execution state (BR-KA-016, SI-10)",
+		func(envelope, rejected bool) {
+			key, idKey := "selected_workflow", "workflow_id"
+			if rejected {
+				key, idKey = "selection_assessment", "proposed_workflow_id"
+			}
+			payload := map[string]any{key: map[string]any{
+				idKey: "catalog-id-2496", "workflow_name": "increase-memory", "workflow_selection_confidence": 0.,
+				"repeat_justification": map[string]any{"evidence_basis": "Current limit", "prior_outcome_relevance": "Prior Full zero", "expected_mechanism": "Increase limit"},
+				"prior_remediation_uids": []any{"private-prior-2496"}, "parameters": map[string]any{"PASSWORD": "private-parameter-2496"},
+			}}
+			if envelope {
+				payload["alternatives"] = []any{}
+			} else {
+				payload["workflows"] = []any{}
+			}
+			raw, err := json.Marshal(payload)
+			Expect(err).NotTo(HaveOccurred())
+			if envelope {
+				raw, err = json.Marshal(map[string]any{"session_id": "sess-2496", "status": "workflows_discovered", "response": string(raw)})
+				Expect(err).NotTo(HaveOccurred())
+			}
+			result, err := ka.ParseDiscoverWorkflowsResponse(raw)
+			Expect(err).NotTo(HaveOccurred())
+			wire, err := json.Marshal(result)
+			Expect(err).NotTo(HaveOccurred())
+			var projected map[string]any
+			Expect(json.Unmarshal(wire, &projected)).To(Succeed())
+			Expect(projected).To(HaveKey(key))
+			Expect(projected[key]).To(HaveKeyWithValue(idKey, "catalog-id-2496"))
+			Expect(projected[key]).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+			Expect(string(wire)).NotTo(ContainSubstring("private-"))
+		}, Entry("selected envelope", true, false), Entry("rejected envelope", true, true),
+		Entry("selected direct", false, false), Entry("rejected direct", false, true),
+	)
+
 	Describe("UT-AF-1408-030: mapKAWorkflow uses catalog-provided Name, not WorkflowID", func() {
 		It("should map Name from KA response when provided", func() {
 			raw := json.RawMessage(`{

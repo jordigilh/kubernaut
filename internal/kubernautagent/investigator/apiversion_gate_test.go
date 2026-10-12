@@ -52,16 +52,20 @@ import (
 // behavior actually under test isolated from this unrelated safety gate.
 func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
 	if cfg.Pipeline.CatalogFetcher == nil {
+		ids := []string{
+			"restart-sub", "scale-up", "generic-fix", "restart-pod", // apiversion_gate_test.go
+			"restart-cache", "noop", // workflow_discovery_rca_characterization_test.go
+			"rotate-node-logs", "increase-memory-limit", // samekind_confidence_2119_test.go, gate_undeclared_tool_2121_test.go
+		}
+		validator := parser.NewValidator(ids)
+		// DD-KA-2496: the characterization catalog must supply readable
+		// authoritative metadata, just as the production catalog does.
+		for _, id := range ids {
+			validator.SetWorkflowMeta(id, parser.WorkflowMeta{WorkflowName: id})
+		}
 		cfg.Pipeline.CatalogFetcher = &stubCatalogFetcher{
-			validator: parser.NewValidator([]string{
-				"restart-sub", "scale-up", "generic-fix", "restart-pod", // apiversion_gate_test.go
-				"restart-cache", "noop", // workflow_discovery_rca_characterization_test.go
-				"rotate-node-logs", "increase-memory-limit", // samekind_confidence_2119_test.go, gate_undeclared_tool_2121_test.go
-			}),
-			discoveredWorkflowIDs: []string{
-				"restart-sub", "scale-up", "generic-fix", "restart-pod",
-				"restart-cache", "noop", "rotate-node-logs", "increase-memory-limit",
-			},
+			validator:             validator,
+			discoveredWorkflowIDs: ids,
 		}
 	}
 	return investigator.New(cfg)

@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -85,6 +86,9 @@ var (
 	// Shared envtest (process 1 only, for SA/RBAC/TokenReview)
 	sharedTestEnv *envtest.Environment
 	sharedCfg     *rest.Config
+	// Process 1 only: authenticated KA identity, not the envtest admin client.
+	kaFixtureClient  *kubernetes.Clientset
+	kaFixtureDynamic dynamic.Interface
 )
 
 func TestAPIfrontendIntegration(t *testing.T) {
@@ -316,6 +320,50 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
+
+	kaFixtureConfig, err := clientcmd.BuildConfigFromFlags(sharedCfg.Host, kaServiceAuthConfig.KubeconfigPath)
+	Expect(err).NotTo(HaveOccurred())
+	kaFixtureClient, err = kubernetes.NewForConfig(kaFixtureConfig)
+	Expect(err).NotTo(HaveOccurred())
+	kaFixtureDynamic, err = dynamic.NewForConfig(kaFixtureConfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	// BR-KA-016 / DD-AA-KA-001: the shared KA must use the same dispatch and
+	// catalog identity as production. These rules mirror the relevant grants in
+	// charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml, not an admin
+	// client or wildcard role. Leases deliberately remain namespace-scoped (AC-6).
+	By("Granting the shared KA fixture production-equivalent dispatch and investigative reads")
+	investigatorRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "af-it-ka-investigator"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"apps"}, Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"batch"}, Resources: []string{"jobs", "cronjobs"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"events.k8s.io"}, Resources: []string{"events"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"kubernaut.ai"}, Resources: []string{"agentsessions"}, Verbs: []string{"get", "list", "watch", "update", "patch"}},
+			{APIGroups: []string{"kubernaut.ai"}, Resources: []string{"agentsessions/status"}, Verbs: []string{"get", "update", "patch"}},
+			{APIGroups: []string{"kubernaut.ai"}, Resources: []string{"investigationsessions", "remediationworkflows", "actiontypes"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"kubernaut.ai"}, Resources: []string{"remediationrequests"}, Verbs: []string{"get", "list"}},
+		},
+	}
+	investigatorBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "af-it-ka-investigator"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: investigatorRole.Name},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "kubernaut-agent-service", Namespace: defaultFixture}},
+	}
+	leaseRole := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: "af-it-ka-leases", Namespace: defaultFixture},
+		Rules: []rbacv1.PolicyRule{{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"},
+			Verbs: []string{"get", "list", "create", "update", "delete"}}},
+	}
+	leaseBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "af-it-ka-leases", Namespace: defaultFixture},
+		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: leaseRole.Name},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "kubernaut-agent-service", Namespace: defaultFixture}},
+	}
+	for _, grant := range []client.Object{investigatorRole, investigatorBinding, leaseRole, leaseBinding} {
+		Expect(client.IgnoreAlreadyExists(sharedK8sClient.Create(context.Background(), grant))).To(Succeed())
+	}
 
 	// Grant KA SA DS write permission
 	kaDSClientBinding := &rbacv1.ClusterRoleBinding{

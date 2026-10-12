@@ -39,6 +39,49 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("FunctionCall transformation", func() {
+		It("UT-AF-2496-001: converter cannot promote model-supplied selection or rejection context (BR-KA-016, SI-10)", func() {
+			queue, ctx := partConverterBridgeCtx()
+			args := map[string]any{
+				"session_id": "sess-2496", "summary": "Current memory pressure", "rca": map[string]any{"explanation": "Current memory pressure"},
+				"selected_workflow":    map[string]any{"workflow_id": "forged-2496", "parameters": map[string]any{"PASSWORD": "private-private"}},
+				"selection_assessment": map[string]any{"proposed_workflow_id": "forged-2496"},
+			}
+			_, err := launcher.BuildStreamingPartConverterForTest()(ctx, nil, &genai.Part{FunctionCall: &genai.FunctionCall{Name: "kubernaut_present_decision", Args: args}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+			artifact, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			part, ok := artifact.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(part.Data).NotTo(HaveKey("selected_workflow"))
+			Expect(part.Data).NotTo(HaveKey("selection_assessment"))
+			Expect(args).To(HaveKey("selected_workflow"), "artifact projection must not mutate the model's source map")
+		})
+
+		It("UT-AF-2496-002: decision projection excludes private non-presentation fields without dropping existing options (BR-KA-016, SI-10)", func() {
+			queue, ctx := partConverterBridgeCtx()
+			args := map[string]any{
+				"session_id": "sess-2496", "summary": "Current memory pressure",
+				"rca":        map[string]any{"explanation": "Current memory pressure", "prompt_tokens": 42, "evidence_handoff": "private-packet-2496"},
+				"options":    []any{map[string]any{"workflow_id": "wf-2496", "name": "Increase memory", "parameters": map[string]any{"new_limit": "1Gi"}}},
+				"parameters": map[string]any{"PASSWORD": "private-parameters-2496"}, "execution_bundle": "private-bundle-2496",
+				"prior_remediation_uids": []string{"private-prior-2496"}, "evidence_handoff": "private-packet-2496", "internal_state": "private-state-2496",
+			}
+			_, err := launcher.BuildStreamingPartConverterForTest()(ctx, nil, &genai.Part{FunctionCall: &genai.FunctionCall{Name: "kubernaut_present_decision", Args: args}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+			artifact, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			part, ok := artifact.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(part.Data["options"]).To(Equal(args["options"]), "existing operator-facing option parameters remain unchanged")
+			Expect(part.Data["rca"]).To(HaveKeyWithValue("prompt_tokens", 42))
+			raw, err := json.Marshal(part.Data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(raw)).NotTo(ContainSubstring("private-"))
+			Expect(args["rca"]).To(HaveKey("evidence_handoff"), "projection must not mutate its input")
+		})
+
 		It("UT-AF-1189-100: kubernaut_investigate -> status text with context", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{

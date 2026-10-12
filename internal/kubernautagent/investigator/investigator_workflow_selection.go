@@ -40,6 +40,27 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	ctx = katypes.WithDiscoveredWorkflowState(ctx, discoveredWorkflows)
 	overriddenSignal := ApplySignalLabelOverrides(signal)
 	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
+	// DD-KA-2496: both production entry points freeze once here, before any
+	// Phase 3 provider call. Every retry/correction shares these same messages
+	// and the acceptance scope derived from this exact sanitized snapshot.
+	frozen, freezeErr := inv.freezeEvidenceHandoff(ctx, handoffInput{
+		Signal: overriddenSignal, RCASummary: rcaSummary, EnrichData: enrichData, Phase1: p1Ctx,
+	}, correlationID)
+	if freezeErr != nil {
+		inv.logger.Error(freezeErr, "evidence handoff could not be frozen; requiring human review", "correlation_id", correlationID)
+		return &katypes.InvestigationResult{
+			HumanReviewNeeded: true, HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
+			Reason: "evidence handoff could not be safely frozen within its configured budget",
+		}, nil
+	}
+	defer func() {
+		if result != nil {
+			result.HandoffDigest = frozen.digest // Never accept the model's digest.
+		}
+	}()
+	llmCtx.RepeatSelection = frozen.repeat
+	signal, rcaSummary, enrichData, p1Ctx = frozen.source.Signal, frozen.source.RCASummary, frozen.source.EnrichData, frozen.source.Phase1
+	ctx = katypes.WithSignalContext(ctx, signal)
 	inv.logger.Info("runWorkflowSelection: post-override signal",
 		"component_gvk", overriddenSignal.ComponentGVK(),
 		"resource_kind", overriddenSignal.ResourceKind,
@@ -53,6 +74,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		RCASummary:                      rcaSummary,
 		EnrichData:                      enrichData,
 		Phase1:                          p1Ctx,
+		EvidenceHandoff:                 frozen.serialized,
 		ResolvedConfidenceThreshold:     inv.resolvedConfidenceThreshold,
 		InconclusiveConfidenceThreshold: inv.inconclusiveConfidenceThreshold,
 	})
@@ -85,7 +107,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if early != nil {
 		return early, nil
 	}
+	return inv.completeWorkflowSelection(ctx, content, messages, rcaSummary, llmCtx)
+}
 
+// completeWorkflowSelection keeps recovered and first-turn proposals on the
+// same acceptance path, separate from frozen prompt/provider orchestration.
+func (inv *Investigator) completeWorkflowSelection(ctx context.Context, content string, messages []llm.Message, rcaSummary string, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, error) {
+	correlationID := llmCtx.CorrelationID
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
 		var terminal *katypes.InvestigationResult
@@ -294,6 +322,7 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 	if discoveredWorkflows, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
 		validator.SetDiscoveredWorkflowState(discoveredWorkflows)
 	}
+	validator.SetRepeatSelectionContext(llmCtx.RepeatSelection)
 
 	state := &selfCorrectionState{content: content, messages: messages}
 	correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {

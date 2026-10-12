@@ -74,6 +74,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 	Describe("UT-KA-433-023: Validator accepts workflow_id in allowlist", func() {
 		It("should accept a workflow_id that is in the session allowlist", func() {
 			v := parser.NewValidator([]string{"oom-increase-memory", "restart-pod", "rollback-deployment"})
+			v.SetWorkflowMeta("oom-increase-memory", parser.WorkflowMeta{WorkflowName: "increase-memory"})
 			result := &katypes.InvestigationResult{
 				WorkflowID: "oom-increase-memory",
 				Confidence: 0.85,
@@ -99,6 +100,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 	Describe("UT-KA-433-025: Validator enforces parameter bounds", func() {
 		It("should reject confidence outside [0,1] range", func() {
 			v := parser.NewValidator([]string{"oom-increase-memory"})
+			v.SetWorkflowMeta("oom-increase-memory", parser.WorkflowMeta{WorkflowName: "increase-memory"})
 			result := &katypes.InvestigationResult{
 				WorkflowID: "oom-increase-memory",
 				Confidence: 1.5,
@@ -109,6 +111,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 
 		It("should reject negative confidence", func() {
 			v := parser.NewValidator([]string{"oom-increase-memory"})
+			v.SetWorkflowMeta("oom-increase-memory", parser.WorkflowMeta{WorkflowName: "increase-memory"})
 			result := &katypes.InvestigationResult{
 				WorkflowID: "oom-increase-memory",
 				Confidence: -0.5,
@@ -121,6 +124,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 	Describe("UT-KA-433-026: Self-correction loop retries up to 3 times", func() {
 		It("should retry correction and return corrected result on second attempt", func() {
 			v := parser.NewValidator([]string{"oom-increase-memory"})
+			v.SetWorkflowMeta("oom-increase-memory", parser.WorkflowMeta{WorkflowName: "increase-memory"})
 			attempt := 0
 			badResult := &katypes.InvestigationResult{
 				WorkflowID: "invalid-workflow",

@@ -37,7 +37,7 @@ type AuditEvent struct {
 |-----------|----------|-------------|---------|---------------|
 | `aiagent.llm.request` | `EventTypeLLMRequest` | AU-2, AU-3 | Every LLM chat completion call KA makes (investigation turns, gate checks, retries) | `model`, `prompt_length`, `prompt_preview` (truncated), `toolsets_enabled` |
 | `aiagent.llm.response` | `EventTypeLLMResponse` | AU-2, AU-3 | LLM response received for a turn | `has_analysis`, `analysis_length`, `analysis_preview`/`analysis_full`, `total_tokens`, `tool_call_count`, `reasoning_text`/`reasoning_redacted` (if the model returned reasoning tokens) |
-| `aiagent.llm.tool_call` | `EventTypeLLMToolCall` | AU-2, AU-12 | Each individual tool call the LLM makes during a turn (one event per call, not per turn) | `tool_name`, `arguments` (redacted/truncated), `result_preview`, `outcome` |
+| `aiagent.llm.tool_call` | `EventTypeLLMToolCall` | AU-2, AU-3, AU-12, AC-6, CC7.2 | Each individual tool call, including a trusted-phase denial before external dispatch (#2498) | `tool_name`, redacted `tool_arguments`, safe `tool_result`/`tool_result_preview`, `phase`, `tool_call_index`; denied calls have outcome `failure` and standardized `error_details.code=ERR_TOOL_PHASE_DENIED` |
 
 **Emitted from:** `internal/kubernautagent/investigator/investigator_loop.go`, `investigator_tools.go`, `investigator_gates.go` (retry/gate-check paths also emit `aiagent.llm.request`)
 
@@ -48,12 +48,39 @@ type AuditEvent struct {
 | Event Type | Constant | NIST/SOC2 Control | Trigger | Detail Fields (`Data`) |
 |-----------|----------|-------------|---------|---------------|
 | `aiagent.workflow.validation_attempt` | `EventTypeValidationAttempt` | AU-2, CC7.2 | Each attempt to validate the LLM's proposed workflow selection against catalog constraints (same-kind gate, API-version gate, target-alignment gate) | `workflow_id`, `is_final_attempt`, `gate` (`same_kind`/`api_version`/`target_alignment`), `outcome`, `reason` (on failure) |
-| `aiagent.response.complete` | `EventTypeResponseComplete` | AU-2, CC8.1 | Investigation reaches a terminal successful result (`submit_result_*` tool call accepted) | `rca_summary`, `confidence`, `workflow_id` (if one was selected), `severity`, `total_tokens` |
+| `aiagent.response.complete` | `EventTypeResponseComplete` | AU-2, AU-3, CC7.2 | Investigation reaches a terminal result, including selected-workflow or human-review outcomes | Typed `response_data` preserves RCA confidence, safe selection metadata, repeat reasoning/validation and review context; see the #2496 contract below. Envelope also retains existing duration/token fields |
 | `aiagent.response.failed` | `EventTypeResponseFailed` | AU-2, AU-3, CC7.2 | Any non-cancellation LLM turn failure, including upstream timeouts, provider errors, or stream failures | `error_message`, `error_details` (`message`, `code`, `component`, `retry_possible`, optional `stack_trace`), `phase`, `duration_seconds` |
 | `aiagent.rca.complete` | `EventTypeRCAComplete` | AU-2, AU-3, CC8.1 | RCA phase specifically completes (distinct from the whole-investigation `response.complete`, carries the forensic RCA detail) | `rca_summary`, `confidence`, `reasoning_text` (redacted if oversized), `total_tokens` |
-| `aiagent.investigation.cancelled` | `EventTypeInvestigationCancelled` | AU-2, CC8.1 | Investigator detects context cancellation mid-investigation (BR-SESSION-001) | `phase`, `turn`, `tokens_used_so_far` — carries investigation-internal state a plain session-level cancellation event cannot, for partial-progress audit reconstruction |
+| `aiagent.investigation.cancelled` | `EventTypeInvestigationCancelled` | AU-2, AU-3, CC7.2 | Investigator detects context cancellation mid-investigation (BR-SESSION-001) | `cancelled_phase`, `cancelled_at_turn`, optional `session_id`, cumulative `total_prompt_tokens` / `total_completion_tokens` / `total_tokens`, and bounded JSON `accumulated_messages` — preserves partial-progress reconstruction after the investigation context is cancelled |
 
 **Emitted from:** `internal/kubernautagent/investigator/investigator_audit.go`, `investigator_loop.go`, `investigator_gates.go`
+
+### #2496 / #2498 reconstruction contract
+
+[DD-KA-2496](../../../architecture/decisions/DD-KA-2496-history-aware-rca-and-repeat-selection.md)
+extends existing events, not event delivery guarantees. `response_data.selectedWorkflow`
+preserves catalog-authoritative `workflowId`/`workflowName`, explicitly named
+`workflow_selection_confidence`, bounded `repeat_justification`, server-computed
+repeat requirement/match/outcome, and `handoff_digest`. A rejected proposal uses
+non-executable `response_data.selection_assessment.proposed_workflow_id` instead;
+it cannot populate `selectedWorkflow`. No-workflow results omit both projections.
+Trusted `prior_remediation_uids` are added only at the durable audit boundary.
+The full frozen evidence packet is never added to these projections, and this
+change does not alter established accepted execution snapshots.
+
+FedRAMP **AU-2/AU-3** and SOC 2 **CC7.2** require correlation-based decision
+reconstruction, including known zero versus unknown selection confidence and
+selection confidence independent of RCA confidence. **SI-10** covers structural
+repeat validation; **AC-6** covers #2498's trusted-phase allow-list. A permitted
+submit sentinel cannot hide a rejected call elsewhere in the same model batch.
+**CC8.1** applies to the project's authorization/testing/change-management
+workflow, not audit-trail completeness; unrelated historical mappings below
+are not corrected by this scoped change.
+
+Proof obligations: `UT-KA-2496-009`, `IT-KA-2496-005`,
+`E2E-FP-2496-001/003/004/006/007`, and `UT/IT-KA-2498-001/002` /
+`E2E-FP-2498-001`; see [TP-2496](../../../tests/2496/TEST_PLAN.md) for actual
+execution status. Declaring these obligations does not certify unrun journeys.
 
 ---
 

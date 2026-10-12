@@ -31,6 +31,8 @@ var _ = Describe("Workflow selection discovery membership", func() {
 			state.Add("workflow-presented")
 
 			validator := parser.NewValidator([]string{"workflow-presented", "workflow-hidden"})
+			validator.SetWorkflowMeta("workflow-presented", parser.WorkflowMeta{WorkflowName: "presented-workflow"})
+			validator.SetWorkflowMeta("workflow-hidden", parser.WorkflowMeta{WorkflowName: "hidden-workflow"})
 			validator.SetDiscoveredWorkflowState(state)
 
 			Expect(validator.Validate(&katypes.InvestigationResult{
@@ -48,6 +50,7 @@ var _ = Describe("Workflow selection discovery membership", func() {
 		It("should accept a workflow added after the validator was created", func() {
 			state := katypes.NewDiscoveredWorkflowState()
 			validator := parser.NewValidator([]string{"workflow-hidden"})
+			validator.SetWorkflowMeta("workflow-hidden", parser.WorkflowMeta{WorkflowName: "hidden-workflow"})
 			validator.SetDiscoveredWorkflowState(state)
 
 			result := &katypes.InvestigationResult{WorkflowID: "workflow-hidden", Confidence: 0.9}

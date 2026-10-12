@@ -20,12 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 )
 
 func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
@@ -70,6 +72,7 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		"needs_human_review": r.HumanReviewNeeded,
 	}
 	applyWorkflowIdentityFields(m, r)
+	applySelectionAuditFields(m, r)
 	applyReviewReasonFields(m, r)
 	applyCollectionFields(m, r)
 
@@ -136,6 +139,10 @@ func applyWorkflowIdentityFields(m map[string]interface{}, r *katypes.Investigat
 	if r.WorkflowID != "" {
 		m["workflow_id"] = r.WorkflowID
 	}
+	// A rejected proposal is never execution configuration (DD-KA-2496).
+	if r.WorkflowID == "" && r.ProposedWorkflowID != "" {
+		return
+	}
 	if r.ExecutionBundle != "" {
 		m["execution_bundle"] = r.ExecutionBundle
 	}
@@ -145,6 +152,77 @@ func applyWorkflowIdentityFields(m map[string]interface{}, r *katypes.Investigat
 	if r.ExecutionEngine != "" {
 		m["execution_engine"] = r.ExecutionEngine
 	}
+}
+
+// applySelectionAuditFields shares the sanitized live allow-list, then adds
+// trusted prior-attempt links only for the durable audit boundary (AU-3/CC7.2).
+func applySelectionAuditFields(m map[string]interface{}, r *katypes.InvestigationResult) {
+	selection := katypes.LiveSelectionFromResult(r)
+	if selected := selection.SelectedWorkflow; selected != nil {
+		applySelectedAuditFields(m, selected)
+		if len(r.PriorRemediationUIDs) > 0 {
+			m["prior_remediation_uids"] = append([]string(nil), r.PriorRemediationUIDs...)
+		}
+		return
+	}
+	if assessed := selection.SelectionAssessment; assessed != nil {
+		assessment := selectionAuditAssessment(assessed)
+		if len(r.PriorRemediationUIDs) > 0 {
+			assessment["prior_remediation_uids"] = append([]string(nil), r.PriorRemediationUIDs...)
+		}
+		m["selection_assessment"] = assessment
+	}
+}
+
+func applySelectedAuditFields(m map[string]interface{}, selected *katypes.LiveSelectedWorkflow) {
+	m["workflow_name"] = selected.WorkflowName
+	if selected.WorkflowSelectionConfidence != nil {
+		m["workflow_selection_confidence"] = *selected.WorkflowSelectionConfidence
+	}
+	if selected.RepeatJustification != nil {
+		m["repeat_justification"] = selected.RepeatJustification
+	}
+	if selected.RepeatJustificationRequired != nil {
+		m["repeat_justification_required"] = *selected.RepeatJustificationRequired
+	}
+	if selected.PriorWorkflowMatch != nil {
+		m["prior_workflow_match"] = *selected.PriorWorkflowMatch
+	}
+	if selected.RepeatValidationOutcome != "" {
+		m["repeat_validation_outcome"] = selected.RepeatValidationOutcome
+	}
+	if selected.HandoffDigest != "" {
+		m["handoff_digest"] = selected.HandoffDigest
+	}
+}
+
+// ResultToAuditJSON uses encoding/json, not ogen's optional-field encoder.
+// Keep the sanitized projection JSON-shaped so absent rejected reasoning remains
+// absent instead of invoking an unset ogen Opt value's MarshalJSON (AU-3/CC7.2).
+func selectionAuditAssessment(assessed *katypes.LiveSelectionAssessment) map[string]interface{} {
+	assessment := map[string]interface{}{"proposed_workflow_id": assessed.ProposedWorkflowID}
+	if assessed.WorkflowName != "" {
+		assessment["workflow_name"] = assessed.WorkflowName
+	}
+	if assessed.WorkflowSelectionConfidence != nil {
+		assessment["workflow_selection_confidence"] = *assessed.WorkflowSelectionConfidence
+	}
+	if assessed.RepeatJustification != nil {
+		assessment["repeat_justification"] = assessed.RepeatJustification
+	}
+	if assessed.RepeatJustificationRequired != nil {
+		assessment["repeat_justification_required"] = *assessed.RepeatJustificationRequired
+	}
+	if assessed.PriorWorkflowMatch != nil {
+		assessment["prior_workflow_match"] = *assessed.PriorWorkflowMatch
+	}
+	if assessed.RepeatValidationOutcome != "" {
+		assessment["repeat_validation_outcome"] = assessed.RepeatValidationOutcome
+	}
+	if assessed.HandoffDigest != "" {
+		assessment["handoff_digest"] = assessed.HandoffDigest
+	}
+	return assessment
 }
 
 // applyReviewReasonFields sets the human-review/reason/actionability fields
@@ -182,7 +260,7 @@ func applyCollectionFields(m map[string]interface{}, r *katypes.InvestigationRes
 	if len(r.Warnings) > 0 {
 		m["warnings"] = r.Warnings
 	}
-	if len(r.Parameters) > 0 {
+	if len(r.Parameters) > 0 && (r.WorkflowID != "" || r.ProposedWorkflowID == "") {
 		m["parameters"] = r.Parameters
 	}
 }
@@ -268,6 +346,29 @@ func toolErrorJSON(msg string) string {
 		return `{"status":"error","error":"marshal failure"}`
 	}
 	return string(b)
+}
+
+// emitToolCallAudit preserves the trusted phase and standardized denial details
+// through the typed DS boundary (DD-KA-2496, DD-ERROR-001, AU-2/AU-3, CC7.2).
+func (inv *Investigator) emitToolCallAudit(ctx context.Context, tc llm.ToolCall, index int, result, phase, correlationID string) {
+	event := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
+	event.EventAction = audit.ActionToolExecution
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["phase"] = phase
+	if !inv.toolAllowedInPhase(ctx, katypes.Phase(phase), tc.Name) {
+		event.EventOutcome = audit.OutcomeFailure
+		event.Data["error_details"] = &sharedaudit.ErrorDetails{
+			Message: fmt.Sprintf("tool %q not allowed in phase %q", tc.Name, phase),
+			Code:    "ERR_TOOL_PHASE_DENIED", Component: "kubernautagent", RetryPossible: false,
+		}
+	}
+	event.Data["tool_call_index"] = index
+	event.Data["tool_name"] = tc.Name
+	event.Data["tool_arguments"] = tc.Arguments
+	auditResult := auditSafeToolResult(tc.Name, result)
+	event.Data["tool_result"] = auditResult
+	event.Data["tool_result_preview"] = truncatePreview(auditResult, 500)
+	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
 }
 
 func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {

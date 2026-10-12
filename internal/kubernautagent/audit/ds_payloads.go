@@ -168,6 +168,12 @@ func buildLLMToolCallPayload(event *AuditEvent) ogenclient.AuditEventRequestEven
 	if preview := dataString(event.Data, "tool_result_preview"); preview != "" {
 		payload.ToolResultPreview.SetTo(truncate(preview, previewMaxLen))
 	}
+	if phase := dataString(event.Data, "phase"); phase != "" {
+		payload.Phase.SetTo(phase)
+	}
+	if details, ok := event.Data["error_details"].(*sharedaudit.ErrorDetails); ok && details != nil {
+		payload.ErrorDetails = sharedaudit.ToOgenOptErrorDetails(details)
+	}
 	return ogenclient.NewLLMToolCallPayloadAuditEventRequestEventData(payload)
 }
 

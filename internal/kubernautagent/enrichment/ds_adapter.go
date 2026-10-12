@@ -104,6 +104,11 @@ func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
 	entry := Tier1Entry{
 		RemediationUID: e.RemediationUID,
 		CompletedAt:    e.CompletedAt,
+		WorkflowID:     e.WorkflowId.Or(""),
+		WorkflowName:   e.WorkflowName.Or(""),
+	}
+	if confidence, known := e.WorkflowSelectionConfidence.Get(); known {
+		entry.WorkflowSelectionConfidence = &confidence
 	}
 	applyTier1Classification(&entry, e)
 	applyTier1Outcome(&entry, e)
@@ -162,6 +167,11 @@ func mapTier2Summary(e ogenclient.RemediationHistorySummary) Tier2Summary {
 	s := Tier2Summary{
 		RemediationUID: e.RemediationUID,
 		CompletedAt:    e.CompletedAt,
+		WorkflowID:     e.WorkflowId.Or(""),
+		WorkflowName:   e.WorkflowName.Or(""),
+	}
+	if confidence, known := e.WorkflowSelectionConfidence.Get(); known {
+		s.WorkflowSelectionConfidence = &confidence
 	}
 	if e.SignalType.Set {
 		s.SignalType = e.SignalType.Value

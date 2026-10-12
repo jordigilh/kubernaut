@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // PooledToolCallTimeout bounds a single pooled-session KA MCP call
@@ -91,6 +92,7 @@ type TargetInfo struct {
 
 // DiscoverWorkflowsResult is the output of kubernaut_discover_workflows.
 type DiscoverWorkflowsResult struct {
+	katypes.LiveSelectionContext
 	Workflows      []WorkflowDetail `json:"workflows"`
 	Count          int              `json:"count"`
 	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
@@ -150,8 +152,9 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 	}
 
 	result := DiscoverWorkflowsResult{
-		Workflows: workflows,
-		Count:     len(workflows),
+		LiveSelectionContext: kaResult.SafeCopy(),
+		Workflows:            workflows,
+		Count:                len(workflows),
 	}
 	if kaResult.SearchedTarget != nil {
 		result.SearchedTarget = &TargetInfo{

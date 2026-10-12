@@ -35,11 +35,9 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-// hangingToolName is the real Phase-3 tool name ("kubectl_describe", per
-// DefaultPhaseToolMap) that this test's fake tool and scripted LLM response
-// both reference, so the LLM's tool call and the registry lookup agree on
-// which (hanging) implementation gets dispatched.
-const hangingToolName = "kubectl_describe"
+// DD-KA-2496/#2498: timeout proof must use a permitted Phase-3 discovery
+// dependency. A Kubernetes tool is rejected before execution, not timed out.
+const hangingToolName = "list_workflows"
 
 // hangingKubectlDescribeTool re-registers hangingToolName with an
 // implementation that blocks on ctx.Done() forever — standing in for
@@ -50,8 +48,8 @@ const hangingToolName = "kubectl_describe"
 // isolation (that's UT-KA-1949-001/002).
 type hangingKubectlDescribeTool struct{}
 
-func (hangingKubectlDescribeTool) Name() string               { return hangingToolName }
-func (hangingKubectlDescribeTool) Description() string        { return "test: hangs forever" }
+func (hangingKubectlDescribeTool) Name() string                { return hangingToolName }
+func (hangingKubectlDescribeTool) Description() string         { return "test: hangs forever" }
 func (hangingKubectlDescribeTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
 func (hangingKubectlDescribeTool) Execute(ctx context.Context, _ json.RawMessage) (string, error) {
 	<-ctx.Done()
@@ -121,6 +119,11 @@ var _ = Describe("Kubernaut Agent Investigator — production dispatch path boun
 			Expect(out.result).NotTo(BeNil())
 			Expect(out.result.WorkflowID).To(Equal("restart-pod"),
 				"the investigation must still reach a final decision after recovering from the bounded tool-call timeout")
+			Expect(client.calls).To(HaveLen(2))
+			Expect(client.calls[1].Messages).To(ContainElement(And(
+				HaveField("Role", "tool"),
+				HaveField("Content", ContainSubstring("context deadline exceeded")),
+			)), "the allowed discovery tool must actually time out, not merely be rejected off-phase")
 		})
 	})
 })

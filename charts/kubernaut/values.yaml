@@ -575,11 +575,13 @@ kubernautAgent:
   # follow-up); only oauth2.credentialsSecretRef remains overridable here.
   fleet:
     oauth2: {}
-  # -- Investigation-outcome confidence bands (BR-KA-213, Issue #1826), templated
+  # -- Frozen evidence whole-packet budget (DD-KA-2496, BR-KA-016) and
+  # investigation-outcome confidence bands (BR-KA-213, Issue #1826), templated
   # into the Phase 3 workflow-selection prompt's "resolved"/"inconclusive"
   # thresholds. Defaults (0.7/0.5, applied by the Go binary when unset here)
   # match the values previously hardcoded directly in the prompt template.
   # investigation:
+  #   maxEvidenceHandoffBytes: 65536
   #   resolvedConfidenceThreshold: 0.7
   #   inconclusiveConfidenceThreshold: 0.5
   investigation: {}

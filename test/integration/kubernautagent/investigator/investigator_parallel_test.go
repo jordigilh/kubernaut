@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -17,6 +18,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -51,8 +54,10 @@ func (f *delayedFakeTool) Execute(ctx context.Context, _ json.RawMessage) (strin
 	if f.execCount != nil {
 		f.execCount.Add(1)
 	}
+	timer := time.NewTimer(f.delay)
+	defer timer.Stop()
 	select {
-	case <-time.After(f.delay):
+	case <-timer.C:
 		return f.result, nil
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -212,8 +217,11 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 
 			execCounter := &atomic.Int32{}
 			reg := registry.New()
-			for i := 0; i < numRequested; i++ {
-				tn := fmt.Sprintf("tool_%d", i)
+			// BR-KA-017: budget enforcement must reach phase-eligible readers,
+			// not stop earlier on the separate off-phase authorization guard.
+			Expect(len(phaseTools[katypes.PhaseRCA])).To(BeNumerically(">=", numRequested))
+			toolNames := phaseTools[katypes.PhaseRCA][:numRequested]
+			for _, tn := range toolNames {
 				reg.Register(&delayedFakeTool{
 					name: tn, result: fmt.Sprintf(`{"tool":"%s"}`, tn),
 					delay: 10 * time.Millisecond, execCount: execCounter,
@@ -221,8 +229,8 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 			}
 
 			toolCalls := make([]llm.ToolCall, numRequested)
-			for i := 0; i < numRequested; i++ {
-				toolCalls[i] = llm.ToolCall{ID: fmt.Sprintf("tc_%d", i), Name: fmt.Sprintf("tool_%d", i), Arguments: `{}`}
+			for i, name := range toolNames {
+				toolCalls[i] = llm.ToolCall{ID: fmt.Sprintf("tc_%d", i), Name: name, Arguments: `{}`}
 			}
 
 			mock := &mockLLMClient{
@@ -262,22 +270,25 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 					rejectedCount++
 				}
 			}
-			Expect(rejectedCount).To(Equal(numRequested - budget),
+			Expect(rejectedCount).To(Equal(numRequested-budget),
 				"exactly %d tool calls should have been rejected", numRequested-budget)
 		})
 	})
 
 	Describe("IT-KA-970-003: Context Cancellation Propagation", func() {
-		It("should terminate all in-flight tool goroutines when context is cancelled", func() {
+		It("should terminate all in-flight readers and persist cancellation [BR-PERFORMANCE-970, BR-AUDIT-005, AU-2, AU-3, CC7.2]", func() {
 			const numTools = 4
 			activeCounter := &atomic.Int32{}
+			execCounter := &atomic.Int32{}
 
 			reg := registry.New()
-			tn := []string{"slow_tool_0", "slow_tool_1", "slow_tool_2", "slow_tool_3"}
+			// BR-KA-017: cancellation must reach the external readers, not
+			// return early through the independent off-phase denial contract.
+			tn := []string{"kubectl_describe", "kubectl_events", "kubectl_logs", "kubectl_get_by_name"}
 			for _, name := range tn {
 				reg.Register(&delayedFakeTool{
 					name: name, result: `{"status":"ok"}`,
-					delay: 5 * time.Second, active: activeCounter,
+					delay: 5 * time.Second, active: activeCounter, execCount: execCounter,
 				})
 			}
 
@@ -291,6 +302,7 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 					{
 						Message:   llm.Message{Role: "assistant", Content: "checking"},
 						ToolCalls: toolCalls,
+						Usage:     llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 					},
 				},
 			}
@@ -304,17 +316,103 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 				Pipeline: investigator.Pipeline{AnomalyDetector: detector},
 			})
 
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			cancelSignal := signal
+			cancelSignal.RemediationID = "rem-970-cancel-" + uuid.NewString()
+			cancelSignal.IncidentID = cancelSignal.RemediationID
+			cancelSignal.ResourceKind = "Pod"
+			cancelSignal.ResourceName = signal.Name
+			cancelSignal.ResourceAPIVersion = "v1"
+			sessionID := "session-970-" + uuid.NewString()
+			ctx, cancel := context.WithCancel(session.WithSessionID(context.Background(), sessionID))
 			defer cancel()
 
-			result, err := inv.Investigate(ctx, signal)
-			Expect(err).NotTo(HaveOccurred())
+			var result *katypes.InvestigationResult
+			var investigationErr error
+			done := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				defer close(done)
+				result, investigationErr = inv.Investigate(ctx, cancelSignal)
+			}()
+			DeferCleanup(func() {
+				cancel()
+				Eventually(done, 10*time.Second, 50*time.Millisecond).Should(BeClosed(),
+					"the fixture investigation must exit even if an assertion fails")
+			})
+
+			By("waiting for real enrichment/audit dispatch and all four readers before the cancellation window")
+			Eventually(execCounter.Load, 10*time.Second, 50*time.Millisecond).Should(Equal(int32(numTools)))
+			Expect(activeCounter.Load()).To(Equal(int32(numTools)), "all readers must still be in flight")
+			// BR-PERFORMANCE-970: the unchanged 100ms window measures cancellation
+			// of running tools, not unrelated authenticated DS setup latency.
+			cancelTimer := time.AfterFunc(100*time.Millisecond, cancel)
+			defer cancelTimer.Stop()
+			Eventually(done, 10*time.Second, 50*time.Millisecond).Should(BeClosed())
+			Expect(investigationErr).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Cancelled).To(BeTrue(),
-				"investigation result should be marked as cancelled when context times out")
+				"investigation result should be marked as cancelled after the 100ms window")
+			Expect(result.CancelledPhase).To(Equal(string(katypes.PhaseRCA)))
+			Expect(result.WorkflowID).To(BeEmpty(), "cancellation cannot produce an executable selection")
+			Expect(mock.calls).To(HaveLen(1), "no workflow-selection provider call may follow cancellation")
+			Expect(execCounter.Load()).To(Equal(int32(numTools)),
+				"BR-PERFORMANCE-970: cancellation must stop tools that actually started; phase-denied calls cannot prove goroutine cleanup")
 
 			Eventually(activeCounter.Load, 2*time.Second, 50*time.Millisecond).Should(Equal(int32(0)),
 				"all tool goroutines should have exited after context cancellation")
+
+			By("proving AU-2/AU-3 and CC7.2 through the authenticated persisted cancellation record")
+			cancelEvents := filterAuditEvents(auditStore.events, audit.EventTypeInvestigationCancelled)
+			Expect(cancelEvents).To(HaveLen(1), "exactly one cancellation event must be emitted")
+			var persisted *ogenclient.AuditEventsQueryResponse
+			Eventually(func(g Gomega) {
+				records, queryErr := ogenClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(cancelSignal.RemediationID),
+					EventType:     ogenclient.NewOptString(audit.EventTypeInvestigationCancelled),
+				})
+				g.Expect(queryErr).NotTo(HaveOccurred())
+				g.Expect(records).NotTo(BeNil())
+				g.Expect(records.Data).To(HaveLen(1), "cancellation must reach durable storage, not only the capture spy")
+				persisted = records
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+
+			stored := persisted.Data[0]
+			Expect(stored.EventType).To(Equal(audit.EventTypeInvestigationCancelled))
+			Expect(stored.CorrelationID).To(Equal(cancelSignal.RemediationID))
+			Expect(stored.EventAction).To(Equal(audit.ActionInvestigationCancelled))
+			Expect(string(stored.EventOutcome)).To(Equal(audit.OutcomeFailure))
+			Expect(stored.ActorType).To(Equal(ogenclient.NewOptString("service")))
+			Expect(stored.ActorID).To(Equal(ogenclient.NewOptString("kubernaut-agent")))
+			storedID, hasID := stored.EventID.Get()
+			Expect(hasID).To(BeTrue())
+			Expect(storedID).NotTo(Equal(uuid.Nil))
+			payload, isCancellation := stored.EventData.GetAIAgentInvestigationCancelledPayload()
+			Expect(isCancellation).To(BeTrue(), "typed DS ingestion/query must preserve the cancellation discriminator")
+			payloadID, parseErr := uuid.Parse(payload.EventID)
+			Expect(parseErr).NotTo(HaveOccurred())
+			Expect(payloadID).NotTo(Equal(uuid.Nil))
+			Expect(payload.EventID).To(Equal(cancelEvents[0].Data["event_id"]))
+			Expect(payload.CancelledPhase).To(Equal(result.CancelledPhase))
+			Expect(payload.CancelledAtTurn).To(Equal(result.CancelledAtTurn))
+			Expect(payload.SessionID).To(Equal(ogenclient.NewOptString(sessionID)))
+			Expect(payload.TotalPromptTokens).To(Equal(ogenclient.NewOptInt(100)))
+			Expect(payload.TotalCompletionTokens).To(Equal(ogenclient.NewOptInt(50)))
+			Expect(payload.TotalTokens).To(Equal(ogenclient.NewOptInt(150)))
+			messages, hasMessages := payload.AccumulatedMessages.Get()
+			Expect(hasMessages).To(BeTrue())
+			Expect(json.Valid([]byte(messages))).To(BeTrue())
+			for _, name := range tn {
+				Expect(messages).To(ContainSubstring(name), "the cancelled attempt must be reconstructable from persisted messages")
+			}
+			allRecords, queryErr := ogenClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(cancelSignal.RemediationID),
+				Limit:         ogenclient.NewOptInt(1000),
+			})
+			Expect(queryErr).NotTo(HaveOccurred())
+			Expect(allRecords).NotTo(BeNil())
+			for _, record := range allRecords.Data {
+				Expect(record.EventType).NotTo(Equal(audit.EventTypeSelectionValidated), "cancelled RCA cannot validate a selection")
+			}
 		})
 	})
 })

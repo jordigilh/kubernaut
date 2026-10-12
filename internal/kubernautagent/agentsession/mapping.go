@@ -25,12 +25,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-logr/logr"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // MapSpecToSignal converts an AgentSession's Spec (AA's 1:1 translation of
@@ -160,6 +162,8 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 
 	if r.WorkflowID != "" {
 		res.SelectedWorkflow = marshalJSON(buildSelectedWorkflowMap(r))
+	} else if r.ProposedWorkflowID != "" {
+		res.SelectionAssessment = marshalJSON(buildSelectionAssessmentMap(r))
 	}
 	if r.IsActionable != nil {
 		res.IsActionable = r.IsActionable
@@ -237,24 +241,14 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 		"workflow_id": r.WorkflowID,
 		"confidence":  r.Confidence,
 	}
+	addSelectionMetadata(sw, r)
+	if r.RepeatJustification != nil {
+		sw["repeat_justification"] = r.RepeatJustification
+	}
 	if len(r.Parameters) > 0 {
 		sw["parameters"] = r.Parameters
 	}
-	if r.ExecutionBundle != "" {
-		sw["execution_bundle"] = r.ExecutionBundle
-	}
-	if r.ExecutionBundleDigest != "" {
-		sw["execution_bundle_digest"] = r.ExecutionBundleDigest
-	}
-	if r.ExecutionEngine != "" {
-		sw["execution_engine"] = r.ExecutionEngine
-	}
-	if r.ServiceAccountName != "" {
-		sw["service_account_name"] = r.ServiceAccountName
-	}
-	if r.EngineConfig != nil {
-		sw["engine_config"] = r.EngineConfig
-	}
+	addWorkflowExecutionMetadata(sw, r)
 	if r.WorkflowVersion != "" {
 		sw["version"] = r.WorkflowVersion
 	}
@@ -288,6 +282,72 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 		sw["execution_cluster_id"] = r.ExecutionClusterID
 	}
 	return sw
+}
+
+func addWorkflowExecutionMetadata(destination map[string]interface{}, r *katypes.InvestigationResult) {
+	if r.ExecutionBundle != "" {
+		destination["execution_bundle"] = r.ExecutionBundle
+	}
+	if r.ExecutionBundleDigest != "" {
+		destination["execution_bundle_digest"] = r.ExecutionBundleDigest
+	}
+	if r.ExecutionEngine != "" {
+		destination["execution_engine"] = r.ExecutionEngine
+	}
+	if r.ServiceAccountName != "" {
+		destination["service_account_name"] = r.ServiceAccountName
+	}
+	if r.EngineConfig != nil {
+		destination["engine_config"] = r.EngineConfig
+	}
+}
+
+// DD-KA-2496: this explicit allow-list cannot promote a rejected ID into an
+// executable workflow or accidentally serialize private execution material.
+func buildSelectionAssessmentMap(r *katypes.InvestigationResult) map[string]interface{} {
+	assessment := map[string]interface{}{"proposed_workflow_id": r.ProposedWorkflowID}
+	addSelectionMetadata(assessment, r)
+	if r.WorkflowName != "" {
+		assessment["workflow_name"] = r.WorkflowName
+	}
+	if r.RepeatJustification != nil {
+		assessment["repeat_justification"] = &sharedtypes.RepeatJustificationAssessment{
+			EvidenceBasis:         boundedAssessmentPart(r.RepeatJustification.EvidenceBasis),
+			PriorOutcomeRelevance: boundedAssessmentPart(r.RepeatJustification.PriorOutcomeRelevance),
+			ExpectedMechanism:     boundedAssessmentPart(r.RepeatJustification.ExpectedMechanism),
+		}
+	}
+	return assessment
+}
+
+func addSelectionMetadata(destination map[string]interface{}, r *katypes.InvestigationResult) {
+	if r.WorkflowSelectionConfidence != nil {
+		destination["workflow_selection_confidence"] = *r.WorkflowSelectionConfidence
+	}
+	if r.RepeatJustificationRequired != nil {
+		destination["repeat_justification_required"] = *r.RepeatJustificationRequired
+	}
+	if r.PriorWorkflowMatch != nil {
+		destination["prior_workflow_match"] = *r.PriorWorkflowMatch
+	}
+	if r.RepeatValidationOutcome != "" {
+		destination["repeat_validation_outcome"] = r.RepeatValidationOutcome
+	}
+	if r.HandoffDigest != "" {
+		destination["handoff_digest"] = r.HandoffDigest
+	}
+	if len(r.PriorRemediationUIDs) > 0 {
+		destination["prior_remediation_uids"] = r.PriorRemediationUIDs
+	}
+}
+
+// Omit unrepresentable rejected parts; never truncate them into apparently
+// valid reasoning. The rejection outcome is preserved independently.
+func boundedAssessmentPart(part string) string {
+	if !utf8.ValidString(part) || utf8.RuneCountInString(part) > 2000 {
+		return ""
+	}
+	return part
 }
 
 func buildWarnings(r *katypes.InvestigationResult) []string {

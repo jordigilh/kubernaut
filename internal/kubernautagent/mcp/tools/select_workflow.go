@@ -534,16 +534,11 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 // from the discovery result (#1169).
 func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
+	result.RCAConfidence = cloneSelectionValue(rca.RCAConfidence)
 
 	applyDiscoveryFullResult(&result, discovery)
-
-	// KA-HIGH-1: Use Phase 3 confidence when a discovery recommendation exists,
-	// since Phase 3 has additional workflow-specific scoring context.
-	if discovery != nil && discovery.Recommended != nil && discovery.Recommended.Confidence > 0 {
-		result.Confidence = discovery.Recommended.Confidence
-	}
-
 	applySelectedWorkflow(&result, workflow)
+	applyDiscoverySelection(&result, workflow, discovery)
 
 	if discovery != nil && workflow != nil {
 		if params, found := lookupDiscoveredParameters(workflow.WorkflowID, discovery); found {
@@ -565,7 +560,7 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 // applyDiscoveryFullResult overlays the Phase 3 (FullResult) fields onto
 // result. Phase 3 is authoritative for post-RCA fields populated during
 // workflow discovery: RemediationTarget (K8s-verified vs LLM-parsed),
-// confidence, labels, warnings, outcome, and actionability. Overrides Phase 2
+// labels, warnings, outcome, and actionability. Overrides Phase 2
 // values only when Phase 3 provides non-zero/non-nil replacements.
 func applyDiscoveryFullResult(result *katypes.InvestigationResult, discovery *mcpinternal.WorkflowDiscoveryResult) {
 	if discovery == nil || discovery.FullResult == nil {
@@ -574,9 +569,6 @@ func applyDiscoveryFullResult(result *katypes.InvestigationResult, discovery *mc
 	fr := discovery.FullResult
 	if fr.RemediationTarget.Kind != "" {
 		result.RemediationTarget = fr.RemediationTarget
-	}
-	if fr.Confidence > 0 {
-		result.Confidence = fr.Confidence
 	}
 	if len(fr.DetectedLabels) > 0 {
 		result.DetectedLabels = fr.DetectedLabels
@@ -590,6 +582,57 @@ func applyDiscoveryFullResult(result *katypes.InvestigationResult, discovery *mc
 	if fr.InvestigationOutcome != "" {
 		result.InvestigationOutcome = fr.InvestigationOutcome
 	}
+}
+
+// applyDiscoverySelection binds score/reasoning to the actual user-selected ID,
+// never to RCA confidence or another candidate's recommendation. DD-KA-2496:
+// a same-ID FullResult preserves unknown versus explicit zero and is copied so
+// completing the session cannot mutate its frozen discovery context.
+func applyDiscoverySelection(result *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) {
+	if discovery == nil || workflow == nil {
+		return
+	}
+	result.Confidence = 0
+	result.WorkflowSelectionConfidence = nil
+	result.RepeatJustification = nil
+	result.RepeatJustificationRequired = nil
+	result.PriorWorkflowMatch = nil
+	result.RepeatValidationOutcome = ""
+	result.PriorRemediationUIDs = nil
+	result.ProposedWorkflowID = ""
+	if full := discovery.FullResult; full != nil {
+		result.HandoffDigest = full.HandoffDigest
+		if full.WorkflowID == workflow.WorkflowID {
+			result.Confidence = full.Confidence
+			result.WorkflowSelectionConfidence = cloneSelectionValue(full.WorkflowSelectionConfidence)
+			result.RepeatJustification = full.RepeatJustification.DeepCopy()
+			result.RepeatJustificationRequired = cloneSelectionValue(full.RepeatJustificationRequired)
+			result.PriorWorkflowMatch = cloneSelectionValue(full.PriorWorkflowMatch)
+			result.RepeatValidationOutcome = full.RepeatValidationOutcome
+			result.PriorRemediationUIDs = append([]string(nil), full.PriorRemediationUIDs...)
+			return
+		}
+	}
+	if recommended := discovery.Recommended; recommended != nil && recommended.WorkflowID == workflow.WorkflowID {
+		result.Confidence = recommended.Confidence
+		result.WorkflowSelectionConfidence = cloneSelectionValue(&recommended.Confidence)
+		return
+	}
+	for _, alternative := range discovery.Alternatives {
+		if alternative.WorkflowID == workflow.WorkflowID {
+			result.Confidence = alternative.Confidence
+			result.WorkflowSelectionConfidence = cloneSelectionValue(&alternative.Confidence)
+			return
+		}
+	}
+}
+
+func cloneSelectionValue[T bool | float64](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 // applySelectedWorkflow copies the catalog-resolved workflow identity/version

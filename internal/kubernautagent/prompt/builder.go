@@ -113,6 +113,7 @@ type workflowTemplateData struct {
 	EnrichmentContext               string
 	Phase1Assessment                string
 	InvestigationAnalysis           string
+	EvidenceHandoff                 string
 	ResolvedConfidenceThreshold     float64
 	InconclusiveConfidenceThreshold float64
 }
@@ -146,6 +147,7 @@ type Phase1Data struct {
 	InvestigationAnalysis string
 	CausalChain           []string
 	DueDiligence          *katypes.DueDiligenceReview
+	RCAConfidence         *float64
 }
 
 // ValidationErrorData maps to fields expected by validation_error.tmpl.
@@ -243,6 +245,9 @@ type WorkflowSelectionInput struct {
 	RCASummary string
 	EnrichData *EnrichmentData
 	Phase1     *Phase1Data
+	// DD-KA-2496: already sanitized, serialized and frozen by the server.
+	// Render verbatim: changing the packet here would invalidate its digest.
+	EvidenceHandoff string
 	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
 	// operator-configured investigation-outcome confidence bands (BR-KA-213,
 	// Issue #1826). Zero means "caller did not set it" — RenderWorkflowSelection
@@ -268,6 +273,7 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		RCASummary:                      sanitizeField(in.RCASummary),
 		Phase1Assessment:                formatPhase1Assessment(in.Phase1),
 		InvestigationAnalysis:           formatInvestigationAnalysis(in.Phase1),
+		EvidenceHandoff:                 in.EvidenceHandoff,
 		ResolvedConfidenceThreshold:     withDefaultFloat(in.ResolvedConfidenceThreshold, defaultResolvedConfidenceThreshold),
 		InconclusiveConfidenceThreshold: withDefaultFloat(in.InconclusiveConfidenceThreshold, defaultInconclusiveConfidenceThreshold),
 	}

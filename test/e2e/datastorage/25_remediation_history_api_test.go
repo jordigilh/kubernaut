@@ -123,34 +123,45 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		Expect(err).ToNot(HaveOccurred(), "Failed to insert audit event: %s", eventType)
 	}
 
-	insertROEvent := func(correlationID, target, preHash, actionType string, ts time.Time) {
+	insertROEvent := func(correlationID, target, preHash, actionType string, confidence float64, ts time.Time) {
 		GinkgoHelper()
 		insertAuditEvent("remediation.workflow_created", "remediation", correlationID,
 			map[string]interface{}{
-				"target_resource":           target,
-				"pre_remediation_spec_hash": preHash,
-				"action_type":               actionType,
-				"signal_type":               "HighCPULoad",
-				"signal_fingerprint":        "fp-e2e-" + testID,
-				"outcome":                   "success",
+				"target_resource":               target,
+				"pre_remediation_spec_hash":     preHash,
+				"action_type":                   actionType,
+				"signal_type":                   "HighCPULoad",
+				"signal_fingerprint":            "fp-e2e-" + testID,
+				"outcome":                       "success",
+				"workflow_id":                   uuid.NewSHA1(uuid.NameSpaceOID, []byte(correlationID)).String(),
+				"workflow_name":                 "history-workflow-2496",
+				"workflow_selection_confidence": confidence,
+				"parameters":                    map[string]string{"PRIVATE": "private-history-2496"},
 			}, ts)
 	}
 
 	insertEMEvents := func(correlationID, reason string, score float64, preHash, postHash string, ts time.Time) {
 		GinkgoHelper()
+		// The real DS scorer aggregates assessed components, not the completed
+		// event's score. A Full/known-zero fixture must supply zero components.
+		healthScore, alertScore, metricsScore := .85, .9, .8
+		if reason == "Full" && score == 0 {
+			healthScore, alertScore, metricsScore = 0, 0, 0
+		}
 		insertAuditEvent("effectiveness.health.assessed", "effectiveness", correlationID,
 			map[string]interface{}{
-				"assessed": true, "score": 0.85,
+				"assessed": true, "score": healthScore,
 				"health_checks": map[string]interface{}{
 					"pod_running":    true,
 					"readiness_pass": true,
 				},
 			}, ts.Add(1*time.Minute))
 		insertAuditEvent("effectiveness.alert.assessed", "effectiveness", correlationID,
-			map[string]interface{}{"assessed": true, "score": 0.9, "signal_resolved": true}, ts.Add(2*time.Minute))
+			map[string]interface{}{"assessed": true, "score": alertScore,
+				"alert_resolution": map[string]bool{"alert_resolved": alertScore > 0}}, ts.Add(2*time.Minute))
 		insertAuditEvent("effectiveness.metrics.assessed", "effectiveness", correlationID,
 			map[string]interface{}{
-				"assessed": true, "score": 0.8,
+				"assessed": true, "score": metricsScore,
 				"metric_deltas": map[string]interface{}{
 					"cpu_before": 0.85,
 					"cpu_after":  0.45,
@@ -196,7 +207,7 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		// Arrange: insert RO + EM events (reason=full)
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-e2e-full-%s", testID)
-		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
+		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", .94, now.Add(-2*time.Hour))
 		insertEMEvents(cid, "Full", 0.85, currentSpecHash, "sha256:e2e_post_"+testID, now.Add(-2*time.Hour))
 
 		// Act: query via HTTP API
@@ -224,13 +235,20 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		Expect(score).To(BeNumerically(">", 0.0))
 		Expect(entry).To(HaveKey("healthChecks"))
 		Expect(entry).To(HaveKey("metricDeltas"))
+		Expect(entry["workflowId"]).To(Equal(uuid.NewSHA1(uuid.NameSpaceOID, []byte(cid)).String()))
+		Expect(entry["workflowName"]).To(Equal("history-workflow-2496"))
+		Expect(entry["workflowSelectionConfidence"]).To(Equal(.94), "selection confidence is not the effectiveness score")
+		encoded, err := json.Marshal(body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).NotTo(ContainSubstring("private-history-2496"))
+		Expect(string(encoded)).NotTo(ContainSubstring("parameters"))
 	})
 
 	It("E2E-DS-016-002: spec_drift assessment reason and score=0.0 survive full service stack", func() {
 		// Arrange
 		now := time.Now().UTC()
 		cid := fmt.Sprintf("corr-e2e-drift-%s", testID)
-		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
+		insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", 0., now.Add(-2*time.Hour))
 		insertEMEvents(cid, "SpecDrift", 0.0, currentSpecHash, "sha256:e2e_drift_"+testID, now.Add(-2*time.Hour))
 
 		// Act
@@ -253,6 +271,8 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 			"spec_drift reason must survive the full service pipeline")
 		Expect(entry["effectivenessScore"]).To(BeNumerically("==", 0.0),
 			"spec_drift score must be 0.0 (unreliable)")
+		Expect(entry["workflowId"]).To(Equal(uuid.NewSHA1(uuid.NameSpaceOID, []byte(cid)).String()))
+		Expect(entry).To(HaveKeyWithValue("workflowSelectionConfidence", 0.), "known zero selection confidence remains present independently of SpecDrift")
 	})
 
 	It("E2E-DS-016-003: Non-existent target returns 200 OK with empty chains", func() {
@@ -285,13 +305,13 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		cid2 := fmt.Sprintf("corr-e2e-mixed2-%s", testID)
 		cid3 := fmt.Sprintf("corr-e2e-mixed3-%s", testID)
 
-		insertROEvent(cid1, targetResource, currentSpecHash, "ScaleUp", now.Add(-3*time.Hour))
+		insertROEvent(cid1, targetResource, currentSpecHash, "ScaleUp", .94, now.Add(-3*time.Hour))
 		insertEMEvents(cid1, "Full", 0.85, currentSpecHash, "sha256:p1_"+testID, now.Add(-3*time.Hour))
 
-		insertROEvent(cid2, targetResource, currentSpecHash, "RestartPod", now.Add(-2*time.Hour))
+		insertROEvent(cid2, targetResource, currentSpecHash, "RestartPod", .90, now.Add(-2*time.Hour))
 		insertEMEvents(cid2, "SpecDrift", 0.0, currentSpecHash, "sha256:p2_"+testID, now.Add(-2*time.Hour))
 
-		insertROEvent(cid3, targetResource, currentSpecHash, "ScaleDown", now.Add(-1*time.Hour))
+		insertROEvent(cid3, targetResource, currentSpecHash, "ScaleDown", .84, now.Add(-1*time.Hour))
 		insertEMEvents(cid3, "Partial", 0.65, currentSpecHash, "sha256:p3_"+testID, now.Add(-1*time.Hour))
 
 		// Act
@@ -319,6 +339,51 @@ var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)"
 		}
 		Expect(reasons).To(Equal([]string{"Full", "SpecDrift", "Partial"}),
 			"Assessment reasons should be in ascending timestamp order (oldest first, per OpenAPI spec)")
+		for i, cid := range []string{cid1, cid2, cid3} {
+			entry := chain[i].(map[string]interface{})
+			Expect(entry["workflowId"]).To(Equal(uuid.NewSHA1(uuid.NameSpaceOID, []byte(cid)).String()))
+			Expect(entry["workflowName"]).To(Equal("history-workflow-2496"), "non-unique workflow name is context, not identity")
+			Expect(entry["workflowSelectionConfidence"]).To(Equal([]float64{.94, .90, .84}[i]))
+		}
+	})
+
+	It("E2E-DS-2496-001: summary tier preserves identity/confidence and incomplete immutable records stay unknown (BR-KA-016, AU-3, CC7.2)", func() {
+		now := time.Now().UTC()
+		older := "corr-e2e-summary-" + testID
+		insertROEvent(older, targetResource, currentSpecHash, "RestartPod", .90, now.Add(-48*time.Hour))
+		insertEMEvents(older, "Full", 0., currentSpecHash, "sha256:summary-post-"+testID, now.Add(-48*time.Hour))
+		legacy := "corr-e2e-incomplete-" + testID
+		insertAuditEvent("remediation.workflow_created", "remediation", legacy, map[string]interface{}{
+			"target_resource": targetResource, "pre_remediation_spec_hash": currentSpecHash,
+			"parameters": map[string]string{"PRIVATE": "legacy-history-secret-2496"},
+		}, now.Add(-time.Hour))
+		var before string
+		Expect(testDB.QueryRow("SELECT event_data::text FROM audit_events WHERE correlation_id = $1", legacy).Scan(&before)).To(Succeed())
+		status, body := queryRemediationHistory(map[string]string{
+			"targetKind": "Deployment", "targetName": "e2e-nginx-" + testID,
+			"targetNamespace": "default", "currentSpecHash": currentSpecHash,
+		})
+		Expect(status).To(Equal(http.StatusOK))
+		tier1 := body["tier1"].(map[string]interface{})["chain"].([]interface{})
+		tier2 := body["tier2"].(map[string]interface{})["chain"].([]interface{})
+		Expect(tier1).To(HaveLen(1))
+		Expect(tier2).To(HaveLen(1))
+		entry := tier2[0].(map[string]interface{})
+		Expect(entry["workflowId"]).To(Equal(uuid.NewSHA1(uuid.NameSpaceOID, []byte(older)).String()))
+		Expect(entry["workflowName"]).To(Equal("history-workflow-2496"))
+		Expect(entry["workflowSelectionConfidence"]).To(Equal(.90))
+		Expect(entry["effectivenessScore"]).To(Equal(0.))
+		Expect(entry["signalResolved"]).To(BeFalse(), "known-zero Full history remains unresolved")
+		for _, field := range []string{"workflowId", "workflowName", "workflowSelectionConfidence"} {
+			Expect(tier1[0]).NotTo(HaveKey(field), "unavailable legacy fields cannot be fabricated or backfilled")
+		}
+		var after string
+		Expect(testDB.QueryRow("SELECT event_data::text FROM audit_events WHERE correlation_id = $1", legacy).Scan(&after)).To(Succeed())
+		Expect(after).To(Equal(before))
+		encoded, err := json.Marshal(body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).NotTo(ContainSubstring("private-history-2496"))
+		Expect(string(encoded)).NotTo(ContainSubstring("legacy-history-secret-2496"))
 	})
 
 	It("E2E-DS-016-005: Invalid tier1Window returns 400 Bad Request", func() {

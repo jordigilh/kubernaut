@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"time"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -32,8 +33,8 @@ import (
 const notAvailable = "N/A"
 
 // completedOutcomes defines which RR outcome values indicate a remediation that
-// "completed" from the orchestrator's perspective. Used by recurring detection and
-// all-zero-effectiveness logic to identify remediations that ran to completion.
+// "completed" from the orchestrator's perspective. Used only by qualitative
+// recurring detection; assessment validity does not derive from these outcomes.
 // Issue #722: Added "Remediated" and "Inconclusive" (CRD-level outcomes).
 var completedOutcomes = map[string]bool{
 	"completed": true, "success": true, "Completed": true, "Success": true,
@@ -43,6 +44,8 @@ var completedOutcomes = map[string]bool{
 // HistoryEntry is a unified interface for detection algorithms that operate on
 // both Tier1 and Tier2 entries (recurring detection, all-zero-effectiveness).
 type HistoryEntry struct {
+	WorkflowID         string
+	WorkflowName       string
 	ActionType         string
 	SignalType         string
 	Outcome            string
@@ -63,12 +66,14 @@ type RecurringPattern struct {
 type remediationHistoryTemplateData struct {
 	TargetResource                 string
 	RegressionDetected             bool
-	Tier1Entries                   []string
+	ChronologicalEntries           []string
+	Tier1Count                     int
 	Tier1Window                    string
-	Tier2Entries                   []string
+	Tier2Count                     int
 	Tier2Window                    string
 	DecliningEffectivenessWarnings []string
 	RecurringRemediationWarnings   []string
+	KnownIneffectiveWarnings       []string
 	RecurrenceDurabilityGuidance   []string
 	HasSpecDrift                   bool
 }
@@ -90,12 +95,14 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult)
 	data := remediationHistoryTemplateData{
 		TargetResource:                 sanitizeField(result.TargetResource),
 		RegressionDetected:             result.RegressionDetected,
-		Tier1Entries:                   renderTier1Entries(result.Tier1, causalChains),
+		ChronologicalEntries:           renderChronologicalHistory(result, causalChains),
+		Tier1Count:                     len(result.Tier1),
 		Tier1Window:                    result.Tier1Window,
-		Tier2Entries:                   renderTier2Entries(result.Tier2),
+		Tier2Count:                     len(result.Tier2),
 		Tier2Window:                    result.Tier2Window,
 		DecliningEffectivenessWarnings: buildDecliningEffectivenessWarnings(result.Tier1),
 		RecurringRemediationWarnings:   buildRecurringRemediationWarnings(allEntries),
+		KnownIneffectiveWarnings:       buildKnownIneffectiveWarnings(allEntries),
 		RecurrenceDurabilityGuidance:   buildRecurrenceDurabilityGuidance(allEntries),
 		HasSpecDrift:                   anyAssessmentReasonSpecDrift(allEntries),
 	}
@@ -103,20 +110,34 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult)
 	return renderRemediationHistoryTemplate(data)
 }
 
-// renderTier1Entries formats each Tier1 entry for the prompt.
-func renderTier1Entries(entries []enrichment.Tier1Entry, causalChains map[string]string) []string {
-	rendered := make([]string, 0, len(entries))
-	for _, e := range entries {
-		rendered = append(rendered, FormatTier1Entry(e, causalChains))
-	}
-	return rendered
+type chronologicalHistoryEntry struct {
+	recordedAt time.Time
+	uid        string
+	rendered   string
 }
 
-// renderTier2Entries formats each Tier2 summary entry for the prompt.
-func renderTier2Entries(entries []enrichment.Tier2Summary) []string {
+// DD-KA-2496: numbering is global across tiers; source slices are never sorted
+// in-place. UID and rendered detail provide a deterministic tie-break.
+func renderChronologicalHistory(result *enrichment.RemediationHistoryResult, causalChains map[string]string) []string {
+	entries := make([]chronologicalHistoryEntry, 0, len(result.Tier1)+len(result.Tier2))
+	for _, e := range result.Tier1 {
+		entries = append(entries, chronologicalHistoryEntry{e.CompletedAt, e.RemediationUID, FormatTier1Entry(e, causalChains)})
+	}
+	for _, e := range result.Tier2 {
+		entries = append(entries, chronologicalHistoryEntry{e.CompletedAt, e.RemediationUID, FormatTier2Summary(e)})
+	}
+	slices.SortStableFunc(entries, func(a, b chronologicalHistoryEntry) int {
+		if cmp := a.recordedAt.Compare(b.recordedAt); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.uid, b.uid); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.rendered, b.rendered)
+	})
 	rendered := make([]string, 0, len(entries))
-	for _, e := range entries {
-		rendered = append(rendered, FormatTier2Summary(e))
+	for i, e := range entries {
+		rendered = append(rendered, fmt.Sprintf("- **Attempt %d** — %s", i+1, strings.TrimPrefix(e.rendered, "- ")))
 	}
 	return rendered
 }
@@ -138,32 +159,33 @@ func buildDecliningEffectivenessWarnings(tier1 []enrichment.Tier1Entry) []string
 	return warnings
 }
 
-// buildRecurringRemediationWarnings builds one warning string per detected
-// completed-but-recurring remediation pattern, escalating to a MANDATORY
-// warning when the pattern shows zero effectiveness across every occurrence.
-// The pattern is based on repeated linked history, not a configurable retry
-// threshold.
+// Recurrence is qualitative evidence, never an action-family ban (DD-KA-2496).
 func buildRecurringRemediationWarnings(allEntries []HistoryEntry) []string {
-	var warnings []string
-	for _, r := range DetectCompletedButRecurring(allEntries) {
-		if AllZeroEffectiveness(allEntries, r.ActionType, r.SignalType) {
-			warnings = append(warnings, fmt.Sprintf(
-				"**MANDATORY: You MUST NOT re-select '%s' for signal "+
-					"'%s'.** This workflow has been applied %d times with "+
-					"zero effectiveness -- the signal continues to recur. Set "+
-					"`investigation_outcome` to `inconclusive` and omit `selected_workflow`, "+
-					"or select a fundamentally different remediation approach.",
-				sanitizeField(r.ActionType), sanitizeField(r.SignalType), r.Count,
-			))
-		} else {
-			warnings = append(warnings, fmt.Sprintf(
-				"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '%s'** -- "+
-					"Completed %d times for signal '%s' but the issue continues "+
-					"to recur. Set `investigation_outcome` to `inconclusive` and omit "+
-					"`selected_workflow`, or select an alternative approach.",
-				sanitizeField(r.ActionType), r.Count, sanitizeField(r.SignalType),
-			))
+	patterns := DetectCompletedButRecurring(allEntries)
+	warnings := make([]string, 0, len(patterns))
+	for _, r := range patterns {
+		warnings = append(warnings, fmt.Sprintf(
+			"**WARNING: RECURRING REMEDIATION for action '%s'** -- "+
+				"Completed %d times for signal '%s' but the issue recurred. "+
+				"Compare individual workflow IDs and current evidence; shared action/name is not workflow identity. "+
+				"If no catalog workflow is suitable, set `investigation_outcome` to `inconclusive` and omit `selected_workflow`.",
+			sanitizeField(r.ActionType), r.Count, sanitizeField(r.SignalType),
+		))
+	}
+	return warnings
+}
+
+// A single assessed failure is relevant. Zero alone does not explain its cause.
+func buildKnownIneffectiveWarnings(entries []HistoryEntry) []string {
+	warnings := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !AllZeroEffectiveness([]HistoryEntry{e}, e.ActionType, e.SignalType) {
+			continue
 		}
+		warnings = append(warnings, fmt.Sprintf(
+			"**KNOWN INEFFECTIVE ATTEMPT:** Workflow ID: %s | Workflow name: %s had known zero effectiveness and an explicitly unresolved signal in a completed valid assessment. "+
+				"The failure cause is unknown from that score alone. Weigh current evidence and explain the prior outcome's relevance before repeating the same workflow ID; all candidates remain available.",
+			withDefault(sanitizeField(e.WorkflowID), unknownHistoryValue), withDefault(sanitizeField(e.WorkflowName), unknownHistoryValue)))
 	}
 	return warnings
 }
@@ -230,15 +252,17 @@ func renderRemediationHistoryTemplate(data remediationHistoryTemplateData) strin
 // FormatTier1Entry formats a single Tier1 detailed entry for the prompt.
 // 1:1 port of KA _format_tier1_entry().
 func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]string) string {
-	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
-	workflow := withDefault(sanitizeField(entry.ActionType), "unknown")
-	outcome := withDefault(sanitizeField(entry.Outcome), "unknown")
+	recorded := formatHistoryRecordedTime(entry.CompletedAt)
+	action := withDefault(sanitizeField(entry.ActionType), unknownHistoryValue)
+	outcome := withDefault(sanitizeField(entry.Outcome), unknownHistoryValue)
 	signal := sanitizeField(entry.SignalType)
 	remediationUID := sanitizeField(entry.RemediationUID)
 
 	lines := []string{
-		fmt.Sprintf("- **Remediation %s** (%s)", remediationUID, completed),
-		fmt.Sprintf("  Workflow: %s | Outcome: %s | Signal: %s", workflow, outcome, signal),
+		fmt.Sprintf("- **Remediation %s** (Recorded at: %s)", remediationUID, recorded),
+		"  " + formatHistorySelection(entry.WorkflowID, entry.WorkflowName, entry.WorkflowSelectionConfidence),
+		fmt.Sprintf("  Action type: %s | Outcome: %s | Signal: %s", action, outcome, signal),
+		fmt.Sprintf("  Assessment: %s", withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending")),
 	}
 
 	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
@@ -296,9 +320,9 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 // FormatTier2Summary formats a single Tier2 compact summary entry for the prompt.
 // 1:1 port of KA _format_tier2_entry().
 func FormatTier2Summary(entry enrichment.Tier2Summary) string {
-	completed := entry.CompletedAt.UTC().Format("2006-01-02T15:04:05Z")
-	workflow := withDefault(sanitizeField(entry.ActionType), "unknown")
-	outcome := withDefault(sanitizeField(entry.Outcome), "unknown")
+	recorded := formatHistoryRecordedTime(entry.CompletedAt)
+	action := withDefault(sanitizeField(entry.ActionType), unknownHistoryValue)
+	outcome := withDefault(sanitizeField(entry.Outcome), unknownHistoryValue)
 
 	var scoreText string
 	switch {
@@ -313,8 +337,31 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 
 	hashMatch := withDefault(sanitizeField(entry.HashMatch), "none")
 
-	return fmt.Sprintf("- %s (%s): %s -> %s, effectiveness=%s, hashMatch=%s",
-		sanitizeField(entry.RemediationUID), completed, workflow, outcome, scoreText, hashMatch)
+	resolved := unknownHistoryValue
+	if entry.SignalResolved != nil {
+		resolved = boolYesNo(*entry.SignalResolved)
+	}
+	return fmt.Sprintf("- %s (Recorded at: %s): %s | Action type: %s -> %s, effectiveness=%s, signal_resolved=%s, assessment=%s, hashMatch=%s",
+		sanitizeField(entry.RemediationUID), recorded, formatHistorySelection(entry.WorkflowID, entry.WorkflowName, entry.WorkflowSelectionConfidence),
+		action, outcome, scoreText, resolved, withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending"), hashMatch)
+}
+
+const unknownHistoryValue = "unknown"
+
+func formatHistoryRecordedTime(recorded time.Time) string {
+	if recorded.IsZero() {
+		return unknownHistoryValue
+	}
+	return recorded.UTC().Format(time.RFC3339)
+}
+
+func formatHistorySelection(id, name string, confidence *float64) string {
+	score := unknownHistoryValue
+	if confidence != nil {
+		score = fmt.Sprintf("%.2f", *confidence)
+	}
+	return fmt.Sprintf("Workflow ID: %s | Workflow name: %s | workflow_selection_confidence: %s",
+		withDefault(sanitizeField(id), unknownHistoryValue), withDefault(sanitizeField(name), unknownHistoryValue), score)
 }
 
 // FormatHealthChecks formats health check results into readable text.
@@ -414,8 +461,12 @@ func formatClusterScopedAndThroughputDeltas(md *enrichment.MetricDeltas) []strin
 // for monotonically decreasing scores across >= 3 entries.
 // 1:1 port of KA _detect_declining_effectiveness().
 func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
-	actionScores := make(map[string][]float64)
-	for _, e := range chain {
+	chronological := slices.Clone(chain)
+	slices.SortStableFunc(chronological, func(a, b enrichment.Tier1Entry) int {
+		return a.CompletedAt.Compare(b.CompletedAt)
+	})
+	actionScores := make(map[string][]float64, len(chain))
+	for _, e := range chronological {
 		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			continue
 		}
@@ -484,9 +535,8 @@ func DetectCompletedButRecurring(entries []HistoryEntry) []RecurringPattern {
 	return result
 }
 
-// AllZeroEffectiveness checks if all completed recurring entries for an
-// action+signal combination have zero (or nil) effectiveness and unresolved signal.
-// 1:1 port of KA _all_zero_effectiveness().
+// AllZeroEffectiveness never treats absent/pending assessment data as zero.
+// No production selection prohibition is derived from this predicate.
 func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string) bool {
 
 	matched := false
@@ -494,17 +544,12 @@ func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string)
 		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			continue
 		}
-		if !completedOutcomes[e.Outcome] {
-			continue
-		}
 		if e.ActionType != actionType || e.SignalType != signalType {
 			continue
 		}
 		matched = true
-		if e.EffectivenessScore != nil && *e.EffectivenessScore > 0 {
-			return false
-		}
-		if e.SignalResolved != nil && *e.SignalResolved {
+		if !enrichment.IsCompletedValidAssessment(e.AssessmentReason, e.EffectivenessScore) ||
+			*e.EffectivenessScore != 0 || e.SignalResolved == nil || *e.SignalResolved {
 			return false
 		}
 	}
@@ -566,6 +611,8 @@ func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Sum
 	entries := make([]HistoryEntry, 0, len(tier1)+len(tier2))
 	for _, e := range tier1 {
 		entries = append(entries, HistoryEntry{
+			WorkflowID:         e.WorkflowID,
+			WorkflowName:       e.WorkflowName,
 			ActionType:         e.ActionType,
 			SignalType:         e.SignalType,
 			Outcome:            e.Outcome,
@@ -577,6 +624,8 @@ func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Sum
 	}
 	for _, e := range tier2 {
 		entries = append(entries, HistoryEntry{
+			WorkflowID:         e.WorkflowID,
+			WorkflowName:       e.WorkflowName,
 			ActionType:         e.ActionType,
 			SignalType:         e.SignalType,
 			Outcome:            e.Outcome,

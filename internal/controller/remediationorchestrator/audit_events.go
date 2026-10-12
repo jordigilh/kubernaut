@@ -116,9 +116,15 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	targetResource := fmt.Sprintf("%s/%s/%s", remTarget.Namespace, remTarget.Kind, remTarget.Name)
 
 	// Extract workflow metadata from AIAnalysis status
-	var workflowID, workflowVersion, actionType string
+	var workflowID, workflowName, workflowVersion, actionType string
+	var selectionConfidence *float64
 	if sw := ai.Status.GetRCAResult().SelectedWorkflow; sw != nil {
 		workflowID = sw.WorkflowID
+		workflowName = sw.WorkflowName
+		// DD-KA-2496: Confidence is required on the selected snapshot. Copy
+		// explicit zero as known; never substitute RCA or approval confidence.
+		confidence := sw.Confidence
+		selectionConfidence = &confidence
 		workflowVersion = sw.Version
 		actionType = sw.ActionType
 	}
@@ -126,13 +132,15 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
 		correlationID, rr.Namespace, rr.Name, rr.Spec.ClusterID,
 		roaudit.RemediationWorkflowCreatedData{
-			PreRemediationSpecHash: preHash,
-			TargetResource:         targetResource,
-			WorkflowID:             workflowID,
-			WorkflowVersion:        workflowVersion,
-			ActionType:             actionType,
-			SignalType:             rr.Spec.SignalType,
-			SignalFingerprint:      rr.Spec.SignalFingerprint,
+			PreRemediationSpecHash:      preHash,
+			TargetResource:              targetResource,
+			WorkflowID:                  workflowID,
+			WorkflowName:                workflowName,
+			WorkflowSelectionConfidence: selectionConfidence,
+			WorkflowVersion:             workflowVersion,
+			ActionType:                  actionType,
+			SignalType:                  rr.Spec.SignalType,
+			SignalFingerprint:           rr.Spec.SignalFingerprint,
 		},
 	)
 	if err != nil {

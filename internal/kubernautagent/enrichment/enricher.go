@@ -81,32 +81,47 @@ type RemediationHistoryResult struct {
 
 // Tier1Entry is a detailed remediation history record (recent window).
 type Tier1Entry struct {
-	RemediationUID          string        `json:"remediation_uid"`
-	SignalType              string        `json:"signal_type,omitempty"`
-	ActionType              string        `json:"action_type,omitempty"`
-	Outcome                 string        `json:"outcome,omitempty"`
-	EffectivenessScore      *float64      `json:"effectiveness_score,omitempty"`
-	SignalResolved          *bool         `json:"signal_resolved,omitempty"`
-	HashMatch               string        `json:"hash_match,omitempty"`
-	PreRemediationSpecHash  string        `json:"pre_remediation_spec_hash,omitempty"`
-	PostRemediationSpecHash string        `json:"post_remediation_spec_hash,omitempty"`
-	HealthChecks            *HealthChecks `json:"health_checks,omitempty"`
-	MetricDeltas            *MetricDeltas `json:"metric_deltas,omitempty"`
-	AssessmentReason        string        `json:"assessment_reason,omitempty"`
-	CompletedAt             time.Time     `json:"completed_at"`
+	RemediationUID string `json:"remediation_uid"`
+	// DD-KA-2496: current-version RO selection metadata, never inferred.
+	WorkflowID                  string        `json:"workflow_id,omitempty"`
+	WorkflowName                string        `json:"workflow_name,omitempty"`
+	WorkflowSelectionConfidence *float64      `json:"workflow_selection_confidence,omitempty"`
+	SignalType                  string        `json:"signal_type,omitempty"`
+	ActionType                  string        `json:"action_type,omitempty"`
+	Outcome                     string        `json:"outcome,omitempty"`
+	EffectivenessScore          *float64      `json:"effectiveness_score,omitempty"`
+	SignalResolved              *bool         `json:"signal_resolved,omitempty"`
+	HashMatch                   string        `json:"hash_match,omitempty"`
+	PreRemediationSpecHash      string        `json:"pre_remediation_spec_hash,omitempty"`
+	PostRemediationSpecHash     string        `json:"post_remediation_spec_hash,omitempty"`
+	HealthChecks                *HealthChecks `json:"health_checks,omitempty"`
+	MetricDeltas                *MetricDeltas `json:"metric_deltas,omitempty"`
+	AssessmentReason            string        `json:"assessment_reason,omitempty"`
+	CompletedAt                 time.Time     `json:"completed_at"`
 }
 
 // Tier2Summary is a compact historical remediation record (wider window).
 type Tier2Summary struct {
-	RemediationUID     string    `json:"remediation_uid"`
-	SignalType         string    `json:"signal_type,omitempty"`
-	ActionType         string    `json:"action_type,omitempty"`
-	Outcome            string    `json:"outcome,omitempty"`
-	EffectivenessScore *float64  `json:"effectiveness_score,omitempty"`
-	SignalResolved     *bool     `json:"signal_resolved,omitempty"`
-	HashMatch          string    `json:"hash_match,omitempty"`
-	AssessmentReason   string    `json:"assessment_reason,omitempty"`
-	CompletedAt        time.Time `json:"completed_at"`
+	RemediationUID              string    `json:"remediation_uid"`
+	WorkflowID                  string    `json:"workflow_id,omitempty"`
+	WorkflowName                string    `json:"workflow_name,omitempty"`
+	WorkflowSelectionConfidence *float64  `json:"workflow_selection_confidence,omitempty"`
+	SignalType                  string    `json:"signal_type,omitempty"`
+	ActionType                  string    `json:"action_type,omitempty"`
+	Outcome                     string    `json:"outcome,omitempty"`
+	EffectivenessScore          *float64  `json:"effectiveness_score,omitempty"`
+	SignalResolved              *bool     `json:"signal_resolved,omitempty"`
+	HashMatch                   string    `json:"hash_match,omitempty"`
+	AssessmentReason            string    `json:"assessment_reason,omitempty"`
+	CompletedAt                 time.Time `json:"completed_at"`
+}
+
+// IsCompletedValidAssessment implements the shared DD-KA-2496 evidence predicate.
+// Full/Partial are completion reasons from EM, not synthetic RO outcome fields.
+// Missing, non-finite, out-of-range and invalidated assessment data stay unknown.
+func IsCompletedValidAssessment(reason string, score *float64) bool {
+	return (reason == "Full" || reason == "Partial") && score != nil &&
+		*score >= 0 && *score <= 1
 }
 
 // HealthChecks holds post-remediation health check results.

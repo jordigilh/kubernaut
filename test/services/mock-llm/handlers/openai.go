@@ -181,7 +181,7 @@ func (h *handler) respondWithRCAExtraction(w http.ResponseWriter, stream, includ
 // respondWithSubmitToolCall writes the appropriate submit_result tool call.
 func (h *handler) respondWithSubmitToolCall(w http.ResponseWriter, stream, includeUsage bool, model string, cfg scenarios.MockScenarioConfig) {
 	toolName := openai.ToolSubmitResultWithWorkflow
-	if cfg.WorkflowID == "" {
+	if cfg.WorkflowID == "" || cfg.DeclineWorkflow {
 		toolName = openai.ToolSubmitResultNoWorkflow
 	}
 	h.trackToolCall(toolName)

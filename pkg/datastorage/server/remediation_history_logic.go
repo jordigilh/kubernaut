@@ -32,7 +32,9 @@ limitations under the License.
 package server
 
 import (
+	"math"
 	"sort"
+	"strings"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -331,6 +333,7 @@ func buildTier1Entry(ro repository.RawAuditRow, emEvents map[string][]*Effective
 		RemediationUID: ro.CorrelationID,
 		CompletedAt:    ro.EventTimestamp,
 	}
+	entry.WorkflowId, entry.WorkflowName, entry.WorkflowSelectionConfidence = historySelectionMetadata(ro)
 
 	// Extract RO event_data fields
 	if v, ok := ro.EventData["signal_type"].(string); ok {
@@ -461,6 +464,7 @@ func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*Effecti
 		RemediationUID: ro.CorrelationID,
 		CompletedAt:    ro.EventTimestamp,
 	}
+	summary.WorkflowId, summary.WorkflowName, summary.WorkflowSelectionConfidence = historySelectionMetadata(ro)
 
 	// Extract RO event_data fields
 	if v, ok := ro.EventData["signal_type"].(string); ok {
@@ -499,6 +503,24 @@ func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*Effecti
 	summary.HashMatch = toSummaryHashMatch(hashMatch)
 
 	return summary
+}
+
+// historySelectionMetadata reads the single v1.6 RO producer contract without
+// mutation, inference, legacy recovery or full-payload projection (DD-KA-2496).
+// Missing/malformed scores stay unknown; an explicit zero is a known selection.
+func historySelectionMetadata(ro repository.RawAuditRow) (api.OptString, api.OptString, api.OptFloat64) {
+	var id, name api.OptString
+	var confidence api.OptFloat64
+	if value, ok := ro.EventData["workflow_id"].(string); ok && strings.TrimSpace(value) != "" {
+		id.SetTo(value)
+	}
+	if value, ok := ro.EventData["workflow_name"].(string); ok && strings.TrimSpace(value) != "" {
+		name.SetTo(value)
+	}
+	if value, ok := ro.EventData["workflow_selection_confidence"].(float64); ok && !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1 {
+		confidence.SetTo(value)
+	}
+	return id, name, confidence
 }
 
 // ============================================================================

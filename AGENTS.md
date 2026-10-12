@@ -465,12 +465,16 @@ Rules for this exception:
 
 | Tier | Target | Metric | Rationale |
 |------|--------|--------|-----------|
-| Unit | 100% of business logic | Line coverage of unit-testable code | Every BR has a UT verifying behavior tied to FedRAMP/SOC2 control objectives |
+| Unit | >= 90% of in-scope business scenarios; 100% of critical scenarios | BR / acceptance-scenario coverage with passing UT assertions | Prove business outcomes, safety and applicable control objectives, not every implementation branch |
 | Integration | 100% of wiring points + 100% of FedRAMP controls assessed | Wiring Manifest completeness + control objective coverage | IT proves components are wired and controls are implemented -- not line % |
 | E2E | 100% of SOC2/FedRAMP control objectives have at least one proving journey | Control objective coverage | Validates end-to-end compliance flows in production-like conditions |
 | All Tiers (merged) | >= 80% | Line-by-line dedup across all tiers | Any tier covering a line counts; this is the CI gate |
 
 Unit tests are the foundation -- they verify business-level behavior, not implementation details.
+The unit target is **scenario coverage, not a 90% or 100% line-coverage mandate**.
+Every in-scope BR must have passing tests for its core acceptance contract; critical
+safety, security, data-integrity and applicable compliance-control scenarios must
+all pass. A percentage cannot excuse an untested critical contract.
 Integration and E2E tests serve wiring proof and control assessment respectively;
 their value is measured by **what they prove** (wiring completeness, control objective coverage),
 not by line coverage percentage. Individual IT/E2E line coverage is reported but not gated.
@@ -478,15 +482,45 @@ not by line coverage percentage. Individual IT/E2E line coverage is reported but
 ### How Coverage Is Measured
 
 This methodology distinguishes **structural coverage** (line/branch) from **requirements-based coverage**
-(ISO/IEC/IEEE 29119-4:2021, Section 5.2.10 and 6.2.12). Unit tests use structural coverage. Integration
-and E2E tests use requirements-based coverage derived from compliance mandates.
+(ISO/IEC/IEEE 29119-4:2021, Section 5.2.10 and 6.2.12). Unit, integration and E2E
+acceptance use requirements-based coverage. Structural coverage remains a diagnostic
+for unit tests and the separate merged-tier CI metric; it does not prove business
+scenario coverage.
 
-**Unit Test Coverage (structural -- line coverage)**:
-- Measured automatically by `go tool cover` and reported by `scripts/coverage/coverage_report.py`
-- CI gate: `--check-gate` on the `unit_testable` and `all_tiers` columns
-- Target: 100% of business logic (unit-testable code as categorized in `.coverage-patterns.yaml`)
-- Rationale: Google's engineering practices recommend per-commit coverage gates with high thresholds
-  for business-critical code (ref: "Software Engineering at Google", Ch. 11, Arguelles 2024)
+**Unit Test Coverage (requirements-based -- business scenarios)**:
+- Define meaningful scenarios before implementation from the in-scope BRs and
+  acceptance criteria: normal outcomes, relevant boundaries, invalid inputs and
+  consequential failure/safety paths. Identify critical scenarios explicitly.
+- Map each scenario to a Test Scenario ID or BR reference and its passing UT.
+  A scenario counts as covered only when assertions prove its business outcome;
+  merely executing code, checking a private call count or adding another assertion
+  to the same behavior does not create an additional covered scenario.
+- Coverage = scenarios with passing proving UTs / all defined in-scope business
+  scenarios. **Minimum: 90%; critical scenarios: 100%.** Assess this matrix in the
+  test plan and PR review; report the numerator, denominator and any remaining gap.
+- Do not remove legitimate scenarios from the denominator or dilute it with
+  trivial duplicates to meet the target. Any non-critical uncovered scenario needs
+  an explicit rationale and accepted risk; no pending/skipped test placeholders.
+- `go tool cover` and `scripts/coverage/coverage_report.py` still report raw
+  line/branch data to help find missing behavior. Their `unit_testable` column is
+  structural, not an automated measurement of the 90% scenario target. Existing
+  structural CI checks are separate and must not be presented as scenario proof.
+- Do not manufacture faults, replace standard-library internals, or add production
+  seams solely to execute unreachable defensive returns or reach a line percentage.
+  Close genuine business/control gaps; document defensible structural exclusions.
+
+**Verification scope and stopping rule**:
+- A localized change is not a whole-service or whole-release certification task.
+  Assess the affected BRs, scenarios, wiring points and applicable controls, plus
+  relevant regression gates. Broader GA work requires explicit authorization.
+- Record unrelated baseline failures and coverage debt separately. Do not expand
+  implementation into unrelated cleanup or keep adding tests merely for a raw
+  coverage number. Investigate whether a failure is a regression before attribution;
+  this is not permission to ignore a genuine regression or weaken a required gate.
+- Once the scoped scenario target, critical contracts, wiring/control proof and
+  required affected checks pass, stop coverage-driven expansion. Reuse valid
+  source-attributed evidence; rerun when code, dependencies or test conditions
+  meaningfully change, not repeatedly without new evidence.
 
 **Integration Test Coverage (requirements-based -- wiring completeness)**:
 - Measured by the **Wiring Manifest** created during the Plan phase of each feature
@@ -657,7 +691,7 @@ A 13-dimension quality gate applied before declaring a service or feature produc
 |---|-----------|--------------|
 | 1 | **Build** | `go build ./...` succeeds with zero errors |
 | 2 | **Lint** | `golangci-lint run` produces zero new warnings |
-| 3 | **Unit Tests** | 100% pass rate, 100% coverage on business logic |
+| 3 | **Unit Tests** | 100% pass rate; >= 90% of defined in-scope business scenarios and 100% of critical scenarios proven by passing UTs |
 | 4 | **Integration Tests** | 100% pass rate, all wiring points + FedRAMP controls assessed |
 | 5 | **Wiring Verification** | CHECKPOINT W passes for all components |
 | 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests (native Go fuzz tests and benchmarks are the sole exceptions -- see [Exception: Go Native Fuzz Tests](#exception-go-native-fuzz-tests) and [Exception: Go Native Benchmarks](#exception-go-native-benchmarks)) |

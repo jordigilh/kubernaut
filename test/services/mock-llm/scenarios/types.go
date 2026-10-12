@@ -18,6 +18,7 @@ package scenarios
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 )
 
@@ -54,19 +55,27 @@ type MultiToolCallEntry struct {
 
 // MockScenarioConfig holds the static configuration for a mock scenario.
 type MockScenarioConfig struct {
-	ScenarioName     string
-	SignalName       string
-	Severity         string
-	WorkflowName     string
-	ActionType       string
-	WorkflowID       string
-	WorkflowTitle    string
-	Confidence       float64
-	Rationale        string // primary workflow rationale (golden transcript fidelity)
-	RootCause        string
-	ResourceKind     string
-	ResourceNS       string
-	ResourceName     string
+	ScenarioName  string
+	SignalName    string
+	Severity      string
+	WorkflowName  string
+	ActionType    string
+	WorkflowID    string
+	WorkflowTitle string
+	Confidence    float64
+	// RepeatJustification is provider-authored reasoning, never trusted history
+	// metadata. KA's real validator decides whether a repeat is admissible.
+	RepeatJustification *sharedtypes.RepeatJustification
+	// RCAConfidence is independent of the current workflow proposal confidence.
+	RCAConfidence *float64
+	// DeclineWorkflow keeps the workflow in real discovery but submits no
+	// suitable workflow after examining it. It never filters the catalog.
+	DeclineWorkflow bool
+	Rationale       string // primary workflow rationale (golden transcript fidelity)
+	RootCause       string
+	ResourceKind    string
+	ResourceNS      string
+	ResourceName    string
 	// ClusterID is the registered MCP Gateway cluster name for AF create-RR
 	// scenarios. It is forwarded as cluster_id so hub and spoke targets are
 	// both explicitly attributed.

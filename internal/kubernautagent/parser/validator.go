@@ -154,6 +154,7 @@ type Validator struct {
 	allowedWorkflows    map[string]struct{}
 	catalogMeta         map[string]WorkflowMeta
 	discoveredWorkflows *katypes.DiscoveredWorkflowState
+	repeatContext       *RepeatSelectionContext
 }
 
 // NewValidator creates a result validator with the given workflow allowlist.
@@ -236,21 +237,18 @@ func (v *Validator) IsAllowed(workflowID string) bool {
 // parameter validation fails (so correctionFn can access the structured result),
 // or a ValidationError for allowlist/confidence failures.
 func (v *Validator) Validate(result *katypes.InvestigationResult) error {
-	if result.HumanReviewNeeded {
-		return nil
+	if result == nil {
+		return &ValidationError{Field: "result", Message: "must not be nil"}
 	}
 
-	if result.WorkflowID != "" {
-		if !v.IsAllowed(result.WorkflowID) {
-			message := fmt.Sprintf("workflow %q not in session allowlist", result.WorkflowID)
-			if _, catalogAllowed := v.allowedWorkflows[result.WorkflowID]; catalogAllowed && v.discoveredWorkflows != nil {
-				message = fmt.Sprintf("workflow %q not returned by workflow discovery in current session", result.WorkflowID)
-			}
-			return &ValidationError{
-				Field:   "workflow_id",
-				Message: message,
-			}
-		}
+	if err := v.validateSelectionIdentity(result); err != nil {
+		return err
+	}
+
+	// Preserve the existing review classification and parameter policy; the
+	// unconditional identity/repeat checks above cannot be bypassed by it.
+	if result.HumanReviewNeeded {
+		return nil
 	}
 
 	if result.Confidence < 0 || result.Confidence > 1 {
@@ -270,6 +268,27 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 	}
 
 	return nil
+}
+
+// DD-KA-2496: catalog identity and repeat reasoning are validated even for a
+// retained human-review proposal. A model name cannot repair catalog metadata.
+func (v *Validator) validateSelectionIdentity(result *katypes.InvestigationResult) error {
+	if result.WorkflowID == "" {
+		return nil
+	}
+	if !v.IsAllowed(result.WorkflowID) {
+		message := fmt.Sprintf("workflow %q not in session allowlist", result.WorkflowID)
+		if _, catalogAllowed := v.allowedWorkflows[result.WorkflowID]; catalogAllowed && v.discoveredWorkflows != nil {
+			message = fmt.Sprintf("workflow %q not returned by workflow discovery in current session", result.WorkflowID)
+		}
+		return &ValidationError{Field: "workflow_id", Message: message}
+	}
+	meta, ok := v.catalogMeta[result.WorkflowID]
+	if !ok || strings.TrimSpace(meta.WorkflowName) == "" {
+		return &ValidationError{Field: "workflow_name", Message: "catalog-authoritative name is required for the selected workflow"}
+	}
+	result.WorkflowName = meta.WorkflowName
+	return v.validateRepeatSelection(result)
 }
 
 // ValidateParameters checks parameters against the workflow schema.
@@ -557,6 +576,11 @@ func (v *Validator) SelfCorrect(result *katypes.InvestigationResult, maxAttempts
 	current.HumanReviewNeeded = true
 	current.HumanReviewReason = "llm_parsing_error"
 	current.Reason = fmt.Sprintf("self-correction exhausted after %d attempts: %s", maxAttempts, lastErr)
+	if v.IsAllowed(current.WorkflowID) {
+		// Preserve the catalog-resolved rejected proposal for operator/audit
+		// context, without leaving an executable selected_workflow behind.
+		current.ProposedWorkflowID = current.WorkflowID
+	}
 	current.WorkflowID = ""
 	current.ExecutionBundle = ""
 	return current, nil

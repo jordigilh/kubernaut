@@ -18,7 +18,9 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -1244,6 +1247,64 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 	})
 
 	Describe("UT-KA-1351-010: buildFinalResult propagates Phase 3 confidence (KA-HIGH-1)", func() {
+		DescribeTable("UT-KA-2496-001: completion preserves same-ID reasoning and never borrows RCA confidence (BR-KA-016)",
+			func(confidence float64, known bool) {
+				rcaConfidence, required, matched := .93, true, true
+				rca := &katypes.InvestigationResult{RCASummary: "Current pressure", Confidence: rcaConfidence, RCAConfidence: &rcaConfidence}
+				full := &katypes.InvestigationResult{
+					WorkflowID: "wf-repeat-2496", WorkflowName: "increase-memory", Confidence: confidence,
+					RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "Current limit", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Increase limit"},
+					RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted",
+					HandoffDigest: "sha256:" + strings.Repeat("b", 64), PriorRemediationUIDs: []string{"prior-2496"},
+				}
+				if known {
+					full.WorkflowSelectionConfidence = &confidence
+				}
+				discovery := &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: full.WorkflowID, Confidence: confidence}, FullResult: full}
+				result := mcptools.BuildFinalResult(rca, &mcptools.CatalogWorkflow{WorkflowID: full.WorkflowID, WorkflowName: full.WorkflowName}, discovery)
+				Expect(result.Confidence).To(Equal(confidence), "an explicit zero or omitted selection score must not inherit Phase 1 confidence")
+				Expect(result.RCAConfidence).To(Equal(&rcaConfidence))
+				if known {
+					Expect(result.WorkflowSelectionConfidence).To(Equal(&confidence))
+				} else {
+					Expect(result.WorkflowSelectionConfidence).To(BeNil())
+				}
+				Expect(result.RepeatJustification).To(Equal(full.RepeatJustification))
+				Expect(result.RepeatJustificationRequired).To(Equal(&required))
+				Expect(result.PriorWorkflowMatch).To(Equal(&matched))
+				Expect(result.RepeatValidationOutcome).To(Equal("accepted"))
+				Expect(result.HandoffDigest).To(Equal(full.HandoffDigest))
+				Expect(result.PriorRemediationUIDs).To(Equal(full.PriorRemediationUIDs))
+				result.RepeatJustification.EvidenceBasis = "mutated completion"
+				result.PriorRemediationUIDs[0] = "mutated completion link"
+				Expect(full.RepeatJustification.EvidenceBasis).To(Equal("Current limit"))
+				Expect(full.PriorRemediationUIDs).To(Equal([]string{"prior-2496"}))
+			},
+			Entry("explicit zero", 0., true),
+			Entry("unknown", 0., false),
+			Entry("known nonzero", .83, true),
+		)
+
+		It("UT-KA-2496-001: a user-selected different ID does not inherit accepted repeat reasoning or another workflow's confidence", func() {
+			confidence, required, matched := .83, true, true
+			full := &katypes.InvestigationResult{WorkflowID: "wf-repeat-2496", Confidence: confidence, WorkflowSelectionConfidence: &confidence,
+				RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "Current limit", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Increase limit"},
+				RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted", PriorRemediationUIDs: []string{"prior-2496"}}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended:  &mcpinternal.DiscoveredWorkflow{WorkflowID: full.WorkflowID, Confidence: confidence},
+				Alternatives: []mcpinternal.DiscoveredWorkflow{{WorkflowID: "wf-other-2496", Confidence: .61}}, FullResult: full}
+			result := mcptools.BuildFinalResult(&katypes.InvestigationResult{Confidence: .93},
+				&mcptools.CatalogWorkflow{WorkflowID: "wf-other-2496", WorkflowName: "increase-memory"}, discovery)
+			Expect(result.Confidence).To(Equal(.61))
+			Expect(result.WorkflowSelectionConfidence).To(Equal(func() *float64 { value := .61; return &value }()))
+			Expect(result.RepeatJustification).To(BeNil())
+			Expect(result.RepeatJustificationRequired).To(BeNil())
+			Expect(result.PriorWorkflowMatch).To(BeNil())
+			Expect(result.RepeatValidationOutcome).To(BeEmpty())
+			Expect(result.PriorRemediationUIDs).To(BeEmpty())
+		})
+
 		It("should use discovery confidence when higher than Phase 2 RCA", func() {
 			rca := &katypes.InvestigationResult{
 				RCASummary: "Pod OOM",
@@ -1501,6 +1562,36 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 })
 
 var _ = Describe("extractDiscoveryResult — parameter propagation (BR-LLM-026, #1169)", func() {
+	DescribeTable("UT-KA-2496-001: discovery carries safe current selection context on the live wire (BR-KA-016, SI-10)",
+		func(rejected bool) {
+			confidence := 0.
+			result := &katypes.InvestigationResult{
+				WorkflowID: "catalog-id-2496", WorkflowName: "increase-memory", WorkflowSelectionConfidence: &confidence,
+				RepeatValidationOutcome: "accepted", RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: "Current limit", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Increase limit"},
+				PriorRemediationUIDs: []string{"private-prior-2496"}, Parameters: map[string]interface{}{"PASSWORD": "private-parameter-2496"},
+			}
+			if rejected {
+				result.WorkflowID, result.ProposedWorkflowID = "", result.WorkflowID
+				result.RepeatValidationOutcome = "rejected"
+			}
+			wire, err := json.Marshal(mcptools.ExtractDiscoveryResult(result))
+			Expect(err).NotTo(HaveOccurred())
+			var payload map[string]interface{}
+			Expect(json.Unmarshal(wire, &payload)).To(Succeed())
+			if rejected {
+				Expect(payload).NotTo(HaveKey("recommended"))
+				Expect(payload).NotTo(HaveKey("selected_workflow"))
+				Expect(payload).To(HaveKey("selection_assessment"))
+				Expect(payload["selection_assessment"]).To(HaveKeyWithValue("proposed_workflow_id", "catalog-id-2496"))
+				Expect(payload["selection_assessment"]).NotTo(HaveKey("workflow_id"))
+			} else {
+				Expect(payload).To(HaveKey("selected_workflow"))
+				Expect(payload["selected_workflow"]).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+				Expect(payload["selected_workflow"]).NotTo(HaveKey("prior_remediation_uids"))
+				Expect(payload["selected_workflow"]).NotTo(HaveKey("parameters"))
+			}
+		}, Entry("selected", false), Entry("rejected", true),
+	)
 
 	Describe("UT-KA-EDR-001: recommended parameters (BR-LLM-026, #1169)", func() {
 		It("should copy recommended workflow parameters from InvestigationResult", func() {

@@ -370,6 +370,7 @@ kubernautAgent:
         sessionTTL: 30m
     investigation:
         inconclusiveConfidenceThreshold: 0.5
+        maxEvidenceHandoffBytes: 65536
         resolvedConfidenceThreshold: 0.7
     llmProfileRef: ""
     logging:

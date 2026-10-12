@@ -127,8 +127,10 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 		})
 
 		It("should accept known workflow IDs through the fetched validator", func() {
+			validator := parser.NewValidator([]string{"oom-recovery", "crashloop-config-fix"})
+			validator.SetWorkflowMeta("oom-recovery", parser.WorkflowMeta{WorkflowName: "oom-recovery"})
 			fetcher := &stubCatalogFetcher{
-				validator: parser.NewValidator([]string{"oom-recovery", "crashloop-config-fix"}),
+				validator: validator,
 			}
 			v, err := fetcher.FetchValidator(context.Background())
 			Expect(err).NotTo(HaveOccurred())

@@ -117,9 +117,14 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationTarget.Kind).To(Equal("Node"),
 				"UT-KA-2119-001: retry confirming the same target must be accepted")
-			Expect(result.Confidence).To(BeNumerically("==", 0.88),
+			// DD-KA-2496 separates RCA provenance from selected confidence.
+			// Keep the original RCA numeric invariant without fabricating a
+			// score on the omitted workflow confidence.
+			Expect(result.RCAConfidence).To(HaveValue(BeNumerically("==", 0.88)),
 				"UT-KA-2119-001: the pre-retry confidence (0.88) must be backfilled when the retry response omits "+
 					"confidence, not silently dropped to 0 (#2119)")
+			Expect(result.WorkflowSelectionConfidence).To(BeNil())
+			Expect(result.Confidence).To(BeZero())
 		})
 	})
 
@@ -150,9 +155,11 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Confidence).To(BeNumerically("==", 0.55),
+			Expect(result.RCAConfidence).To(HaveValue(BeNumerically("==", 0.55)),
 				"UT-KA-2119-002: a genuine, non-zero retry confidence must be preserved as-is -- "+
 					"the backfill guard must not clobber a real re-assessment")
+			Expect(result.WorkflowSelectionConfidence).To(BeNil())
+			Expect(result.Confidence).To(BeZero())
 		})
 	})
 
@@ -180,9 +187,11 @@ var _ = Describe("#2119: sameKindValidationGate must not silently drop RCA confi
 			result, err := inv.Investigate(context.Background(), signal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Confidence).To(BeNumerically("==", 0),
+			Expect(result.RCAConfidence).To(HaveValue(BeNumerically("==", 0)),
 				"UT-KA-2119-003: backfill must only trigger when the pre-retry confidence was a real (>0) value -- "+
 					"it must not fabricate a non-zero confidence out of another zero value")
+			Expect(result.WorkflowSelectionConfidence).To(BeNil())
+			Expect(result.Confidence).To(BeZero())
 		})
 	})
 

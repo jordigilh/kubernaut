@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -360,7 +361,43 @@ func (inv *Investigator) executeResolved(ctx context.Context, name string, args 
 	return result, err
 }
 
-func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string) string {
+// toolAllowedInPhase enforces the server-owned phase contract (DD-KA-2496,
+// BR-KA-017). Fleet-only tools extend RCA, never workflow discovery. Submission
+// sentinels are phase-scoped too; model arguments cannot change this decision.
+func (inv *Investigator) toolAllowedInPhase(ctx context.Context, phase katypes.Phase, name string) bool {
+	switch phase {
+	case katypes.PhaseRCA, katypes.PhaseWorkflowDiscovery, katypes.PhaseValidation:
+	default:
+		return false
+	}
+	switch name {
+	case SubmitResultToolName:
+		return phase == katypes.PhaseRCA || phase == katypes.PhaseValidation
+	case SubmitResultWithWorkflowToolName, SubmitResultNoWorkflowToolName:
+		return phase == katypes.PhaseWorkflowDiscovery
+	}
+	if slices.Contains(inv.phaseTools[phase], name) {
+		return true
+	}
+	if phase == katypes.PhaseRCA {
+		overlay, _ := FleetOverlayFromContext(ctx)
+		_, found := resolveTool(overlay, name)
+		return found
+	}
+	return false
+}
+
+func (inv *Investigator) phaseToolError(name string, phase katypes.Phase, correlationID string) string {
+	err := fmt.Errorf("tool %q not allowed in phase %q", name, phase)
+	inv.logger.Error(err, "tool call rejected by trusted phase policy",
+		"tool", name, "phase", string(phase), "correlation_id", correlationID)
+	return toolErrorJSON(err.Error())
+}
+
+func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string, phase katypes.Phase) string {
+	if !inv.toolAllowedInPhase(ctx, phase, name) {
+		return inv.phaseToolError(name, phase, correlationID)
+	}
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
@@ -390,19 +427,28 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return errResult
 	}
 
+	// DD-KA-2496: project the original structure before text sanitizers can
+	// consume JSON quoting. captureEvidence retains only sanitized content,
+	// never the original output; summarization/truncation stay independent.
+	if phase == katypes.PhaseRCA {
+		inv.captureEvidence(ctx, correlationID, name, result)
+	}
+
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {
 			inv.logger.Error(sanitizeErr, "sanitization failed, fail-closed for SOC2 compliance",
 				"tool", name,
 			)
+			if phase == katypes.PhaseRCA {
+				inv.failEvidence(correlationID, "observation sanitization failed")
+			}
 			errResult := toolErrorJSON("sanitization failed: tool output withheld")
 			alignment.SubmitToolStep(ctx, name, errResult)
 			return errResult
 		}
 		result = sanitized
 	}
-
 	alignment.SubmitToolStep(ctx, name, result)
 
 	if inv.pipeline.Summarizer != nil {

@@ -90,6 +90,7 @@ var _ = Describe("BR-KA-191: SelfCorrect with Parameter Validation (#1170)", fun
 		minVal := float64(1)
 		maxVal := float64(10)
 		v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
+			WorkflowName:    "test-workflow",
 			ExecutionEngine: "tekton",
 			ExecutionBundle: "quay.io/test/bundle:v1",
 			Parameters: []models.WorkflowParameter{

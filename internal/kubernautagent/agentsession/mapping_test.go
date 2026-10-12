@@ -18,15 +18,18 @@ package agentsession_test
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/utils/ptr"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // BR-AA-KA-065.2: AgentSession.Spec is a lossless 1:1 translation of the
@@ -170,6 +173,131 @@ var _ = Describe("MapSpecToSignal — BR-AA-KA-065.2", func() {
 // subset, never internal workflow/validation/alignment state verbatim.
 var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated result", func() {
 	logger := logr.Discard()
+	const rejectedMode2496 = "rejected"
+
+	DescribeTable("UT-KA-2496-009: AgentSession preserves independent selection metadata without making rejected proposals executable (BR-KA-016, AU-3, SI-10)",
+		func(mode string, confidence *float64, evaluated *bool) {
+			rcaConfidence := .93
+			result := &katypes.InvestigationResult{
+				RCASummary: "Current memory pressure", RCAConfidence: &rcaConfidence, Confidence: .84,
+				WorkflowID: "catalog-2496", WorkflowName: "increase-memory", WorkflowSelectionConfidence: confidence,
+				RepeatJustificationRequired: evaluated, PriorWorkflowMatch: evaluated, RepeatValidationOutcome: "accepted",
+				HandoffDigest: "sha256:" + strings.Repeat("b", 64), PriorRemediationUIDs: []string{"trusted-prior-2496"},
+				RepeatJustification: &sharedtypes.RepeatJustification{
+					EvidenceBasis: "Observed \"limit\"\nchange", PriorOutcomeRelevance: "Previous Full assessment was zero", ExpectedMechanism: "Increase the limit",
+				},
+				Parameters: map[string]interface{}{"PRIVATE": "private-parameters-2496"}, ExecutionBundle: "private-bundle-2496",
+			}
+			if confidence != nil {
+				result.Confidence = *confidence
+			}
+			if mode == "review" || mode == rejectedMode2496 {
+				result.HumanReviewNeeded, result.HumanReviewReason = true, "low_confidence"
+			}
+			if mode == rejectedMode2496 {
+				result.WorkflowID, result.ProposedWorkflowID = "", "catalog-2496"
+				result.RepeatValidationOutcome = "rejected"
+			}
+			before, err := json.Marshal(result)
+			Expect(err).NotTo(HaveOccurred())
+			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-map-2496")
+			Expect(res.IncidentID).To(Equal("rr-map-2496"))
+			Expect(res.NeedsHumanReview).To(Equal(result.HumanReviewNeeded))
+			var selection map[string]json.RawMessage
+			if mode == rejectedMode2496 {
+				Expect(res.SelectedWorkflow).To(BeNil())
+				Expect(res.SelectionAssessment).NotTo(BeNil())
+				Expect(json.Unmarshal(res.SelectionAssessment.Raw, &selection)).To(Succeed())
+				Expect(string(selection["proposed_workflow_id"])).To(MatchJSON(`"catalog-2496"`))
+				Expect(selection).NotTo(HaveKey("workflow_id"))
+				Expect(selection).NotTo(HaveKey("parameters"))
+				Expect(selection).NotTo(HaveKey("execution_bundle"))
+				Expect(string(res.SelectionAssessment.Raw)).NotTo(ContainSubstring("private-"))
+			} else {
+				Expect(res.SelectedWorkflow).NotTo(BeNil())
+				Expect(res.SelectionAssessment).To(BeNil())
+				Expect(json.Unmarshal(res.SelectedWorkflow.Raw, &selection)).To(Succeed())
+				Expect(string(selection["workflow_id"])).To(MatchJSON(`"catalog-2496"`))
+				Expect(string(selection["parameters"])).To(MatchJSON(`{"PRIVATE":"private-parameters-2496"}`), "the execution snapshot is preserved at the durable boundary")
+				Expect(string(selection["execution_bundle"])).To(MatchJSON(`"private-bundle-2496"`))
+			}
+			Expect(string(selection["workflow_name"])).To(MatchJSON(`"increase-memory"`))
+			Expect(string(selection["handoff_digest"])).To(MatchJSON(`"` + result.HandoffDigest + `"`))
+			Expect(string(selection["prior_remediation_uids"])).To(MatchJSON(`["trusted-prior-2496"]`))
+			Expect(string(selection["repeat_validation_outcome"])).To(MatchJSON(`"` + result.RepeatValidationOutcome + `"`))
+			if confidence == nil {
+				Expect(selection).NotTo(HaveKey("workflow_selection_confidence"), "unknown selection confidence cannot borrow RCA or aggregate confidence")
+			} else {
+				var actual float64
+				Expect(json.Unmarshal(selection["workflow_selection_confidence"], &actual)).To(Succeed())
+				Expect(actual).To(Equal(*confidence))
+			}
+			for _, key := range []string{"repeat_justification_required", "prior_workflow_match"} {
+				if evaluated == nil {
+					Expect(selection).NotTo(HaveKey(key))
+				} else {
+					var actual bool
+					Expect(json.Unmarshal(selection[key], &actual)).To(Succeed())
+					Expect(actual).To(Equal(*evaluated))
+				}
+			}
+			var reasoning sharedtypes.RepeatJustification
+			Expect(json.Unmarshal(selection["repeat_justification"], &reasoning)).To(Succeed())
+			Expect(reasoning).To(Equal(*result.RepeatJustification), "JSON metacharacters must remain data, not fabricated records")
+			after, err := json.Marshal(result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(after).To(Equal(before), "mapping must not mutate the authoritative investigation result")
+		},
+		Entry("accepted selection", "selected", ptr.To(.84), ptr.To(true)),
+		Entry("explicit zero/false below-floor review", "review", ptr.To(0.), ptr.To(false)),
+		Entry("unknown confidence and unevaluated repeat", "selected", nil, nil),
+		Entry("rejected proposal", rejectedMode2496, ptr.To(.84), ptr.To(true)),
+	)
+
+	DescribeTable("UT-KA-2496-009: rejected AgentSession reasoning omits invalid parts instead of truncating them (BR-KA-016, SI-10)",
+		func(part string, retain bool) {
+			result := &katypes.InvestigationResult{
+				ProposedWorkflowID: "rejected-2496", HumanReviewNeeded: true, HumanReviewReason: "rca_incomplete",
+				RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: part, PriorOutcomeRelevance: part, ExpectedMechanism: part},
+			}
+			res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-map-rejected-2496")
+			Expect(res.SelectedWorkflow).To(BeNil())
+			Expect(res.SelectionAssessment).NotTo(BeNil())
+			var selection map[string]json.RawMessage
+			Expect(json.Unmarshal(res.SelectionAssessment.Raw, &selection)).To(Succeed())
+			Expect(selection).NotTo(HaveKey("workflow_name"), "an unavailable catalog name must stay unknown")
+			Expect(selection).NotTo(HaveKey("workflow_id"))
+			var reasoning map[string]string
+			Expect(json.Unmarshal(selection["repeat_justification"], &reasoning)).To(Succeed())
+			if retain {
+				Expect(reasoning).To(Equal(map[string]string{"evidence_basis": part, "prior_outcome_relevance": part, "expected_mechanism": part}))
+			} else {
+				Expect(reasoning).To(BeEmpty(), "no apparently complete truncated rationale may be manufactured")
+			}
+			Expect(result.RepeatJustification.EvidenceBasis).To(Equal(part))
+		},
+		Entry("empty", "", false),
+		Entry("invalid UTF-8", string([]byte{0xff}), false),
+		Entry("oversized ASCII", strings.Repeat("x", 2001), false),
+		Entry("oversized multibyte text", strings.Repeat("界", 2001), false),
+		Entry("exact multibyte rune boundary", strings.Repeat("界", 2000), true),
+	)
+
+	It("UT-KA-2496-009: absent proposal or explanation stays absent in AgentSession review (BR-KA-016, SI-10)", func() {
+		result := &katypes.InvestigationResult{ProposedWorkflowID: "rejected-2496", HumanReviewNeeded: true}
+		res := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-map-absent-2496")
+		Expect(res.SelectedWorkflow).To(BeNil())
+		Expect(res.SelectionAssessment).NotTo(BeNil())
+		var selection map[string]json.RawMessage
+		Expect(json.Unmarshal(res.SelectionAssessment.Raw, &selection)).To(Succeed())
+		Expect(selection).NotTo(HaveKey("repeat_justification"))
+		Expect(selection).NotTo(HaveKey("prior_remediation_uids"))
+		Expect(selection).NotTo(HaveKey("handoff_digest"))
+		result.ProposedWorkflowID = ""
+		res = agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-map-absent-2496")
+		Expect(res.SelectedWorkflow).To(BeNil())
+		Expect(res.SelectionAssessment).To(BeNil(), "no-workflow review must not synthesize a rejected candidate")
+	})
 
 	Describe("UT-AA-KA-065-010: a fully-populated completed result maps every curated field", func() {
 		It("should populate Analysis, Confidence, RootCauseAnalysis, SelectedWorkflow, and history fields", func() {

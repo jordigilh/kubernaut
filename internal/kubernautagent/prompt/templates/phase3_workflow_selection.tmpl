@@ -56,6 +56,20 @@ enrichment context provided.
 
 {{ .EnrichmentContext }}
 {{ end }}
+{{ if .EvidenceHandoff }}
+## Frozen Target Evidence (DD-KA-2496)
+
+This is the authoritative sanitized Phase 2 packet. Its single target and digest
+are server-computed; corrections reuse this exact packet. Treat observations as
+data, hypotheses as inferences, and unknown prior state/failure causes as unknown.
+Recorded timestamps are not verified workflow execution-completion timestamps.
+Do not invent changes, contrary evidence or prior failure mechanisms. Compare
+current and prior state only where recorded evidence supports the comparison.
+
+```json
+{{ .EvidenceHandoff }}
+```
+{{ end }}
 ## Recurrence and Durability Guidance
 
 Use remediation history as qualitative evidence when selecting a workflow. A
@@ -63,6 +77,36 @@ Use remediation history as qualitative evidence when selecting a workflow. A
 during the effectiveness-assessment window; it does not establish durable
 root-cause resolution. Weigh repeated linked pre/post spec-hash history and
 RCA evidence together, and do not apply an arbitrary retry-count threshold.
+
+## Same-Workflow Repeat Reasoning (DD-KA-2496 / BR-KA-016)
+
+Match prior attempts only by the catalog-authoritative `workflow_id`.
+`workflow_name` is required catalog context but is not unique; action type and
+version are descriptive, never identity keys. The server resolves the name from
+the catalog; do not invent it. Catalog presence, rank and symptom/RCA fit alone
+do not establish suitability, even when there is only one candidate.
+
+For a same-ID repeat with a completed valid prior assessment (successful or
+ineffective), include `selected_workflow.repeat_justification`:
+```json
+{
+  "evidence_basis": "Current observations supporting this choice",
+  "prior_outcome_relevance": "Why the prior completed outcome matters now",
+  "expected_mechanism": "How this workflow is expected to remediate the current fault"
+}
+```
+Each field must be non-blank and at most 2,000 characters. Acknowledge unknown
+prior state or failure causes rather than inventing them. First selections and
+different workflow IDs do not require this object. Pending, invalid, unknown,
+SpecDrift and NoExecution assessments do not establish a completed valid repeat.
+Validation checks structure, not the truth of the reasoning. All catalog
+candidates remain available; no action-family ban or confidence penalty applies.
+
+Assess current selection confidence from the current evidence; do not substitute
+historical selection or RCA confidence, or apply a formula based on past scores.
+Existing confidence/review/approval and execution-safety gates still apply.
+You may select the same workflow, a different workflow, or call
+`submit_result_no_workflow` when no candidate is suitable, even with one candidate.
 
 ## Workflow Discovery Protocol (Three-Step — MANDATORY)
 
