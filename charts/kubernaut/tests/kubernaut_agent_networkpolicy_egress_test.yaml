@@ -59,6 +59,41 @@ tests:
                   matchLabels:
                     app: datastorage
 
+  - it: "renders Prometheus and Alertmanager egress for investigator tools (Issue #2484)"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9090
+                protocol: TCP
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9093
+                protocol: TCP
+
+  - it: "honors shared monitoring port overrides for investigator egress"
+    set:
+      networkPolicies:
+        monitoring:
+          prometheusPort: 19090
+          alertManagerPort: 19093
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 19090
+                protocol: TCP
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 19093
+                protocol: TCP
+
   - it: "renders the LLM provider egress rule unconditionally (ai.llm.endpoint is mandatory KA config), defaulting to 443/0.0.0.0/0"
     asserts:
       - contains:

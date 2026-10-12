@@ -91,14 +91,19 @@ runs:
         attempt=1
         while true; do
           echo "🔍 Trivy scan attempt ${attempt}/${max_attempts}: ${IMAGE_REF}"
-          output=$(trivy image \
+          # GitHub invokes Bash with -e: guard capture so a scanner failure
+          # reaches output/status classification instead of exiting silently.
+          if output=$(trivy image \
             --format "${{ inputs.format }}" \
             --exit-code "${{ inputs.exit-code }}" \
             --severity "${{ inputs.severity }}" \
             "${IGNORE_UNFIXED_FLAG[@]}" \
             "${IGNOREFILE_FLAG[@]}" \
-            "${IMAGE_REF}" 2>&1)
-          status=$?
+            "${IMAGE_REF}" 2>&1); then
+            status=0
+          else
+            status=$?
+          fi
           echo "${output}"
 
           if [ "${status}" -eq 0 ]; then

@@ -179,6 +179,8 @@ echo ""
 START_TIME=$(date +%s)
 
 # Version information
+# Issue #2502: preserve failure-time node evidence before any live collector can fail.
+bash "${COLLECTORS_DIR}/fleet-service-path.sh" "${COLLECTION_DIR}" || echo "Warning: Fleet Service-path collection had errors"
 echo "Collecting version information..."
 kubectl version --output=yaml > "${COLLECTION_DIR}/version-info.yaml" 2>/dev/null || true
 
@@ -281,4 +283,3 @@ echo "  cd ${COLLECTION_NAME} && sha256sum -c SHA256SUMS"
 echo "=========================================="
 
 exit 0
-

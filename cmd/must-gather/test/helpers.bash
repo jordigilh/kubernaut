@@ -61,8 +61,6 @@ teardown_test_environment() {
 
 # Mock kubectl command
 mock_kubectl() {
-    local response_file="$1"
-
     cat > "${MOCK_KUBECTL_BIN}" <<EOF
 #!/bin/bash
 # Mock kubectl for testing
@@ -483,16 +481,48 @@ count_files() {
 
 # Mock curl for DataStorage API tests
 mock_curl() {
-    local response_file="$1"
+    # UT-MG-2493-001: match the real curl --output/--write-out protocol and
+    # distinct API schemas. Only the external HTTP client is replaced.
+    export MOCK_CURL_WORKFLOWS="$1"
+    export MOCK_CURL_AUDIT="$2"
+    export MOCK_CURL_HTTP_STATUS="${3:-200}"
+    export MOCK_CURL_EXIT_CODE="${4:-0}"
+    export MOCK_CURL_DIAGNOSTIC="${5:-}"
 
-    cat > "${TEST_TEMP_DIR}/bin/curl" <<EOF
+    cat > "${TEST_TEMP_DIR}/bin/curl" <<'EOF'
 #!/bin/bash
-# Mock curl for testing
-# Issue #2037: record the invoked URL so tests can assert DATASTORAGE_URL
-# was built from the configured RELEASE_NAMESPACE (last arg is the URL).
-echo "\${@: -1}" >> "${TEST_TEMP_DIR}/curl-calls.log"
-cat "${response_file}"
-exit 0
+set -euo pipefail
+output_file=""
+write_out=""
+url=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --output|-o) output_file="$2"; shift 2 ;;
+        --write-out|-w) write_out="$2"; shift 2 ;;
+        https://*|http://*) url="$1"; shift ;;
+        *) shift ;;
+    esac
+done
+[[ -n "$output_file" && "$write_out" == '%{http_code}' && -n "$url" ]] || {
+    printf 'mock curl requires output, HTTP write-out and URL\n' >&2
+    exit 2
+}
+printf '%s\n' "$url" >> "$TEST_TEMP_DIR/curl-calls.log"
+if [[ "$MOCK_CURL_EXIT_CODE" != 0 ]]; then
+    : > "$output_file"
+else
+    case "$url" in
+        */api/v1/workflows\?*) response_file="$MOCK_CURL_WORKFLOWS" ;;
+        */api/v1/audit/events\?*) response_file="$MOCK_CURL_AUDIT" ;;
+        *) printf 'unexpected mock curl endpoint\n' >&2; exit 2 ;;
+    esac
+    cat "$response_file" > "$output_file"
+fi
+if [[ -n "$MOCK_CURL_DIAGNOSTIC" ]]; then
+    printf '%s\n' "$MOCK_CURL_DIAGNOSTIC" >&2
+fi
+printf '%s' "$MOCK_CURL_HTTP_STATUS"
+exit "$MOCK_CURL_EXIT_CODE"
 EOF
 
     chmod +x "${TEST_TEMP_DIR}/bin/curl"
@@ -540,4 +570,3 @@ assert_failure() {
         return 1
     fi
 }
-

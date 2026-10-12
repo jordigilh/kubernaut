@@ -48,6 +48,7 @@ type afE2ESuiteSetup struct {
 	FleetClusterName    string            `json:"fleet_cluster_name"`
 	LocalHostPortOffset int               `json:"local_host_port_offset"`
 	PersonaTokens       map[string]string `json:"persona_tokens,omitempty"`
+	AuditActorEmail     string            `json:"audit_actor_email,omitempty"`
 }
 
 type fleetAFToolCall struct {

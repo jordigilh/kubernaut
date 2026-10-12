@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,6 +79,18 @@ type RunMustGatherImageOptions struct {
 	// outside RELEASE_NAMESPACE/WORKFLOW_NAMESPACE. Optional -- omitted
 	// entirely when unset, matching single-cluster suites that have none.
 	ExtraNamespaces []string
+	// DataStorage separates verified service identity from external-node routing.
+	// Credentials are read-only files, never values in argv or the archive tree.
+	DataStorage *MustGatherDataStorageOptions
+	// FleetDiagnosticsDir contains only this lane's bounded Service-path logs.
+	FleetDiagnosticsDir string
+}
+
+type MustGatherDataStorageOptions struct {
+	URL       string
+	ConnectTo string
+	CAFile    string
+	TokenFile string
 }
 
 // RunMustGatherImage runs the production must-gather image as a local podman
@@ -100,6 +113,28 @@ func RunMustGatherImage(ctx context.Context, opts RunMustGatherImageOptions, wri
 	}
 	if opts.OutputDir == "" {
 		return fmt.Errorf("RunMustGatherImage: OutputDir is required")
+	}
+	if opts.DataStorage != nil {
+		u, err := url.Parse(opts.DataStorage.URL)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+			return fmt.Errorf("must-gather DataStorage requires an https authority without credentials")
+		}
+		for _, path := range []string{opts.DataStorage.CAFile, opts.DataStorage.TokenFile} {
+			info, err := os.Stat(path)
+			if err != nil {
+				return fmt.Errorf("stat must-gather credential or ca file: %w", err)
+			}
+			if !filepath.IsAbs(path) || !info.Mode().IsRegular() {
+				return fmt.Errorf("must-gather credential and ca paths must be absolute regular files")
+			}
+			rel, err := filepath.Rel(opts.OutputDir, path)
+			if err != nil {
+				return fmt.Errorf("check must-gather credential isolation: %w", err)
+			}
+			if rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+				return fmt.Errorf("must-gather credential files must remain outside the output directory")
+			}
+		}
 	}
 	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create must-gather output directory: %w", err)
@@ -209,12 +244,24 @@ func buildMustGatherPodmanArgs(opts RunMustGatherImageOptions, kubeconfigPath st
 		"-e", "KUBECONFIG=/kubeconfig/kubeconfig-internal.yaml",
 		"-v", fmt.Sprintf("%s:/kubeconfig/kubeconfig-internal.yaml:ro,Z", kubeconfigPath),
 		"-v", fmt.Sprintf("%s:/must-gather:Z", opts.OutputDir),
-		opts.Image,
-		"--dest-dir=/must-gather",
-		"--namespace=" + namespace,
-		"--workflow-namespace=" + workflowNamespace,
-		"--since=" + since,
 	}
+	if ds := opts.DataStorage; ds != nil {
+		args = append(args,
+			"-e", "DATASTORAGE_URL="+ds.URL,
+			"-e", "DATASTORAGE_CA_FILE=/datastorage/ca.crt",
+			"-e", "DATASTORAGE_TOKEN_FILE=/datastorage/token",
+			"-v", ds.CAFile+":/datastorage/ca.crt:ro,Z",
+			"-v", ds.TokenFile+":/datastorage/token:ro,Z")
+		if ds.ConnectTo != "" {
+			args = append(args, "-e", "DATASTORAGE_CONNECT_TO="+ds.ConnectTo)
+		}
+	}
+	if opts.FleetDiagnosticsDir != "" {
+		args = append(args, "-e", "FLEET_DIAGNOSTICS_DIR=/fleet-diagnostics",
+			"-v", opts.FleetDiagnosticsDir+":/fleet-diagnostics:ro,Z")
+	}
+	args = append(args, opts.Image, "--dest-dir=/must-gather", "--namespace="+namespace,
+		"--workflow-namespace="+workflowNamespace, "--since="+since)
 	for _, ns := range opts.ExtraNamespaces {
 		if ns == "" {
 			continue

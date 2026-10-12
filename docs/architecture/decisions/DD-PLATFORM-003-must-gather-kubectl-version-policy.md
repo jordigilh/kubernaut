@@ -3,7 +3,7 @@
 **Date**: July 13, 2026
 **Status**: ✅ **APPROVED**
 **Confidence**: 90%
-**Last Reviewed**: July 13, 2026
+**Last Reviewed**: October 11, 2026 (six-month risk-acceptance amendment below)
 **Related**: Issue #1663 (Trivy security scan blocking `v1.6.0-rc1` release), Issue #1662 (follow-up to re-triage residual CVEs before exception expiration), Issue #1315 (Trivy/SBOM release gate), `cmd/must-gather/Dockerfile`
 
 ---
@@ -180,3 +180,39 @@ this specific tool.
 **Success Metrics**:
 - Trivy scan for `must-gather`: 0 CRITICAL, <=5 time-bound-exception HIGH (target: 0 once upstream catches up)
 - No user-reported must-gather functional regressions against clusters in the 1.30-1.32 range post-release
+
+## 2026-10-11 Amendment: Explicit Six-Month Risk Acceptance
+
+**Approved by the user**: "let's add kubectl CVEs as exceptions for 6 months validity".
+**Scope**: BR-SECURITY-2493 / PR #2493; follow-up remains Issue #1662.
+
+Retain the existing released kubectl **v1.36.2** and collector build path. Renew
+the thirteen expired exceptions and add **CVE-2026-78667**, **CVE-2026-78669**,
+and **CVE-2026-97031**. All sixteen IDs expire on **2027-04-11**, six calendar
+months from the UTC approval date. This replaces the previous 90-day duration
+for this enumerated set only; no general exception-policy change is implied.
+
+This is **risk acceptance, not vulnerability remediation**. Current Trivy
+v0.72.0 binary analysis reports nineteen HIGH package findings / sixteen unique
+CVEs in the retained must-gather verification image's installed kubectl (Go
+1.26.4, x/net v0.49.0, x/text v0.33.0). Checksum-verified published v1.36.5 and
+v1.37.1 binaries already fix thirteen IDs, but both still report the three new
+HIGH IDs. The historical "no available published fix" justification above must
+not be read as current justification for renewing all sixteen exceptions.
+
+An isolated downstream source-build spike resolved the observed findings,
+but the user selected time-bound exceptions instead of adopting that new build
+strategy. Neither a kubectl upgrade nor a source builder is introduced here.
+Keeping the current CLI avoids a new client/collector compatibility change;
+it does not eliminate vulnerability exposure or prove any CVE unreachable.
+
+Existing CI and both release-architecture scans apply
+`cmd/must-gather/.trivyignore` **only to the must-gather image**. Severity,
+ignore-unfixed and fail-closed exit settings are unchanged; unlisted findings
+remain blocking. Application images and govulncheck receive no new exceptions.
+
+Owner: **Kubernaut Platform Team**. Re-triage in **Issue #1662** before expiry;
+remove resolved entries earlier when a replacement is adopted and collector
+compatibility is verified. Any renewal requires fresh explicit approval.
+Do not close the remediation follow-up merely because an exception-aware scan
+passes, and do not describe that result as a CVE-free image.

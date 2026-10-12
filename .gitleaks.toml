@@ -134,3 +134,16 @@ paths = [
   '''^test/unit/notification/sanitization_test\.go$''',
   '''^test/unit/security/security_algorithms_test\.go$''',
 ]
+
+# BR-SECURITY-2493: PR #2493 discussion_r4239946051 / code-scanning alert #42.
+# This exact value was recomputed from the retained diagnostic archive on
+# 2026-10-11; it is a public SHA-256 checksum, not a credential. CI scans git
+# history, so keep detection enabled while excluding only this historical
+# rule + file + checksum combination (never the whole file or commit).
+[[allowlists]]
+description = "Verified must-gather archive SHA-256; not an API key (PR #2493 alert #42)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^docs/tests/2502/TEST_PLAN\.md$''']
+regexes = ['''^03ad405812c6f0574da6f89c7e13c063250192db43c517f877b84f3565913a65$''']

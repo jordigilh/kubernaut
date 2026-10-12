@@ -33,6 +33,7 @@ ARG BUILD_DATE=unknown
 FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:8106afc02bac6f3d78384a7380460aa51bf0118f8179453609c80ca1858c5454 AS goose-builder
 USER root
 ARG TARGETARCH
+ENV GOTOOLCHAIN=go1.26.9+auto
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
 # no_clickhouse/no_mssql/no_mysql/no_sqlite3/no_turso/no_vertica/no_ydb: keep
 # only the postgres driver (see comment above) -- libsql remains registered

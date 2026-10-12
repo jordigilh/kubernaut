@@ -19,6 +19,7 @@ var _ = Describe("APIFrontend E2E must-gather scope [BR-TESTING-001]", func() {
 		Expect(apifrontendMustGatherExtraNamespaces(fleetAFClusterName, true)).To(Equal([]string{
 			"envoy-gateway-system",
 			"envoy-ai-gateway-system",
+			"kube-system",
 		}), "BR-TESTING-001: Fleet diagnostics must include both deployed Envoy controller namespaces")
 		Expect(apifrontendMustGatherExtraNamespaces(fleetAFClusterName, false)).To(BeEmpty(),
 			"BR-TESTING-001: local-only runs must not collect Fleet controller namespaces")
