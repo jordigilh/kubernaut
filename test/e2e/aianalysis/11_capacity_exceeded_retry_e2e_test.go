@@ -153,16 +153,15 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 
 		By("filling KA's configured dispatch capacity with long-lived investigations")
 		createBatch(analyses[:capacityLimit])
-		Eventually(func() int {
+		Eventually(func(g Gomega) int {
 			investigating := 0
 			for _, a := range analyses[:capacityLimit] {
+				sessionName := "as-" + a.Name
 				session := &agentsessionv1.AgentSession{}
-				if err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      "as-" + a.Name,
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+					Name:      sessionName,
 					Namespace: controllerNamespace,
-				}, session); err != nil {
-					continue
-				}
+				}, session)).To(Succeed(), "AgentSession %s must be readable by the E2E client", sessionName)
 				if session.Status.Phase == agentsessionv1.AgentSessionPhaseInvestigating {
 					investigating++
 				}

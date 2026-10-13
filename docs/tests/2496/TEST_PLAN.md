@@ -1113,6 +1113,15 @@ also waits for AlertManager to expose the exact firing alert and namespace after
 injection before creating the RR, eliminating the POST/GET ingestion race; its
 zero health/alert/metrics effectiveness contract is unchanged.
 
+The first retry of that staged-capacity repair then exposed a test-client setup
+defect: the AIAnalysis E2E scheme registered AIAnalysis but not AgentSession.
+The 50 typed AgentSession GET errors were swallowed by the wait, producing a
+false `0/50 Investigating` timeout even though controller and KA logs showed all
+50 sessions were created and dispatched. The suite now registers the AgentSession
+scheme and surfaces GET failures. `Serial` remains intentional: the burst
+consumes KA's shared 50-session capacity, and the prior cross-process RCA showed
+that removing it starves unrelated specs under `TEST_PROCS`.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.
