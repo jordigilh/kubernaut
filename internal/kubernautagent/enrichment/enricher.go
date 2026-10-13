@@ -393,7 +393,10 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 
 	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, req.ClusterID, specHash)
 	if histErr != nil {
-		result.HistoryUnavailable = true
+		// An empty current hash means no valid history query could be formed
+		// (the DS API correctly returns 400). Preserve unknown/legacy flows;
+		// only a failed valid Phase 2 acquisition requires manual review.
+		result.HistoryUnavailable = specHash != ""
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)

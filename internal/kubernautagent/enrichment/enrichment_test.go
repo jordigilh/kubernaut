@@ -57,6 +57,15 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 		}, Entry("failed request", true), Entry("successful empty history", false),
 	)
 
+	It("UT-KA-2496-AUDIT-006: an empty current hash remains unknown rather than a failed valid acquisition", func() {
+		ds := &fakeDataStorageClient{err: errors.New("bad request for missing current hash")}
+		enricher := enrichment.NewEnricher(&fakeK8sClient{}, ds, audit.NopAuditStore{}, logr.Discard())
+		result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api", Namespace: "prod"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HistoryUnavailable).To(BeFalse())
+		Expect(result.RemediationHistory).To(BeNil())
+	})
+
 	Describe("UT-KA-433-028: EnrichmentResult serializes owner chain + history", func() {
 		It("should round-trip serialize baseline enrichment fields", func() {
 			original := enrichment.EnrichmentResult{

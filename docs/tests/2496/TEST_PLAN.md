@@ -1054,10 +1054,12 @@ new `AUDIT` specs must reproduce each defect before production changes.
 | Interactive RCA confidence provenance | UT-KA-2496-AUDIT-005; MCP completion/live projection | Carry the trusted Phase 1 score independently of selected confidence |
 
 The user separately chose manual review on total Phase 2 history acquisition
-failure. Propagate a safe acquisition-status flag through existing enrichment
-and freeze wiring; legitimate empty history, unknown individual assessments and
-optional Phase 1 context calls remain valid. Prove review occurs before a
-selection-provider request. No baseline history-key redesign is authorized.
+failure after a valid target/hash query. Propagate a safe acquisition-status
+flag through existing enrichment and freeze wiring; unqueryable legacy flows
+with no current hash remain unknown, as do legitimate empty history and
+individual unknown assessments. Optional Phase 1 context calls remain valid.
+Prove review occurs before a selection-provider request for valid-query failure.
+No baseline history-key redesign is authorized.
 
 The user also approved removing blanket `Serial` from the seven independent
 fullpipeline history journeys and scoping A2A request/message IDs to their RR.

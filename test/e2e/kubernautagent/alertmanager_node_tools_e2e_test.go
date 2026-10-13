@@ -77,13 +77,7 @@ var _ = Describe("E2E-KA-1507: Alertmanager & Node Proxy Tools", Label("e2e", "k
 			Expect(result).NotTo(BeNil())
 			Expect(result.IncidentID).To(Equal("e2e-ka-1507-tools"))
 			Expect(result.Analysis).NotTo(BeEmpty(), "analysis should contain tool results")
-			// BR-KA-016: a total Phase 2 history acquisition failure is now
-			// fail-closed to existing manual review. This journey still proves
-			// both external RCA tools ran and the result was persisted; it does
-			// not turn unavailable history into an empty successful history.
-			Expect(result.NeedsHumanReview).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"))
-			Expect(result.Confidence).To(BeZero())
+			Expect(result.Confidence).To(BeNumerically(">", 0), "confidence should be positive")
 		})
 	})
 })
