@@ -1122,6 +1122,15 @@ scheme and surfaces GET failures. `Serial` remains intentional: the burst
 consumes KA's shared 50-session capacity, and the prior cross-process RCA showed
 that removing it starves unrelated specs under `TEST_PROCS`.
 
+The later FullPipeline A2A scheduling review distinguishes that AA-065 capacity
+case from the ten FP A2A journeys. Those journeys were serialized in commit
+`f46662031` because they all reused `sre@kubernaut.ai`, sharing APIF per-user
+rate/session buckets and active-context state. The E2E DEX fixture now provisions
+16 SRE-grouped `fp-a2a-*` personas, selected per Ginkgo process, and the ten A2A
+`Serial` decorators are removed. The effective APIF global session cap remains
+50 and KA caps remain unchanged; this optimization isolates user state without
+inflating platform limits.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.

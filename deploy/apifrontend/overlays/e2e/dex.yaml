@@ -71,6 +71,105 @@ data:
         userID: "e2e-user-structured-decision"
         groups:
           - "sre"
+      # FullPipeline A2A specs use one isolated SRE persona per Ginkgo
+      # process so they can run concurrently without sharing APIF's per-user
+      # rate/session buckets or active-context registry.
+      - email: "fp-a2a-1@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-1"
+        userID: "e2e-user-fp-a2a-1"
+        groups:
+          - "sre"
+      - email: "fp-a2a-2@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-2"
+        userID: "e2e-user-fp-a2a-2"
+        groups:
+          - "sre"
+      - email: "fp-a2a-3@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-3"
+        userID: "e2e-user-fp-a2a-3"
+        groups:
+          - "sre"
+      - email: "fp-a2a-4@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-4"
+        userID: "e2e-user-fp-a2a-4"
+        groups:
+          - "sre"
+      - email: "fp-a2a-5@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-5"
+        userID: "e2e-user-fp-a2a-5"
+        groups:
+          - "sre"
+      - email: "fp-a2a-6@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-6"
+        userID: "e2e-user-fp-a2a-6"
+        groups:
+          - "sre"
+      - email: "fp-a2a-7@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-7"
+        userID: "e2e-user-fp-a2a-7"
+        groups:
+          - "sre"
+      - email: "fp-a2a-8@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-8"
+        userID: "e2e-user-fp-a2a-8"
+        groups:
+          - "sre"
+      - email: "fp-a2a-9@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-9"
+        userID: "e2e-user-fp-a2a-9"
+        groups:
+          - "sre"
+      - email: "fp-a2a-10@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-10"
+        userID: "e2e-user-fp-a2a-10"
+        groups:
+          - "sre"
+      - email: "fp-a2a-11@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-11"
+        userID: "e2e-user-fp-a2a-11"
+        groups:
+          - "sre"
+      - email: "fp-a2a-12@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-12"
+        userID: "e2e-user-fp-a2a-12"
+        groups:
+          - "sre"
+      - email: "fp-a2a-13@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-13"
+        userID: "e2e-user-fp-a2a-13"
+        groups:
+          - "sre"
+      - email: "fp-a2a-14@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-14"
+        userID: "e2e-user-fp-a2a-14"
+        groups:
+          - "sre"
+      - email: "fp-a2a-15@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-15"
+        userID: "e2e-user-fp-a2a-15"
+        groups:
+          - "sre"
+      - email: "fp-a2a-16@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "fp-a2a-16"
+        userID: "e2e-user-fp-a2a-16"
+        groups:
+          - "sre"
       - email: "orchestrator@kubernaut.ai"
         hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
         username: "orchestrator-user"
