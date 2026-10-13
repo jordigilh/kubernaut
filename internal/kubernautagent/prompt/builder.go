@@ -61,11 +61,12 @@ type SignalData struct {
 
 // EnrichmentData contains enrichment context injected into the prompt.
 type EnrichmentData struct {
-	OwnerChain      []string
-	DetectedLabels  map[string]string
-	QuotaDetails    map[string]enrichment.QuotaResourceUsage
-	HistoryResult   *enrichment.RemediationHistoryResult
-	HistoryRendered string
+	OwnerChain         []string
+	DetectedLabels     map[string]string
+	QuotaDetails       map[string]enrichment.QuotaResourceUsage
+	HistoryResult      *enrichment.RemediationHistoryResult
+	HistoryRendered    string
+	HistoryUnavailable bool
 }
 
 // investigationTemplateData maps to fields expected by incident_investigation.tmpl.

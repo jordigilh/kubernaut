@@ -127,7 +127,7 @@ func (c LiveSelectionContext) SafeCopy() LiveSelectionContext {
 		cloned.PriorWorkflowMatch = copyLiveValue(cloned.PriorWorkflowMatch)
 		cloned.RepeatValidationOutcome = liveValidationOutcome(cloned.RepeatValidationOutcome)
 		cloned.HandoffDigest = boundedLiveText(cloned.HandoffDigest, 128)
-		cloned.RepeatJustification = safeLiveJustification(cloned.RepeatJustification)
+		cloned.RepeatJustification = SafeRepeatJustification(cloned.RepeatJustification)
 		return LiveSelectionContext{SelectedWorkflow: &cloned}
 	}
 	if assessment := c.SelectionAssessment; assessment != nil {
@@ -142,13 +142,16 @@ func (c LiveSelectionContext) SafeCopy() LiveSelectionContext {
 		cloned.PriorWorkflowMatch = copyLiveValue(cloned.PriorWorkflowMatch)
 		cloned.RepeatValidationOutcome = liveValidationOutcome(cloned.RepeatValidationOutcome)
 		cloned.HandoffDigest = boundedLiveText(cloned.HandoffDigest, 128)
-		cloned.RepeatJustification = safeLiveAssessment(cloned.RepeatJustification)
+		cloned.RepeatJustification = SafeRepeatJustificationAssessment(cloned.RepeatJustification)
 		return LiveSelectionContext{SelectionAssessment: &cloned}
 	}
 	return LiveSelectionContext{}
 }
 
-func safeLiveJustification(justification *sharedtypes.RepeatJustification) *sharedtypes.RepeatJustification {
+// SafeRepeatJustification returns a credential-safe independent copy only when
+// all mandatory fields remain valid after sanitization. Acceptance callers must
+// reject a non-nil input that cannot be safely represented, never silently omit it.
+func SafeRepeatJustification(justification *sharedtypes.RepeatJustification) *sharedtypes.RepeatJustification {
 	if justification == nil {
 		return nil
 	}
@@ -163,7 +166,9 @@ func safeLiveJustification(justification *sharedtypes.RepeatJustification) *shar
 	return cloned
 }
 
-func safeLiveAssessment(justification *sharedtypes.RepeatJustificationAssessment) *sharedtypes.RepeatJustificationAssessment {
+// SafeRepeatJustificationAssessment preserves safe bounded parts of a rejected,
+// non-executable explanation without manufacturing a complete justification.
+func SafeRepeatJustificationAssessment(justification *sharedtypes.RepeatJustificationAssessment) *sharedtypes.RepeatJustificationAssessment {
 	if justification == nil {
 		return nil
 	}

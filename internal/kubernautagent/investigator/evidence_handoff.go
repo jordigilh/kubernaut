@@ -154,11 +154,7 @@ func scopedHandoffInput(in handoffInput) handoffInput {
 	data := *in.EnrichData
 	in.EnrichData = &data
 	if data.HistoryResult != nil {
-		ns := in.Signal.Namespace
-		if ns == "" {
-			ns = "cluster"
-		}
-		if data.HistoryResult.TargetResource != ns+"/"+in.Signal.ResourceKind+"/"+in.Signal.ResourceName {
+		if data.HistoryResult.TargetResource != in.Signal.Namespace+"/"+in.Signal.ResourceKind+"/"+in.Signal.ResourceName {
 			data.HistoryResult = nil // Never disclose or match another target's history.
 		}
 	}
@@ -166,6 +162,9 @@ func scopedHandoffInput(in handoffInput) handoffInput {
 }
 
 func (inv *Investigator) freezeEvidenceHandoff(ctx context.Context, in handoffInput, id string) (*frozenEvidenceHandoff, error) {
+	if in.EnrichData != nil && in.EnrichData.HistoryUnavailable {
+		return nil, fmt.Errorf("remediation history acquisition failed; complete repeat context is unavailable")
+	}
 	observations, err := inv.evidenceSnapshot(id)
 	if err != nil {
 		return nil, err

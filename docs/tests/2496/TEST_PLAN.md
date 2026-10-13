@@ -3,7 +3,7 @@
 **Test Plan Identifier**: TP-2496-v1.6<br>
 **Feature**: Preserve prior workflow identity/confidence and require auditable justification for same-workflow repeats<br>
 **Version**: 1.6 — synchronized final pre-implementation contract, live projection, pyramid/control proof and existing-E2E regression matrix<br>
-**Latest execution revision**: 1.59 — draft PR #2503 published for authorized CI triage; scoped gate repairs and branch-history rewrite in progress<br>
+**Latest execution revision**: 1.60 — scoped audit repairs and user-approved parallel history journeys in progress; CI runtime RCA active<br>
 **Created**: 2026-10-09<br>
 **Status**: Approved — implementation and wiring-first TDD in progress; full GA gates outstanding<br>
 **Baseline**: `8a907bb57d3530da32de9b3b8250b53587ed6f41`, branch `issue-2496-history-aware-rca`<br>
@@ -1038,3 +1038,36 @@ A full `HEAD` ancestry scan separately reports 21 findings, all inherited from
 main commit `80c8a9ad5ce09669b60e0078e80dc7ea63fcfc4e`; no main-history rewrite or
 scanner exclusion was applied. CI CodeQL/runtime and the normal secret-scan job
 remain pending. These local checks do not establish the earlier AF EOF cause.
+
+### 16.15 Scoped audit repair and scheduling — user approved 2026-10-13
+
+The read-only review at `936627078` identified five in-scope source defects.
+Independent source/blame preflight supports a 96–99% approach confidence; the
+new `AUDIT` specs must reproduce each defect before production changes.
+
+| Finding | RED / regression proof | Minimal GREEN boundary |
+|---|---|---|
+| Canonical cluster-scoped history | UT-KA-2496-AUDIT-001; extend IT-KA-2496-002 | Preserve the RO/DS leading-slash target composite for empty namespace |
+| Persisted reasoning credentials | UT-KA-2496-AUDIT-002; accepted/rejected AgentSession and AA read-back | Apply existing credential sanitizer to new narratives, never execution inputs |
+| Fleet/catalog name collision | UT-KA-2498-AUDIT-003; real catalog dispatch IT | Resolve overlays only during trusted RCA; discovery uses the local catalog |
+| Post-sanitization explanation overflow | UT-KA-2496-AUDIT-004; IT-KA-2496-003 | Validate sanitized bounds before acceptance; use existing correction/review |
+| Interactive RCA confidence provenance | UT-KA-2496-AUDIT-005; MCP completion/live projection | Carry the trusted Phase 1 score independently of selected confidence |
+
+The user separately chose manual review on total Phase 2 history acquisition
+failure. Propagate a safe acquisition-status flag through existing enrichment
+and freeze wiring; legitimate empty history, unknown individual assessments and
+optional Phase 1 context calls remain valid. Prove review occurs before a
+selection-provider request. No baseline history-key redesign is authorized.
+
+The user also approved removing blanket `Serial` from the seven independent
+fullpipeline history journeys and scoping A2A request/message IDs to their RR.
+UT-PLATFORM-2496-PARALLEL-001/002 fail before repair; all 315 infrastructure specs,
+fullpipeline compile and scoped lint pass afterward. Within-spec sequencing,
+real cooldown/approval/isolation assertions, default processes, quotas and
+deadlines remain unchanged. Actual parallel runtime proof remains pending.
+
+Repairs enhance existing components and wiring; no new service/type architecture
+or semantic reviewer is introduced. REFACTOR centralizes safe narrative
+projection and phase-aware resolution without weakening existing contracts.
+Validate affected UT/production dispatch IT and source-attributed gates, then
+batch one commit/push. Static scheduling guards are not extra business scenarios.

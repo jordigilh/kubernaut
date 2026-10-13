@@ -57,6 +57,39 @@ func (restrictedEvidencePolicy2496) Sanitize(_ context.Context, input string) (s
 // DD-KA-2496 / BR-KA-016/211, SI-10/AC-4: UT proves safety of the
 // pre-transform capture; cmd/kubernautagent's IT-KA-2496-007 proves dispatch.
 var _ = Describe("#2496 evidence handoff observation privacy", func() {
+	It("UT-KA-2496-AUDIT-006: failed history acquisition survives projection and blocks freezing", func() {
+		var enrichmentResult enrichment.EnrichmentResult
+		Expect(json.Unmarshal([]byte(`{"history_unavailable":true}`), &enrichmentResult)).To(Succeed())
+		inv := New(Config{Logger: logr.Discard()})
+		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{
+			Signal: katypes.SignalContext{ResourceKind: "Pod", ResourceName: "api", Namespace: "prod"}, EnrichData: toPromptEnrichment(&enrichmentResult),
+		}, "rr-history-unavailable")
+		Expect(err).To(MatchError(ContainSubstring("history")))
+		Expect(frozen).To(BeNil())
+	})
+	DescribeTable("UT-KA-2496-AUDIT-001: canonical cluster-scoped history remains in the frozen repeat scope",
+		func(kind, reason string) {
+			inv := New(Config{Logger: logr.Discard()})
+			score := .5
+			input := handoffInput{Signal: katypes.SignalContext{ResourceKind: kind, ResourceName: "target", ResourceAPIVersion: "v1"},
+				EnrichData: &prompt.EnrichmentData{HistoryResult: &enrichment.RemediationHistoryResult{
+					TargetResource: "/" + kind + "/target",
+					Tier1:          []enrichment.Tier1Entry{{RemediationUID: "prior-cluster", WorkflowID: "same-id", WorkflowName: "catalog-name", AssessmentReason: reason, EffectivenessScore: &score}},
+				}}}
+			frozen, err := inv.freezeEvidenceHandoff(context.Background(), input, "cluster-history-audit")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(frozen.repeat.CompletedPriorWorkflows).To(HaveKeyWithValue("same-id", []string{"prior-cluster"}))
+			Expect(frozen.serialized).To(ContainSubstring("prior-cluster"))
+			input.EnrichData.HistoryResult.TargetResource = "/" + kind + "/other"
+			other, err := inv.freezeEvidenceHandoff(context.Background(), input, "wrong-cluster-history-audit")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(other.repeat.CompletedPriorWorkflows).NotTo(HaveKey("same-id"))
+			Expect(other.serialized).NotTo(ContainSubstring("prior-cluster"))
+		},
+		Entry("Node Full", "Node", "Full"),
+		Entry("PersistentVolume Partial", "PersistentVolume", "Partial"),
+	)
+
 	DescribeTable("UT-KA-2496-010: non-observational tools and missing correlation IDs cannot share evidence (BR-KA-016, AC-4)",
 		func(id, tool string) {
 			inv := New(Config{Logger: logr.Discard()})
@@ -208,6 +241,19 @@ var _ = Describe("#2496 evidence handoff observation privacy", func() {
 		Entry("malformed YAML after a Secret document", "kind: Secret\nstringData:\n  arbitrary: opaque-private-value\n---\nstatus: [unterminated\n"),
 		Entry("malformed YAML Secret", "kind: Secret\nstringData:\n  arbitrary: opaque-private-value\nstatus: [unterminated\n"),
 	)
+
+	It("UT-KA-2496-AUDIT-007: an explicit source truncation marker is preserved as opaque evidence", func() {
+		inv := New(Config{Logger: logr.Discard()})
+		inv.captureEvidence(context.Background(), "rr-truncated", "nodes_stats_summary", `{"node":{"pods":[`+strings.Repeat(`{"name":"pod"},`, 20)+`]}
+... [TRUNCATED] Response exceeded limit.`)
+		observations, err := inv.evidenceSnapshot("rr-truncated")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(observations).To(HaveLen(1))
+		Expect(observations[0].Content).To(ContainSubstring("[TRUNCATED]"))
+		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{Signal: katypes.SignalContext{ResourceKind: "Pod", ResourceName: "api", Namespace: "prod"}}, "rr-truncated")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(frozen.serialized).To(ContainSubstring("[TRUNCATED]"))
+	})
 
 	It("UT-KA-2496-010: non-finite values fail serialization without fabricating a score", func() {
 		score := math.NaN()

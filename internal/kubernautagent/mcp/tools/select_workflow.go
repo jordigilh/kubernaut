@@ -567,6 +567,9 @@ func applyDiscoveryFullResult(result *katypes.InvestigationResult, discovery *mc
 		return
 	}
 	fr := discovery.FullResult
+	if result.RCAConfidence == nil {
+		result.RCAConfidence = cloneSelectionValue(fr.RCAConfidence)
+	}
 	if fr.RemediationTarget.Kind != "" {
 		result.RemediationTarget = fr.RemediationTarget
 	}

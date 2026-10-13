@@ -174,6 +174,34 @@ var _ = Describe("#2496 production repeat acceptance and bounded correction", fu
 		Expect(json.Unmarshal(raw, &value)).To(Succeed())
 		return value
 	}
+	It("IT-KA-2496-AUDIT-006: failed history acquisition requests review before the selection provider is invoked", func() {
+		var unavailable prompt.EnrichmentData
+		Expect(json.Unmarshal([]byte(`{"HistoryUnavailable":true}`), &unavailable)).To(Succeed())
+		result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+			Namespace: "prod", ResourceKind: "Pod", ResourceName: "api", ResourceAPIVersion: "v1", Severity: "critical",
+		}, &katypes.InvestigationResult{RCASummary: "Current observation", Confidence: .93}, &unavailable, "rr-history-failure")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+		Expect(result.WorkflowID).To(BeEmpty())
+		mu.Lock()
+		calls := len(requests)
+		mu.Unlock()
+		Expect(calls).To(BeZero(), "unavailable repeat context cannot be treated as an empty successful lookup")
+	})
+	It("IT-KA-2496-AUDIT-006: a legitimate empty history does not block first selection", func() {
+		history.HistoryResult.Tier1 = nil
+		result := invoke()
+		Expect(result.HumanReviewNeeded).To(BeFalse())
+		Expect(result.WorkflowID).To(Equal(wfA))
+	})
+	It("IT-KA-2496-AUDIT-004: sanitizer-expanding repeat reasoning exhausts into review instead of accepted missing explanation", func() {
+		proposals[0].justification = json.RawMessage(`{"evidence_basis":"` + strings.Repeat("a", 1989) + ` password=x","prior_outcome_relevance":"Prior completed outcome","expected_mechanism":"Increase limit"}`)
+		result := invoke()
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.WorkflowID).To(BeEmpty())
+		Expect(result.RepeatValidationOutcome).To(Equal("rejected"))
+	})
 
 	DescribeTable("IT-KA-2496-003: every malformed same-ID repeat exhausts into review",
 		func(justification json.RawMessage) {

@@ -196,6 +196,9 @@ type EnrichmentResult struct {
 	DetectedLabels        *DetectedLabels               `json:"detected_labels,omitempty"`
 	QuotaDetails          map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
 	RemediationHistory    *RemediationHistoryResult     `json:"remediation_history,omitempty"`
+	// HistoryUnavailable distinguishes acquisition failure from a successful
+	// empty history. Phase 2 must require review when repeat context is unavailable.
+	HistoryUnavailable bool `json:"history_unavailable,omitempty"`
 }
 
 // Enricher resolves owner chain, labels, and remediation history.
@@ -390,6 +393,7 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 
 	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, req.ClusterID, specHash)
 	if histErr != nil {
+		result.HistoryUnavailable = true
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)

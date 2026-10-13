@@ -45,7 +45,7 @@ import (
 // isolation case lives in the registered hub/spoke fleet suite; no CR status
 // or confidence/review/approval/RO safety control is changed. Live result
 // assertions read AF's SSE artifacts, never DataStorage as a transport.
-var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "fullpipeline", "history-2496"), Serial, func() {
+var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "fullpipeline", "history-2496"), func() {
 	DescribeTable("current selection after a genuine completed prior lifecycle",
 		func(currentSignal string, successfulPrior, approvalRequired bool) {
 			environment := "staging"
@@ -400,7 +400,7 @@ func fpAssertHistoryAudit2496(rrName, priorWorkflowID string, result *agentsessi
 
 func fpAssertHistoryLive2496(rrName string, result *agentsessionv1.AgentSessionResult) {
 	GinkgoHelper()
-	body := fpA2AMessageStreamWithContext("history-live-2496", "history-live-"+rrName, "investigate current selection 2496 for "+rrName)
+	body := fpA2AMessageStreamWithContext("history-live-"+rrName, "history-live-"+rrName, "investigate current selection 2496 for "+rrName)
 	resp, err := fpA2ASSEInvoke(body, 180*time.Second)
 	Expect(err).NotTo(HaveOccurred())
 	defer func() { Expect(resp.Body.Close()).To(Succeed()) }()

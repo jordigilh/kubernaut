@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-logr/logr"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -147,6 +146,16 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, synthesizing curated placeholder", "incidentID", incidentID)
 		r = &katypes.InvestigationResult{RCASummary: "Investigation completed without result"}
 	}
+	// DD-KA-2496: an accepted repeat must not lose mandatory reasoning at a
+	// persistence boundary. Fail to the existing non-executable review shape.
+	if r.WorkflowID != "" && r.RepeatJustificationRequired != nil && *r.RepeatJustificationRequired && katypes.SafeRepeatJustification(r.RepeatJustification) == nil {
+		log.Info("mandatory repeat explanation cannot be safely persisted; requiring review", "incidentID", incidentID)
+		copyResult := *r
+		copyResult.ProposedWorkflowID, copyResult.WorkflowID = r.WorkflowID, ""
+		copyResult.HumanReviewNeeded, copyResult.HumanReviewReason = true, katypes.HumanReviewReasonRCAIncomplete
+		copyResult.RepeatValidationOutcome = "rejected"
+		r = &copyResult
+	}
 
 	res := &agentsessionv1.AgentSessionResult{
 		IncidentID:        incidentID,
@@ -242,8 +251,8 @@ func buildSelectedWorkflowMap(r *katypes.InvestigationResult) map[string]interfa
 		"confidence":  r.Confidence,
 	}
 	addSelectionMetadata(sw, r)
-	if r.RepeatJustification != nil {
-		sw["repeat_justification"] = r.RepeatJustification
+	if safe := katypes.SafeRepeatJustification(r.RepeatJustification); safe != nil {
+		sw["repeat_justification"] = safe
 	}
 	if len(r.Parameters) > 0 {
 		sw["parameters"] = r.Parameters
@@ -311,11 +320,9 @@ func buildSelectionAssessmentMap(r *katypes.InvestigationResult) map[string]inte
 		assessment["workflow_name"] = r.WorkflowName
 	}
 	if r.RepeatJustification != nil {
-		assessment["repeat_justification"] = &sharedtypes.RepeatJustificationAssessment{
-			EvidenceBasis:         boundedAssessmentPart(r.RepeatJustification.EvidenceBasis),
-			PriorOutcomeRelevance: boundedAssessmentPart(r.RepeatJustification.PriorOutcomeRelevance),
-			ExpectedMechanism:     boundedAssessmentPart(r.RepeatJustification.ExpectedMechanism),
-		}
+		assessment["repeat_justification"] = katypes.SafeRepeatJustificationAssessment(&sharedtypes.RepeatJustificationAssessment{
+			EvidenceBasis: r.RepeatJustification.EvidenceBasis, PriorOutcomeRelevance: r.RepeatJustification.PriorOutcomeRelevance, ExpectedMechanism: r.RepeatJustification.ExpectedMechanism,
+		})
 	}
 	return assessment
 }
@@ -343,13 +350,6 @@ func addSelectionMetadata(destination map[string]interface{}, r *katypes.Investi
 
 // Omit unrepresentable rejected parts; never truncate them into apparently
 // valid reasoning. The rejection outcome is preserved independently.
-func boundedAssessmentPart(part string) string {
-	if !utf8.ValidString(part) || utf8.RuneCountInString(part) > 2000 {
-		return ""
-	}
-	return part
-}
-
 func buildWarnings(r *katypes.InvestigationResult) []string {
 	if len(r.Warnings) > 0 {
 		return r.Warnings

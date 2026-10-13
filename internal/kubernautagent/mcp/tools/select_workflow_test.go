@@ -33,6 +33,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -1247,6 +1249,25 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 	})
 
 	Describe("UT-KA-1351-010: buildFinalResult propagates Phase 3 confidence (KA-HIGH-1)", func() {
+		It("UT-KA-2496-AUDIT-005: parsed interactive RCA keeps its trusted confidence in completion and live payload", func() {
+			rca, err := parser.NewResultParser().Parse(`{"rca_summary":"Observed pressure","confidence":0.93}`)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rca.RCAConfidence).To(BeNil(), "start with the actual extraction shape, not a pre-populated provenance pointer")
+			rcaScore, selectedScore := .93, .84
+			discovery := &mcpinternal.WorkflowDiscoveryResult{FullResult: &katypes.InvestigationResult{
+				WorkflowID: "wf-confidence", WorkflowName: "catalog-name", Confidence: selectedScore,
+				RCAConfidence: &rcaScore, WorkflowSelectionConfidence: &selectedScore,
+			}}
+			result := mcptools.BuildFinalResult(rca, &mcptools.CatalogWorkflow{WorkflowID: "wf-confidence", WorkflowName: "catalog-name"}, discovery)
+			Expect(result.RCAConfidence).To(HaveValue(Equal(rcaScore)))
+			Expect(result.Confidence).To(Equal(selectedScore))
+			var live map[string]json.RawMessage
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &live)).To(Succeed())
+			Expect(string(live["confidence"])).To(Equal("0.93"))
+			*result.RCAConfidence = .1
+			Expect(*discovery.FullResult.RCAConfidence).To(Equal(.93), "completion must not alias the trusted discovery snapshot")
+		})
+
 		DescribeTable("UT-KA-2496-001: completion preserves same-ID reasoning and never borrows RCA confidence (BR-KA-016)",
 			func(confidence float64, known bool) {
 				rcaConfidence, required, matched := .93, true, true

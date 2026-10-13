@@ -43,13 +43,19 @@ import (
 // Test doubles replace only external tools and audit storage. The real registry,
 // investigator dispatch, provider client and prompt builder are always used.
 type phaseProbe2498 struct {
-	name     string
-	endpoint string
-	calls    atomic.Int32
+	name        string
+	endpoint    string
+	description string
+	calls       atomic.Int32
 }
 
-func (t *phaseProbe2498) Name() string                { return t.name }
-func (t *phaseProbe2498) Description() string         { return "external test endpoint" }
+func (t *phaseProbe2498) Name() string { return t.name }
+func (t *phaseProbe2498) Description() string {
+	if t.description != "" {
+		return t.description
+	}
+	return "external test endpoint"
+}
 func (t *phaseProbe2498) Parameters() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
 func (t *phaseProbe2498) Execute(ctx context.Context, _ json.RawMessage) (string, error) {
 	t.calls.Add(1)
@@ -94,6 +100,29 @@ func (s *phaseAudit2498) snapshot() []*audit.AuditEvent {
 }
 
 var _ = Describe("DD-KA-2496: trusted phase isolation (BR-KA-017, AC-6, SI-10)", func() {
+	DescribeTable("UT-KA-2498-AUDIT-003: catalog-name collisions cannot advertise or execute the fleet implementation in discovery",
+		func(name string) {
+			catalog := &phaseProbe2498{name: name, description: "catalog implementation"}
+			remote := &phaseProbe2498{name: name, description: "remote Kubernetes implementation"}
+			reg := registry.New()
+			reg.Register(catalog)
+			ctx := WithFleetOverlay(context.Background(), map[string]tools.Tool{name: remote})
+			inv := New(Config{Registry: reg, PhaseTools: DefaultPhaseToolMap(), Logger: logr.Discard(), AuditStore: audit.NopAuditStore{}})
+			definitions := inv.toolDefinitionsForPhase(ctx, katypes.PhaseWorkflowDiscovery)
+			Expect(definitions).To(ContainElement(SatisfyAll(HaveField("Name", name), HaveField("Description", "catalog implementation"))))
+			resp := llm.ChatResponse{ToolCalls: []llm.ToolCall{{ID: "collision", Name: name, Arguments: "{}"}}}
+			messages, _, _ := inv.processToolCalls(ctx, nil, resp, 1, string(katypes.PhaseWorkflowDiscovery), "rr-collision-audit")
+			Expect(messages).To(HaveLen(2))
+			Expect(catalog.calls.Load()).To(Equal(int32(1)))
+			Expect(remote.calls.Load()).To(BeZero(), "an allowed name must not authorize a different remote implementation")
+			Expect(inv.executeTool(ctx, name, json.RawMessage(`{}`), "rr-collision-rca", katypes.PhaseRCA)).To(ContainSubstring("external result"))
+			Expect(remote.calls.Load()).To(Equal(int32(1)), "authorized RCA overlay behavior remains intact")
+		},
+		Entry("list actions", "list_available_actions"),
+		Entry("list workflows", "list_workflows"),
+		Entry("get workflow", "get_workflow"),
+	)
+
 	Describe("UT-KA-2498-001: advertisement and execution share a trusted phase", func() {
 		DescribeTable("rejects an off-phase registered tool without invoking it",
 			func(name string, phase katypes.Phase) {

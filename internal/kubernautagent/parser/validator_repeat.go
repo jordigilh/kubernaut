@@ -84,6 +84,11 @@ func (v *Validator) validateRepeatSelection(result *katypes.InvestigationResult)
 			return &ValidationError{Field: "repeat_justification." + part.name, Message: "must be non-blank valid text of at most 2000 characters"}
 		}
 	}
+	safe := katypes.SafeRepeatJustification(result.RepeatJustification)
+	if safe == nil {
+		return &ValidationError{Field: "repeat_justification", Message: "must remain complete and within 2000 characters per field after credential sanitization"}
+	}
+	result.RepeatJustification = safe
 	if required {
 		result.RepeatValidationOutcome = "accepted"
 	} else {

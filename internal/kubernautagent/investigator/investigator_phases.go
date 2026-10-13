@@ -330,6 +330,7 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 	}
 
 	pe.HistoryResult = data.RemediationHistory
+	pe.HistoryUnavailable = data.HistoryUnavailable
 	return pe
 }
 

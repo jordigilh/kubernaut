@@ -174,6 +174,43 @@ var _ = Describe("MapSpecToSignal — BR-AA-KA-065.2", func() {
 var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated result", func() {
 	logger := logr.Discard()
 	const rejectedMode2496 = "rejected"
+	It("UT-KA-2496-AUDIT-004: an unsafe mandatory explanation cannot persist as an accepted selection", func() {
+		required := true
+		result := &katypes.InvestigationResult{WorkflowID: "catalog-id", WorkflowName: "catalog-name", Confidence: .84,
+			RepeatJustificationRequired: &required, RepeatValidationOutcome: "accepted",
+			RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: strings.Repeat("a", 1989) + " password=x", PriorOutcomeRelevance: "Prior outcome", ExpectedMechanism: "Increase limit"},
+		}
+		mapped := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-required-safety")
+		Expect(mapped.NeedsHumanReview).To(BeTrue())
+		Expect(mapped.SelectedWorkflow).To(BeNil())
+		Expect(mapped.SelectionAssessment).NotTo(BeNil())
+		Expect(string(mapped.SelectionAssessment.Raw)).To(ContainSubstring(`"repeat_validation_outcome":"rejected"`))
+		Expect(result.WorkflowID).To(Equal("catalog-id"), "projection cannot mutate the source result")
+	})
+	DescribeTable("UT-KA-2496-AUDIT-002: selected and rejected persisted narratives redact credentials without changing execution fields",
+		func(rejected bool) {
+			result := &katypes.InvestigationResult{WorkflowID: "catalog-id", WorkflowName: "catalog-name", Confidence: .84,
+				RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: "Current password=private-private", PriorOutcomeRelevance: "Prior password=private-private", ExpectedMechanism: "Mechanism password=private-private"},
+				Parameters:          map[string]any{"EXECUTION_INPUT": "keep-execution-value"}, ExecutionBundle: "catalog-bundle",
+			}
+			if rejected {
+				result.WorkflowID, result.ProposedWorkflowID = "", "catalog-id"
+				result.HumanReviewNeeded = true
+			}
+			mapped := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "rr-safe-reasoning")
+			var raw []byte
+			if rejected {
+				raw = mapped.SelectionAssessment.Raw
+			} else {
+				raw = mapped.SelectedWorkflow.Raw
+				Expect(string(raw)).To(ContainSubstring("keep-execution-value"))
+				Expect(string(raw)).To(ContainSubstring("catalog-bundle"))
+			}
+			Expect(string(raw)).NotTo(ContainSubstring("private-private"))
+			Expect(string(raw)).To(ContainSubstring("REDACTED"))
+			Expect(result.RepeatJustification.EvidenceBasis).To(Equal("Current password=private-private"), "mapping does not mutate the authoritative result")
+		}, Entry("selected", false), Entry("rejected", true),
+	)
 
 	DescribeTable("UT-KA-2496-009: AgentSession preserves independent selection metadata without making rejected proposals executable (BR-KA-016, AU-3, SI-10)",
 		func(mode string, confidence *float64, evaluated *bool) {

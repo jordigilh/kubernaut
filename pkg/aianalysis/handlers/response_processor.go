@@ -43,6 +43,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -341,11 +342,11 @@ func stampSelectionMetadata(sw *aianalysisv1.SelectedWorkflow, m map[string]inte
 	sw.HandoffDigest = GetStringFromMap(m, "handoff_digest")
 	sw.PriorRemediationUIDs = GetStringSliceFromMap(m, "prior_remediation_uids")
 	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
-		sw.RepeatJustification = &sharedtypes.RepeatJustification{
+		sw.RepeatJustification = katypes.SafeRepeatJustification(&sharedtypes.RepeatJustification{
 			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
 			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
 			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
-		}
+		})
 	}
 }
 
@@ -385,11 +386,11 @@ func (p *ResponseProcessor) storeSelectionAssessment(analysis *aianalysisv1.AIAn
 		PriorRemediationUIDs:        GetStringSliceFromMap(m, "prior_remediation_uids"),
 	}
 	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
-		assessment.RepeatJustification = &sharedtypes.RepeatJustificationAssessment{
+		assessment.RepeatJustification = katypes.SafeRepeatJustificationAssessment(&sharedtypes.RepeatJustificationAssessment{
 			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
 			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
 			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
-		}
+		})
 	}
 	analysis.Status.EnsureRCAResult().SelectionAssessment = assessment
 }

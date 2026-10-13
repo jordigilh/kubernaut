@@ -175,6 +175,13 @@ func projectObservation(ctx context.Context, output string) (string, error) {
 	trimmed := strings.TrimSpace(output)
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
 		if !json.Valid([]byte(trimmed)) {
+			// Tool clients may return a deliberately bounded textual response with
+			// an explicit truncation marker after a JSON prefix. Preserve that
+			// marker as opaque, sanitized text; never silently repair arbitrary
+			// malformed JSON.
+			if strings.Contains(trimmed, "[TRUNCATED]") {
+				return output, nil
+			}
 			return "", fmt.Errorf("structured observation is not valid JSON")
 		}
 		projected, err := projectObservationJSON(ctx, json.RawMessage(trimmed))

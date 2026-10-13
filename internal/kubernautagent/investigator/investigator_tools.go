@@ -232,7 +232,7 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 		for _, t := range phaseTools {
 			eff := t
 			ov, overridden := resolveTool(overlay, t.Name())
-			if overridden {
+			if phase == katypes.PhaseRCA && overridden {
 				eff = ov
 			} else if phase == katypes.PhaseRCA && hasOverlay && isFleetSuppressed(t.Name()) {
 				seen[t.Name()] = struct{}{}
@@ -332,8 +332,11 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 // schema, but that's advertisement only — this is the execution-time
 // backstop, so a suppressed name called anyway (schema drift, hallucination,
 // adversarial input) can't still run against the hub.
-func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage) (string, error) {
+func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage, phase katypes.Phase) (string, error) {
 	overlay, hasOverlay := FleetOverlayFromContext(ctx)
+	if phase != katypes.PhaseRCA {
+		overlay, hasOverlay = nil, false
+	}
 	if hasOverlay {
 		if t, found := resolveTool(overlay, name); found {
 			return t.Execute(ctx, args)
@@ -414,7 +417,7 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON(ar.Reason)
 	}
 
-	result, err := inv.executeResolved(ctx, name, args)
+	result, err := inv.executeResolved(ctx, name, args, phase)
 	if err != nil {
 		inv.logger.Error(err, "tool execution failed",
 			"tool", name,

@@ -70,6 +70,39 @@ func selectionObject2496(raw []byte) map[string]json.RawMessage {
 // BR-KA-016 / BR-AI-088 / DD-KA-2496: these are real mapper/processor tests,
 // not a substitute for the admitted AgentSession -> AA controller IT.
 var _ = Describe("#2496 selection persistence", func() {
+	DescribeTable("UT-AA-2496-AUDIT-002: AA status independently sanitizes admitted selected and rejected narratives",
+		func(rejected bool) {
+			r := selectionResult2496(.84, rejected)
+			if rejected {
+				r.WorkflowID, r.ProposedWorkflowID, r.RepeatValidationOutcome = "", aaCatalogID2496, aaRejected2496
+			}
+			mapped := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "rr-aa-narrative")
+			raw := mapped.SelectedWorkflow
+			if rejected {
+				raw = mapped.SelectionAssessment
+			}
+			var body map[string]any
+			Expect(json.Unmarshal(raw.Raw, &body)).To(Succeed())
+			body["repeat_justification"] = map[string]string{"evidence_basis": "Current password=private-private", "prior_outcome_relevance": "Prior password=private-private", "expected_mechanism": "Mechanism password=private-private"}
+			wire, err := json.Marshal(body)
+			Expect(err).NotTo(HaveOccurred())
+			raw.Raw = wire
+			analysis := buildLowConfidenceFloorTestAnalysis()
+			auditClient := aiaudit.NewAuditClient(&aiAuditStoreSpy{}, logr.Discard())
+			_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), auditClient).ProcessAgentSessionResult(context.Background(), analysis, mapped)
+			Expect(err).NotTo(HaveOccurred())
+			var persisted []byte
+			if rejected {
+				persisted, err = json.Marshal(analysis.Status.GetRCAResult().SelectionAssessment.RepeatJustification)
+			} else {
+				persisted, err = json.Marshal(analysis.Status.GetRCAResult().SelectedWorkflow.RepeatJustification)
+				Expect(analysis.Status.GetRCAResult().SelectedWorkflow.ExecutionBundle).To(Equal(r.ExecutionBundle))
+			}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(persisted)).NotTo(ContainSubstring("private-private"))
+			Expect(string(persisted)).To(ContainSubstring("REDACTED"))
+		}, Entry("selected", false), Entry("rejected", true),
+	)
 	DescribeTable("UT-AA-2496-003: both complete and failed typed audit preserve selected or non-executable reasoning (BR-KA-016, BR-AUDIT-005, AU-3, CC7.2)",
 		func(confidence float64, mode string) {
 			rejected := mode == aaRejected2496 || mode == "rejected-complete-parts"

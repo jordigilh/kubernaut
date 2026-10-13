@@ -18,6 +18,7 @@ package parser_test
 
 import (
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +29,35 @@ import (
 
 // DD-KA-2496; BR-KA-016/191; SI-10/AU-3.
 var _ = Describe("#2496 typed selection reasoning and confidence provenance", func() {
+	It("UT-KA-2496-AUDIT-002: accepted repeat reasoning is credential-safe before persistence", func() {
+		v := parser.NewValidator([]string{"id-a"})
+		v.SetWorkflowMeta("id-a", parser.WorkflowMeta{WorkflowName: "catalog-name"})
+		v.SetRepeatSelectionContext(&parser.RepeatSelectionContext{CompletedPriorWorkflows: map[string][]string{"id-a": {"prior-rr"}}})
+		result, err := parser.NewResultParser().Parse(`{"workflow_id":"id-a","confidence":0.84,"repeat_justification":{"evidence_basis":"Current limit password=private-private","prior_outcome_relevance":"Prior outcome password=private-private","expected_mechanism":"Increase limit password=private-private"}}`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(v.Validate(result)).To(Succeed())
+		wire, err := json.Marshal(result.RepeatJustification)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(wire)).NotTo(ContainSubstring("private-private"))
+		Expect(string(wire)).To(ContainSubstring("REDACTED"))
+		Expect(result.RepeatValidationOutcome).To(Equal("accepted"))
+	})
+
+	It("UT-KA-2496-AUDIT-004: post-sanitization overflow cannot accept a required repeat without reasoning", func() {
+		v := parser.NewValidator([]string{"id-a"})
+		v.SetWorkflowMeta("id-a", parser.WorkflowMeta{WorkflowName: "catalog-name"})
+		v.SetRepeatSelectionContext(&parser.RepeatSelectionContext{CompletedPriorWorkflows: map[string][]string{"id-a": {"prior-rr"}}})
+		payload := map[string]any{"workflow_id": "id-a", "confidence": .84, "repeat_justification": map[string]string{
+			"evidence_basis": strings.Repeat("a", 1989) + " password=x", "prior_outcome_relevance": "Prior completed outcome", "expected_mechanism": "Increase limit",
+		}}
+		wire, err := json.Marshal(payload)
+		Expect(err).NotTo(HaveOccurred())
+		result, err := parser.NewResultParser().Parse(string(wire))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(v.Validate(result)).To(MatchError(ContainSubstring("repeat_justification")))
+		Expect(result.RepeatValidationOutcome).To(Equal("rejected"))
+	})
+
 	DescribeTable("UT-KA-2496-005: preserves all three justification fields without conflating selection/RCA confidence",
 		func(raw string, selected float64) {
 			result, err := parser.NewResultParser().Parse(raw)
