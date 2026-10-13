@@ -73,6 +73,7 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		fleetHistoryCrash2496(k8sClient, targetNS)
 		fleetHistoryCrash2496(remoteK8sClient, targetNS)
 		sourceOrigin, currentOrigin := "hub", remoteCluster
+		fleetHistoryMetrics2496(targetNS, sourceOrigin)
 		By("Proving both bound targets are visible through their registered MCP overlays")
 		for _, origin := range []string{sourceOrigin, currentOrigin} {
 			mcp, err := newFleetMCPClientForCluster(ctx, origin)
@@ -102,6 +103,7 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		Expect(priorEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		Expect(priorEA.Spec.ClusterID).To(Equal(sourceOrigin))
 		Expect(priorEA.Status.AssessmentReason).To(BeElementOf("Full", "Partial"))
+		Expect(priorEA.Status.Components.MetricsAssessed).To(BeTrue(), "the valid cluster-scoped metric fixture must be assessed")
 		Expect(priorEA.Status.Components.HealthScore).To(HaveValue(BeNumerically(">", 0)))
 		// Source pre-state and current spoke state really collide. Do not seed
 		// unrelated hashes that would be excluded even without cluster scoping.
@@ -185,6 +187,23 @@ func fleetHistoryCrash2496(reader client.Reader, targetNS string) {
 		}
 		g.Expect(crashed).To(BeTrue(), "the scoped workload must exhibit the real fault")
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+}
+
+func fleetHistoryMetrics2496(targetNS, clusterID string) {
+	GinkgoHelper()
+	now := time.Now()
+	labels := map[string]string{
+		"namespace":                    targetNS,
+		"pod":                          "memory-eater-2496",
+		"container":                    "workload",
+		infrastructure.ClusterLabelKey: clusterID,
+	}
+	Expect(infrastructure.InjectMetrics(ctx, "http://localhost:9190", []infrastructure.TestMetric{
+		{Name: "container_memory_working_set_bytes", Labels: labels, Value: 500_000_000, Timestamp: now.Add(-20 * time.Second)},
+		{Name: "container_memory_working_set_bytes", Labels: labels, Value: 200_000_000, Timestamp: now},
+		{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 100, Timestamp: now.Add(-20 * time.Second), IsCounter: true},
+		{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: 110, Timestamp: now, IsCounter: true},
+	})).To(Succeed(), "cluster-scoped EM metrics must be available before the prior lifecycle")
 }
 
 func fleetScopedHistory2496(targetNS, origin, hash string) *ogenclient.RemediationHistoryContext {

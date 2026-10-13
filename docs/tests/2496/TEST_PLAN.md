@@ -1066,7 +1066,14 @@ fullpipeline history journeys and scoping A2A request/message IDs to their RR.
 UT-PLATFORM-2496-PARALLEL-001/002 fail before repair; all 315 infrastructure specs,
 fullpipeline compile and scoped lint pass afterward. Within-spec sequencing,
 real cooldown/approval/isolation assertions, default processes, quotas and
-deadlines remain unchanged. Actual parallel runtime proof remains pending.
+ deadlines remain unchanged. Actual parallel runtime proof remains pending.
+
+The Fleet isolation test's prior lifecycle also requires a real `Full`/`Partial`
+EffectivenessAssessment. EM's Fleet PromQL includes the origin `cluster` label;
+the test now injects two accepted `cluster=hub` samples before creating the prior
+RR and asserts `MetricsAssessed=true`. A `MetricsTimedOut` result is a monitoring
+fixture failure, not evidence that history scoping is wrong. No production EM,
+PromQL, timeout, or score-policy change is part of this repair.
 
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
