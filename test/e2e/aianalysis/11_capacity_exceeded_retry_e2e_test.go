@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -43,11 +44,15 @@ import (
 // doc comment). Only this E2E test exercises KA's actual session.Store
 // admission control under genuine concurrent load.
 //
-// capacityBurstOvershoot deliberately creates more concurrent investigations
-// than this E2E cluster's configured KA runtime.session.maxConcurrentInvestigations
-// (50 -- see the inline KA config template in test/infrastructure/kubernautagent.go).
-// Investigations are created via concurrent goroutines (not a serial loop) so
-// the burst arrives at KA's dispatcher as close to simultaneously as possible.
+// capacityLimit is this E2E cluster's configured
+// KA runtime.session.maxConcurrentInvestigations (see the inline KA config
+// template in test/infrastructure/kubernautagent.go).
+const capacityLimit = 50
+
+// capacityBurstOvershoot creates 20 investigations beyond the configured cap.
+// The test fills the first 50 slots and then creates the overshoot concurrently
+// so capacity rejection is controlled by the KA admission boundary rather than
+// by a wall-clock race between API-server creation and mock-LLM completion.
 //
 // History (2026-08-20): 120 (2.4x overshoot) originally, with the default
 // fast-completing "CrashLoopBackOff" mock scenario. After DD-AA-KA-001 Gap
@@ -65,15 +70,11 @@ import (
 // LLM responds in well under a second) were racing each other, and on that
 // run creation lost. Root cause of both failure modes: relying on wall-clock
 // race timing (a fundamentally non-deterministic lever) to force overlap.
-// Fixed by using the "brief-investigation-test" mock LLM scenario below
-// (~9-12s deterministic investigation duration, the same mechanism already
-// proven by IT-AA-1376-001 for holding KA sessions open a controlled amount
-// of time) instead of racing burst-creation speed against instant
-// completion -- this guarantees overlap deterministically regardless of CI
-// runner speed, so the burst size no longer needs to be large enough to
-// "win" a timing race. 70 (1.4x overshoot, 20 over the 50-slot cap) is ample
-// to force multiple genuine rejections once overlap is guaranteed.
-const capacityBurstOvershoot = 70
+// Fixed by filling the configured cap with the existing
+// "slow-investigation-test" mock scenario before creating the overshoot. This
+// removes the API-server creation-rate versus investigation-completion race
+// without changing KA configuration or the test timeout.
+const capacityBurstOvershoot = capacityLimit + 20
 
 // Serial (2026-08-20 RCA, PR #2189 round-13): this suite runs with
 // `--procs=$(TEST_PROCS)` (Makefile test-e2e-% target), so without Serial
@@ -110,14 +111,11 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint: "e2e-fp-" + suffix,
 							Severity:    "warning",
-							// "brief-investigation-test" routes to the mock LLM's
-							// briefInvestigationConfig scenario (~9-12s deterministic
-							// investigation duration) instead of the near-instant
-							// default "CrashLoopBackOff" scenario -- see
-							// capacityBurstOvershoot's doc comment above for why a
-							// deterministic delay, not burst size, is what reliably
-							// forces capacity overlap.
-							SignalName:       "brief-investigation-test",
+							// "slow-investigation-test" keeps the first capacityLimit
+							// AgentSessions in KA's Investigating phase while the
+							// overshoot is admitted. This avoids relying on the
+							// API-server creation rate to beat mock-LLM completion.
+							SignalName:       "slow-investigation-test",
 							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",
@@ -140,28 +138,45 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 			}
 		}()
 
-		By("bursting far more concurrent investigations than KA's configured dispatch capacity, all at once")
-		var wg sync.WaitGroup
-		for _, a := range analyses {
-			wg.Add(1)
-			go func(a *aianalysisv1.AIAnalysis) {
-				defer wg.Done()
-				defer GinkgoRecover()
-				Expect(k8sClient.Create(ctx, a)).To(Succeed())
-			}(a)
+		createBatch := func(batch []*aianalysisv1.AIAnalysis) {
+			var wg sync.WaitGroup
+			for _, a := range batch {
+				wg.Add(1)
+				go func(a *aianalysisv1.AIAnalysis) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					Expect(k8sClient.Create(ctx, a)).To(Succeed())
+				}(a)
+			}
+			wg.Wait()
 		}
-		wg.Wait()
+
+		By("filling KA's configured dispatch capacity with long-lived investigations")
+		createBatch(analyses[:capacityLimit])
+		Eventually(func() int {
+			investigating := 0
+			for _, a := range analyses[:capacityLimit] {
+				session := &agentsessionv1.AgentSession{}
+				if err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      "as-" + a.Name,
+					Namespace: controllerNamespace,
+				}, session); err != nil {
+					continue
+				}
+				if session.Status.Phase == agentsessionv1.AgentSessionPhaseInvestigating {
+					investigating++
+				}
+			}
+			return investigating
+		}, 60*time.Second, 500*time.Millisecond).Should(Equal(capacityLimit),
+			"the first capacityLimit AgentSessions must be running before the overshoot is created")
+
+		By("creating the overshoot concurrently so KA must reject at least one dispatch")
+		createBatch(analyses[capacityLimit:])
 
 		By("every investigation must eventually converge to Completed -- a capacity rejection is transient and must never surface as a permanent failure")
-		// 120s (2026-08-20, alongside switching to the deterministic
-		// "brief-investigation-test" scenario -- see capacityBurstOvershoot's doc
-		// comment above): with each investigation taking a bounded ~9-12s and at
-		// most a handful of ErrorClassifier retry cycles (backoff base 1s,
-		// multiplier 2.0, max 5 attempts -- ~31s worst case) needed to drain 20
-		// investigations past a 50-slot cap in two waves, total convergence should
-		// land well under a minute; 120s leaves generous margin for CI scheduling
-		// noise without re-approaching this job's 20-minute CI budget the way the
-		// earlier 240s-360s timeouts (chasing a non-deterministic race) did.
+		// 120s leaves margin for the slow fixture's first wave, capacity-retry
+		// backoff, and the second wave without changing the existing CI budget.
 		Eventually(func() map[string]int {
 			counts := map[string]int{}
 			for _, a := range analyses {

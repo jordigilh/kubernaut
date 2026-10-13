@@ -18,7 +18,9 @@ package fullpipeline
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -415,7 +417,48 @@ func fpHistoryAlert2496(targetNS, signal string, resolved bool) {
 	if resolved {
 		alert.Status, alert.EndsAt = "resolved", time.Now().Add(-time.Second)
 	}
-	Expect(infrastructure.InjectAlerts("http://localhost:9193", []infrastructure.TestAlert{alert})).To(Succeed())
+	alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
+	Expect(infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{alert})).To(Succeed())
+	if !resolved {
+		// AlertManager accepts POST /api/v2/alerts before its in-memory alert
+		// state is necessarily visible to the EM GET path. Confirm the exact
+		// alert/namespace pair is active before creating the RR so the first
+		// effectiveness assessment cannot race alert ingestion.
+		Eventually(func() bool {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, alertManagerURL+"/api/v2/alerts", http.NoBody)
+			if err != nil {
+				return false
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return false
+			}
+			if resp.StatusCode != http.StatusOK {
+				_ = resp.Body.Close()
+				return false
+			}
+			var alerts []struct {
+				Labels map[string]string `json:"labels"`
+				Status struct {
+					State string `json:"state"`
+				} `json:"status"`
+			}
+			decodeErr := json.NewDecoder(resp.Body).Decode(&alerts)
+			closeErr := resp.Body.Close()
+			if decodeErr != nil || closeErr != nil {
+				return false
+			}
+			for _, candidate := range alerts {
+				if candidate.Status.State == "active" &&
+					candidate.Labels["alertname"] == signal &&
+					candidate.Labels["namespace"] == targetNS {
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"AlertManager must expose the injected %s alert for namespace %s before the RR is created", signal, targetNS)
+	}
 }
 
 // Existing Prometheus OTLP receiver: monotonic resource-pressure samples,

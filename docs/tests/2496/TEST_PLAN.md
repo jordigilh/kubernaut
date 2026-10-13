@@ -1102,6 +1102,17 @@ Ginkgo regression covering both cross-cluster non-blocking and same-cluster
 blocking behavior. No execution timeout, lock clearing, or remote infrastructure
 change is part of this repair.
 
+The subsequent CI retry exposed two timing-sensitive test fixtures rather than
+new product failures. `E2E-AA-065` used a 3-second mock delay while CI created its
+70 CRDs over a longer API-server window, so sessions drained before KA's
+50-investigation admission cap was reached. The test now fills the first 50
+AgentSessions with the existing slow investigation scenario, waits for their
+`Investigating` status, and then creates the 20-session overshoot concurrently;
+the retry and convergence assertions are unchanged. The history producer now
+also waits for AlertManager to expose the exact firing alert and namespace after
+injection before creating the RR, eliminating the POST/GET ingestion race; its
+zero health/alert/metrics effectiveness contract is unchanged.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.
