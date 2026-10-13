@@ -57,7 +57,7 @@ const fleetHistoryOOMKilled2496 = "OOMKilled"
 // Only historical distractors and the external provider are scripted. All
 // lifecycle state, eligibility, confidence, execution, history and live results
 // come from the deployed platform. The current Job must genuinely run remotely.
-var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet", "history-2496"), Serial, func() {
+var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet", "history-2496"), func() {
 	It("E2E-FP-2496-005 / E2E-FLEET-2496-005: colliding target/origin history cannot impose a repeat or leak into real remote execution", func() {
 		Expect(remoteKubeconfigPath).NotTo(Equal(kubeconfigPath), "the spoke must have its own control plane")
 		targetNS := fmt.Sprintf("history-2496-%d", time.Now().UnixNano())

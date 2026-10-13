@@ -37,7 +37,7 @@ import (
 // Paired IT-KA-2498-002 counts external invocations directly. This deployed
 // journey proves the trusted pre-dispatch denial through durable error records,
 // advertised phase allow-lists and a positive, real catalog -> Job -> patch path.
-var _ = Describe("Trusted phase isolation [BR-KA-017]", Label("e2e", "fullpipeline", "phase-2498"), Serial, func() {
+var _ = Describe("Trusted phase isolation [BR-KA-017]", Label("e2e", "fullpipeline", "phase-2498"), func() {
 	It("E2E-FP-2498-001: optional RCA context is unused and forced discovery-phase context/Kubernetes calls are denied", func() {
 		targetNS := fmt.Sprintf("phase-2498-%d", time.Now().UnixNano())
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: targetNS, Labels: map[string]string{
