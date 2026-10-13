@@ -65,6 +65,12 @@ data:
         userID: "e2e-user-sre"
         groups:
           - "sre"
+      - email: "structured-decision@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "structured-decision-user"
+        userID: "e2e-user-structured-decision"
+        groups:
+          - "sre"
       - email: "orchestrator@kubernaut.ai"
         hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
         username: "orchestrator-user"

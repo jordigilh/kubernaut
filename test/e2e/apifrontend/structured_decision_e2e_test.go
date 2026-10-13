@@ -46,13 +46,13 @@ import (
 // =============================================================================
 
 var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Label("e2e", "structured-decision"), func() {
-	var sreToken string
+	var structuredDecisionToken string
 
 	BeforeEach(func() {
 		var err error
-		sreToken, err = fetchDEXTokenForPersona("sre")
-		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
-		Expect(sreToken).NotTo(BeEmpty())
+		structuredDecisionToken, err = fetchDEXTokenForDedicatedPersona(structuredDecisionPersonaName)
+		Expect(err).NotTo(HaveOccurred(), "structured-decision DEX token required")
+		Expect(structuredDecisionToken).NotTo(BeEmpty())
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
@@ -62,7 +62,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
-		req.Header.Set("Authorization", "Bearer "+sreToken)
+		req.Header.Set("Authorization", "Bearer "+structuredDecisionToken)
 		return httpClient.Do(req)
 	}
 

@@ -193,13 +193,37 @@ var e2ePersonas = map[string]persona{
 	"remediation-approver": {Email: "approver@kubernaut.ai", Password: "password", Role: "remediation-approver"},
 }
 
+// Dedicated identities reuse an existing RBAC group without becoming an
+// additional ACL-matrix persona. This keeps session continuity isolated while
+// preserving the same SRE-authorized tool surface.
+const structuredDecisionPersonaName = "structured-decision"
+
+var dedicatedE2EPersonas = map[string]persona{
+	structuredDecisionPersonaName: {
+		Email:    "structured-decision@kubernaut.ai",
+		Password: "password",
+		Role:     "sre",
+	},
+}
+
 // fetchDEXTokenForPersona obtains a JWT for the given persona role.
 func fetchDEXTokenForPersona(role string) (string, error) {
 	p, ok := e2ePersonas[role]
 	if !ok {
 		return "", fmt.Errorf("unknown persona role: %s", role)
 	}
+	return fetchDEXTokenForConfiguredPersona(role, p)
+}
 
+func fetchDEXTokenForDedicatedPersona(name string) (string, error) {
+	p, ok := dedicatedE2EPersonas[name]
+	if !ok {
+		return "", fmt.Errorf("unknown dedicated persona: %s", name)
+	}
+	return fetchDEXTokenForConfiguredPersona(name, p)
+}
+
+func fetchDEXTokenForConfiguredPersona(role string, p persona) (string, error) {
 	key := dexPersonaTokenCacheKey{
 		role:         role,
 		dexURL:       dexURL,
@@ -223,7 +247,9 @@ func fetchDEXTokenForPersona(role string) (string, error) {
 func seedDEXPersonaTokenCache(tokens map[string]string) error {
 	for role, token := range tokens {
 		if _, ok := e2ePersonas[role]; !ok {
-			return fmt.Errorf("unknown DEX persona role %q", role)
+			if _, ok := dedicatedE2EPersonas[role]; !ok {
+				return fmt.Errorf("unknown DEX persona role %q", role)
+			}
 		}
 		if strings.TrimSpace(token) == "" {
 			return fmt.Errorf("empty DEX token for persona %q", role)
