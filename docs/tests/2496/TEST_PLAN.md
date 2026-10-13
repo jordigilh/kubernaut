@@ -1093,6 +1093,15 @@ only the default first 50 audit rows even when the correlated lifecycle exceeded
 50 rows; it now uses the existing paginated `QueryAuditSnapshot` helper. The
 phase-denial, catalog, execution and patch assertions are unchanged.
 
+The next Fleet retry proved a second cooldown path remained unscoped: RO allowed
+the remote WFE after applying the cluster-aware history fix, but WorkflowExecution
+admission's duplicate `CheckCooldownActive` gate matched the completed hub WFE by
+target only and left the remote WFE Pending. The repair passes the WFE execution
+cluster into that check and preserves same-cluster cooldown blocking, with a
+Ginkgo regression covering both cross-cluster non-blocking and same-cluster
+blocking behavior. No execution timeout, lock clearing, or remote infrastructure
+change is part of this repair.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.
