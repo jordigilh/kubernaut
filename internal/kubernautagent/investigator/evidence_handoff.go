@@ -316,7 +316,7 @@ func (packet *evidenceHandoff) projectEnrichment(data *prompt.EnrichmentData) {
 }
 
 func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []handoffPriorAttempt {
-	attempts := make([]handoffPriorAttempt, 0, len(history.Tier1)+len(history.Tier2))
+	attempts := make([]handoffPriorAttempt, 0, len(history.Tier1))
 	for _, prior := range history.Tier1 {
 		attempts = append(attempts, handoffPriorAttempt{
 			RemediationUID: prior.RemediationUID, WorkflowID: optionalHandoffString(prior.WorkflowID), WorkflowName: optionalHandoffString(prior.WorkflowName),
@@ -328,6 +328,8 @@ func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []hando
 				HashMatch: optionalHandoffString(prior.HashMatch), HealthChecks: prior.HealthChecks, MetricDeltas: prior.MetricDeltas},
 		})
 	}
+	// Grow reserves the second tier without unchecked allocation-size addition.
+	attempts = slices.Grow(attempts, len(history.Tier2))
 	for _, prior := range history.Tier2 {
 		attempts = append(attempts, handoffPriorAttempt{
 			RemediationUID: prior.RemediationUID, WorkflowID: optionalHandoffString(prior.WorkflowID), WorkflowName: optionalHandoffString(prior.WorkflowName),

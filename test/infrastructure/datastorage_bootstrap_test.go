@@ -50,7 +50,7 @@ var _ = Describe("DS E2E burst capacity [BR-DS-006]", Serial, func() {
 			for _, document := range strings.Split(manifest, "\n---\n") {
 				var deployment appsv1.Deployment
 				Expect(yaml.Unmarshal([]byte(document), &deployment)).To(Succeed())
-				if deployment.Kind != "Deployment" {
+				if deployment.Kind != deploymentKind {
 					continue
 				}
 				deployments++

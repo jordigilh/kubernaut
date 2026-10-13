@@ -1,6 +1,6 @@
 # Implementation Plan: Issue #2496 — Failed Workflow Identity and Repeat-Selection Reasoning
 
-**Status**: Combined #2496/#2498 source changes in place; canonical verification in progress; no publication yet<br>
+**Status**: Combined #2496/#2498 draft PR #2503 published for authorized CI triage; scoped gate repairs in progress<br>
 **Issue**: [#2496](https://github.com/jordigilh/kubernaut/issues/2496)<br>
 **Incorporated issue**: [#2498](https://github.com/jordigilh/kubernaut/issues/2498) — strict phase-scoped tool availability and optional RCA context tools<br>
 **Created**: 2026-10-09<br>
@@ -58,6 +58,17 @@ approval-pending notes are historical, not current authorization or requirements
   closing #2496/#2498 **only after verification is complete**, followed by a fresh
   production-readiness subagent audit and repairs. No premature publication or
   manual issue closure. Both issues are session-linked; link the PR immediately.
+
+**Current publication exception (2026-10-13):** after the single fresh AF-local
+diagnostic remained non-actionable, the user explicitly authorized publishing
+[draft PR #2503](https://github.com/jordigilh/kubernaut/pull/2503) for CI triage.
+This supersedes the earlier pre-publication gate only, not merge readiness or
+the scoped scenario, critical-control and wiring requirements. The user then
+approved the localized CI repairs and removal of synthetic secret-scan literals
+from this feature branch's reachable history. See [TEST_PLAN.md §16.14](TEST_PLAN.md#1614-scoped-ci-gate-repair--user-approved-2026-10-13).
+Previously successful evidence remains source-attributed to its original
+snapshots; later source repairs require affected validation, not wholesale gate
+repetition or release certification.
 
 Latest detailed continuation: [IMPLEMENTATION_SESSION_HANDOFF.md](IMPLEMENTATION_SESSION_HANDOFF.md).
 Implementation confidence remains **85%**, not a release-readiness assertion.

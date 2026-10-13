@@ -3,7 +3,7 @@
 **Test Plan Identifier**: TP-2496-v1.6<br>
 **Feature**: Preserve prior workflow identity/confidence and require auditable justification for same-workflow repeats<br>
 **Version**: 1.6 — synchronized final pre-implementation contract, live projection, pyramid/control proof and existing-E2E regression matrix<br>
-**Latest execution revision**: 1.58 — full-workload diagnostic approved but not launched; fresh continuation handoff requested<br>
+**Latest execution revision**: 1.59 — draft PR #2503 published for authorized CI triage; scoped gate repairs and branch-history rewrite in progress<br>
 **Created**: 2026-10-09<br>
 **Status**: Approved — implementation and wiring-first TDD in progress; full GA gates outstanding<br>
 **Baseline**: `8a907bb57d3530da32de9b3b8250b53587ed6f41`, branch `issue-2496-history-aware-rca`<br>
@@ -999,3 +999,42 @@ and needs userpermission to relax the previous no-rerun-before-cause condition.
 Preserve all oldresources and newcluster afterfailure/success; verify freshworkload
 inventory and allprovenance. No blindretry, no pass-as-rootcause inference. Ifnot
 approved, remainread-only/blocked; do not alter originalconstraints silently.
+
+### 16.14 Scoped CI gate repair — user approved 2026-10-13
+
+The user authorized early draft publication for CI triage after the single AF
+diagnostic did not establish a cause, then approved fixing the findings and
+rewriting this feature branch to remove the synthetic secret-scan literals from
+reachable history. PR #2503 remains draft; publication is not merge approval.
+
+- **RED:** preserve run `38323849546` at `a64e3d419` as the failing secret/lint/
+  CodeQL/Helm evidence; reproduce the chart attribution gap and four flagged
+  allocation sites with `UT-PLATFORM-2496-CI-001` and the `ALLOC` source guards.
+- **GREEN:** recognize KA's real render assertions under its schema service key;
+  use append growth instead of unchecked capacity sums; retain privacy inputs
+  and negative assertions with low-entropy synthetic sentinels; reuse the test
+  Deployment-kind constant. No new production wiring or policy is introduced.
+- **REFACTOR:** clarify canonical chart-service attribution and eliminate the
+  duplicate fixture kind; preserve history ordering, packet limits and dispatch.
+- **Verification:** affected behavior suites, build/compile, CI-scoped lint,
+  `make check-helm-coverage`, unchanged scanner configuration and rewritten
+  reachable-history scan; then one CI cycle. Gateway's module-download HTTP/2
+  failure warrants no production code or capacity change.
+
+The source guards are static security regressions, not added business scenarios
+or manufactured integer-overflow inputs. Existing scenario/control targets and
+all remaining scoped runtime gates remain intact. GitHub's historical run/alert
+records are not erased by rewriting the branch. Private evidence stays excluded.
+
+**Local repair evidence:** the new chart-attribution spec fails as intended before
+the fix, as do all four allocation guards. After repair, all ten affected test
+packages pass; `make check-helm-coverage`, `go build ./...`, compile-only validation
+and the exact CI lint scope pass. Gitleaks 8.30.1 reports no findings in the staged
+fixture replacements with the scanner configuration unchanged. A same-config
+comparison of feature history reports **9 findings before rewrite and 0 after**;
+the original feature/merge commits are no longer ancestors. The validated code
+tree and all fifteen private evidence files remain unchanged by the rewrite.
+A full `HEAD` ancestry scan separately reports 21 findings, all inherited from
+main commit `80c8a9ad5ce09669b60e0078e80dc7ea63fcfc4e`; no main-history rewrite or
+scanner exclusion was applied. CI CodeQL/runtime and the normal secret-scan job
+remain pending. These local checks do not establish the earlier AF EOF cause.

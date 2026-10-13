@@ -227,7 +227,7 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
 		overlay, hasOverlay := FleetOverlayFromContext(ctx)
-		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+len(overlay)+2)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools))
 		seen := make(map[string]struct{}, len(phaseTools))
 		for _, t := range phaseTools {
 			eff := t
@@ -250,6 +250,7 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 		}
 	}
 
+	defs = slices.Grow(defs, 2)
 	if phase == katypes.PhaseWorkflowDiscovery {
 		defs = append(defs,
 			llm.ToolDefinition{
@@ -292,6 +293,7 @@ func appendNonCollidingOverlayTools(defs []llm.ToolDefinition, overlay map[strin
 		}
 	}
 	sort.Strings(names)
+	defs = slices.Grow(defs, len(names))
 	for _, name := range names {
 		t := overlay[name]
 		defs = append(defs, llm.ToolDefinition{

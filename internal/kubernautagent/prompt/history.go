@@ -119,10 +119,11 @@ type chronologicalHistoryEntry struct {
 // DD-KA-2496: numbering is global across tiers; source slices are never sorted
 // in-place. UID and rendered detail provide a deterministic tie-break.
 func renderChronologicalHistory(result *enrichment.RemediationHistoryResult, causalChains map[string]string) []string {
-	entries := make([]chronologicalHistoryEntry, 0, len(result.Tier1)+len(result.Tier2))
+	entries := make([]chronologicalHistoryEntry, 0, len(result.Tier1))
 	for _, e := range result.Tier1 {
 		entries = append(entries, chronologicalHistoryEntry{e.CompletedAt, e.RemediationUID, FormatTier1Entry(e, causalChains)})
 	}
+	entries = slices.Grow(entries, len(result.Tier2))
 	for _, e := range result.Tier2 {
 		entries = append(entries, chronologicalHistoryEntry{e.CompletedAt, e.RemediationUID, FormatTier2Summary(e)})
 	}
@@ -608,7 +609,7 @@ func boolYesNo(v bool) string {
 // toHistoryEntries converts Tier1 and Tier2 entries into unified HistoryEntry slices
 // for detection algorithms that operate across both tiers.
 func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Summary) []HistoryEntry {
-	entries := make([]HistoryEntry, 0, len(tier1)+len(tier2))
+	entries := make([]HistoryEntry, 0, len(tier1))
 	for _, e := range tier1 {
 		entries = append(entries, HistoryEntry{
 			WorkflowID:         e.WorkflowID,
@@ -622,6 +623,7 @@ func toHistoryEntries(tier1 []enrichment.Tier1Entry, tier2 []enrichment.Tier2Sum
 			AssessmentReason:   e.AssessmentReason,
 		})
 	}
+	entries = slices.Grow(entries, len(tier2))
 	for _, e := range tier2 {
 		entries = append(entries, HistoryEntry{
 			WorkflowID:         e.WorkflowID,
