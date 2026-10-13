@@ -636,6 +636,7 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 		ctx,
 		targetResourceStr,
 		workflowID, // Pass workflow ID for workflow-specific matching
+		rr.Spec.ClusterID,
 		r.config.RecentlyRemediatedCooldown,
 	)
 	if err != nil && !errors.Is(err, ErrNoMatch) {
@@ -1062,6 +1063,7 @@ func (r *RoutingEngine) FindRecentCompletedWFE(
 	ctx context.Context,
 	targetResource string,
 	workflowID string,
+	clusterID string,
 	cooldownDuration int64,
 ) (*workflowexecutionv1.WorkflowExecution, error) {
 	logger := log.FromContext(ctx)
@@ -1099,6 +1101,13 @@ func (r *RoutingEngine) FindRecentCompletedWFE(
 
 		// Filter: Must match workflow ID (if specified)
 		if workflowID != "" && wfe.Spec.WorkflowRef.WorkflowID != workflowID {
+			continue
+		}
+
+		// Fleet target identity includes the execution/origin cluster. A
+		// completed hub WFE must not impose cooldown on the same-named target
+		// in a registered spoke (BR-FLEET-004, DD-KA-2496).
+		if wfe.Spec.ClusterID != clusterID {
 			continue
 		}
 

@@ -1075,6 +1075,14 @@ RR and asserts `MetricsAssessed=true`. A `MetricsTimedOut` result is a monitorin
 fixture failure, not evidence that history scoping is wrong. No production EM,
 PromQL, timeout, or score-policy change is part of this repair.
 
+The subsequent Fleet run reached the remote-selection stage but RO's
+`FindRecentCompletedWFE` applied the completed hub workflow's cooldown to the
+same-named spoke target because it matched target/workflow without
+`WorkflowExecution.Spec.ClusterID`. This is a real cluster-scope defect, not an
+environment failure. The repair scopes the cooldown lookup by cluster and adds
+the cross-cluster regression (`CheckRecentlyRemediated` must not block a remote
+RR from a hub WFE); existing same-cluster cooldown behavior remains covered.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.

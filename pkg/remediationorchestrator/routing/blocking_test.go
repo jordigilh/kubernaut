@@ -807,6 +807,32 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	// WorkflowID matching done via WorkflowRef in actual implementation
 	// ========================================
 	Context("CheckRecentlyRemediated", func() {
+		It("should not apply a hub cooldown to the same target and workflow on another cluster", func() {
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-hub-scope", Namespace: "default"},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "default/pod/nginx-cross-cluster",
+					ClusterID:      "hub",
+					WorkflowRef:    workflowexecutionv1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "restart-workflow"}},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhaseCompleted, CompletionTime: &completionTime},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-scope", Namespace: "default"},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID:      "remote-cluster",
+					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-cross-cluster", Namespace: "default"},
+				},
+			}
+
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow", "default/pod/nginx-cross-cluster")
+
+			Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue())
+			Expect(blocked).To(BeNil())
+		})
+
 		It("should block when recent WFE within 5min cooldown", func() {
 			// Create recently completed WFE (within cooldown)
 			completionTime := metav1.Now()
