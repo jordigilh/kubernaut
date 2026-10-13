@@ -1083,6 +1083,16 @@ environment failure. The repair scopes the cooldown lookup by cluster and adds
 the cross-cluster regression (`CheckRecentlyRemediated` must not block a remote
 RR from a hub WFE); existing same-cluster cooldown behavior remains covered.
 
+The Fullpipeline run `38438562473` exposed two separate test-side defects. The
+`E2E-FP-2496-003` fixture injected a worsening namespace series, but its values
+were too small to dominate the real target's namespace-wide EM aggregates; a
+nonzero metrics score therefore remained possible without an EM query failure.
+The fixture now keeps the worsening CPU/memory series dominant while preserving
+the zero-score assertion and production EM scoring. `E2E-FP-2498-001` queried
+only the default first 50 audit rows even when the correlated lifecycle exceeded
+50 rows; it now uses the existing paginated `QueryAuditSnapshot` helper. The
+phase-denial, catalog, execution and patch assertions are unchanged.
+
 Repairs enhance existing components and wiring; no new service/type architecture
 or semantic reviewer is introduced. REFACTOR centralizes safe narrative
 projection and phase-aware resolution without weakening existing contracts.

@@ -72,12 +72,14 @@ func fpAssertPhaseIsolation2498(rrName string) {
 	forbidden := []string{"get_namespaced_resource_context", "get_cluster_resource_context", "kubectl_get_by_name"}
 	allowed := []string{"list_available_actions", "list_workflows", "get_workflow", "todo_write", "submit_result_with_workflow", "submit_result_no_workflow"}
 	Eventually(func(g Gomega) {
-		resp, err := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{CorrelationID: ogenclient.NewOptString(rrName)})
+		events, err := infrastructure.QueryAuditSnapshot(ctx, dataStorageClient, ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(rrName),
+		})
 		g.Expect(err).NotTo(HaveOccurred())
 		var rca, discovery bool
 		denied := make([]string, 0, len(forbidden))
 		catalog := make(map[string]bool, 3)
-		for _, event := range resp.Data {
+		for _, event := range events {
 			switch event.EventType {
 			case "aiagent.llm.request":
 				request, ok := event.EventData.GetLLMRequestPayload()

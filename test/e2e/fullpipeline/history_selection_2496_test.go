@@ -428,9 +428,15 @@ func fpNonImprovingTelemetry2496(targetNS string) {
 	labels := map[string]string{"namespace": targetNS, "pod": "pressure-input-2496", "container": "workload"}
 	sample := func(at time.Time) []infrastructure.TestMetric {
 		step := 30 + at.Sub(started).Seconds()/10
+		// EM's namespace-scoped queries sum every matching series, including the
+		// real memory-eater's cAdvisor samples. Keep this synthetic worsening
+		// series dominant so target-pod churn cannot turn the aggregate into an
+		// apparent improvement while this fixture proves the rejected-repeat path.
+		memory := float64(512*1024*1024) + step*64*1024*1024
+		cpu := step * step * 1_000_000
 		return []infrastructure.TestMetric{
-			{Name: "container_memory_working_set_bytes", Labels: labels, Value: 64*1024*1024 + step*2*1024*1024, Timestamp: at},
-			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: step * step, Timestamp: at, IsCounter: true},
+			{Name: "container_memory_working_set_bytes", Labels: labels, Value: memory, Timestamp: at},
+			{Name: "container_cpu_usage_seconds_total", Labels: labels, Value: cpu, Timestamp: at, IsCounter: true},
 		}
 	}
 	// Fresh Prometheus heads reject samples predating their current append
