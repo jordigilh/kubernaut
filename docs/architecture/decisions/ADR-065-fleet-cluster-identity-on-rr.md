@@ -28,6 +28,12 @@
 > `cluster` label, and all fleet reads/writes, including hub-targeted remediation,
 > route through the Gateway. `ClusterName` remains absent as a separate CRD field.
 
+> **Amendment (2026-10-13, BR-KA-016/DD-KA-2496)**: AF live decision artifacts
+> (`investigation_summary` and interactive `present_decision`) derive cluster
+> attribution from the server-owned RR context. `cluster_id` is not an
+> AI-authored decision field. AF omits it when the trusted RR context has no
+> cluster value; a model-supplied value cannot override or establish attribution.
+
 ## Context
 
 Historically, cluster identity was known to RO via boot-time discovery (`pkg/shared/cluster/identity.go` → `kube-system` namespace UID). RO now reads the authoritative per-request identity from the RR CRD.

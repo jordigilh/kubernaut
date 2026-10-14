@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // applyLLMRCA copies the resolved RCA fields (whichever of snake_case /
@@ -58,13 +59,20 @@ func applyLLMRCA(result *katypes.InvestigationResult, rca *llmRCA, logger logr.L
 
 // applyLLMWorkflow copies the selected-workflow fields onto result, merging
 // (rather than replacing) any parameters already present.
-func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow) {
+func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow, logger logr.Logger) {
 	if wf == nil {
 		return
 	}
 	result.WorkflowID = wf.WorkflowID
 	result.ExecutionBundle = wf.ExecutionBundle
-	result.Confidence = wf.Confidence
+	// DD-KA-2496: never borrow RCA confidence for a selected workflow, and
+	// never treat an explicit zero as missing.
+	result.Confidence = 0
+	result.WorkflowSelectionConfidence = wf.Confidence
+	if wf.Confidence != nil {
+		result.Confidence = *wf.Confidence
+	}
+	applyRepeatJustification(result, wf.RepeatJustification, logger)
 	result.Reason = wf.Rationale
 	result.WorkflowRationale = wf.Rationale
 	result.ExecutionEngine = wf.ExecutionEngine
@@ -77,6 +85,22 @@ func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow) {
 	for k, v := range wf.Parameters {
 		result.Parameters[k] = v
 	}
+}
+
+func applyRepeatJustification(result *katypes.InvestigationResult, raw json.RawMessage, logger logr.Logger) {
+	result.RepeatJustification = nil
+	result.RepeatJustificationInvalid = false
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return
+	}
+	var explanation sharedtypes.RepeatJustification
+	if err := json.Unmarshal(raw, &explanation); err != nil {
+		// Only the field name/shape error is observable, never raw model text.
+		logger.Info("repeat justification has invalid shape, requesting structural correction")
+		result.RepeatJustificationInvalid = true
+		return
+	}
+	result.RepeatJustification = &explanation
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -98,7 +122,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	if resp.Confidence > 0 {
 		result.Confidence = resp.Confidence
 	}
-	applyLLMWorkflow(result, resp.Workflow)
+	applyLLMWorkflow(result, resp.Workflow, logger)
 
 	for _, alt := range resp.AlternativeWorkflows {
 		result.AlternativeWorkflows = append(result.AlternativeWorkflows, katypes.AlternativeWorkflow{
@@ -304,7 +328,7 @@ func mergeNestedInvestigationAnalysis(result *katypes.InvestigationResult, jsonS
 // Handles hybrid JSON where the LLM returns flat rca_summary alongside a nested
 // selected_workflow (#1431). Top-level workflow_id (already populated by
 // json.Unmarshal) takes precedence.
-func mergeNestedSelectedWorkflow(result *katypes.InvestigationResult, jsonStr string) {
+func mergeNestedSelectedWorkflow(result *katypes.InvestigationResult, jsonStr string, logger logr.Logger) {
 	if result.WorkflowID != "" {
 		return
 	}
@@ -315,22 +339,7 @@ func mergeNestedSelectedWorkflow(result *katypes.InvestigationResult, jsonStr st
 	if resp.Workflow == nil {
 		return
 	}
-	result.WorkflowID = resp.Workflow.WorkflowID
-	result.ExecutionBundle = resp.Workflow.ExecutionBundle
-	if resp.Workflow.Confidence > 0 {
-		result.Confidence = resp.Workflow.Confidence
-	}
-	result.Reason = resp.Workflow.Rationale
-	result.WorkflowRationale = resp.Workflow.Rationale
-	result.ExecutionEngine = resp.Workflow.ExecutionEngine
-	if resp.Workflow.Parameters != nil {
-		if result.Parameters == nil {
-			result.Parameters = make(map[string]interface{})
-		}
-		for k, v := range resp.Workflow.Parameters {
-			result.Parameters[k] = v
-		}
-	}
+	applyLLMWorkflow(result, resp.Workflow, logger)
 }
 
 // applyFlatFields applies LLM-provided flat fields to the result:

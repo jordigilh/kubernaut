@@ -63,6 +63,17 @@ func compileSchemaEntry(c *jsonschema.Compiler, entryName string) error {
 	}
 
 	schemaCache[schemaCacheName(entryName)] = sch
+	if entryName == "investigation_summary.v1.schema.json" {
+		// DD-KA-2496: enforce the new allow-list independently of inherited
+		// artifact fields, preserving existing presentation/recovery formats.
+		for _, field := range []string{"selected_workflow", "selection_assessment"} {
+			projection, err := c.Compile(url + "#/$defs/" + field)
+			if err != nil {
+				return fmt.Errorf("compile live selection schema %s: %w", field, err)
+			}
+			schemaCache["investigation_summary."+field] = projection
+		}
+	}
 	return nil
 }
 
@@ -90,4 +101,24 @@ func ValidatePayload(schemaName string, data map[string]any) error {
 	}
 
 	return sch.Validate(data)
+}
+
+func validateLiveSelectionContext(data map[string]any) error {
+	initSchemas()
+	if schemaInitErr != nil {
+		return fmt.Errorf("live selection schema unavailable: %w", schemaInitErr)
+	}
+	for _, field := range []string{"selected_workflow", "selection_assessment"} {
+		value, present := data[field]
+		if !present {
+			continue
+		}
+		schema := schemaCache["investigation_summary."+field]
+		if err := schema.Validate(value); err != nil {
+			// Schema errors can include the rejected value. Never copy private
+			// contents into logs, metadata or the human-readable fallback.
+			return fmt.Errorf("invalid live %s context", field)
+		}
+	}
+	return nil
 }

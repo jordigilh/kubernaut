@@ -37,6 +37,8 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const deploymentKind = "Deployment"
+
 // MCPClientConfig holds the configuration for creating an MCP client connection.
 // Uses TLS-aware transport + SA Bearer token auth, matching the E2E suite pattern.
 type MCPClientConfig struct {
@@ -254,7 +256,7 @@ func CreateDirectRRWithSeverity(ctx context.Context, namespace, testID, severity
 // to interact with it via MCP before completion. Scenario-specific signals use a
 // Deployment target; the generic CreateDirectRR helper uses a Pod target.
 func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName string) (string, error) {
-	return createDirectRRWithTargetKindAndSeverity(ctx, namespace, testID, signalName, "Deployment", "high")
+	return createDirectRRWithTargetKindAndSeverity(ctx, namespace, testID, signalName, deploymentKind, "high")
 }
 
 func createDirectRRWithTargetKindAndSeverity(ctx context.Context, namespace, testID, signalName, targetKind, severity string) (string, error) {
@@ -318,11 +320,11 @@ func createDirectRRWithTargetKindAndSeverity(ctx context.Context, namespace, tes
 				}},
 			},
 		}}
-	case "Deployment":
+	case deploymentKind:
 		targetGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 		targetObj = &unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": "apps/v1",
-			"kind":       "Deployment",
+			"kind":       deploymentKind,
 			"metadata": map[string]interface{}{
 				"name":      targetName,
 				"namespace": targetNS,
@@ -396,7 +398,7 @@ func createDirectRRWithTargetKindAndSeverity(ctx context.Context, namespace, tes
 }
 
 func targetAPIVersion(targetKind string) string {
-	if targetKind == "Deployment" {
+	if targetKind == deploymentKind {
 		return "apps/v1"
 	}
 	return "v1"

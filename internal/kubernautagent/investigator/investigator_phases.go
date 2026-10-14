@@ -51,6 +51,7 @@ func BuildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Da
 		},
 		InvestigationOutcome:  rcaResult.InvestigationOutcome,
 		Confidence:            rcaResult.Confidence,
+		RCAConfidence:         rcaResult.RCAConfidence,
 		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
 		CausalChain:           rcaResult.CausalChain,
 		DueDiligence:          rcaResult.DueDiligence,
@@ -64,14 +65,12 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	if result == nil || p1 == nil {
 		return
 	}
+	mergePhase1Confidence(result, p1)
 	if result.Severity == "" && p1.Severity != "" {
 		result.Severity = p1.Severity
 	}
 	if len(result.ContributingFactors) == 0 && len(p1.ContributingFactors) > 0 {
 		result.ContributingFactors = p1.ContributingFactors
-	}
-	if result.Confidence == 0 && p1.Confidence > 0 {
-		result.Confidence = p1.Confidence
 	}
 	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
 		mergePhase1InvestigationOutcome(result, p1.InvestigationOutcome)
@@ -81,6 +80,16 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	}
 	if result.DueDiligence == nil && p1.DueDiligence != nil {
 		result.DueDiligence = p1.DueDiligence
+	}
+}
+
+// DD-KA-2496: RCA and selection confidence remain separate. Neither an
+// explicit selected zero nor a missing selected score may borrow RCA's.
+func mergePhase1Confidence(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
+	rcaConfidence := p1.Confidence
+	result.RCAConfidence = &rcaConfidence
+	if result.WorkflowID == "" && result.ProposedWorkflowID == "" && result.WorkflowSelectionConfidence == nil && result.Confidence == 0 && p1.Confidence > 0 {
+		result.Confidence = p1.Confidence
 	}
 }
 
@@ -212,6 +221,10 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 	if result == nil {
 		return
 	}
+	if rcaResult != nil {
+		rcaConfidence := rcaResult.Confidence
+		result.RCAConfidence = &rcaConfidence
+	}
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
 	InjectRemediationTarget(result, signal, enrichData)
@@ -317,6 +330,7 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 	}
 
 	pe.HistoryResult = data.RemediationHistory
+	pe.HistoryUnavailable = data.HistoryUnavailable
 	return pe
 }
 

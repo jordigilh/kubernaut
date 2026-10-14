@@ -166,14 +166,14 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 		It("should deliver the real taint key to the LLM", func() {
 			reg := registry.New()
 			reg.Register(&fakeTool{
-				name:   "kubectl_get_node",
+				name:   "kubectl_get_by_name",
 				result: "apiVersion: v1\nkind: Node\nspec:\n  taints:\n  - effect: NoSchedule\n    key: maintenance\n    value: scheduled\n",
 			})
 
 			mockClient.responses = []llm.ChatResponse{
 				{
 					Message:   llm.Message{Role: "assistant", Content: "checking node taints"},
-					ToolCalls: []llm.ToolCall{{ID: "tc_taint", Name: "kubectl_get_node", Arguments: `{}`}},
+					ToolCalls: []llm.ToolCall{{ID: "tc_taint", Name: "kubectl_get_by_name", Arguments: `{}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"taint preserved"}`}},
 				wfToolResp(`{"workflow_id":"remove-taint-v1","confidence":0.7}`),
@@ -197,14 +197,14 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 		It("should withhold original Secret data from the LLM", func() {
 			reg := registry.New()
 			reg.Register(&fakeTool{
-				name:   "kubectl_get_secret",
+				name:   "kubectl_get_by_name",
 				result: "apiVersion: v1\nkind: Secret\nmetadata:\n  name: db-creds\ndata:\n  key: c2VjcmV0LWtleQ==\n  tls.crt: Y2VydGlmaWNhdGU=\n",
 			})
 
 			mockClient.responses = []llm.ChatResponse{
 				{
 					Message:   llm.Message{Role: "assistant", Content: "checking Secret"},
-					ToolCalls: []llm.ToolCall{{ID: "tc_secret", Name: "kubectl_get_secret", Arguments: `{}`}},
+					ToolCalls: []llm.ToolCall{{ID: "tc_secret", Name: "kubectl_get_by_name", Arguments: `{}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"secret protected"}`}},
 				wfToolResp(`{"workflow_id":"noop","confidence":0.6}`),

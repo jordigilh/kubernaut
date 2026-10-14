@@ -27,6 +27,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // =============================================================================
@@ -44,13 +46,13 @@ import (
 // =============================================================================
 
 var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Label("e2e", "structured-decision"), func() {
-	var sreToken string
+	var structuredDecisionToken string
 
 	BeforeEach(func() {
 		var err error
-		sreToken, err = fetchDEXTokenForPersona("sre")
-		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
-		Expect(sreToken).NotTo(BeEmpty())
+		structuredDecisionToken, err = fetchDEXTokenForDedicatedPersona(structuredDecisionPersonaName)
+		Expect(err).NotTo(HaveOccurred(), "structured-decision DEX token required")
+		Expect(structuredDecisionToken).NotTo(BeEmpty())
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
@@ -60,7 +62,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
-		req.Header.Set("Authorization", "Bearer "+sreToken)
+		req.Header.Set("Authorization", "Bearer "+structuredDecisionToken)
 		return httpClient.Do(req)
 	}
 
@@ -263,6 +265,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		err = json.Unmarshal([]byte(text), &payload)
 		Expect(err).NotTo(HaveOccurred(),
 			"SI-10: decision payload must be valid JSON after transmission")
+		validators.ValidateLiveSelectionProjection(payload)
 	})
 
 	It("E2E-AF-1396-001: AU-3 — RCA fields flow end-to-end through decision event", func() {
@@ -304,6 +307,9 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		}
 		err = json.Unmarshal([]byte(text), &payload)
 		Expect(err).NotTo(HaveOccurred(), "AU-3: payload must parse for audit trail")
+		var liveData map[string]any
+		Expect(json.Unmarshal([]byte(text), &liveData)).To(Succeed())
+		validators.ValidateLiveSelectionProjection(liveData)
 
 		By("Verifying RCA fields")
 		Expect(payload.RCA.Severity).To(Equal("warning"),
@@ -367,6 +373,9 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 
 		Expect(payload.Options).To(HaveLen(3),
 			"AC-6: ALL options must be presented for human review — no hidden automated choices")
+		var liveData map[string]any
+		Expect(json.Unmarshal([]byte(text), &liveData)).To(Succeed())
+		validators.ValidateLiveSelectionProjection(liveData)
 		workflowIDs := make([]string, len(payload.Options))
 		for i, opt := range payload.Options {
 			workflowIDs[i] = opt.WorkflowID

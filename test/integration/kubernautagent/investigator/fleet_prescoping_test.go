@@ -299,6 +299,9 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 	})
 
 	Describe("IT-KA-FLEET-021 [AC-6]: a tool name absent from both the fleet overlay and the local registry surfaces cluster context in the error", func() {
+		// BR-KA-017: use a phase-eligible reader that is absent from both
+		// dependencies, so this still proves lookup-error attribution rather
+		// than the separate off-phase denial contract.
 		It("wraps the not-found error with the tool name and target cluster ID when an overlay is active", func() {
 			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
 				"kubectl_get_by_name": &fakeTool{name: "kubectl_get_by_name", result: `{"source":"remote-cluster-east"}`},
@@ -307,7 +310,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{
 					Message:   llm.Message{Role: "assistant", Content: ""},
-					ToolCalls: []llm.ToolCall{{ID: "tc_miss", Name: "totally_unknown_tool", Arguments: `{}`}},
+					ToolCalls: []llm.ToolCall{{ID: "tc_miss", Name: "kubectl_describe", Arguments: `{}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				{
@@ -340,7 +343,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 					"message, not surfaced as an Investigate() error")
 
 			toolErrorContent := allMessageContent(mockClient.calls[1].Messages)
-			Expect(toolErrorContent).To(ContainSubstring("totally_unknown_tool"))
+			Expect(toolErrorContent).To(ContainSubstring("kubectl_describe"))
 			Expect(toolErrorContent).To(ContainSubstring("not found"))
 			Expect(toolErrorContent).To(ContainSubstring("remote-east"),
 				"IT-KA-FLEET-021: for a fleet-target investigation, a not-found error must name the "+
@@ -354,7 +357,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{
 					Message:   llm.Message{Role: "assistant", Content: ""},
-					ToolCalls: []llm.ToolCall{{ID: "tc_miss", Name: "totally_unknown_tool", Arguments: `{}`}},
+					ToolCalls: []llm.ToolCall{{ID: "tc_miss", Name: "kubectl_describe", Arguments: `{}`}},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				{
@@ -385,7 +388,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 			Expect(err).NotTo(HaveOccurred())
 
 			toolErrorContent := allMessageContent(mockClient.calls[1].Messages)
-			Expect(toolErrorContent).To(ContainSubstring("tool not found: totally_unknown_tool"),
+			Expect(toolErrorContent).To(ContainSubstring("tool not found: kubectl_describe"),
 				"IT-KA-FLEET-021: a hub-local investigation has no overlay in context, so the plain "+
 					"registry.ErrToolNotFound message must pass through unwrapped (zero regression)")
 		})

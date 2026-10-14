@@ -18,8 +18,10 @@ import (
 )
 
 var regexMap = map[string]ogenregex.Regexp{
-	"^[a-f0-9]{64}$":  ogenregex.MustCompile("^[a-f0-9]{64}$"),
-	"^[a-zA-Z0-9_]+$": ogenregex.MustCompile("^[a-zA-Z0-9_]+$"),
+	"\\S":                   ogenregex.MustCompile("\\S"),
+	"^[a-f0-9]{64}$":        ogenregex.MustCompile("^[a-f0-9]{64}$"),
+	"^[a-zA-Z0-9_]+$":       ogenregex.MustCompile("^[a-zA-Z0-9_]+$"),
+	"^sha256:[a-f0-9]{64}$": ogenregex.MustCompile("^sha256:[a-f0-9]{64}$"),
 }
 var (
 	// Allocate option closure once.

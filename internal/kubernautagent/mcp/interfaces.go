@@ -100,6 +100,7 @@ type DiscoveryTargetInfo struct {
 // by discover_workflows. Contains the selected + alternative workflows along with
 // the full InvestigationResult for final assembly in select_workflow.
 type WorkflowDiscoveryResult struct {
+	katypes.LiveSelectionContext
 	// Recommended is the top-ranked workflow.
 	Recommended *DiscoveredWorkflow `json:"recommended,omitempty"`
 	// Alternatives are additional workflows the user may choose from.

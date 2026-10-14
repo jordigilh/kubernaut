@@ -2881,6 +2881,15 @@ components:
         workflow_id:
           type: string
           description: Selected workflow identifier
+        workflow_name:
+          type: string
+          description: Catalog-authoritative human-readable name of the selected workflow (non-unique; DD-KA-2496).
+        workflow_selection_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Current selection confidence copied from AIAnalysis.SelectedWorkflow, not RCA or approval confidence. Omitted if unavailable; zero is known (DD-KA-2496).
         confidence_str:
           type: string
           description: Workflow selection confidence as string
@@ -3188,6 +3197,34 @@ components:
         workflow_id:
           type: string
           description: Selected workflow identifier
+        workflow_name:
+          type: string
+          description: Catalog-authoritative non-unique workflow name (DD-KA-2496)
+        workflow_selection_confidence:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+          description: Selection confidence only; omitted when unknown, never inherited from RCA
+        repeat_justification:
+          $ref: '#/components/schemas/RepeatJustification'
+        repeat_justification_required:
+          type: boolean
+        prior_workflow_match:
+          type: boolean
+        repeat_validation_outcome:
+          type: string
+          enum: [not_required, accepted, rejected]
+        handoff_digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+        prior_remediation_uids:
+          type: array
+          items:
+            type: string
+          description: Trusted target-scoped audit links; never included in live Console projections
+        selection_assessment:
+          $ref: '#/components/schemas/SelectionAssessment'
         reason:
           type: string
           description: Primary failure reason
@@ -4935,6 +4972,80 @@ components:
           description: Namespace of the resource (empty for cluster-scoped)
           example: "production"
 
+    # DD-KA-2496 / BR-KA-016: selection reasoning is not execution configuration.
+    # Rejected/incomplete reasoning has its own non-executable schema, with
+    # optional bounded parts omitted (never truncated) when unrepresentable.
+    RepeatJustification:
+      type: object
+      required: [evidence_basis, prior_outcome_relevance, expected_mechanism]
+      additionalProperties: false
+      properties:
+        evidence_basis:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: '\S'
+        prior_outcome_relevance:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: '\S'
+        expected_mechanism:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: '\S'
+
+    RepeatJustificationAssessment:
+      type: object
+      additionalProperties: false
+      properties:
+        evidence_basis:
+          type: string
+          maxLength: 2000
+        prior_outcome_relevance:
+          type: string
+          maxLength: 2000
+        expected_mechanism:
+          type: string
+          maxLength: 2000
+
+    SelectionAssessment:
+      type: object
+      required: [proposed_workflow_id]
+      additionalProperties: false
+      description: Non-executable rejected selection context for audit reconstruction; no workflow_id, parameters, bundle or handoff body
+      properties:
+        proposed_workflow_id:
+          type: string
+          minLength: 1
+          maxLength: 253
+        workflow_name:
+          type: string
+          maxLength: 253
+        workflow_selection_confidence:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+        repeat_justification:
+          $ref: '#/components/schemas/RepeatJustificationAssessment'
+        repeat_justification_required:
+          type: boolean
+        prior_workflow_match:
+          type: boolean
+        repeat_validation_outcome:
+          type: string
+          enum: [not_required, accepted, rejected]
+        handoff_digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+        prior_remediation_uids:
+          type: array
+          items:
+            type: string
+          description: Trusted target-scoped audit links, not live Console context
+
     IncidentResponseData:
       type: object
       required: [incidentId, analysis, rootCauseAnalysis, confidence, timestamp]
@@ -5031,6 +5142,9 @@ components:
           properties:
             workflowId:
               type: string
+            workflowName:
+              type: string
+              description: Catalog-authoritative non-unique workflow name (DD-KA-2496)
             actionType:
               type: string
               description: |
@@ -5044,10 +5158,35 @@ components:
               format: float
               minimum: 0.0
               maximum: 1.0
+            workflow_selection_confidence:
+              type: number
+              format: double
+              minimum: 0.0
+              maximum: 1.0
+              description: Independent selection confidence; zero is known, omission is unknown
+            repeat_justification:
+              $ref: '#/components/schemas/RepeatJustification'
+            repeat_justification_required:
+              type: boolean
+            prior_workflow_match:
+              type: boolean
+            repeat_validation_outcome:
+              type: string
+              enum: [not_required, accepted, rejected]
+            handoff_digest:
+              type: string
+              pattern: '^sha256:[a-f0-9]{64}$'
+            prior_remediation_uids:
+              type: array
+              items:
+                type: string
+              description: Trusted target-scoped audit links, excluded from live Console projections
             parameters:
               type: object
               additionalProperties: true
           additionalProperties: false
+        selection_assessment:
+          $ref: '#/components/schemas/SelectionAssessment'
         confidence:
           type: number
           format: float
@@ -5245,6 +5384,11 @@ components:
         tool_result_preview:
           type: string
           description: Preview of the audit-safe tool result (at most 500 characters).
+        phase:
+          type: string
+          description: Trusted server phase at dispatch; model-supplied phase arguments are not authoritative (DD-KA-2496).
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
 
     WorkflowValidationPayload:
       type: object
@@ -5857,6 +6001,18 @@ components:
           type: string
           description: RemediationRequest UID (correlation key)
           example: "rr-abc-123"
+        workflowId:
+          type: string
+          description: Catalog-authoritative workflow identity from the stored RO selection. Sole repeat key; omitted when unknown (DD-KA-2496).
+        workflowName:
+          type: string
+          description: Catalog-authoritative non-unique human context. Omitted when unknown (DD-KA-2496).
+        workflowSelectionConfidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown; zero is known (DD-KA-2496).
         signalFingerprint:
           type: string
           description: Signal fingerprint that triggered the remediation
@@ -5961,6 +6117,18 @@ components:
           type: string
           description: RemediationRequest UID (correlation key)
           example: "rr-old-001"
+        workflowId:
+          type: string
+          description: Catalog-authoritative workflow identity from the stored RO selection. Sole repeat key; omitted when unknown (DD-KA-2496).
+        workflowName:
+          type: string
+          description: Catalog-authoritative non-unique human context. Omitted when unknown (DD-KA-2496).
+        workflowSelectionConfidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown; zero is known (DD-KA-2496).
         signalType:
           type: string
           description: Type of signal

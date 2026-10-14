@@ -18,15 +18,110 @@ package session_test
 
 import (
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Marshal RCA Subset — TP-1395-1396 (#1396)", func() {
+	Describe("UT-KA-2496-001: safe current selection is distinct from RCA and execution state (BR-KA-016, SI-10)", func() {
+		It("redacts credentials in new reasoning while retaining JSON-safe ordinary evidence", func() {
+			result := &katypes.InvestigationResult{
+				WorkflowID: "catalog-id-2496", WorkflowName: "increase-memory",
+				RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: "Current limit; password=sentinel-credential-2496", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Increase \"memory\"\nwithout retrying the old limit"},
+			}
+			wire := session.MarshalRCASubset(result)
+			var projected map[string]interface{}
+			Expect(json.Unmarshal(wire, &projected)).To(Succeed())
+			Expect(projected).To(HaveKey("selected_workflow"))
+			Expect(string(wire)).NotTo(ContainSubstring("sentinel-credential-2496"))
+			selected := projected["selected_workflow"].(map[string]interface{})
+			Expect(selected["repeat_justification"]).To(HaveKeyWithValue("expected_mechanism", result.RepeatJustification.ExpectedMechanism))
+			Expect(result.RepeatJustification.EvidenceBasis).To(ContainSubstring("sentinel-credential-2496"), "projection must not mutate stored reasoning")
+		})
+
+		It("omits oversized or invalid UTF-8 rejected parts instead of manufacturing apparently valid truncated reasoning", func() {
+			result := &katypes.InvestigationResult{
+				ProposedWorkflowID: "rejected-2496", WorkflowName: "increase-memory", RepeatValidationOutcome: "rejected",
+				RepeatJustification: &sharedtypes.RepeatJustification{EvidenceBasis: strings.Repeat("界", 2001), PriorOutcomeRelevance: string([]byte{0xff}), ExpectedMechanism: "Bounded valid part"},
+			}
+			var projected map[string]interface{}
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &projected)).To(Succeed())
+			Expect(projected).To(HaveKey("selection_assessment"))
+			assessment := projected["selection_assessment"].(map[string]interface{})
+			Expect(assessment["repeat_justification"]).NotTo(HaveKey("evidence_basis"))
+			Expect(assessment["repeat_justification"]).NotTo(HaveKey("prior_outcome_relevance"))
+			Expect(assessment["repeat_justification"]).To(HaveKeyWithValue("expected_mechanism", "Bounded valid part"))
+		})
+
+		It("preserves explicit zero selection confidence and trusted repeat context without private execution fields", func() {
+			rcaConfidence, selectionConfidence, required, matched := .93, 0., true, true
+			result := &katypes.InvestigationResult{
+				Severity: "critical", RCASummary: "Current memory pressure", Confidence: selectionConfidence,
+				RCAConfidence: &rcaConfidence, WorkflowSelectionConfidence: &selectionConfidence,
+				WorkflowID: "catalog-id-2496", WorkflowName: "increase-memory",
+				RepeatJustification: &sharedtypes.RepeatJustification{
+					EvidenceBasis: "Current memory limit observed", PriorOutcomeRelevance: "Prior Full assessment was ineffective", ExpectedMechanism: "Increase the limit"},
+				RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted",
+				HandoffDigest: "sha256:" + strings.Repeat("b", 64), PriorRemediationUIDs: []string{"private-prior-2496"},
+				ExecutionBundle: "private-bundle-2496", Parameters: map[string]interface{}{"PASSWORD": "private-parameter-2496"},
+			}
+			var projected map[string]interface{}
+			wire := session.MarshalRCASubset(result)
+			Expect(json.Unmarshal(wire, &projected)).To(Succeed())
+			Expect(projected).To(HaveKeyWithValue("confidence", .93), "RCA confidence must not be replaced by selection confidence")
+			Expect(projected).To(HaveKey("selected_workflow"))
+			selected := projected["selected_workflow"].(map[string]interface{})
+			Expect(selected).To(HaveKeyWithValue("workflow_id", "catalog-id-2496"))
+			Expect(selected).To(HaveKeyWithValue("workflow_name", "increase-memory"))
+			Expect(selected).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+			Expect(selected).To(HaveKeyWithValue("repeat_justification_required", true))
+			Expect(selected).To(HaveKeyWithValue("prior_workflow_match", true))
+			Expect(selected).To(HaveKeyWithValue("repeat_validation_outcome", "accepted"))
+			Expect(selected).To(HaveKeyWithValue("handoff_digest", result.HandoffDigest))
+			Expect(string(wire)).NotTo(ContainSubstring("private-"))
+			Expect(projected).NotTo(HaveKey("selection_assessment"))
+		})
+
+		It("never promotes a rejected identity or incomplete reasoning into an executable selection", func() {
+			confidence, required := .81, true
+			result := &katypes.InvestigationResult{
+				Severity: "critical", RCASummary: "No justified retry", ProposedWorkflowID: "rejected-2496", WorkflowName: "increase-memory",
+				WorkflowSelectionConfidence: &confidence, HumanReviewNeeded: true,
+				RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "Current observation", PriorOutcomeRelevance: "Unknown cause"},
+				RepeatJustificationRequired: &required, RepeatValidationOutcome: "rejected",
+				ExecutionBundle: "private-bundle-2496", PriorRemediationUIDs: []string{"private-prior-2496"},
+			}
+			var projected map[string]interface{}
+			wire := session.MarshalRCASubset(result)
+			Expect(json.Unmarshal(wire, &projected)).To(Succeed())
+			Expect(projected).NotTo(HaveKey("selected_workflow"))
+			Expect(projected).To(HaveKey("selection_assessment"))
+			assessment := projected["selection_assessment"].(map[string]interface{})
+			Expect(assessment).NotTo(HaveKey("workflow_id"))
+			Expect(assessment).To(HaveKeyWithValue("proposed_workflow_id", "rejected-2496"))
+			Expect(assessment).To(HaveKeyWithValue("repeat_validation_outcome", "rejected"))
+			Expect(assessment["repeat_justification"]).To(HaveKeyWithValue("evidence_basis", "Current observation"))
+			Expect(string(wire)).NotTo(ContainSubstring("private-"))
+		})
+
+		It("does not invent a selection for explicit no-workflow, or a score when confidence is unknown", func() {
+			result := &katypes.InvestigationResult{Severity: "warning", RCASummary: "No suitable workflow", HumanReviewNeeded: true}
+			var projected map[string]interface{}
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &projected)).To(Succeed())
+			Expect(projected).NotTo(HaveKey("selected_workflow"))
+			Expect(projected).NotTo(HaveKey("selection_assessment"))
+			result.WorkflowID, result.WorkflowName, result.Confidence = "catalog-id-2496", "increase-memory", .93
+			Expect(json.Unmarshal(session.MarshalRCASubset(result), &projected)).To(Succeed())
+			Expect(projected).To(HaveKey("selected_workflow"))
+			Expect(projected["selected_workflow"]).NotTo(HaveKey("workflow_selection_confidence"))
+		})
+	})
 
 	Describe("UT-KA-1396-004: marshalRCASubset produces valid JSON with bounded fields", func() {
 		It("should marshal severity, confidence, causal_chain, target, and metrics", func() {

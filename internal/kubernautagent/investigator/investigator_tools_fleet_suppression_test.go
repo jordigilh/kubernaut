@@ -137,7 +137,7 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 			}
 			ctx := WithFleetOverlay(context.Background(), overlay)
 
-			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil)
+			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil, katypes.PhaseRCA)
 			Expect(err).To(HaveOccurred(),
 				"UT-KA-FLEET-035: a suppressed local tool called by name during a fleet-target "+
 					"investigation must be rejected, not silently executed against the hub (AC-6)")
@@ -151,7 +151,7 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 			overlay := map[string]tools.Tool{"kubectl_get_by_name": overlayTool}
 			ctx := WithFleetOverlay(context.Background(), overlay)
 
-			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil)
+			result, err := inv.executeResolved(ctx, "kubectl_get_by_name", nil, katypes.PhaseRCA)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal("fake-result:kubectl_get_by_name"),
 				"UT-KA-FLEET-035: an overlay-provided override must still execute -- blocking is scoped "+
@@ -159,7 +159,7 @@ var _ = Describe("Fleet-target local K8s tool suppression (BR-INTEGRATION-1489, 
 		})
 
 		It("still executes kubectl_get_by_name for a hub-local investigation (zero regression)", func() {
-			result, err := inv.executeResolved(context.Background(), "kubectl_get_by_name", nil)
+			result, err := inv.executeResolved(context.Background(), "kubectl_get_by_name", nil, katypes.PhaseRCA)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal("fake-result:kubectl_get_by_name"),
 				"UT-KA-FLEET-035: a hub-local investigation (no overlay in ctx) must still execute local "+

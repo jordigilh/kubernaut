@@ -2615,9 +2615,15 @@
         },
         "investigation": {
           "type": "object",
-          "description": "BR-KA-213, Issue #1826: investigation-outcome confidence bands, templated into the Phase 3 workflow-selection prompt's Outcome A (\"resolved\")/Outcome B (\"inconclusive\") thresholds. Previously hardcoded as literal 0.7/0.5 in the prompt template.",
+          "description": "Investigation-outcome confidence bands (BR-KA-213, Issue #1826) and independent frozen-evidence packet budget (DD-KA-2496, BR-KA-016).",
           "additionalProperties": false,
           "properties": {
+            "maxEvidenceHandoffBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 65536,
+              "description": "DD-KA-2496: maximum serialized bytes for the entire frozen evidence packet, including digest and freeze timestamp. Independent of tool-output summarization/truncation; overflow routes workflow selection to existing human review, never partial delivery."
+            },
             "resolvedConfidenceThreshold": {
               "type": "number",
               "exclusiveMinimum": 0,

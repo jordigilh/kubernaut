@@ -1,6 +1,7 @@
 package launcher_test
 
 import (
+	"encoding/json"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -9,6 +10,24 @@ import (
 )
 
 var _ = Describe("Decision artifact recovery (#2365)", func() {
+	It("UT-AF-2496-001: recovered presentation retains bounded rejected reasoning without promoting it to a workflow (BR-KA-016, SI-10)", func() {
+		var discovery ka.DiscoverWorkflowsResult
+		Expect(json.Unmarshal([]byte(`{"workflows":[],"selection_assessment":{"proposed_workflow_id":"rejected-2496","workflow_name":"increase-memory","workflow_selection_confidence":0,"repeat_validation_outcome":"rejected","repeat_justification":{"evidence_basis":"Current limit","prior_outcome_relevance":"Prior Full zero"},"prior_remediation_uids":["private-private"],"parameters":{"PASSWORD":"private-private"}}}`), &discovery)).To(Succeed())
+		result, err := launcher.BuildRecoveredDecisionArtifact(launcher.DecisionRecoveryInput{
+			SessionID: "sess-2496", Summary: "No justified retry", Discovery: &discovery,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Complete).To(BeTrue(), "the presentation is complete, not an accepted execution choice")
+		Expect(result.Data).NotTo(HaveKey("selected_workflow"))
+		Expect(result.Data).To(HaveKey("selection_assessment"))
+		Expect(result.Data["selection_assessment"]).To(HaveKeyWithValue("proposed_workflow_id", "rejected-2496"))
+		Expect(result.Data["selection_assessment"]).NotTo(HaveKey("workflow_id"))
+		wire, err := json.Marshal(result.Data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(wire)).NotTo(ContainSubstring("private-private"))
+		Expect(launcher.ValidatePayloadForTest("investigation_summary", result.Data)).To(Succeed())
+	})
+
 	It("UT-AF-2365-006 (AU-3, SI-10, ASVS 5.1): builds options from authoritative RCA and discovery data", func() {
 		result, err := launcher.BuildRecoveredDecisionArtifact(launcher.DecisionRecoveryInput{
 			SessionID: "sess-2365",

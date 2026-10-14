@@ -20,6 +20,34 @@ var _ = Describe("kubernaut_discover_workflows", func() {
 	})
 
 	Describe("HandleDiscoverWorkflows", func() {
+		DescribeTable("UT-AF-2496-001: production discovery handler preserves live selection context (BR-KA-016, SI-10)",
+			func(rejected bool) {
+				key, idKey := "selected_workflow", "workflow_id"
+				if rejected {
+					key, idKey = "selection_assessment", "proposed_workflow_id"
+				}
+				payload := map[string]any{"workflows": []any{}, key: map[string]any{
+					idKey: "catalog-id-2496", "workflow_name": "increase-memory", "workflow_selection_confidence": 0.,
+					"prior_remediation_uids": []any{"private-prior-2496"}, "parameters": map[string]any{"PASSWORD": "private-parameter-2496"},
+				}}
+				raw, err := json.Marshal(payload)
+				Expect(err).NotTo(HaveOccurred())
+				kaResult, err := ka.ParseDiscoverWorkflowsResponse(raw)
+				Expect(err).NotTo(HaveOccurred())
+				mockMCP := &ka.MockMCPClient{DiscoverWorkflowsFn: func(context.Context, ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) { return kaResult, nil }}
+				result, err := tools.HandleDiscoverWorkflows(ctx, mockMCP, tools.DiscoverWorkflowsArgs{})
+				Expect(err).NotTo(HaveOccurred())
+				wire, err := json.Marshal(result)
+				Expect(err).NotTo(HaveOccurred())
+				var projected map[string]any
+				Expect(json.Unmarshal(wire, &projected)).To(Succeed())
+				Expect(projected).To(HaveKey(key))
+				Expect(projected[key]).To(HaveKeyWithValue(idKey, "catalog-id-2496"))
+				Expect(projected[key]).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+				Expect(string(wire)).NotTo(ContainSubstring("private-"))
+			}, Entry("selected", false), Entry("rejected", true),
+		)
+
 		It("UT-AF-WP-001: returns workflows with parameters from mock KA", func() {
 			mockMCP := &ka.MockMCPClient{
 				DiscoverWorkflowsFn: func(_ context.Context, args ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {

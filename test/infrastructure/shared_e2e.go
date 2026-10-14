@@ -764,6 +764,9 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// Override the built-in GitOps selection scenario with the UUID assigned by
 	// the seeded catalog. The explicit A2A transcript below uses the same UUID.
 	afGitOpsWorkflowID := resolveWorkflowUUIDForEnvironment(workflowUUIDs, "gitops-drift-2390-v1", "staging")
+	// BR-KA-016: this external discovery fixture authors the current workflow
+	// score explicitly. Interactive selection must never borrow RCA confidence.
+	scenariosYAML += "      ka_gitops_workflow_discovery_2390:\n        confidence: 0.95\n"
 	scenariosYAML += fmt.Sprintf(`      af_select_gitops_workflow_2390:
         tool_call:
           name: "kubernaut_select_workflow"

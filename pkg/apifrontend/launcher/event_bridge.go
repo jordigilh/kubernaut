@@ -31,6 +31,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // #2110/#2111: a2a-go@v0.3.15's own internal/taskstore/store.go registers
@@ -110,14 +111,16 @@ type RRContext struct {
 // correctly, since the A2A ecosystem convention routes streaming content through
 // status-update events, not artifact-update events.
 type EventBridge struct {
-	mu        sync.Mutex
-	queue     eventqueue.Writer
-	taskID    a2a.TaskID
-	contextID string
-	metrics   BridgeMetrics
-	rrCtx     *RRContext
-	decisionSeverity    string
-	decisionProvisional bool
+	mu                   sync.Mutex
+	queue                eventqueue.Writer
+	taskID               a2a.TaskID
+	contextID            string
+	metrics              BridgeMetrics
+	rrCtx                *RRContext
+	decisionSeverity     string
+	decisionProvisional  bool
+	decisionSelection    katypes.LiveSelectionContext
+	decisionSelectionSet bool
 }
 
 const (
@@ -239,6 +242,39 @@ func DecisionRCAClassificationSafe(ctx context.Context) (string, bool) {
 		return bridge.DecisionRCAClassification()
 	}
 	return "", false
+}
+
+// SetDecisionSelectionContextSafe accepts only trusted KA context, independent
+// of the model's present_decision arguments (DD-KA-2496). An empty value clears
+// prior context, including across a new request's bridge restoration.
+func SetDecisionSelectionContextSafe(ctx context.Context, selection katypes.LiveSelectionContext) {
+	if bridge := EventBridgeFromContext(ctx); bridge != nil {
+		bridge.mu.Lock()
+		bridge.decisionSelection = selection.SafeCopy()
+		bridge.decisionSelectionSet = true
+		bridge.mu.Unlock()
+	}
+}
+
+func (b *EventBridge) projectDecisionSelection(ctx context.Context, data map[string]any) map[string]any {
+	b.mu.Lock()
+	selection, set := b.decisionSelection, b.decisionSelectionSet
+	b.mu.Unlock()
+	if !set {
+		return data
+	}
+	projectedData := cloneMap(data)
+	delete(projectedData, "selected_workflow")
+	delete(projectedData, "selection_assessment")
+	projected, err := selection.ToMap()
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "failed to project trusted decision selection context")
+		return projectedData
+	}
+	for key, value := range projected {
+		projectedData[key] = value
+	}
+	return projectedData
 }
 
 // RRContextSafe is a nil-safe helper that returns a copy of the RR context
@@ -641,23 +677,12 @@ func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, tex
 	if b == nil || b.queue == nil {
 		return nil
 	}
+	if meta["schema"] == "investigation_summary" && data != nil {
+		data = b.projectDecisionSelection(ctx, data)
+	}
 
 	parts := make(a2a.ContentParts, 0, 2)
-	if data != nil {
-		safe, err := sanitizeArtifactData(data)
-		if err != nil {
-			logr.FromContextOrDiscard(ctx).Error(err, "artifact data is not gob-safe for a2a-go's deep-copy pipeline -- "+
-				"dropping structured DataPart and falling back to text-only artifact (#2110/#2111 boundary guard)")
-			if b.metrics != nil {
-				b.metrics.IncBridgeWriteFailures()
-			}
-		} else {
-			parts = append(parts, a2a.DataPart{
-				Data:     safe,
-				Metadata: map[string]any{"mediaType": "application/json"},
-			})
-		}
-	}
+	parts = b.appendArtifactDataPart(ctx, parts, data, meta)
 	parts = append(parts, a2a.TextPart{Text: textFallback})
 
 	evt := &a2a.TaskArtifactUpdateEvent{
@@ -683,6 +708,25 @@ func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, tex
 		}
 	}
 	return err
+}
+
+func (b *EventBridge) appendArtifactDataPart(ctx context.Context, parts a2a.ContentParts, data map[string]any, meta map[string]any) a2a.ContentParts {
+	if data == nil {
+		return parts
+	}
+	safe, err := sanitizeArtifactData(data)
+	if err == nil && meta["schema"] == "investigation_summary" {
+		err = validateLiveSelectionContext(safe)
+	}
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "artifact data failed live schema or gob-safety validation -- "+
+			"dropping structured DataPart and falling back to text-only artifact (DD-KA-2496, #2110/#2111 boundary guard)")
+		if b.metrics != nil {
+			b.metrics.IncBridgeWriteFailures()
+		}
+		return parts
+	}
+	return append(parts, a2a.DataPart{Data: safe, Metadata: map[string]any{"mediaType": "application/json"}})
 }
 
 // emojiRange is an inclusive Unicode codepoint range known to contain emoji.

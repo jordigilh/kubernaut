@@ -316,7 +316,19 @@ func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID
 // total tool-call budget is now exhausted.
 func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, turn int, phase string, correlationID string) (newMessages []llm.Message, sentinel LoopResult, budgetExhausted bool) {
 	for _, tc := range resp.ToolCalls {
+		if !inv.toolAllowedInPhase(ctx, katypes.Phase(phase), tc.Name) {
+			continue
+		}
 		if sr := sentinelResult(tc, resp.Message.Reasoning, messages); sr != nil {
+			// DD-KA-2496: an allowed submit must not hide a rejected call in
+			// the same batch. Preserve sentinel short-circuit semantics for
+			// permitted tools while making off-phase attempts auditable.
+			for i, call := range resp.ToolCalls {
+				if !inv.toolAllowedInPhase(ctx, katypes.Phase(phase), call.Name) {
+					result := inv.phaseToolError(call.Name, katypes.Phase(phase), correlationID)
+					inv.emitToolCallAudit(ctx, call, i, result, phase, correlationID)
+				}
+			}
 			inv.logger.Info("sentinel detected",
 				"tool", tc.Name,
 				"phase", phase,
@@ -343,7 +355,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			// had no deadline at all.
 			toolCtx, cancel := context.WithTimeout(ctx, inv.toolCallTimeout)
 			defer cancel()
-			toolResults[i] = inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
+			toolResults[i] = inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID, katypes.Phase(phase))
 			return nil
 		})
 	}
@@ -361,16 +373,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			"result_preview": truncatePreview(toolResults[i], 200),
 		})
 
-		tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
-		tcEvent.EventAction = audit.ActionToolExecution
-		tcEvent.EventOutcome = audit.OutcomeSuccess
-		tcEvent.Data["tool_call_index"] = i
-		tcEvent.Data["tool_name"] = tc.Name
-		tcEvent.Data["tool_arguments"] = tc.Arguments
-		auditResult := auditSafeToolResult(tc.Name, toolResults[i])
-		tcEvent.Data["tool_result"] = auditResult
-		tcEvent.Data["tool_result_preview"] = truncatePreview(auditResult, 500)
-		audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
+		inv.emitToolCallAudit(ctx, tc, i, toolResults[i], phase, correlationID)
 
 		messages = append(messages, llm.Message{
 			Role:       "tool",

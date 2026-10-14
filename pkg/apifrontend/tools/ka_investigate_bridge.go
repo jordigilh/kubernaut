@@ -254,6 +254,7 @@ func captureCompleteEventRCA(ctx context.Context, evt ka.InvestigationEvent, sum
 		return
 	}
 	*rcaResult = &rca
+	rca.LiveSelectionContext = rca.SafeCopy()
 	if rca.RCASummary != "" && summary.Len() == 0 {
 		summary.WriteString(rca.RCASummary)
 	}
@@ -308,6 +309,12 @@ func emitInvestigationSummaryArtifact(ctx context.Context, rca *InvestigateRCA, 
 			"tool_calls_count": rca.TotalToolCalls,
 			"llm_turns":        rca.TotalLLMTurns,
 		},
+	}
+	if rca.SelectedWorkflow != nil {
+		data["selected_workflow"] = rca.SelectedWorkflow
+	}
+	if rca.SelectionAssessment != nil {
+		data["selection_assessment"] = rca.SelectionAssessment
 	}
 	meta := map[string]any{
 		"type":           launcher.MetaTypeDecision,

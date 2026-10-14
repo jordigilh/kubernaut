@@ -1,0 +1,41 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: oomkill-increase-memory-alternative-2496-v1
+spec:
+  # BR-KA-016 / DD-KA-2496: a distinct catalog ID in the same action family.
+  # Uses the existing immutable Job bundle, not a second execution backend.
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits using a distinct catalog workflow"
+    whenToUse: "A different workflow ID after a completed prior attempt"
+    whenNotToUse: "Memory leaks requiring application changes"
+    preconditions: "The target is managed by a Deployment or StatefulSet"
+  actionType: IncreaseMemoryLimits
+  labels:
+    severity: [critical, high, warning]
+    environment: [production, staging, test]
+    component: ["*"]
+    priority: "*"
+    cluster: ["*"]
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:6343779228f380aa2ed8f1584b98f0bafb7f6063dbb8c0de1581a5fd5172a395
+    serviceAccountName: workflow-job-executor
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Root managing resource name, injected by KA"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Root managing resource kind, injected by KA"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Root managing resource namespace, injected by KA"
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
+      description: "New memory limit for the current target"

@@ -17,10 +17,15 @@ limitations under the License.
 package datastorage
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,6 +36,53 @@ import (
 // BR-AUDIT-009: Retention policies for audit data
 // BR-AUDIT-004: Immutability / integrity of audit records
 var _ = Describe("Retention Enforcement — Integration Tests", Ordered, ContinueOnFailure, func() {
+	var retentionDB *sql.DB
+
+	BeforeAll(func() {
+		// BR-AUDIT-004/009: partition DDL must exercise real migrations and
+		// triggers without locking the audit parent used by parallel specs.
+		// This database belongs only to this test group in the existing instance.
+		var sharedDatabase string
+		Expect(db.QueryRowContext(ctx, "SELECT current_database()").Scan(&sharedDatabase)).To(Succeed())
+		databaseName := fmt.Sprintf("retention_test_p%d_%s", GinkgoParallelProcess(), strings.ReplaceAll(uuid.NewString(), "-", ""))
+		databaseIdentifier := pgx.Identifier{databaseName}.Sanitize()
+		_, err := db.ExecContext(ctx, "CREATE DATABASE "+databaseIdentifier)
+		Expect(err).NotTo(HaveOccurred(), "the test PostgreSQL role must create its own fixture database")
+
+		DeferCleanup(func() {
+			if retentionDB != nil {
+				Expect(retentionDB.Close()).To(Succeed())
+			}
+			if os.Getenv("KEEP_CONTAINERS_ON_FAILURE") != "" {
+				GinkgoWriter.Printf("Retaining test-owned database %s for verification\n", databaseName)
+				return
+			}
+			// CREATE succeeded above: drop only this unique, owned database.
+			// Never force-close connections or alter the shared database.
+			_, cleanupErr := db.ExecContext(ctx, "DROP DATABASE "+databaseIdentifier)
+			Expect(cleanupErr).NotTo(HaveOccurred())
+		})
+
+		host := os.Getenv("POSTGRES_HOST")
+		if host == "" {
+			host = localhost
+		}
+		port := os.Getenv("POSTGRES_PORT")
+		if port == "" {
+			port = "15433" // Same test instance and DD-TEST-001 binding.
+		}
+		connString := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=%s sslmode=disable options='-c search_path=public'", host, port, databaseName)
+		retentionDB, err = sql.Open("pgx", connString)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(retentionDB.PingContext(ctx)).To(Succeed())
+		applyMigrationsWithPropagationTo(retentionDB)
+
+		var actualDatabase string
+		Expect(retentionDB.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDatabase)).To(Succeed())
+		Expect(actualDatabase).To(Equal(databaseName))
+		Expect(actualDatabase).NotTo(Equal(sharedDatabase), "retention DDL must not touch the shared audit database")
+		GinkgoWriter.Printf("Retention fixtures isolated in %s; shared database %s unchanged\n", actualDatabase, sharedDatabase)
+	})
 
 	// Insert a synthetic expired audit event for tests.
 	// Uses a date within the static partition range (2026-03 to 2028-12).
@@ -46,18 +98,36 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 				'success', 'system', 'retention-test', 'test-resource', 'test-id',
 				$4, '{}'::jsonb, $5, $6
 			)`
-		_, err := db.ExecContext(ctx, insertQuery, eventID, eventDate, eventDate, corrID, retentionDays, legalHold)
+		_, err := retentionDB.ExecContext(ctx, insertQuery, eventID, eventDate, eventDate, corrID, retentionDays, legalHold)
 		Expect(err).NotTo(HaveOccurred())
 		return eventID
 	}
 
 	countByCorrID := func(corrID string) int {
 		var count int
-		err := db.QueryRowContext(ctx,
+		err := retentionDB.QueryRowContext(ctx,
 			"SELECT count(*) FROM audit_events WHERE correlation_id = $1", corrID,
 		).Scan(&count)
 		Expect(err).NotTo(HaveOccurred())
 		return count
+	}
+
+	cleanupHeldEvents := func(predicate, corrID string) {
+		tx, err := retentionDB.BeginTx(ctx, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() {
+			rollbackErr := tx.Rollback()
+			if !errors.Is(rollbackErr, sql.ErrTxDone) {
+				Expect(rollbackErr).NotTo(HaveOccurred())
+			}
+		}()
+		_, err = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
+		Expect(err).NotTo(HaveOccurred())
+		_, err = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE "+predicate, corrID)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE "+predicate, corrID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tx.Commit()).To(Succeed())
 	}
 
 	// IT-DS-485-001 (P0): Disabled by default — no deletes
@@ -83,7 +153,8 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		AfterAll(func() {
-			_, _ = db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			_, err := retentionDB.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -108,7 +179,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 				WHERE correlation_id = $1
 				  AND event_date + (retention_days * INTERVAL '1 day') < $2::DATE
 				  AND legal_hold = FALSE`
-			result, err := db.ExecContext(ctx, deleteQuery, corrID, futureNow)
+			result, err := retentionDB.ExecContext(ctx, deleteQuery, corrID, futureNow)
 			Expect(err).NotTo(HaveOccurred())
 
 			rowsAffected, err := result.RowsAffected()
@@ -118,7 +189,8 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		AfterAll(func() {
-			_, _ = db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			_, err := retentionDB.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -141,7 +213,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 				WHERE correlation_id = $1
 				  AND event_date + (retention_days * INTERVAL '1 day') < $2::DATE
 				  AND legal_hold = FALSE`
-			result, err := db.ExecContext(ctx, deleteQuery, corrID, futureNow)
+			result, err := retentionDB.ExecContext(ctx, deleteQuery, corrID, futureNow)
 			Expect(err).NotTo(HaveOccurred())
 
 			rowsAffected, err := result.RowsAffected()
@@ -151,7 +223,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		It("should trigger error on direct DELETE of legal_hold=true row", func() {
-			_, err := db.ExecContext(ctx,
+			_, err := retentionDB.ExecContext(ctx,
 				"DELETE FROM audit_events WHERE correlation_id = $1", corrID,
 			)
 			Expect(err).To(HaveOccurred(), "DB trigger should block direct DELETE of held row")
@@ -163,13 +235,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 			// Use session variable inside a single transaction to bypass triggers
 			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
 			// concurrent test processes on the partitioned table).
-			tx, txErr := db.BeginTx(ctx, nil)
-			if txErr == nil {
-				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
-				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", corrID)
-				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
-				_ = tx.Commit()
-			}
+			cleanupHeldEvents("correlation_id = $1", corrID)
 		})
 	})
 
@@ -183,7 +249,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 
 		BeforeAll(func() {
 			// Create the test partition
-			err := partition.EnsureMonthlyPartitions(ctx, db, testMonth, 0, []partition.ParentTable{partition.AuditEventsTable})
+			err := partition.EnsureMonthlyPartitions(ctx, retentionDB, testMonth, 0, []partition.ParentTable{partition.AuditEventsTable})
 			Expect(err).NotTo(HaveOccurred())
 
 			// Insert a row with short retention, no hold
@@ -193,7 +259,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		It("should be able to drop a fully-expired partition after row delete", func() {
 			// First: delete all eligible rows
 			futureNow := time.Date(2030, time.June, 1, 0, 0, 0, 0, time.UTC)
-			_, err := db.ExecContext(ctx, `
+			_, err := retentionDB.ExecContext(ctx, `
 				DELETE FROM audit_events
 				WHERE event_date >= $1 AND event_date < $2
 				  AND event_date + (retention_days * INTERVAL '1 day') < $3::DATE
@@ -204,25 +270,25 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 
 			// Verify partition is empty
 			var rowCount int
-			err = db.QueryRowContext(ctx,
+			err = retentionDB.QueryRowContext(ctx,
 				fmt.Sprintf("SELECT count(*) FROM %s", partName),
 			).Scan(&rowCount)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rowCount).To(Equal(0))
 
 			// Drop the partition
-			_, err = db.ExecContext(ctx,
+			_, err = retentionDB.ExecContext(ctx,
 				fmt.Sprintf("ALTER TABLE audit_events DETACH PARTITION %s", partName),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = db.ExecContext(ctx,
+			_, err = retentionDB.ExecContext(ctx,
 				fmt.Sprintf("DROP TABLE IF EXISTS %s", partName),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify partition is gone
 			var exists bool
-			err = db.QueryRowContext(ctx,
+			err = retentionDB.QueryRowContext(ctx,
 				"SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)", partName,
 			).Scan(&exists)
 			Expect(err).NotTo(HaveOccurred())
@@ -230,7 +296,8 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		AfterAll(func() {
-			_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", partName))
+			_, err := retentionDB.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", partName))
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -243,7 +310,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		corrFresh := "test-ret-485-005-fresh"
 
 		BeforeAll(func() {
-			err := partition.EnsureMonthlyPartitions(ctx, db, testMonth, 0, []partition.ParentTable{partition.AuditEventsTable})
+			err := partition.EnsureMonthlyPartitions(ctx, retentionDB, testMonth, 0, []partition.ParentTable{partition.AuditEventsTable})
 			Expect(err).NotTo(HaveOccurred())
 
 			// Expired, no hold
@@ -256,7 +323,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 
 		It("should delete only eligible (expired + no hold) rows", func() {
 			futureNow := time.Date(2030, time.June, 1, 0, 0, 0, 0, time.UTC)
-			_, err := db.ExecContext(ctx, `
+			_, err := retentionDB.ExecContext(ctx, `
 				DELETE FROM audit_events
 				WHERE event_date >= $1 AND event_date < $2
 				  AND event_date + (retention_days * INTERVAL '1 day') < $3::DATE
@@ -274,15 +341,10 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 			// Use session variable inside a single transaction to bypass triggers
 			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
 			// concurrent test processes on the partitioned table).
-			tx, txErr := db.BeginTx(ctx, nil)
-			if txErr == nil {
-				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
-				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id LIKE 'test-ret-485-005-%'")
-				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id LIKE 'test-ret-485-005-%'")
-				_ = tx.Commit()
-			}
-			_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s",
+			cleanupHeldEvents("correlation_id LIKE $1", "test-ret-485-005-%")
+			_, err := retentionDB.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s",
 				partition.FormatPartitionName("audit_events", 2030, time.February)))
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -291,7 +353,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 	Describe("IT-DS-485-006: retention_operations log", func() {
 		It("should be possible to insert a structured retention operation record", func() {
 			runID := uuid.New().String()
-			_, err := db.ExecContext(ctx, `
+			_, err := retentionDB.ExecContext(ctx, `
 				INSERT INTO retention_operations (
 					run_id, scope, period_start, period_end,
 					rows_scanned, rows_deleted, partitions_dropped,
@@ -310,14 +372,15 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 
 			// Verify record exists
 			var count int
-			err = db.QueryRowContext(ctx,
+			err = retentionDB.QueryRowContext(ctx,
 				"SELECT count(*) FROM retention_operations WHERE run_id = $1::UUID", runID,
 			).Scan(&count)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(count).To(Equal(1))
 
 			// Cleanup
-			_, _ = db.ExecContext(ctx, "DELETE FROM retention_operations WHERE run_id = $1::UUID", runID)
+			_, err = retentionDB.ExecContext(ctx, "DELETE FROM retention_operations WHERE run_id = $1::UUID", runID)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -354,7 +417,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		It("should block UPDATE that sets legal_hold from TRUE to FALSE", func() {
-			_, err := db.ExecContext(ctx,
+			_, err := retentionDB.ExecContext(ctx,
 				"UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", corrID,
 			)
 			Expect(err).To(HaveOccurred(), "SOC2 trigger should block legal_hold removal")
@@ -362,7 +425,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 		})
 
 		It("should allow UPDATE that keeps legal_hold = TRUE", func() {
-			_, err := db.ExecContext(ctx,
+			_, err := retentionDB.ExecContext(ctx,
 				"UPDATE audit_events SET legal_hold_reason = 'updated reason' WHERE correlation_id = $1", corrID,
 			)
 			Expect(err).NotTo(HaveOccurred(), "updating other fields should be allowed")
@@ -372,13 +435,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 			// Use session variable inside a single transaction to bypass triggers
 			// without DROP TRIGGER (which takes AccessExclusiveLock and deadlocks
 			// concurrent test processes on the partitioned table).
-			tx, txErr := db.BeginTx(ctx, nil)
-			if txErr == nil {
-				_, _ = tx.ExecContext(ctx, "SET LOCAL kubernaut.legal_hold_release = 'authorized'")
-				_, _ = tx.ExecContext(ctx, "UPDATE audit_events SET legal_hold = FALSE WHERE correlation_id = $1", corrID)
-				_, _ = tx.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id = $1", corrID)
-				_ = tx.Commit()
-			}
+			cleanupHeldEvents("correlation_id = $1", corrID)
 		})
 	})
 })

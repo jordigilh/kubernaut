@@ -684,7 +684,6 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				},
 				Status: signalprocessingv1alpha1.SignalProcessingStatus{
 					Phase:             signalprocessingv1alpha1.PhaseClassifying,
-					StartTime:         &metav1.Time{Time: time.Now()},
 					KubernetesContext: nil,
 				},
 			}
@@ -712,6 +711,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				PolicyEvaluator: mockEval,
 				Recorder:        record.NewFakeRecorder(20),
 			}
+
+			// BR-SP-001 / UT-SP-437-001: initialize the external fake API
+			// before starting the recent-enrichment clock. Setup must not
+			// consume the production 30s safety valve under a parallel gate.
+			Expect(fakeClient.Status().Update(context.Background(), staleSP)).To(Succeed())
+			staleSP.Status.StartTime = &metav1.Time{Time: time.Now()}
+			Expect(fakeClient.Status().Update(context.Background(), staleSP)).To(Succeed())
 
 			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: staleSP.Name, Namespace: staleSP.Namespace},
@@ -746,8 +752,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					},
 				},
 				Status: signalprocessingv1alpha1.SignalProcessingStatus{
-					Phase:     signalprocessingv1alpha1.PhaseClassifying,
-					StartTime: &metav1.Time{Time: time.Now()},
+					Phase: signalprocessingv1alpha1.PhaseClassifying,
 					KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
 						Namespace: nil,
 					},
@@ -777,6 +782,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				PolicyEvaluator: mockEval,
 				Recorder:        record.NewFakeRecorder(20),
 			}
+
+			// BR-SP-001 / UT-SP-437-002: anchor the pending-enrichment
+			// timestamp after fake API setup, leaving the safety valve and
+			// the separate expired-enrichment test unchanged.
+			Expect(fakeClient.Status().Update(context.Background(), staleSP)).To(Succeed())
+			staleSP.Status.StartTime = &metav1.Time{Time: time.Now()}
+			Expect(fakeClient.Status().Update(context.Background(), staleSP)).To(Succeed())
 
 			result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: staleSP.Name, Namespace: staleSP.Namespace},

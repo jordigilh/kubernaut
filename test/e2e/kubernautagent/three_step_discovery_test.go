@@ -117,10 +117,19 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 				`"workflow_name":"oomkill-increase-memory-v1"`),
 				"selectedWorkflow must be the workflow returned by list_workflows")
 			var selectedWorkflow struct {
-				WorkflowID   string `json:"workflow_id"`
-				WorkflowName string `json:"workflow_name"`
+				WorkflowID                  string   `json:"workflow_id"`
+				WorkflowName                string   `json:"workflow_name"`
+				WorkflowSelectionConfidence *float64 `json:"workflow_selection_confidence"`
+				RepeatValidationOutcome     string   `json:"repeat_validation_outcome"`
+				HandoffDigest               string   `json:"handoff_digest"`
 			}
 			Expect(json.Unmarshal(incidentResp.SelectedWorkflow.Raw, &selectedWorkflow)).To(Succeed())
+			Expect(selectedWorkflow.WorkflowID).NotTo(BeEmpty())
+			Expect(selectedWorkflow.WorkflowName).To(Equal("oomkill-increase-memory-v1"))
+			Expect(selectedWorkflow.WorkflowSelectionConfidence).NotTo(BeNil(), "BR-KA-016: selection confidence is explicit, independent of RCA")
+			Expect(*selectedWorkflow.WorkflowSelectionConfidence).To(Equal(.95))
+			Expect(selectedWorkflow.RepeatValidationOutcome).To(Equal("not_required"))
+			Expect(selectedWorkflow.HandoffDigest).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
 
 			By("querying Data Storage by the unique remediation ID until both discovery events arrive")
 			var auditEvents []ogenclient.AuditEvent
@@ -349,6 +358,12 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 				"selectedWorkflow must be the workflow returned by list_workflows")
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Confidence should be ~0.95 for CrashLoop scenario")
+			var selected map[string]any
+			Expect(json.Unmarshal(incidentResp.SelectedWorkflow.Raw, &selected)).To(Succeed())
+			Expect(selected).To(HaveKeyWithValue("workflow_name", "crashloop-config-fix-v1"))
+			Expect(selected["workflow_id"]).NotTo(BeEmpty())
+			Expect(selected).To(HaveKeyWithValue("workflow_selection_confidence", .95))
+			Expect(selected).To(HaveKeyWithValue("repeat_validation_outcome", "not_required"))
 
 			logger.Info("✅ E2E-KA-017-001-001b: CrashLoop three-step discovery PASSED",
 				"incident_id", incidentResp.IncidentID,

@@ -747,10 +747,13 @@ type RemediationWorkflowCreatedData struct {
 	PreRemediationSpecHash string
 	TargetResource         string
 	WorkflowID             string
-	WorkflowVersion        string
-	ActionType             string
-	SignalType             string
-	SignalFingerprint      string
+	// DD-KA-2496: selected snapshot metadata, not RCA/approval confidence.
+	WorkflowName                string
+	WorkflowSelectionConfidence *float64
+	WorkflowVersion             string
+	ActionType                  string
+	SignalType                  string
+	SignalFingerprint           string
 }
 
 // BuildRemediationWorkflowCreatedEvent builds an audit event capturing the
@@ -788,6 +791,12 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 
 	if data.WorkflowVersion != "" {
 		payload.WorkflowVersion = api.OptString{Value: data.WorkflowVersion, Set: true}
+	}
+	if data.WorkflowName != "" {
+		payload.WorkflowName.SetTo(data.WorkflowName)
+	}
+	if data.WorkflowSelectionConfidence != nil {
+		payload.WorkflowSelectionConfidence.SetTo(*data.WorkflowSelectionConfidence)
 	}
 	if data.ActionType != "" {
 		payload.ActionType = api.OptString{Value: data.ActionType, Set: true}

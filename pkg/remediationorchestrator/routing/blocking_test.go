@@ -807,6 +807,61 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	// WorkflowID matching done via WorkflowRef in actual implementation
 	// ========================================
 	Context("CheckRecentlyRemediated", func() {
+		It("should not apply a hub cooldown to the same target and workflow on another cluster", func() {
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-hub-scope", Namespace: "default"},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "default/pod/nginx-cross-cluster",
+					ClusterID:      "hub",
+					WorkflowRef:    workflowexecutionv1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "restart-workflow"}},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhaseCompleted, CompletionTime: &completionTime},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-remote-scope", Namespace: "default"},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID:      "remote-cluster",
+					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-cross-cluster", Namespace: "default"},
+				},
+			}
+
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow", "default/pod/nginx-cross-cluster")
+
+			Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue())
+			Expect(blocked).To(BeNil())
+		})
+
+		It("should apply cooldown using the effective execution cluster when it differs from RR origin", func() {
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-effective-execution-cluster", Namespace: "default"},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "default/pod/nginx-effective-cluster",
+					ClusterID:      "gitops-hub-cluster",
+					WorkflowRef:    workflowexecutionv1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{WorkflowID: "restart-workflow"}},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{Phase: workflowexecutionv1.PhaseCompleted, CompletionTime: &completionTime},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-effective-execution-cluster", Namespace: "default"},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID:      "signal-origin-cluster",
+					TargetResource: remediationv1.ResourceIdentifier{Kind: "Pod", Name: "nginx-effective-cluster", Namespace: "default"},
+				},
+			}
+
+			blocked, err := engine.CheckPostAnalysisConditions(
+				ctx, rr, "restart-workflow", "default/pod/nginx-effective-cluster", "", "", "gitops-hub-cluster")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).ToNot(BeNil(), "BR-FLEET-004: cooldown must use the workflow's effective execution cluster")
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+		})
+
 		It("should block when recent WFE within 5min cooldown", func() {
 			// Create recently completed WFE (within cooldown)
 			completionTime := metav1.Now()
@@ -1270,7 +1325,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "", "")
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures))) // First check should win
@@ -1429,7 +1484,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "", "")
 			Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue())
 			Expect(blocked).To(BeNil()) // Not blocked (empty target doesn't match)
 		})
@@ -1789,7 +1844,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			// Check blocking conditions (post-AA includes all checks)
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "", "", "")
 			Expect(err).ToNot(HaveOccurred())
 			// Should return ConsecutiveFailures (higher priority than DuplicateInProgress)
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))

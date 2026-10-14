@@ -37,9 +37,10 @@ import (
 // complete_no_action tools against the real Kind cluster with real KA + MockLLM.
 //
 // Tests:
-//   E2E-KA-DISC-001: start -> message -> discover_workflows -> select_workflow
-//   E2E-KA-DISC-002: start -> complete_no_action with reason
-//   E2E-KA-DISC-003: select_workflow without discover_workflows (gating)
+//
+//	E2E-KA-DISC-001: start -> message -> discover_workflows -> select_workflow
+//	E2E-KA-DISC-002: start -> complete_no_action with reason
+//	E2E-KA-DISC-003: select_workflow without discover_workflows (gating)
 var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka", "interactive", "discovery"), func() {
 
 	var (
@@ -124,6 +125,16 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			recommendedID, ok := recommended["workflow_id"].(string)
 			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
 			GinkgoWriter.Printf("Using recommended workflow_id: %s\n", recommendedID)
+			selected, ok := innerData["selected_workflow"].(map[string]any)
+			Expect(ok).To(BeTrue(), "BR-KA-016: discovery carries trusted live selection metadata")
+			Expect(selected).To(HaveKeyWithValue("workflow_id", recommendedID))
+			Expect(selected).To(HaveKeyWithValue("workflow_name", "oomkill-increase-memory-v1"))
+			Expect(selected).To(HaveKeyWithValue("workflow_selection_confidence", recommended["confidence"]))
+			Expect(selected).To(HaveKeyWithValue("repeat_validation_outcome", "not_required"))
+			Expect(selected["handoff_digest"]).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
+			for _, field := range []string{"parameters", "execution_bundle", "prior_remediation_uids", "frozen_evidence"} {
+				Expect(selected).NotTo(HaveKey(field), "safe live selection is not executable configuration or history")
+			}
 
 			By("Verifying recommended workflow has oomkilled scenario parameters (#1169)")
 			recParams, _ := recommended["parameters"].(map[string]any)
@@ -319,6 +330,12 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			recommendedID, ok := recommended["workflow_id"].(string)
 			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
 			GinkgoWriter.Printf("E2E-KA-DISC-005 recommended workflow_id: %s\n", recommendedID)
+			selected, ok := innerData["selected_workflow"].(map[string]any)
+			Expect(ok).To(BeTrue(), "BR-KA-016: cross-resource discovery retains trusted selection provenance")
+			Expect(selected).To(HaveKeyWithValue("workflow_id", recommendedID))
+			Expect(selected).To(HaveKeyWithValue("workflow_selection_confidence", recommended["confidence"]))
+			Expect(selected).To(HaveKeyWithValue("repeat_validation_outcome", "not_required"))
+			Expect(selected["handoff_digest"]).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
 
 			By("Selecting the recommended workflow")
 			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
