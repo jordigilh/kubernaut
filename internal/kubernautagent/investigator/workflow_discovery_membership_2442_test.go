@@ -74,6 +74,8 @@ var _ = Describe("Workflow selection discovery membership — #2442", func() {
 		}
 
 		validator := parser.NewValidator([]string{"workflow-presented", "workflow-hidden"})
+		validator.SetWorkflowMeta("workflow-presented", parser.WorkflowMeta{WorkflowName: "presented-workflow"})
+		validator.SetWorkflowMeta("workflow-hidden", parser.WorkflowMeta{WorkflowName: "hidden-workflow"})
 		inv := investigator.New(investigator.Config{
 			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
 			Enricher:   enrichment.NewEnricher(&gateK8sClient{}, &gateDSClient{}, audit.NopAuditStore{}, logr.Discard()),

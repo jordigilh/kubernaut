@@ -8,6 +8,19 @@ import (
 )
 
 var _ = Describe("Schema Validation (#1399)", func() {
+	DescribeTable("UT-AF-2496-001: live selection schema excludes execution/provenance fields (BR-KA-016, SI-10)",
+		func(field string, metadata map[string]any) {
+			data := map[string]any{
+				"session_id": "sess-2496", "summary": "Current pressure", "rca": map[string]any{"explanation": "Current pressure"}, field: metadata,
+			}
+			Expect(launcher.ValidatePayloadForTest("investigation_summary", data)).NotTo(Succeed())
+		},
+		Entry("selected raw parameters", "selected_workflow", map[string]any{"workflow_id": "wf-2496", "workflow_name": "increase-memory", "parameters": map[string]any{"PASSWORD": "private-private"}}),
+		Entry("selected prior links", "selected_workflow", map[string]any{"workflow_id": "wf-2496", "workflow_name": "increase-memory", "prior_remediation_uids": []any{"private-private"}}),
+		Entry("rejected executable identity", "selection_assessment", map[string]any{"proposed_workflow_id": "wf-2496", "workflow_name": "increase-memory", "workflow_id": "wf-2496"}),
+		Entry("incomplete selected identity", "selected_workflow", map[string]any{"workflow_id": "wf-2496"}),
+	)
+
 	It("UT-AF-1399-012: ValidatePayload returns nil for valid investigation_summary", func() {
 		data := map[string]any{
 			"session_id": "sess-001",

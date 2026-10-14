@@ -2,10 +2,16 @@ package launcher_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -19,6 +25,44 @@ import (
 // =============================================================================
 
 var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
+	It("UT-AF-2496-002: a text-only artifact cannot invent structured selection context (BR-KA-016, SI-10)", func() {
+		queue, ctx := partConverterBridgeCtx()
+		Expect(launcher.EmitArtifactSafe(ctx, nil, "Authoritative selection context unavailable", map[string]any{"schema": "investigation_summary", "schema_version": "1.0"})).To(Succeed())
+		Expect(queue.events).To(HaveLen(1))
+		artifact, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+		Expect(artifact.Artifact.Parts).To(Equal(a2a.ContentParts{a2a.TextPart{Text: "Authoritative selection context unavailable"}}))
+	})
+
+	DescribeTable("UT-AF-2496-002: live selection schema failure is observable without logging payload contents (BR-KA-016, SI-10)",
+		func(field string, selection any) {
+			queue, ctx := partConverterBridgeCtx()
+			core, logs := observer.New(zap.InfoLevel)
+			ctx = logr.NewContext(ctx, zapr.NewLogger(zap.New(core)))
+			data := map[string]any{"session_id": "rr-2496", "summary": "Current pressure", "rca": map[string]any{"explanation": "Current pressure"}, field: selection}
+			Expect(launcher.EmitArtifactSafe(ctx, data, "Current pressure", map[string]any{"schema": "investigation_summary", "schema_version": "1.0"})).To(Succeed())
+			Expect(queue.events).To(HaveLen(1))
+			artifact, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(artifact.Artifact.Parts).To(Equal(a2a.ContentParts{a2a.TextPart{Text: "Current pressure"}}))
+			Expect(logs.Len()).To(BeNumerically(">", 0), "structured fallback is observable")
+			for _, entry := range logs.All() {
+				Expect(entry.Message).NotTo(ContainSubstring("private-private"))
+				fields, err := json.Marshal(entry.ContextMap())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(fields)).NotTo(ContainSubstring("private-private"))
+			}
+		},
+		Entry("malformed", "selected_workflow", "private-private"),
+		Entry("oversized reasoning", "selected_workflow", map[string]any{"workflow_id": "wf-2496", "workflow_name": "Increase memory", "repeat_justification": map[string]any{"evidence_basis": strings.Repeat("a", 2001), "prior_outcome_relevance": "Prior Full zero", "expected_mechanism": "Increase limit"}}),
+		Entry("private execution fields", "selected_workflow", map[string]any{"workflow_id": "wf-2496", "workflow_name": "Increase memory", "parameters": map[string]any{"PASSWORD": "private-private"}}),
+		Entry("rejected null context", "selection_assessment", nil),
+		Entry("rejected execution identity", "selection_assessment", map[string]any{"proposed_workflow_id": "wf-2496", "workflow_id": "private-private"}),
+		Entry("rejected private prior links", "selection_assessment", map[string]any{"proposed_workflow_id": "wf-2496", "prior_remediation_uids": []any{"private-private"}}),
+		Entry("rejected invalid confidence", "selection_assessment", map[string]any{"proposed_workflow_id": "wf-2496", "workflow_selection_confidence": 1.1}),
+		Entry("rejected blank optional reason", "selection_assessment", map[string]any{"proposed_workflow_id": "wf-2496", "repeat_justification": map[string]any{"evidence_basis": " \t"}}),
+	)
+
 	Describe("Reasoning routing through production streaming converter", func() {
 		It("IT-AF-1399-001: Thought part routes to reasoning through streaming pipeline", func() {
 			convert := launcher.BuildStreamingPartConverterForTest()

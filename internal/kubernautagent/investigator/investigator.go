@@ -214,6 +214,8 @@ type Pipeline struct {
 	CatalogFetcher    CatalogFetcher
 	Summarizer        *summarizer.Summarizer
 	MaxToolOutputSize int
+	// DD-KA-2496: applies to the complete frozen packet, never tool results.
+	MaxEvidenceHandoffBytes int
 }
 
 // Config holds all dependencies for constructing an Investigator.
@@ -320,6 +322,9 @@ type Investigator struct {
 	// single-Investigate threading), this spans interactive and discovery
 	// legs that carry no accumulator at all.
 	tokenScope *tokenScope
+	// DD-KA-2496: ephemeral, correlation-scoped pre-transform evidence; never
+	// an audit/conversation lookup or a singleton shared observation slice.
+	evidence *evidenceRuntime
 }
 
 // FleetOverlayResolver returns the configured authoritative fleet overlay
@@ -377,6 +382,12 @@ func New(cfg Config) *Investigator {
 	if toolCallTimeout <= 0 {
 		toolCallTimeout = DefaultToolCallTimeout
 	}
+	phaseTools := cfg.PhaseTools
+	if phaseTools == nil {
+		// DD-KA-2496: omitted configuration gets the same strict policy for
+		// advertisement and dispatch, never an unrestricted registry fallback.
+		phaseTools = DefaultPhaseToolMap()
+	}
 	return &Investigator{
 		client:                          cfg.Client,
 		builder:                         cfg.Builder,
@@ -385,7 +396,7 @@ func New(cfg Config) *Investigator {
 		auditStore:                      cfg.AuditStore,
 		logger:                          cfg.Logger,
 		maxTurns:                        cfg.MaxTurns,
-		phaseTools:                      cfg.PhaseTools,
+		phaseTools:                      phaseTools,
 		registry:                        cfg.Registry,
 		pipeline:                        pipeline,
 		modelName:                       cfg.ModelName,
@@ -404,6 +415,7 @@ func New(cfg Config) *Investigator {
 		metricsScope:    newMetricsScope(),
 		tokenScope:      newTokenScope(),
 		toolCallTimeout: toolCallTimeout,
+		evidence:        newEvidenceRuntime(pipeline),
 	}
 }
 
@@ -526,6 +538,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// per-RR totals (turns, tools, and tokens alike).
 	inv.resetMetrics(correlationID)
 	inv.resetTokenScope(correlationID)
+	inv.resetEvidence(correlationID)
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
 	// model name, and runtime params. Subsequent hot-reload swaps do not
@@ -968,6 +981,7 @@ type LLMInvocationContext struct {
 	ModelName         string
 	RuntimeParams     llm.RuntimeParams
 	WorkflowDiscovery *workflowDiscoveryAuditContext
+	RepeatSelection   *parser.RepeatSelectionContext
 }
 
 // workflowDiscoveryAuditContext is the safe provenance summary persisted on

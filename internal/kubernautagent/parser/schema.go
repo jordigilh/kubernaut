@@ -162,7 +162,18 @@ const investigationResultSchemaJSON = `{
         "rationale": { "type": "string" },
         "parameters": { "type": "object" },
         "execution_engine": { "type": "string" },
-        "execution_bundle": { "type": "string" }
+		"execution_bundle": { "type": "string" },
+        "repeat_justification": {
+          "type": "object",
+          "description": "Required for a same workflow_id with a completed valid prior target assessment. Structural explanation only; catalog identity is server-resolved.",
+          "additionalProperties": false,
+          "properties": {
+            "evidence_basis": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" },
+            "prior_outcome_relevance": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" },
+            "expected_mechanism": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" }
+          },
+          "required": ["evidence_basis", "prior_outcome_relevance", "expected_mechanism"]
+        }
       },
       "required": ["workflow_id", "confidence"]
     },

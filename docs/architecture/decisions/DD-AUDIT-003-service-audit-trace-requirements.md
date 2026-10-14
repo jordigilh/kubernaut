@@ -346,6 +346,26 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `aianalysis.rego.evaluation` | Rego policy evaluation result | P0 |
 | `aianalysis.error.occurred` | Structured error event | P0 |
 
+**#2496 terminal selection/review extension (DD-KA-2496):** Both
+`aianalysis.analysis.completed` and `aianalysis.analysis.failed` preserve bounded
+catalog identity, explicitly named `workflow_selection_confidence`, repeat
+reasoning/requirement/match/outcome, and `handoff_digest` when present. Accepted
+selections retain the established snapshot; rejected proposals use only the
+non-executable `selection_assessment` sibling. Trusted prior-attempt links belong
+to persisted audit context, not the KA→AF live projection. No-workflow outcomes
+omit both selected and proposed context. Failure payloads keep the failed event
+discriminator even when the current reconciliation phase differs, and partial
+review context is preserved before terminal emission.
+
+Controls: FedRAMP **AU-2/AU-3** and SOC 2 **CC7.2** (terminal decision
+reconstruction), **SI-10** (structurally bounded reasoning), and **AC-4**
+(minimized live versus durable context). **CC8.1** governs change management,
+not reconstruction completeness. Proof obligations are `UT-AA-2496-003`,
+authenticated/admitted `IT-AA-2496-001/002/003/004`, and
+`E2E-FP-2496-001/003/004/006/007`; actual pass/fail status is maintained in
+[TP-2496](../../tests/2496/TEST_PLAN.md). Existing delivery remains best-effort;
+this extension adds no synchronous audit acknowledgment or retention-policy change.
+
 **SOC2 Compliance Event** (v1.3 - January 2026):
 - **Event**: `aianalysis.analysis.completed`
 - **Purpose**: Single event capturing complete analysis outcome for RR reconstruction (DD-AUDIT-004)
@@ -1127,4 +1147,3 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 **Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.session.observed` includes `observer_user` (the authenticated identity of the subscribing user, extracted from `auth.UserContextKey` in the request context) for SOC2 CC8.1 operator attribution. `aiagent.session.access_denied` is emitted when an authenticated user attempts to access a session they do not own; includes `requesting_user`, `session_id`, and `endpoint` for SOC2 CC8.1 failed-access audit trail.
 
 **Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
-

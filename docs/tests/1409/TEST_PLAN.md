@@ -15,6 +15,14 @@ gap, cluster-unaware dedup fingerprint in `kubernaut_check_existing_remediation`
 **Status**: Draft
 **Branch**: `feat/1409-af-cluster-id-events`
 
+> **v1.6 authority clarification (2026-10-13):** This draft predates the approved
+> BR-KA-016/DD-KA-2496 contract. Its caller-precedence assertions for the
+> `investigation_summary` artifact are historical and superseded for v1.6.
+> `present_decision` does not accept model-authored cluster attribution: AF uses
+> trusted `RRContext`/RemediationRequest state or omits `cluster_id`. Validated
+> `cluster_id` inputs on RR-creating tools remain a separate contract. Generic
+> `mergeRRContext` metadata behavior is not changed by this clarification.
+
 ---
 
 ## 1. Introduction

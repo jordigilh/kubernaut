@@ -257,7 +257,7 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		"confidence":          cfg.Confidence,
 	}
 
-	if cfg.WorkflowID != "" {
+	if cfg.WorkflowID != "" && !cfg.DeclineWorkflow {
 		sw := map[string]interface{}{
 			"workflow_id":      cfg.WorkflowID,
 			"confidence":       cfg.Confidence,
@@ -268,6 +268,9 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 			sw["parameters"] = cfg.RawParameters
 		} else if len(cfg.Parameters) > 0 {
 			sw["parameters"] = cfg.Parameters
+		}
+		if cfg.RepeatJustification != nil {
+			sw["repeat_justification"] = cfg.RepeatJustification
 		}
 		obj["selected_workflow"] = sw
 	}
@@ -324,6 +327,9 @@ func rcaOnlyJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		"severity":              cfg.Severity,
 		"confidence":            cfg.Confidence,
 		"investigation_outcome": "actionable",
+	}
+	if cfg.RCAConfidence != nil {
+		obj["confidence"] = *cfg.RCAConfidence
 	}
 	if cfg.InvestigationOutcome != "" {
 		obj["investigation_outcome"] = cfg.InvestigationOutcome

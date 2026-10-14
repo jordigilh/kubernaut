@@ -16,6 +16,7 @@
 | 1.0–1.5 | 2026-02-05 to 2026-03-24 | Architecture Team | Historical evolution under the Python-era implementation: introduced the three-step tools, moved label detection from signal source to RCA target (ADR-056), surfaced labels as read-only `cluster_context`, added one-shot reassessment via `detected_infrastructure`, and split resource-context tools by scope (Issue #524). Superseded by v2.0 below; see git history for the original entries. |
 | 2.0 | 2026-08-01 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). Replaced the Python "shared mutable `session_state` dict" mechanism with Go's actual mechanism: `SignalContext.DetectedLabelsJSON`, propagated via `context.Context`. Removed the dual incident/recovery-flow framing — Go KA has a single unified investigation flow, so the "recovery flow validation parity" rationale is historical only. Renamed `BR-HAPI-017-*` → `BR-KA-017-*`. Corrected the label count from 7 to the current 12 infrastructure characteristics (`internal/kubernautagent/enrichment/label_detector.go`). **Also corrected a factually wrong first draft**: the tools do not call DataStorage over REST — per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (Issue #1677, implemented), discovery/scoring ownership moved from DS into KA's own `workflowcatalog.Catalog` before this rewrite was even written; the DS REST surface this DD originally described is retired dead code. |
 | 2.1 | 2026-09-20 | — | Issue #2442: selected workflow IDs must be returned by `list_workflows` in the current selection context; pagination and self-correction accumulate IDs, while `get_workflow` remains read-only for membership. |
+| 2.3 | 2026-10-09 | Architecture Team | **Issues #2496/#2498**: make Phase 1 context/history calls optional, deliver only the resolved target's frozen Phase 2 handoff to selection, and enforce the Phase 3 discovery/result-submission allow-list server-side before registry/external execution. Workflow repeat matching is by mandatory `workflow_id`; required catalog `workflow_name` is not unique and action type/version are non-identity context. |
 
 ---
 
@@ -57,6 +58,14 @@ KA has a single, unified investigation flow (there is no separate "incident" vs 
 ## Decision
 
 Workflow discovery uses three purpose-built tools instead of a single free-text search tool, structured as: resolve target/enrichment context → discover action types → list workflows for the chosen action type → fetch the selected workflow's parameter schema → validate before execution.
+
+### Issue #2496/#2498 phase and identity amendment (v2.3)
+
+- Phase 1/RCA may use the resource-context/history tools when relevant, but their invocation is optional and no history is pre-injected. RCA completion must work when neither tool is called.
+- Phase 2 automatically enriches the single resolved target and supplies the immutable, sanitized target-scoped handoff used by workflow selection. The handoff has one `target`; it contains no duplicated per-item source metadata.
+- Phase 3 exposes only workflow discovery and required result-submission tooling. The server checks the trusted phase allow-list **before** registry or external execution; model-supplied phase arguments are not authoritative. A forced off-phase Kubernetes/context-history call is rejected observably.
+- `workflow_id` is mandatory and is the sole identity/matching key. `workflow_name` is mandatory catalog-authoritative context but may be shared across workflow versions/action types; `action_type` and `workflow_version` are optional descriptive context and never fallbacks.
+- A same-ID repeat with a completed valid prior assessment must include the bounded structural repeat justification defined by DD-KA-2496. First selections, different IDs, no-workflow results and unknown/pending/invalid/SpecDrift history do not require it. Discovery membership, parameter validation, confidence/review and execution safety remain unchanged.
 
 **Rationale**:
 1. **Reduced LLM cognitive load**: Three focused tools with clear responsibilities outperform one overloaded tool.

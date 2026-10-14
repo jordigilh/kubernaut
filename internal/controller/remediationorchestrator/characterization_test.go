@@ -63,7 +63,7 @@ func (e *ErrorRoutingEngine) CheckPreAnalysisConditions(_ context.Context, _ *re
 	return nil, e.PreAnalysisErr
 }
 
-func (e *ErrorRoutingEngine) CheckPostAnalysisConditions(_ context.Context, _ *remediationv1.RemediationRequest, _ string, _ string, _ string, _ string) (*routing.BlockingCondition, error) {
+func (e *ErrorRoutingEngine) CheckPostAnalysisConditions(_ context.Context, _ *remediationv1.RemediationRequest, _ string, _ string, _ string, _ string, _ string) (*routing.BlockingCondition, error) {
 	if e.PostAnalysisErr != nil {
 		return nil, e.PostAnalysisErr
 	}

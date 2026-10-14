@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 const (
@@ -410,6 +411,11 @@ func recordInvestigateGroundingState(ctx agent.Context, resp map[string]any, isS
 	}
 
 	rca, artifactSeverity, provisional := groundedInvestigateRCA(resp, grounded)
+	selection := katypes.LiveSelectionContext{}
+	if rca != nil {
+		selection = rca.LiveSelectionContext
+	}
+	recordDecisionSelectionContext(ctx, selection)
 	if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
 		logger.Error(err, "phase-guard failed to persist grounded_rca state")
 	}
@@ -484,6 +490,43 @@ func restoreDecisionRCAClassification(ctx agent.Context, state adksession.State)
 	launcher.SetDecisionRCAClassificationSafe(ctx, severity, provisional)
 }
 
+func recordDecisionSelectionContext(ctx agent.Context, selection katypes.LiveSelectionContext) {
+	projected, err := selection.ToMap()
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to project trusted selection context")
+		projected = nil
+		selection = katypes.LiveSelectionContext{}
+	}
+	if err := ctx.State().Set(session.StateKeyDecisionSelectionContext, projected); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist trusted selection context")
+	}
+	launcher.SetDecisionSelectionContextSafe(ctx, selection)
+}
+
+func decodeTrustedSelectionContext(ctx agent.Context, raw any) katypes.LiveSelectionContext {
+	selection := katypes.LiveSelectionContext{}
+	data, err := json.Marshal(raw)
+	if err == nil {
+		err = json.Unmarshal(data, &selection)
+	}
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to decode trusted selection context")
+		return katypes.LiveSelectionContext{}
+	}
+	return selection.SafeCopy()
+}
+
+func restoreDecisionSelectionContext(ctx agent.Context, state adksession.State) {
+	selection := katypes.LiveSelectionContext{}
+	raw, err := state.Get(session.StateKeyDecisionSelectionContext)
+	if err == nil {
+		selection = decodeTrustedSelectionContext(ctx, raw)
+	} else if !errors.Is(err, adksession.ErrStateKeyNotExist) {
+		logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to restore trusted selection context")
+	}
+	launcher.SetDecisionSelectionContextSafe(ctx, selection)
+}
+
 // toolCallSucceeded reports whether a tool call completed without a Go error
 // and without an embedded "error" field in its response payload.
 func toolCallSucceeded(callErr error, resp map[string]any) bool {
@@ -513,6 +556,7 @@ func recordDiscoverWorkflowsCheckpoint(ctx agent.Context, resp map[string]any) {
 		return
 	}
 	logger := logr.FromContextOrDiscard(ctx)
+	recordDecisionSelectionContext(ctx, decodeTrustedSelectionContext(ctx, resp))
 	mode := interactionModeFromState(state)
 	blocked := mode != session.InteractionModeFullRemediationAutonomous
 	if err := state.Set(session.StateKeyPhase3Blocked, blocked); err != nil {
@@ -1025,11 +1069,16 @@ func enforceGroundingGuard(ctx agent.Context, args map[string]any) {
 	if args == nil {
 		return
 	}
+	// DD-KA-2496: never let model-authored selection/rejection metadata reach
+	// execution-time schema validation or the FunctionCall artifact converter.
+	delete(args, "selected_workflow")
+	delete(args, "selection_assessment")
 	state := ctx.State()
 	if state == nil {
 		return
 	}
 	restoreDecisionRCAClassification(ctx, state)
+	restoreDecisionSelectionContext(ctx, state)
 
 	grounded := false
 	if v, err := state.Get(session.StateKeyGroundedContentAvailable); err == nil {
@@ -1045,6 +1094,7 @@ func enforceGroundingGuard(ctx agent.Context, args map[string]any) {
 	}
 
 	logr.FromContextOrDiscard(ctx).Info("grounding-guard overriding present_decision content: no groundable investigation content available")
+	launcher.SetDecisionSelectionContextSafe(ctx, katypes.LiveSelectionContext{})
 
 	args["summary"] = noGroundedContentSummary
 	// #1396 (ka_tools.go PresentDecisionArgs): rca is a required property in

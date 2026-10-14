@@ -298,7 +298,7 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/...$(if $(wildcard cmd/$*),$(COMMA)github.com/jordigilh/kubernaut/cmd/$*/...) ./pkg/$*/... ./internal/controller/$*/...$(if $(wildcard cmd/$*), ./cmd/$*/...)
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --keep-going --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/...$(if $(wildcard cmd/$*),$(COMMA)github.com/jordigilh/kubernaut/cmd/$*/...) $(GINKGO_FOCUS_ARGS) ./pkg/$*/... ./internal/controller/$*/...$(if $(wildcard cmd/$*), ./cmd/$*/...)
 	@if [ -f coverage_unit_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
@@ -314,12 +314,18 @@ test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent uni
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 kubernautagent - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/...,github.com/jordigilh/kubernaut/cmd/kubernautagent/... ./pkg/kubernautagent/... ./internal/kubernautagent/... ./cmd/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --keep-going --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/...,github.com/jordigilh/kubernaut/cmd/kubernautagent/... $(GINKGO_FOCUS_ARGS) ./pkg/kubernautagent/... ./internal/kubernautagent/... ./cmd/kubernautagent/...
 	@if [ -f coverage_unit_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_kubernautagent.out"; \
 		go tool cover -func=coverage_unit_kubernautagent.out | grep total || echo "No coverage data"; \
 	fi
+
+# Mock LLM provider fixtures for deployed KA/AF journeys (BR-KA-016, DD-KA-2496).
+# Keep the canonical provider suite runnable through Make with its normal defaults.
+.PHONY: test-unit-mock-llm
+test-unit-mock-llm: ginkgo ensure-coverage-dirs ## Run deterministic Mock LLM provider fixture tests
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --keep-going $(GINKGO_FOCUS_ARGS) ./test/services/mock-llm/...
 
 # Gateway unit tests: no internal/controller/gateway/ exists, use pkg-only coverpkg.
 # cmd/gateway/... is included (Issue #1756 Makefile-gap fix): see the
@@ -961,13 +967,15 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 # CI/CD: Set IMAGE_REGISTRY + IMAGE_TAG to use pre-built images (fast)
 # Local: Builds 3 images at a time (slow, ~20-30 min)
 .PHONY: test-e2e-fullpipeline
-test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E tests (all services, Kind cluster, ~30 min)
+test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E tests (all services, Kind cluster, ~45-60 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Full Pipeline E2E Tests (Issue #39)"
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
+	@# BR-KA-016: serial history/approval journeys retain genuine 600s WFE cooldowns.
+	@# Give the expanded suite room without changing any per-journey safety deadline.
+	@$(GINKGO) -v --race --timeout=70m --procs=$(TEST_PROCS) $(GINKGO_FOCUS_ARGS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 # Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)

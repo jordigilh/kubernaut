@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -308,5 +309,5 @@ var _ = Describe("AgentSession capacity-exceeded retry against a real API server
 })
 
 func randSuffix() string {
-	return time.Now().Format("150405-000000")
+	return uuid.NewString()
 }

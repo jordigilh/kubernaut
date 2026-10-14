@@ -71,7 +71,7 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		FetchFreshRR: func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 			return nil, fmt.Errorf("not implemented")
 		},
-		CheckPostAnalysisConditions: func(_ context.Context, _ *remediationv1.RemediationRequest, _, _, _, _ string) (*routing.BlockingCondition, error) {
+		CheckPostAnalysisConditions: func(_ context.Context, _ *remediationv1.RemediationRequest, _, _, _, _, _ string) (*routing.BlockingCondition, error) {
 			return nil, nil
 		},
 		HandleBlocked: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *routing.BlockingCondition, _, _ string) (ctrl.Result, error) {
@@ -328,7 +328,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
 			}
-			cbs.CheckPostAnalysisConditions = func(_ context.Context, _ *remediationv1.RemediationRequest, _, _, _, _ string) (*routing.BlockingCondition, error) {
+			cbs.CheckPostAnalysisConditions = func(_ context.Context, _ *remediationv1.RemediationRequest, _, _, _, _, _ string) (*routing.BlockingCondition, error) {
 				return &routing.BlockingCondition{
 					Reason:       "ResourceBusy",
 					Message:      "target in use",

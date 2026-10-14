@@ -480,6 +480,11 @@ var _ = SynchronizedBeforeSuite(
 			Expect(tokenErr).NotTo(HaveOccurred(), "prewarm DEX token for persona %s before parallel E2E specs", role)
 			personaTokens[role] = token
 		}
+		for role := range dedicatedE2EPersonas {
+			token, tokenErr := fetchDEXTokenForDedicatedPersona(role)
+			Expect(tokenErr).NotTo(HaveOccurred(), "prewarm DEX token for dedicated persona %s before parallel E2E specs", role)
+			personaTokens[role] = token
+		}
 		finishAFBeforeSuiteStep("prewarm DEX persona tokens", tokensStarted)
 
 		_, _ = fmt.Fprintln(beforeSuiteWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

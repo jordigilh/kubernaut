@@ -19,10 +19,60 @@ package validators
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/gomega"
 )
+
+// ValidateLiveSelectionProjection checks the public DD-KA-2496 allow-list
+// independently of the production projector. Established workflow-option
+// parameters are deliberately outside this check; selection/assessment context
+// must never carry execution data, frozen evidence, state, or prior audit links.
+func ValidateLiveSelectionProjection(data map[string]any) {
+	for _, key := range []string{"selected_workflow", "selection_assessment"} {
+		value, present := data[key]
+		if !present || value == nil {
+			continue
+		}
+		selection, ok := value.(map[string]any)
+		Expect(ok).To(BeTrue(), "BR-KA-016: %s must be structured", key)
+		idKey := "workflow_id"
+		if key == "selection_assessment" {
+			idKey = "proposed_workflow_id"
+		}
+		allowed := []string{idKey, "workflow_name", "workflow_selection_confidence", "repeat_justification",
+			"repeat_justification_required", "prior_workflow_match", "repeat_validation_outcome", "handoff_digest"}
+		for field := range selection {
+			Expect(field).To(BeElementOf(allowed), "AC-4: %s must exclude private/executable field %s", key, field)
+		}
+		Expect(selection[idKey]).To(BeAssignableToTypeOf(""))
+		Expect(selection[idKey]).NotTo(BeEmpty())
+		if key == "selected_workflow" {
+			Expect(selection["workflow_name"]).To(BeAssignableToTypeOf(""))
+			Expect(selection["workflow_name"]).NotTo(BeEmpty(), "catalog identity must include its authoritative name")
+		}
+		if confidence, present := selection["workflow_selection_confidence"]; present {
+			Expect(confidence).To(BeAssignableToTypeOf(float64(0)))
+			Expect(confidence).To(BeNumerically(">=", 0))
+			Expect(confidence).To(BeNumerically("<=", 1))
+		}
+		if digest, present := selection["handoff_digest"]; present {
+			Expect(digest).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
+		}
+		if justification, present := selection["repeat_justification"]; present {
+			parts, ok := justification.(map[string]any)
+			Expect(ok).To(BeTrue())
+			for part, value := range parts {
+				Expect(part).To(BeElementOf("evidence_basis", "prior_outcome_relevance", "expected_mechanism"))
+				text, ok := value.(string)
+				Expect(ok).To(BeTrue())
+				Expect(utf8.ValidString(text)).To(BeTrue())
+				Expect(utf8.RuneCountInString(text)).To(BeNumerically("<=", 2000))
+			}
+		}
+	}
+}
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (

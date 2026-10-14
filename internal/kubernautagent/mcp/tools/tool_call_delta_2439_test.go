@@ -176,5 +176,7 @@ func (discoveryCatalogFetcher2439) FetchValidator(ctx context.Context) (*parser.
 	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
 		state.Add("wf-2439")
 	}
-	return parser.NewValidator([]string{"wf-2439"}), nil
+	v := parser.NewValidator([]string{"wf-2439"})
+	v.SetWorkflowMeta("wf-2439", parser.WorkflowMeta{WorkflowName: "restart-pod"})
+	return v, nil
 }

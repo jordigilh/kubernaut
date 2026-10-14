@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
@@ -187,6 +188,7 @@ func buildAnalysisCompletePayload(analysis *aianalysisv1.AIAnalysis) *ogenclient
 		payload.Confidence.SetTo(confidence)
 		payload.WorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 	}
+	applySelectionAuditFields(payload, rca)
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
 		payload.Reason.SetTo(string(analysis.Status.Reason))
@@ -630,13 +632,9 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 
 	payload := buildAnalysisFailedPayload(analysis, errorDetails)
 
-	// Use ogen union constructor (OGEN-MIGRATION)
-	// Determine which constructor based on phase
-	if analysis.Status.Phase == aianalysisv1.PhaseFailed {
-		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
-	} else {
-		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(payload)
-	}
+	// DD-KA-2496 audit wiring: the event being emitted, not reconciliation's
+	// current phase, determines the union discriminator (AU-3/CC7.2).
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
 
 	// Store audit event
 	return c.store.StoreAudit(ctx, event)
@@ -701,6 +699,7 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 		payload.Confidence.SetTo(confidence)
 		payload.WorkflowID.SetTo(rca.SelectedWorkflow.WorkflowID)
 	}
+	applySelectionAuditFields(&payload, rca)
 	// ADR-055: TargetInOwnerChain removed - remediationTarget is now in RCA
 	if analysis.Status.Reason != "" {
 		payload.Reason.SetTo(string(analysis.Status.Reason))
@@ -729,6 +728,101 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 // ========================================
 // OGEN-MIGRATION: Helper functions for type conversion
 // ========================================
+
+// applySelectionAuditFields preserves independent confidence, known zero and
+// optional rejected reasoning in both complete/failed payloads (DD-KA-2496).
+// Trusted prior-attempt links belong to audit, never the shared live projection.
+func applySelectionAuditFields(payload *ogenclient.AIAnalysisAuditPayload, rca *aianalysisv1.RCAResult) {
+	if selected := rca.SelectedWorkflow; selected != nil {
+		safe := (katypes.LiveSelectionContext{SelectedWorkflow: &katypes.LiveSelectedWorkflow{
+			WorkflowID: selected.WorkflowID, WorkflowName: selected.WorkflowName,
+			WorkflowSelectionConfidence: selected.WorkflowSelectionConfidence, RepeatJustification: selected.RepeatJustification,
+			RepeatJustificationRequired: selected.RepeatJustificationRequired, PriorWorkflowMatch: selected.PriorWorkflowMatch,
+			RepeatValidationOutcome: selected.RepeatValidationOutcome, HandoffDigest: selected.HandoffDigest,
+		}}).SafeCopy().SelectedWorkflow
+		if safe == nil {
+			return
+		}
+		applySelectedAuditFields(payload, safe)
+		payload.PriorRemediationUids = append([]string(nil), selected.PriorRemediationUIDs...)
+		return
+	}
+	if assessed := rca.SelectionAssessment; assessed != nil {
+		safe := (katypes.LiveSelectionContext{SelectionAssessment: &katypes.LiveSelectionAssessment{
+			ProposedWorkflowID: assessed.ProposedWorkflowID, WorkflowName: assessed.WorkflowName,
+			WorkflowSelectionConfidence: assessed.WorkflowSelectionConfidence, RepeatJustification: assessed.RepeatJustification,
+			RepeatJustificationRequired: assessed.RepeatJustificationRequired, PriorWorkflowMatch: assessed.PriorWorkflowMatch,
+			RepeatValidationOutcome: assessed.RepeatValidationOutcome, HandoffDigest: assessed.HandoffDigest,
+		}}).SafeCopy().SelectionAssessment
+		if safe == nil {
+			return
+		}
+		assessment := selectionAuditAssessment(safe)
+		assessment.PriorRemediationUids = append([]string(nil), assessed.PriorRemediationUIDs...)
+		payload.SelectionAssessment.SetTo(assessment)
+	}
+}
+
+func applySelectedAuditFields(payload *ogenclient.AIAnalysisAuditPayload, safe *katypes.LiveSelectedWorkflow) {
+	payload.WorkflowName.SetTo(safe.WorkflowName)
+	if safe.WorkflowSelectionConfidence != nil {
+		payload.WorkflowSelectionConfidence.SetTo(*safe.WorkflowSelectionConfidence)
+	}
+	if safe.RepeatJustification != nil {
+		payload.RepeatJustification.SetTo(ogenclient.RepeatJustification{
+			EvidenceBasis: safe.RepeatJustification.EvidenceBasis, PriorOutcomeRelevance: safe.RepeatJustification.PriorOutcomeRelevance,
+			ExpectedMechanism: safe.RepeatJustification.ExpectedMechanism,
+		})
+	}
+	if safe.RepeatJustificationRequired != nil {
+		payload.RepeatJustificationRequired.SetTo(*safe.RepeatJustificationRequired)
+	}
+	if safe.PriorWorkflowMatch != nil {
+		payload.PriorWorkflowMatch.SetTo(*safe.PriorWorkflowMatch)
+	}
+	if safe.RepeatValidationOutcome != "" {
+		payload.RepeatValidationOutcome.SetTo(ogenclient.AIAnalysisAuditPayloadRepeatValidationOutcome(safe.RepeatValidationOutcome))
+	}
+	if safe.HandoffDigest != "" {
+		payload.HandoffDigest.SetTo(safe.HandoffDigest)
+	}
+}
+
+func selectionAuditAssessment(safe *katypes.LiveSelectionAssessment) ogenclient.SelectionAssessment {
+	assessment := ogenclient.SelectionAssessment{ProposedWorkflowID: safe.ProposedWorkflowID}
+	if safe.WorkflowName != "" {
+		assessment.WorkflowName.SetTo(safe.WorkflowName)
+	}
+	if safe.WorkflowSelectionConfidence != nil {
+		assessment.WorkflowSelectionConfidence.SetTo(*safe.WorkflowSelectionConfidence)
+	}
+	if safe.RepeatJustification != nil {
+		parts := ogenclient.RepeatJustificationAssessment{}
+		if safe.RepeatJustification.EvidenceBasis != "" {
+			parts.EvidenceBasis.SetTo(safe.RepeatJustification.EvidenceBasis)
+		}
+		if safe.RepeatJustification.PriorOutcomeRelevance != "" {
+			parts.PriorOutcomeRelevance.SetTo(safe.RepeatJustification.PriorOutcomeRelevance)
+		}
+		if safe.RepeatJustification.ExpectedMechanism != "" {
+			parts.ExpectedMechanism.SetTo(safe.RepeatJustification.ExpectedMechanism)
+		}
+		assessment.RepeatJustification.SetTo(parts)
+	}
+	if safe.RepeatJustificationRequired != nil {
+		assessment.RepeatJustificationRequired.SetTo(*safe.RepeatJustificationRequired)
+	}
+	if safe.PriorWorkflowMatch != nil {
+		assessment.PriorWorkflowMatch.SetTo(*safe.PriorWorkflowMatch)
+	}
+	if safe.RepeatValidationOutcome != "" {
+		assessment.RepeatValidationOutcome.SetTo(ogenclient.SelectionAssessmentRepeatValidationOutcome(safe.RepeatValidationOutcome))
+	}
+	if safe.HandoffDigest != "" {
+		assessment.HandoffDigest.SetTo(safe.HandoffDigest)
+	}
+	return assessment
+}
 
 // Note: componentMapping moved to pkg/shared/audit/ogen_helpers.go for reuse across all services
 
