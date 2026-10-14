@@ -3,7 +3,7 @@
 **Test Plan Identifier**: TP-2496-v1.6<br>
 **Feature**: Preserve prior workflow identity/confidence and require auditable justification for same-workflow repeats<br>
 **Version**: 1.6 — synchronized final pre-implementation contract, live projection, pyramid/control proof and existing-E2E regression matrix<br>
-**Latest execution revision**: 1.60 — scoped audit repairs and user-approved parallel history journeys in progress; CI runtime RCA active<br>
+**Latest execution revision**: 1.61 — server-owned live cluster attribution clarified; scoped audit repairs and user-approved parallel history journeys in progress<br>
 **Created**: 2026-10-09<br>
 **Status**: Approved — implementation and wiring-first TDD in progress; full GA gates outstanding<br>
 **Baseline**: `8a907bb57d3530da32de9b3b8250b53587ed6f41`, branch `issue-2496-history-aware-rca`<br>
@@ -87,7 +87,7 @@ Mappings are scoped evidence for this feature, not a claim of whole-system certi
 | Contextual consistency: **SI-10**; ASVS **2.2.3** | Identity refers to the actual historical selection; confidence comes from selected-workflow audit, not RCA; unknown/SpecDrift is not zero-effectiveness failure. | UT-DS-2496-001/003; UT-KA-2496-002/003 | IT-DS-2496-001/002; IT-KA-2496-002 | E2E-FP-2496-001/002 |
 | Required sequence cannot be bypassed: **SI-10**; ASVS **2.3.1** | Initial, text/parse-recovered and self-corrected selections all satisfy membership and structural repeat checks before acceptance; decline remains possible. Existing configured confidence/review gates remain independent. | UT-KA-2496-006/007; UT-AA-2496-002 | IT-KA-2496-003; IT-AA-2496-004 | E2E-FP-2496-003/004/006 |
 | Attributable audit / reconstruction: **AU-2 / AU-3**, SOC2 **CC7.2**; ASVS **16.2.1 / 16.2.4 / 16.3.3** | For explicit past-remediation/history retrieval, correlation queries recover prior attempts, selected workflow confidence/effectiveness, current justification and acceptance/rejection, with UUID, actor, action and outcome. Validation bypass attempts are recorded. | UT-KA-2496-009; UT-AA-2496-001 | IT-KA-2496-005; IT-AA-2496-002 | E2E-FP-2496-001/003/004 |
-| Live current-result delivery: **AC-4 / SI-10**; ASVS **2.2.1 / 16.2.4** | The current safe workflow/repeat projection reaches the Console from the KA MCP complete/event or interactive decision payload through AF/A2A without an audit/DS read; past-remediation retrieval remains a separate path. | UT-AF-2496-001 | IT-AF-2496-001/002 | E2E-FP-2496-001/003/007 |
+| Live current-result delivery and server-owned cluster attribution: **AC-4 / AU-3 / SI-10**; ASVS **2.2.1 / 2.2.2 / 16.2.4** | The current safe workflow/repeat projection reaches the Console from the KA MCP complete/event or interactive decision payload through AF/A2A without an audit/DS read; trusted RR cluster attribution is injected by AF, model-supplied cluster identity is not projected, and past-remediation retrieval remains a separate path. | UT-AF-2496-001/002 | IT-AF-2496-001/002 | E2E-FP-2496-001/003/007 |
 | Honest timeline: **AU-3**, **CC7.2**; ASVS **16.2.1**, timestamp representation part of **16.2.2** | Numbered oldest-first attempts label existing workflow-created/recorded timestamps honestly, without claiming they are verified execution completion. | UT-DS-2496-002; UT-KA-2496-001 | IT-DS-2496-001; IT-KA-2496-001 | E2E-FP-2496-001 |
 | Information-flow / least privilege: **AC-4 / AC-6**; ASVS **2.2.3** | A same-name/hash/UUID fixture on another target/origin cluster cannot contribute prior identity/confidence to this attempt; no new arbitrary audit/K8s read permission is granted. | UT-DS-2496-003 | IT-DS-2496-002 | E2E-FP-2496-005 |
 | Phase-scoped least privilege: FedRAMP **AC-6 / SI-10**; ASVS **2.2.1 / 2.2.3** | Phase 1 may optionally call resource context; Phase 3 exposes and executes only discovery/submission tools; forced off-phase calls are blocked before external execution. | UT-KA-2498-001/002 | IT-KA-2498-001/002 | E2E-FP-2498-001 |
@@ -179,6 +179,13 @@ The autonomous KA complete-event path and interactive `present_decision` path mu
 ```
 
 `rca.confidence` remains RCA confidence and must not populate `workflow_selection_confidence`. No parameters, raw audit records, secrets, prior RR identifiers or full frozen handoff may cross this live boundary. No-workflow results omit `selected_workflow`; malformed/oversized data follows the existing observable fallback.
+
+For the interactive `kubernaut_present_decision` path, `cluster_id` is not an
+AI-authored response field. AF injects it only from trusted `RRContext` /
+`RemediationRequest` state and omits it when no trusted value is available. A
+`cluster_id` used as a validated input to an RR-creating tool is a separate
+request contract. Draft #1409/#2364 ambient or caller-precedence wording does not
+define the v1.6 live decision contract.
 
 ## 5. Approach and pass/fail/suspension
 

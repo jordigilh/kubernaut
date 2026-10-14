@@ -24,6 +24,10 @@ approval-pending notes are historical, not current authorization or requirements
   immutable evidence packet, AgentSession/AA mapping and safe live/durable context
   projections are implemented. Catalog membership, confidence controls and safety
   dispatch remain unchanged; rejected proposals are non-executable assessments.
+- The v1.6 live `present_decision` contract is server-owned for cluster attribution:
+  the AF artifact projects only trusted `RRContext`/RemediationRequest `cluster_id`
+  and omits it when unavailable; a model-supplied value is not authoritative. This
+  is separate from validated cluster inputs accepted by RR-creating tools.
 - Complete local `make test` passes **11,524 specs across 114 suites**. Current
   production source remains unchanged since that pass. Complete AF integration
   passes **217 specs across three suites**; KA E2E passes **110/110**; Mock unit Make

@@ -1,5 +1,13 @@
 # Test Plan: #2364 Ambient fleet-field tolerance in AF tool schemas
 
+> **v1.6 authority clarification (2026-10-13):** This historical ambient-field
+> tolerance plan is superseded for `present_decision` cluster attribution by
+> BR-KA-016/DD-KA-2496. The v1.6 model-facing decision contract does not expose
+> `cluster_id` as an AI-authored field; AF injects trusted RR context or omits it.
+> Any remaining ambient-field tolerance must be justified separately for the
+> affected tool and must not make model data authoritative for routing, audit
+> attribution or live Console cluster identity.
+
 ## 1. Introduction
 
 ### 1.1 Purpose

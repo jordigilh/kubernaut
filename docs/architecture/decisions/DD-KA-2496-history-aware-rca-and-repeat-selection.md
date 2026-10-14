@@ -2,7 +2,7 @@
 
 **Status**: Approved for implementation; wiring-first TDD in progress<br>
 **Decision Date**: 2026-10-09<br>
-**Version**: 1.1 — concrete handoff/review contracts approved 2026-10-10<br>
+**Version**: 1.2 — concrete handoff/review contracts and server-owned live cluster attribution approved 2026-10-13<br>
 **Applies To**: Kubernaut Agent, DataStorage, AIAnalysis, Remediation Orchestrator and existing audit/status paths<br>
 **Issues**: [#2496](https://github.com/jordigilh/kubernaut/issues/2496), [#2498](https://github.com/jordigilh/kubernaut/issues/2498)
 
@@ -60,6 +60,17 @@ Each field is non-blank and limited to 2,000 characters. Validation is structura
 
 Use existing typed boundaries and persistence paths. Extend the bounded KA complete-event/AF `investigation_summary` artifact (and the existing interactive decision artifact where applicable) with the safe current workflow/repeat projection needed by the live Console. Preserve the workflow identity/name, current selection confidence, repeat justification, whether it was required, server-computed prior-match/validation outcome, handoff digest and existing audit envelope on successful and human-review paths. The audit/DS projection is for compliance and explicit past-remediation/history retrieval, not the live result transport. Do not persist raw tool payloads, secrets, prior parameters or model-supplied prior RR identifiers. Existing audit delivery remains best-effort and observable; no synchronous audit gate, live DS audit lookup or new table is added.
 
+### 4.1 Server-owned live cluster attribution
+
+The v1.6 `kubernaut_present_decision` model response does not own `cluster_id`.
+AF must not project a model-supplied cluster value into the live decision artifact.
+The artifact receives `cluster_id` only from trusted server-side `RRContext` /
+`RemediationRequest` state and omits it when that trusted value is unavailable.
+This is distinct from a validated `cluster_id` request input on an RR-creating tool.
+The generic `mergeRRContext` metadata merge contract is unchanged; this rule applies
+to the server-bound live decision artifact. It supersedes older draft ambient-field
+or caller-precedence wording for `present_decision` in the v1.6 contract.
+
 Rejected/no-workflow proposals use a sibling **`selection_assessment`** on KA/audit
 wires and **`selectionAssessment`** in AA RCA status. It is non-executable: retain
 the proposed identity, bounded reasoning, known current selection confidence and
@@ -75,6 +86,7 @@ by the user on 2026-10-10.
 | Contract area | Business/control objective |
 |---|---|
 | Target scoping, sanitizer and trusted validation | BR-KA-016, BR-KA-211; FedRAMP SI-10 and AC-4; OWASP ASVS 5.0.0 V2 |
+| Server-owned live cluster attribution | BR-KA-016; FedRAMP AC-4/AU-3/SI-10; OWASP ASVS 5.0.0 V2.2.1/V2.2.2 |
 | Phase allow-list and off-phase rejection | BR-KA-017/#2498; FedRAMP AC-6/SI-10; OWASP ASVS V2.2.1/V2.2.3 |
 | Typed audit/status reconstruction | BR-AUDIT-005/ADR-034; FedRAMP AU-2/AU-3; SOC 2 CC7.2; OWASP ASVS V16.2 |
 | Human review and existing execution safety | BR-KA-197, BR-KA-200, BR-KA-191; existing confidence, Rego and RO safety controls |

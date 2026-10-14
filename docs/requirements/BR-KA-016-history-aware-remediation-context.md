@@ -26,12 +26,14 @@ When a target recurs, workflow selection must use trustworthy target-scoped hist
 7. Phase 3 exposes and executes only workflow-discovery/result-submission tools. Server-side phase authorization rejects off-phase Kubernetes/context-history calls before registry/external execution and records the rejection observably.
 8. Success, low-confidence and partial human-review paths preserve the approved identity, current confidence, justification/requiredness, server-computed prior-match/validation outcome, handoff digest and existing audit envelope through AgentSession, AA status and typed audit/DS paths. The live current-result projection uses the KA MCP event/decision payload and AF/A2A artifact; it does not query audit data. Raw tool payloads, secrets, prior parameters and model-supplied prior RR IDs are not persisted.
 9. Rejected/no-workflow proposals retain safe, non-executable review context in sibling `selection_assessment` (KA/audit) / `selectionAssessment` (AA status), never as an executable selected-workflow ID.
+10. The live `kubernaut_present_decision` response does not author cluster identity. `cluster_id` is server-owned context: AF projects only the trusted `RRContext`/RemediationRequest value and omits the field when no trusted value exists. A validated `cluster_id` supplied to an RR-creating tool is a separate request-input contract and is not authority for the live decision artifact.
 
 ## Control objectives
 
 | Objective | Applicable controls |
 |---|---|
 | Trusted input, sanitization, target scoping and fail-closed degradation | FedRAMP SI-10, AC-4; OWASP ASVS 5.0.0 V2.2.1–V2.3.1 |
+| Server-owned live cluster attribution and fail-closed omission | FedRAMP AC-4, AU-3, SI-10; OWASP ASVS 5.0.0 V2.2.1, V2.2.2 |
 | Least-privilege phase tool execution | FedRAMP AC-6/SI-10; OWASP ASVS V2.2.3 |
 | Auditable decision and remediation reconstruction | FedRAMP AU-2/AU-3; SOC 2 CC7.2; OWASP ASVS V16.2 |
 | Change approval/testing | SOC 2 CC8.1 for this implementation process only |
