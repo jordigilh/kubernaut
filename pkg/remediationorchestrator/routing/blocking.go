@@ -333,7 +333,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 		return blocked, nil
 	}
 
-	blocked, err = r.checkRecentlyRemediated(ctx, rr, workflowID, targetResource, executionClusterID)
+	blocked, err = r.checkRecentlyRemediated(ctx, workflowID, targetResource, executionClusterID)
 	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
@@ -629,12 +629,11 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 	workflowID string,
 	targetResource string,
 ) (*BlockingCondition, error) {
-	return r.checkRecentlyRemediated(ctx, rr, workflowID, targetResource, rr.Spec.ClusterID)
+	return r.checkRecentlyRemediated(ctx, workflowID, targetResource, rr.Spec.ClusterID)
 }
 
 func (r *RoutingEngine) checkRecentlyRemediated(
 	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
 	workflowID string,
 	targetResource string,
 	clusterID string,
