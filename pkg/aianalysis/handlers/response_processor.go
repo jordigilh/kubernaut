@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-logr/logr"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -49,7 +50,11 @@ import (
 
 // defaultLowConfidenceFloor is the V1.0 global default applied when no
 // operator override is configured (BR-KA-197 AC-4, BR-AI-088.4).
-const defaultLowConfidenceFloor = 0.7
+const (
+	defaultLowConfidenceFloor    = 0.7
+	maxPriorRemediationUIDs      = 64
+	maxPriorRemediationUIDLength = 253
+)
 
 // ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
@@ -340,7 +345,7 @@ func stampSelectionMetadata(sw *aianalysisv1.SelectedWorkflow, m map[string]inte
 	sw.PriorWorkflowMatch = optionalSelectionBool(m, "prior_workflow_match")
 	sw.RepeatValidationOutcome = GetStringFromMap(m, "repeat_validation_outcome")
 	sw.HandoffDigest = GetStringFromMap(m, "handoff_digest")
-	sw.PriorRemediationUIDs = GetStringSliceFromMap(m, "prior_remediation_uids")
+	sw.PriorRemediationUIDs = boundedPriorRemediationUIDs(GetStringSliceFromMap(m, "prior_remediation_uids"))
 	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
 		sw.RepeatJustification = katypes.SafeRepeatJustification(&sharedtypes.RepeatJustification{
 			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
@@ -376,23 +381,62 @@ func (p *ResponseProcessor) storeSelectionAssessment(analysis *aianalysisv1.AIAn
 		p.log.Info("selection assessment has no proposed workflow identity", "aianalysis", analysis.Name)
 		return
 	}
-	assessment := &aianalysisv1.SelectionAssessment{
-		ProposedWorkflowID: proposedID, WorkflowName: GetStringFromMap(m, "workflow_name"),
+	selection := katypes.LiveSelectionContext{SelectionAssessment: &katypes.LiveSelectionAssessment{
+		ProposedWorkflowID:          proposedID,
+		WorkflowName:                GetStringFromMap(m, "workflow_name"),
 		WorkflowSelectionConfidence: optionalSelectionConfidence(m),
 		RepeatJustificationRequired: optionalSelectionBool(m, "repeat_justification_required"),
 		PriorWorkflowMatch:          optionalSelectionBool(m, "prior_workflow_match"),
 		RepeatValidationOutcome:     GetStringFromMap(m, "repeat_validation_outcome"),
 		HandoffDigest:               GetStringFromMap(m, "handoff_digest"),
-		PriorRemediationUIDs:        GetStringSliceFromMap(m, "prior_remediation_uids"),
-	}
+	}}
 	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
-		assessment.RepeatJustification = katypes.SafeRepeatJustificationAssessment(&sharedtypes.RepeatJustificationAssessment{
+		selection.SelectionAssessment.RepeatJustification = &sharedtypes.RepeatJustificationAssessment{
 			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
 			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
 			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
-		})
+		}
+	}
+	safe := selection.SafeCopy().SelectionAssessment
+	if safe == nil {
+		p.log.Info("selection assessment identity was not representable after sanitization", "aianalysis", analysis.Name)
+		return
+	}
+	assessment := &aianalysisv1.SelectionAssessment{
+		ProposedWorkflowID:          safe.ProposedWorkflowID,
+		WorkflowName:                safe.WorkflowName,
+		WorkflowSelectionConfidence: safe.WorkflowSelectionConfidence,
+		RepeatJustificationRequired: safe.RepeatJustificationRequired,
+		PriorWorkflowMatch:          safe.PriorWorkflowMatch,
+		RepeatValidationOutcome:     safe.RepeatValidationOutcome,
+		HandoffDigest:               safe.HandoffDigest,
+		PriorRemediationUIDs:        boundedPriorRemediationUIDs(GetStringSliceFromMap(m, "prior_remediation_uids")),
+	}
+	if safe.RepeatJustification != nil {
+		assessment.RepeatJustification = &sharedtypes.RepeatJustificationAssessment{
+			EvidenceBasis:         safe.RepeatJustification.EvidenceBasis,
+			PriorOutcomeRelevance: safe.RepeatJustification.PriorOutcomeRelevance,
+			ExpectedMechanism:     safe.RepeatJustification.ExpectedMechanism,
+		}
 	}
 	analysis.Status.EnsureRCAResult().SelectionAssessment = assessment
+}
+
+func boundedPriorRemediationUIDs(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, min(len(values), maxPriorRemediationUIDs))
+	for _, value := range values {
+		if len(result) == maxPriorRemediationUIDs || !utf8.ValidString(value) || strings.TrimSpace(value) == "" || utf8.RuneCountInString(value) > maxPriorRemediationUIDLength {
+			continue
+		}
+		result = append(result, value)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows

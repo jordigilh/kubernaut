@@ -103,6 +103,40 @@ var _ = Describe("#2496 selection persistence", func() {
 			Expect(string(persisted)).To(ContainSubstring("REDACTED"))
 		}, Entry("selected", false), Entry("rejected", true),
 	)
+
+	It("UT-AA-2496-004: rejected selection status bounds identity text and prior links (BR-KA-016, SI-10)", func() {
+		r := selectionResult2496(.84, true)
+		r.WorkflowID, r.ProposedWorkflowID, r.RepeatValidationOutcome = "", aaCatalogID2496, aaRejected2496
+		res := agentsession.MapInvestigationResultToAgentSessionResult(logr.Discard(), r, "incident-bounded-assessment-2496")
+
+		links := make([]string, 66)
+		links[0] = strings.Repeat("x", 254)
+		for i := 1; i < len(links); i++ {
+			links[i] = "prior-2496-" + strings.Repeat("p", i)
+		}
+		assessment := map[string]interface{}{
+			"proposed_workflow_id":   "proposal-2496",
+			"workflow_name":          strings.Repeat("n", 300),
+			"prior_remediation_uids": links,
+		}
+		wire, err := json.Marshal(assessment)
+		Expect(err).NotTo(HaveOccurred())
+		res.SelectionAssessment = &apiextensionsv1.JSON{Raw: wire}
+
+		analysis := buildLowConfidenceFloorTestAnalysis()
+		_, err = handlers.NewResponseProcessor(logr.Discard(), metrics.NewMetrics(), &noopAuditClient{}).
+			ProcessAgentSessionResult(context.Background(), analysis, res)
+		Expect(err).NotTo(HaveOccurred())
+
+		persisted := analysis.Status.GetRCAResult().SelectionAssessment
+		Expect(persisted).NotTo(BeNil())
+		Expect(persisted.ProposedWorkflowID).To(Equal("proposal-2496"))
+		Expect(persisted.WorkflowName).To(BeEmpty(), "oversized rejected workflow names must be omitted, not truncated")
+		Expect(persisted.PriorRemediationUIDs).To(HaveLen(64))
+		for _, prior := range persisted.PriorRemediationUIDs {
+			Expect(len(prior)).To(BeNumerically("<", 254))
+		}
+	})
 	DescribeTable("UT-AA-2496-003: both complete and failed typed audit preserve selected or non-executable reasoning (BR-KA-016, BR-AUDIT-005, AU-3, CC7.2)",
 		func(confidence float64, mode string) {
 			rejected := mode == aaRejected2496 || mode == "rejected-complete-parts"

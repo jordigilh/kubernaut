@@ -1244,7 +1244,9 @@ spec:
                           PriorRemediationUIDs are trusted target-scoped links for audit/history
                           reconstruction only, never for live Console delivery or execution.
                         items:
+                          maxLength: 253
                           type: string
+                        maxItems: 64
                         type: array
                       priorWorkflowMatch:
                         type: boolean
@@ -1450,11 +1452,15 @@ spec:
                         type: string
                       priorRemediationUIDs:
                         items:
+                          maxLength: 253
                           type: string
+                        maxItems: 64
                         type: array
                       priorWorkflowMatch:
                         type: boolean
                       proposedWorkflowId:
+                        maxLength: 253
+                        minLength: 1
                         type: string
                       repeatJustification:
                         description: |-
@@ -1481,6 +1487,8 @@ spec:
                         - rejected
                         type: string
                       workflowName:
+                        maxLength: 253
+                        minLength: 1
                         type: string
                       workflowSelectionConfidence:
                         maximum: 1

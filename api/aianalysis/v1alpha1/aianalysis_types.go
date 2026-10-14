@@ -847,6 +847,8 @@ type SelectedWorkflow struct {
 	// PriorRemediationUIDs are trusted target-scoped links for audit/history
 	// reconstruction only, never for live Console delivery or execution.
 	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=253
 	PriorRemediationUIDs []string `json:"priorRemediationUIDs,omitempty"`
 
 	// SelectedAt records when this snapshot was first populated. Once
@@ -861,8 +863,12 @@ type SelectedWorkflow struct {
 // DD-KA-2496: rejected/incomplete explanations remain visible without satisfying
 // the executable reasoning schema. No parameters, bundles or handoff body.
 type SelectionAssessment struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	ProposedWorkflowID string `json:"proposedWorkflowId"`
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	WorkflowName string `json:"workflowName,omitempty"`
 	// +optional
 	// +kubebuilder:validation:Minimum=0.0
@@ -881,6 +887,8 @@ type SelectionAssessment struct {
 	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
 	HandoffDigest string `json:"handoffDigest,omitempty"`
 	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=253
 	PriorRemediationUIDs []string `json:"priorRemediationUIDs,omitempty"`
 }
 
