@@ -3249,6 +3249,11 @@ type OIDCPatchConfig struct {
 	GroupsPrefix string
 }
 
+// The static API-server restart can make host-facing readyz stable before
+// kube-proxy repopulates the well-known in-cluster Service VIP. Keep this
+// bounded, but allow the Kind control plane enough time to converge on CI.
+const inClusterAPIServerReadinessTimeout = 3 * time.Minute
+
 // patchAPIServerForOIDCConfig adds OIDC flags to the API server static pod
 // manifest on the Kind node per the given OIDCPatchConfig, enabling the K8s
 // API server to accept JWTs from the configured issuer.
@@ -3292,7 +3297,7 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 	}
 	if apiServerOIDCConfigurationIsCurrent(ctx, nodeName, kubeconfigPath, issuerServiceNamespace, cfg, caPEM) {
 		_, _ = fmt.Fprintln(writer, "  ✅ Existing API server OIDC config and trust root already match; reusing retained cluster")
-		if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, 60*time.Second, writer); err != nil {
+		if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, inClusterAPIServerReadinessTimeout, writer); err != nil {
 			return fmt.Errorf("in-cluster API server readiness failed: %w", err)
 		}
 		return nil
@@ -3382,7 +3387,7 @@ func patchAPIServerForOIDCConfig(ctx context.Context, clusterName, kubeconfigPat
 			consecutiveOK++
 			if consecutiveOK >= 5 {
 				_, _ = fmt.Fprintln(writer, "  ✅ API server restarted with OIDC enabled (readyz stable)")
-				if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, 60*time.Second, writer); err != nil {
+				if err := waitForInClusterAPIServer(ctx, nodeName, kubeconfigPath, inClusterAPIServerReadinessTimeout, writer); err != nil {
 					return fmt.Errorf("in-cluster API server readiness failed: %w", err)
 				}
 				return nil
