@@ -225,6 +225,32 @@ var _ = Describe("DD-KA-2496: trusted phase isolation (BR-KA-017, AC-6, SI-10)",
 			Expect(probe.calls.Load()).To(Equal(int32(1)))
 			Expect(messages[1].Content).To(ContainSubstring("external result"))
 		})
+
+		It("UT-KA-2498-AUDIT-004: records tool failures and redacts durable arguments", func() {
+			store := &phaseAudit2498{}
+			inv := New(Config{Registry: registry.New(), PhaseTools: DefaultPhaseToolMap(), Logger: logr.Discard(), AuditStore: store})
+
+			inv.emitToolCallAudit(
+				context.Background(),
+				llm.ToolCall{
+					Name:      "list_workflows",
+					Arguments: `{"namespace":"prod","token":"secret-token","parameters":{"PASSWORD":"secret-password"},"name":"api"}`,
+				},
+				0,
+				`{"status":"error","error":"upstream token=secret-token"}`,
+				string(katypes.PhaseWorkflowDiscovery),
+				"rr-tool-audit",
+			)
+
+			events := store.snapshot()
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].EventOutcome).To(Equal(audit.OutcomeFailure))
+			Expect(events[0].Data).To(HaveKeyWithValue("tool_name", "list_workflows"))
+			Expect(events[0].Data["tool_arguments"]).NotTo(ContainSubstring("secret-token"))
+			Expect(events[0].Data["tool_arguments"]).NotTo(ContainSubstring("secret-password"))
+			Expect(events[0].Data["tool_arguments"]).To(ContainSubstring("[REDACTED]"))
+			Expect(events[0].Data).To(HaveKey("error_details"))
+		})
 	})
 
 	It("UT-KA-2498-002: the RCA prompt makes context/history tools optional", func() {

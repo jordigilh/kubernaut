@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -28,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
 func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
@@ -348,6 +350,75 @@ func toolErrorJSON(msg string) string {
 	return string(b)
 }
 
+const maxAuditToolArgumentsBytes = 4096
+
+var sensitiveAuditArgumentKeyFragments = []string{
+	"api_key", "apikey", "authorization", "body", "credential", "header", "password",
+	"parameters", "payload", "private_key", "secret", "signature", "token",
+}
+
+func auditToolErrorDetails(result string) *sharedaudit.ErrorDetails {
+	var envelope struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result), &envelope); err != nil || envelope.Status != "error" {
+		return nil
+	}
+
+	message := strings.TrimSpace(envelope.Error)
+	if message == "" {
+		message = "tool execution failed"
+	}
+	message = sanitization.SanitizeForLog(truncatePreview(message, 500))
+	return &sharedaudit.ErrorDetails{
+		Message:       message,
+		Code:          "ERR_TOOL_EXECUTION_FAILED",
+		Component:     "kubernautagent",
+		RetryPossible: false,
+	}
+}
+
+func auditToolArgumentKeyIsSensitive(key string) bool {
+	lowerKey := strings.ToLower(key)
+	for _, fragment := range sensitiveAuditArgumentKeyFragments {
+		if strings.Contains(lowerKey, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+// auditSafeToolArguments preserves bounded, non-sensitive tool identity while
+// preventing raw model arguments from entering durable audit storage (AU-3/AU-9).
+func auditSafeToolArguments(raw string) string {
+	var arguments map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &arguments); err != nil || arguments == nil {
+		return `{"arguments_omitted":true,"reason":"invalid_or_non_object"}`
+	}
+
+	safe := make(map[string]json.RawMessage, len(arguments))
+	for key, value := range arguments {
+		if auditToolArgumentKeyIsSensitive(key) {
+			safe[key] = json.RawMessage(`"[REDACTED]"`)
+			continue
+		}
+
+		sanitized := sanitization.SanitizeForLog(string(value))
+		if len(sanitized) > 1024 || !json.Valid([]byte(sanitized)) {
+			safe[key] = json.RawMessage(`"[TRUNCATED]"`)
+			continue
+		}
+		safe[key] = json.RawMessage(sanitized)
+	}
+
+	encoded, err := json.Marshal(safe)
+	if err != nil || len(encoded) > maxAuditToolArgumentsBytes {
+		return `{"arguments_omitted":true,"reason":"size_limit"}`
+	}
+	return string(encoded)
+}
+
 // emitToolCallAudit preserves the trusted phase and standardized denial details
 // through the typed DS boundary (DD-KA-2496, DD-ERROR-001, AU-2/AU-3, CC7.2).
 func (inv *Investigator) emitToolCallAudit(ctx context.Context, tc llm.ToolCall, index int, result, phase, correlationID string) {
@@ -361,10 +432,13 @@ func (inv *Investigator) emitToolCallAudit(ctx context.Context, tc llm.ToolCall,
 			Message: fmt.Sprintf("tool %q not allowed in phase %q", tc.Name, phase),
 			Code:    "ERR_TOOL_PHASE_DENIED", Component: "kubernautagent", RetryPossible: false,
 		}
+	} else if details := auditToolErrorDetails(result); details != nil {
+		event.EventOutcome = audit.OutcomeFailure
+		event.Data["error_details"] = details
 	}
 	event.Data["tool_call_index"] = index
 	event.Data["tool_name"] = tc.Name
-	event.Data["tool_arguments"] = tc.Arguments
+	event.Data["tool_arguments"] = auditSafeToolArguments(tc.Arguments)
 	auditResult := auditSafeToolResult(tc.Name, result)
 	event.Data["tool_result"] = auditResult
 	event.Data["tool_result_preview"] = truncatePreview(auditResult, 500)
