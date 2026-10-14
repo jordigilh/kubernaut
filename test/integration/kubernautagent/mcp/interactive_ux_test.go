@@ -167,23 +167,46 @@ var _ = Describe("Interactive Session UX — Notifications & Timeouts BR-INTERAC
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = session.Close() }()
 
+			// IT-KA-UX-04: transport success alone does not prove cancellation.
+			// Keep the real 300ms timer and DS/Lease path; record which step
+			// completed before expiry rather than treating a retry as a repair.
+			startAt := time.Now()
 			result, err := callInvestigate(session, map[string]any{
 				"rr_id":  "rr-ux-04",
 				"action": "start",
 			})
+			GinkgoWriter.Printf("IT-KA-UX-04 start elapsed=%s expired=%v\n", time.Since(startAt), stack.GetExpiredSessions())
 			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.IsError).To(BeFalse(), "start must be accepted; MCP content: %v", result.Content)
 			startOutput, err := decodeOutput(result)
 			Expect(err).NotTo(HaveOccurred())
-			sessionID := startOutput["session_id"].(string)
+			Expect(startOutput).To(HaveKeyWithValue("status", "started"))
+			sessionID, ok := startOutput["session_id"].(string)
+			Expect(ok).To(BeTrue(), "start must return a string session ID")
+			Expect(sessionID).NotTo(BeEmpty())
+			expiredBeforeCancel := stack.GetExpiredSessions()
+			GinkgoWriter.Printf("IT-KA-UX-04 before cancel elapsed=%s session_id=%s expired=%v\n", time.Since(startAt), sessionID, expiredBeforeCancel)
+			Expect(expiredBeforeCancel).NotTo(ContainElement(sessionID), "session must still be active before cancel is sent")
 
-			_, err = callInvestigate(session, map[string]any{
+			cancelAt := time.Now()
+			cancelResult, err := callInvestigate(session, map[string]any{
 				"rr_id":  "rr-ux-04",
 				"action": "cancel",
 			})
+			GinkgoWriter.Printf("IT-KA-UX-04 cancel elapsed=%s total=%s expired=%v\n", time.Since(cancelAt), time.Since(startAt), stack.GetExpiredSessions())
 			Expect(err).NotTo(HaveOccurred())
+			Expect(cancelResult).NotTo(BeNil())
+			Expect(cancelResult.IsError).To(BeFalse(), "cancel must be accepted; MCP content: %v", cancelResult.Content)
+			cancelOutput, err := decodeOutput(cancelResult)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cancelOutput).To(HaveKeyWithValue("status", "cancelled"))
+			Expect(cancelOutput).To(HaveKeyWithValue("session_id", sessionID))
 
 			time.Sleep(500 * time.Millisecond)
-			Expect(stack.GetExpiredSessions()).NotTo(ContainElement(sessionID))
+			expiredAfterCancel := stack.GetExpiredSessions()
+			GinkgoWriter.Printf("IT-KA-UX-04 after observation total=%s expired=%v\n", time.Since(startAt), expiredAfterCancel)
+			Expect(expiredAfterCancel).NotTo(ContainElement(sessionID))
 		})
 	})
 

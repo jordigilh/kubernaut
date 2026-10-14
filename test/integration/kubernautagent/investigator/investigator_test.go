@@ -20,6 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -33,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,6 +66,19 @@ var staticFixtureWorkflowIDs = []string{
 func (f *staticCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
 	if state, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
 		state.Add(staticFixtureWorkflowIDs...)
+	}
+	// BR-KA-016: the external catalog fixture must supply its own authoritative
+	// names. Preserve existing schemas/metadata and never take a name from LLM
+	// output or add a workflow that is absent from the fixture allowlist.
+	for _, workflowID := range staticFixtureWorkflowIDs {
+		if !f.validator.IsAllowed(workflowID) {
+			continue
+		}
+		meta, _ := f.validator.GetWorkflowMeta(workflowID)
+		if strings.TrimSpace(meta.WorkflowName) == "" {
+			meta.WorkflowName = workflowID
+			f.validator.SetWorkflowMeta(workflowID, meta)
+		}
 	}
 	return f.validator, nil
 }
@@ -384,12 +402,15 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			now := time.Now()
 			seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", corrID,
 				map[string]interface{}{
-					"target_resource":           target,
-					"pre_remediation_spec_hash": specHash,
-					"action_type":               "IncreaseMemory",
-					"signal_type":               "OOMKilled",
-					"signal_fingerprint":        "fp-test-433w005",
-					"outcome":                   "success",
+					"target_resource":               target,
+					"pre_remediation_spec_hash":     specHash,
+					"workflow_id":                   corrID,
+					"workflow_name":                 "increase-memory-history-fixture",
+					"workflow_selection_confidence": 0.9,
+					"action_type":                   "IncreaseMemory",
+					"signal_type":                   "OOMKilled",
+					"signal_fingerprint":            "fp-test-433w005",
+					"outcome":                       "success",
 				}, now.Add(-30*time.Minute))
 			seedAuditEvent(testCtx, "effectiveness.hash.computed", "effectiveness", corrID,
 				map[string]interface{}{
@@ -417,12 +438,15 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name:        "api-server-abc",
-				Namespace:   "production",
-				Severity:    "critical",
-				Environment: "Production",
-				Priority:    "P0",
-				Message:     "OOMKilled",
+				Name:               "api-server-abc",
+				Namespace:          "production",
+				ResourceKind:       "Pod",
+				ResourceName:       "api-server-abc",
+				ResourceAPIVersion: "v1",
+				Severity:           "critical",
+				Environment:        "Production",
+				Priority:           "P0",
+				Message:            "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -443,6 +467,146 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				"workflow selection prompt should contain remediation history workflow ID")
 		})
 	})
+
+	// BR-KA-016 / BR-KA-211 / DD-KA-2496; AC-4, SI-10, AU-3.
+	// Extend the existing real-DS suite: only Kubernetes resource reads and
+	// the external provider endpoint are substituted, never business logic.
+	DescribeTable("#2496 real history reaches the external selection request",
+		func(hostile bool) {
+			testCtx := context.Background()
+			resourceName := fmt.Sprintf("history-provider-2496-%d", time.Now().UnixNano())
+			target := "production/Pod/" + resourceName
+			olderID, recentID := resourceName+"-older", resourceName+"-recent"
+			// BR-KA-016 / AU-3: the existing ogen date-time codec emits
+			// RFC3339 whole seconds. Keep exact timestamp equality without
+			// inventing a sub-second API contract or changing production codecs.
+			now := time.Now().UTC().Truncate(time.Second)
+			olderTime, recentTime := now.Add(-30*time.Hour), now.Add(-time.Hour)
+			workflowName := "history-workflow-2496"
+			if hostile {
+				workflowName += " password=history-secret-2496"
+			}
+			for _, attempt := range []struct {
+				id         string
+				timestamp  time.Time
+				confidence float64
+			}{{olderID, olderTime, .94}, {recentID, recentTime, 0}} {
+				seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", attempt.id,
+					map[string]interface{}{
+						"target_resource": target, "pre_remediation_spec_hash": sha256FixtureHash,
+						"workflow_id": attempt.id, "workflow_name": workflowName,
+						"workflow_selection_confidence": attempt.confidence,
+						"action_type":                   "IncreaseMemory", "signal_type": "OOMKilled",
+						"parameters": map[string]string{"PRIVATE": "prior-parameter-2496"},
+					}, attempt.timestamp)
+				seedAuditEvent(testCtx, "effectiveness.health.assessed", "effectiveness", attempt.id,
+					map[string]interface{}{"event_type": "effectiveness.health.assessed", "assessed": true, "score": 0.}, attempt.timestamp.Add(time.Minute))
+				seedAuditEvent(testCtx, "effectiveness.alert.assessed", "effectiveness", attempt.id,
+					map[string]interface{}{"event_type": "effectiveness.alert.assessed", "assessed": true, "score": 0.,
+						"alert_resolution": map[string]interface{}{"alert_resolved": false}}, attempt.timestamp.Add(2*time.Minute))
+				seedAuditEvent(testCtx, "effectiveness.hash.computed", "effectiveness", attempt.id,
+					map[string]interface{}{"event_type": "effectiveness.hash.computed", "pre_remediation_spec_hash": sha256FixtureHash,
+						"post_remediation_spec_hash": sha256FixtureHash}, attempt.timestamp.Add(3*time.Minute))
+				seedAuditEvent(testCtx, "effectiveness.assessment.completed", "effectiveness", attempt.id,
+					map[string]interface{}{"event_type": "effectiveness.assessment.completed", "reason": "Full"}, attempt.timestamp.Add(4*time.Minute))
+			}
+			DeferCleanup(func() {
+				_, err := seedDB.ExecContext(context.Background(),
+					"DELETE FROM audit_events WHERE correlation_id IN ($1, $2)", olderID, recentID)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			var mu sync.Mutex
+			requests := make([]map[string]json.RawMessage, 0, 2)
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				mu.Lock()
+				requests = append(requests, body)
+				turn := len(requests)
+				mu.Unlock()
+				message := map[string]interface{}{"role": "assistant", "content": `{"rca_summary":"Memory pressure","confidence":0.99}`}
+				finish := "stop"
+				if turn > 1 {
+					message["content"] = ""
+					message["tool_calls"] = []interface{}{map[string]interface{}{
+						"id": "decline-history-2496", "type": "function",
+						"function": map[string]string{"name": investigator.SubmitResultNoWorkflowToolName,
+							"arguments": `{"root_cause_analysis":{"summary":"Memory pressure"},"reasoning":"No suitable workflow"}`},
+					}}
+					finish = "tool_calls"
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(map[string]interface{}{"id": "history-provider-2496",
+					"object": "chat.completion", "choices": []interface{}{map[string]interface{}{
+						"index": 0, "finish_reason": finish, "message": message}}}); err != nil {
+					GinkgoWriter.Printf("history provider response: %v\n", err)
+				}
+			}))
+			DeferCleanup(provider.Close)
+			fixtureEnricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			inv := investigator.New(investigator.Config{
+				Client: kaopenai.New("test-model", provider.URL, "test-key"), Builder: builder, ResultParser: rp,
+				Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 5,
+				PhaseTools: phaseTools, Registry: registry.New(),
+			})
+			result, err := inv.Investigate(testCtx, katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", ResourceKind: "Pod", ResourceName: resourceName,
+				ResourceAPIVersion: "v1", Severity: "critical", Environment: "production", Priority: "P0",
+				RemediationID: resourceName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.WorkflowID).To(BeEmpty(), "declining does not authorize an execution")
+			mu.Lock()
+			captured := append([]map[string]json.RawMessage(nil), requests...)
+			mu.Unlock()
+			Expect(captured).To(HaveLen(2), "the real DS handoff must reach Phase 3 before the explicit decline")
+			Expect(string(captured[0]["messages"])).NotTo(ContainSubstring(olderID), "history is not automatically injected into RCA")
+
+			var messages []struct{ Content string }
+			Expect(json.Unmarshal(captured[1]["messages"], &messages)).To(Succeed())
+			var packet map[string]json.RawMessage
+			for _, message := range messages {
+				if section := strings.Index(message.Content, "## Frozen Target Evidence (DD-KA-2496)"); section >= 0 {
+					start := strings.Index(message.Content[section:], "```json\n")
+					Expect(start).To(BeNumerically(">=", 0), "the frozen evidence section must contain its JSON packet")
+					start += section + len("```json\n")
+					end := strings.Index(message.Content[start:], "\n```")
+					Expect(end).To(BeNumerically(">=", 0))
+					Expect(json.Unmarshal([]byte(message.Content[start:start+end]), &packet)).To(Succeed())
+				}
+			}
+			Expect(packet).NotTo(BeEmpty())
+			var attempts []map[string]json.RawMessage
+			Expect(json.Unmarshal(packet["prior_attempts"], &attempts)).To(Succeed())
+			Expect(attempts).To(HaveLen(2), "both real DS tiers must survive enrichment and the immutable handoff")
+			for i, expected := range []struct {
+				id, confidence string
+				at             time.Time
+			}{{olderID, "0.94", olderTime}, {recentID, "0", recentTime}} {
+				Expect(string(attempts[i]["attempt"])).To(Equal(fmt.Sprintf("%d", i+1)))
+				Expect(string(attempts[i]["workflow_id"])).To(Equal(fmt.Sprintf("%q", expected.id)))
+				Expect(string(attempts[i]["workflow_name"])).To(ContainSubstring("history-workflow-2496"))
+				Expect(string(attempts[i]["workflow_selection_confidence"])).To(Equal(expected.confidence), "RCA confidence cannot replace prior selection confidence or explicit zero")
+				var recorded time.Time
+				Expect(json.Unmarshal(attempts[i]["recorded_at"], &recorded)).To(Succeed())
+				Expect(recorded).To(BeTemporally("==", expected.at))
+				var assessment map[string]json.RawMessage
+				Expect(json.Unmarshal(attempts[i]["assessment"], &assessment)).To(Succeed())
+				Expect(string(assessment["effectiveness_score"])).To(Equal("0"))
+				Expect(string(assessment["signal_resolved"])).To(Equal("false"))
+				Expect(string(assessment["completed_valid"])).To(Equal("true"))
+				Expect(string(assessment["failure_cause"])).To(Equal("null"), "zero effectiveness cannot invent a failure mechanism")
+			}
+			Expect(string(captured[1]["messages"])).NotTo(ContainSubstring("prior-parameter-2496"))
+			Expect(string(captured[1]["messages"])).NotTo(ContainSubstring("history-secret-2496"))
+		},
+		Entry("IT-KA-2496-001: authenticated DS metadata reaches a real HTTP provider in chronological order", false),
+		Entry("IT-KA-2496-006: historical credentials and parameters cannot reach that provider", true),
+	)
 
 	Describe("IT-KA-433W-006: Investigator with nil enricher degrades gracefully", func() {
 		It("should produce investigation result without enrichment data and without panic", func() {

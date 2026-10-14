@@ -641,6 +641,12 @@ func startRedis() {
 // mustConnectPostgreSQL creates a new database connection (for process 1 setup)
 // Returns the connection so it can be closed after migrations
 func mustConnectPostgreSQL() *sqlx.DB {
+	return mustConnectPostgreSQLDatabase("action_history")
+}
+
+// mustConnectPostgreSQLDatabase keeps the suite's connection settings while
+// allowing a DDL fixture to use its own database in the same test instance.
+func mustConnectPostgreSQLDatabase(databaseName string) *sqlx.DB {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
 		host = localhost
@@ -652,7 +658,7 @@ func mustConnectPostgreSQL() *sqlx.DB {
 
 	// Fix: Set search_path at connection level so ALL connections use public schema
 	// This prevents connection pool issues where new connections don't inherit SET search_path
-	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=%s sslmode=disable options='-c search_path=public'", host, port, databaseName)
 	tempDB, err := sqlx.Connect("pgx", connStr)
 	Expect(err).ToNot(HaveOccurred())
 

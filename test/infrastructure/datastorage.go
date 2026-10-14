@@ -909,7 +909,9 @@ spec:
             cpu: 250m
           limits:
             memory: 1Gi
-            cpu: 500m
+            # BR-DS-006: canonical parallel specs burst across monthly
+            # partitions. Allow CPU headroom without relaxing DB deadlines.
+            cpu: "4"
         readinessProbe:
           exec:
             command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
@@ -1246,7 +1248,9 @@ spec:
             cpu: 250m
           limits:
             memory: 1Gi
-            cpu: 500m
+            # BR-DS-006: absorb the authenticated write burst in this E2E
+            # fixture only; production/Helm resource defaults are unchanged.
+            cpu: "2"
         readinessProbe:
           httpGet:
             path: /readyz

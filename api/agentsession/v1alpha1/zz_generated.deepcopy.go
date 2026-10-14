@@ -148,6 +148,11 @@ func (in *AgentSessionResult) DeepCopyInto(out *AgentSessionResult) {
 		*out = new(v1.JSON)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SelectionAssessment != nil {
+		in, out := &in.SelectionAssessment, &out.SelectionAssessment
+		*out = new(v1.JSON)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.IsActionable != nil {
 		in, out := &in.IsActionable, &out.IsActionable
 		*out = new(bool)

@@ -272,6 +272,7 @@ type InvestigateMCPResult struct {
 // It carries the AF-relevant subset of InvestigationResult for the LLM to pass
 // through into present_decision (#1396).
 type InvestigateRCA struct {
+	katypes.LiveSelectionContext
 	Severity       string   `json:"severity,omitempty"`
 	Confidence     float64  `json:"confidence,omitempty"`
 	CausalChain    []string `json:"causal_chain,omitempty"`

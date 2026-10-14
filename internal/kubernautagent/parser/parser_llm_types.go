@@ -82,12 +82,13 @@ type llmRemTarget struct {
 }
 
 type llmWorkflow struct {
-	WorkflowID      string                 `json:"workflow_id"`
-	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
-	Confidence      float64                `json:"confidence"`
-	Rationale       string                 `json:"rationale,omitempty"`
-	Parameters      map[string]interface{} `json:"parameters,omitempty"`
-	ExecutionEngine string                 `json:"execution_engine,omitempty"`
+	WorkflowID          string                 `json:"workflow_id"`
+	ExecutionBundle     string                 `json:"execution_bundle,omitempty"`
+	Confidence          *float64               `json:"confidence"`
+	Rationale           string                 `json:"rationale,omitempty"`
+	Parameters          map[string]interface{} `json:"parameters,omitempty"`
+	ExecutionEngine     string                 `json:"execution_engine,omitempty"`
+	RepeatJustification json.RawMessage        `json:"repeat_justification,omitempty"`
 }
 
 // unwrapDoubleSerializedJSON detects when an LLM has double-serialized a
@@ -252,4 +253,13 @@ func coerceStringifiedNumberFieldIfQuoted(raw map[string]json.RawMessage, key st
 type flatLLMFields struct {
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
+}
+
+// flatLLMResult intercepts optional model-owned fields before unmarshaling the
+// wire DTO. Malformed repeat text must reach bounded selection correction with
+// its workflow identity intact, not turn into an unrelated no-workflow result.
+type flatLLMResult struct {
+	*katypes.InvestigationResult
+	Confidence          *float64        `json:"confidence"`
+	RepeatJustification json.RawMessage `json:"repeat_justification"`
 }

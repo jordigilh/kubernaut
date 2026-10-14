@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -226,12 +227,12 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
 		overlay, hasOverlay := FleetOverlayFromContext(ctx)
-		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+len(overlay)+2)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools))
 		seen := make(map[string]struct{}, len(phaseTools))
 		for _, t := range phaseTools {
 			eff := t
 			ov, overridden := resolveTool(overlay, t.Name())
-			if overridden {
+			if phase == katypes.PhaseRCA && overridden {
 				eff = ov
 			} else if phase == katypes.PhaseRCA && hasOverlay && isFleetSuppressed(t.Name()) {
 				seen[t.Name()] = struct{}{}
@@ -249,6 +250,7 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 		}
 	}
 
+	defs = slices.Grow(defs, 2)
 	if phase == katypes.PhaseWorkflowDiscovery {
 		defs = append(defs,
 			llm.ToolDefinition{
@@ -291,6 +293,7 @@ func appendNonCollidingOverlayTools(defs []llm.ToolDefinition, overlay map[strin
 		}
 	}
 	sort.Strings(names)
+	defs = slices.Grow(defs, len(names))
 	for _, name := range names {
 		t := overlay[name]
 		defs = append(defs, llm.ToolDefinition{
@@ -329,8 +332,11 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 // schema, but that's advertisement only — this is the execution-time
 // backstop, so a suppressed name called anyway (schema drift, hallucination,
 // adversarial input) can't still run against the hub.
-func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage) (string, error) {
+func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage, phase katypes.Phase) (string, error) {
 	overlay, hasOverlay := FleetOverlayFromContext(ctx)
+	if phase != katypes.PhaseRCA {
+		overlay, hasOverlay = nil, false
+	}
 	if hasOverlay {
 		if t, found := resolveTool(overlay, name); found {
 			return t.Execute(ctx, args)
@@ -360,7 +366,43 @@ func (inv *Investigator) executeResolved(ctx context.Context, name string, args 
 	return result, err
 }
 
-func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string) string {
+// toolAllowedInPhase enforces the server-owned phase contract (DD-KA-2496,
+// BR-KA-017). Fleet-only tools extend RCA, never workflow discovery. Submission
+// sentinels are phase-scoped too; model arguments cannot change this decision.
+func (inv *Investigator) toolAllowedInPhase(ctx context.Context, phase katypes.Phase, name string) bool {
+	switch phase {
+	case katypes.PhaseRCA, katypes.PhaseWorkflowDiscovery, katypes.PhaseValidation:
+	default:
+		return false
+	}
+	switch name {
+	case SubmitResultToolName:
+		return phase == katypes.PhaseRCA || phase == katypes.PhaseValidation
+	case SubmitResultWithWorkflowToolName, SubmitResultNoWorkflowToolName:
+		return phase == katypes.PhaseWorkflowDiscovery
+	}
+	if slices.Contains(inv.phaseTools[phase], name) {
+		return true
+	}
+	if phase == katypes.PhaseRCA {
+		overlay, _ := FleetOverlayFromContext(ctx)
+		_, found := resolveTool(overlay, name)
+		return found
+	}
+	return false
+}
+
+func (inv *Investigator) phaseToolError(name string, phase katypes.Phase, correlationID string) string {
+	err := fmt.Errorf("tool %q not allowed in phase %q", name, phase)
+	inv.logger.Error(err, "tool call rejected by trusted phase policy",
+		"tool", name, "phase", string(phase), "correlation_id", correlationID)
+	return toolErrorJSON(err.Error())
+}
+
+func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string, phase katypes.Phase) string {
+	if !inv.toolAllowedInPhase(ctx, phase, name) {
+		return inv.phaseToolError(name, phase, correlationID)
+	}
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
@@ -375,7 +417,7 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON(ar.Reason)
 	}
 
-	result, err := inv.executeResolved(ctx, name, args)
+	result, err := inv.executeResolved(ctx, name, args, phase)
 	if err != nil {
 		inv.logger.Error(err, "tool execution failed",
 			"tool", name,
@@ -390,19 +432,28 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return errResult
 	}
 
+	// DD-KA-2496: project the original structure before text sanitizers can
+	// consume JSON quoting. captureEvidence retains only sanitized content,
+	// never the original output; summarization/truncation stay independent.
+	if phase == katypes.PhaseRCA {
+		inv.captureEvidence(ctx, correlationID, name, result)
+	}
+
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {
 			inv.logger.Error(sanitizeErr, "sanitization failed, fail-closed for SOC2 compliance",
 				"tool", name,
 			)
+			if phase == katypes.PhaseRCA {
+				inv.failEvidence(correlationID, "observation sanitization failed")
+			}
 			errResult := toolErrorJSON("sanitization failed: tool output withheld")
 			alignment.SubmitToolStep(ctx, name, errResult)
 			return errResult
 		}
 		result = sanitized
 	}
-
 	alignment.SubmitToolStep(ctx, name, result)
 
 	if inv.pipeline.Summarizer != nil {

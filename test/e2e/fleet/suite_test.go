@@ -82,6 +82,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -529,6 +530,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(remediationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(signalprocessingv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(agentsessionv1.AddToScheme(scheme.Scheme)).To(Succeed()) // BR-KA-016: admitted history-selection result read-back
 		Expect(workflowexecutionv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed())

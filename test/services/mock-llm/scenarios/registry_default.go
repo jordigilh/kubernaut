@@ -174,6 +174,12 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ThoughtText:       ks.ThoughtText,
 			}
 			cfg.NextToolCall = convertToolCallChain(ks.NextToolCall)
+			// BR-KA-016: consumer-defined discovery selectors may author an
+			// independent workflow score through the existing scenario override.
+			// Omitted and explicit-zero scores must not borrow RCA confidence.
+			if override := overrides.Scenarios[ks.Name]; override.Confidence != nil {
+				cfg.Confidence = *override.Confidence
+			}
 			r.Register(newSelectorScenario(ks.Name, ScenarioSelector{
 				Scope:             ScenarioScope{Caller: Caller(ks.Caller), Phase: Phase(ks.Phase)},
 				Keywords:          ks.Keywords,
@@ -222,6 +228,12 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(newKeywordScenario("alertmanager_node_tools", "mock_alertmanager_node_tools", alertmanagerNodeToolsConfig()))
 	r.Register(newKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
 	r.Register(newKeywordScenario("mock_reasoning_capture", "mock_reasoning_capture", reasoningCaptureConfig()))
+	for _, scenario := range historySelectionScenarios2496() {
+		r.Register(scenario)
+	}
+	for _, scenario := range phaseIsolationScenarios2498() {
+		r.Register(scenario)
+	}
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
@@ -321,6 +333,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Keeps KA session in "investigating" via a 30s second-turn delay.
 	r.Register(newKeywordScenario("slow_investigation", "slow-investigation-test", slowInvestigationConfig()))
 
+	// E2E-AA-065: capacity saturation needs a phase-valid, parseable RCA
+	// response while the first wave remains active for the overshoot burst.
+	r.Register(newCapacityRetrySlowInvestigationScenario())
+
 	// Brief investigation scenario for IT tests that need a non-instant session
 	// but don't require the full 30s window. 5s delay is enough for IS creation
 	// and upgrade detection before the session completes naturally.
@@ -357,6 +373,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(afKaInteractiveFleetBridgeMessageEchoE2EScenario())
 
 	// Default fallback (lowest priority = 0.01)
+	r.Register(afHistoryLive2496())
 	r.Register(defaultFallbackScenario())
 
 	return r

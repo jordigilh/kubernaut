@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // E2E-FP-1189-005: Console-equivalent interactive remediation — replays the
@@ -39,7 +40,7 @@ import (
 // assertions require the full pipeline to reach a real WorkflowExecution
 // Completed phase, proving the Console-facing experience and the underlying
 // remediation are the same code path end-to-end.
-var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]", Label("fp", "af", "a2a", "interactive", "streaming", "issue-1189"), Serial, func() {
+var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]", Label("fp", "af", "a2a", "interactive", "streaming", "issue-1189"), func() {
 
 	It("should stream 5 SSE turns with visible content and complete the full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
 		targetNS := fpRemediateNS["interactive-streaming"]
@@ -179,7 +180,13 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		} else {
 			data := fpArtifactDataPart(rcaArtifacts[0])
 			Expect(data).NotTo(BeNil(), "investigation_summary artifact must carry a DataPart")
+			validators.ValidateLiveSelectionProjection(data)
 			GinkgoWriter.Printf("  Turn 2 (SSE) — RCA displayed (investigation_summary): %v\n", data)
+		}
+		for _, artifact := range rcaArtifacts {
+			data := fpArtifactDataPart(artifact)
+			Expect(data).NotTo(BeNil())
+			validators.ValidateLiveSelectionProjection(data)
 		}
 
 		By("Turn 3 (SSE): discover available workflows")
@@ -192,6 +199,11 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		Expect(len(arts3)+len(statuses3)).To(BeNumerically(">", 0),
 			"turn 3 must produce at least one SSE frame")
 		sawVisibleContent = sawVisibleContent || fpSSEHasNonEmptyText(arts3, statuses3)
+		for _, artifact := range fpArtifactsBySchema(arts3, "decision") {
+			data := fpArtifactDataPart(artifact)
+			Expect(data).NotTo(BeNil(), "the decision must retain its structured DataPart")
+			validators.ValidateLiveSelectionProjection(data)
+		}
 		GinkgoWriter.Printf("  Turn 3 (SSE) — discover workflows: %d artifacts, %d statuses\n", len(arts3), len(statuses3))
 
 		By("Turn 4 (SSE): select workflow")

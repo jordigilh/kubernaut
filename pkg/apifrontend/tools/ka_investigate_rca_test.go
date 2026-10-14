@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -31,6 +32,87 @@ import (
 )
 
 var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396)", func() {
+	DescribeTable("UT-AF-2496-001: complete-event delivery keeps selection confidence independent and rejected reasoning non-executable (BR-KA-016, AU-3, SI-10)",
+		func(rejected bool) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			DeferCleanup(cancel)
+			queue := &bridgeQueue{}
+			ctx = launcher.WithEventBridge(ctx, queue, "task-live-2496", "context-live-2496", nil)
+			field, identity, outcome := "selected_workflow", "workflow_id", "accepted"
+			if rejected {
+				field, identity, outcome = "selection_assessment", "proposed_workflow_id", "rejected"
+			}
+			reasoning := map[string]any{"evidence_basis": "Current limit observed", "prior_outcome_relevance": "Prior Full zero"}
+			if !rejected {
+				reasoning["expected_mechanism"] = "Increase current limit"
+			}
+			payload := map[string]any{
+				"severity": "critical", "confidence": .93, "rca_summary": "Current memory pressure",
+				field: map[string]any{
+					identity: "catalog-id-2496", "workflow_name": "increase-memory", "workflow_selection_confidence": 0.,
+					"repeat_justification": reasoning, "repeat_justification_required": true, "prior_workflow_match": true,
+					"repeat_validation_outcome": outcome, "handoff_digest": "sha256:" + strings.Repeat("b", 64),
+					"prior_remediation_uids": []string{"private-prior-2496"}, "execution_bundle": "private-bundle-2496",
+					"parameters": map[string]any{"PASSWORD": "private-parameter-2496"},
+				},
+			}
+			wire, err := json.Marshal(payload)
+			Expect(err).NotTo(HaveOccurred())
+			before := append([]byte(nil), wire...)
+			events := make(chan ka.InvestigationEvent, 1)
+			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: wire}
+			close(events)
+			cfg := &tools.InvestigateConfig{MCPClient: &ka.MockMCPClient{
+				StartInvestigationFn: func(context.Context, ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "session-live-2496", Status: "completed", Events: events}, nil
+				},
+			}}
+			result, err := tools.HandleInvestigationMCPWithRegistry(ctx, cfg, tools.InvestigateMCPArgs{RRID: "rr-live-2496"}, true, "alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RCA).NotTo(BeNil())
+			Expect(result.RCA.Confidence).To(Equal(.93))
+			var artifacts []*a2a.TaskArtifactUpdateEvent
+			for _, event := range queue.Events() {
+				if artifact, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
+					artifacts = append(artifacts, artifact)
+				}
+			}
+			Expect(artifacts).To(HaveLen(1), "the blocking handler emits one final live summary, not an audit-read reconstruction")
+			artifact := artifacts[0].Artifact
+			Expect(artifact.Metadata).To(HaveKeyWithValue("schema", "investigation_summary"))
+			Expect(artifact.Parts).To(HaveLen(2))
+			part, ok := artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(part.Data["rca"]).To(HaveKeyWithValue("confidence", .93))
+			Expect(part.Data[field]).To(HaveKeyWithValue(identity, "catalog-id-2496"))
+			Expect(part.Data[field]).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+			Expect(part.Data[field]).To(HaveKeyWithValue("repeat_validation_outcome", outcome))
+			if rejected {
+				Expect(part.Data).NotTo(HaveKey("selected_workflow"))
+				Expect(part.Data[field]).NotTo(HaveKey("workflow_id"))
+			} else {
+				Expect(part.Data).NotTo(HaveKey("selection_assessment"))
+			}
+			emitted, err := json.Marshal(part.Data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(emitted)).NotTo(ContainSubstring("private-"))
+			Expect(string(emitted)).NotTo(ContainSubstring("prior_remediation_uids"))
+			Expect(string(emitted)).NotTo(ContainSubstring("execution_bundle"))
+			Expect(string(emitted)).NotTo(ContainSubstring("parameters"))
+			Expect(artifact.Parts[1]).To(BeAssignableToTypeOf(a2a.TextPart{}))
+			if rejected {
+				result.RCA.SelectionAssessment.ProposedWorkflowID = "mutated-result"
+			} else {
+				result.RCA.SelectedWorkflow.WorkflowID = "mutated-result"
+			}
+			after, err := json.Marshal(part.Data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(after).To(Equal(emitted), "mutating the parsed result cannot rewrite an emitted artifact")
+			Expect(wire).To(Equal(before), "projection never modifies the incoming event")
+		},
+		Entry("accepted current workflow", false),
+		Entry("rejected proposal with incomplete bounded reasoning", true),
+	)
 
 	Describe("UT-AF-1396-020: bridgeEventsCollectSummary populates RCA from complete event Data", func() {
 		It("should extract structured RCA from EventTypeComplete Data field", func() {
@@ -265,11 +347,11 @@ var _ = Describe("Progressive RCA Emission — #1407", func() {
 
 			events := make(chan ka.InvestigationEvent, 5)
 			rcaPayload := map[string]interface{}{
-				"severity":    "warning",
-				"confidence":  0.78,
+				"severity":     "warning",
+				"confidence":   0.78,
 				"causal_chain": []string{"High CPU from runaway goroutine", "Throttled response time"},
-				"target":      "Pod/api-gateway in staging",
-				"rca_summary": "Runaway goroutine causing CPU throttling",
+				"target":       "Pod/api-gateway in staging",
+				"rca_summary":  "Runaway goroutine causing CPU throttling",
 			}
 			rcaJSON, _ := json.Marshal(rcaPayload)
 			events <- ka.InvestigationEvent{

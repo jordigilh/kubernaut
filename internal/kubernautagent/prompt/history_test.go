@@ -266,8 +266,8 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 	Describe("UT-KA-433-HP-009: AllZeroEffectiveness", func() {
 		It("should return true when all completed entries have zero effectiveness", func() {
 			entries := []prompt.HistoryEntry{
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0)},
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Completed", EffectivenessScore: floatPtr(0.0)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Full"},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Completed", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Full"},
 			}
 			Expect(prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")).To(BeTrue())
 		})
@@ -326,8 +326,9 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				Tier1Window: "24h",
 			}
 			output := prompt.BuildRemediationHistorySection(result)
-			Expect(output).To(ContainSubstring("MANDATORY: You MUST NOT re-select"),
-				"all-zero escalation warning must still be present")
+			Expect(output).To(ContainSubstring("WARNING: RECURRING REMEDIATION"),
+				"recurrence context remains visible without an action-family prohibition (DD-KA-2496)")
+			Expect(output).NotTo(ContainSubstring("MUST NOT re-select"))
 			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
 				"all-zero warning must reference investigation_outcome to inconclusive")
 			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
@@ -346,8 +347,8 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				Tier1Window: "24h",
 			}
 			output := prompt.BuildRemediationHistorySection(result)
-			Expect(output).To(ContainSubstring("WARNING: REPEATED INEFFECTIVE REMEDIATION"),
-				"repeated ineffective warning must be present")
+			Expect(output).To(ContainSubstring("WARNING: RECURRING REMEDIATION"),
+				"recurrence remains visible without inferring a failure cause from poor scores")
 			Expect(output).To(ContainSubstring("`investigation_outcome` to `inconclusive`"),
 				"repeated ineffective warning must reference investigation_outcome to inconclusive")
 			Expect(output).NotTo(ContainSubstring("`needs_human_review`"),
@@ -416,7 +417,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			Expect(output).To(ContainSubstring("Note on spec drift entries"))
 		})
 
-		It("should include MANDATORY escalation warning for all-zero recurring entries", func() {
+		It("should retain all-zero recurrence context without prohibiting a justified repeat (DD-KA-2496)", func() {
 			result := &enrichment.RemediationHistoryResult{
 				TargetResource: "default/Pod/web",
 				Tier1: []enrichment.Tier1Entry{
@@ -426,7 +427,9 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 				Tier1Window: "24h",
 			}
 			output := prompt.BuildRemediationHistorySection(result)
-			Expect(output).To(ContainSubstring("MANDATORY: You MUST NOT re-select"))
+			Expect(output).To(ContainSubstring("WARNING: RECURRING REMEDIATION"))
+			Expect(output).NotTo(ContainSubstring("MUST NOT re-select"))
+			Expect(output).To(ContainSubstring("repeat_justification"))
 			Expect(output).To(ContainSubstring("restart_pod"))
 		})
 	})
@@ -522,20 +525,20 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 	Describe("UT-KA-722-003: AllZeroEffectiveness with Remediated outcome", func() {
 		It("should include Remediated entries in zero-effectiveness check", func() {
 			entries := []prompt.HistoryEntry{
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Full"},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Remediated", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Full"},
 			}
 			Expect(prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")).To(BeTrue())
 		})
 	})
 
 	Describe("UT-KA-722-004: AllZeroEffectiveness with Inconclusive outcome", func() {
-		It("should include Inconclusive entries in zero-effectiveness check", func() {
+		It("should not treat unknown effectiveness as zero for Inconclusive entries (DD-KA-2496)", func() {
 			entries := []prompt.HistoryEntry{
-				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: nil, SignalResolved: boolPtr(false)},
-				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: nil, SignalResolved: boolPtr(false), AssessmentReason: "Partial"},
+				{ActionType: "scale_up", SignalType: "HighLatency", Outcome: "Inconclusive", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Partial"},
 			}
-			Expect(prompt.AllZeroEffectiveness(entries, "scale_up", "HighLatency")).To(BeTrue())
+			Expect(prompt.AllZeroEffectiveness(entries, "scale_up", "HighLatency")).To(BeFalse())
 		})
 	})
 
@@ -583,7 +586,7 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 	Describe("UT-KA-749-004: AllZeroEffectiveness skips SpecDrift", func() {
 		It("should not count SpecDrift entries in zero-effectiveness check", func() {
 			entries := []prompt.HistoryEntry{
-				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false)},
+				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), SignalResolved: boolPtr(false), AssessmentReason: "Full"},
 				{ActionType: "restart_pod", SignalType: "OOMKilled", Outcome: "Success", EffectivenessScore: floatPtr(0.0), AssessmentReason: "SpecDrift"},
 			}
 			result := prompt.AllZeroEffectiveness(entries, "restart_pod", "OOMKilled")

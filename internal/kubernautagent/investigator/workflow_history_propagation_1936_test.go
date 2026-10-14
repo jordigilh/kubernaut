@@ -162,6 +162,7 @@ var _ = Describe("#1936: workflow-discovery retries must include real tool-call 
 			}
 
 			validator := parser.NewValidator([]string{"valid-wf"})
+			validator.SetWorkflowMeta("valid-wf", parser.WorkflowMeta{WorkflowName: "valid-workflow"})
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,

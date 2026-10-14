@@ -35,6 +35,36 @@ import (
 )
 
 var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
+	DescribeTable("UT-KA-2496-AUDIT-006: failed history acquisition is distinct from a legitimate empty result",
+		func(failed bool) {
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{TargetResource: "prod/Pod/api"}}
+			if failed {
+				ds.err = errors.New("external history unavailable")
+			}
+			enricher := enrichment.NewEnricher(&fakeK8sClient{specHash: "current-spec"}, ds, audit.NopAuditStore{}, logr.Discard())
+			result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api", Namespace: "prod", SpecHash: "current-spec"})
+			Expect(err).NotTo(HaveOccurred(), "partial enrichment stays observable and available to RCA")
+			wire, err := json.Marshal(result)
+			Expect(err).NotTo(HaveOccurred())
+			var data map[string]json.RawMessage
+			Expect(json.Unmarshal(wire, &data)).To(Succeed())
+			if failed {
+				Expect(string(data["history_unavailable"])).To(Equal("true"))
+			} else {
+				Expect(string(data["history_unavailable"])).NotTo(Equal("true"))
+				Expect(result.RemediationHistory).NotTo(BeNil())
+			}
+		}, Entry("failed request", true), Entry("successful empty history", false),
+	)
+
+	It("UT-KA-2496-AUDIT-006: an empty current hash remains unknown rather than a failed valid acquisition", func() {
+		ds := &fakeDataStorageClient{err: errors.New("bad request for missing current hash")}
+		enricher := enrichment.NewEnricher(&fakeK8sClient{}, ds, audit.NopAuditStore{}, logr.Discard())
+		result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api", Namespace: "prod"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HistoryUnavailable).To(BeFalse())
+		Expect(result.RemediationHistory).To(BeNil())
+	})
 
 	Describe("UT-KA-433-028: EnrichmentResult serializes owner chain + history", func() {
 		It("should round-trip serialize baseline enrichment fields", func() {

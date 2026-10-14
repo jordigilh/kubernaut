@@ -466,6 +466,10 @@ type RCAResult struct {
 	// ========================================
 	// Selected workflow for execution (populated when phase=Completed)
 	SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
+	// SelectionAssessment is non-executable context for rejected proposals.
+	// It cannot be used by RO/WFE to construct a WorkflowExecution (DD-KA-2496).
+	// +optional
+	SelectionAssessment *SelectionAssessment `json:"selectionAssessment,omitempty"`
 
 	// ========================================
 	// ALTERNATIVE WORKFLOWS (Dec 2025)
@@ -791,6 +795,7 @@ type RemediationTarget struct {
 // time) -- a documented, narrow trade-off (see EngineConfig's own doc
 // comment for the precedent of pushing that validation to the Go/RO layer).
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || (self.workflowId == oldSelf.workflowId && self.workflowName == oldSelf.workflowName && self.actionType == oldSelf.actionType && self.version == oldSelf.version && self.executionBundle == oldSelf.executionBundle && self.confidence == oldSelf.confidence && self.rationale == oldSelf.rationale && (has(self.executionBundleDigest) == has(oldSelf.executionBundleDigest)) && (!has(self.executionBundleDigest) || self.executionBundleDigest == oldSelf.executionBundleDigest) && (has(self.executionEngine) == has(oldSelf.executionEngine)) && (!has(self.executionEngine) || self.executionEngine == oldSelf.executionEngine) && (has(self.serviceAccountName) == has(oldSelf.serviceAccountName)) && (!has(self.serviceAccountName) || self.serviceAccountName == oldSelf.serviceAccountName) && (has(self.dependencies) == has(oldSelf.dependencies)) && (!has(self.dependencies) || self.dependencies == oldSelf.dependencies) && (has(self.resources) == has(oldSelf.resources)) && (!has(self.resources) || self.resources == oldSelf.resources) && (has(self.parameters) == has(oldSelf.parameters)) && (!has(self.parameters) || self.parameters == oldSelf.parameters) && (has(self.selectedAt) == has(oldSelf.selectedAt)) && (!has(self.selectedAt) || self.selectedAt == oldSelf.selectedAt) && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames)) && (!has(self.declaredParameterNames) || self.declaredParameterNames == oldSelf.declaredParameterNames))",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || ((has(self.repeatJustification) == has(oldSelf.repeatJustification)) && (!has(self.repeatJustification) || self.repeatJustification == oldSelf.repeatJustification) && (has(self.workflowSelectionConfidence) == has(oldSelf.workflowSelectionConfidence)) && (!has(self.workflowSelectionConfidence) || self.workflowSelectionConfidence == oldSelf.workflowSelectionConfidence) && (has(self.repeatJustificationRequired) == has(oldSelf.repeatJustificationRequired)) && (!has(self.repeatJustificationRequired) || self.repeatJustificationRequired == oldSelf.repeatJustificationRequired) && (has(self.priorWorkflowMatch) == has(oldSelf.priorWorkflowMatch)) && (!has(self.priorWorkflowMatch) || self.priorWorkflowMatch == oldSelf.priorWorkflowMatch) && (has(self.repeatValidationOutcome) == has(oldSelf.repeatValidationOutcome)) && (!has(self.repeatValidationOutcome) || self.repeatValidationOutcome == oldSelf.repeatValidationOutcome) && (has(self.handoffDigest) == has(oldSelf.handoffDigest)) && (!has(self.handoffDigest) || self.handoffDigest == oldSelf.handoffDigest) && (has(self.priorRemediationUIDs) == has(oldSelf.priorRemediationUIDs)) && (!has(self.priorRemediationUIDs) || self.priorRemediationUIDs == oldSelf.priorRemediationUIDs))",message="selection metadata is immutable once selectedAt is populated (DD-KA-2496)"
 type SelectedWorkflow struct {
 	// WorkflowSnapshot is the catalog-resolved execution snapshot
 	// (WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle/
@@ -820,12 +825,71 @@ type SelectedWorkflow struct {
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
 
+	// DD-KA-2496 / BR-KA-016: reasoning is not execution configuration. Nil
+	// confidence/flags mean unknown, not zero/false. These freeze with SelectedAt.
+	// +optional
+	RepeatJustification *sharedtypes.RepeatJustification `json:"repeatJustification,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	WorkflowSelectionConfidence *float64 `json:"workflowSelectionConfidence,omitempty"`
+	// +optional
+	RepeatJustificationRequired *bool `json:"repeatJustificationRequired,omitempty"`
+	// +optional
+	PriorWorkflowMatch *bool `json:"priorWorkflowMatch,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=not_required;accepted;rejected
+	RepeatValidationOutcome string `json:"repeatValidationOutcome,omitempty"`
+	// HandoffDigest is computed by KA, not supplied by the LLM.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	HandoffDigest string `json:"handoffDigest,omitempty"`
+	// PriorRemediationUIDs are trusted target-scoped links for audit/history
+	// reconstruction only, never for live Console delivery or execution.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=253
+	PriorRemediationUIDs []string `json:"priorRemediationUIDs,omitempty"`
+
 	// SelectedAt records when this snapshot was first populated. Once
 	// non-nil, the entire SelectedWorkflow becomes immutable via the
 	// XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
 	// to prevent tampering with the execution snapshot RO/WFE will trust.
 	// +optional
 	SelectedAt *metav1.Time `json:"selectedAt,omitempty"`
+}
+
+// SelectionAssessment is a bounded non-executable sibling of SelectedWorkflow.
+// DD-KA-2496: rejected/incomplete explanations remain visible without satisfying
+// the executable reasoning schema. No parameters, bundles or handoff body.
+type SelectionAssessment struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	ProposedWorkflowID string `json:"proposedWorkflowId"`
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	WorkflowName string `json:"workflowName,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	WorkflowSelectionConfidence *float64 `json:"workflowSelectionConfidence,omitempty"`
+	// +optional
+	RepeatJustification *sharedtypes.RepeatJustificationAssessment `json:"repeatJustification,omitempty"`
+	// +optional
+	RepeatJustificationRequired *bool `json:"repeatJustificationRequired,omitempty"`
+	// +optional
+	PriorWorkflowMatch *bool `json:"priorWorkflowMatch,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=not_required;accepted;rejected
+	RepeatValidationOutcome string `json:"repeatValidationOutcome,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	HandoffDigest string `json:"handoffDigest,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=253
+	PriorRemediationUIDs []string `json:"priorRemediationUIDs,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

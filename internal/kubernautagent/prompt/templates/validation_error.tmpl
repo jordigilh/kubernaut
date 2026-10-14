@@ -49,4 +49,18 @@ Use the parameter names, types, and constraints shown above when correcting your
 2. Verify all required parameters are provided with correct types and values
 
 **Re-submit your JSON response with the corrected workflow selection.**
-{{ end -}}
+{{ end }}
+
+**Repeat-selection contract (DD-KA-2496 / BR-KA-016):**
+Use the catalog-authoritative workflow ID; the server resolves the required
+catalog name. For a same-ID repeat with a completed valid prior assessment,
+successful or ineffective, provide `repeat_justification` with non-blank
+`evidence_basis`, `prior_outcome_relevance` and `expected_mechanism`, each at most
+2,000 characters. Explain current evidence, the prior outcome's relevance and the
+expected mechanism. Do not fabricate unknown prior state or failure causes.
+First selections and a different workflow ID need no justification. Structural
+validation is not a semantic judge and does not penalize confidence or remove
+candidates. Reassess current selection confidence from current evidence; do not
+borrow RCA/historical confidence. Existing review, approval and safety gates apply.
+You may instead choose a different workflow or call `submit_result_no_workflow`
+when none is suitable; catalog presence does not force selection.

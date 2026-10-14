@@ -100,6 +100,64 @@ func assertWorkflowDiscoveryTrace(trace map[string]ogenclient.AuditEvent, correl
 	}
 }
 
+// BR-KA-016 / DD-KA-2496: compare the deployed producer's admitted result with
+// the authenticated durable record. Audit is reconstruction evidence here,
+// never the live Console transport; existing execution snapshot fields remain
+// on the durable boundary, outside the additive safe reasoning projection.
+func assertAuditSelection2496(ds *ogenclient.Client, correlationID string, result *agentsessionv1.AgentSessionResult) {
+	Eventually(func(g Gomega) {
+		response, err := ds.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(correlationID),
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		var complete []ogenclient.AuditEvent
+		for _, event := range response.Data {
+			if event.EventType == kaaudit.EventTypeResponseComplete {
+				complete = append(complete, event)
+			}
+		}
+		g.Expect(complete).To(HaveLen(1), "one terminal response must persist, without duplicate emissions")
+		event := complete[0]
+		g.Expect(event.CorrelationID).To(Equal(correlationID))
+		g.Expect(event.EventID.IsSet()).To(BeTrue())
+		g.Expect(event.ActorType.Value).To(Equal("service"))
+		g.Expect(event.ActorID.Value).To(Equal("kubernaut-agent"))
+		g.Expect(event.EventAction).To(Equal(kaaudit.ActionResponseSent))
+		g.Expect(string(event.EventOutcome)).To(Equal("success"))
+		payload, ok := event.EventData.GetAIAgentResponsePayload()
+		g.Expect(ok).To(BeTrue(), "AU-3: response.complete must retain its typed discriminator")
+		g.Expect(string(payload.EventType)).To(Equal(event.EventType))
+		g.Expect(float64(payload.ResponseData.Confidence)).To(BeNumerically("~", result.Confidence, 0.000001),
+			"the existing overall-confidence contract must survive audit mapping")
+		if result.SelectedWorkflow == nil {
+			g.Expect(payload.ResponseData.SelectedWorkflow.IsSet()).To(BeFalse())
+			return
+		}
+		var selected map[string]any
+		g.Expect(json.Unmarshal(result.SelectedWorkflow.Raw, &selected)).To(Succeed())
+		stored, present := payload.ResponseData.SelectedWorkflow.Get()
+		g.Expect(present).To(BeTrue())
+		g.Expect(stored.WorkflowId.Value).To(Equal(selected["workflow_id"]))
+		g.Expect(stored.WorkflowName.Value).To(Equal(selected["workflow_name"]))
+		g.Expect(stored.WorkflowName.Value).NotTo(BeEmpty(), "catalog-authoritative workflow name is mandatory")
+		g.Expect(stored.WorkflowSelectionConfidence.IsSet()).To(BeTrue())
+		g.Expect(stored.WorkflowSelectionConfidence.Value).To(Equal(selected["workflow_selection_confidence"]))
+		g.Expect(stored.HandoffDigest.Value).To(Equal(selected["handoff_digest"]))
+		g.Expect(stored.HandoffDigest.Value).To(MatchRegexp(`^sha256:[a-f0-9]{64}$`))
+		g.Expect(stored.RepeatJustificationRequired.Value).To(Equal(selected["repeat_justification_required"]))
+		g.Expect(stored.PriorWorkflowMatch.Value).To(Equal(selected["prior_workflow_match"]))
+		g.Expect(string(stored.RepeatValidationOutcome.Value)).To(Equal(selected["repeat_validation_outcome"]))
+		if justification, present := selected["repeat_justification"]; present {
+			raw, marshalErr := json.Marshal(stored.RepeatJustification.Value)
+			g.Expect(marshalErr).NotTo(HaveOccurred())
+			var parts map[string]any
+			g.Expect(json.Unmarshal(raw, &parts)).To(Succeed())
+			g.Expect(parts).To(Equal(justification), "repeat explanation must survive typed ingestion unchanged")
+			g.Expect(parts).To(HaveLen(3), "reasoning must not include parameters, execution bundles or handoff contents")
+		}
+	}, 30*time.Second, time.Second).Should(Succeed())
+}
+
 var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 
 	var dataStorageClient *ogenclient.Client
@@ -777,6 +835,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 				}
 			}
 			Expect(genericFound).To(BeTrue(), "generic RestartPod must remain available for model discretion")
+			assertAuditSelection2496(dataStorageClient, remediationID, result)
 		})
 
 		It("E2E-KA-2478-002: permits a generic fallback when no management label matches", func() {
@@ -853,6 +912,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			Expect(bestWorkflowIDSet).To(BeTrue())
 			Expect(selectedWorkflowID).To(Equal(bestWorkflowID),
 				"the generic workflow remains selectable even when it is not ranked first")
+			assertAuditSelection2496(dataStorageClient, remediationID, result)
 		})
 	})
 
@@ -879,7 +939,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
-			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed")
 
 			var events []ogenclient.AuditEvent
@@ -926,6 +986,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			Expect(hasRequest).To(BeTrue(), "aiagent.llm.request must be present")
 			Expect(hasResponse).To(BeTrue(), "aiagent.llm.response must be present")
 			Expect(hasComplete).To(BeTrue(), "aiagent.response.complete must be present")
+			assertAuditSelection2496(dataStorageClient, remediationID, result)
 		})
 
 		It("E2E-KA-433-AP-002: response.complete contains IncidentResponseData", func() {
@@ -949,7 +1010,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// #2190: AgentSession CRD flow replaces sessionClient.Investigate().
-			_, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
+			result, err := infrastructure.InvestigateViaAgentSession(ctx, k8sClient, sharedNamespace, spec, 2*time.Minute)
 			Expect(err).ToNot(HaveOccurred())
 
 			var events []ogenclient.AuditEvent
@@ -977,6 +1038,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 					break
 				}
 			}
+			assertAuditSelection2496(dataStorageClient, remediationID, result)
 		})
 
 		It("E2E-KA-433-AP-003: All audit events carry actor attribution", func() {

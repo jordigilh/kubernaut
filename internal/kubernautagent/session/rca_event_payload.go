@@ -28,11 +28,12 @@ import (
 // workflow, validation, and alignment state to keep the payload small
 // and avoid leaking implementation details to AF/Console.
 type rcaEventPayload struct {
-	Severity       string   `json:"severity,omitempty"`
-	Confidence     float64  `json:"confidence,omitempty"`
-	CausalChain    []string `json:"causal_chain,omitempty"`
-	Target         string   `json:"target,omitempty"`
-	RCASummary     string   `json:"rca_summary,omitempty"`
+	katypes.LiveSelectionContext
+	Severity    string   `json:"severity,omitempty"`
+	Confidence  float64  `json:"confidence,omitempty"`
+	CausalChain []string `json:"causal_chain,omitempty"`
+	Target      string   `json:"target,omitempty"`
+	RCASummary  string   `json:"rca_summary,omitempty"`
 	// #2387: deliberately WITHOUT omitempty. A tracked-zero (0,0 after a
 	// genuinely tool-free investigation) must serialize as explicit zeros so
 	// AF can distinguish it from untracked (keys absent, pre-fix payloads).
@@ -71,15 +72,20 @@ func MarshalRCASubset(result *katypes.InvestigationResult) json.RawMessage {
 	}
 
 	payload := rcaEventPayload{
-		Severity:       result.Severity,
-		Confidence:     result.Confidence,
-		CausalChain:    result.CausalChain,
-		Target:         formatTarget(result.RemediationTarget),
-		RCASummary:     result.RCASummary,
-		TotalLLMTurns:  result.TotalLLMTurns,
-		TotalToolCalls: result.TotalToolCalls,
-		IsActionable:   result.IsActionable,
-		HasWorkflow:    result.WorkflowID != "",
+		LiveSelectionContext: katypes.LiveSelectionFromResult(result),
+		Severity:             result.Severity,
+		Confidence:           result.Confidence,
+		CausalChain:          result.CausalChain,
+		Target:               formatTarget(result.RemediationTarget),
+		RCASummary:           result.RCASummary,
+		TotalLLMTurns:        result.TotalLLMTurns,
+		TotalToolCalls:       result.TotalToolCalls,
+		IsActionable:         result.IsActionable,
+		HasWorkflow:          result.WorkflowID != "",
+	}
+	// DD-KA-2496: RCA provenance is independent of the current selection score.
+	if result.RCAConfidence != nil {
+		payload.Confidence = *result.RCAConfidence
 	}
 	// #2387 tokens: TokenUsage nil (never recorded, e.g. pre-fix results or
 	// pure-sentinel flows) leaves all three keys absent.

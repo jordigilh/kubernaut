@@ -57,12 +57,12 @@ func (c *rrWatchReadyClient) Watch(ctx context.Context, obj crclient.ObjectList,
 	return watcher, err
 }
 
-// IT #2364: proves fleet-hinted tool calls (ambient cluster_id/rr_id/session_id
-// propagated by the model from console fleet hints and cross-phase
-// preservation) survive the REAL ADK functiontool schema validation -- the
-// exact step that killed 15 turns live. Mirrors the 2092 IT's verbatim
-// Flow.callTool sequence: BeforeToolCallbacks first, then tool.Run on the
-// same map, neither mocked.
+// IT #2364: proves fleet-hinted tool calls (ambient rr_id/session_id propagated
+// by the model from cross-phase preservation) survive the REAL ADK functiontool
+// schema validation. In v1.6, present_decision does not accept model-authored
+// cluster_id; the server-owned RRContext is the only live artifact source.
+// Mirrors the 2092 IT's verbatim Flow.callTool sequence: BeforeToolCallbacks
+// first, then tool.Run on the same map, neither mocked.
 var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema validation", func() {
 	newToolCtx := func() statefulToolContext {
 		state := newMapState()
@@ -102,11 +102,10 @@ var _ = Describe("IT #2364 — fleet-hinted calls through real ADK schema valida
 					"description": "Raise memory limits on the spoke",
 				},
 			},
-			// Ambient fields the live model propagated; pre-fix ADK rejected
-			// the call with: validating root: unexpected additional
-			// properties ["cluster_id"] (14x) / ["rr_id" "cluster_id"] (1x).
-			"cluster_id": "spoke",
-			"rr_id":      "payments/rr-2364",
+			// RRID is the remaining ambient preservation field. The v1.6
+			// present_decision schema intentionally excludes model cluster_id;
+			// cluster attribution comes from trusted server-side RRContext.
+			"rr_id": "payments/rr-2364",
 		}
 
 		cbResult, cbErr := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)

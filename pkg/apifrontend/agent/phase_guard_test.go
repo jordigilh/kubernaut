@@ -18,11 +18,20 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"iter"
+	"strings"
 	"time"
 
+	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"google.golang.org/adk/v2/agent"
 	adksession "google.golang.org/adk/v2/session"
@@ -31,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // statefulToolContext extends fakeToolContext with a working session.State
@@ -51,7 +61,9 @@ func (s statefulToolContext) SessionID() string {
 
 // mapState is a minimal session.State backed by a map.
 type mapState struct {
-	data map[string]any
+	data   map[string]any
+	getErr error
+	setErr error
 }
 
 func newMapState() *mapState {
@@ -59,6 +71,9 @@ func newMapState() *mapState {
 }
 
 func (m *mapState) Get(key string) (any, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
 	v, ok := m.data[key]
 	if !ok {
 		return nil, adksession.ErrStateKeyNotExist
@@ -67,6 +82,9 @@ func (m *mapState) Get(key string) (any, error) {
 }
 
 func (m *mapState) Set(key string, value any) error {
+	if m.setErr != nil {
+		return m.setErr
+	}
 	m.data[key] = value
 	return nil
 }
@@ -80,6 +98,8 @@ func (m *mapState) All() iter.Seq2[string, any] {
 		}
 	}
 }
+
+const guardRejected2496 = "rejected"
 
 var _ = Describe("Phase Guard (#1307)", func() {
 	var (
@@ -100,6 +120,143 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		}
 		before, after = NewPhaseGuardForTest()
 	})
+
+	DescribeTable("IT-AF-2496-002: interactive decision restores only trusted KA selection context (BR-KA-016, AU-3, SI-10)",
+		func(outcome string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			DeferCleanup(cancel)
+			queues := eventqueue.NewInMemoryManager()
+			queue, err := queues.GetOrCreate(ctx, "task-decision-2496")
+			Expect(err).NotTo(HaveOccurred())
+			reader, err := queues.GetOrCreate(ctx, "task-decision-2496")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { Expect(queues.Destroy(context.Background(), "task-decision-2496")).To(Succeed()) })
+			ctx = launcher.WithEventBridge(auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "alice"}), queue, "task-decision-2496", "context-2496", nil)
+			toolCtx = statefulToolContext{fakeToolContext: fakeToolContext{Context: ctx}, state: state}
+			_, err = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": session.InteractionModeFullRemediation}, map[string]any{
+				"session_id": "sess-2496", "rr_id": "rr-2496", "status": "completed", "summary": "Current memory pressure",
+				"rca": map[string]any{"severity": "critical", "confidence": .93, "rca_summary": "Current memory pressure"},
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			trusted := map[string]any{
+				"workflow_id": "catalog-id-2496", "workflow_name": "increase-memory", "workflow_selection_confidence": 0.,
+				"repeat_justification_required": true, "prior_workflow_match": true, "repeat_validation_outcome": "accepted",
+				"repeat_justification": map[string]any{"evidence_basis": "Current limit", "prior_outcome_relevance": "Prior Full zero", "expected_mechanism": "Increase limit"},
+				"handoff_digest":       "sha256:" + strings.Repeat("b", 64), "prior_remediation_uids": []any{"private-prior-2496"},
+				"parameters": map[string]any{"PASSWORD": "private-parameter-2496"}, "execution_bundle": "private-bundle-2496",
+			}
+			discovery := map[string]any{"workflows": []any{map[string]any{"workflow_id": "catalog-id-2496", "name": "increase-memory"}}}
+			switch outcome {
+			case "selected":
+				discovery["selected_workflow"] = trusted
+			case guardRejected2496:
+				delete(trusted, "workflow_id")
+				trusted["proposed_workflow_id"], trusted["repeat_validation_outcome"] = "catalog-id-2496", guardRejected2496
+				discovery["selection_assessment"] = trusted
+			}
+			_, err = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, discovery, nil)
+			Expect(err).NotTo(HaveOccurred())
+			switch outcome {
+			case "malformed-state":
+				Expect(state.Set(session.StateKeyDecisionSelectionContext, map[string]any{"selected_workflow": "private-malformed-2496"})).To(Succeed())
+			case "unserializable-state":
+				Expect(state.Set(session.StateKeyDecisionSelectionContext, make(chan int))).To(Succeed())
+			}
+			// Presentation may occur on the next user turn: server-only context
+			// must be restored from ADK state into a fresh per-request bridge.
+			ctx = launcher.WithEventBridge(ctx, queue, "task-decision-2496", "context-2496", nil)
+			toolCtx = statefulToolContext{fakeToolContext: fakeToolContext{Context: ctx}, state: state}
+			args := map[string]any{
+				"session_id": "sess-2496", "summary": "Current memory pressure",
+				"rca": map[string]any{"confidence": .93, "explanation": "Current memory pressure"}, "options": []any{},
+				"selected_workflow":    map[string]any{"workflow_id": "forged-2496"},
+				"selection_assessment": map[string]any{"proposed_workflow_id": "forged-2496"},
+			}
+			_, err = before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(args).NotTo(HaveKey("selected_workflow"), "selection metadata is server-only, not a model-authored tool argument")
+			Expect(args).NotTo(HaveKey("selection_assessment"))
+			// The real converter is covered in launcher, its own package. This
+			// seam proves guard -> trusted bridge restoration without importing
+			// another package's test-only export or inventing a production API.
+			Expect(launcher.EmitArtifactSafe(ctx, args, "Decision: current memory pressure", map[string]any{
+				"type": launcher.MetaTypeDecision, "schema": "investigation_summary", "schema_version": "1.0",
+			})).To(Succeed())
+			event, _, err := reader.Read(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			artifact, ok := event.(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			part, ok := artifact.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			switch outcome {
+			case "selected":
+				Expect(part.Data).To(HaveKey("selected_workflow"))
+				Expect(part.Data["selected_workflow"]).To(HaveKeyWithValue("workflow_id", "catalog-id-2496"))
+				Expect(part.Data["selected_workflow"]).To(HaveKeyWithValue("workflow_selection_confidence", 0.))
+				Expect(part.Data).NotTo(HaveKey("selection_assessment"))
+			case guardRejected2496:
+				Expect(part.Data).NotTo(HaveKey("selected_workflow"))
+				Expect(part.Data).To(HaveKey("selection_assessment"))
+				Expect(part.Data["selection_assessment"]).To(HaveKeyWithValue("proposed_workflow_id", "catalog-id-2496"))
+				Expect(part.Data["selection_assessment"]).NotTo(HaveKey("workflow_id"))
+			default:
+				Expect(part.Data).NotTo(HaveKey("selected_workflow"))
+				Expect(part.Data).NotTo(HaveKey("selection_assessment"))
+			}
+			wire, err := json.Marshal(part.Data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(wire)).NotTo(ContainSubstring("private-"))
+			Expect(string(wire)).NotTo(ContainSubstring("forged-2496"))
+			blocked, err := state.Get(session.StateKeyPhase3Blocked)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(blocked).To(BeTrue(), "presenting reasoning does not grant execution consent")
+		},
+		Entry("selected", "selected"), Entry(guardRejected2496, guardRejected2496), Entry("no selection", "no-selection"),
+		Entry("malformed persisted context", "malformed-state"), Entry("unserializable persisted context", "unserializable-state"),
+	)
+
+	DescribeTable("UT-AF-2496-001: ADK state failure is observable and cannot revive stale selection context (BR-KA-016, AC-4, SI-10)",
+		func(operation string) {
+			const taskID = "task-state-failure-2496"
+			const summary = "No current workflow"
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			DeferCleanup(cancel)
+			queues := eventqueue.NewInMemoryManager()
+			queue, err := queues.GetOrCreate(ctx, taskID)
+			Expect(err).NotTo(HaveOccurred())
+			reader, err := queues.GetOrCreate(ctx, taskID)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { Expect(queues.Destroy(context.Background(), taskID)).To(Succeed()) })
+			core, logs := observer.New(zap.InfoLevel)
+			ctx = launcher.WithEventBridge(logr.NewContext(ctx, zapr.NewLogger(zap.New(core))), queue, taskID, "context-state-failure-2496", nil)
+			toolCtx = statefulToolContext{fakeToolContext: fakeToolContext{Context: ctx}, state: state}
+			launcher.SetDecisionSelectionContextSafe(ctx, katypes.LiveSelectionContext{SelectedWorkflow: &katypes.LiveSelectedWorkflow{
+				WorkflowID: "stale-workflow-2496", WorkflowName: "previous-turn",
+			}})
+			if operation == "read" {
+				state.getErr = errors.New("adk state read unavailable")
+				restoreDecisionSelectionContext(toolCtx, state)
+			} else {
+				state.setErr = errors.New("adk state write unavailable")
+				recordDecisionSelectionContext(toolCtx, katypes.LiveSelectionContext{})
+			}
+			Expect(logs.Len()).To(BeNumerically(">", 0), "state transport failures must not be silent")
+			data := map[string]any{"session_id": "session-state-failure-2496", "summary": summary, "rca": map[string]any{"explanation": summary}}
+			Expect(launcher.EmitArtifactSafe(ctx, data, summary, map[string]any{
+				"type": launcher.MetaTypeDecision, "schema": "investigation_summary", "schema_version": "1.0",
+			})).To(Succeed())
+			event, _, err := reader.Read(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			artifact, ok := event.(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			part, ok := artifact.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(part.Data).NotTo(HaveKey("selected_workflow"))
+			Expect(part.Data).NotTo(HaveKey("selection_assessment"))
+			Expect(data).NotTo(HaveKey("selected_workflow"), "the bridge must not mutate caller presentation data")
+		},
+		Entry("state read failure", "read"), Entry("state write failure", "write"),
+	)
 
 	DescribeTable("blocks MCP-dependent tools without prior investigate",
 		func(toolName string) {

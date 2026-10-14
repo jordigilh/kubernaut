@@ -435,11 +435,12 @@ func buildInvestigator(
 		// call cannot hang an investigation goroutine indefinitely.
 		ToolCallTimeout: p.cfg.AI.Safety.ToolCallTimeout,
 		Pipeline: investigator.Pipeline{
-			Sanitizer:         p.sanitizer,
-			AnomalyDetector:   p.anomalyDetector,
-			CatalogFetcher:    p.catalogFetcher,
-			Summarizer:        p.summarizer,
-			MaxToolOutputSize: p.cfg.AI.Summarizer.MaxToolOutputSize,
+			Sanitizer:               p.sanitizer,
+			AnomalyDetector:         p.anomalyDetector,
+			CatalogFetcher:          p.catalogFetcher,
+			Summarizer:              p.summarizer,
+			MaxToolOutputSize:       p.cfg.AI.Summarizer.MaxToolOutputSize,
+			MaxEvidenceHandoffBytes: p.cfg.AI.Investigation.MaxEvidenceHandoffBytes,
 		},
 	}
 	return investigator.New(invCfg)

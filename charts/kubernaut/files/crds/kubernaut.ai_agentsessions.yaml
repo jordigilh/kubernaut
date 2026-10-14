@@ -475,6 +475,12 @@ spec:
                       execution_bundle, confidence, parameters), free-form per KA's schema.
                       Absent (nil) means no workflow was selected.
                     x-kubernetes-preserve-unknown-fields: true
+                  selectionAssessment:
+                    description: |-
+                      SelectionAssessment retains curated rejected-proposal reasoning, never
+                      executable workflow configuration (DD-KA-2496 / BR-KA-016). Nested fields
+                      use the KA snake_case wire contract, matching SelectedWorkflow above.
+                    x-kubernetes-preserve-unknown-fields: true
                   timestamp:
                     description: Timestamp is the ISO timestamp of analysis completion.
                     type: string

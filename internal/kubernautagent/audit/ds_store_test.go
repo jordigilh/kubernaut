@@ -18,23 +18,147 @@ package audit_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	inc001        = "inc-001"
-	test          = "test"
-	remoteCluster = "remote-cluster"
+	inc001               = "inc-001"
+	test                 = "test"
+	remoteCluster        = "remote-cluster"
+	oversized2496        = "oversized"
+	rejectedComplete2496 = "rejected-complete"
+	rejectedAbsent2496   = "rejected-absent"
+	rejectedMinimal2496  = "rejected-minimal"
 )
 
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
+	DescribeTable("UT-KA-2496-009: production result and typed DS audit preserve selection/review context (BR-KA-016, BR-AUDIT-005, AU-3, CC7.2)",
+		func(confidence float64, mode string) {
+			required, matched, rcaConfidence := true, true, .93
+			result := &katypes.InvestigationResult{
+				RCASummary: "Memory pressure", Severity: "high", Confidence: confidence, RCAConfidence: &rcaConfidence,
+				WorkflowID: "catalog-2496", WorkflowName: "increase-memory", WorkflowSelectionConfidence: &confidence,
+				RepeatJustification:         &sharedtypes.RepeatJustification{EvidenceBasis: "New limit observed", PriorOutcomeRelevance: "Prior Full zero", ExpectedMechanism: "Increase limit"},
+				RepeatJustificationRequired: &required, PriorWorkflowMatch: &matched, RepeatValidationOutcome: "accepted",
+				HandoffDigest: "sha256:" + strings.Repeat("b", 64), PriorRemediationUIDs: []string{"trusted-prior-2496"},
+			}
+			switch mode {
+			case "review":
+				result.HumanReviewNeeded, result.HumanReviewReason = true, "low_confidence"
+			case "unknown":
+				result.WorkflowSelectionConfidence = nil
+			case "rejected", rejectedComplete2496, oversized2496, rejectedAbsent2496, rejectedMinimal2496:
+				result.WorkflowID, result.ProposedWorkflowID = "", "catalog-2496"
+				result.HumanReviewNeeded, result.HumanReviewReason = true, "rca_incomplete"
+				result.RepeatValidationOutcome = "rejected"
+				if mode != rejectedComplete2496 {
+					result.RepeatJustification.ExpectedMechanism = ""
+				}
+				result.Parameters = map[string]interface{}{"PRIOR": "private-private"}
+				result.ExecutionBundle = "private-bundle-2496"
+				if mode == oversized2496 {
+					result.RepeatJustification.EvidenceBasis = strings.Repeat("x", 2001)
+				}
+				if mode == rejectedAbsent2496 || mode == rejectedMinimal2496 {
+					result.RepeatJustification = nil
+				}
+				if mode == rejectedMinimal2496 {
+					result.WorkflowName, result.HandoffDigest = "", ""
+					result.WorkflowSelectionConfidence = nil
+					result.RepeatJustificationRequired, result.PriorWorkflowMatch = nil, nil
+				}
+			case "no-workflow":
+				result = &katypes.InvestigationResult{RCASummary: "No suitable workflow", HumanReviewNeeded: true, HumanReviewReason: "no_matching_workflows"}
+			}
+			raw, err := json.Marshal(investigator.ResultToAuditJSON(result))
+			Expect(err).NotTo(HaveOccurred())
+			event := audit.NewEvent(audit.EventTypeResponseComplete, "rr-audit-2496")
+			event.EventAction, event.EventOutcome = audit.ActionResponseSent, audit.OutcomeSuccess
+			event.Data["response_data"] = string(raw)
+			recorder := &fakeOgenClient{}
+			Expect(audit.NewDSAuditStore(recorder).StoreAudit(context.Background(), event)).To(Succeed())
+			Expect(recorder.calls).To(HaveLen(1))
+			Expect(recorder.calls[0].CorrelationID).To(Equal("rr-audit-2496"))
+			raw, err = json.Marshal(recorder.calls[0].EventData)
+			Expect(err).NotTo(HaveOccurred())
+			var payload map[string]json.RawMessage
+			Expect(json.Unmarshal(raw, &payload)).To(Succeed())
+			var response map[string]json.RawMessage
+			Expect(json.Unmarshal(payload["response_data"], &response)).To(Succeed())
+			if mode == "no-workflow" {
+				Expect(response).NotTo(HaveKey("selectedWorkflow"))
+				Expect(response).NotTo(HaveKey("selection_assessment"))
+				return
+			}
+			var selection map[string]json.RawMessage
+			if result.ProposedWorkflowID != "" {
+				Expect(response).NotTo(HaveKey("selectedWorkflow"))
+				Expect(response).To(HaveKey("selection_assessment"))
+				Expect(json.Unmarshal(response["selection_assessment"], &selection)).To(Succeed())
+				Expect(string(selection["proposed_workflow_id"])).To(Equal(`"catalog-2496"`))
+				Expect(selection).NotTo(HaveKey("workflow_id"))
+				Expect(string(raw)).NotTo(ContainSubstring("private-"))
+			} else {
+				Expect(response).To(HaveKey("selectedWorkflow"))
+				Expect(json.Unmarshal(response["selectedWorkflow"], &selection)).To(Succeed())
+				Expect(string(selection["workflowId"])).To(Equal(`"catalog-2496"`))
+				Expect(string(selection["workflowName"])).To(Equal(`"increase-memory"`))
+			}
+			if mode == "unknown" || mode == rejectedMinimal2496 {
+				Expect(selection).NotTo(HaveKey("workflow_selection_confidence"))
+			} else {
+				var actual float64
+				Expect(json.Unmarshal(selection["workflow_selection_confidence"], &actual)).To(Succeed())
+				Expect(actual).To(BeNumerically("~", confidence, 0.000001))
+			}
+			if mode == rejectedMinimal2496 {
+				Expect(selection).NotTo(HaveKey("workflow_name"))
+				Expect(selection).NotTo(HaveKey("repeat_justification_required"))
+				Expect(selection).NotTo(HaveKey("prior_workflow_match"))
+				Expect(selection).NotTo(HaveKey("handoff_digest"))
+			} else {
+				Expect(string(selection["repeat_justification_required"])).To(Equal("true"))
+				Expect(string(selection["prior_workflow_match"])).To(Equal("true"))
+				Expect(string(selection["handoff_digest"])).To(Equal(`"` + result.HandoffDigest + `"`))
+			}
+			Expect(string(selection["repeat_validation_outcome"])).To(Equal(`"` + result.RepeatValidationOutcome + `"`))
+			Expect(string(selection["prior_remediation_uids"])).To(MatchJSON(`["trusted-prior-2496"]`))
+			if result.RepeatJustification == nil {
+				Expect(selection).NotTo(HaveKey("repeat_justification"), "missing rejected reasoning must remain absent, not prevent audit persistence")
+				return
+			}
+			var reason map[string]json.RawMessage
+			Expect(json.Unmarshal(selection["repeat_justification"], &reason)).To(Succeed())
+			if mode == oversized2496 {
+				Expect(reason).NotTo(HaveKey("evidence_basis"), "omit invalid rejected parts, never truncate")
+			} else {
+				Expect(string(reason["evidence_basis"])).To(Equal(`"New limit observed"`))
+			}
+			if mode == rejectedComplete2496 {
+				Expect(string(reason["prior_outcome_relevance"])).To(Equal(`"Prior Full zero"`))
+				Expect(string(reason["expected_mechanism"])).To(Equal(`"Increase limit"`), "complete rejected reasoning remains audit context, not executable selection")
+			}
+		},
+		Entry("selected success", .84, "success"), Entry("explicit zero review", 0., "review"),
+		Entry("partial review", .84, "review"), Entry("unknown confidence", .84, "unknown"),
+		Entry("rejected incomplete", .84, "rejected"), Entry("rejected oversized", .84, oversized2496),
+		Entry("rejected with complete bounded reasoning", .84, rejectedComplete2496),
+		Entry("rejected with no submitted reasoning", .84, rejectedAbsent2496),
+		Entry("rejected with unknown optional context", .84, rejectedMinimal2496),
+		Entry("no workflow", 0., "no-workflow"),
+	)
 
 	Describe("UT-KA-433W-008: DSAuditStore maps event fields to ogen request", func() {
 		It("should map EventType, EventCategory, CorrelationID, EventAction, EventOutcome", func() {

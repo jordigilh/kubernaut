@@ -124,7 +124,10 @@ var _ = Describe("DEX persona token helper", Label("dex-token-helper"), func() {
 			dexURL, clientID, clientSecret = originalDEXURL, originalClientID, originalClientSecret
 		})
 
-		setup := afE2ESuiteSetup{PersonaTokens: map[string]string{"sre": "shared-suite-token"}}
+		setup := afE2ESuiteSetup{PersonaTokens: map[string]string{
+			"sre":                         "shared-suite-token",
+			structuredDecisionPersonaName: "structured-decision-suite-token",
+		}}
 		encoded, err := json.Marshal(setup)
 		Expect(err).NotTo(HaveOccurred())
 		var workerSetup afE2ESuiteSetup
@@ -136,6 +139,10 @@ var _ = Describe("DEX persona token helper", Label("dex-token-helper"), func() {
 		Expect(token).To(Equal("shared-suite-token"))
 		Expect(requests.Load()).To(Equal(int32(0)), "workers should use the synchronized token instead of calling DEX")
 		Expect(responseWriteError.Load()).To(BeFalse())
+
+		dedicatedToken, err := fetchDEXTokenForDedicatedPersona(structuredDecisionPersonaName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(dedicatedToken).To(Equal("structured-decision-suite-token"))
 	})
 
 	It("UT-AF-E2E-1807-002 retries a DEX request that reaches its per-attempt timeout", func() {

@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-logr/logr"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -43,12 +44,17 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // defaultLowConfidenceFloor is the V1.0 global default applied when no
 // operator override is configured (BR-KA-197 AC-4, BR-AI-088.4).
-const defaultLowConfidenceFloor = 0.7
+const (
+	defaultLowConfidenceFloor    = 0.7
+	maxPriorRemediationUIDs      = 64
+	maxPriorRemediationUIDLength = 253
+)
 
 // ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
@@ -127,6 +133,10 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// ADR-056: Persist detected labels before routing any response outcome so
 	// terminal paths retain the same post-RCA context as normal success.
 	p.populatePostRCAContext(analysis, res.DetectedLabels)
+
+	// DD-KA-2496: preserve non-executable rejection context before any routing
+	// branch or failure audit; it never contributes to hasSelectedWorkflow.
+	p.storeSelectionAssessment(analysis, res.SelectionAssessment)
 
 	// Check if NeedsHumanReview is set
 	needsHumanReview := res.NeedsHumanReview
@@ -322,8 +332,111 @@ func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]i
 	sw.Dependencies = extractWorkflowDependencies(swMap)
 	sw.Resources = extractResourceRequirements(swMap)
 	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
+	stampSelectionMetadata(sw, swMap)
 	now := metav1.Now()
 	sw.SelectedAt = &now
+}
+
+// All three selected-workflow preservation paths use this mapping; pointer
+// presence distinguishes unknown from explicit zero/false without RCA fallback.
+func stampSelectionMetadata(sw *aianalysisv1.SelectedWorkflow, m map[string]interface{}) {
+	sw.WorkflowSelectionConfidence = optionalSelectionConfidence(m)
+	sw.RepeatJustificationRequired = optionalSelectionBool(m, "repeat_justification_required")
+	sw.PriorWorkflowMatch = optionalSelectionBool(m, "prior_workflow_match")
+	sw.RepeatValidationOutcome = GetStringFromMap(m, "repeat_validation_outcome")
+	sw.HandoffDigest = GetStringFromMap(m, "handoff_digest")
+	sw.PriorRemediationUIDs = boundedPriorRemediationUIDs(GetStringSliceFromMap(m, "prior_remediation_uids"))
+	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
+		sw.RepeatJustification = katypes.SafeRepeatJustification(&sharedtypes.RepeatJustification{
+			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
+			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
+			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
+		})
+	}
+}
+
+func optionalSelectionConfidence(m map[string]interface{}) *float64 {
+	confidence, ok := m["workflow_selection_confidence"].(float64)
+	if !ok {
+		return nil
+	}
+	return &confidence
+}
+
+func optionalSelectionBool(m map[string]interface{}, field string) *bool {
+	value, ok := m[field].(bool)
+	if !ok {
+		return nil
+	}
+	return &value
+}
+
+func (p *ResponseProcessor) storeSelectionAssessment(analysis *aianalysisv1.AIAnalysis, raw *apiextensionsv1.JSON) {
+	if raw == nil {
+		return
+	}
+	m := mapFromAgentSessionJSON(raw)
+	proposedID := GetStringFromMap(m, "proposed_workflow_id")
+	if proposedID == "" {
+		p.log.Info("selection assessment has no proposed workflow identity", "aianalysis", analysis.Name)
+		return
+	}
+	selection := katypes.LiveSelectionContext{SelectionAssessment: &katypes.LiveSelectionAssessment{
+		ProposedWorkflowID:          proposedID,
+		WorkflowName:                GetStringFromMap(m, "workflow_name"),
+		WorkflowSelectionConfidence: optionalSelectionConfidence(m),
+		RepeatJustificationRequired: optionalSelectionBool(m, "repeat_justification_required"),
+		PriorWorkflowMatch:          optionalSelectionBool(m, "prior_workflow_match"),
+		RepeatValidationOutcome:     GetStringFromMap(m, "repeat_validation_outcome"),
+		HandoffDigest:               GetStringFromMap(m, "handoff_digest"),
+	}}
+	if explanation, ok := m["repeat_justification"].(map[string]interface{}); ok {
+		selection.SelectionAssessment.RepeatJustification = &sharedtypes.RepeatJustificationAssessment{
+			EvidenceBasis:         GetStringFromMap(explanation, "evidence_basis"),
+			PriorOutcomeRelevance: GetStringFromMap(explanation, "prior_outcome_relevance"),
+			ExpectedMechanism:     GetStringFromMap(explanation, "expected_mechanism"),
+		}
+	}
+	safe := selection.SafeCopy().SelectionAssessment
+	if safe == nil {
+		p.log.Info("selection assessment identity was not representable after sanitization", "aianalysis", analysis.Name)
+		return
+	}
+	assessment := &aianalysisv1.SelectionAssessment{
+		ProposedWorkflowID:          safe.ProposedWorkflowID,
+		WorkflowName:                safe.WorkflowName,
+		WorkflowSelectionConfidence: safe.WorkflowSelectionConfidence,
+		RepeatJustificationRequired: safe.RepeatJustificationRequired,
+		PriorWorkflowMatch:          safe.PriorWorkflowMatch,
+		RepeatValidationOutcome:     safe.RepeatValidationOutcome,
+		HandoffDigest:               safe.HandoffDigest,
+		PriorRemediationUIDs:        boundedPriorRemediationUIDs(GetStringSliceFromMap(m, "prior_remediation_uids")),
+	}
+	if safe.RepeatJustification != nil {
+		assessment.RepeatJustification = &sharedtypes.RepeatJustificationAssessment{
+			EvidenceBasis:         safe.RepeatJustification.EvidenceBasis,
+			PriorOutcomeRelevance: safe.RepeatJustification.PriorOutcomeRelevance,
+			ExpectedMechanism:     safe.RepeatJustification.ExpectedMechanism,
+		}
+	}
+	analysis.Status.EnsureRCAResult().SelectionAssessment = assessment
+}
+
+func boundedPriorRemediationUIDs(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, min(len(values), maxPriorRemediationUIDs))
+	for _, value := range values {
+		if len(result) == maxPriorRemediationUIDs || !utf8.ValidString(value) || strings.TrimSpace(value) == "" || utf8.RuneCountInString(value) > maxPriorRemediationUIDLength {
+			continue
+		}
+		result = append(result, value)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows
@@ -434,7 +547,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		"hasPartialWorkflow", hasSelectedWorkflow,
 	)
 
-	p.applyWorkflowResolutionFailureState(ctx, analysis, res, humanReviewReason)
+	p.applyWorkflowResolutionFailureState(analysis, res, humanReviewReason)
 
 	// Handle ValidationAttemptsHistory. Issue #588: Message contains only
 	// validation attempt errors. Warnings are stored separately in
@@ -458,13 +571,20 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
 	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Workflow resolution failed, requires human review")
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No resolved workflow, approval not applicable")
+
+	// DD-KA-2496 / AU-3 / CC7.2: emit only after partial selection and review
+	// context are preserved, so the terminal audit can reconstruct this decision.
+	failureErr := fmt.Errorf("workflow resolution failed: %s", humanReviewReason)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.Error(auditErr, "Failed to record analysis failure audit")
+	}
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
 // applyWorkflowResolutionFailureState sets the CRD status fields, records
 // failure metrics, emits the audit event, and maps the SubReason for a
 // workflow-resolution failure.
-func (p *ResponseProcessor) applyWorkflowResolutionFailureState(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult, humanReviewReason string) {
+func (p *ResponseProcessor) applyWorkflowResolutionFailureState(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult, humanReviewReason string) {
 	// Set structured failure with timestamp
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
@@ -490,12 +610,6 @@ func (p *ResponseProcessor) applyWorkflowResolutionFailureState(ctx context.Cont
 		subReason = humanReviewReason
 	}
 	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
-
-	// DD-AUDIT-003: Record analysis failure audit event
-	failureErr := fmt.Errorf("workflow resolution failed: %s", humanReviewReason)
-	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
-		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-	}
 
 	// Map HumanReviewReason enum to SubReason
 	if humanReviewReason != "" {

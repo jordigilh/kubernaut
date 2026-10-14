@@ -24,12 +24,23 @@ package signalprocessing_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -124,41 +135,130 @@ var _ = Describe("Controller Shutdown", func() {
 			}
 		})
 
-		// Test 3: In-progress operation completes before exit
-		It("should allow in-progress operation to complete before exit", func() {
+		// BR-SP-090 / ADR-032: exercise the real audit resource cleanup called
+		// by cmd/signalprocessing, not a sleep-based substitute worker.
+		It("UT-SP-090-2496-001: waits for proxy-held audit delivery before completing shutdown", func() {
 			ctx, cancel := context.WithCancel(context.Background())
-
-			var operationStarted atomic.Bool
-			var operationCompleted atomic.Bool
-
-			// Simulate a worker with in-progress operation
-			go func() {
-				for {
-					select {
-					case <-ctx.Done():
-						// Context canceled - finish current operation gracefully
-						if operationStarted.Load() {
-							// Complete the operation (simulate cleanup)
-							time.Sleep(20 * time.Millisecond)
-							operationCompleted.Store(true)
-						}
-						return
-					default:
-						// Start an operation
-						operationStarted.Store(true)
-						time.Sleep(50 * time.Millisecond)
-					}
+			defer cancel()
+			gate := make(chan struct{})
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(gate) }) }
+			arrived := make(chan string, 1)
+			received := make(chan []ogenclient.AuditEventRequest, 1)
+			fixtureErrors := make(chan error, 1)
+			recordFixtureError := func(err error) {
+				GinkgoWriter.Printf("Shutdown HTTP fixture error: %v\n", err)
+				select {
+				case fixtureErrors <- err:
+				default:
 				}
-			}()
+			}
 
-			// Wait for operation to start
-			Eventually(operationStarted.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
+			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var batch []ogenclient.AuditEventRequest
+				if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+					recordFixtureError(fmt.Errorf("decode forwarded audit batch: %w", err))
+					http.Error(w, "invalid batch", http.StatusBadRequest)
+					return
+				}
+				select {
+				case received <- batch:
+				default:
+					recordFixtureError(fmt.Errorf("unexpected duplicate audit batch"))
+					http.Error(w, "duplicate batch", http.StatusConflict)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				response := ogenclient.BatchAuditEventResponse{EventIds: []uuid.UUID{uuid.New()}}
+				if err := json.NewEncoder(w).Encode(&response); err != nil {
+					recordFixtureError(fmt.Errorf("encode audit batch response: %w", err))
+				}
+			}))
+			DeferCleanup(endpoint.Close)
+			target, err := url.Parse(endpoint.URL)
+			Expect(err).NotTo(HaveOccurred())
+			proxyTransport := &http.Transport{}
+			DeferCleanup(proxyTransport.CloseIdleConnections)
+			forwarder := &httputil.ReverseProxy{
+				Rewrite:   func(r *httputil.ProxyRequest) { r.SetURL(target) },
+				Transport: proxyTransport,
+			}
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case arrived <- r.Method + " " + r.URL.Path:
+				default:
+				}
+				select {
+				case <-gate:
+					forwarder.ServeHTTP(w, r)
+				case <-r.Context().Done():
+					recordFixtureError(fmt.Errorf("held audit request cancelled: %w", r.Context().Err()))
+				}
+			}))
+			DeferCleanup(proxy.Close)
+			clientTransport := &http.Transport{}
+			DeferCleanup(clientTransport.CloseIdleConnections)
+			client, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(proxy.URL, 5*time.Second, clientTransport)
+			Expect(err).NotTo(HaveOccurred())
+			store, err := sharedaudit.NewBufferedStore(client, sharedaudit.DefaultConfig(), "signalprocessing", logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+			closeDone := make(chan struct{})
+			var closeErr error
+			closeStarted := false
+			startClose := func() {
+				closeStarted = true
+				go func() {
+					closeErr = store.Close()
+					close(closeDone)
+				}()
+			}
+			DeferCleanup(func() {
+				// Registered last: release and join before transports/servers close.
+				release()
+				if !closeStarted {
+					startClose()
+				}
+				Eventually(closeDone, 35*time.Second).Should(BeClosed(), "join the real store worker even after an assertion failure")
+				Expect(closeErr).NotTo(HaveOccurred())
+			})
 
-			// Cancel context while operation is in progress
+			event := sharedaudit.NewAuditEventRequest()
+			sharedaudit.SetEventType(event, "signalprocessing.signal.processed")
+			sharedaudit.SetEventCategory(event, "signalprocessing")
+			sharedaudit.SetEventAction(event, "processed")
+			sharedaudit.SetEventOutcome(event, sharedaudit.OutcomeSuccess)
+			sharedaudit.SetActor(event, "service", "signalprocessing-controller")
+			sharedaudit.SetCorrelationID(event, "shutdown-"+uuid.NewString())
+			payload := ogenclient.SignalProcessingAuditPayload{
+				EventType: "signalprocessing.signal.processed",
+				Phase:     ogenclient.SignalProcessingAuditPayloadPhaseCompleted,
+				Signal:    "ShutdownAuditDelivery",
+			}
+			event.EventData = ogenclient.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(payload)
+			Expect(store.StoreAudit(ctx, event)).To(Succeed())
+
+			By("holding the real shutdown-flush request at a forwarding proxy")
+			startClose()
+			Eventually(arrived, time.Second, 5*time.Millisecond).Should(Receive(Equal("POST /api/v1/audit/events/batch")))
 			cancel()
+			Expect(ctx.Err()).To(Equal(context.Canceled))
+			Consistently(closeDone, 20*time.Millisecond, 5*time.Millisecond).ShouldNot(BeClosed(), "Close must wait for the held delivery")
+			Expect(received).NotTo(Receive(), "the upstream fixture must not see the batch before the proxy is released")
 
-			// Operation should complete gracefully
-			Eventually(operationCompleted.Load, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
+			By("releasing delivery while preserving the existing completion budget")
+			release()
+			Eventually(closeDone, 200*time.Millisecond, 10*time.Millisecond).Should(BeClosed())
+			Expect(closeErr).NotTo(HaveOccurred())
+			var batch []ogenclient.AuditEventRequest
+			Expect(received).To(Receive(&batch))
+			Expect(batch).To(HaveLen(1))
+			Expect(batch[0].CorrelationID).To(Equal(event.CorrelationID))
+			Expect(batch[0].EventType).To(Equal(event.EventType))
+			Expect(batch[0].ActorID).To(Equal(event.ActorID))
+			Expect(batch[0].EventData.SignalProcessingAuditPayload).To(Equal(payload))
+			Expect(fixtureErrors).NotTo(Receive())
+			// This is resource-shutdown UT, not manager/SIGTERM or real DB proof.
 		})
 	})
 

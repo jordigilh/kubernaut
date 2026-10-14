@@ -479,16 +479,20 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 	}
 
 	dr := &mcpinternal.WorkflowDiscoveryResult{
-		FullResult: result,
+		LiveSelectionContext: katypes.LiveSelectionFromResult(result),
+		FullResult:           result,
 	}
 
 	if result.WorkflowID != "" {
 		dr.Recommended = &mcpinternal.DiscoveredWorkflow{
 			WorkflowID:      result.WorkflowID,
 			ExecutionBundle: result.ExecutionBundle,
-			Confidence:      result.Confidence,
+			Name:            result.WorkflowName,
 			Rationale:       result.WorkflowRationale,
 			Parameters:      cloneParameterMap(result.Parameters),
+		}
+		if result.WorkflowSelectionConfidence != nil {
+			dr.Recommended.Confidence = *result.WorkflowSelectionConfidence
 		}
 	}
 

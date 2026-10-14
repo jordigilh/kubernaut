@@ -53,24 +53,9 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 
 	jsonStr := extractJSON(content)
 	if jsonStr != "" {
-		coerced := coerceKnownFields(jsonStr)
-		var result katypes.InvestigationResult
-		if err := json.Unmarshal([]byte(coerced), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
-			// Severity is read-only SignalProcessing context. The result field is
-			// populated later by the investigator from trusted AgentSession input.
-			result.Severity = ""
-			// BR-KA-200: Clear any HR fields populated by json.Unmarshal via
-			// the "human_review_reason" tag match. HR is parser-derived only.
-			result.HumanReviewNeeded = false
-			result.HumanReviewReason = ""
-			var flat flatLLMFields
-			_ = json.Unmarshal([]byte(coerced), &flat)
-			applyFlatFields(&result, flat)
-			mergeNestedRemediationTarget(&result, coerced)
-			mergeNestedInvestigationAnalysis(&result, coerced)
-			mergeNestedSelectedWorkflow(&result, coerced)
-			applyOutcomeRouting(&result)
-			return &result, nil
+		if parsed := p.parseFlatResult(coerceKnownFields(jsonStr)); parsed != nil {
+			applyOutcomeRouting(parsed)
+			return parsed, nil
 		}
 
 		if parsed, err := parseLLMFormat(jsonStr, p.logger); err == nil {
@@ -88,6 +73,53 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 		return nil, &ErrNoJSON{Content: content}
 	}
 	return nil, &ErrNoRecognizedFields{Raw: jsonStr}
+}
+
+// Flat intake owns its provenance clearing/coercion. Nested and section-header
+// fallbacks remain in Parse and retain the same priority and outcome routing.
+func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationResult {
+	var result katypes.InvestigationResult
+	intake := flatLLMResult{InvestigationResult: &result}
+	if err := json.Unmarshal([]byte(coerced), &intake); err != nil || (result.RCASummary == "" && result.WorkflowID == "") {
+		return nil
+	}
+	clearModelSelectionMetadata(&result)
+	if intake.Confidence != nil {
+		result.Confidence = *intake.Confidence
+	}
+	if result.WorkflowID != "" {
+		result.WorkflowSelectionConfidence = intake.Confidence
+	}
+	applyRepeatJustification(&result, intake.RepeatJustification, p.logger)
+	// Severity is read-only SP context. Human review is parser-derived only.
+	result.Severity = ""
+	result.HumanReviewNeeded = false
+	result.HumanReviewReason = ""
+	var flat flatLLMFields
+	if err := json.Unmarshal([]byte(coerced), &flat); err != nil {
+		p.logger.V(1).Info("flat result context contains an invalid field shape")
+	}
+	applyFlatFields(&result, flat)
+	mergeNestedRemediationTarget(&result, coerced)
+	mergeNestedInvestigationAnalysis(&result, coerced)
+	mergeNestedSelectedWorkflow(&result, coerced, p.logger)
+	return &result
+}
+
+// DD-KA-2496: the flat result DTO also carries trusted production metadata.
+// None of these fields is model-owned, including authoritative readable names.
+func clearModelSelectionMetadata(result *katypes.InvestigationResult) {
+	result.WorkflowName = ""
+	result.ActionType = ""
+	result.ExecutionClusterID = ""
+	result.WorkflowSelectionConfidence = nil
+	result.RCAConfidence = nil
+	result.RepeatJustificationRequired = nil
+	result.PriorWorkflowMatch = nil
+	result.RepeatValidationOutcome = ""
+	result.PriorRemediationUIDs = nil
+	result.HandoffDigest = ""
+	result.ProposedWorkflowID = ""
 }
 
 const notActionableWarning = "Alert not actionable — no remediation warranted"

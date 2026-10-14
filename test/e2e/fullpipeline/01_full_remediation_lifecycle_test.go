@@ -406,6 +406,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			return we.Status.Phase
 		}, timeout, interval).Should(Equal("Completed"),
 			"WorkflowExecution should reach Completed phase")
+		fpAssertSelectionAudit2496(remediationRequest.Name, aa.Status.GetRCAResult().SelectedWorkflow)
 
 		// ================================================================
 		// Step 9: Verify NotificationRequest created (BR-ORCH-045: completion)
@@ -1359,6 +1360,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			return we.Status.Phase
 		}, timeout, interval).Should(Equal("Completed"),
 			"WorkflowExecution should reach Completed phase")
+		fpAssertSelectionAudit2496(remediationRequest.Name, aa.Status.GetRCAResult().SelectedWorkflow)
 
 		// ================================================================
 		// AM Step 9: Verify NotificationRequest created

@@ -42,7 +42,7 @@ import (
 //   - No InvestigationSession is created (autonomous flow, Issue #1332)
 //
 // This completes the Pyramid Invariant E2E tier for Issue #1292.
-var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057", "issue-1332"), Serial, func() {
+var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057", "issue-1332"), func() {
 
 	It("should create RR in kubernaut-system with targetResource in workload namespace", func() {
 		By("Verifying AF is reachable")
@@ -52,20 +52,24 @@ var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af"
 		}
 		_ = resp.Body.Close()
 
-		workloadNS := fmt.Sprintf("fp-e2e-1292-%d", time.Now().Unix())
+		// The suite supplies this unique managed namespace and its scoped
+		// firing alert through the existing A2A grounding infrastructure. No
+		// severity default, ambiguity bypass or competing Gateway RR is added.
+		workloadNS := fpRemediateNS["cross-namespace"]
+		Expect(workloadNS).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  workloadNS: %s\n", workloadNS)
 
-		By("Creating managed workload namespace")
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   workloadNS,
-				Labels: map[string]string{"kubernaut.ai/managed": "true"},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		By("Verifying the managed workload namespace already created by the suite")
+		ns := &corev1.Namespace{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: workloadNS}, ns)).To(Succeed())
+		Expect(ns.Labels).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
 		})
+		By("Verifying namespace-scoped triage evidence is firing before the A2A call")
+		alertName := "FullPipelineA2ASeverityGrounding_" + strings.ReplaceAll(workloadNS, "-", "_")
+		Expect(infrastructure.WaitForPrometheusRuleState(ctx, "http://localhost:9190", alertName,
+			infrastructure.RuleStateFiring, time.Minute)).To(Succeed())
 
 		By("Deploying memory-eater in workload namespace")
 		Expect(infrastructure.DeployMemoryEater(ctx, workloadNS, kubeconfigPath, GinkgoWriter)).To(Succeed())

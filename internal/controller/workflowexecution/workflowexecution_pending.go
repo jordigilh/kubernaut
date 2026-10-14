@@ -244,7 +244,7 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (ctrl.Result, error, bool) {
 	currentWFEKey := fmt.Sprintf("%s/%s", wfe.Namespace, wfe.Name)
-	remaining, active := r.CheckCooldownActive(ctx, wfe.Spec.TargetResource, currentWFEKey)
+	remaining, active := r.CheckCooldownActive(ctx, wfe.Spec.TargetResource, wfe.Spec.ClusterID, currentWFEKey)
 	if !active {
 		return ctrl.Result{}, nil, false
 	}

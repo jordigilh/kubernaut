@@ -21,6 +21,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Phase represents a stage in the investigation flow.
@@ -40,6 +41,10 @@ const (
 // (store, manager) and event emission to identify security escalations
 // that must bypass interactive hold.
 const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
+
+// DefaultMaxEvidenceHandoffBytes is the independent whole-packet budget for
+// Phase 2 evidence, including its digest and freeze timestamp (DD-KA-2496).
+const DefaultMaxEvidenceHandoffBytes = 65_536
 
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string
@@ -86,6 +91,24 @@ type InvestigationResult struct {
 	EngineConfig          *apiextensionsv1.JSON `json:"engine_config,omitempty"`
 	WorkflowVersion       string                `json:"workflow_version,omitempty"`
 	WorkflowRationale     string                `json:"workflow_rationale,omitempty"`
+
+	// DD-KA-2496: selected confidence has its own provenance; nil is unknown,
+	// while a pointer to zero is an explicit score. Confidence remains the
+	// selection score for the existing approval/review consumers.
+	WorkflowSelectionConfidence *float64                         `json:"workflow_selection_confidence,omitempty"`
+	RCAConfidence               *float64                         `json:"rca_confidence,omitempty"`
+	RepeatJustification         *sharedtypes.RepeatJustification `json:"repeat_justification,omitempty"`
+	// The fields below are server-computed from this request's scoped history,
+	// never accepted from model output. Nil booleans mean not yet evaluated.
+	RepeatJustificationRequired *bool    `json:"repeat_justification_required,omitempty"`
+	PriorWorkflowMatch          *bool    `json:"prior_workflow_match,omitempty"`
+	RepeatValidationOutcome     string   `json:"repeat_validation_outcome,omitempty"`
+	PriorRemediationUIDs        []string `json:"prior_remediation_uids,omitempty"`
+	HandoffDigest               string   `json:"handoff_digest,omitempty"`
+	// A rejected proposal is retained separately, not as an executable selection.
+	ProposedWorkflowID string `json:"proposed_workflow_id,omitempty"`
+	// Intake remembers malformed explanation shape without retaining raw data.
+	RepeatJustificationInvalid bool `json:"-"`
 
 	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
 	// #1661 Change 12) resolved from the DS catalog at selection time and

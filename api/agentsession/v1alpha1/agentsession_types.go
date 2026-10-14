@@ -325,6 +325,12 @@ type AgentSessionResult struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	SelectedWorkflow *apiextensionsv1.JSON `json:"selectedWorkflow,omitempty"`
+	// SelectionAssessment retains curated rejected-proposal reasoning, never
+	// executable workflow configuration (DD-KA-2496 / BR-KA-016). Nested fields
+	// use the KA snake_case wire contract, matching SelectedWorkflow above.
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	SelectionAssessment *apiextensionsv1.JSON `json:"selectionAssessment,omitempty"`
 	// Confidence is KA's overall confidence in the analysis (0.0-1.0).
 	Confidence float64 `json:"confidence,omitempty"`
 	// Timestamp is the ISO timestamp of analysis completion.

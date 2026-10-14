@@ -18,14 +18,13 @@ import (
 // tool calls whose schemas declare none of them. Every struct below must
 // tolerate its ambient fields as ignored omitempty hints.
 var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
-	It("UT-2364-001: SI-10 PresentDecisionArgs schema tolerates cluster_id/rr_id", func() {
+	It("UT-2364-001: SI-10 PresentDecisionArgs excludes model cluster_id and retains rr_id hint", func() {
 		schema, err := jsonschema.For[tools.PresentDecisionArgs](nil)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(schema.Properties).To(HaveKey("cluster_id"),
-			"fleet-hinted present_decision calls carry cluster_id -- strict schema must tolerate it (#2364)")
+		Expect(schema.Properties).NotTo(HaveKey("cluster_id"),
+			"v1.6 present_decision must not expose model-authored cluster attribution")
 		Expect(schema.Properties).To(HaveKey("rr_id"),
 			"prompt.txt instructs rr_id preservation -- present_decision must tolerate it (#2364)")
-		Expect(schema.Required).NotTo(ContainElement("cluster_id"))
 		Expect(schema.Required).NotTo(ContainElement("rr_id"))
 		Expect(schema.Required).To(ContainElement("session_id"),
 			"fields the LLM IS expected to supply must remain required")
@@ -105,17 +104,12 @@ var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
 		Expect(string(data)).NotTo(ContainSubstring("cluster_id"))
 		Expect(string(data)).NotTo(ContainSubstring("rr_id"))
 
-		withAmbient := tools.PresentDecisionArgs{
-			SessionID: "sess-1", Summary: "s",
-			ClusterID: "spoke", RRID: "ns/rr-1",
-		}
+		withAmbient := tools.PresentDecisionArgs{SessionID: "sess-1", Summary: "s", RRID: "ns/rr-1"}
 		data2, err := json.Marshal(withAmbient)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(data2)).To(ContainSubstring(`"cluster_id":"spoke"`))
 		Expect(string(data2)).To(ContainSubstring(`"rr_id":"ns/rr-1"`))
 		var decoded tools.PresentDecisionArgs
 		Expect(json.Unmarshal(data2, &decoded)).To(Succeed())
-		Expect(decoded.ClusterID).To(Equal("spoke"))
 		Expect(decoded.RRID).To(Equal("ns/rr-1"))
 	})
 
@@ -126,8 +120,8 @@ var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
 		})
 		hinted := tools.HandlePresentDecision(tools.PresentDecisionArgs{
 			SessionID: "sess-1", Summary: "leak",
-			Options:   []tools.WorkflowOption{{WorkflowID: "wf-1", Name: "Restart"}},
-			ClusterID: "spoke", RRID: "ns/rr-1",
+			Options: []tools.WorkflowOption{{WorkflowID: "wf-1", Name: "Restart"}},
+			RRID:    "ns/rr-1",
 		})
 		Expect(hinted.Message).To(Equal(plain.Message),
 			"ambient hints must never alter presentation -- hints only, never routing (AC-6)")

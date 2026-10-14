@@ -87,6 +87,13 @@ func BuildRecoveredDecisionArtifact(input DecisionRecoveryInput) (DecisionRecove
 	if input.RRID != "" {
 		data["rr_id"] = input.RRID
 	}
+	selection, err := input.Discovery.ToMap()
+	if err != nil {
+		return DecisionRecoveryResult{}, fmt.Errorf("project recovered selection context: %w", err)
+	}
+	for key, value := range selection {
+		data[key] = value
+	}
 
 	return DecisionRecoveryResult{
 		Data:         data,
