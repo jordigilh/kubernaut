@@ -434,7 +434,7 @@ type PresentDecisionArgs struct {
 	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
 	// RRID is an ambient cross-phase hint (#2364). It is tolerated here for
 	// strict ADK schema compatibility but is ignored by HandlePresentDecision.
-	RRID      string `json:"rr_id,omitempty"`
+	RRID string `json:"rr_id,omitempty"`
 }
 
 // WorkflowOption represents a remediation workflow choice.

@@ -120,8 +120,8 @@ var _ = Describe("ambient fleet-field tolerance (#2364)", func() {
 		})
 		hinted := tools.HandlePresentDecision(tools.PresentDecisionArgs{
 			SessionID: "sess-1", Summary: "leak",
-			Options:   []tools.WorkflowOption{{WorkflowID: "wf-1", Name: "Restart"}},
-			RRID: "ns/rr-1",
+			Options: []tools.WorkflowOption{{WorkflowID: "wf-1", Name: "Restart"}},
+			RRID:    "ns/rr-1",
 		})
 		Expect(hinted.Message).To(Equal(plain.Message),
 			"ambient hints must never alter presentation -- hints only, never routing (AC-6)")
