@@ -30,6 +30,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -63,7 +64,7 @@ type AnalyzingCallbacks struct {
 	EmitApprovalRequestedAudit     func(ctx context.Context, rr *remediationv1.RemediationRequest, confidence float64, workflowID string)
 	RecordEvent                    func(rr *remediationv1.RemediationRequest, eventType string, reason string, message string)
 	FetchFreshRR                   func(ctx context.Context, key client.ObjectKey) (*remediationv1.RemediationRequest, error)
-	CheckPostAnalysisConditions    func(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID, targetResource, preHash, actionType string) (*routing.BlockingCondition, error)
+	CheckPostAnalysisConditions    func(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID, targetResource, preHash, actionType, executionClusterID string) (*routing.BlockingCondition, error)
 	HandleBlocked                  func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
 	AcquireLock                    func(ctx context.Context, target string) (bool, error)
 	ReleaseLock                    func(ctx context.Context, target string) error
@@ -249,7 +250,8 @@ func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remedi
 	}()
 
 	// Routing checks
-	blocked, err := h.callbacks.CheckPostAnalysisConditions(ctx, rr, hashCtx.workflowID, hashCtx.targetResource, hashCtx.preHash, hashCtx.actionType)
+	executionClusterID := creator.ResolveExecutionClusterID(rr, ai)
+	blocked, err := h.callbacks.CheckPostAnalysisConditions(ctx, rr, hashCtx.workflowID, hashCtx.targetResource, hashCtx.preHash, hashCtx.actionType, executionClusterID)
 	if err != nil && !errors.Is(err, routing.ErrNotBlocked) {
 		logger.Error(err, "Failed to check routing conditions")
 		return phase.Requeue(config.RequeueGenericError, "routing check failed"), nil

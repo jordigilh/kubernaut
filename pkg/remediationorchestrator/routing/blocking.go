@@ -59,7 +59,7 @@ var ErrNoMatch = errors.New("no matching resource found")
 // from post-AA checks (all checks including resource-level with AI-resolved target).
 type BlockingConditionChecker interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
-	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*BlockingCondition, error)
+	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string, executionClusterID string) (*BlockingCondition, error)
 	CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 }
@@ -288,6 +288,7 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 //   - workflowID: from AIAnalysis.Status.SelectedWorkflow.WorkflowID
 //   - targetResource: AI-resolved target formatted as "namespace/kind/name" or "kind/name"
 //   - preRemediationSpecHash: hash of the target resource spec before remediation (Issue #214)
+//   - executionClusterID: effective workflow execution cluster, falling back to the RR origin cluster
 //
 // Checks (in priority order):
 // 1. UnmanagedResource (BR-SCOPE-010, ADR-053)
@@ -306,6 +307,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	targetResource string,
 	preRemediationSpecHash string,
 	actionType string,
+	executionClusterID string,
 ) (*BlockingCondition, error) {
 	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
 		return blocked, nil
@@ -331,7 +333,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 		return blocked, nil
 	}
 
-	blocked, err = r.CheckRecentlyRemediated(ctx, rr, workflowID, targetResource)
+	blocked, err = r.checkRecentlyRemediated(ctx, rr, workflowID, targetResource, executionClusterID)
 	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
@@ -627,6 +629,16 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 	workflowID string,
 	targetResource string,
 ) (*BlockingCondition, error) {
+	return r.checkRecentlyRemediated(ctx, rr, workflowID, targetResource, rr.Spec.ClusterID)
+}
+
+func (r *RoutingEngine) checkRecentlyRemediated(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	workflowID string,
+	targetResource string,
+	clusterID string,
+) (*BlockingCondition, error) {
 	targetResourceStr := targetResource
 
 	// DD-RO-002 Check 4: Workflow-specific cooldown
@@ -636,7 +648,7 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 		ctx,
 		targetResourceStr,
 		workflowID, // Pass workflow ID for workflow-specific matching
-		rr.Spec.ClusterID,
+		clusterID,
 		r.config.RecentlyRemediatedCooldown,
 	)
 	if err != nil && !errors.Is(err, ErrNoMatch) {
