@@ -88,7 +88,9 @@ var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "f
 			// writes must not race a whole-object fixture update.
 			Expect(k8sClient.Patch(ctx, dep, client.MergeFrom(beforeArgs))).To(Succeed())
 			fpWaitForPodCrashInNS("memory-eater", targetNS, 2*time.Minute)
-			firstSignal := "historyfirst2496"
+			// Keep parallel table entries from sharing AlertManager state. Each
+			// scenario owns its alert lifecycle and deferred cleanup.
+			firstSignal := "historyfirst2496-" + targetNS
 			if successfulPrior {
 				firstSignal = "historyrepeataccepted2496" // 512Mi really resolves the OOM.
 			} else {
