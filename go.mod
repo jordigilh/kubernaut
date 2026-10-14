@@ -1,6 +1,6 @@
 module github.com/jordigilh/kubernaut
 
-go 1.27.0
+go 1.26.9
 
 require (
 	cloud.google.com/go/auth v0.24.1
@@ -49,7 +49,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/slack-go/slack v0.30.1
 	github.com/sony/gobreaker/v2 v2.4.0
-	github.com/tektoncd/pipeline v1.17.0
+	github.com/tektoncd/pipeline v1.16.0
 	github.com/vektah/gqlparser/v2 v2.5.62
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
@@ -79,7 +79,6 @@ require (
 )
 
 require (
-	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
