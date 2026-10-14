@@ -392,20 +392,18 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
 	// DD-KA-2496: project presentation fields only. Selection/assessment
 	// context is server-owned; execution and evidence state are not live data.
-	data := make(map[string]any, 8)
-	for _, key := range []string{"session_id", "summary", "rca", "options", "searched_target", "signal_target", "cluster_id", "rr_id"} {
+	data := make(map[string]any, 7)
+	for _, key := range []string{"session_id", "summary", "rca", "options", "searched_target", "signal_target", "rr_id"} {
 		if value, ok := fc.Args[key]; ok {
 			data[key] = value
 		}
 	}
 	projectDecisionRCAClassification(bridge, data)
 
-	// SI-10: caller-supplied cluster_id (already present in the LLM-produced
-	// payload) takes precedence over the server-side RRContext value.
+	// SI-10/AU-3: cluster attribution is server-owned. The LLM-facing
+	// present_decision contract does not authorize a model-supplied cluster_id.
 	if rc := bridge.RRContext(); rc != nil && rc.ClusterID != "" {
-		if _, exists := data["cluster_id"]; !exists {
-			data["cluster_id"] = rc.ClusterID
-		}
+		data["cluster_id"] = rc.ClusterID
 	}
 
 	summary, _ := data["summary"].(string)

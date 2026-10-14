@@ -2162,7 +2162,7 @@ var _ = Describe("Fleet cluster_id propagation into investigation_summary (#1409
 			"AU-3: investigation_summary DataPart must carry cluster_id from RRContext for Console multi-cluster banners")
 	})
 
-	It("UT-AF-1409-006b: emitDecisionEvent never overwrites a caller-supplied cluster_id (SI-10 precedence)", func() {
+	It("UT-AF-1409-006b: emitDecisionEvent overwrites model cluster_id with trusted RRContext", func() {
 		queue, ctx := partConverterBridgeCtx()
 		launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-1409-006b", ClusterID: "cluster-server-side"})
 
@@ -2181,8 +2181,8 @@ var _ = Describe("Fleet cluster_id propagation into investigation_summary (#1409
 		Expect(ok).To(BeTrue())
 		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
 		Expect(ok).To(BeTrue())
-		Expect(dp.Data).To(HaveKeyWithValue("cluster_id", "cluster-caller-supplied"),
-			"SI-10: caller-supplied cluster_id in the decision payload must take precedence over RRContext")
+		Expect(dp.Data).To(HaveKeyWithValue("cluster_id", "cluster-server-side"),
+			"SI-10/AU-3: trusted RRContext cluster_id must take precedence over model data")
 	})
 
 	It("UT-AF-1409-006c: emitDecisionEvent omits cluster_id when RRContext has none (local-hub RR)", func() {
@@ -2194,6 +2194,7 @@ var _ = Describe("Fleet cluster_id propagation into investigation_summary (#1409
 			"summary":    "OOMKill detected",
 			"rca":        map[string]any{"severity": "critical", "confidence": 0.9, "explanation": "memory limit exceeded"},
 			"options":    []any{},
+			"cluster_id": "cluster-model-supplied",
 		})
 		_, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
@@ -2204,6 +2205,6 @@ var _ = Describe("Fleet cluster_id propagation into investigation_summary (#1409
 		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
 		Expect(ok).To(BeTrue())
 		Expect(dp.Data).NotTo(HaveKey("cluster_id"),
-			"AU-3: local-hub RRs (no ClusterID) must not inject a false empty cluster_id attribution")
+			"AU-3: without trusted RRContext, model-supplied cluster_id must not establish attribution")
 	})
 })

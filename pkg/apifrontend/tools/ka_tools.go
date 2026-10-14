@@ -432,13 +432,8 @@ type PresentDecisionArgs struct {
 	Options        []WorkflowOption `json:"options"`
 	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
 	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
-	// ClusterID and RRID are ambient hints the LLM propagates from fleet
-	// context and cross-phase preservation (#2364, recurrence of the
-	// #2073/#2074 failure class). Tolerated here so strict ADK schema
-	// validation does not kill the turn; ignored by HandlePresentDecision,
-	// which keys everything off SessionID, and by the artifact path, which
-	// merges authoritative cluster identity from RRContext.
-	ClusterID string `json:"cluster_id,omitempty"`
+	// RRID is an ambient cross-phase hint (#2364). It is tolerated here for
+	// strict ADK schema compatibility but is ignored by HandlePresentDecision.
 	RRID      string `json:"rr_id,omitempty"`
 }
 
