@@ -70,10 +70,13 @@ const capacityLimit = 50
 // LLM responds in well under a second) were racing each other, and on that
 // run creation lost. Root cause of both failure modes: relying on wall-clock
 // race timing (a fundamentally non-deterministic lever) to force overlap.
-// Fixed by filling the configured cap with the existing
-// "slow-investigation-test" mock scenario before creating the overshoot. This
-// removes the API-server creation-rate versus investigation-completion race
-// without changing KA configuration or the test timeout.
+// Fixed by filling the configured cap with the dedicated
+// "capacity-retry-controlled-investigation-test" mock scenario before creating the
+// overshoot. The fixture uses a tool allowed in trusted RCA and returns a
+// structured RCA, so phase guards cannot turn the capacity journey into an
+// unrelated parse failure. This removes the API-server creation-rate versus
+// investigation-completion race without changing KA configuration or the
+// test timeout.
 const capacityBurstOvershoot = capacityLimit + 20
 
 // Serial (2026-08-20 RCA, PR #2189 round-13): this suite runs with
@@ -111,11 +114,11 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint: "e2e-fp-" + suffix,
 							Severity:    "warning",
-							// "slow-investigation-test" keeps the first capacityLimit
+							// "capacity-retry-controlled-investigation-test" keeps the first capacityLimit
 							// AgentSessions in KA's Investigating phase while the
 							// overshoot is admitted. This avoids relying on the
 							// API-server creation rate to beat mock-LLM completion.
-							SignalName:       "slow-investigation-test",
+							SignalName:       "capacity-retry-controlled-investigation-test",
 							SignalMode:       "reactive",
 							Environment:      "staging",
 							BusinessPriority: "P2",

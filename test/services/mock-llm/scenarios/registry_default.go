@@ -333,6 +333,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Keeps KA session in "investigating" via a 30s second-turn delay.
 	r.Register(newKeywordScenario("slow_investigation", "slow-investigation-test", slowInvestigationConfig()))
 
+	// E2E-AA-065: capacity saturation needs a phase-valid, parseable RCA
+	// response while the first wave remains active for the overshoot burst.
+	r.Register(newCapacityRetrySlowInvestigationScenario())
+
 	// Brief investigation scenario for IT tests that need a non-instant session
 	// but don't require the full 30s window. 5s delay is enough for IS creation
 	// and upgrade detection before the session completes naturally.
