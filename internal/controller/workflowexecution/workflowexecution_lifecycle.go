@@ -263,7 +263,8 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 // failedExecutionRetentionRemaining reports whether a failed WFE is within the
 // configured retention window and how long remains (BR-WE-019, AU-11).
 func (r *WorkflowExecutionReconciler) failedExecutionRetentionRemaining(wfe *workflowexecutionv1alpha1.WorkflowExecution) (time.Duration, bool) {
-	if !r.RetainFailedExecutions || r.FailedExecutionRetention <= 0 || wfe.Status.Phase != workflowexecutionv1alpha1.PhaseFailed {
+	retainFailedExecutions, failedExecutionRetention := r.FailedExecutionRetentionConfig()
+	if !retainFailedExecutions || failedExecutionRetention <= 0 || wfe.Status.Phase != workflowexecutionv1alpha1.PhaseFailed {
 		return 0, false
 	}
 	var anchor time.Time
@@ -275,7 +276,7 @@ func (r *WorkflowExecutionReconciler) failedExecutionRetentionRemaining(wfe *wor
 	default:
 		return 0, false
 	}
-	remaining := r.FailedExecutionRetention - time.Since(anchor)
+	remaining := failedExecutionRetention - time.Since(anchor)
 	if remaining <= 0 {
 		return 0, true
 	}

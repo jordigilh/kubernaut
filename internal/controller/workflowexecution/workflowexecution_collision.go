@@ -95,7 +95,8 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 		return r.adoptExistingPipelineRun(ctx, wfe, resourceName, logger)
 	}
 
-	if r.RetainFailedExecutions {
+	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
+	if retainFailedExecutions {
 		result, replaced, replaceErr := r.replaceFailedPipelineRun(ctx, wfe, resourceName, existingPR, logger)
 		if replaceErr != nil {
 			return ctrl.Result{}, replaceErr
@@ -188,6 +189,7 @@ func (r *WorkflowExecutionReconciler) replaceFailedPipelineRun(ctx context.Conte
 	if r.ExecutorRegistry == nil {
 		return ctrl.Result{}, false, fmt.Errorf("executor registry is required to replace terminal retained PipelineRun")
 	}
+	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
 	exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if execErr != nil {
 		return ctrl.Result{}, false, fmt.Errorf("get executor for terminal PipelineRun replacement: %w", execErr)
@@ -195,7 +197,7 @@ func (r *WorkflowExecutionReconciler) replaceFailedPipelineRun(ctx context.Conte
 	if _, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, weexecutor.CreateOptions{
 		Dependencies:           convertWorkflowDependencies(wfe.Spec.WorkflowRef.Dependencies),
 		DeclaredParameterNames: wfe.Spec.WorkflowRef.DeclaredParameterNames,
-		RetainFailedExecutions: r.RetainFailedExecutions,
+		RetainFailedExecutions: retainFailedExecutions,
 	}); createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
 			return ctrl.Result{RequeueAfter: time.Second}, true, nil

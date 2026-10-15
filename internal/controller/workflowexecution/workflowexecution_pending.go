@@ -67,10 +67,11 @@ const executionEngineJob = "job"
 //nolint:unparam // see doc comment above -- error kept for call-site signature stability (Issue #1546 Tier 4)
 func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
 	ref := wfe.Spec.WorkflowRef
+	retainFailedExecutions, _ := r.FailedExecutionRetentionConfig()
 	opts := weexecutor.CreateOptions{
 		Dependencies:           convertWorkflowDependencies(ref.Dependencies),
 		DeclaredParameterNames: ref.DeclaredParameterNames,
-		RetainFailedExecutions: r.RetainFailedExecutions,
+		RetainFailedExecutions: retainFailedExecutions,
 	}
 	return nil, opts, nil
 }

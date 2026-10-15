@@ -877,8 +877,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 
 	Context("Retained failed execution", func() {
 		It("should keep the failed Job while a different workflow creates a new Job (IT-WE-2512-002)", func() {
-			previousRetain := reconciler.RetainFailedExecutions
-			previousRetention := reconciler.FailedExecutionRetention
+			previousRetain, previousRetention := reconciler.FailedExecutionRetentionConfig()
 			wfe1 := createUniqueJobWFE("retained-failed-job1", fmt.Sprintf("default/deployment/job-failed-cycle-%d", time.Now().UnixNano()))
 			wfe1.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/failed-a:v1"
 			wfe2 := createUniqueJobWFE("retained-failed-job2", wfe1.Spec.TargetResource)
@@ -887,11 +886,9 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			defer cleanupJobWFE(wfe1)
 			defer cleanupJobWFE(wfe2)
 			defer func() {
-				reconciler.RetainFailedExecutions = previousRetain
-				reconciler.FailedExecutionRetention = previousRetention
+				reconciler.SetFailedExecutionRetention(previousRetain, previousRetention)
 			}()
-			reconciler.RetainFailedExecutions = true
-			reconciler.FailedExecutionRetention = time.Minute
+			reconciler.SetFailedExecutionRetention(true, time.Minute)
 
 			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 			Eventually(func() string {

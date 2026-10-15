@@ -45,6 +45,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -147,12 +148,11 @@ type WorkflowExecutionReconciler struct {
 	// Default: 5 minutes
 	CooldownPeriod time.Duration
 
-	// RetainFailedExecutions keeps failed execution resources available for
-	// bounded diagnosis (BR-WE-019, FedRAMP AU-11).
-	RetainFailedExecutions bool
-
-	// FailedExecutionRetention is the bounded failed-resource retention period.
-	FailedExecutionRetention time.Duration
+	// Failed-execution retention configuration is guarded because integration
+	// tests reconfigure the live reconciler while its workers are running.
+	retentionMu              sync.RWMutex
+	retainFailedExecutions   bool
+	failedExecutionRetention time.Duration
 
 	// AuditStore for writing audit events (BR-WE-005, ADR-032)
 	// Uses pkg/audit buffered store via Data Storage Service
@@ -217,14 +217,31 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		StatusManager:            opts.StatusManager,
 		ExecutionNamespace:       opts.ExecutionNamespace,
 		CooldownPeriod:           opts.CooldownPeriod,
-		RetainFailedExecutions:   opts.RetainFailedExecutions,
-		FailedExecutionRetention: opts.FailedExecutionRetention,
+		retainFailedExecutions:   opts.RetainFailedExecutions,
+		failedExecutionRetention: opts.FailedExecutionRetention,
 		AuditStore:               opts.AuditStore,
 		PhaseManager:             opts.PhaseManager,
 		AuditManager:             opts.AuditManager,
 		ExecutorRegistry:         opts.ExecutorRegistry,
 		ClientFactory:            opts.ClientFactory,
 	}
+}
+
+// FailedExecutionRetentionConfig returns a consistent snapshot of the
+// failed-execution retention configuration.
+func (r *WorkflowExecutionReconciler) FailedExecutionRetentionConfig() (bool, time.Duration) {
+	r.retentionMu.RLock()
+	defer r.retentionMu.RUnlock()
+	return r.retainFailedExecutions, r.failedExecutionRetention
+}
+
+// SetFailedExecutionRetention updates the failed-execution retention
+// configuration atomically for subsequent reconciles.
+func (r *WorkflowExecutionReconciler) SetFailedExecutionRetention(retain bool, retention time.Duration) {
+	r.retentionMu.Lock()
+	defer r.retentionMu.Unlock()
+	r.retainFailedExecutions = retain
+	r.failedExecutionRetention = retention
 }
 
 // executionClientFor returns the cluster-aware execution-resource client used
