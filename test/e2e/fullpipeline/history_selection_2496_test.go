@@ -326,6 +326,12 @@ func fpAssertPriorHistory2496(rr *remediationv1.RemediationRequest, ea *eav1.Eff
 		g.Expect(entry.EffectivenessScore.IsSet() && !entry.EffectivenessScore.IsNull()).To(BeTrue())
 		g.Expect(entry.SignalResolved.IsSet() && !entry.SignalResolved.IsNull()).To(BeTrue())
 		g.Expect(entry.SignalResolved.Value).To(Equal(successful))
+		g.Expect(entry.AppliedState.Set).To(BeTrue(), "history must expose server-derived applied state")
+		g.Expect(entry.AppliedState.Value).To(Equal(ogenclient.RemediationHistoryEntryAppliedStateConfirmed))
+		g.Expect(entry.SpecChangeStatus.Set).To(BeTrue())
+		g.Expect(entry.SpecChangeStatus.Value).To(Equal(ogenclient.RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent))
+		g.Expect(entry.PostRemediationSpecHash.Set).To(BeTrue())
+		g.Expect(entry.PostRemediationSpecHash.Value).To(Equal(ea.Status.Components.PostRemediationSpecHash))
 		if successful {
 			g.Expect(entry.EffectivenessScore.Value).To(BeNumerically(">", 0))
 		} else {

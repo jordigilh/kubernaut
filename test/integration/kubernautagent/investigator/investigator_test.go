@@ -392,13 +392,13 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433W-005: Investigation prompt excludes enrichment, workflow selection includes it", func() {
-		It("should NOT include enrichment in RCA prompt; remediation history appears in Phase 3 only", func() {
+	Describe("IT-KA-2511-001: RCA reviews target history before workflow selection", func() {
+		It("should keep initial RCA signal-only, then continue with target history before Phase 3", func() {
 			By("Seeding remediation history into PostgreSQL so the real DS returns it")
 			testCtx := context.Background()
 			specHash := sha256FixtureHash
 			corrID := "oom-increase-memory"
-			target := "production/Pod/api-server-abc"
+			target := "production/Deployment/api-server"
 			now := time.Now()
 			seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", corrID,
 				map[string]interface{}{
@@ -433,7 +433,8 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
+				{ToolCalls: []llm.ToolCall{{ID: "rca-initial-2511", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"Memory pressure detected","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}},"confidence":0.8}`}}},
+				{ToolCalls: []llm.ToolCall{{ID: "rca-review-2511", Name: investigator.SubmitResultToolName, Arguments: `{"root_cause_analysis":{"summary":"Deployment memory pressure remains actionable","remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}},"confidence":0.85,"actionable":true,"investigation_outcome":"actionable"}`}}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
@@ -449,22 +450,25 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				Message:            "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(mockClient.calls).To(HaveLen(2))
+			Expect(mockClient.calls).To(HaveLen(3))
 
 			rcaCall := mockClient.calls[0]
 			systemPrompt := rcaCall.Messages[0].Content
-			Expect(systemPrompt).NotTo(ContainSubstring("Owner Chain"),
-				"RCA system prompt must NOT contain enrichment owner chain (Phase 3 only)")
-			Expect(systemPrompt).NotTo(ContainSubstring("Detected Labels"),
-				"RCA system prompt must NOT contain enrichment labels (Phase 3 only)")
 			Expect(systemPrompt).NotTo(ContainSubstring("oom-increase-memory"),
-				"RCA system prompt must NOT contain remediation history (Phase 3 only)")
+				"initial RCA request must remain signal-only")
 
-			By("remediation history should appear in workflow selection prompt instead")
-			wdCall := mockClient.calls[1]
+			By("server-supplied provisional RCA and remediation history should appear in the continuation request")
+			historyReviewCall := mockClient.calls[1]
+			historyReviewPrompt := historyReviewCall.Messages[len(historyReviewCall.Messages)-1].Content
+			Expect(historyReviewPrompt).To(ContainSubstring("PROVISIONAL RCA"))
+			Expect(historyReviewPrompt).To(ContainSubstring("PRIOR REMEDIATION HISTORY REVIEW"))
+			Expect(historyReviewPrompt).To(ContainSubstring("oom-increase-memory"))
+
+			By("workflow selection should retain the reviewed history")
+			wdCall := mockClient.calls[2]
 			wdSystemPrompt := wdCall.Messages[0].Content
 			Expect(wdSystemPrompt).To(ContainSubstring("oom-increase-memory"),
-				"workflow selection prompt should contain remediation history workflow ID")
+				"workflow selection prompt should retain remediation history workflow ID")
 		})
 	})
 
