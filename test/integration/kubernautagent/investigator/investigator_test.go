@@ -521,7 +521,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			})
 
 			var mu sync.Mutex
-			requests := make([]map[string]json.RawMessage, 0, 2)
+			requests := make([]map[string]json.RawMessage, 0, 3)
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				var body map[string]json.RawMessage
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -532,9 +532,17 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				requests = append(requests, body)
 				turn := len(requests)
 				mu.Unlock()
-				message := map[string]interface{}{"role": "assistant", "content": `{"rca_summary":"Memory pressure","confidence":0.99}`}
+				message := map[string]interface{}{"role": "assistant", "content": `{"rca_summary":"Memory pressure","confidence":0.99,"remediation_target":{"kind":"Pod","name":"` + resourceName + `","namespace":"production","api_version":"v1"}}`}
 				finish := "stop"
-				if turn > 1 {
+				if turn == 2 {
+					message["content"] = ""
+					message["tool_calls"] = []interface{}{map[string]interface{}{
+						"id": "review-history-2496", "type": "function",
+						"function": map[string]string{"name": investigator.SubmitResultToolName,
+							"arguments": `{"root_cause_analysis":{"summary":"Memory pressure remains actionable","remediation_target":{"kind":"Pod","name":"` + resourceName + `","namespace":"production","api_version":"v1"}},"confidence":0.99,"actionable":true,"investigation_outcome":"actionable"}`},
+					}}
+					finish = "tool_calls"
+				} else if turn >= 3 {
 					message["content"] = ""
 					message["tool_calls"] = []interface{}{map[string]interface{}{
 						"id": "decline-history-2496", "type": "function",
@@ -567,11 +575,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			mu.Lock()
 			captured := append([]map[string]json.RawMessage(nil), requests...)
 			mu.Unlock()
-			Expect(captured).To(HaveLen(2), "the real DS handoff must reach Phase 3 before the explicit decline")
-			Expect(string(captured[0]["messages"])).NotTo(ContainSubstring(olderID), "history is not automatically injected into RCA")
+			Expect(captured).To(HaveLen(3), "the real DS handoff must reach Phase 3 after provisional RCA history review")
+			Expect(string(captured[0]["messages"])).NotTo(ContainSubstring(olderID), "history must not be signal-pre-injected into initial RCA")
+			Expect(string(captured[1]["messages"])).To(ContainSubstring(olderID), "history must be supplied to the continuation request")
 
 			var messages []struct{ Content string }
-			Expect(json.Unmarshal(captured[1]["messages"], &messages)).To(Succeed())
+			Expect(json.Unmarshal(captured[2]["messages"], &messages)).To(Succeed())
 			var packet map[string]json.RawMessage
 			for _, message := range messages {
 				if section := strings.Index(message.Content, "## Frozen Target Evidence (DD-KA-2496)"); section >= 0 {
@@ -607,6 +616,8 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			}
 			Expect(string(captured[1]["messages"])).NotTo(ContainSubstring("prior-parameter-2496"))
 			Expect(string(captured[1]["messages"])).NotTo(ContainSubstring("history-secret-2496"))
+			Expect(string(captured[2]["messages"])).NotTo(ContainSubstring("prior-parameter-2496"))
+			Expect(string(captured[2]["messages"])).NotTo(ContainSubstring("history-secret-2496"))
 		},
 		Entry("IT-KA-2496-001: authenticated DS metadata reaches a real HTTP provider in chronological order", false),
 		Entry("IT-KA-2496-006: historical credentials and parameters cannot reach that provider", true),

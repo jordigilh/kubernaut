@@ -434,6 +434,12 @@ func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, a
 		if isForbiddenError(err) {
 			return "", true, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
 		}
+		// A deleted target or an unavailable API mapping is sparse evidence,
+		// not a history backend outage (DD-KA-006 / Issue #1039).
+		if IsNotFoundError(err) || IsNoMatchError(err) {
+			e.logger.Info("enrichment: target unavailable while computing specHash; proceeding with empty", "resource", namespace+"/"+kind+"/"+name)
+			return "", false, nil
+		}
 		e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 			"resource", namespace+"/"+kind+"/"+name,
 		)

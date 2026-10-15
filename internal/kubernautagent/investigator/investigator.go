@@ -1172,15 +1172,10 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	})
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
-		// DD-KA-2511: a configured enrichment path that cannot resolve the
-		// target's spec/history must remain observable and fail closed. A nil
-		// result would be indistinguishable from an optional/no-enricher path.
-		return &enrichment.EnrichmentResult{
-			ResourceKind:       kind,
-			ResourceName:       name,
-			ResourceNamespace:  namespace,
-			HistoryUnavailable: true,
-		}
+		// Preserve the existing best-effort behavior for unrelated enrichment
+		// failures (for example optional label/RBAC reads). History/spec-hash
+		// acquisition failures are represented explicitly by EnrichmentResult.
+		return nil
 	}
 	return result
 }
