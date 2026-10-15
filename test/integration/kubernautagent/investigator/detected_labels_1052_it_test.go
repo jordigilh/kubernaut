@@ -170,13 +170,12 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			// Return different owner chains per resource name:
-			// - "api-server" -> known chain (initial enrichment succeeds)
-			// - "worker-pod" -> empty chain (re-enrichment, labels will all fail)
+			// Return only the signal-target owner chain. The RCA target is
+			// intentionally absent from this fixture so the real LabelDetector
+			// observes a missing target and produces all-failed detections.
 			k8sClient := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"api-server": {{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
-					"worker-pod": {{Kind: "Pod", Name: "worker-pod", Namespace: "production"}},
 				},
 			}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).
