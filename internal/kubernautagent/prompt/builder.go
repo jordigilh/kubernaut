@@ -364,6 +364,14 @@ var injectionPatterns = regexp.MustCompile(
 	`(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|disregard\s+(all\s+)?prior|forget\s+(all\s+)?previous|system\s*:\s*you\s+are)`,
 )
 
+// credentialPatterns prevents audit-derived identifiers and names from
+// carrying credential-like values into an LLM prompt. History is server-owned
+// evidence, but workflow names and other free-form fields may still contain
+// accidental secrets (BR-KA-2511, FedRAMP SI-10, OWASP ASVS V2.2.x).
+var credentialPatterns = regexp.MustCompile(
+	`(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;|]+)`,
+)
+
 func withDefault(value, fallback string) string {
 	if value != "" {
 		return value
@@ -426,7 +434,8 @@ func sanitizeMapValues(m map[string]string) map[string]string {
 }
 
 func sanitizeField(s string) string {
-	return injectionPatterns.ReplaceAllString(s, "[REDACTED]")
+	s = injectionPatterns.ReplaceAllString(s, "[REDACTED]")
+	return credentialPatterns.ReplaceAllString(s, "[REDACTED]")
 }
 
 func inferPriority(severity string) string {

@@ -487,6 +487,21 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			Expect(output).NotTo(ContainSubstring("ignore previous instructions"))
 			Expect(output).NotTo(ContainSubstring("system: you are now"))
 		})
+
+		It("UT-KA-2511-SEC-001: redacts credential-like values in RCA history review", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "production/Deployment/api-server",
+				Tier1: []enrichment.Tier1Entry{{
+					WorkflowID:   "history-workflow-2496",
+					WorkflowName: "history-workflow password=history-secret-2496",
+					CompletedAt:  time.Now(),
+				}},
+			}
+
+			output := prompt.BuildRCAHistoryReviewSection(result)
+			Expect(output).To(ContainSubstring("[REDACTED]"))
+			Expect(output).NotTo(ContainSubstring("history-secret-2496"))
+		})
 	})
 
 	// ========================================
