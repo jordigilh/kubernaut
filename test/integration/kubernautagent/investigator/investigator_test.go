@@ -479,7 +479,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		func(hostile bool) {
 			testCtx := context.Background()
 			resourceName := fmt.Sprintf("history-provider-2496-%d", time.Now().UnixNano())
-			target := "production/Pod/" + resourceName
+			target := "production/Deployment/" + resourceName
 			olderID, recentID := resourceName+"-older", resourceName+"-recent"
 			// BR-KA-016 / AU-3: the existing ogen date-time codec emits
 			// RFC3339 whole seconds. Keep exact timestamp equality without
@@ -532,14 +532,14 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				requests = append(requests, body)
 				turn := len(requests)
 				mu.Unlock()
-				message := map[string]interface{}{"role": "assistant", "content": `{"rca_summary":"Memory pressure","confidence":0.99,"remediation_target":{"kind":"Pod","name":"` + resourceName + `","namespace":"production","api_version":"v1"}}`}
+				message := map[string]interface{}{"role": "assistant", "content": `{"rca_summary":"Memory pressure","confidence":0.99,"remediation_target":{"kind":"Deployment","name":"` + resourceName + `","namespace":"production","api_version":"apps/v1"}}`}
 				finish := "stop"
 				if turn == 2 {
 					message["content"] = ""
 					message["tool_calls"] = []interface{}{map[string]interface{}{
 						"id": "review-history-2496", "type": "function",
 						"function": map[string]string{"name": investigator.SubmitResultToolName,
-							"arguments": `{"root_cause_analysis":{"summary":"Memory pressure remains actionable","remediation_target":{"kind":"Pod","name":"` + resourceName + `","namespace":"production","api_version":"v1"}},"confidence":0.99,"actionable":true,"investigation_outcome":"actionable"}`},
+							"arguments": `{"root_cause_analysis":{"summary":"Memory pressure remains actionable","remediation_target":{"kind":"Deployment","name":"` + resourceName + `","namespace":"production","api_version":"apps/v1"}},"confidence":0.99,"actionable":true,"investigation_outcome":"actionable"}`},
 					}}
 					finish = "tool_calls"
 				} else if turn >= 3 {
