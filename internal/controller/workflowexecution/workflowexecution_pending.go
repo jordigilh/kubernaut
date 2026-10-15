@@ -45,6 +45,8 @@ import (
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
+const executionEngineJob = "job"
+
 // resolveSchemaMetadata builds executor.CreateOptions directly from
 // wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
 // #1661 this fetched Dependencies/DeclaredParameterNames from a DataStorage
@@ -244,7 +246,7 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (ctrl.Result, error, bool) {
 	currentWFEKey := fmt.Sprintf("%s/%s", wfe.Namespace, wfe.Name)
-	remaining, active := r.CheckCooldownActive(ctx, wfe.Spec.TargetResource, wfe.Spec.ClusterID, currentWFEKey)
+	remaining, active := r.CheckCooldownActive(ctx, wfe.Spec.TargetResource, wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.ClusterID, currentWFEKey)
 	if !active {
 		return ctrl.Result{}, nil, false
 	}
@@ -280,29 +282,53 @@ func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Co
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (string, ctrl.Result, error, bool) {
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob {
+		resourceName = weexecutor.JobExecutionResourceName(wfe)
+	}
 	resourceExists := false
+	var executionClient weexecutor.ExecutorClient
 	switch wfe.Spec.WorkflowRef.ExecutionEngine {
-	case "job":
+	case executionEngineJob:
+		var clientErr error
+		executionClient, clientErr = r.executionClientFor(ctx, wfe.Spec.ClusterID)
+		if clientErr != nil {
+			return resourceName, ctrl.Result{}, fmt.Errorf("get execution client for Job existence check: %w", clientErr), true
+		}
 		existingJob := &batchv1.Job{}
-		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
+		existingJob.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
 		if err == nil {
 			resourceExists = true
-		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
-			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
-				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
-			result, markErr := r.MarkFailed(ctx, wfe, nil)
-			return resourceName, result, markErr, true
+		} else if apierrors.IsNotFound(err) {
+			if wfe.Status.ExecutionRef != nil {
+				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
+					"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
+				result, markErr := r.MarkFailed(ctx, wfe, nil)
+				return resourceName, result, markErr, true
+			}
+		} else {
+			return resourceName, ctrl.Result{}, fmt.Errorf("check existing Job %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
 	case workflowexecutionv1alpha1.ExecutionEngineTekton:
+		var clientErr error
+		executionClient, clientErr = r.executionClientFor(ctx, wfe.Spec.ClusterID)
+		if clientErr != nil {
+			return resourceName, ctrl.Result{}, fmt.Errorf("get execution client for PipelineRun existence check: %w", clientErr), true
+		}
 		existingPR := &tektonv1.PipelineRun{}
-		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
+		existingPR.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
 		if err == nil {
 			resourceExists = true
-		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
-			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
-				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
-			result, markErr := r.MarkFailed(ctx, wfe, nil)
-			return resourceName, result, markErr, true
+		} else if apierrors.IsNotFound(err) {
+			if wfe.Status.ExecutionRef != nil {
+				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
+					"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
+				result, markErr := r.MarkFailed(ctx, wfe, nil)
+				return resourceName, result, markErr, true
+			}
+		} else {
+			return resourceName, ctrl.Result{}, fmt.Errorf("check existing PipelineRun %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
 	case "ansible":
 		// AWX manages jobs externally — no K8s resource to check.
@@ -321,7 +347,8 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		// original SOC2 CC8.1 rationale on why workflow_id alone was sufficient
 		// before this field existed).
 		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, wfe.Spec.WorkflowRef.WorkflowName); err != nil {
-			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
+			logger.Error(err, "Failed to record mandatory workflow.selection.completed audit event")
+			return resourceName, ctrl.Result{}, fmt.Errorf("record workflow.selection.completed audit event: %w", err), true
 		}
 	} else {
 		logger.V(2).Info("Skipping workflow.selection.completed audit event - execution resource already exists",
@@ -334,8 +361,8 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 // createPendingExecutionResource dispatches to the engine-specific executor
 // (BR-WE-014) to create the execution resource, handling the
 // already-exists collision path (DD-WE-003 Layer 2: Tekton delegates to
-// HandleAlreadyExists; Job attempts terminal-state cleanup + retry via
-// handleJobAlreadyExists, Issue #374/#383/#190). shouldReturn is true when
+// HandleAlreadyExists; Job collisions fail closed without stale replacement,
+// DD-WE-010). shouldReturn is true when
 // the caller must immediately return (result, err) — unsupported engine,
 // unresolvable collision, or hard creation failure. Reads the engine
 // directly from the immutable wfe.Spec.WorkflowRef.ExecutionEngine, already
@@ -373,11 +400,8 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 		}
 
 		// DD-WE-003 Layer 2: Execution-time collision handling
-		result, res, err, shouldReturn := r.handleCreateAlreadyExists(ctx, wfe, resourceName, createOpts, exec, createErr, logger)
-		if shouldReturn {
-			return result, res, err, true
-		}
-		createResult = result
+		result, res, err := r.handleCreateAlreadyExists(ctx, wfe, resourceName, createErr)
+		return result, res, err, true
 	}
 
 	return createResult, ctrl.Result{}, nil, false
@@ -385,41 +409,35 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 
 // handleCreateAlreadyExists resolves a DD-WE-003 Layer 2 execution-time
 // collision (the execution resource already exists): Tekton delegates to
-// HandleAlreadyExists, Job attempts terminal-state cleanup + retry via
-// handleJobAlreadyExists (Issue #374/#383/#190), and any other outcome
+// HandleAlreadyExists, Job collisions fail closed without deleting retained
+// Jobs (DD-WE-010), and any other outcome
 // (including non-tekton/non-job engines) fails the WFE with a
-// resource-locked message. shouldReturn is true when the caller must
-// immediately return (result, res, err); when false, createResult replaces
-// the caller's create result (Job retry succeeded) and processing continues.
+// fail-closed collision message. The caller always returns after this decision.
 // Extracted from createPendingExecutionResource (Wave 6 6e-ii GREEN: nestif
 // remediation) — pure code motion, no behavior change.
-func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, exec weexecutor.Executor, createErr error, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
+func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createErr error) (*weexecutor.CreateResult, ctrl.Result, error) {
 	if wfe.Spec.WorkflowRef.ExecutionEngine == workflowexecutionv1alpha1.ExecutionEngineTekton {
 		result, handleErr := r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
-		return &weexecutor.CreateResult{}, result, handleErr, true
+		return &weexecutor.CreateResult{}, result, handleErr
 	}
 
-	// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
-	// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
-	// and retry creation. If still running, the lock is valid -- fail the WFE.
-	if wfe.Spec.WorkflowRef.ExecutionEngine == "job" {
-		retryResult, handled, requeueForGC, originalWFE := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
-		switch {
-		case handled:
-			return retryResult, ctrl.Result{}, nil, false
-		case requeueForGC:
-			logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
-			return &weexecutor.CreateResult{}, ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil, true
-		case originalWFE != "":
-			// Issue #190: Valid lock owned by another WFE — classify as Deduplicated.
+	// DD-WE-010: Job identity is per WFE/RR, so an AlreadyExists collision is
+	// never resolved by deleting the existing Job. The executor has already
+	// recognized an exact same-WFE retry; reaching this branch means the
+	// collision is foreign or could not be verified.
+	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob {
+		originalWFE := r.getOriginalWFEFromJob(ctx, wfe.Spec.ClusterID, resourceName)
+		if originalWFE != "" && originalWFE != wfe.Name {
+			// Issue #190: preserve the existing collision classification, but
+			// never delete or replace the Job that supplied the evidence.
 			markErr := r.MarkFailedAsDeduplicated(ctx, wfe, originalWFE)
-			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
+			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr
 		}
 	}
 
 	markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-		fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
-	return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
+		fmt.Sprintf("Execution resource %s already exists and could not be verified", resourceName))
+	return &weexecutor.CreateResult{}, ctrl.Result{}, markErr
 }
 
 // finalizePendingToRunning persists the created execution resource's
@@ -448,10 +466,11 @@ func (r *WorkflowExecutionReconciler) finalizePendingToRunning(ctx context.Conte
 	// Gap #6: Record execution workflow started audit event (BR-AUDIT-005)
 	// ========================================
 	if err := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, createdName, r.ExecutionNamespace); err != nil {
-		logger.V(1).Info("Failed to record execution.workflow.started audit event", "error", err)
+		logger.Error(err, "Failed to record mandatory execution.workflow.started audit event")
 		weconditions.SetAuditRecorded(wfe, false,
 			weconditions.ReasonAuditFailed,
 			fmt.Sprintf("Failed to record audit event: %v", err))
+		return ctrl.Result{}, fmt.Errorf("record mandatory execution.workflow.started audit event: %w", err)
 	} else {
 		weconditions.SetAuditRecorded(wfe, true,
 			weconditions.ReasonAuditSucceeded,

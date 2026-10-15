@@ -19,8 +19,12 @@ package audit
 import (
 	"testing"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -122,5 +126,52 @@ var _ = Describe("buildExecutionStartedPayload / buildWorkflowExecutionAuditPayl
 		Expect(startedPayload.WorkflowName.IsSet()).To(BeFalse())
 		Expect(completedPayload.ActionType.IsSet()).To(BeFalse())
 		Expect(completedPayload.WorkflowName.IsSet()).To(BeFalse())
+	})
+})
+
+var _ = Describe("DD-AUDIT-010 idempotent execution audit identity", func() {
+	It("UT-AUDIT-2512-001: derives a stable event ID per WFE and logical event", func() {
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{ObjectMeta: metav1.ObjectMeta{
+			Name: "wfe-audit-idempotent", Namespace: "kubernaut-system",
+		}}
+
+		first := workflowExecutionAuditEventID(wfe, EventTypeExecutionStarted)
+		retry := workflowExecutionAuditEventID(wfe, EventTypeExecutionStarted)
+		completed := workflowExecutionAuditEventID(wfe, EventTypeCompleted)
+		recreated := wfe.DeepCopy()
+		recreated.UID = types.UID("123e4567-e89b-12d3-a456-426614174099")
+
+		Expect(first).To(Equal(retry))
+		Expect(completed).NotTo(Equal(first))
+		Expect(workflowExecutionAuditEventID(recreated, EventTypeExecutionStarted)).NotTo(Equal(first))
+	})
+
+	It("UT-AUDIT-2512-002: includes generic execution and RR identity in the payload", func() {
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{Name: "wfe-audit-ref", Namespace: "kubernaut-system"},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				ClusterID: "cluster-a",
+				RemediationRequestRef: corev1.ObjectReference{
+					UID: types.UID("550e8400-e29b-41d4-a716-446655440099"),
+				},
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					ExecutionEngine: "job",
+				}},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				ExecutionRef: &corev1.LocalObjectReference{Name: "wfe-550e8400-e29b-41d4-a716-446655440099-abcd"},
+			},
+		}
+
+		payload := buildWorkflowExecutionAuditPayload(wfe)
+
+		Expect(payload.ExecutionResourceKind.IsSet()).To(BeTrue())
+		Expect(payload.ExecutionResourceKind.Value).To(Equal("Job"))
+		Expect(payload.ExecutionResourceName.IsSet()).To(BeTrue())
+		Expect(payload.ExecutionResourceName.Value).To(Equal(wfe.Status.ExecutionRef.Name))
+		Expect(payload.ExecutionClusterID.IsSet()).To(BeTrue())
+		Expect(payload.ExecutionClusterID.Value).To(Equal("cluster-a"))
+		Expect(payload.RemediationRequestUID.IsSet()).To(BeTrue())
+		Expect(payload.RemediationRequestUID.Value.String()).To(Equal(string(wfe.Spec.RemediationRequestRef.UID)))
 	})
 })

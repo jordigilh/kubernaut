@@ -78,8 +78,11 @@ type Executor interface {
 	// AWX job) in the specified execution namespace. Returns a CreateResult
 	// containing the resource name and any non-fatal warnings.
 	//
-	// The execution resource name MUST be deterministic based on targetResource
-	// to provide atomic resource locking (DD-WE-003).
+	// Execution-resource identity is backend-specific. Tekton retains its
+	// target-derived compatibility identity, while Job uses the immutable
+	// RemediationRequest/WFE identity from JobExecutionResourceName (DD-WE-010).
+	// Active-target locking is owned by RemediationOrchestrator (DD-RO-002), not
+	// by assuming that every backend name is a target lock.
 	//
 	// DD-WE-006: opts.Dependencies carries schema-declared infrastructure dependencies
 	// to be mounted as volumes (Job) or workspace bindings (Tekton).

@@ -153,8 +153,13 @@ func (r *WorkflowExecutionReconciler) fetchTektonPipelineRunForMark(ctx context.
 	if wfe.Spec.WorkflowRef.ExecutionEngine != workflowexecutionv1alpha1.ExecutionEngineTekton {
 		return nil
 	}
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		return nil
+	}
 	var pr tektonv1.PipelineRun
-	if err := r.Get(ctx, client.ObjectKey{
+	pr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := executionClient.Get(ctx, client.ObjectKey{
 		Name:      wfe.Status.ExecutionRef.Name,
 		Namespace: r.ExecutionNamespace,
 	}, &pr); err != nil {
@@ -176,6 +181,27 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		logger.V(1).Info("Could not resolve execution engine in terminal phase (non-fatal)", "error", engineErr)
 	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
+
+	// A terminal transition persists the phase before emitting its audit event.
+	// If the audit write fails, the error causes a retry, but the next reconcile
+	// enters this terminal path rather than MarkCompleted/MarkFailed again. Retry
+	// the missing terminal audit here until AuditRecorded is true (ADR-032,
+	// BR-AUDIT-005). Minimal unit reconcilers without status/audit managers retain
+	// their cleanup-only behavior; production wiring supplies both managers.
+	if r.AuditManager != nil && r.StatusManager != nil &&
+		!weconditions.IsConditionTrue(wfe, weconditions.ConditionAuditRecorded) {
+		var auditFn func(context.Context, *workflowexecutionv1alpha1.WorkflowExecution) error
+		eventName := "workflow.failed"
+		if wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted {
+			eventName = "workflow.completed"
+			auditFn = r.AuditManager.RecordWorkflowCompleted
+		} else {
+			auditFn = r.AuditManager.RecordWorkflowFailed
+		}
+		if err := r.recordTerminalAudit(ctx, wfe, eventName, auditFn, logger); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// WE-H3: No completion time in terminal phase means we can't calculate cooldown,
 	// but we must still release execution resources. Set completionTime now so cleanup proceeds.
@@ -297,14 +323,19 @@ func (r *WorkflowExecutionReconciler) releaseExecutionLockViaExecutor(ctx contex
 // code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) releaseExecutionLockFallback(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cooldown time.Duration, logger logr.Logger) error {
 	prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		return fmt.Errorf("get execution client for PipelineRun cleanup: %w", clientErr)
+	}
 	var existing tektonv1.PipelineRun
-	err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing)
+	existing.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	err := executionClient.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing)
 	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get PipelineRun for ownership check")
 		return err
 	}
 	if err == nil && existing.Labels["kubernaut.ai/workflow-execution"] == wfe.Name {
-		if delErr := r.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
+		if delErr := executionClient.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
 			logger.Error(delErr, "Failed to delete PipelineRun after cooldown")
 			return delErr
 		}
@@ -317,12 +348,12 @@ func (r *WorkflowExecutionReconciler) releaseExecutionLockFallback(ctx context.C
 }
 
 // ========================================
-// CheckCooldownActive checks if cooldown is active for a target resource in a
-// specific execution cluster (BR-WE-009, BR-FLEET-004).
+// CheckCooldownActive checks if cooldown is active for a workflow/target pair
+// in a specific execution cluster (BR-WE-010, BR-FLEET-004).
 // Returns (remaining duration, is active)
 // currentWFEName format: "namespace/name" to uniquely identify the current WFE
 // ========================================
-func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, targetResource, clusterID, currentWFEKey string) (time.Duration, bool) {
+func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, targetResource, workflowID, clusterID, currentWFEKey string) (time.Duration, bool) {
 	logger := log.FromContext(ctx)
 
 	// Get cooldown period (use default if not set)
@@ -331,7 +362,8 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 		cooldown = DefaultCooldownPeriod
 	}
 
-	// Query all WorkflowExecutions with the same targetResource.
+	// Query all WorkflowExecutions with the same targetResource, then scope the
+	// defense-in-depth cooldown to the same workflow ID below.
 	// Retry up to 3 times with short backoff to tolerate transient informer/API
 	// pressure in resource-constrained environments (e.g., Kind CI clusters).
 	// Only fail-closed if ALL attempts fail (DD-WE-001 compliance).
@@ -364,21 +396,7 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 			continue
 		}
 
-		// Target resource names can collide across registered hub/spoke
-		// clusters. A completed WFE on another execution cluster must not
-		// impose this cluster's cooldown (BR-FLEET-004).
-		if otherWFE.Spec.ClusterID != clusterID {
-			continue
-		}
-
-		// Only check terminal phases (Completed or Failed)
-		if otherWFE.Status.Phase != workflowexecutionv1alpha1.PhaseCompleted &&
-			otherWFE.Status.Phase != workflowexecutionv1alpha1.PhaseFailed {
-			continue
-		}
-
-		// Check if completion time is set
-		if otherWFE.Status.CompletionTime == nil {
+		if !isCooldownCandidate(otherWFE, workflowID, clusterID) {
 			continue
 		}
 
@@ -400,6 +418,20 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 
 	// No active cooldown found
 	return 0, false
+}
+
+func isCooldownCandidate(wfe *workflowexecutionv1alpha1.WorkflowExecution, workflowID, clusterID string) bool {
+	// Target resource names can collide across registered hub/spoke clusters. A
+	// completed WFE on another execution cluster must not impose this cluster's
+	// cooldown (BR-FLEET-004).
+	if wfe.Spec.ClusterID != clusterID || wfe.Spec.WorkflowRef.WorkflowID != workflowID {
+		return false
+	}
+	if wfe.Status.Phase != workflowexecutionv1alpha1.PhaseCompleted &&
+		wfe.Status.Phase != workflowexecutionv1alpha1.PhaseFailed {
+		return false
+	}
+	return wfe.Status.CompletionTime != nil
 }
 
 // ========================================
@@ -503,13 +535,18 @@ func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDeleteViaExecut
 // pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDeleteFallback(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) error {
 	prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		return fmt.Errorf("get execution client for PipelineRun finalization cleanup: %w", clientErr)
+	}
 	pr := &tektonv1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      prName,
 			Namespace: r.ExecutionNamespace,
 		},
 	}
-	if err := r.Delete(ctx, pr); err != nil {
+	pr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if err := executionClient.Delete(ctx, pr); err != nil {
 		if !apierrors.IsNotFound(err) {
 			logger.Error(err, "Failed to delete PipelineRun during finalization")
 			return err

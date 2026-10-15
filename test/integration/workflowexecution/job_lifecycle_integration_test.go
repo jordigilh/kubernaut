@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -36,6 +37,8 @@ import (
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
+
+const differentWorkflowID = "test-workflow-different"
 
 // Job Backend Integration Tests (BR-WE-014)
 //
@@ -168,9 +171,9 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-id", "test-workflow"))
 			Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/execution-engine", "job"))
 
-			By("Verifying Job uses deterministic naming (DD-WE-003)")
-			expectedName := executor.ExecutionResourceName(targetResource)
-			Expect(job.Name).To(Equal(expectedName), "Job name must be deterministic for resource locking")
+			By("Verifying Job uses the immutable WFE/RR identity (DD-WE-010)")
+			expectedName := executor.JobExecutionResourceName(wfe)
+			Expect(job.Name).To(Equal(expectedName), "Job name must be deterministic for this WFE/RR execution")
 
 			By("Verifying container spec")
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -303,12 +306,12 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
-			By("Verifying the Job name is deterministic")
+			By("Verifying the Job name uses the immutable WFE/RR identity")
 			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			expectedName := executor.ExecutionResourceName(targetResource)
+			expectedName := executor.JobExecutionResourceName(wfe1)
 			Expect(job.Name).To(Equal(expectedName),
-				"Job name must be deterministic based on target resource for resource locking")
+				"Job name must be deterministic for this WFE/RR execution")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-005: Deterministic Job naming for resource locking verified\n")
 		})
@@ -353,6 +356,39 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(prList.Items).To(BeEmpty(), "No Tekton resources should be created for Job engine")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-006: Executor dispatch correctly selected Job backend\n")
+		})
+
+		It("IT-WE-2512-003: repeated production reconciles keep one Job and one execution reference", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-reentry-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("reentry", targetResource)
+			defer cleanupJobWFE(wfe)
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+
+			request := ctrl.Request{NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}}
+			for i := 0; i < 3; i++ {
+				_, err = reconciler.Reconcile(ctx, request)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			jobs := &batchv1.JobList{}
+			Expect(k8sClient.List(ctx, jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{
+				"kubernaut.ai/workflow-execution": wfe.Name,
+			})).To(Succeed())
+			Expect(jobs.Items).To(HaveLen(1))
+			updated, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.ExecutionRef).NotTo(BeNil())
+			Expect(updated.Status.ExecutionRef.Name).To(Equal(job.Name))
 		})
 	})
 
@@ -669,125 +705,6 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			GinkgoWriter.Printf("✅ IT-WE-014-015: Job failure conditions + FailureDetails verified\n")
 		})
 	})
-
-	// ========================================
-	// AlreadyExists / Race Condition for Job Backend (IT-WE-014-016 to IT-WE-014-017)
-	// BR-WE-002 equivalent: Idempotent execution resource creation
-	// ========================================
-
-	Context("Job AlreadyExists Race Condition (BR-WE-002)", func() {
-
-		It("should fail second WFE when Job already exists for same target (IT-WE-014-016)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-conflict-%d", time.Now().UnixNano())
-
-			wfe1 := createUniqueJobWFE("conflict-job1", targetResource)
-			defer func() {
-				cleanupJobWFE(wfe1)
-			}()
-
-			By("Creating first WFE targeting the resource")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
-
-			By("Waiting for first WFE to reach Running (Job created)")
-			Eventually(func() string {
-				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
-				if err != nil {
-					return ""
-				}
-				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
-
-			By("Verifying Job exists for first WFE")
-			_, err := waitForJobCreation(wfe1.Name, 5*time.Second)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Creating second WFE for SAME target resource")
-			wfe2 := createUniqueJobWFE("conflict-job2", targetResource)
-			defer func() {
-				cleanupJobWFE(wfe2)
-			}()
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
-
-			By("Verifying second WFE fails with ExecutionResourceExists")
-			Eventually(func() string {
-				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
-				if err != nil {
-					return ""
-				}
-				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
-				"Second WFE should fail due to Job name collision (resource locked)")
-
-			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(failedWFE2.Status.FailureDetails.Reason).To(Equal("Deduplicated"),
-				"Failure reason should be 'Deduplicated' (Issue #190: collision with labeled Job)")
-			Expect(failedWFE2.Status.DeduplicatedBy).To(Equal(wfe1.Name),
-				"DeduplicatedBy should reference the first WFE")
-
-			GinkgoWriter.Printf("✅ IT-WE-014-016: Second WFE failed with ExecutionResourceExists\n")
-		})
-
-		It("should keep first WFE unaffected when second WFE fails on AlreadyExists (IT-WE-014-017)", func() {
-			targetResource := fmt.Sprintf("default/deployment/job-isolation-%d", time.Now().UnixNano())
-
-			wfe1 := createUniqueJobWFE("isolation-job1", targetResource)
-			defer func() {
-				cleanupJobWFE(wfe1)
-			}()
-
-			By("Creating first WFE targeting the resource")
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
-
-			By("Waiting for first WFE to reach Running")
-			Eventually(func() string {
-				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
-				if err != nil {
-					return ""
-				}
-				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
-
-			By("Creating second WFE for SAME target (will fail)")
-			wfe2 := createUniqueJobWFE("isolation-job2", targetResource)
-			defer func() {
-				cleanupJobWFE(wfe2)
-			}()
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
-
-			By("Waiting for second WFE to fail")
-			Eventually(func() string {
-				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
-				if err != nil {
-					return ""
-				}
-				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
-
-			By("Verifying first WFE remains Running (unaffected)")
-			wfe1Key := types.NamespacedName{Name: wfe1.Name, Namespace: wfe1.Namespace}
-			wfe1Updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-			Expect(k8sClient.Get(ctx, wfe1Key, wfe1Updated)).To(Succeed())
-			Expect(wfe1Updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"First WFE should continue running unaffected by second WFE's failure")
-
-			By("Completing first WFE normally to verify full isolation")
-			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(simulateJobCompletion(job, true)).To(Succeed())
-
-			Eventually(func() string {
-				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
-				if err != nil {
-					return ""
-				}
-				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
-				"First WFE should complete successfully despite second WFE's failure")
-
-			GinkgoWriter.Printf("✅ IT-WE-014-017: First WFE completed normally, isolated from second WFE's AlreadyExists failure\n")
-		})
-	})
 })
 
 // ========================================
@@ -799,7 +716,7 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 
 	Context("Sequential Remediation", func() {
 
-		It("should allow second WFE after first completes for same target (IT-WE-374-001)", func() {
+		It("should allow a different workflow WFE after first completes for same target (IT-WE-2512-001, IT-WE-374-001)", func() {
 			targetResource := fmt.Sprintf("default/deployment/seq-remediation-%d", time.Now().UnixNano())
 
 			By("Phase 1: Creating first WFE targeting the resource")
@@ -820,8 +737,9 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			By("Getting the Job and simulating successful completion")
 			job1, err := waitForJobCreation(wfe1.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			expectedJobName := executor.ExecutionResourceName(targetResource)
-			Expect(job1.Name).To(Equal(expectedJobName), "Job name must be deterministic")
+			expectedJobName := executor.JobExecutionResourceName(wfe1)
+			Expect(job1.Name).To(Equal(expectedJobName), "Job name must be deterministic for WFE1/RR1")
+			oldJobName := job1.Name
 
 			Expect(simulateJobCompletion(job1, true)).To(Succeed())
 
@@ -835,12 +753,14 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
 				"WFE1 should reach Completed phase")
 
-			By("Phase 2: Creating second WFE for the SAME target resource")
+			By("Phase 2: Creating a different workflow for the SAME target resource")
 			wfe2 := createUniqueJobWFE("seq2", targetResource)
+			wfe2.Spec.WorkflowRef.WorkflowID = differentWorkflowID
+			wfe2.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/sequence-b:v2"
 			defer cleanupJobWFE(wfe2)
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
-			By("Waiting for second WFE to reach Running (stale Job cleaned up, new Job created)")
+			By("Waiting for second WFE to reach Running without stale Job replacement")
 			Eventually(func() string {
 				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
 				if err != nil {
@@ -848,13 +768,19 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 				}
 				return updated.Status.Phase
 			}, 30*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"WFE2 should reach Running phase (Issue #374: completed Job cleaned up)")
+				"WFE2 should reach Running phase with its own identity")
 
 			By("Verifying a new Job was created for WFE2")
 			job2, err := waitForJobCreation(wfe2.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(job2.Name).To(Equal(expectedJobName),
-				"New Job should have the same deterministic name (same target resource)")
+			Expect(job2.Name).To(Equal(executor.JobExecutionResourceName(wfe2)),
+				"New Job should use WFE2/RR2 identity")
+			Expect(job2.Name).ToNot(Equal(oldJobName), "WFE2 must not reuse WFE1's retained Job")
+			Expect(job2.Spec.Template.Spec.Containers[0].Image).To(Equal(wfe2.Spec.WorkflowRef.ExecutionBundle))
+
+			var retainedJob batchv1.Job
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: oldJobName, Namespace: WorkflowExecutionNS}, &retainedJob)).To(Succeed(),
+				"completed WFE1 Job must remain diagnosable while WFE2 is created")
 
 			By("Simulating second Job completion")
 			Expect(simulateJobCompletion(job2, true)).To(Succeed())
@@ -869,61 +795,134 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
 				"WFE2 should reach Completed phase")
 
-			GinkgoWriter.Printf("✅ IT-WE-374-001: Sequential remediation succeeded (completed Job cleaned up)\n")
+			GinkgoWriter.Printf("✅ IT-WE-2512-001: Sequential remediation kept retained Job identity separate\n")
 		})
-	})
 
-	Context("Concurrent Lock Preservation", func() {
-
-		It("should block second WFE when first is still running (IT-WE-374-002)", func() {
-			targetResource := fmt.Sprintf("default/deployment/concurrent-lock-%d", time.Now().UnixNano())
-
-			By("Creating first WFE targeting the resource")
-			wfe1 := createUniqueJobWFE("lock-active1", targetResource)
+		It("should apply cooldown only to the same workflow and allow a different workflow (IT-WE-2512-004)", func() {
+			targetResource := fmt.Sprintf("default/deployment/cooldown-scope-%d", time.Now().UnixNano())
+			wfe1 := createUniqueJobWFE("cooldown-scope-1", targetResource)
+			wfeSame := createUniqueJobWFE("cooldown-scope-same", targetResource)
+			wfeDifferent := createUniqueJobWFE("cooldown-scope-different", targetResource)
+			wfeDifferent.Spec.WorkflowRef.WorkflowID = differentWorkflowID
+			wfeDifferent.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/cooldown-different:v2"
 			defer cleanupJobWFE(wfe1)
-			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			defer cleanupJobWFE(wfeSame)
+			defer cleanupJobWFE(wfeDifferent)
 
-			By("Waiting for first WFE to reach Running (Job actively executing)")
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
 				if err != nil {
 					return ""
 				}
 				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"WFE1 should reach Running phase (Job actively executing)")
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+			job1, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(simulateJobCompletion(job1, true)).To(Succeed())
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
-			By("Creating second WFE for the SAME target while first is still running")
-			wfe2 := createUniqueJobWFE("lock-active2", targetResource)
+			Expect(k8sClient.Create(ctx, wfeSame)).To(Succeed())
+			Eventually(func() string {
+				updated, err := getWFE(wfeSame.Name, wfeSame.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhasePending)),
+				"same workflow must remain Pending during cooldown")
+			Consistently(func() int {
+				jobs := &batchv1.JobList{}
+				if err := k8sClient.List(ctx, jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{
+					"kubernaut.ai/workflow-execution": wfeSame.Name,
+				}); err != nil {
+					return -1
+				}
+				return len(jobs.Items)
+			}, 2*time.Second, 200*time.Millisecond).Should(Equal(0),
+				"same-workflow cooldown must prevent Job creation")
+
+			Expect(k8sClient.Create(ctx, wfeDifferent)).To(Succeed())
+			Eventually(func() string {
+				updated, err := getWFE(wfeDifferent.Name, wfeDifferent.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)),
+				"different workflow must not be blocked by the prior workflow cooldown")
+			jobDifferent, err := waitForJobCreation(wfeDifferent.Name, 5*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(jobDifferent.Spec.Template.Spec.Containers[0].Image).To(Equal(wfeDifferent.Spec.WorkflowRef.ExecutionBundle))
+		})
+	})
+
+	Context("Retained failed execution", func() {
+		It("should keep the failed Job while a different workflow creates a new Job (IT-WE-2512-002)", func() {
+			previousRetain := reconciler.RetainFailedExecutions
+			previousRetention := reconciler.FailedExecutionRetention
+			wfe1 := createUniqueJobWFE("retained-failed-job1", fmt.Sprintf("default/deployment/job-failed-cycle-%d", time.Now().UnixNano()))
+			wfe1.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/failed-a:v1"
+			wfe2 := createUniqueJobWFE("retained-failed-job2", wfe1.Spec.TargetResource)
+			wfe2.Spec.WorkflowRef.WorkflowID = differentWorkflowID
+			wfe2.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/failed-b:v2"
+			defer cleanupJobWFE(wfe1)
 			defer cleanupJobWFE(wfe2)
-			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+			defer func() {
+				reconciler.RetainFailedExecutions = previousRetain
+				reconciler.FailedExecutionRetention = previousRetention
+			}()
+			reconciler.RetainFailedExecutions = true
+			reconciler.FailedExecutionRetention = time.Minute
 
-			By("Verifying second WFE fails with target resource locked")
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+			failedJob, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(simulateJobCompletion(failedJob, false)).To(Succeed())
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
+
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 			Eventually(func() string {
 				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
 				if err != nil {
 					return ""
 				}
 				return updated.Status.Phase
-			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseFailed),
-				"WFE2 should fail because running Job is a valid lock (BR-WE-009)")
-
-			By("Verifying failure message indicates resource is locked")
-			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+			newJob, err := waitForJobCreation(wfe2.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(failedWFE2.Status.FailureDetails.Message).To(
-				ContainSubstring("already exists"),
-				"Failure message should indicate resource collision")
+			Expect(newJob.Name).ToNot(Equal(failedJob.Name))
+			Expect(newJob.Spec.Template.Spec.Containers[0].Image).To(Equal(wfe2.Spec.WorkflowRef.ExecutionBundle))
 
-			By("Verifying first WFE remains Running (unaffected)")
-			wfe1Updated, err := getWFE(wfe1.Name, wfe1.Namespace)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(wfe1Updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"WFE1 should continue running unaffected")
-
-			GinkgoWriter.Printf("✅ IT-WE-374-002: Concurrent lock preserved (running Job blocks new WFE)\n")
+			var retainedJob batchv1.Job
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: failedJob.Name, Namespace: WorkflowExecutionNS}, &retainedJob)).To(Succeed(),
+				"the failed Job must remain diagnosable while WFE2 is created")
+			Expect(retainedJob.Spec.Template.Spec.Containers[0].Image).To(Equal(wfe1.Spec.WorkflowRef.ExecutionBundle))
 		})
 	})
+
+	// Active-target locking is owned by RemediationOrchestrator and is covered
+	// by IT-RO-2512-001. Direct WorkflowExecution collision tests were removed
+	// when Job identity stopped being a target lock (DD-RO-002/DD-WE-010).
 })
 
 // ========================================
@@ -1159,5 +1158,81 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		Expect(eventData.RetryCount.Value).To(Equal(3))
 
 		GinkgoWriter.Printf("✅ IT-WE-019-004: workflow.completed event retry_count == 3\n")
+	})
+
+	It("should reconstruct sequential Job identities from each RR correlation (IT-WE-2512-005)", func() {
+		targetResource := fmt.Sprintf("default/deployment/job-audit-identity-%d", time.Now().UnixNano())
+		wfe1 := createUniqueJobWFE("audit-identity-1", targetResource)
+		wfe1.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/audit-a:v1"
+		wfe2 := createUniqueJobWFE("audit-identity-2", targetResource)
+		wfe2.Spec.WorkflowRef.WorkflowID = differentWorkflowID
+		wfe2.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/audit-b:v2"
+		defer cleanupJobWFE(wfe1)
+		defer cleanupJobWFE(wfe2)
+
+		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+		Eventually(func() string {
+			updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+			if err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+		job1, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		flushAuditBuffer()
+		Eventually(func() bool {
+			events, queryErr := queryAuditEvents(dsClients.OpenAPIClient, wfe1.Spec.RemediationRequestRef.Name, nil)
+			if queryErr != nil {
+				return false
+			}
+			for _, event := range events {
+				if event.EventType != weaudit.EventTypeExecutionStarted {
+					continue
+				}
+				data, ok := event.EventData.GetWorkflowExecutionAuditPayload()
+				if ok && data.PipelinerunName.IsSet() && data.PipelinerunName.Value == job1.Name && data.ContainerImage == wfe1.Spec.WorkflowRef.ExecutionBundle {
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"RR1 correlation must identify WFE1's exact Job and bundle")
+
+		Expect(simulateJobCompletion(job1, true)).To(Succeed())
+		_, err = waitForWFEPhase(wfe1.Name, wfe1.Namespace, workflowexecutionv1alpha1.PhaseCompleted, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+		Eventually(func() string {
+			updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+			if err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+		job2, err := waitForJobCreation(wfe2.Name, 5*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(job2.Name).ToNot(Equal(job1.Name))
+
+		flushAuditBuffer()
+		Eventually(func() bool {
+			events, queryErr := queryAuditEvents(dsClients.OpenAPIClient, wfe2.Spec.RemediationRequestRef.Name, nil)
+			if queryErr != nil {
+				return false
+			}
+			for _, event := range events {
+				if event.EventType != weaudit.EventTypeExecutionStarted {
+					continue
+				}
+				data, ok := event.EventData.GetWorkflowExecutionAuditPayload()
+				if ok && data.PipelinerunName.IsSet() && data.PipelinerunName.Value == job2.Name && data.ContainerImage == wfe2.Spec.WorkflowRef.ExecutionBundle {
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"RR2 correlation must identify WFE2's exact Job and bundle")
 	})
 })

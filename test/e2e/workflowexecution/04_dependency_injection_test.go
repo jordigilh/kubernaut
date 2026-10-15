@@ -26,6 +26,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -82,6 +83,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName1,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{

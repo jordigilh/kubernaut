@@ -603,7 +603,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	// Reference: DD-RO-002, DD-WE-001
 	// ========================================
 	Context("CheckResourceBusy", func() {
-		It("should block when Running WFE on same target exists", func() {
+		It("UT-WE-2512-008: should block when Running WFE on same target exists", func() {
 			// Create running WFE on target resource
 			wfe := &workflowexecutionv1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{

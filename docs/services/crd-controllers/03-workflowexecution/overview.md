@@ -1,12 +1,17 @@
 ## Overview
 
-**Version**: 4.3
-**Last Updated**: 2026-03-21
-**Status**: ✅ Updated for Lock Persistence (DD-WE-003) and per-workflow ServiceAccounts (DD-WE-005 v2.0)
+**Version**: 4.4
+**Last Updated**: 2026-10-14
+**Status**: ✅ Updated for per-RR Job identity (DD-WE-010), Lock Persistence (DD-WE-003), and per-workflow ServiceAccounts (DD-WE-005 v2.0)
 
 ---
 
 ## Changelog
+
+### Version 4.4 (2026-10-14)
+**Updates**:
+- ✅ **DD-WE-010 / Issue #2512**: Job names use the full parent RR UID plus a four-character WFE UID suffix; retained Jobs are never replaced to make a new cycle possible.
+- ✅ **DD-RO-002**: RemediationOrchestrator remains the active-target lock authority; WorkflowExecution cooldown is scoped to the same workflow ID.
 
 ### Version 4.3 (2026-03-21)
 **Updates**:
@@ -292,7 +297,7 @@ stateDiagram-v2
 | **Workflow Storage** | OCI bundle references | [ADR-043](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) |
 | **Resource Locking** | Target-scoped, skip-not-queue | [DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) |
 | **Execution Namespace** | Dedicated `kubernaut-workflows` | [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md) |
-| **Lock Persistence** | Deterministic PipelineRun name | [DD-WE-003](../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md) |
+| **Lock Persistence** | RO-owned target lock; backend-specific identity (Tekton target compatibility name, Job per-RR/WFE name) | [DD-WE-003](../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md), [DD-WE-010](../../../architecture/decisions/DD-WE-010-job-identity-per-remediation-request.md) |
 | **Execution SA** | Per-workflow ServiceAccount reference (schema → WE → PipelineRun) | [DD-WE-005](../../../architecture/decisions/DD-WE-005-workflow-scoped-rbac.md) v2.0 |
 | **API Group** | `kubernaut.ai` | [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 | **Contract Alignment** | Enhanced failure details | [DD-CONTRACT-001](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md) |

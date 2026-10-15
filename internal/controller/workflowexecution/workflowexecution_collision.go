@@ -43,85 +43,18 @@ import (
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
-// handleJobAlreadyExists implements Issue #374 pre-execution cleanup for completed Jobs.
-// When a Job creation fails with AlreadyExists, this method checks if the existing Job
-// is in a terminal state. If so, it cleans up the stale Job and retries creation.
-//
-// Returns:
-//
-//	(createResult, true, false, "") — Job cleaned up and recreation succeeded.
-//	(nil, false, true, "")          — Cleanup accepted but GC pending; caller should requeue.
-//	(nil, false, false, name)       — Lock is valid (Job still running); 4th value is original WFE name from label (Issue #190).
-//	(nil, false, false, "")         — Unrecoverable error or executor type mismatch.
-func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
-	ctx context.Context,
-	exec weexecutor.Executor,
-	wfe *workflowexecutionv1alpha1.WorkflowExecution,
-	resourceName string,
-	createOpts weexecutor.CreateOptions,
-) (*weexecutor.CreateResult, bool, bool, string) {
-	logger := log.FromContext(ctx)
-
-	jobExec, ok := exec.(*weexecutor.JobExecutor)
-	if !ok {
-		return nil, false, false, ""
-	}
-
-	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.ClusterID, wfe.Spec.TargetResource, r.ExecutionNamespace)
-	if checkErr != nil {
-		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
-		return nil, false, false, ""
-	}
-	if !completed {
-		// Issue #190: Lock is valid (Job still running). Try to identify the
-		// original WFE from the Job's label so the caller can classify this
-		// as Deduplicated rather than Unknown.
-		originalWFE := r.getOriginalWFEFromJob(ctx, resourceName)
-		return nil, false, false, originalWFE
-	}
-
-	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
-		"resource", resourceName)
-
-	ownerName := r.getOriginalWFEFromJob(ctx, resourceName)
-	if ownerName == "" {
-		logger.Info("Terminal Job has no WorkflowExecution owner; refusing replacement", "resource", resourceName)
-		return nil, false, false, ""
-	}
-	cleanupWFE := &workflowexecutionv1alpha1.WorkflowExecution{
-		ObjectMeta: metav1.ObjectMeta{Name: ownerName},
-		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			TargetResource: wfe.Spec.TargetResource,
-			ClusterID:      wfe.Spec.ClusterID,
-		},
-	}
-	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
-		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
-		return nil, false, false, ""
-	}
-
-	retryResult, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
-	if retryErr != nil {
-		if apierrors.IsAlreadyExists(retryErr) {
-			logger.Info("Job cleanup accepted but GC pending, will requeue (Issue #383)",
-				"resource", resourceName)
-			return nil, false, true, ""
-		}
-		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
-		return nil, false, false, ""
-	}
-
-	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
-		"resource", resourceName, "newJob", retryResult.ResourceName)
-	return retryResult, true, false, ""
-}
-
 // getOriginalWFEFromJob fetches the existing Job by resource name and reads the
 // kubernaut.ai/workflow-execution label. Returns empty string if the Job cannot
-// be found or the label is absent (Issue #190).
-func (r *WorkflowExecutionReconciler) getOriginalWFEFromJob(ctx context.Context, resourceName string) string {
+// be found or the label is absent. It is used only for collision classification;
+// labels are never used to authorize deletion or adoption (DD-WE-010).
+func (r *WorkflowExecutionReconciler) getOriginalWFEFromJob(ctx context.Context, clusterID, resourceName string) string {
+	executionClient, err := r.executionClientFor(ctx, clusterID)
+	if err != nil {
+		return ""
+	}
 	var job batchv1.Job
-	if err := r.Get(ctx, client.ObjectKey{
+	job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+	if err := executionClient.Get(ctx, client.ObjectKey{
 		Name:      resourceName,
 		Namespace: r.ExecutionNamespace,
 	}, &job); err != nil {
@@ -141,8 +74,15 @@ func (r *WorkflowExecutionReconciler) getOriginalWFEFromJob(ctx context.Context,
 func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, err error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		logger.Error(clientErr, "Failed to get execution client for existing PipelineRun", "clusterID", wfe.Spec.ClusterID)
+		markErr := r.MarkFailedWithReason(ctx, wfe, "RaceConditionError", fmt.Sprintf("PipelineRun already exists but execution client could not verify ownership: %v", clientErr))
+		return ctrl.Result{}, markErr
+	}
 	existingPR := &tektonv1.PipelineRun{}
-	if getErr := r.Get(ctx, client.ObjectKey{
+	existingPR.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
+	if getErr := executionClient.Get(ctx, client.ObjectKey{
 		Name:      resourceName,
 		Namespace: r.ExecutionNamespace,
 	}, existingPR); getErr != nil {
@@ -155,6 +95,12 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 		existingPR.Labels["kubernaut.ai/workflow-execution"] == wfe.Name &&
 		existingPR.Labels["kubernaut.ai/source-namespace"] == wfe.Namespace {
 		logger.Info("PipelineRun already exists and is ours, continuing", "name", resourceName)
+		if r.AuditManager == nil {
+			return ctrl.Result{}, fmt.Errorf("audit manager is required before adopting existing PipelineRun %s", resourceName)
+		}
+		if auditErr := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, resourceName, r.ExecutionNamespace); auditErr != nil {
+			return ctrl.Result{}, fmt.Errorf("record mandatory execution.workflow.started audit event for existing PipelineRun: %w", auditErr)
+		}
 
 		now := metav1.Now()
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
@@ -170,6 +116,9 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 			weconditions.SetExecutionCreated(wfe, true,
 				weconditions.ReasonExecutionCreated,
 				fmt.Sprintf("PipelineRun %s already exists (race condition)", resourceName))
+			weconditions.SetAuditRecorded(wfe, true,
+				weconditions.ReasonAuditSucceeded,
+				"Audit event execution.workflow.started recorded to DataStorage")
 
 			return nil
 		}); err != nil {
@@ -229,7 +178,11 @@ func (r *WorkflowExecutionReconciler) replaceFailedPipelineRun(ctx context.Conte
 	}
 
 	logger.Info("Replacing terminal retained PipelineRun", "name", resourceName, "owner", ownerNamespace+"/"+ownerName)
-	if deleteErr := r.Delete(ctx, existingPR); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		return ctrl.Result{}, false, fmt.Errorf("get execution client for terminal PipelineRun replacement: %w", clientErr)
+	}
+	if deleteErr := executionClient.Delete(ctx, existingPR); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
 		return ctrl.Result{}, false, fmt.Errorf("delete terminal retained PipelineRun: %w", deleteErr)
 	}
 	if r.ExecutorRegistry == nil {

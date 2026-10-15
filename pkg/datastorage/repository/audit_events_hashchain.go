@@ -25,6 +25,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // ========================================
@@ -141,6 +144,23 @@ func (r *AuditEventsRepository) hashEvent(previousHash string, event *AuditEvent
 	}
 	event.HashAlgorithm = HashAlgorithmSHA256Unkeyed
 	return calculateEventHash(previousHash, event)
+}
+
+// idempotencyFingerprint identifies the logical audit payload independently of
+// its chain position and write timestamp. Retries may receive a new timestamp
+// after a lost response, but they must not be allowed to reuse an event ID for
+// a different resource, outcome, or event_data payload (DD-AUDIT-010).
+func idempotencyFingerprint(event *AuditEvent) (string, error) {
+	eventForFingerprint := PrepareEventForHashing(event)
+	eventForFingerprint.EventID = uuid.Nil
+	eventForFingerprint.EventTimestamp = time.Time{}
+	eventForFingerprint.IdempotencyKey = false
+	payload, err := json.Marshal(eventForFingerprint)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal event for idempotency fingerprint: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // CalculateHashForVerification computes the expected hash for verification,

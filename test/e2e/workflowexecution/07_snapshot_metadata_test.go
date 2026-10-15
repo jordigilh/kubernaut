@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -29,6 +30,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -197,6 +199,7 @@ func newSnapshotWFE(options snapshotWFEOptions) *workflowexecutionv1alpha1.Workf
 				Kind:       "RemediationRequest",
 				Name:       "test-rr-" + options.name,
 				Namespace:  controllerNamespace,
+				UID:        types.UID(uuid.NewString()),
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID: options.workflowID, WorkflowName: options.workflowName, ActionType: "RestartPod", Version: "1.0.0",
