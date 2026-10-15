@@ -383,7 +383,7 @@ jobs:
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
           format: cyclonedx-json
@@ -438,7 +438,7 @@ jobs:
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
           format: cyclonedx-json
@@ -555,7 +555,7 @@ jobs:
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: helm-smoke-diagnostics-${{ matrix.tls_mode }}-${{ github.run_id }}
           path: /tmp/kind-smoke-logs/
@@ -705,7 +705,7 @@ jobs:
           echo "  Signed ${SVC} manifest list"
 
       - name: Download SBOM artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: sbom-${{ matrix.service }}-*
           path: sboms/
@@ -855,14 +855,14 @@ jobs:
           fetch-depth: 0
 
       - name: Download all SBOM artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: sbom-*
           path: sboms/
           merge-multiple: true
 
       - name: Download all provenance bundle artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: provenance-*
           path: provenance/
