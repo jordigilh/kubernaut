@@ -22,6 +22,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -72,6 +73,14 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 			logger.Error(getErr, "Execution resource not found - deleted externally",
 				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 			return r.MarkFailed(ctx, wfe, nil)
+		}
+		if errors.Is(getErr, weexecutor.ErrExecutionIdentityMismatch) {
+			logger.Error(getErr, "Execution resource identity mismatch - failing closed")
+			return r.MarkFailed(ctx, wfe, nil, &workflowexecutionv1alpha1.ExecutionStatusSummary{
+				Status:  corev1.ConditionFalse,
+				Reason:  workflowexecutionv1alpha1.FailureReasonConfigurationError,
+				Message: getErr.Error(),
+			})
 		}
 		return ctrl.Result{}, getErr
 	}

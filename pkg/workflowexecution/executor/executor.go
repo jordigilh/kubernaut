@@ -24,11 +24,18 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
+
+// ErrExecutionIdentityMismatch indicates that the named execution resource
+// belongs to a different workflow or has a different immutable template. It
+// is terminal for the WFE: retrying would risk observing or adopting foreign
+// execution state.
+var ErrExecutionIdentityMismatch = errors.New("execution resource identity mismatch")
 
 // CreateOptions carries optional configuration for execution resource creation.
 // Using a struct allows adding new fields without breaking the interface.

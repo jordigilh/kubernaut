@@ -526,7 +526,7 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 			matches = legacyJobIdentityMatches(&job, expected, wfe)
 		}
 		if !matches {
-			return nil, fmt.Errorf("execution Job %s/%s has mismatched identity or image", namespace, jobName)
+			return nil, fmt.Errorf("%w: execution Job %s/%s has mismatched identity or image", ErrExecutionIdentityMismatch, namespace, jobName)
 		}
 	}
 
