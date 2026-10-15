@@ -43,6 +43,6 @@ error observability, and remove duplication without creating new components.
 - `make test`
 
 Then run affected DataStorage, KA, Mock LLM, integration, fleet and full-pipeline
-targets. CI fullpipeline/KA E2E and focused helios08 journeys passed; six
-pre-existing KA integration label/re-enrichment failures remain separately
-classified from this feature.
+targets. CI fullpipeline/KA E2E and focused helios08 journeys passed; the
+remaining pre-existing KA integration label/re-enrichment failures remain
+separately classified from this feature.

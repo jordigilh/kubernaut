@@ -81,7 +81,7 @@ These updates are part of feature delivery, not post-CI remediation.
 | `make test-unit-kubernautagent` | Passed |
 | `make test-unit-mock-llm` | Passed |
 | `make test-integration-datastorage` | Passed |
-| `make test-integration-kubernautagent` | Local setup was capacity-limited; CI executed the lane with six unrelated baseline label/re-enrichment failures |
+| `make test-integration-kubernautagent` | Local setup was capacity-limited; CI executed the lane with pre-existing baseline label/re-enrichment failures |
 | `make test-e2e-fullpipeline GINKGO_FOCUS=2496 TEST_PROCS=1` | Passed in CI; focused `E2E-1293-006` and `E2E-FP-2496-002` also passed on helios08 |
 | `make test-e2e-fleet` | Passed in CI run 38758198869 |
 
