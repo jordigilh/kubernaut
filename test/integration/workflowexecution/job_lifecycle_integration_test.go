@@ -375,6 +375,9 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).NotTo(HaveOccurred())
+			if updated.Spec.Parameters == nil {
+				updated.Spec.Parameters = make(map[string]string)
+			}
 			updated.Spec.Parameters["REENTRY_PROBE"] = "true"
 			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 			Eventually(func() string {
