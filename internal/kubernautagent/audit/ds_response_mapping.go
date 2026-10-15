@@ -248,6 +248,7 @@ type investigationResultJSON struct {
 	AlternativeWorkflows        []altWorkflowJSON               `json:"alternative_workflows"`
 	RemediationTarget           *remediationTargetJSON          `json:"remediation_target"`
 	CausalChain                 []string                        `json:"causal_chain"`
+	CausalMechanismStatus       string                          `json:"causal_mechanism_status"`
 	DueDiligence                *dueDiligenceJSON               `json:"due_diligence"`
 	Reasoning                   *reasoningJSON                  `json:"reasoning"`
 	// IsActionable is a pointer so json.Unmarshal leaves it nil when the key
@@ -315,6 +316,9 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 	if len(ir.CausalChain) > 0 {
 		data.RootCauseAnalysis.CausalChain = ir.CausalChain
 	}
+	if status, ok := causalMechanismStatusResponse(ir.CausalMechanismStatus); ok {
+		data.RootCauseAnalysis.CausalMechanismStatus.SetTo(status)
+	}
 	if ir.DueDiligence != nil {
 		data.RootCauseAnalysis.DueDiligence.SetTo(toDueDiligenceResponse(ir.DueDiligence))
 	}
@@ -372,6 +376,18 @@ func toRemediationTargetResponse(rt *remediationTargetJSON) ogenclient.IncidentR
 
 // toDueDiligenceResponse maps the audit-record DueDiligence review into the
 // ogen wire format, omitting any field that was never populated.
+func causalMechanismStatusResponse(value string) (ogenclient.IncidentResponseDataRootCauseAnalysisCausalMechanismStatus, bool) {
+	status := ogenclient.IncidentResponseDataRootCauseAnalysisCausalMechanismStatus(value)
+	switch status {
+	case ogenclient.IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified,
+		ogenclient.IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable,
+		ogenclient.IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown:
+		return status, true
+	default:
+		return "", false
+	}
+}
+
 func toDueDiligenceResponse(dd *dueDiligenceJSON) ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence {
 	out := ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence{}
 	if dd.CausalCompleteness != "" {

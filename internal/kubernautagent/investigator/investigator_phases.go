@@ -54,6 +54,7 @@ func BuildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Da
 		RCAConfidence:         rcaResult.RCAConfidence,
 		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
 		CausalChain:           rcaResult.CausalChain,
+		CausalMechanismStatus: rcaResult.CausalMechanismStatus,
 		DueDiligence:          rcaResult.DueDiligence,
 	}
 }
@@ -77,6 +78,9 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	}
 	if len(result.CausalChain) == 0 && len(p1.CausalChain) > 0 {
 		result.CausalChain = p1.CausalChain
+	}
+	if result.CausalMechanismStatus == "" && p1.CausalMechanismStatus != "" {
+		result.CausalMechanismStatus = p1.CausalMechanismStatus
 	}
 	if result.DueDiligence == nil && p1.DueDiligence != nil {
 		result.DueDiligence = p1.DueDiligence

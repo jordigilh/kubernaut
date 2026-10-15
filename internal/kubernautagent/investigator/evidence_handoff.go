@@ -71,6 +71,7 @@ type handoffRCA struct {
 	Confidence            *float64                    `json:"confidence"`
 	InvestigationAnalysis string                      `json:"investigation_analysis"`
 	CausalChain           []string                    `json:"causal_chain"`
+	CausalMechanismStatus string                      `json:"causal_mechanism_status"`
 	DueDiligence          *katypes.DueDiligenceReview `json:"due_diligence"`
 }
 
@@ -289,6 +290,7 @@ func (packet *evidenceHandoff) projectPhase1(p1 *prompt.Phase1Data, signal katyp
 	}
 	packet.RCA.Confidence, packet.RCA.InvestigationAnalysis = p1.RCAConfidence, p1.InvestigationAnalysis
 	packet.RCA.CausalChain, packet.RCA.DueDiligence = p1.CausalChain, p1.DueDiligence
+	packet.RCA.CausalMechanismStatus = p1.CausalMechanismStatus
 	packet.Hypotheses = append(packet.Hypotheses, p1.ContributingFactors...)
 	if p1.RemediationTarget.Kind != "" && p1.RemediationTarget.Kind == signal.ResourceKind && p1.RemediationTarget.Name == signal.ResourceName {
 		packet.TargetResolution.Basis = "phase_1_rca"

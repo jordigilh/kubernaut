@@ -39,6 +39,9 @@ func applyLLMRCA(result *katypes.InvestigationResult, rca *llmRCA, logger logr.L
 	result.ContributingFactors = rca.ContributingFactors
 	result.InvestigationAnalysis = rca.InvestigationAnalysis
 	result.CausalChain = rca.CausalChain
+	if isCausalMechanismStatus(rca.CausalMechanismStatus) {
+		result.CausalMechanismStatus = rca.CausalMechanismStatus
+	}
 	result.DueDiligence = rca.DueDiligence
 
 	t := rca.resolvedTarget()
@@ -59,6 +62,15 @@ func applyLLMRCA(result *katypes.InvestigationResult, rca *llmRCA, logger logr.L
 
 // applyLLMWorkflow copies the selected-workflow fields onto result, merging
 // (rather than replacing) any parameters already present.
+func isCausalMechanismStatus(status string) bool {
+	switch status {
+	case "verified", "probable", "unknown":
+		return true
+	default:
+		return false
+	}
+}
+
 func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow, logger logr.Logger) {
 	if wf == nil {
 		return

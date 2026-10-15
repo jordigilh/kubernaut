@@ -162,8 +162,10 @@ type InvestigationResult struct {
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
 
 	// Adversarial Due Diligence (Issue #847 / DD-KA-847)
-	CausalChain  []string            `json:"causal_chain,omitempty"`
-	DueDiligence *DueDiligenceReview `json:"due_diligence,omitempty"`
+	CausalChain []string `json:"causal_chain,omitempty"`
+	// DD-KA-2511: server-preserved classification from history-aware RCA review.
+	CausalMechanismStatus string              `json:"causal_mechanism_status,omitempty"`
+	DueDiligence          *DueDiligenceReview `json:"due_diligence,omitempty"`
 
 	// Observability
 	Warnings       []string               `json:"warnings,omitempty"`

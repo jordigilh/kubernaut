@@ -106,6 +106,11 @@ const rcaResultSchemaJSON = `{
           "minItems": 2,
           "description": "Five whys causal chain from signal to root cause. Each entry is one why step tracing from the observed symptom to the deepest identifiable cause. Last entry is the root cause."
         },
+        "causal_mechanism_status": {
+          "type": "string",
+          "enum": ["verified", "probable", "unknown"],
+          "description": "Confidence classification for the deeper causal mechanism when prior remediation history is available."
+        },
         "due_diligence": {
           "type": "object",
           "description": "Adversarial self-review across 8 dimensions. Every field is mandatory.",

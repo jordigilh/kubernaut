@@ -64,6 +64,7 @@ type llmRCA struct {
 	RemediationTargetAlt  *llmRemTarget               `json:"remediationTarget,omitempty"`
 	InvestigationAnalysis string                      `json:"investigation_analysis,omitempty"`
 	CausalChain           []string                    `json:"causal_chain,omitempty"`
+	CausalMechanismStatus string                      `json:"causal_mechanism_status,omitempty"`
 	DueDiligence          *katypes.DueDiligenceReview `json:"due_diligence,omitempty"`
 }
 

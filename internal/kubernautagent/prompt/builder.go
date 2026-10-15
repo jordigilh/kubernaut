@@ -147,6 +147,7 @@ type Phase1Data struct {
 	Confidence            float64
 	InvestigationAnalysis string
 	CausalChain           []string
+	CausalMechanismStatus string
 	DueDiligence          *katypes.DueDiligenceReview
 	RCAConfidence         *float64
 }
@@ -316,6 +317,9 @@ func formatPhase1Assessment(p1 *Phase1Data) string {
 			sanitized[i] = sanitizeField(f)
 		}
 		parts = append(parts, "- **Contributing Factors**: "+strings.Join(sanitized, "; "))
+	}
+	if p1.CausalMechanismStatus != "" {
+		parts = append(parts, "- **Causal Mechanism Status**: "+sanitizeField(p1.CausalMechanismStatus))
 	}
 	if p1.RemediationTarget.Kind != "" {
 		target := sanitizeField(p1.RemediationTarget.Kind) + "/" + sanitizeField(p1.RemediationTarget.Name)
