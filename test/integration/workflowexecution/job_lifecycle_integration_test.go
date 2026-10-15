@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -374,18 +373,24 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 
-			request := ctrl.Request{NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}}
-			for i := 0; i < 3; i++ {
-				_, err = reconciler.Reconcile(ctx, request)
-				Expect(err).NotTo(HaveOccurred())
-			}
+			updated, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).NotTo(HaveOccurred())
+			updated.Spec.Parameters["REENTRY_PROBE"] = "true"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			Eventually(func() string {
+				current, getErr := getWFE(wfe.Name, wfe.Namespace)
+				if getErr != nil {
+					return ""
+				}
+				return current.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			jobs := &batchv1.JobList{}
 			Expect(k8sClient.List(ctx, jobs, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{
 				"kubernaut.ai/workflow-execution": wfe.Name,
 			})).To(Succeed())
 			Expect(jobs.Items).To(HaveLen(1))
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
+			updated, err = getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated.Status.ExecutionRef).NotTo(BeNil())
 			Expect(updated.Status.ExecutionRef.Name).To(Equal(job.Name))

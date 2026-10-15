@@ -113,59 +113,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	// Calculate event_date from event_timestamp (28-column INSERT below)
 	eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
-	// ========================================
-	// SOC2 Gap #9: Hash Chain Integration
-	// ========================================
-	// Wrap the transactional portion in a retry loop so that transient
-	// PostgreSQL deadlocks (40P01) are retried transparently. The hash
-	// fields are recalculated on each attempt because they depend on the
-	// current chain head, which may change between retries.
 	err = txretry.WithSerializableRetry(ctx, 3, func() error {
-		event.EventHash = ""
-		event.PreviousEventHash = ""
-
-		tx, txErr := r.db.BeginTx(ctx, nil)
-		if txErr != nil {
-			return fmt.Errorf("failed to begin transaction: %w", txErr)
-		}
-		defer func() {
-			if txErr != nil {
-				_ = tx.Rollback()
-			}
-		}()
-
-		previousHash, txErr := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
-		if txErr != nil {
-			return fmt.Errorf("failed to get previous event hash: %w", txErr)
-		}
-
-		eventHash, txErr := r.hashEvent(previousHash, event)
-		if txErr != nil {
-			return fmt.Errorf("failed to calculate event hash: %w", txErr)
-		}
-
-		event.EventHash = eventHash
-		event.PreviousEventHash = previousHash
-
-		if event.IdempotencyKey {
-			claimed, existingHash, existingPrevious, claimErr := claimAuditEventID(ctx, tx, event)
-			if claimErr != nil {
-				return fmt.Errorf("claim audit event id: %w", claimErr)
-			}
-			if !claimed {
-				event.EventHash = existingHash
-				event.PreviousEventHash = existingPrevious
-			} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
-				return fmt.Errorf("failed to insert audit event: %w", txErr)
-			}
-		} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
-			return fmt.Errorf("failed to insert audit event: %w", txErr)
-		}
-
-		if txErr = tx.Commit(); txErr != nil {
-			return fmt.Errorf("failed to commit transaction: %w", txErr)
-		}
-		return nil
+		return r.persistCreateEvent(ctx, event, eventDataJSON, version, eventDate)
 	})
 	if err != nil {
 		return nil, err
@@ -181,6 +130,51 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	)
 
 	return event, nil
+}
+
+func (r *AuditEventsRepository) persistCreateEvent(ctx context.Context, event *AuditEvent, eventDataJSON []byte, version string, eventDate time.Time) (txErr error) {
+	event.EventHash = ""
+	event.PreviousEventHash = ""
+	tx, txErr := r.db.BeginTx(ctx, nil)
+	if txErr != nil {
+		return fmt.Errorf("failed to begin transaction: %w", txErr)
+	}
+	defer func() {
+		if txErr != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	previousHash, txErr := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+	if txErr != nil {
+		return fmt.Errorf("failed to get previous event hash: %w", txErr)
+	}
+	eventHash, txErr := r.hashEvent(previousHash, event)
+	if txErr != nil {
+		return fmt.Errorf("failed to calculate event hash: %w", txErr)
+	}
+	event.EventHash = eventHash
+	event.PreviousEventHash = previousHash
+
+	if event.IdempotencyKey {
+		claimed, existingHash, existingPrevious, claimErr := claimAuditEventID(ctx, tx, event)
+		if claimErr != nil {
+			return fmt.Errorf("claim audit event id: %w", claimErr)
+		}
+		if !claimed {
+			event.EventHash = existingHash
+			event.PreviousEventHash = existingPrevious
+		} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
+			return fmt.Errorf("failed to insert audit event: %w", txErr)
+		}
+	} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
+		return fmt.Errorf("failed to insert audit event: %w", txErr)
+	}
+
+	if txErr = tx.Commit(); txErr != nil {
+		return fmt.Errorf("failed to commit transaction: %w", txErr)
+	}
+	return nil
 }
 
 // createAuditEventSQL is the single-row INSERT used by execCreateInsert.

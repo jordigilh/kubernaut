@@ -532,50 +532,36 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 
 	summary := j.buildStatusSummary(ctx, c, &job)
 
-	// Check Job conditions for terminal states
+	return j.executionResultForJob(ctx, c, &job, summary), nil
+}
+
+func (j *JobExecutor) executionResultForJob(ctx context.Context, c ExecutorClient, job *batchv1.Job, summary *workflowexecutionv1alpha1.ExecutionStatusSummary) *ExecutionResult {
 	for _, condition := range job.Status.Conditions {
 		switch condition.Type {
 		case batchv1.JobComplete:
 			if condition.Status == corev1.ConditionTrue {
-				return &ExecutionResult{
-					Phase:   workflowexecutionv1alpha1.PhaseCompleted,
-					Reason:  string(condition.Type),
-					Message: condition.Message,
-					Summary: summary,
-				}, nil
+				return &ExecutionResult{Phase: workflowexecutionv1alpha1.PhaseCompleted, Reason: string(condition.Type), Message: condition.Message, Summary: summary}
 			}
 		case batchv1.JobFailed:
 			if condition.Status == corev1.ConditionTrue {
 				message := condition.Message
-				if enriched := j.enrichFailureMessage(ctx, c, &job); enriched != "" {
+				if enriched := j.enrichFailureMessage(ctx, c, job); enriched != "" {
 					message = enriched
 				}
-				// BR-WORKFLOW-008: MarkFailed persists FailureDetails.Message from
-				// summary.Message (not this result's top-level Message), so the
-				// enrichment must also be reflected there or the specific missing
-				// dependency detail never reaches the WFE status / K8s Event.
 				summary.Message = message
-				return &ExecutionResult{
-					Phase:   workflowexecutionv1alpha1.PhaseFailed,
-					Reason:  condition.Reason,
-					Message: message,
-					Summary: summary,
-				}, nil
+				return &ExecutionResult{Phase: workflowexecutionv1alpha1.PhaseFailed, Reason: condition.Reason, Message: message, Summary: summary}
 			}
-		default:
-			// Suspended/FailureTarget/SuccessCriteriaMet are non-terminal
-			// signals -- only Complete/Failed determine this loop's
-			// outcome; anything else falls through to "still running".
+		case batchv1.JobSuspended, batchv1.JobFailureTarget, batchv1.JobSuccessCriteriaMet:
+			// Non-terminal signals; only Complete and Failed determine the
+			// WorkflowExecution phase.
 		}
 	}
-
-	// No terminal condition yet - Job is still running
 	return &ExecutionResult{
 		Phase:   workflowexecutionv1alpha1.PhaseRunning,
 		Reason:  "Running",
 		Message: fmt.Sprintf("Job running (%d/%d pods active)", job.Status.Active, pointerInt32(job.Spec.Completions, 1)),
 		Summary: summary,
-	}, nil
+	}
 }
 
 // jobPodNameSuffixLength is the length of the random suffix Kubernetes

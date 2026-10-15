@@ -297,16 +297,17 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		existingJob := &batchv1.Job{}
 		existingJob.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
-		if err == nil {
+		switch {
+		case err == nil:
 			resourceExists = true
-		} else if apierrors.IsNotFound(err) {
+		case apierrors.IsNotFound(err):
 			if wfe.Status.ExecutionRef != nil {
 				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
 					"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 				result, markErr := r.MarkFailed(ctx, wfe, nil)
 				return resourceName, result, markErr, true
 			}
-		} else {
+		default:
 			return resourceName, ctrl.Result{}, fmt.Errorf("check existing Job %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
 	case workflowexecutionv1alpha1.ExecutionEngineTekton:
@@ -318,16 +319,17 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		existingPR := &tektonv1.PipelineRun{}
 		existingPR.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
 		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
-		if err == nil {
+		switch {
+		case err == nil:
 			resourceExists = true
-		} else if apierrors.IsNotFound(err) {
+		case apierrors.IsNotFound(err):
 			if wfe.Status.ExecutionRef != nil {
 				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
 					"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 				result, markErr := r.MarkFailed(ctx, wfe, nil)
 				return resourceName, result, markErr, true
 			}
-		} else {
+		default:
 			return resourceName, ctrl.Result{}, fmt.Errorf("check existing PipelineRun %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
 	case "ansible":

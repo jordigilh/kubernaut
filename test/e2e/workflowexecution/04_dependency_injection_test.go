@@ -190,6 +190,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName2,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -263,6 +264,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						// Deliberately no Dependencies -- this test proves no dependency
@@ -346,6 +348,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -444,6 +447,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -534,6 +538,7 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{

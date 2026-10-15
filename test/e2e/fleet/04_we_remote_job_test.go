@@ -38,7 +38,6 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -152,23 +151,42 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 				ClusterID:      "remote-cluster",
 			},
 		}
-		jobName = weexecutor.JobExecutionResourceName(wfe)
-
-		By("Creating a foreign Job with the expected name on the remote cluster")
-		remoteJob := newCollisionJob(true)
-		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
-		DeferCleanup(func() {
-			_ = remoteK8sClient.Delete(context.Background(), remoteJob)
-		})
-		By("Submitting a WorkflowExecution whose foreign Job identity already exists remotely")
+		By("Creating the WorkflowExecution and waiting for its API-assigned Job identity")
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		DeferCleanup(func() {
+			if jobName != "" {
+				_ = remoteK8sClient.Delete(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+					Name: jobName, Namespace: infrastructure.ExecutionNamespace,
+				}})
+			}
+		})
 		DeferCleanup(func() {
 			if err := k8sClient.Delete(context.Background(), wfe); err != nil && !apierrors.IsNotFound(err) {
 				GinkgoWriter.Printf("failed to clean up WFE %s: %v\n", wfe.Name, err)
 			}
 		})
 
-		By("Verifying the production collision path fails closed without replacing the remote Job")
+		Eventually(func(g Gomega) {
+			var currentWFE workflowexecutionv1alpha1.WorkflowExecution
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &currentWFE)).To(Succeed())
+			g.Expect(currentWFE.Status.ExecutionRef).NotTo(BeNil())
+			jobName = currentWFE.Status.ExecutionRef.Name
+		}, timeout, interval).Should(Succeed())
+
+		By("Replacing the created remote Job with a foreign Job using the same name")
+		var createdJob batchv1.Job
+		Eventually(func() error {
+			return remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &createdJob)
+		}, timeout, interval).Should(Succeed())
+		Expect(remoteK8sClient.Delete(ctx, &createdJob)).To(Succeed())
+		Eventually(func() bool {
+			var deleted batchv1.Job
+			return apierrors.IsNotFound(remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &deleted))
+		}, timeout, interval).Should(BeTrue())
+		remoteJob := newCollisionJob(true)
+		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
+
+		By("Verifying the production status path fails closed without adopting the remote Job")
 		Eventually(func(g Gomega) {
 			var currentWFE workflowexecutionv1alpha1.WorkflowExecution
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &currentWFE)).To(Succeed())

@@ -91,44 +91,8 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 		return ctrl.Result{}, markErr
 	}
 
-	if existingPR.Labels != nil &&
-		existingPR.Labels["kubernaut.ai/workflow-execution"] == wfe.Name &&
-		existingPR.Labels["kubernaut.ai/source-namespace"] == wfe.Namespace {
-		logger.Info("PipelineRun already exists and is ours, continuing", "name", resourceName)
-		if r.AuditManager == nil {
-			return ctrl.Result{}, fmt.Errorf("audit manager is required before adopting existing PipelineRun %s", resourceName)
-		}
-		if auditErr := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, resourceName, r.ExecutionNamespace); auditErr != nil {
-			return ctrl.Result{}, fmt.Errorf("record mandatory execution.workflow.started audit event for existing PipelineRun: %w", auditErr)
-		}
-
-		now := metav1.Now()
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-			if err := r.PhaseManager.TransitionTo(wfe, wephase.Running); err != nil {
-				return fmt.Errorf("failed to transition to Running in HandleAlreadyExists: %w", err)
-			}
-
-			wfe.Status.StartTime = &now
-			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{
-				Name: resourceName,
-			}
-
-			weconditions.SetExecutionCreated(wfe, true,
-				weconditions.ReasonExecutionCreated,
-				fmt.Sprintf("PipelineRun %s already exists (race condition)", resourceName))
-			weconditions.SetAuditRecorded(wfe, true,
-				weconditions.ReasonAuditSucceeded,
-				"Audit event execution.workflow.started recorded to DataStorage")
-
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status in HandleAlreadyExists: %w", err)
-		}
-
-		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPipelineRunCreated,
-			fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", r.ExecutionNamespace, resourceName))
-
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	if pipelineRunOwnedByWFE(existingPR, wfe) {
+		return r.adoptExistingPipelineRun(ctx, wfe, resourceName, logger)
 	}
 
 	if r.RetainFailedExecutions {
@@ -158,6 +122,42 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 	markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
 		fmt.Sprintf("PipelineRun '%s' already exists for target resource (owner label missing)", resourceName))
 	return ctrl.Result{}, markErr
+}
+
+func pipelineRunOwnedByWFE(pr *tektonv1.PipelineRun, wfe *workflowexecutionv1alpha1.WorkflowExecution) bool {
+	return pr.Labels != nil &&
+		pr.Labels["kubernaut.ai/workflow-execution"] == wfe.Name &&
+		pr.Labels["kubernaut.ai/source-namespace"] == wfe.Namespace
+}
+
+func (r *WorkflowExecutionReconciler) adoptExistingPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, logger logr.Logger) (ctrl.Result, error) {
+	logger.Info("PipelineRun already exists and is ours, continuing", "name", resourceName)
+	if r.AuditManager == nil {
+		return ctrl.Result{}, fmt.Errorf("audit manager is required before adopting existing PipelineRun %s", resourceName)
+	}
+	if auditErr := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, resourceName, r.ExecutionNamespace); auditErr != nil {
+		return ctrl.Result{}, fmt.Errorf("record mandatory execution.workflow.started audit event for existing PipelineRun: %w", auditErr)
+	}
+
+	now := metav1.Now()
+	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
+		if err := r.PhaseManager.TransitionTo(wfe, wephase.Running); err != nil {
+			return fmt.Errorf("failed to transition to Running in HandleAlreadyExists: %w", err)
+		}
+		wfe.Status.StartTime = &now
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: resourceName}
+		weconditions.SetExecutionCreated(wfe, true, weconditions.ReasonExecutionCreated,
+			fmt.Sprintf("PipelineRun %s already exists (race condition)", resourceName))
+		weconditions.SetAuditRecorded(wfe, true, weconditions.ReasonAuditSucceeded,
+			"Audit event execution.workflow.started recorded to DataStorage")
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status in HandleAlreadyExists: %w", err)
+	}
+
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPipelineRunCreated,
+		fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", r.ExecutionNamespace, resourceName))
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
 func (r *WorkflowExecutionReconciler) replaceFailedPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, existingPR *tektonv1.PipelineRun, logger logr.Logger) (ctrl.Result, bool, error) {
