@@ -249,7 +249,7 @@ jobs:
 
       - name: Upload license report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: license-report
           path: licenses.csv
@@ -450,7 +450,7 @@ jobs:
       
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-unit-${{ matrix.service }}
           path: coverage-reports/unit-${{ matrix.service }}.txt
@@ -458,7 +458,7 @@ jobs:
 
       - name: Upload full coverage profile
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-profile-unit-${{ matrix.service }}
           path: |
@@ -637,7 +637,7 @@ jobs:
           ls -lh "${TARBALL}"
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: image-${{ matrix.service }}-${{ matrix.arch }}
           path: /tmp/image-artifact/${{ matrix.service }}-${{ matrix.arch }}.tar
@@ -758,7 +758,7 @@ jobs:
           ls -lh "${TARBALL}"
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: image-${{ matrix.image_name }}-amd64
           path: /tmp/image-artifact/${{ matrix.image_name }}-amd64.tar
@@ -910,7 +910,7 @@ jobs:
       
       - name: Upload integration test log on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: integration-log-${{ matrix.service }}-${{ github.run_id }}
           path: integration-${{ matrix.service }}.log
@@ -937,7 +937,7 @@ jobs:
       
       - name: Upload integration coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-integration-${{ matrix.service }}
           path: coverage-reports/integration-${{ matrix.service }}.txt
@@ -945,7 +945,7 @@ jobs:
 
       - name: Upload full integration coverage profile
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-profile-integration-${{ matrix.service }}
           path: coverage_integration_${{ matrix.service }}.out
@@ -972,7 +972,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-*.tar.gz
@@ -1020,7 +1020,7 @@ jobs:
           exit ${PIPESTATUS[0]}
       - name: Upload test log on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: cel-immutability-regression-log-${{ github.run_id }}
           path: cel-immutability-regression.log
@@ -1035,7 +1035,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: must-gather-logs-cel-immutability-regression-${{ github.run_id }}
           path: must-gather-*.tar.gz
@@ -1277,7 +1277,7 @@ jobs:
       
       - name: Upload E2E coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-e2e-${{ matrix.service }}
           path: coverage-reports/e2e-${{ matrix.service }}.txt
@@ -1285,7 +1285,7 @@ jobs:
 
       - name: Upload full E2E coverage profile
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
           path: coverage_e2e_${{ matrix.service }}.out
@@ -1352,7 +1352,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-e2e-*.tar.gz
@@ -1510,7 +1510,7 @@ jobs:
           kubectl get nodes -o wide
 
       - name: Download pre-built image artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: image-*-amd64
           path: /tmp/ci-images
@@ -1954,7 +1954,7 @@ jobs:
 
       - name: Upload must-gather and Kind logs
         if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: helm-smoke-must-gather-${{ matrix.tls_mode }}-${{ github.run_id }}
           path: |
@@ -2041,7 +2041,7 @@ jobs:
           kubectl get nodes -o wide
 
       - name: Download pre-built image artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: image-*-amd64
           path: /tmp/ci-images
@@ -2207,7 +2207,7 @@ jobs:
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: must-gather-e2e-diagnostics-${{ github.run_id }}
           path: /tmp/kind-e2e-logs/
@@ -2241,7 +2241,7 @@ jobs:
 
       - name: Download coverage summary reports
         if: always()
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: coverage-*
           path: coverage-reports
@@ -2250,7 +2250,7 @@ jobs:
 
       - name: Download full coverage profiles
         if: always()
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: coverage-profile-*
           path: coverage-profiles
@@ -2617,7 +2617,7 @@ jobs:
 
       - name: Upload compact RCA output
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: rca-dossiers-${{ github.run_id }}
           path: |
