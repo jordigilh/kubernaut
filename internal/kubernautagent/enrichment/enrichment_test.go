@@ -370,6 +370,8 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			Expect(result).NotTo(BeNil())
 			Expect(ds.capturedSpecHash).To(BeEmpty(),
 				"enricher should proceed with empty specHash on failure")
+			Expect(result.HistoryUnavailable).To(BeTrue(),
+				"spec-hash failure must distinguish unavailable history from a successful empty result")
 		})
 	})
 

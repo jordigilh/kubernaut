@@ -21576,6 +21576,8 @@ type IncidentResponseDataRootCauseAnalysis struct {
 	// Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed
 	// symptom to the deepest identifiable cause.
 	CausalChain []string `json:"causalChain"`
+	// Server-preserved Agent classification of the deeper causal mechanism.
+	CausalMechanismStatus OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus `json:"causalMechanismStatus"`
 	// Adversarial self-review across 8 dimensions (Issue.
 	DueDiligence OptIncidentResponseDataRootCauseAnalysisDueDiligence `json:"dueDiligence"`
 	// Visible LLM reasoning/thinking text that led to this root cause analysis, when the model's
@@ -21610,6 +21612,11 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetRemediationTarget() OptIncide
 // GetCausalChain returns the value of CausalChain.
 func (s *IncidentResponseDataRootCauseAnalysis) GetCausalChain() []string {
 	return s.CausalChain
+}
+
+// GetCausalMechanismStatus returns the value of CausalMechanismStatus.
+func (s *IncidentResponseDataRootCauseAnalysis) GetCausalMechanismStatus() OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus {
+	return s.CausalMechanismStatus
 }
 
 // GetDueDiligence returns the value of DueDiligence.
@@ -21652,6 +21659,11 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetCausalChain(val []string) {
 	s.CausalChain = val
 }
 
+// SetCausalMechanismStatus sets the value of CausalMechanismStatus.
+func (s *IncidentResponseDataRootCauseAnalysis) SetCausalMechanismStatus(val OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) {
+	s.CausalMechanismStatus = val
+}
+
 // SetDueDiligence sets the value of DueDiligence.
 func (s *IncidentResponseDataRootCauseAnalysis) SetDueDiligence(val OptIncidentResponseDataRootCauseAnalysisDueDiligence) {
 	s.DueDiligence = val
@@ -21665,6 +21677,55 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetReasoning(val OptString) {
 // SetReasoningRedacted sets the value of ReasoningRedacted.
 func (s *IncidentResponseDataRootCauseAnalysis) SetReasoningRedacted(val OptBool) {
 	s.ReasoningRedacted = val
+}
+
+// Server-preserved Agent classification of the deeper causal mechanism.
+type IncidentResponseDataRootCauseAnalysisCausalMechanismStatus string
+
+const (
+	IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified IncidentResponseDataRootCauseAnalysisCausalMechanismStatus = "verified"
+	IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable IncidentResponseDataRootCauseAnalysisCausalMechanismStatus = "probable"
+	IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown  IncidentResponseDataRootCauseAnalysisCausalMechanismStatus = "unknown"
+)
+
+// AllValues returns all IncidentResponseDataRootCauseAnalysisCausalMechanismStatus values.
+func (IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) AllValues() []IncidentResponseDataRootCauseAnalysisCausalMechanismStatus {
+	return []IncidentResponseDataRootCauseAnalysisCausalMechanismStatus{
+		IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified,
+		IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable,
+		IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataRootCauseAnalysisCausalMechanismStatus(data) {
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified
+		return nil
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable
+		return nil
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Adversarial self-review across 8 dimensions (Issue.
@@ -25391,6 +25452,52 @@ func (o OptIncidentResponseDataHumanReviewReason) Or(d IncidentResponseDataHuman
 	return d
 }
 
+// NewOptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus returns new OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus with value set to v.
+func NewOptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus(v IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus {
+	return OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus is optional IncidentResponseDataRootCauseAnalysisCausalMechanismStatus.
+type OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus struct {
+	Value IncidentResponseDataRootCauseAnalysisCausalMechanismStatus
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus was set.
+func (o OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Reset() {
+	var v IncidentResponseDataRootCauseAnalysisCausalMechanismStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) SetTo(v IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Get() (v IncidentResponseDataRootCauseAnalysisCausalMechanismStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Or(d IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) IncidentResponseDataRootCauseAnalysisCausalMechanismStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptIncidentResponseDataRootCauseAnalysisDueDiligence returns new OptIncidentResponseDataRootCauseAnalysisDueDiligence with value set to v.
 func NewOptIncidentResponseDataRootCauseAnalysisDueDiligence(v IncidentResponseDataRootCauseAnalysisDueDiligence) OptIncidentResponseDataRootCauseAnalysisDueDiligence {
 	return OptIncidentResponseDataRootCauseAnalysisDueDiligence{
@@ -27033,6 +27140,52 @@ func (o OptRemediationHealthChecks) Or(d RemediationHealthChecks) RemediationHea
 	return d
 }
 
+// NewOptRemediationHistoryEntryAppliedState returns new OptRemediationHistoryEntryAppliedState with value set to v.
+func NewOptRemediationHistoryEntryAppliedState(v RemediationHistoryEntryAppliedState) OptRemediationHistoryEntryAppliedState {
+	return OptRemediationHistoryEntryAppliedState{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationHistoryEntryAppliedState is optional RemediationHistoryEntryAppliedState.
+type OptRemediationHistoryEntryAppliedState struct {
+	Value RemediationHistoryEntryAppliedState
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationHistoryEntryAppliedState was set.
+func (o OptRemediationHistoryEntryAppliedState) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationHistoryEntryAppliedState) Reset() {
+	var v RemediationHistoryEntryAppliedState
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationHistoryEntryAppliedState) SetTo(v RemediationHistoryEntryAppliedState) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationHistoryEntryAppliedState) Get() (v RemediationHistoryEntryAppliedState, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationHistoryEntryAppliedState) Or(d RemediationHistoryEntryAppliedState) RemediationHistoryEntryAppliedState {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationHistoryEntryHashMatch returns new OptRemediationHistoryEntryHashMatch with value set to v.
 func NewOptRemediationHistoryEntryHashMatch(v RemediationHistoryEntryHashMatch) OptRemediationHistoryEntryHashMatch {
 	return OptRemediationHistoryEntryHashMatch{
@@ -27079,6 +27232,98 @@ func (o OptRemediationHistoryEntryHashMatch) Or(d RemediationHistoryEntryHashMat
 	return d
 }
 
+// NewOptRemediationHistoryEntrySpecChangeStatus returns new OptRemediationHistoryEntrySpecChangeStatus with value set to v.
+func NewOptRemediationHistoryEntrySpecChangeStatus(v RemediationHistoryEntrySpecChangeStatus) OptRemediationHistoryEntrySpecChangeStatus {
+	return OptRemediationHistoryEntrySpecChangeStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationHistoryEntrySpecChangeStatus is optional RemediationHistoryEntrySpecChangeStatus.
+type OptRemediationHistoryEntrySpecChangeStatus struct {
+	Value RemediationHistoryEntrySpecChangeStatus
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationHistoryEntrySpecChangeStatus was set.
+func (o OptRemediationHistoryEntrySpecChangeStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationHistoryEntrySpecChangeStatus) Reset() {
+	var v RemediationHistoryEntrySpecChangeStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationHistoryEntrySpecChangeStatus) SetTo(v RemediationHistoryEntrySpecChangeStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationHistoryEntrySpecChangeStatus) Get() (v RemediationHistoryEntrySpecChangeStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationHistoryEntrySpecChangeStatus) Or(d RemediationHistoryEntrySpecChangeStatus) RemediationHistoryEntrySpecChangeStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationHistorySummaryAppliedState returns new OptRemediationHistorySummaryAppliedState with value set to v.
+func NewOptRemediationHistorySummaryAppliedState(v RemediationHistorySummaryAppliedState) OptRemediationHistorySummaryAppliedState {
+	return OptRemediationHistorySummaryAppliedState{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationHistorySummaryAppliedState is optional RemediationHistorySummaryAppliedState.
+type OptRemediationHistorySummaryAppliedState struct {
+	Value RemediationHistorySummaryAppliedState
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationHistorySummaryAppliedState was set.
+func (o OptRemediationHistorySummaryAppliedState) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationHistorySummaryAppliedState) Reset() {
+	var v RemediationHistorySummaryAppliedState
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationHistorySummaryAppliedState) SetTo(v RemediationHistorySummaryAppliedState) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationHistorySummaryAppliedState) Get() (v RemediationHistorySummaryAppliedState, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationHistorySummaryAppliedState) Or(d RemediationHistorySummaryAppliedState) RemediationHistorySummaryAppliedState {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationHistorySummaryHashMatch returns new OptRemediationHistorySummaryHashMatch with value set to v.
 func NewOptRemediationHistorySummaryHashMatch(v RemediationHistorySummaryHashMatch) OptRemediationHistorySummaryHashMatch {
 	return OptRemediationHistorySummaryHashMatch{
@@ -27119,6 +27364,52 @@ func (o OptRemediationHistorySummaryHashMatch) Get() (v RemediationHistorySummar
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRemediationHistorySummaryHashMatch) Or(d RemediationHistorySummaryHashMatch) RemediationHistorySummaryHashMatch {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationHistorySummarySpecChangeStatus returns new OptRemediationHistorySummarySpecChangeStatus with value set to v.
+func NewOptRemediationHistorySummarySpecChangeStatus(v RemediationHistorySummarySpecChangeStatus) OptRemediationHistorySummarySpecChangeStatus {
+	return OptRemediationHistorySummarySpecChangeStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationHistorySummarySpecChangeStatus is optional RemediationHistorySummarySpecChangeStatus.
+type OptRemediationHistorySummarySpecChangeStatus struct {
+	Value RemediationHistorySummarySpecChangeStatus
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationHistorySummarySpecChangeStatus was set.
+func (o OptRemediationHistorySummarySpecChangeStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationHistorySummarySpecChangeStatus) Reset() {
+	var v RemediationHistorySummarySpecChangeStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationHistorySummarySpecChangeStatus) SetTo(v RemediationHistorySummarySpecChangeStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationHistorySummarySpecChangeStatus) Get() (v RemediationHistorySummarySpecChangeStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationHistorySummarySpecChangeStatus) Or(d RemediationHistorySummarySpecChangeStatus) RemediationHistorySummarySpecChangeStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -29529,6 +29820,10 @@ type RemediationHistoryEntry struct {
 	// - postRemediation: currentSpecHash matches postRemediationSpecHash (unchanged)
 	// - none: currentSpecHash matches neither hash.
 	HashMatch OptRemediationHistoryEntryHashMatch `json:"hashMatch"`
+	// Server-derived applied-state evidence for the historical attempt.
+	AppliedState OptRemediationHistoryEntryAppliedState `json:"appliedState"`
+	// Server-derived comparison of pre/post/current target state.
+	SpecChangeStatus OptRemediationHistoryEntrySpecChangeStatus `json:"specChangeStatus"`
 	// Spec hash captured before remediation was applied.
 	PreRemediationSpecHash OptString `json:"preRemediationSpecHash"`
 	// Spec hash captured after remediation was applied.
@@ -29601,6 +29896,16 @@ func (s *RemediationHistoryEntry) GetSignalResolved() OptNilBool {
 // GetHashMatch returns the value of HashMatch.
 func (s *RemediationHistoryEntry) GetHashMatch() OptRemediationHistoryEntryHashMatch {
 	return s.HashMatch
+}
+
+// GetAppliedState returns the value of AppliedState.
+func (s *RemediationHistoryEntry) GetAppliedState() OptRemediationHistoryEntryAppliedState {
+	return s.AppliedState
+}
+
+// GetSpecChangeStatus returns the value of SpecChangeStatus.
+func (s *RemediationHistoryEntry) GetSpecChangeStatus() OptRemediationHistoryEntrySpecChangeStatus {
+	return s.SpecChangeStatus
 }
 
 // GetPreRemediationSpecHash returns the value of PreRemediationSpecHash.
@@ -29698,6 +30003,16 @@ func (s *RemediationHistoryEntry) SetHashMatch(val OptRemediationHistoryEntryHas
 	s.HashMatch = val
 }
 
+// SetAppliedState sets the value of AppliedState.
+func (s *RemediationHistoryEntry) SetAppliedState(val OptRemediationHistoryEntryAppliedState) {
+	s.AppliedState = val
+}
+
+// SetSpecChangeStatus sets the value of SpecChangeStatus.
+func (s *RemediationHistoryEntry) SetSpecChangeStatus(val OptRemediationHistoryEntrySpecChangeStatus) {
+	s.SpecChangeStatus = val
+}
+
 // SetPreRemediationSpecHash sets the value of PreRemediationSpecHash.
 func (s *RemediationHistoryEntry) SetPreRemediationSpecHash(val OptString) {
 	s.PreRemediationSpecHash = val
@@ -29736,6 +30051,55 @@ func (s *RemediationHistoryEntry) SetAssessmentReason(val OptNilRemediationHisto
 // SetAssessedAt sets the value of AssessedAt.
 func (s *RemediationHistoryEntry) SetAssessedAt(val OptDateTime) {
 	s.AssessedAt = val
+}
+
+// Server-derived applied-state evidence for the historical attempt.
+type RemediationHistoryEntryAppliedState string
+
+const (
+	RemediationHistoryEntryAppliedStateConfirmed    RemediationHistoryEntryAppliedState = "confirmed"
+	RemediationHistoryEntryAppliedStateNotConfirmed RemediationHistoryEntryAppliedState = "not_confirmed"
+	RemediationHistoryEntryAppliedStateUnknown      RemediationHistoryEntryAppliedState = "unknown"
+)
+
+// AllValues returns all RemediationHistoryEntryAppliedState values.
+func (RemediationHistoryEntryAppliedState) AllValues() []RemediationHistoryEntryAppliedState {
+	return []RemediationHistoryEntryAppliedState{
+		RemediationHistoryEntryAppliedStateConfirmed,
+		RemediationHistoryEntryAppliedStateNotConfirmed,
+		RemediationHistoryEntryAppliedStateUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationHistoryEntryAppliedState) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationHistoryEntryAppliedStateConfirmed:
+		return []byte(s), nil
+	case RemediationHistoryEntryAppliedStateNotConfirmed:
+		return []byte(s), nil
+	case RemediationHistoryEntryAppliedStateUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationHistoryEntryAppliedState) UnmarshalText(data []byte) error {
+	switch RemediationHistoryEntryAppliedState(data) {
+	case RemediationHistoryEntryAppliedStateConfirmed:
+		*s = RemediationHistoryEntryAppliedStateConfirmed
+		return nil
+	case RemediationHistoryEntryAppliedStateNotConfirmed:
+		*s = RemediationHistoryEntryAppliedStateNotConfirmed
+		return nil
+	case RemediationHistoryEntryAppliedStateUnknown:
+		*s = RemediationHistoryEntryAppliedStateUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Reason/status of the effectiveness assessment. Null if assessment
@@ -29877,6 +30241,76 @@ func (s *RemediationHistoryEntryHashMatch) UnmarshalText(data []byte) error {
 	}
 }
 
+// Server-derived comparison of pre/post/current target state.
+type RemediationHistoryEntrySpecChangeStatus string
+
+const (
+	RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent  RemediationHistoryEntrySpecChangeStatus = "post_hash_matches_current"
+	RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent   RemediationHistoryEntrySpecChangeStatus = "pre_hash_matches_current"
+	RemediationHistoryEntrySpecChangeStatusNoExecution             RemediationHistoryEntrySpecChangeStatus = "no_execution"
+	RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent RemediationHistoryEntrySpecChangeStatus = "hashes_differ_from_current"
+	RemediationHistoryEntrySpecChangeStatusHashesUnavailable       RemediationHistoryEntrySpecChangeStatus = "hashes_unavailable"
+	RemediationHistoryEntrySpecChangeStatusHashesContradictory     RemediationHistoryEntrySpecChangeStatus = "hashes_contradictory"
+)
+
+// AllValues returns all RemediationHistoryEntrySpecChangeStatus values.
+func (RemediationHistoryEntrySpecChangeStatus) AllValues() []RemediationHistoryEntrySpecChangeStatus {
+	return []RemediationHistoryEntrySpecChangeStatus{
+		RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent,
+		RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent,
+		RemediationHistoryEntrySpecChangeStatusNoExecution,
+		RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent,
+		RemediationHistoryEntrySpecChangeStatusHashesUnavailable,
+		RemediationHistoryEntrySpecChangeStatusHashesContradictory,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationHistoryEntrySpecChangeStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent:
+		return []byte(s), nil
+	case RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent:
+		return []byte(s), nil
+	case RemediationHistoryEntrySpecChangeStatusNoExecution:
+		return []byte(s), nil
+	case RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent:
+		return []byte(s), nil
+	case RemediationHistoryEntrySpecChangeStatusHashesUnavailable:
+		return []byte(s), nil
+	case RemediationHistoryEntrySpecChangeStatusHashesContradictory:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationHistoryEntrySpecChangeStatus) UnmarshalText(data []byte) error {
+	switch RemediationHistoryEntrySpecChangeStatus(data) {
+	case RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent
+		return nil
+	case RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent
+		return nil
+	case RemediationHistoryEntrySpecChangeStatusNoExecution:
+		*s = RemediationHistoryEntrySpecChangeStatusNoExecution
+		return nil
+	case RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent
+		return nil
+	case RemediationHistoryEntrySpecChangeStatusHashesUnavailable:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesUnavailable
+		return nil
+	case RemediationHistoryEntrySpecChangeStatusHashesContradictory:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesContradictory
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Compact remediation history entry for Tier 2.
 // Contains only essential fields for historical context.
 // Ref: #/components/schemas/RemediationHistorySummary
@@ -29903,6 +30337,14 @@ type RemediationHistorySummary struct {
 	SignalResolved OptNilBool `json:"signalResolved"`
 	// Result of three-way hash comparison against currentSpecHash.
 	HashMatch OptRemediationHistorySummaryHashMatch `json:"hashMatch"`
+	// Server-derived applied-state evidence for the historical attempt.
+	AppliedState OptRemediationHistorySummaryAppliedState `json:"appliedState"`
+	// Server-derived comparison of pre/post/current target state.
+	SpecChangeStatus OptRemediationHistorySummarySpecChangeStatus `json:"specChangeStatus"`
+	// Spec hash captured before remediation was applied, when available.
+	PreRemediationSpecHash OptString `json:"preRemediationSpecHash"`
+	// Spec hash captured after remediation was applied, when available.
+	PostRemediationSpecHash OptString `json:"postRemediationSpecHash"`
 	// Reason/status of the effectiveness assessment (same enum as
 	// RemediationHistoryEntry). When "SpecDrift", effectiveness score
 	// is unreliable (DD-EM-002 v1.1).
@@ -29959,6 +30401,26 @@ func (s *RemediationHistorySummary) GetSignalResolved() OptNilBool {
 // GetHashMatch returns the value of HashMatch.
 func (s *RemediationHistorySummary) GetHashMatch() OptRemediationHistorySummaryHashMatch {
 	return s.HashMatch
+}
+
+// GetAppliedState returns the value of AppliedState.
+func (s *RemediationHistorySummary) GetAppliedState() OptRemediationHistorySummaryAppliedState {
+	return s.AppliedState
+}
+
+// GetSpecChangeStatus returns the value of SpecChangeStatus.
+func (s *RemediationHistorySummary) GetSpecChangeStatus() OptRemediationHistorySummarySpecChangeStatus {
+	return s.SpecChangeStatus
+}
+
+// GetPreRemediationSpecHash returns the value of PreRemediationSpecHash.
+func (s *RemediationHistorySummary) GetPreRemediationSpecHash() OptString {
+	return s.PreRemediationSpecHash
+}
+
+// GetPostRemediationSpecHash returns the value of PostRemediationSpecHash.
+func (s *RemediationHistorySummary) GetPostRemediationSpecHash() OptString {
+	return s.PostRemediationSpecHash
 }
 
 // GetAssessmentReason returns the value of AssessmentReason.
@@ -30021,6 +30483,26 @@ func (s *RemediationHistorySummary) SetHashMatch(val OptRemediationHistorySummar
 	s.HashMatch = val
 }
 
+// SetAppliedState sets the value of AppliedState.
+func (s *RemediationHistorySummary) SetAppliedState(val OptRemediationHistorySummaryAppliedState) {
+	s.AppliedState = val
+}
+
+// SetSpecChangeStatus sets the value of SpecChangeStatus.
+func (s *RemediationHistorySummary) SetSpecChangeStatus(val OptRemediationHistorySummarySpecChangeStatus) {
+	s.SpecChangeStatus = val
+}
+
+// SetPreRemediationSpecHash sets the value of PreRemediationSpecHash.
+func (s *RemediationHistorySummary) SetPreRemediationSpecHash(val OptString) {
+	s.PreRemediationSpecHash = val
+}
+
+// SetPostRemediationSpecHash sets the value of PostRemediationSpecHash.
+func (s *RemediationHistorySummary) SetPostRemediationSpecHash(val OptString) {
+	s.PostRemediationSpecHash = val
+}
+
 // SetAssessmentReason sets the value of AssessmentReason.
 func (s *RemediationHistorySummary) SetAssessmentReason(val OptNilRemediationHistorySummaryAssessmentReason) {
 	s.AssessmentReason = val
@@ -30029,6 +30511,55 @@ func (s *RemediationHistorySummary) SetAssessmentReason(val OptNilRemediationHis
 // SetCompletedAt sets the value of CompletedAt.
 func (s *RemediationHistorySummary) SetCompletedAt(val time.Time) {
 	s.CompletedAt = val
+}
+
+// Server-derived applied-state evidence for the historical attempt.
+type RemediationHistorySummaryAppliedState string
+
+const (
+	RemediationHistorySummaryAppliedStateConfirmed    RemediationHistorySummaryAppliedState = "confirmed"
+	RemediationHistorySummaryAppliedStateNotConfirmed RemediationHistorySummaryAppliedState = "not_confirmed"
+	RemediationHistorySummaryAppliedStateUnknown      RemediationHistorySummaryAppliedState = "unknown"
+)
+
+// AllValues returns all RemediationHistorySummaryAppliedState values.
+func (RemediationHistorySummaryAppliedState) AllValues() []RemediationHistorySummaryAppliedState {
+	return []RemediationHistorySummaryAppliedState{
+		RemediationHistorySummaryAppliedStateConfirmed,
+		RemediationHistorySummaryAppliedStateNotConfirmed,
+		RemediationHistorySummaryAppliedStateUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationHistorySummaryAppliedState) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationHistorySummaryAppliedStateConfirmed:
+		return []byte(s), nil
+	case RemediationHistorySummaryAppliedStateNotConfirmed:
+		return []byte(s), nil
+	case RemediationHistorySummaryAppliedStateUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationHistorySummaryAppliedState) UnmarshalText(data []byte) error {
+	switch RemediationHistorySummaryAppliedState(data) {
+	case RemediationHistorySummaryAppliedStateConfirmed:
+		*s = RemediationHistorySummaryAppliedStateConfirmed
+		return nil
+	case RemediationHistorySummaryAppliedStateNotConfirmed:
+		*s = RemediationHistorySummaryAppliedStateNotConfirmed
+		return nil
+	case RemediationHistorySummaryAppliedStateUnknown:
+		*s = RemediationHistorySummaryAppliedStateUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Reason/status of the effectiveness assessment (same enum as
@@ -30160,6 +30691,76 @@ func (s *RemediationHistorySummaryHashMatch) UnmarshalText(data []byte) error {
 		return nil
 	case RemediationHistorySummaryHashMatchNone:
 		*s = RemediationHistorySummaryHashMatchNone
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Server-derived comparison of pre/post/current target state.
+type RemediationHistorySummarySpecChangeStatus string
+
+const (
+	RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent  RemediationHistorySummarySpecChangeStatus = "post_hash_matches_current"
+	RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent   RemediationHistorySummarySpecChangeStatus = "pre_hash_matches_current"
+	RemediationHistorySummarySpecChangeStatusNoExecution             RemediationHistorySummarySpecChangeStatus = "no_execution"
+	RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent RemediationHistorySummarySpecChangeStatus = "hashes_differ_from_current"
+	RemediationHistorySummarySpecChangeStatusHashesUnavailable       RemediationHistorySummarySpecChangeStatus = "hashes_unavailable"
+	RemediationHistorySummarySpecChangeStatusHashesContradictory     RemediationHistorySummarySpecChangeStatus = "hashes_contradictory"
+)
+
+// AllValues returns all RemediationHistorySummarySpecChangeStatus values.
+func (RemediationHistorySummarySpecChangeStatus) AllValues() []RemediationHistorySummarySpecChangeStatus {
+	return []RemediationHistorySummarySpecChangeStatus{
+		RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent,
+		RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent,
+		RemediationHistorySummarySpecChangeStatusNoExecution,
+		RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent,
+		RemediationHistorySummarySpecChangeStatusHashesUnavailable,
+		RemediationHistorySummarySpecChangeStatusHashesContradictory,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationHistorySummarySpecChangeStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent:
+		return []byte(s), nil
+	case RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent:
+		return []byte(s), nil
+	case RemediationHistorySummarySpecChangeStatusNoExecution:
+		return []byte(s), nil
+	case RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent:
+		return []byte(s), nil
+	case RemediationHistorySummarySpecChangeStatusHashesUnavailable:
+		return []byte(s), nil
+	case RemediationHistorySummarySpecChangeStatusHashesContradictory:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationHistorySummarySpecChangeStatus) UnmarshalText(data []byte) error {
+	switch RemediationHistorySummarySpecChangeStatus(data) {
+	case RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent
+		return nil
+	case RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent
+		return nil
+	case RemediationHistorySummarySpecChangeStatusNoExecution:
+		*s = RemediationHistorySummarySpecChangeStatusNoExecution
+		return nil
+	case RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent
+		return nil
+	case RemediationHistorySummarySpecChangeStatusHashesUnavailable:
+		*s = RemediationHistorySummarySpecChangeStatusHashesUnavailable
+		return nil
+	case RemediationHistorySummarySpecChangeStatusHashesContradictory:
+		*s = RemediationHistorySummarySpecChangeStatusHashesContradictory
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

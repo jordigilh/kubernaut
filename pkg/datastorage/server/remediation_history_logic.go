@@ -249,6 +249,39 @@ type emCorrelationResult struct {
 // correlateEMEvents processes EM events for a given correlation_id, extracting
 // the effectiveness score, post-remediation hash, and signal resolution status.
 // These fields are common to both Tier 1 (detailed) and Tier 2 (summary) entries.
+type appliedStateClassification struct {
+	appliedState     string
+	specChangeStatus string
+}
+
+// classifyAppliedState derives application evidence from server-owned hashes
+// and the Effectiveness Monitor assessment. A score of zero alone does not
+// prove that the workflow was or was not applied.
+func classifyAppliedState(currentSpecHash, preHash, postHash, assessmentReason string) appliedStateClassification {
+	if assessmentReason == "NoExecution" {
+		return appliedStateClassification{appliedState: "not_confirmed", specChangeStatus: "no_execution"}
+	}
+	if currentSpecHash == "" {
+		return appliedStateClassification{appliedState: "unknown", specChangeStatus: "hashes_unavailable"}
+	}
+	if postHash != "" && postHash == currentSpecHash {
+		if preHash != "" && preHash == postHash {
+			return appliedStateClassification{appliedState: "unknown", specChangeStatus: "hashes_contradictory"}
+		}
+		return appliedStateClassification{appliedState: "confirmed", specChangeStatus: "post_hash_matches_current"}
+	}
+	if preHash != "" && preHash == currentSpecHash {
+		if postHash == "" {
+			return appliedStateClassification{appliedState: "unknown", specChangeStatus: "hashes_unavailable"}
+		}
+		return appliedStateClassification{appliedState: "not_confirmed", specChangeStatus: "pre_hash_matches_current"}
+	}
+	if preHash == "" || postHash == "" {
+		return appliedStateClassification{appliedState: "unknown", specChangeStatus: "hashes_unavailable"}
+	}
+	return appliedStateClassification{appliedState: "unknown", specChangeStatus: "hashes_differ_from_current"}
+}
+
 func correlateEMEvents(correlationID string, emEvts []*EffectivenessEvent) emCorrelationResult {
 	var result emCorrelationResult
 
@@ -362,6 +395,9 @@ func buildTier1Entry(ro repository.RawAuditRow, emEvents map[string][]*Effective
 
 	hashMatch := computeEntryHashMatch(currentSpecHash, preHash, postHash)
 	entry.HashMatch = api.OptRemediationHistoryEntryHashMatch{Value: hashMatch, Set: true}
+	classification := classifyAppliedState(currentSpecHash, preHash, postHash, entryAssessmentReason(entry))
+	entry.AppliedState = api.NewOptRemediationHistoryEntryAppliedState(api.RemediationHistoryEntryAppliedState(classification.appliedState))
+	entry.SpecChangeStatus = api.NewOptRemediationHistoryEntrySpecChangeStatus(api.RemediationHistoryEntrySpecChangeStatus(classification.specChangeStatus))
 
 	entry.SideEffects = []string{}
 
@@ -373,6 +409,13 @@ func buildTier1Entry(ro repository.RawAuditRow, emEvents map[string][]*Effective
 // sub-objects (healthChecks, metricDeltas) to entry, returning the resolved
 // postHash. Extracted from buildTier1Entry (GO-ANTIPATTERN-AUDIT-2026-07-01
 // Wave 3) — pure code motion, no behavior change.
+func entryAssessmentReason(entry api.RemediationHistoryEntry) string {
+	if entry.AssessmentReason.Set && !entry.AssessmentReason.Null {
+		return string(entry.AssessmentReason.Value)
+	}
+	return ""
+}
+
 func applyTier1EMCorrelation(entry *api.RemediationHistoryEntry, correlationID string, emEvts []*EffectivenessEvent) string {
 	emResult := correlateEMEvents(correlationID, emEvts)
 	entry.EffectivenessScore = emResult.score
@@ -501,6 +544,15 @@ func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*Effecti
 	// CorrelateTier1Chain — see computeEntryHashMatch.
 	hashMatch := computeEntryHashMatch(currentSpecHash, preHash, postHash)
 	summary.HashMatch = toSummaryHashMatch(hashMatch)
+	classification := classifyAppliedState(currentSpecHash, preHash, postHash, summaryAssessmentReason(summary))
+	summary.AppliedState = api.NewOptRemediationHistorySummaryAppliedState(api.RemediationHistorySummaryAppliedState(classification.appliedState))
+	summary.SpecChangeStatus = api.NewOptRemediationHistorySummarySpecChangeStatus(api.RemediationHistorySummarySpecChangeStatus(classification.specChangeStatus))
+	if preHash != "" {
+		summary.PreRemediationSpecHash = api.OptString{Value: preHash, Set: true}
+	}
+	if postHash != "" {
+		summary.PostRemediationSpecHash = api.OptString{Value: postHash, Set: true}
+	}
 
 	return summary
 }
@@ -508,6 +560,13 @@ func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*Effecti
 // historySelectionMetadata reads the single v1.6 RO producer contract without
 // mutation, inference, legacy recovery or full-payload projection (DD-KA-2496).
 // Missing/malformed scores stay unknown; an explicit zero is a known selection.
+func summaryAssessmentReason(summary api.RemediationHistorySummary) string {
+	if summary.AssessmentReason.Set && !summary.AssessmentReason.Null {
+		return string(summary.AssessmentReason.Value)
+	}
+	return ""
+}
+
 func historySelectionMetadata(ro repository.RawAuditRow) (api.OptString, api.OptString, api.OptFloat64) {
 	var id, name api.OptString
 	var confidence api.OptFloat64

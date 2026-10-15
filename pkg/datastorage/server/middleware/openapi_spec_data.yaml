@@ -5100,6 +5100,10 @@ components:
                 type: string
               description: Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed symptom to the deepest identifiable cause.
               example: ["Signal: OOMKilled on pod X", "Why? Container exceeded memory limit", "Root cause: Missing memory limit configuration"]
+            causalMechanismStatus:
+              type: string
+              enum: [verified, probable, unknown]
+              description: Server-preserved Agent classification of the deeper causal mechanism.
             dueDiligence:
               type: object
               description: Adversarial self-review across 8 dimensions (Issue #847). Captures the LLM's justification for its RCA.
@@ -6057,6 +6061,25 @@ components:
             - postRemediation: currentSpecHash matches postRemediationSpecHash (unchanged)
             - none: currentSpecHash matches neither hash
           example: "postRemediation"
+        appliedState:
+          type: string
+          enum:
+            - confirmed
+            - not_confirmed
+            - unknown
+          description: Server-derived applied-state evidence for the historical attempt.
+          example: "confirmed"
+        specChangeStatus:
+          type: string
+          enum:
+            - post_hash_matches_current
+            - pre_hash_matches_current
+            - no_execution
+            - hashes_differ_from_current
+            - hashes_unavailable
+            - hashes_contradictory
+          description: Server-derived comparison of pre/post/current target state.
+          example: "post_hash_matches_current"
         preRemediationSpecHash:
           type: string
           description: Spec hash captured before remediation was applied
@@ -6163,6 +6186,33 @@ components:
             - none
           description: Result of three-way hash comparison against currentSpecHash
           example: "preRemediation"
+        appliedState:
+          type: string
+          enum:
+            - confirmed
+            - not_confirmed
+            - unknown
+          description: Server-derived applied-state evidence for the historical attempt.
+          example: "unknown"
+        specChangeStatus:
+          type: string
+          enum:
+            - post_hash_matches_current
+            - pre_hash_matches_current
+            - no_execution
+            - hashes_differ_from_current
+            - hashes_unavailable
+            - hashes_contradictory
+          description: Server-derived comparison of pre/post/current target state.
+          example: "hashes_unavailable"
+        preRemediationSpecHash:
+          type: string
+          description: Spec hash captured before remediation was applied, when available
+          example: "sha256:aabb112233dd"
+        postRemediationSpecHash:
+          type: string
+          description: Spec hash captured after remediation was applied, when available
+          example: "sha256:ccdd334455ee"
         assessmentReason:
           type: string
           nullable: true
