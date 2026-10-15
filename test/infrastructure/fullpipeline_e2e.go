@@ -156,6 +156,7 @@ func fullPipelineWorkflowSeeds(fleetMode bool) []WorkflowSeedSpec {
 
 	return append(seeds,
 		WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "production"},
+		WorkflowSeedSpec{FixtureDir: "history-alternative-2496", Environment: "production"},
 		WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "production"},
 		WorkflowSeedSpec{FixtureDir: "fix-certificate", Environment: "production"},
 		WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "production"},
@@ -165,6 +166,7 @@ func fullPipelineWorkflowSeeds(fleetMode bool) []WorkflowSeedSpec {
 		WorkflowSeedSpec{FixtureDir: "crashloop-config-fix-job", Environment: "staging"},
 		WorkflowSeedSpec{FixtureDir: "oomkill-increase-memory-job", Environment: "staging"},
 		WorkflowSeedSpec{FixtureDir: "gitops-drift-2390", Environment: "staging"},
+		WorkflowSeedSpec{FixtureDir: "history-alternative-2496", Environment: "staging"},
 		WorkflowSeedSpec{FixtureDir: "standalone-exec-cluster-id", Environment: "staging"},
 		WorkflowSeedSpec{FixtureDir: "generic-restart", Environment: "staging"},
 		WorkflowSeedSpec{FixtureDir: "fullpipeline-consent-job", Environment: "staging"},
@@ -482,6 +484,10 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	afRemediateNS = map[string]string{
 		"autonomous":  fmt.Sprintf("fp-auto-%s", uuid.New().String()[:8]),
 		"interactive": fmt.Sprintf("fp-int-%s", uuid.New().String()[:8]),
+		// The cross-namespace A2A target also needs namespace-scoped firing
+		// Prometheus evidence before AF's fail-closed severity triage. A real
+		// pod crash alone does not ensure its normal alert has fired yet.
+		"cross-namespace": fmt.Sprintf("fp-e2e-1292-%s", uuid.New().String()[:8]),
 		// interactive-streaming: dedicated namespace for E2E-FP-1189-005, kept
 		// distinct from "interactive" above so its memory-eater Deployment's
 		// signal fingerprint never collides with E2E-FP-1189-003/-004's. This

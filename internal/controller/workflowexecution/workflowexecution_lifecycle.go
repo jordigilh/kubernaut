@@ -317,12 +317,12 @@ func (r *WorkflowExecutionReconciler) releaseExecutionLockFallback(ctx context.C
 }
 
 // ========================================
-// CheckCooldownActive checks if cooldown is active for a target resource
-// BR-WE-009: Cooldown Period is Configurable
+// CheckCooldownActive checks if cooldown is active for a target resource in a
+// specific execution cluster (BR-WE-009, BR-FLEET-004).
 // Returns (remaining duration, is active)
 // currentWFEName format: "namespace/name" to uniquely identify the current WFE
 // ========================================
-func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, targetResource, currentWFEKey string) (time.Duration, bool) {
+func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, targetResource, clusterID, currentWFEKey string) (time.Duration, bool) {
 	logger := log.FromContext(ctx)
 
 	// Get cooldown period (use default if not set)
@@ -349,7 +349,7 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 	}
 	if listErr != nil {
 		logger.Error(listErr, "Failed to list WorkflowExecutions for cooldown check after retries — failing closed",
-			"targetResource", targetResource, "attempts", maxAttempts)
+			"targetResource", targetResource, "clusterID", clusterID, "attempts", maxAttempts)
 		return cooldown, true
 	}
 
@@ -361,6 +361,13 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 		// Skip the current WFE (don't check cooldown against ourselves)
 		otherKey := fmt.Sprintf("%s/%s", otherWFE.Namespace, otherWFE.Name)
 		if otherKey == currentWFEKey {
+			continue
+		}
+
+		// Target resource names can collide across registered hub/spoke
+		// clusters. A completed WFE on another execution cluster must not
+		// impose this cluster's cooldown (BR-FLEET-004).
+		if otherWFE.Spec.ClusterID != clusterID {
 			continue
 		}
 
@@ -383,6 +390,7 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 			remaining := cooldown - elapsed
 			logger.V(1).Info("Cooldown active for target resource",
 				"targetResource", targetResource,
+				"clusterID", clusterID,
 				"blockingWFE", otherKey,
 				"remaining", remaining,
 			)

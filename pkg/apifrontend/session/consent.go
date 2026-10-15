@@ -104,6 +104,10 @@ const (
 	// created for each subsequent streaming request.
 	StateKeyDecisionRCAClassification = "af_decision_rca_classification"
 
+	// DD-KA-2496: gob-safe allow-listed current selection context, written only
+	// from trusted KA responses and restored into each fresh EventBridge.
+	StateKeyDecisionSelectionContext = "af_decision_selection_context"
+
 	// StateKeyDiscoveryResult stores the successful canonical discovery result
 	// for completion recovery when ADK trims older events.
 	StateKeyDiscoveryResult = "af_discovery_result"

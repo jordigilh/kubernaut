@@ -1228,14 +1228,69 @@ spec:
                         - job
                         - ansible
                         type: string
+                      handoffDigest:
+                        description: HandoffDigest is computed by KA, not supplied
+                          by the LLM.
+                        pattern: ^sha256:[a-f0-9]{64}$
+                        type: string
                       parameters:
                         additionalProperties:
                           type: string
                         description: Workflow parameters (UPPER_SNAKE_CASE keys per
                           DD-WORKFLOW-003)
                         type: object
+                      priorRemediationUIDs:
+                        description: |-
+                          PriorRemediationUIDs are trusted target-scoped links for audit/history
+                          reconstruction only, never for live Console delivery or execution.
+                        items:
+                          maxLength: 253
+                          type: string
+                        maxItems: 64
+                        type: array
+                      priorWorkflowMatch:
+                        type: boolean
                       rationale:
                         description: Rationale explaining why this workflow was selected
+                        type: string
+                      repeatJustification:
+                        description: |-
+                          DD-KA-2496 / BR-KA-016: reasoning is not execution configuration. Nil
+                          confidence/flags mean unknown, not zero/false. These freeze with SelectedAt.
+                        properties:
+                          evidence_basis:
+                            description: EvidenceBasis describes current observations
+                              supporting the choice.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                          expected_mechanism:
+                            description: ExpectedMechanism describes how the workflow
+                              is expected to help now.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                          prior_outcome_relevance:
+                            description: PriorOutcomeRelevance explains the relevance
+                              of the previous outcome.
+                            maxLength: 2000
+                            minLength: 1
+                            pattern: \S
+                            type: string
+                        required:
+                        - evidence_basis
+                        - expected_mechanism
+                        - prior_outcome_relevance
+                        type: object
+                      repeatJustificationRequired:
+                        type: boolean
+                      repeatValidationOutcome:
+                        enum:
+                        - not_required
+                        - accepted
+                        - rejected
                         type: string
                       resources:
                         description: |-
@@ -1329,6 +1384,10 @@ spec:
                           Catalog-authoritative: always sourced from DataStorage, never
                           LLM-suppliable (Issue #1661 Change 12).
                         type: string
+                      workflowSelectionConfidence:
+                        maximum: 1
+                        minimum: 0
+                        type: number
                     required:
                     - actionType
                     - confidence
@@ -1363,6 +1422,81 @@ spec:
                         && (has(self.declaredParameterNames) == has(oldSelf.declaredParameterNames))
                         && (!has(self.declaredParameterNames) || self.declaredParameterNames
                         == oldSelf.declaredParameterNames))'
+                    - message: selection metadata is immutable once selectedAt is
+                        populated (DD-KA-2496)
+                      rule: '!has(oldSelf.selectedAt) || ((has(self.repeatJustification)
+                        == has(oldSelf.repeatJustification)) && (!has(self.repeatJustification)
+                        || self.repeatJustification == oldSelf.repeatJustification)
+                        && (has(self.workflowSelectionConfidence) == has(oldSelf.workflowSelectionConfidence))
+                        && (!has(self.workflowSelectionConfidence) || self.workflowSelectionConfidence
+                        == oldSelf.workflowSelectionConfidence) && (has(self.repeatJustificationRequired)
+                        == has(oldSelf.repeatJustificationRequired)) && (!has(self.repeatJustificationRequired)
+                        || self.repeatJustificationRequired == oldSelf.repeatJustificationRequired)
+                        && (has(self.priorWorkflowMatch) == has(oldSelf.priorWorkflowMatch))
+                        && (!has(self.priorWorkflowMatch) || self.priorWorkflowMatch
+                        == oldSelf.priorWorkflowMatch) && (has(self.repeatValidationOutcome)
+                        == has(oldSelf.repeatValidationOutcome)) && (!has(self.repeatValidationOutcome)
+                        || self.repeatValidationOutcome == oldSelf.repeatValidationOutcome)
+                        && (has(self.handoffDigest) == has(oldSelf.handoffDigest))
+                        && (!has(self.handoffDigest) || self.handoffDigest == oldSelf.handoffDigest)
+                        && (has(self.priorRemediationUIDs) == has(oldSelf.priorRemediationUIDs))
+                        && (!has(self.priorRemediationUIDs) || self.priorRemediationUIDs
+                        == oldSelf.priorRemediationUIDs))'
+                  selectionAssessment:
+                    description: |-
+                      SelectionAssessment is non-executable context for rejected proposals.
+                      It cannot be used by RO/WFE to construct a WorkflowExecution (DD-KA-2496).
+                    properties:
+                      handoffDigest:
+                        pattern: ^sha256:[a-f0-9]{64}$
+                        type: string
+                      priorRemediationUIDs:
+                        items:
+                          maxLength: 253
+                          type: string
+                        maxItems: 64
+                        type: array
+                      priorWorkflowMatch:
+                        type: boolean
+                      proposedWorkflowId:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      repeatJustification:
+                        description: |-
+                          RepeatJustificationAssessment retains bounded parts of rejected reasoning.
+                          DD-KA-2496: unlike executable RepeatJustification, missing/blank parts must
+                          remain representable for review; this type never establishes acceptance.
+                        properties:
+                          evidence_basis:
+                            maxLength: 2000
+                            type: string
+                          expected_mechanism:
+                            maxLength: 2000
+                            type: string
+                          prior_outcome_relevance:
+                            maxLength: 2000
+                            type: string
+                        type: object
+                      repeatJustificationRequired:
+                        type: boolean
+                      repeatValidationOutcome:
+                        enum:
+                        - not_required
+                        - accepted
+                        - rejected
+                        type: string
+                      workflowName:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      workflowSelectionConfidence:
+                        maximum: 1
+                        minimum: 0
+                        type: number
+                    required:
+                    - proposedWorkflowId
+                    type: object
                 type: object
               reason:
                 description: Reason provides the umbrella failure or completion category.

@@ -28,6 +28,81 @@ import (
 )
 
 var _ = Describe("Response Builders", func() {
+	It("UT-MOCK-2496-004: live AF fixture scopes an existing RR to the current user turn without inventing a selection (BR-KA-016)", func() {
+		registry := scenarios.DefaultRegistry()
+		for _, id := range []string{"rr-history-2496-one", "rr-history-2496-two"} {
+			ctx := &scenarios.DetectionContext{Caller: scenarios.CallerAF,
+				LastUserContent: "investigate current selection 2496 for " + id}
+			matched := registry.Detect(ctx)
+			Expect(matched).NotTo(BeNil())
+			Expect(matched.Scenario.Name()).To(Equal("af_history_live_2496"))
+			configured, ok := matched.Scenario.(scenarios.ScenarioWithContextConfig)
+			Expect(ok).To(BeTrue())
+			fixture := configured.ConfigForContext(ctx)
+			Expect(fixture.ToolCallName).To(Equal("kubernaut_investigate"))
+			Expect(fixture.ToolCallArgs).To(Equal(map[string]interface{}{"rr_id": id}))
+			Expect(fixture.WorkflowID).To(BeEmpty())
+			ctx.Caller = scenarios.CallerKA
+			Expect(registry.Detect(ctx).Scenario.Name()).NotTo(Equal("af_history_live_2496"))
+		}
+	})
+	DescribeTable("UT-MOCK-2496-001: deterministic provider fixtures exercise repeat acceptance, rejection and current-confidence review (BR-KA-016, BR-KA-197)",
+		func(name string, confidence float64, justified bool) {
+			scenario, found := scenarios.DefaultRegistry().Get(name)
+			Expect(found).To(BeTrue(), "the deployed provider fixture must be registered")
+			configured, ok := scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			fixture := configured.Config()
+			Expect(fixture.WorkflowName).To(Equal("oomkill-increase-memory-v1"))
+			Expect(fixture.ActionType).To(Equal("IncreaseMemoryLimits"))
+			for _, text := range []bool{false, true} {
+				resp := response.BuildToolCallResponse("mock-model", openai.ToolSubmitResultWithWorkflow, fixture)
+				raw := resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+				if text {
+					resp = response.BuildTextResponse("mock-model", fixture)
+					raw = *resp.Choices[0].Message.Content
+				}
+				var payload map[string]interface{}
+				Expect(json.Unmarshal([]byte(raw), &payload)).To(Succeed())
+				selected, ok := payload["selected_workflow"].(map[string]interface{})
+				Expect(ok).To(BeTrue())
+				Expect(selected).To(HaveKeyWithValue("workflow_id", fixture.WorkflowID))
+				Expect(selected).To(HaveKeyWithValue("confidence", confidence))
+				if !justified {
+					Expect(selected).NotTo(HaveKey("repeat_justification"), "missing justification must stay missing on every correction")
+					continue
+				}
+				parts, ok := selected["repeat_justification"].(map[string]interface{})
+				Expect(ok).To(BeTrue())
+				for _, key := range []string{"evidence_basis", "prior_outcome_relevance", "expected_mechanism"} {
+					Expect(parts[key]).NotTo(BeEmpty())
+				}
+			}
+		},
+		Entry("accepted repeat", "history_repeat_accepted_2496", .84, true),
+		Entry("rejected repeat", "history_repeat_rejected_2496", .84, false),
+		Entry("below-floor repeat", "history_repeat_low_2496", .42, true),
+		Entry("approval-band repeat", "history_repeat_approval_2496", .75, true),
+	)
+
+	It("UT-MOCK-2496-003: a different catalog ID in the same action family carries no inherited repeat explanation (BR-KA-016)", func() {
+		scenario, found := scenarios.DefaultRegistry().Get("history_different_2496")
+		Expect(found).To(BeTrue(), "the deployed different-workflow fixture must be registered")
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		fixture := configured.Config()
+		Expect(fixture.WorkflowName).To(Equal("oomkill-increase-memory-alternative-2496-v1"))
+		Expect(fixture.WorkflowID).NotTo(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
+		Expect(fixture.ActionType).To(Equal("IncreaseMemoryLimits"), "action family is not the repeat key")
+		resp := response.BuildToolCallResponse("mock-model", openai.ToolSubmitResultWithWorkflow, fixture)
+		var payload map[string]interface{}
+		Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &payload)).To(Succeed())
+		selected, ok := payload["selected_workflow"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(selected).To(HaveKeyWithValue("workflow_id", fixture.WorkflowID))
+		Expect(selected).To(HaveKeyWithValue("confidence", .96))
+		Expect(selected).NotTo(HaveKey("repeat_justification"))
+	})
 
 	var cfg scenarios.MockScenarioConfig
 

@@ -43,9 +43,23 @@ Authoritative reference for all structured audit events emitted by the `remediat
 | `orchestrator.approval.requested` | `EventTypeApprovalRequested` | `approval_requested` | `pending` | Selected workflow requires human approval (low confidence/high risk); RR transitions Analyzing→AwaitingApproval | `rar_name`, `rr_name`, `namespace`, `required_by`, `workflow_id`, `confidence` |
 | `orchestrator.approval.approved` | `EventTypeApprovalApproved` | `approved` | `success` | `RemediationApprovalRequest.Status.Decision == Approved` | `rar_name`, `rr_name`, `namespace`, `decision` (opt). `decided_by`/`message` deliberately omitted (ADR-034 v1.7 Two-Event Pattern — captured by Auth Webhook) |
 | `orchestrator.approval.rejected` | `EventTypeApprovalRejected` | `rejected` **or** `expired` | `failure` | `Decision == Rejected` (human), **or** `Decision == Expired` (RO auto-expires when the approval deadline passes with no decision) — see Known Gaps #1 | Same shape as `approved` |
-| `remediation.workflow_created` | `EventTypeRemediationWorkflowCreated` | `workflow_created` | `success` | RO creates a `WorkflowExecution` CRD, from either the Analyzing or AwaitingApproval path (DD-EM-002, GAP-RO-1) | `rr_name`, `namespace`, `pre_remediation_spec_hash`, `target_resource`, `workflow_id`, `workflow_version`/`action_type`/`signal_type`/`signal_fingerprint` (opt). Note category prefix is `remediation.*`, not `orchestrator.*` |
+| `remediation.workflow_created` | `EventTypeRemediationWorkflowCreated` | `workflow_created` | `success` | RO creates a `WorkflowExecution` CRD, from either the Analyzing or AwaitingApproval path (DD-EM-002, GAP-RO-1) | `rr_name`, `namespace`, `pre_remediation_spec_hash`, `target_resource`, `workflow_id`, catalog-authoritative `workflow_name`, explicit `workflow_selection_confidence`, `workflow_version`/`action_type`/`signal_type`/`signal_fingerprint` (opt). Note category prefix is `remediation.*`, not `orchestrator.*` |
 
 **Emitted from:** `internal/controller/remediationorchestrator/audit_events.go` (`emitLifecycleStartedAudit`, `emitPhaseTransitionAudit`, `emitVerifyingStartedAudit`, `emitVerificationCompletedAudit`, `emitVerificationTimedOutAudit`, `emitCompletionAudit`, `emitFailureAudit`, `emitTimeoutAudit`, `emitRetentionCleanupAudit`, `emitRoutingBlockedAudit`, `emitApprovalRequestedAudit`, `emitRemediationCreatedAudit`, `emitEACreatedAudit`, `emitWorkflowCreatedAudit`), `remediation_approval_request.go` (`buildAndStoreApprovalAudit`), called from `reconcile_loop.go`, `terminal_transitions.go`, `verifying_handler.go`, `blocking.go`/`blocked_transitions.go`, `analyzing_handler.go`, `timeout_management.go`, `timeout_handling.go`, and `wfe_creation_helper.go`.
+
+**#2496 control mapping:** `remediation.workflow_created` supplies authoritative
+selection metadata to current-version DS history under FedRAMP **AU-2/AU-3** and
+SOC 2 **CC7.2** (correlation-based reconstruction). RO copies the selected
+snapshot's confidence, including explicit zero; it never substitutes RCA or
+approval confidence. DS treats missing legacy identity/confidence as unknown
+without backfill or immutable-row modification (**AU-9** inherited protection).
+History remains target/origin scoped (**AC-4**); only `workflow_id` is a repeat
+identity, while the mandatory name is descriptive and non-unique. Proof:
+`UT-RO-2496-002`, real-controller `IT-RO-2496-002`, and the producer-generated
+`E2E-FP-2496-001/007` journeys in
+[TP-2496](../../../../tests/2496/TEST_PLAN.md). **CC8.1** is change management,
+not the reconstruction objective; this amendment does not sweep unrelated
+historical mappings in the catalog.
 
 ---
 

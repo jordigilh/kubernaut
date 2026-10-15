@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	gobreaker "github.com/sony/gobreaker/v2"
 )
 
@@ -136,6 +137,7 @@ type DiscoveryTarget struct {
 
 // DiscoverWorkflowsResult is the response from kubernaut_discover_workflows MCP call.
 type DiscoverWorkflowsResult struct {
+	katypes.LiveSelectionContext
 	Workflows      []DiscoveredWorkflow `json:"workflows"`
 	SearchedTarget *DiscoveryTarget     `json:"searched_target,omitempty"`
 	SignalTarget   *DiscoveryTarget     `json:"signal_target,omitempty"`
@@ -159,6 +161,7 @@ type kaDiscoveryTarget struct {
 // kaWorkflowDiscoveryPayload matches the JSON inside the Response string
 // of KA's InvestigateOutput when action=discover_workflows.
 type kaWorkflowDiscoveryPayload struct {
+	katypes.LiveSelectionContext
 	Recommended    *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
 	Alternatives   []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
 	SearchedTarget *kaDiscoveryTarget     `json:"searched_target,omitempty"`
@@ -188,6 +191,7 @@ func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResu
 		if err := json.Unmarshal(raw, &direct); err != nil {
 			return nil, fmt.Errorf("parse direct discover_workflows response: %w", err)
 		}
+		direct.LiveSelectionContext = direct.SafeCopy()
 		return &direct, nil
 	}
 
@@ -213,7 +217,7 @@ func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResu
 		workflows = append(workflows, mapKAWorkflow(alt))
 	}
 
-	result := &DiscoverWorkflowsResult{Workflows: workflows}
+	result := &DiscoverWorkflowsResult{Workflows: workflows, LiveSelectionContext: payload.SafeCopy()}
 	if payload.SearchedTarget != nil {
 		result.SearchedTarget = &DiscoveryTarget{
 			APIVersion: payload.SearchedTarget.APIVersion,

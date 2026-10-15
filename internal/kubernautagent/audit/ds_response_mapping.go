@@ -226,21 +226,30 @@ func toJxRawMap(s string) ogenclient.LLMToolCallPayloadToolArguments {
 }
 
 type investigationResultJSON struct {
-	RCASummary           string                 `json:"rca_summary"`
-	Severity             string                 `json:"severity"`
-	ContributingFactors  []string               `json:"contributing_factors"`
-	WorkflowID           string                 `json:"workflow_id"`
-	ExecutionBundle      string                 `json:"execution_bundle"`
-	Confidence           float64                `json:"confidence"`
-	NeedsHumanReview     bool                   `json:"needs_human_review"`
-	HumanReviewReason    string                 `json:"human_review_reason"`
-	Warnings             []string               `json:"warnings"`
-	Parameters           map[string]interface{} `json:"parameters"`
-	AlternativeWorkflows []altWorkflowJSON      `json:"alternative_workflows"`
-	RemediationTarget    *remediationTargetJSON `json:"remediation_target"`
-	CausalChain          []string               `json:"causal_chain"`
-	DueDiligence         *dueDiligenceJSON      `json:"due_diligence"`
-	Reasoning            *reasoningJSON         `json:"reasoning"`
+	RCASummary                  string                          `json:"rca_summary"`
+	Severity                    string                          `json:"severity"`
+	ContributingFactors         []string                        `json:"contributing_factors"`
+	WorkflowID                  string                          `json:"workflow_id"`
+	WorkflowName                string                          `json:"workflow_name"`
+	WorkflowSelectionConfidence *float64                        `json:"workflow_selection_confidence"`
+	RepeatJustification         *ogenclient.RepeatJustification `json:"repeat_justification"`
+	RepeatJustificationRequired *bool                           `json:"repeat_justification_required"`
+	PriorWorkflowMatch          *bool                           `json:"prior_workflow_match"`
+	RepeatValidationOutcome     string                          `json:"repeat_validation_outcome"`
+	HandoffDigest               string                          `json:"handoff_digest"`
+	PriorRemediationUIDs        []string                        `json:"prior_remediation_uids"`
+	SelectionAssessment         *ogenclient.SelectionAssessment `json:"selection_assessment"`
+	ExecutionBundle             string                          `json:"execution_bundle"`
+	Confidence                  float64                         `json:"confidence"`
+	NeedsHumanReview            bool                            `json:"needs_human_review"`
+	HumanReviewReason           string                          `json:"human_review_reason"`
+	Warnings                    []string                        `json:"warnings"`
+	Parameters                  map[string]interface{}          `json:"parameters"`
+	AlternativeWorkflows        []altWorkflowJSON               `json:"alternative_workflows"`
+	RemediationTarget           *remediationTargetJSON          `json:"remediation_target"`
+	CausalChain                 []string                        `json:"causal_chain"`
+	DueDiligence                *dueDiligenceJSON               `json:"due_diligence"`
+	Reasoning                   *reasoningJSON                  `json:"reasoning"`
 	// IsActionable is a pointer so json.Unmarshal leaves it nil when the key
 	// is absent (pre-#1923 audit JSON blobs), distinguishing "never
 	// determined" from an explicit false (Issue #1923 Gap 1).
@@ -316,6 +325,8 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 
 	if ir.WorkflowID != "" {
 		data.SelectedWorkflow.SetTo(toSelectedWorkflowResponse(ir))
+	} else if ir.SelectionAssessment != nil {
+		data.SelectionAssessment.SetTo(*ir.SelectionAssessment)
 	}
 
 	if ir.NeedsHumanReview {
@@ -395,6 +406,28 @@ func toDueDiligenceResponse(dd *dueDiligenceJSON) ogenclient.IncidentResponseDat
 func toSelectedWorkflowResponse(ir investigationResultJSON) ogenclient.IncidentResponseDataSelectedWorkflow {
 	sw := ogenclient.IncidentResponseDataSelectedWorkflow{}
 	sw.WorkflowId.SetTo(ir.WorkflowID)
+	if ir.WorkflowName != "" {
+		sw.WorkflowName.SetTo(ir.WorkflowName)
+	}
+	if ir.WorkflowSelectionConfidence != nil {
+		sw.WorkflowSelectionConfidence.SetTo(*ir.WorkflowSelectionConfidence)
+	}
+	if ir.RepeatJustification != nil {
+		sw.RepeatJustification.SetTo(*ir.RepeatJustification)
+	}
+	if ir.RepeatJustificationRequired != nil {
+		sw.RepeatJustificationRequired.SetTo(*ir.RepeatJustificationRequired)
+	}
+	if ir.PriorWorkflowMatch != nil {
+		sw.PriorWorkflowMatch.SetTo(*ir.PriorWorkflowMatch)
+	}
+	if ir.RepeatValidationOutcome != "" {
+		sw.RepeatValidationOutcome.SetTo(ogenclient.IncidentResponseDataSelectedWorkflowRepeatValidationOutcome(ir.RepeatValidationOutcome))
+	}
+	if ir.HandoffDigest != "" {
+		sw.HandoffDigest.SetTo(ir.HandoffDigest)
+	}
+	sw.PriorRemediationUids = append([]string(nil), ir.PriorRemediationUIDs...)
 	if ir.ExecutionBundle != "" {
 		sw.ExecutionBundle.SetTo(ir.ExecutionBundle)
 	}

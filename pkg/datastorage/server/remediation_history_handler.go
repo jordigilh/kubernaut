@@ -40,6 +40,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
@@ -113,6 +114,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 	if tier2Summaries == nil {
 		tier2Summaries = []api.RemediationHistorySummary{}
 	}
+	h.logHistorySelectionMetadataGaps(r, req, tier1Entries, tier2Summaries)
 
 	h.logger.Info("Remediation history context served",
 		"target_resource", req.targetResource,
@@ -121,6 +123,40 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		"regression_detected", regressionDetected)
 
 	h.writeRemediationHistoryResponse(w, req, tier1Entries, tier2Summaries, regressionDetected)
+}
+
+// logHistorySelectionMetadataGaps emits one bounded diagnostic for the entire
+// lookup (DD-KA-2496). No payloads, parameter values, record-age guesses or
+// backfill are involved. Pending effectiveness is not a selection-metadata gap.
+func (h *Handler) logHistorySelectionMetadataGaps(r *http.Request, req remediationHistoryRequest, tier1 []api.RemediationHistoryEntry, tier2 []api.RemediationHistorySummary) {
+	missing := make(map[string]bool, 3)
+	affected := make(map[string]struct{}, len(tier1)+len(tier2))
+	note := func(uid string, id, name api.OptString, confidence api.OptFloat64) {
+		if !id.Set || !name.Set || !confidence.Set {
+			affected[uid] = struct{}{}
+			missing["workflow_id"] = missing["workflow_id"] || !id.Set
+			missing["workflow_name"] = missing["workflow_name"] || !name.Set
+			missing["workflow_selection_confidence"] = missing["workflow_selection_confidence"] || !confidence.Set
+		}
+	}
+	for _, entry := range tier1 {
+		note(entry.RemediationUID, entry.WorkflowId, entry.WorkflowName, entry.WorkflowSelectionConfidence)
+	}
+	for _, entry := range tier2 {
+		note(entry.RemediationUID, entry.WorkflowId, entry.WorkflowName, entry.WorkflowSelectionConfidence)
+	}
+	if len(affected) == 0 {
+		return
+	}
+	fields := make([]string, 0, 3)
+	for _, field := range []string{"workflow_id", "workflow_name", "workflow_selection_confidence"} {
+		if missing[field] {
+			fields = append(fields, field)
+		}
+	}
+	h.logger.Info("Remediation history selection metadata incomplete",
+		"request_id", middleware.GetReqID(r.Context()), "target_resource", req.targetResource, "cluster_id", req.clusterID,
+		"affected_record_count", len(affected), "missing_fields", fields, "backfill_attempted", false)
 }
 
 // parseRemediationHistoryRequest parses and validates the required/optional

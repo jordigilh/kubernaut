@@ -3113,6 +3113,18 @@ type AIAnalysisAuditPayload struct {
 	Confidence OptFloat32 `json:"confidence"`
 	// Selected workflow identifier.
 	WorkflowID OptString `json:"workflow_id"`
+	// Catalog-authoritative non-unique workflow name (DD-KA-2496).
+	WorkflowName OptString `json:"workflow_name"`
+	// Selection confidence only; omitted when unknown, never inherited from RCA.
+	WorkflowSelectionConfidence OptFloat64                                       `json:"workflow_selection_confidence"`
+	RepeatJustification         OptRepeatJustification                           `json:"repeat_justification"`
+	RepeatJustificationRequired OptBool                                          `json:"repeat_justification_required"`
+	PriorWorkflowMatch          OptBool                                          `json:"prior_workflow_match"`
+	RepeatValidationOutcome     OptAIAnalysisAuditPayloadRepeatValidationOutcome `json:"repeat_validation_outcome"`
+	HandoffDigest               OptString                                        `json:"handoff_digest"`
+	// Trusted target-scoped audit links; never included in live Console projections.
+	PriorRemediationUids []string               `json:"prior_remediation_uids"`
+	SelectionAssessment  OptSelectionAssessment `json:"selection_assessment"`
 	// Primary failure reason.
 	Reason OptString `json:"reason"`
 	// Detailed failure sub-reason.
@@ -3169,6 +3181,51 @@ func (s *AIAnalysisAuditPayload) GetConfidence() OptFloat32 {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *AIAnalysisAuditPayload) GetWorkflowName() OptString {
+	return s.WorkflowName
+}
+
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *AIAnalysisAuditPayload) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
+}
+
+// GetRepeatJustification returns the value of RepeatJustification.
+func (s *AIAnalysisAuditPayload) GetRepeatJustification() OptRepeatJustification {
+	return s.RepeatJustification
+}
+
+// GetRepeatJustificationRequired returns the value of RepeatJustificationRequired.
+func (s *AIAnalysisAuditPayload) GetRepeatJustificationRequired() OptBool {
+	return s.RepeatJustificationRequired
+}
+
+// GetPriorWorkflowMatch returns the value of PriorWorkflowMatch.
+func (s *AIAnalysisAuditPayload) GetPriorWorkflowMatch() OptBool {
+	return s.PriorWorkflowMatch
+}
+
+// GetRepeatValidationOutcome returns the value of RepeatValidationOutcome.
+func (s *AIAnalysisAuditPayload) GetRepeatValidationOutcome() OptAIAnalysisAuditPayloadRepeatValidationOutcome {
+	return s.RepeatValidationOutcome
+}
+
+// GetHandoffDigest returns the value of HandoffDigest.
+func (s *AIAnalysisAuditPayload) GetHandoffDigest() OptString {
+	return s.HandoffDigest
+}
+
+// GetPriorRemediationUids returns the value of PriorRemediationUids.
+func (s *AIAnalysisAuditPayload) GetPriorRemediationUids() []string {
+	return s.PriorRemediationUids
+}
+
+// GetSelectionAssessment returns the value of SelectionAssessment.
+func (s *AIAnalysisAuditPayload) GetSelectionAssessment() OptSelectionAssessment {
+	return s.SelectionAssessment
 }
 
 // GetReason returns the value of Reason.
@@ -3239,6 +3296,51 @@ func (s *AIAnalysisAuditPayload) SetConfidence(val OptFloat32) {
 // SetWorkflowID sets the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *AIAnalysisAuditPayload) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
+}
+
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *AIAnalysisAuditPayload) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
+}
+
+// SetRepeatJustification sets the value of RepeatJustification.
+func (s *AIAnalysisAuditPayload) SetRepeatJustification(val OptRepeatJustification) {
+	s.RepeatJustification = val
+}
+
+// SetRepeatJustificationRequired sets the value of RepeatJustificationRequired.
+func (s *AIAnalysisAuditPayload) SetRepeatJustificationRequired(val OptBool) {
+	s.RepeatJustificationRequired = val
+}
+
+// SetPriorWorkflowMatch sets the value of PriorWorkflowMatch.
+func (s *AIAnalysisAuditPayload) SetPriorWorkflowMatch(val OptBool) {
+	s.PriorWorkflowMatch = val
+}
+
+// SetRepeatValidationOutcome sets the value of RepeatValidationOutcome.
+func (s *AIAnalysisAuditPayload) SetRepeatValidationOutcome(val OptAIAnalysisAuditPayloadRepeatValidationOutcome) {
+	s.RepeatValidationOutcome = val
+}
+
+// SetHandoffDigest sets the value of HandoffDigest.
+func (s *AIAnalysisAuditPayload) SetHandoffDigest(val OptString) {
+	s.HandoffDigest = val
+}
+
+// SetPriorRemediationUids sets the value of PriorRemediationUids.
+func (s *AIAnalysisAuditPayload) SetPriorRemediationUids(val []string) {
+	s.PriorRemediationUids = val
+}
+
+// SetSelectionAssessment sets the value of SelectionAssessment.
+func (s *AIAnalysisAuditPayload) SetSelectionAssessment(val OptSelectionAssessment) {
+	s.SelectionAssessment = val
 }
 
 // SetReason sets the value of Reason.
@@ -3360,6 +3462,54 @@ func (s *AIAnalysisAuditPayloadPhase) UnmarshalText(data []byte) error {
 		return nil
 	case AIAnalysisAuditPayloadPhaseFailed:
 		*s = AIAnalysisAuditPayloadPhaseFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAnalysisAuditPayloadRepeatValidationOutcome string
+
+const (
+	AIAnalysisAuditPayloadRepeatValidationOutcomeNotRequired AIAnalysisAuditPayloadRepeatValidationOutcome = "not_required"
+	AIAnalysisAuditPayloadRepeatValidationOutcomeAccepted    AIAnalysisAuditPayloadRepeatValidationOutcome = "accepted"
+	AIAnalysisAuditPayloadRepeatValidationOutcomeRejected    AIAnalysisAuditPayloadRepeatValidationOutcome = "rejected"
+)
+
+// AllValues returns all AIAnalysisAuditPayloadRepeatValidationOutcome values.
+func (AIAnalysisAuditPayloadRepeatValidationOutcome) AllValues() []AIAnalysisAuditPayloadRepeatValidationOutcome {
+	return []AIAnalysisAuditPayloadRepeatValidationOutcome{
+		AIAnalysisAuditPayloadRepeatValidationOutcomeNotRequired,
+		AIAnalysisAuditPayloadRepeatValidationOutcomeAccepted,
+		AIAnalysisAuditPayloadRepeatValidationOutcomeRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAnalysisAuditPayloadRepeatValidationOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeNotRequired:
+		return []byte(s), nil
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeAccepted:
+		return []byte(s), nil
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAnalysisAuditPayloadRepeatValidationOutcome) UnmarshalText(data []byte) error {
+	switch AIAnalysisAuditPayloadRepeatValidationOutcome(data) {
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeNotRequired:
+		*s = AIAnalysisAuditPayloadRepeatValidationOutcomeNotRequired
+		return nil
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeAccepted:
+		*s = AIAnalysisAuditPayloadRepeatValidationOutcomeAccepted
+		return nil
+	case AIAnalysisAuditPayloadRepeatValidationOutcomeRejected:
+		*s = AIAnalysisAuditPayloadRepeatValidationOutcomeRejected
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -21119,7 +21269,8 @@ type IncidentResponseData struct {
 	// Structured RCA with summary, severity, contributingFactors.
 	RootCauseAnalysis IncidentResponseDataRootCauseAnalysis `json:"rootCauseAnalysis"`
 	// Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
-	SelectedWorkflow OptIncidentResponseDataSelectedWorkflow `json:"selectedWorkflow"`
+	SelectedWorkflow    OptIncidentResponseDataSelectedWorkflow `json:"selectedWorkflow"`
+	SelectionAssessment OptSelectionAssessment                  `json:"selection_assessment"`
 	// Overall confidence in analysis.
 	Confidence float32 `json:"confidence"`
 	// ISO timestamp of analysis completion.
@@ -21161,6 +21312,11 @@ func (s *IncidentResponseData) GetRootCauseAnalysis() IncidentResponseDataRootCa
 // GetSelectedWorkflow returns the value of SelectedWorkflow.
 func (s *IncidentResponseData) GetSelectedWorkflow() OptIncidentResponseDataSelectedWorkflow {
 	return s.SelectedWorkflow
+}
+
+// GetSelectionAssessment returns the value of SelectionAssessment.
+func (s *IncidentResponseData) GetSelectionAssessment() OptSelectionAssessment {
+	return s.SelectionAssessment
 }
 
 // GetConfidence returns the value of Confidence.
@@ -21216,6 +21372,11 @@ func (s *IncidentResponseData) SetRootCauseAnalysis(val IncidentResponseDataRoot
 // SetSelectedWorkflow sets the value of SelectedWorkflow.
 func (s *IncidentResponseData) SetSelectedWorkflow(val OptIncidentResponseDataSelectedWorkflow) {
 	s.SelectedWorkflow = val
+}
+
+// SetSelectionAssessment sets the value of SelectionAssessment.
+func (s *IncidentResponseData) SetSelectionAssessment(val OptSelectionAssessment) {
+	s.SelectionAssessment = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -21712,17 +21873,33 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byt
 // Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
 type IncidentResponseDataSelectedWorkflow struct {
 	WorkflowId OptString `json:"workflowId"`
+	// Catalog-authoritative non-unique workflow name (DD-KA-2496).
+	WorkflowName OptString `json:"workflowName"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
 	// Propagated from KA's three-step discovery protocol.
-	ActionType      OptString                                         `json:"actionType"`
-	ExecutionBundle OptString                                         `json:"executionBundle"`
-	Confidence      OptFloat32                                        `json:"confidence"`
-	Parameters      OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
+	ActionType      OptString  `json:"actionType"`
+	ExecutionBundle OptString  `json:"executionBundle"`
+	Confidence      OptFloat32 `json:"confidence"`
+	// Independent selection confidence; zero is known, omission is unknown.
+	WorkflowSelectionConfidence OptFloat64                                                     `json:"workflow_selection_confidence"`
+	RepeatJustification         OptRepeatJustification                                         `json:"repeat_justification"`
+	RepeatJustificationRequired OptBool                                                        `json:"repeat_justification_required"`
+	PriorWorkflowMatch          OptBool                                                        `json:"prior_workflow_match"`
+	RepeatValidationOutcome     OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome `json:"repeat_validation_outcome"`
+	HandoffDigest               OptString                                                      `json:"handoff_digest"`
+	// Trusted target-scoped audit links, excluded from live Console projections.
+	PriorRemediationUids []string                                          `json:"prior_remediation_uids"`
+	Parameters           OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
 }
 
 // GetWorkflowId returns the value of WorkflowId.
 func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowId() OptString {
 	return s.WorkflowId
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowName() OptString {
+	return s.WorkflowName
 }
 
 // GetActionType returns the value of ActionType.
@@ -21740,6 +21917,41 @@ func (s *IncidentResponseDataSelectedWorkflow) GetConfidence() OptFloat32 {
 	return s.Confidence
 }
 
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
+}
+
+// GetRepeatJustification returns the value of RepeatJustification.
+func (s *IncidentResponseDataSelectedWorkflow) GetRepeatJustification() OptRepeatJustification {
+	return s.RepeatJustification
+}
+
+// GetRepeatJustificationRequired returns the value of RepeatJustificationRequired.
+func (s *IncidentResponseDataSelectedWorkflow) GetRepeatJustificationRequired() OptBool {
+	return s.RepeatJustificationRequired
+}
+
+// GetPriorWorkflowMatch returns the value of PriorWorkflowMatch.
+func (s *IncidentResponseDataSelectedWorkflow) GetPriorWorkflowMatch() OptBool {
+	return s.PriorWorkflowMatch
+}
+
+// GetRepeatValidationOutcome returns the value of RepeatValidationOutcome.
+func (s *IncidentResponseDataSelectedWorkflow) GetRepeatValidationOutcome() OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome {
+	return s.RepeatValidationOutcome
+}
+
+// GetHandoffDigest returns the value of HandoffDigest.
+func (s *IncidentResponseDataSelectedWorkflow) GetHandoffDigest() OptString {
+	return s.HandoffDigest
+}
+
+// GetPriorRemediationUids returns the value of PriorRemediationUids.
+func (s *IncidentResponseDataSelectedWorkflow) GetPriorRemediationUids() []string {
+	return s.PriorRemediationUids
+}
+
 // GetParameters returns the value of Parameters.
 func (s *IncidentResponseDataSelectedWorkflow) GetParameters() OptIncidentResponseDataSelectedWorkflowParameters {
 	return s.Parameters
@@ -21748,6 +21960,11 @@ func (s *IncidentResponseDataSelectedWorkflow) GetParameters() OptIncidentRespon
 // SetWorkflowId sets the value of WorkflowId.
 func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowId(val OptString) {
 	s.WorkflowId = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
 }
 
 // SetActionType sets the value of ActionType.
@@ -21765,6 +21982,41 @@ func (s *IncidentResponseDataSelectedWorkflow) SetConfidence(val OptFloat32) {
 	s.Confidence = val
 }
 
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
+}
+
+// SetRepeatJustification sets the value of RepeatJustification.
+func (s *IncidentResponseDataSelectedWorkflow) SetRepeatJustification(val OptRepeatJustification) {
+	s.RepeatJustification = val
+}
+
+// SetRepeatJustificationRequired sets the value of RepeatJustificationRequired.
+func (s *IncidentResponseDataSelectedWorkflow) SetRepeatJustificationRequired(val OptBool) {
+	s.RepeatJustificationRequired = val
+}
+
+// SetPriorWorkflowMatch sets the value of PriorWorkflowMatch.
+func (s *IncidentResponseDataSelectedWorkflow) SetPriorWorkflowMatch(val OptBool) {
+	s.PriorWorkflowMatch = val
+}
+
+// SetRepeatValidationOutcome sets the value of RepeatValidationOutcome.
+func (s *IncidentResponseDataSelectedWorkflow) SetRepeatValidationOutcome(val OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) {
+	s.RepeatValidationOutcome = val
+}
+
+// SetHandoffDigest sets the value of HandoffDigest.
+func (s *IncidentResponseDataSelectedWorkflow) SetHandoffDigest(val OptString) {
+	s.HandoffDigest = val
+}
+
+// SetPriorRemediationUids sets the value of PriorRemediationUids.
+func (s *IncidentResponseDataSelectedWorkflow) SetPriorRemediationUids(val []string) {
+	s.PriorRemediationUids = val
+}
+
 // SetParameters sets the value of Parameters.
 func (s *IncidentResponseDataSelectedWorkflow) SetParameters(val OptIncidentResponseDataSelectedWorkflowParameters) {
 	s.Parameters = val
@@ -21779,6 +22031,54 @@ func (s *IncidentResponseDataSelectedWorkflowParameters) init() IncidentResponse
 		*s = m
 	}
 	return m
+}
+
+type IncidentResponseDataSelectedWorkflowRepeatValidationOutcome string
+
+const (
+	IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeNotRequired IncidentResponseDataSelectedWorkflowRepeatValidationOutcome = "not_required"
+	IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeAccepted    IncidentResponseDataSelectedWorkflowRepeatValidationOutcome = "accepted"
+	IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected    IncidentResponseDataSelectedWorkflowRepeatValidationOutcome = "rejected"
+)
+
+// AllValues returns all IncidentResponseDataSelectedWorkflowRepeatValidationOutcome values.
+func (IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) AllValues() []IncidentResponseDataSelectedWorkflowRepeatValidationOutcome {
+	return []IncidentResponseDataSelectedWorkflowRepeatValidationOutcome{
+		IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeNotRequired,
+		IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeAccepted,
+		IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeNotRequired:
+		return []byte(s), nil
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeAccepted:
+		return []byte(s), nil
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataSelectedWorkflowRepeatValidationOutcome(data) {
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeNotRequired:
+		*s = IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeNotRequired
+		return nil
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeAccepted:
+		*s = IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeAccepted
+		return nil
+	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected:
+		*s = IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // LLM API request event payload (aiagent.llm.request).
@@ -22188,6 +22488,10 @@ type LLMToolCallPayload struct {
 	ToolResult jx.Raw `json:"tool_result"`
 	// Preview of the audit-safe tool result (at most 500 characters).
 	ToolResultPreview OptString `json:"tool_result_preview"`
+	// Trusted server phase at dispatch; model-supplied phase arguments are not authoritative
+	// (DD-KA-2496).
+	Phase        OptString       `json:"phase"`
+	ErrorDetails OptErrorDetails `json:"error_details"`
 }
 
 // GetEventType returns the value of EventType.
@@ -22230,6 +22534,16 @@ func (s *LLMToolCallPayload) GetToolResultPreview() OptString {
 	return s.ToolResultPreview
 }
 
+// GetPhase returns the value of Phase.
+func (s *LLMToolCallPayload) GetPhase() OptString {
+	return s.Phase
+}
+
+// GetErrorDetails returns the value of ErrorDetails.
+func (s *LLMToolCallPayload) GetErrorDetails() OptErrorDetails {
+	return s.ErrorDetails
+}
+
 // SetEventType sets the value of EventType.
 func (s *LLMToolCallPayload) SetEventType(val LLMToolCallPayloadEventType) {
 	s.EventType = val
@@ -22268,6 +22582,16 @@ func (s *LLMToolCallPayload) SetToolResult(val jx.Raw) {
 // SetToolResultPreview sets the value of ToolResultPreview.
 func (s *LLMToolCallPayload) SetToolResultPreview(val OptString) {
 	s.ToolResultPreview = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *LLMToolCallPayload) SetPhase(val OptString) {
+	s.Phase = val
+}
+
+// SetErrorDetails sets the value of ErrorDetails.
+func (s *LLMToolCallPayload) SetErrorDetails(val OptErrorDetails) {
+	s.ErrorDetails = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -23917,6 +24241,52 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 	return m
 }
 
+// NewOptAIAnalysisAuditPayloadRepeatValidationOutcome returns new OptAIAnalysisAuditPayloadRepeatValidationOutcome with value set to v.
+func NewOptAIAnalysisAuditPayloadRepeatValidationOutcome(v AIAnalysisAuditPayloadRepeatValidationOutcome) OptAIAnalysisAuditPayloadRepeatValidationOutcome {
+	return OptAIAnalysisAuditPayloadRepeatValidationOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAnalysisAuditPayloadRepeatValidationOutcome is optional AIAnalysisAuditPayloadRepeatValidationOutcome.
+type OptAIAnalysisAuditPayloadRepeatValidationOutcome struct {
+	Value AIAnalysisAuditPayloadRepeatValidationOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptAIAnalysisAuditPayloadRepeatValidationOutcome was set.
+func (o OptAIAnalysisAuditPayloadRepeatValidationOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAnalysisAuditPayloadRepeatValidationOutcome) Reset() {
+	var v AIAnalysisAuditPayloadRepeatValidationOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAnalysisAuditPayloadRepeatValidationOutcome) SetTo(v AIAnalysisAuditPayloadRepeatValidationOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAnalysisAuditPayloadRepeatValidationOutcome) Get() (v AIAnalysisAuditPayloadRepeatValidationOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAnalysisAuditPayloadRepeatValidationOutcome) Or(d AIAnalysisAuditPayloadRepeatValidationOutcome) AIAnalysisAuditPayloadRepeatValidationOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptApifrontendSessionCompletedPayloadUserDecision returns new OptApifrontendSessionCompletedPayloadUserDecision with value set to v.
 func NewOptApifrontendSessionCompletedPayloadUserDecision(v ApifrontendSessionCompletedPayloadUserDecision) OptApifrontendSessionCompletedPayloadUserDecision {
 	return OptApifrontendSessionCompletedPayloadUserDecision{
@@ -25199,6 +25569,52 @@ func (o OptIncidentResponseDataSelectedWorkflowParameters) Get() (v IncidentResp
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIncidentResponseDataSelectedWorkflowParameters) Or(d IncidentResponseDataSelectedWorkflowParameters) IncidentResponseDataSelectedWorkflowParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome returns new OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome with value set to v.
+func NewOptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome(v IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome {
+	return OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome is optional IncidentResponseDataSelectedWorkflowRepeatValidationOutcome.
+type OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome struct {
+	Value IncidentResponseDataSelectedWorkflowRepeatValidationOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome was set.
+func (o OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) Reset() {
+	var v IncidentResponseDataSelectedWorkflowRepeatValidationOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) SetTo(v IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) Get() (v IncidentResponseDataSelectedWorkflowRepeatValidationOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) Or(d IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) IncidentResponseDataSelectedWorkflowRepeatValidationOutcome {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -27077,6 +27493,190 @@ func (o OptRemediationWorkflowContentPayloadCustomLabels) Or(d RemediationWorkfl
 	return d
 }
 
+// NewOptRepeatJustification returns new OptRepeatJustification with value set to v.
+func NewOptRepeatJustification(v RepeatJustification) OptRepeatJustification {
+	return OptRepeatJustification{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRepeatJustification is optional RepeatJustification.
+type OptRepeatJustification struct {
+	Value RepeatJustification
+	Set   bool
+}
+
+// IsSet returns true if OptRepeatJustification was set.
+func (o OptRepeatJustification) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRepeatJustification) Reset() {
+	var v RepeatJustification
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRepeatJustification) SetTo(v RepeatJustification) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRepeatJustification) Get() (v RepeatJustification, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRepeatJustification) Or(d RepeatJustification) RepeatJustification {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRepeatJustificationAssessment returns new OptRepeatJustificationAssessment with value set to v.
+func NewOptRepeatJustificationAssessment(v RepeatJustificationAssessment) OptRepeatJustificationAssessment {
+	return OptRepeatJustificationAssessment{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRepeatJustificationAssessment is optional RepeatJustificationAssessment.
+type OptRepeatJustificationAssessment struct {
+	Value RepeatJustificationAssessment
+	Set   bool
+}
+
+// IsSet returns true if OptRepeatJustificationAssessment was set.
+func (o OptRepeatJustificationAssessment) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRepeatJustificationAssessment) Reset() {
+	var v RepeatJustificationAssessment
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRepeatJustificationAssessment) SetTo(v RepeatJustificationAssessment) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRepeatJustificationAssessment) Get() (v RepeatJustificationAssessment, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRepeatJustificationAssessment) Or(d RepeatJustificationAssessment) RepeatJustificationAssessment {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSelectionAssessment returns new OptSelectionAssessment with value set to v.
+func NewOptSelectionAssessment(v SelectionAssessment) OptSelectionAssessment {
+	return OptSelectionAssessment{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSelectionAssessment is optional SelectionAssessment.
+type OptSelectionAssessment struct {
+	Value SelectionAssessment
+	Set   bool
+}
+
+// IsSet returns true if OptSelectionAssessment was set.
+func (o OptSelectionAssessment) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSelectionAssessment) Reset() {
+	var v SelectionAssessment
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSelectionAssessment) SetTo(v SelectionAssessment) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSelectionAssessment) Get() (v SelectionAssessment, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSelectionAssessment) Or(d SelectionAssessment) SelectionAssessment {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSelectionAssessmentRepeatValidationOutcome returns new OptSelectionAssessmentRepeatValidationOutcome with value set to v.
+func NewOptSelectionAssessmentRepeatValidationOutcome(v SelectionAssessmentRepeatValidationOutcome) OptSelectionAssessmentRepeatValidationOutcome {
+	return OptSelectionAssessmentRepeatValidationOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSelectionAssessmentRepeatValidationOutcome is optional SelectionAssessmentRepeatValidationOutcome.
+type OptSelectionAssessmentRepeatValidationOutcome struct {
+	Value SelectionAssessmentRepeatValidationOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptSelectionAssessmentRepeatValidationOutcome was set.
+func (o OptSelectionAssessmentRepeatValidationOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSelectionAssessmentRepeatValidationOutcome) Reset() {
+	var v SelectionAssessmentRepeatValidationOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSelectionAssessmentRepeatValidationOutcome) SetTo(v SelectionAssessmentRepeatValidationOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSelectionAssessmentRepeatValidationOutcome) Get() (v SelectionAssessmentRepeatValidationOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSelectionAssessmentRepeatValidationOutcome) Or(d SelectionAssessmentRepeatValidationOutcome) SelectionAssessmentRepeatValidationOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptShadowLLMResponsePayloadEvaluationResult returns new OptShadowLLMResponsePayloadEvaluationResult with value set to v.
 func NewOptShadowLLMResponsePayloadEvaluationResult(v ShadowLLMResponsePayloadEvaluationResult) OptShadowLLMResponsePayloadEvaluationResult {
 	return OptShadowLLMResponsePayloadEvaluationResult{
@@ -28903,6 +29503,14 @@ func (*RemediationHistoryContext) getRemediationHistoryContextRes() {}
 type RemediationHistoryEntry struct {
 	// RemediationRequest UID (correlation key).
 	RemediationUID string `json:"remediationUID"`
+	// Catalog-authoritative workflow identity from the stored RO selection. Sole repeat key; omitted
+	// when unknown (DD-KA-2496).
+	WorkflowId OptString `json:"workflowId"`
+	// Catalog-authoritative non-unique human context. Omitted when unknown (DD-KA-2496).
+	WorkflowName OptString `json:"workflowName"`
+	// Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown;
+	//  zero is known (DD-KA-2496).
+	WorkflowSelectionConfidence OptFloat64 `json:"workflowSelectionConfidence"`
 	// Signal fingerprint that triggered the remediation.
 	SignalFingerprint OptString `json:"signalFingerprint"`
 	// Type of signal (e.g. HighCPULoad, OOMKilled).
@@ -28943,6 +29551,21 @@ type RemediationHistoryEntry struct {
 // GetRemediationUID returns the value of RemediationUID.
 func (s *RemediationHistoryEntry) GetRemediationUID() string {
 	return s.RemediationUID
+}
+
+// GetWorkflowId returns the value of WorkflowId.
+func (s *RemediationHistoryEntry) GetWorkflowId() OptString {
+	return s.WorkflowId
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *RemediationHistoryEntry) GetWorkflowName() OptString {
+	return s.WorkflowName
+}
+
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *RemediationHistoryEntry) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
 }
 
 // GetSignalFingerprint returns the value of SignalFingerprint.
@@ -29023,6 +29646,21 @@ func (s *RemediationHistoryEntry) GetAssessedAt() OptDateTime {
 // SetRemediationUID sets the value of RemediationUID.
 func (s *RemediationHistoryEntry) SetRemediationUID(val string) {
 	s.RemediationUID = val
+}
+
+// SetWorkflowId sets the value of WorkflowId.
+func (s *RemediationHistoryEntry) SetWorkflowId(val OptString) {
+	s.WorkflowId = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *RemediationHistoryEntry) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
+}
+
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *RemediationHistoryEntry) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
 }
 
 // SetSignalFingerprint sets the value of SignalFingerprint.
@@ -29245,6 +29883,14 @@ func (s *RemediationHistoryEntryHashMatch) UnmarshalText(data []byte) error {
 type RemediationHistorySummary struct {
 	// RemediationRequest UID (correlation key).
 	RemediationUID string `json:"remediationUID"`
+	// Catalog-authoritative workflow identity from the stored RO selection. Sole repeat key; omitted
+	// when unknown (DD-KA-2496).
+	WorkflowId OptString `json:"workflowId"`
+	// Catalog-authoritative non-unique human context. Omitted when unknown (DD-KA-2496).
+	WorkflowName OptString `json:"workflowName"`
+	// Recorded workflow-selection confidence, independent of effectiveness and RCA. Omitted when unknown;
+	//  zero is known (DD-KA-2496).
+	WorkflowSelectionConfidence OptFloat64 `json:"workflowSelectionConfidence"`
 	// Type of signal.
 	SignalType OptString `json:"signalType"`
 	// Action type applied (null if escalated).
@@ -29268,6 +29914,21 @@ type RemediationHistorySummary struct {
 // GetRemediationUID returns the value of RemediationUID.
 func (s *RemediationHistorySummary) GetRemediationUID() string {
 	return s.RemediationUID
+}
+
+// GetWorkflowId returns the value of WorkflowId.
+func (s *RemediationHistorySummary) GetWorkflowId() OptString {
+	return s.WorkflowId
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *RemediationHistorySummary) GetWorkflowName() OptString {
+	return s.WorkflowName
+}
+
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *RemediationHistorySummary) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
 }
 
 // GetSignalType returns the value of SignalType.
@@ -29313,6 +29974,21 @@ func (s *RemediationHistorySummary) GetCompletedAt() time.Time {
 // SetRemediationUID sets the value of RemediationUID.
 func (s *RemediationHistorySummary) SetRemediationUID(val string) {
 	s.RemediationUID = val
+}
+
+// SetWorkflowId sets the value of WorkflowId.
+func (s *RemediationHistorySummary) SetWorkflowId(val OptString) {
+	s.WorkflowId = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *RemediationHistorySummary) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
+}
+
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *RemediationHistorySummary) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
 }
 
 // SetSignalType sets the value of SignalType.
@@ -29858,6 +30534,11 @@ type RemediationOrchestratorAuditPayload struct {
 	RequiredBy OptDateTime `json:"required_by"`
 	// Selected workflow identifier.
 	WorkflowID OptString `json:"workflow_id"`
+	// Catalog-authoritative human-readable name of the selected workflow (non-unique; DD-KA-2496).
+	WorkflowName OptString `json:"workflow_name"`
+	// Current selection confidence copied from AIAnalysis.SelectedWorkflow, not RCA or approval
+	// confidence. Omitted if unavailable; zero is known (DD-KA-2496).
+	WorkflowSelectionConfidence OptFloat64 `json:"workflow_selection_confidence"`
 	// Workflow selection confidence as string.
 	ConfidenceStr OptString `json:"confidence_str"`
 	// Approval decision.
@@ -29999,6 +30680,16 @@ func (s *RemediationOrchestratorAuditPayload) GetRequiredBy() OptDateTime {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *RemediationOrchestratorAuditPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *RemediationOrchestratorAuditPayload) GetWorkflowName() OptString {
+	return s.WorkflowName
+}
+
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *RemediationOrchestratorAuditPayload) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
 }
 
 // GetConfidenceStr returns the value of ConfidenceStr.
@@ -30189,6 +30880,16 @@ func (s *RemediationOrchestratorAuditPayload) SetRequiredBy(val OptDateTime) {
 // SetWorkflowID sets the value of WorkflowID.
 func (s *RemediationOrchestratorAuditPayload) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *RemediationOrchestratorAuditPayload) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
+}
+
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *RemediationOrchestratorAuditPayload) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
 }
 
 // SetConfidenceStr sets the value of ConfidenceStr.
@@ -31630,6 +32331,80 @@ func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalText(data []b
 	}
 }
 
+// Ref: #/components/schemas/RepeatJustification
+type RepeatJustification struct {
+	EvidenceBasis         string `json:"evidence_basis"`
+	PriorOutcomeRelevance string `json:"prior_outcome_relevance"`
+	ExpectedMechanism     string `json:"expected_mechanism"`
+}
+
+// GetEvidenceBasis returns the value of EvidenceBasis.
+func (s *RepeatJustification) GetEvidenceBasis() string {
+	return s.EvidenceBasis
+}
+
+// GetPriorOutcomeRelevance returns the value of PriorOutcomeRelevance.
+func (s *RepeatJustification) GetPriorOutcomeRelevance() string {
+	return s.PriorOutcomeRelevance
+}
+
+// GetExpectedMechanism returns the value of ExpectedMechanism.
+func (s *RepeatJustification) GetExpectedMechanism() string {
+	return s.ExpectedMechanism
+}
+
+// SetEvidenceBasis sets the value of EvidenceBasis.
+func (s *RepeatJustification) SetEvidenceBasis(val string) {
+	s.EvidenceBasis = val
+}
+
+// SetPriorOutcomeRelevance sets the value of PriorOutcomeRelevance.
+func (s *RepeatJustification) SetPriorOutcomeRelevance(val string) {
+	s.PriorOutcomeRelevance = val
+}
+
+// SetExpectedMechanism sets the value of ExpectedMechanism.
+func (s *RepeatJustification) SetExpectedMechanism(val string) {
+	s.ExpectedMechanism = val
+}
+
+// Ref: #/components/schemas/RepeatJustificationAssessment
+type RepeatJustificationAssessment struct {
+	EvidenceBasis         OptString `json:"evidence_basis"`
+	PriorOutcomeRelevance OptString `json:"prior_outcome_relevance"`
+	ExpectedMechanism     OptString `json:"expected_mechanism"`
+}
+
+// GetEvidenceBasis returns the value of EvidenceBasis.
+func (s *RepeatJustificationAssessment) GetEvidenceBasis() OptString {
+	return s.EvidenceBasis
+}
+
+// GetPriorOutcomeRelevance returns the value of PriorOutcomeRelevance.
+func (s *RepeatJustificationAssessment) GetPriorOutcomeRelevance() OptString {
+	return s.PriorOutcomeRelevance
+}
+
+// GetExpectedMechanism returns the value of ExpectedMechanism.
+func (s *RepeatJustificationAssessment) GetExpectedMechanism() OptString {
+	return s.ExpectedMechanism
+}
+
+// SetEvidenceBasis sets the value of EvidenceBasis.
+func (s *RepeatJustificationAssessment) SetEvidenceBasis(val OptString) {
+	s.EvidenceBasis = val
+}
+
+// SetPriorOutcomeRelevance sets the value of PriorOutcomeRelevance.
+func (s *RepeatJustificationAssessment) SetPriorOutcomeRelevance(val OptString) {
+	s.PriorOutcomeRelevance = val
+}
+
+// SetExpectedMechanism sets the value of ExpectedMechanism.
+func (s *RepeatJustificationAssessment) SetExpectedMechanism(val OptString) {
+	s.ExpectedMechanism = val
+}
+
 // Search results metadata (BR-AUDIT-027).
 // Ref: #/components/schemas/ResultsMetadata
 type ResultsMetadata struct {
@@ -31704,6 +32479,160 @@ func (s *SearchExecutionMetadata) GetDurationMs() int64 {
 // SetDurationMs sets the value of DurationMs.
 func (s *SearchExecutionMetadata) SetDurationMs(val int64) {
 	s.DurationMs = val
+}
+
+// Non-executable rejected selection context for audit reconstruction; no workflow_id, parameters,
+// bundle or handoff body.
+// Ref: #/components/schemas/SelectionAssessment
+type SelectionAssessment struct {
+	ProposedWorkflowID          string                                        `json:"proposed_workflow_id"`
+	WorkflowName                OptString                                     `json:"workflow_name"`
+	WorkflowSelectionConfidence OptFloat64                                    `json:"workflow_selection_confidence"`
+	RepeatJustification         OptRepeatJustificationAssessment              `json:"repeat_justification"`
+	RepeatJustificationRequired OptBool                                       `json:"repeat_justification_required"`
+	PriorWorkflowMatch          OptBool                                       `json:"prior_workflow_match"`
+	RepeatValidationOutcome     OptSelectionAssessmentRepeatValidationOutcome `json:"repeat_validation_outcome"`
+	HandoffDigest               OptString                                     `json:"handoff_digest"`
+	// Trusted target-scoped audit links, not live Console context.
+	PriorRemediationUids []string `json:"prior_remediation_uids"`
+}
+
+// GetProposedWorkflowID returns the value of ProposedWorkflowID.
+func (s *SelectionAssessment) GetProposedWorkflowID() string {
+	return s.ProposedWorkflowID
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *SelectionAssessment) GetWorkflowName() OptString {
+	return s.WorkflowName
+}
+
+// GetWorkflowSelectionConfidence returns the value of WorkflowSelectionConfidence.
+func (s *SelectionAssessment) GetWorkflowSelectionConfidence() OptFloat64 {
+	return s.WorkflowSelectionConfidence
+}
+
+// GetRepeatJustification returns the value of RepeatJustification.
+func (s *SelectionAssessment) GetRepeatJustification() OptRepeatJustificationAssessment {
+	return s.RepeatJustification
+}
+
+// GetRepeatJustificationRequired returns the value of RepeatJustificationRequired.
+func (s *SelectionAssessment) GetRepeatJustificationRequired() OptBool {
+	return s.RepeatJustificationRequired
+}
+
+// GetPriorWorkflowMatch returns the value of PriorWorkflowMatch.
+func (s *SelectionAssessment) GetPriorWorkflowMatch() OptBool {
+	return s.PriorWorkflowMatch
+}
+
+// GetRepeatValidationOutcome returns the value of RepeatValidationOutcome.
+func (s *SelectionAssessment) GetRepeatValidationOutcome() OptSelectionAssessmentRepeatValidationOutcome {
+	return s.RepeatValidationOutcome
+}
+
+// GetHandoffDigest returns the value of HandoffDigest.
+func (s *SelectionAssessment) GetHandoffDigest() OptString {
+	return s.HandoffDigest
+}
+
+// GetPriorRemediationUids returns the value of PriorRemediationUids.
+func (s *SelectionAssessment) GetPriorRemediationUids() []string {
+	return s.PriorRemediationUids
+}
+
+// SetProposedWorkflowID sets the value of ProposedWorkflowID.
+func (s *SelectionAssessment) SetProposedWorkflowID(val string) {
+	s.ProposedWorkflowID = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *SelectionAssessment) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
+}
+
+// SetWorkflowSelectionConfidence sets the value of WorkflowSelectionConfidence.
+func (s *SelectionAssessment) SetWorkflowSelectionConfidence(val OptFloat64) {
+	s.WorkflowSelectionConfidence = val
+}
+
+// SetRepeatJustification sets the value of RepeatJustification.
+func (s *SelectionAssessment) SetRepeatJustification(val OptRepeatJustificationAssessment) {
+	s.RepeatJustification = val
+}
+
+// SetRepeatJustificationRequired sets the value of RepeatJustificationRequired.
+func (s *SelectionAssessment) SetRepeatJustificationRequired(val OptBool) {
+	s.RepeatJustificationRequired = val
+}
+
+// SetPriorWorkflowMatch sets the value of PriorWorkflowMatch.
+func (s *SelectionAssessment) SetPriorWorkflowMatch(val OptBool) {
+	s.PriorWorkflowMatch = val
+}
+
+// SetRepeatValidationOutcome sets the value of RepeatValidationOutcome.
+func (s *SelectionAssessment) SetRepeatValidationOutcome(val OptSelectionAssessmentRepeatValidationOutcome) {
+	s.RepeatValidationOutcome = val
+}
+
+// SetHandoffDigest sets the value of HandoffDigest.
+func (s *SelectionAssessment) SetHandoffDigest(val OptString) {
+	s.HandoffDigest = val
+}
+
+// SetPriorRemediationUids sets the value of PriorRemediationUids.
+func (s *SelectionAssessment) SetPriorRemediationUids(val []string) {
+	s.PriorRemediationUids = val
+}
+
+type SelectionAssessmentRepeatValidationOutcome string
+
+const (
+	SelectionAssessmentRepeatValidationOutcomeNotRequired SelectionAssessmentRepeatValidationOutcome = "not_required"
+	SelectionAssessmentRepeatValidationOutcomeAccepted    SelectionAssessmentRepeatValidationOutcome = "accepted"
+	SelectionAssessmentRepeatValidationOutcomeRejected    SelectionAssessmentRepeatValidationOutcome = "rejected"
+)
+
+// AllValues returns all SelectionAssessmentRepeatValidationOutcome values.
+func (SelectionAssessmentRepeatValidationOutcome) AllValues() []SelectionAssessmentRepeatValidationOutcome {
+	return []SelectionAssessmentRepeatValidationOutcome{
+		SelectionAssessmentRepeatValidationOutcomeNotRequired,
+		SelectionAssessmentRepeatValidationOutcomeAccepted,
+		SelectionAssessmentRepeatValidationOutcomeRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SelectionAssessmentRepeatValidationOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case SelectionAssessmentRepeatValidationOutcomeNotRequired:
+		return []byte(s), nil
+	case SelectionAssessmentRepeatValidationOutcomeAccepted:
+		return []byte(s), nil
+	case SelectionAssessmentRepeatValidationOutcomeRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SelectionAssessmentRepeatValidationOutcome) UnmarshalText(data []byte) error {
+	switch SelectionAssessmentRepeatValidationOutcome(data) {
+	case SelectionAssessmentRepeatValidationOutcomeNotRequired:
+		*s = SelectionAssessmentRepeatValidationOutcomeNotRequired
+		return nil
+	case SelectionAssessmentRepeatValidationOutcomeAccepted:
+		*s = SelectionAssessmentRepeatValidationOutcomeAccepted
+		return nil
+	case SelectionAssessmentRepeatValidationOutcomeRejected:
+		*s = SelectionAssessmentRepeatValidationOutcomeRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Shadow agent LLM request event payload (aiagent.shadow.llm.request). Emitted before each shadow

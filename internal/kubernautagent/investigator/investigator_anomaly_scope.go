@@ -104,22 +104,22 @@ func (inv *Investigator) StartAnomalyDetectorCleanupLoop(ctx context.Context, in
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				removed := inv.pruneAnomalyDetectors(maxAge)
-				if removed > 0 {
-					inv.logger.V(1).Info("pruned idle per-investigation anomaly detectors",
-						"removed", removed, "max_age", maxAge)
-				}
-				// #2387: share the existing sweep — no new goroutine or cmd
-				// wiring needed for the metrics/token scopes' TTL hygiene.
-				if mRemoved := inv.pruneMetrics(maxAge); mRemoved > 0 {
-					inv.logger.V(1).Info("pruned idle per-investigation metrics",
-						"removed", mRemoved, "max_age", maxAge)
-				}
-				if tRemoved := inv.pruneTokenScope(maxAge); tRemoved > 0 {
-					inv.logger.V(1).Info("pruned idle per-investigation token scopes",
-						"removed", tRemoved, "max_age", maxAge)
-				}
+				inv.pruneInvestigationScopes(maxAge)
 			}
 		}
 	}()
+}
+
+// #2387 / DD-KA-2496: one cancellation-owned loop reclaims every request scope.
+func (inv *Investigator) pruneInvestigationScopes(maxAge time.Duration) {
+	inv.logPrunedScope("anomaly detectors", inv.pruneAnomalyDetectors(maxAge), maxAge)
+	inv.logPrunedScope("metrics", inv.pruneMetrics(maxAge), maxAge)
+	inv.logPrunedScope("token scopes", inv.pruneTokenScope(maxAge), maxAge)
+	inv.logPrunedScope("evidence", inv.pruneEvidence(maxAge), maxAge)
+}
+
+func (inv *Investigator) logPrunedScope(scope string, removed int, maxAge time.Duration) {
+	if removed > 0 {
+		inv.logger.V(1).Info("pruned idle per-investigation "+scope, "removed", removed, "max_age", maxAge)
+	}
 }

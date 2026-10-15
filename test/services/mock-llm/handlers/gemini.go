@@ -281,7 +281,7 @@ func (h *handler) handleGeminiDiscoveryPlan(
 // respondGeminiWithSubmitToolCall writes the appropriate submit_result tool call in Gemini format.
 func (h *handler) respondGeminiWithSubmitToolCall(w http.ResponseWriter, cfg scenarios.MockScenarioConfig) {
 	toolName := openai.ToolSubmitResultWithWorkflow
-	if cfg.WorkflowID == "" {
+	if cfg.WorkflowID == "" || cfg.DeclineWorkflow {
 		toolName = openai.ToolSubmitResultNoWorkflow
 	}
 	h.trackToolCall(toolName)

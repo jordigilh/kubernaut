@@ -69,7 +69,7 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 			}},
 		}
 
-		messages, sentinel, budgetExhausted := inv.processToolCalls(context.Background(), nil, response, 0, "workflow_selection", "corr-2466-003")
+		messages, sentinel, budgetExhausted := inv.processToolCalls(context.Background(), nil, response, 0, string(katypes.PhaseWorkflowDiscovery), "corr-2466-003")
 
 		Expect(sentinel).To(BeNil())
 		Expect(budgetExhausted).To(BeFalse())
@@ -116,7 +116,7 @@ var _ = Describe("UT-KA-2466-003: get_workflow audit result minimization", func(
 			Message: llm.Message{Role: "assistant", Content: "checking resource"},
 			ToolCalls: []llm.ToolCall{{
 				ID:        "tc-get-pods-2466",
-				Name:      "kubectl_get",
+				Name:      "kubectl_get_by_name",
 				Arguments: `{"kind":"Pod"}`,
 			}},
 		}

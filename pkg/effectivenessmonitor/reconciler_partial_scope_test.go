@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -100,18 +101,27 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 	}
 
 	It("UT-EM-254-006a: Within grace period — requeues at 5s for scope re-evaluation", func() {
+		scenarioAt := time.Now()
 		s := buildScheme()
+		schemeReadyAt := time.Now()
+
+		constructionAt := time.Now()
+		r, fc := makeReconciler(s, &partialScopeDSQuerier{})
+		constructionReadyAt := time.Now()
 
 		// EA created very recently (within 30s grace period).
+		// Establish its age after dependency setup, not before the fake
+		// client's managed-fields schema initialization (BR-EM-001).
 		// Hash and health are NOT pre-set — they get computed in Step 7
 		// (avoids Step 6.5 spec drift since HashComputed starts as false).
 		// After Step 7 computes hash+health, Step 7a checks partial scope.
-		vd := metav1.NewTime(time.Now().Add(25 * time.Minute))
-		pca := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		fixtureAt := time.Now()
+		vd := metav1.NewTime(fixtureAt.Add(25 * time.Minute))
+		pca := metav1.NewTime(fixtureAt.Add(-1 * time.Minute))
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-partial-006a", Namespace: "default",
-				CreationTimestamp: metav1.NewTime(time.Now().Add(-5 * time.Second)),
+				CreationTimestamp: metav1.NewTime(fixtureAt.Add(-5 * time.Second)),
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "corr-partial-006a",
@@ -130,19 +140,62 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 			},
 		}
 
-		r, _ := makeReconciler(s, &partialScopeDSQuerier{}, ea)
-
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{
 			Name: "ea-partial-006a", Namespace: "default",
 		}}
+		createAt := time.Now()
+		Expect(fc.Create(ctx, ea)).To(Succeed())
+		createElapsed := time.Since(createAt)
 
+		// BR-EM-001 / UT-EM-254-006a: verify the same now-5s fixture age
+		// at dispatch without changing production grace or a stored timestamp.
+		before := &eav1.EffectivenessAssessment{}
+		beforeReadAt := time.Now()
+		Expect(fc.Get(ctx, req.NamespacedName, before)).To(Succeed())
+		dispatchAt := time.Now()
+		GinkgoWriter.Printf("UT-EM-254-006a scheme=%s fake_client_reconciler=%s fixture_create=%s pre_dispatch_read=%s setup_total=%s persisted_creation=%s age_before_reconcile=%s\n",
+			schemeReadyAt.Sub(scenarioAt), constructionReadyAt.Sub(constructionAt), createElapsed, dispatchAt.Sub(beforeReadAt), dispatchAt.Sub(scenarioAt),
+			before.CreationTimestamp.Format(time.RFC3339Nano), dispatchAt.Sub(before.CreationTimestamp.Time))
+		Expect(dispatchAt.Sub(before.CreationTimestamp.Time)).To(BeNumerically(">=", 5*time.Second))
+		Expect(dispatchAt.Sub(before.CreationTimestamp.Time)).To(BeNumerically("<", 30*time.Second),
+			"recent EA precondition must hold after fixture creation")
+		Expect(before.Status.Phase).To(Equal(eav1.PhaseAssessing))
+		Expect(before.Status.Components.HashComputed).To(BeFalse())
+		Expect(before.Status.Components.HealthAssessed).To(BeFalse())
+		reconcileAt := time.Now()
 		result, err := r.Reconcile(ctx, req)
+		reconcileElapsed := time.Since(reconcileAt)
+		GinkgoWriter.Printf("UT-EM-254-006a reconcile=%s result=%+v error=%v age_after_reconcile=%s\n",
+			reconcileElapsed, result, err, time.Since(before.CreationTimestamp.Time))
 		Expect(err).NotTo(HaveOccurred())
+		fetched := &eav1.EffectivenessAssessment{}
+		readbackAt := time.Now()
+		readbackErr := fc.Get(ctx, req.NamespacedName, fetched)
+		GinkgoWriter.Printf("UT-EM-254-006a readback=%s error=%v phase=%s assessment_reason=%s total=%s\n",
+			time.Since(readbackAt), readbackErr, fetched.Status.Phase, fetched.Status.AssessmentReason, time.Since(scenarioAt))
+		Expect(readbackErr).NotTo(HaveOccurred())
 
 		// Within grace period → requeue at 5s
 		Expect(result.RequeueAfter).To(Equal(5*time.Second),
 			"Within grace period: must requeue at exactly 5s for scope re-evaluation")
+		Expect(fetched.Status.Phase).To(Equal(eav1.PhaseAssessing))
+		Expect(fetched.Status.CompletedAt).To(BeNil())
+		Expect(fetched.Status.AssessmentReason).To(BeEmpty())
+
+		// The grace requeue precedes the status flush. Prove real component
+		// activity through its existing metrics, not fabricated persisted flags.
+		for _, component := range []string{"hash", "health"} {
+			var assessments float64
+			for _, outcome := range []string{"success", "error", "skipped"} {
+				counter, metricErr := r.Metrics.ComponentAssessmentsTotal.GetMetricWithLabelValues(component, outcome)
+				Expect(metricErr).NotTo(HaveOccurred())
+				assessments += testutil.ToFloat64(counter)
+			}
+			GinkgoWriter.Printf("UT-EM-254-006a component=%s assessments=%g\n", component, assessments)
+			Expect(assessments).To(Equal(float64(1)),
+				"%s assessment must remain observable during partial grace", component)
+		}
 	})
 
 	It("UT-EM-254-006b: After grace period — completes as 'partial'", func() {

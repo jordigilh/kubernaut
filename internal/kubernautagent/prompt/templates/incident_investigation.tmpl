@@ -172,9 +172,11 @@ Based on your RCA, determine the signal_name that best describes the effect:
 **If investigation reveals different root cause**:
 - Input: OOMKilled → Investigation shows node memory pressure → Use "NodePressure" or "Evicted"
 
-### Phase 3b: Identify the Root Owner (MANDATORY for remediation)
+### Optional Target Context and Remediation History (DD-KA-2496)
 
-Call the appropriate resource context tool with the **resource that needs remediation**.
+You may call the appropriate resource context tool when relevant to the RCA,
+using the **resource that needs remediation**. These calls are optional; RCA
+completion does not depend on calling either context/history tool.
 
 **CRITICAL**: This must be the resource whose configuration will be changed to fix the problem, NOT the resource that reported the signal.
 
@@ -186,7 +188,9 @@ Choose the tool based on whether the resource is **namespaced** or **cluster-sco
 - **`get_cluster_resource_context`** — For cluster-scoped resources (Node, PersistentVolume, Namespace, etc.).
   Returns: `root_owner`, `remediation_history`.
 
-**Important**: You **must** call this for your **final** RCA target before submitting the result.
+After RCA, Phase 2 automatically resolves and enriches the selected target and
+freezes its context/history for workflow selection. No history is pre-injected
+into this RCA request, and workflow discovery cannot call these tools.
 
 ## Pre-Submit Adversarial Due Diligence (MANDATORY)
 

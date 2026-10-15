@@ -141,7 +141,11 @@ func serviceFromTemplatePath(p string) string {
 	const prefix = "templates/"
 	trimmed := strings.TrimPrefix(p, prefix)
 	if idx := strings.Index(trimmed, "/"); idx >= 0 {
-		return trimmed[:idx]
+		trimmed = trimmed[:idx]
+	}
+	// The KA template directory differs from its canonical schema service key.
+	if trimmed == "kubernaut-agent" {
+		return "kubernautAgent"
 	}
 	return trimmed
 }

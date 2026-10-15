@@ -209,15 +209,15 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	Describe("IT-KA-433-AP-003: Investigation emits per-tool-call events", func() {
 		It("should emit 2 separate llm.tool_call events for 2 tool calls", func() {
 			reg := registry.New()
-			reg.Register(&fakeTool{name: "get_pods", result: `{"items":[{"name":"api"}]}`})
-			reg.Register(&fakeTool{name: "get_logs", result: `{"logs":"OOMKilled"}`})
+			reg.Register(&fakeTool{name: "kubectl_get_by_kind_in_namespace", result: `{"items":[{"name":"api"}]}`})
+			reg.Register(&fakeTool{name: "fetch_pod_logs", result: `{"logs":"OOMKilled"}`})
 
 			mockClient.responses = []llm.ChatResponse{
 				{
 					Message: llm.Message{Role: "assistant", Content: "investigating"},
 					ToolCalls: []llm.ToolCall{
-						{ID: "tc_1", Name: "get_pods", Arguments: `{"namespace":"production"}`},
-						{ID: "tc_2", Name: "get_logs", Arguments: `{"pod":"api"}`},
+						{ID: "tc_1", Name: "kubectl_get_by_kind_in_namespace", Arguments: `{"namespace":"production"}`},
+						{ID: "tc_2", Name: "fetch_pod_logs", Arguments: `{"pod":"api"}`},
 					},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`}},
@@ -236,10 +236,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			tcEvents := eventsOfType(audit.EventTypeLLMToolCall)
 			Expect(tcEvents).To(HaveLen(2))
 			Expect(tcEvents[0].Data["tool_call_index"]).To(Equal(0))
-			Expect(tcEvents[0].Data["tool_name"]).To(Equal("get_pods"))
+			Expect(tcEvents[0].Data["tool_name"]).To(Equal("kubectl_get_by_kind_in_namespace"))
 			Expect(tcEvents[0].Data["tool_result"]).To(Equal(`{"items":[{"name":"api"}]}`))
 			Expect(tcEvents[1].Data["tool_call_index"]).To(Equal(1))
-			Expect(tcEvents[1].Data["tool_name"]).To(Equal("get_logs"))
+			Expect(tcEvents[1].Data["tool_name"]).To(Equal("fetch_pod_logs"))
 			Expect(tcEvents[1].Data["tool_result"]).To(Equal(`{"logs":"OOMKilled"}`))
 		})
 	})

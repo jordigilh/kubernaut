@@ -103,9 +103,10 @@ func fpCreateTargetPod(ctx context.Context, deployment *appsv1.Deployment) {
 	})
 }
 
-// FullPipeline A2A specs use one shared SRE identity and are marked Serial to
-// avoid per-user MCP rate-limit contention. Direct service-account MCP specs
-// remain parallel.
+// FullPipeline A2A specs use a process-scoped SRE persona from the E2E DEX
+// overlay. This keeps per-user MCP rate-limit and active-context state isolated
+// while allowing independent A2A specs to run in parallel. Direct
+// service-account MCP specs remain parallel as before.
 
 func fpBuildJSONRPC(id, method string, params map[string]interface{}) string {
 	payload := map[string]interface{}{

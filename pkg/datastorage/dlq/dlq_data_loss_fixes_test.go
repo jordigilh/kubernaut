@@ -990,26 +990,44 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		streamKey := auditDlqEvents
-		err = redisClient.XAdd(ctx, &redis.XAddArgs{
+		messageID, err := redisClient.XAdd(ctx, &redis.XAddArgs{
 			Stream: streamKey,
 			ID:     "*",
 			Values: map[string]interface{}{"message": string(msgJSON)},
-		}).Err()
+		}).Result()
 		Expect(err).ToNot(HaveOccurred())
 
-		// ACT
-		drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// ACT: SI-10 validates the bounded two-pass permanent-failure path,
+		// not a wall-clock shutdown budget. Deadline/cancellation companions
+		// retain their original contracts and production budgets are unchanged.
+		drainCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
+		drainAt := time.Now()
 		stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, successRepo)
+		GinkgoWriter.Printf("UT-DS-1048-QEM2-002 drain=%s context_error=%v stats=%+v error=%v\n",
+			time.Since(drainAt), drainCtx.Err(), stats, drainErr)
 
 		// ASSERT: DF-H1: Oversized payload remains after 2 passes → drain reports error
 		Expect(drainErr).To(HaveOccurred(),
 			"DF-H1: oversized message remains after 2 passes → drain must report error")
+		Expect(drainErr).To(MatchError(ContainSubstring("drain events: messages remain after 2 passes")))
+		Expect(drainCtx.Err()).NotTo(HaveOccurred())
+		Expect(stats).NotTo(BeNil())
+		Expect(stats.TimedOut).To(BeFalse())
 		Expect(stats.EventsProcessed).To(Equal(0))
+		Expect(stats.TotalProcessed).To(Equal(0))
+		Expect(stats.Errors).To(HaveLen(1))
+		Expect(successRepo.CreatedCount()).To(BeZero(), "oversized input must never reach database writes")
 
 		depth, err := dlqClient.GetDLQDepth(ctx, "events")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(depth).To(Equal(int64(1)), "oversized message remains in stream")
+		remaining, err := redisClient.XRange(ctx, streamKey, "-", "+").Result()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(remaining).To(HaveLen(1))
+		Expect(remaining[0].ID).To(Equal(messageID))
+		Expect(remaining[0].Values["message"]).To(Equal(string(msgJSON)),
+			"rejection must retain the original oversized entry without rewriting it")
 	})
 
 	It("UT-DS-1048-QEM2-003: should handle drain pagination (>100 messages)", func() {

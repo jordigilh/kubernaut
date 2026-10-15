@@ -85,6 +85,11 @@ const (
 
 	clusterName = "fullpipeline-e2e"
 	namespace   = "kubernaut-system"
+
+	// The E2E DEX overlay provisions one SRE-grouped persona per possible
+	// Ginkgo process so A2A specs can run concurrently without sharing APIF's
+	// per-user buckets or active-context registry.
+	fpA2APersonaCount = 16
 )
 
 var (
@@ -315,6 +320,17 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// fpA2AUsername returns the SRE-grouped persona assigned to this Ginkgo
+// process. A process runs one spec at a time, so process-scoped identity keeps
+// independent specs isolated while avoiding per-test token plumbing.
+func fpA2AUsername() string {
+	process := GinkgoParallelProcess()
+	if process < 1 || process > fpA2APersonaCount {
+		Fail(fmt.Sprintf("Ginkgo process %d exceeds the %d provisioned FP A2A personas", process, fpA2APersonaCount))
+	}
+	return fmt.Sprintf("fp-a2a-%d@kubernaut.ai", process)
+}
+
 // getAFToken obtains an OIDC token from DEX for API Frontend authentication (password grant).
 func getAFToken() string {
 	if afAuthToken != "" {
@@ -327,7 +343,7 @@ func getAFToken() string {
 		"grant_type":    {"password"},
 		"client_id":     {"kubernaut-apifrontend"},
 		"client_secret": {"e2e-client-secret"},
-		"username":      {"sre@kubernaut.ai"},
+		"username":      {fpA2AUsername()},
 		"password":      {"password"},
 		"scope":         {"openid email profile groups"},
 	})

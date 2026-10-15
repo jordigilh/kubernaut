@@ -31,6 +31,7 @@ import (
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -394,6 +395,7 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 						}
 						Expect(dpData).To(HaveKey("summary"),
 							"SI-10: investigation_summary must include summary field")
+						validators.ValidateLiveSelectionProjection(dpData)
 						found = true
 						break
 					}

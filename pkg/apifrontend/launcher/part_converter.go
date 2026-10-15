@@ -18,24 +18,24 @@ const (
 )
 
 var toolStatusMessages = map[string]string{
-	"kubernaut_investigate":           "Investigating %s...",
-	"kubernaut_discover_workflows":    "Discovering available remediation workflows...",
-	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
-	"kubernaut_watch":                 "Watching remediation progress...",
-	"kubernaut_remediate":             "Creating remediation request...",
+	"kubernaut_investigate":                "Investigating %s...",
+	"kubernaut_discover_workflows":         "Discovering available remediation workflows...",
+	"kubernaut_select_workflow":            "Selecting remediation workflow %s...",
+	"kubernaut_watch":                      "Watching remediation progress...",
+	"kubernaut_remediate":                  "Creating remediation request...",
 	"kubernaut_check_existing_remediation": "Checking for existing remediation...",
-	"kubectl_list_events":             "Fetching cluster events...",
-	"kubectl_get":                     "Fetching resource details...",
-	"kubectl_list":                    "Listing cluster resources...",
-	"kubernaut_list_remediations":     "Listing remediations...",
-	"kubernaut_get_remediation":       "Getting remediation details...",
-	"kubernaut_approve":               "Approving remediation...",
-	"kubernaut_cancel_remediation":    "Cancelling remediation...",
-	"kubernaut_present_decision":      "Presenting decision to user...",
-	"kubernaut_list_workflows":        "Listing available workflows...",
-	"kubernaut_get_remediation_history": "Getting remediation history...",
-	"kubernaut_get_effectiveness":     "Getting effectiveness data...",
-	"kubernaut_get_audit_trail":       "Getting audit trail...",
+	"kubectl_list_events":                  "Fetching cluster events...",
+	"kubectl_get":                          "Fetching resource details...",
+	"kubectl_list":                         "Listing cluster resources...",
+	"kubernaut_list_remediations":          "Listing remediations...",
+	"kubernaut_get_remediation":            "Getting remediation details...",
+	"kubernaut_approve":                    "Approving remediation...",
+	"kubernaut_cancel_remediation":         "Cancelling remediation...",
+	"kubernaut_present_decision":           "Presenting decision to user...",
+	"kubernaut_list_workflows":             "Listing available workflows...",
+	"kubernaut_get_remediation_history":    "Getting remediation history...",
+	"kubernaut_get_effectiveness":          "Getting effectiveness data...",
+	"kubernaut_get_audit_trail":            "Getting audit trail...",
 }
 
 // keyToolSummarizers maps tool names to functions that extract a human-readable
@@ -390,18 +390,20 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 // Falls back to EmitStructuredMeta on schema validation failure for graceful
 // degradation (SI-17).
 func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
-	data := make(map[string]any, len(fc.Args)+1)
-	for key, value := range fc.Args {
-		data[key] = value
+	// DD-KA-2496: project presentation fields only. Selection/assessment
+	// context is server-owned; execution and evidence state are not live data.
+	data := make(map[string]any, 7)
+	for _, key := range []string{"session_id", "summary", "rca", "options", "searched_target", "signal_target", "rr_id"} {
+		if value, ok := fc.Args[key]; ok {
+			data[key] = value
+		}
 	}
 	projectDecisionRCAClassification(bridge, data)
 
-	// SI-10: caller-supplied cluster_id (already present in the LLM-produced
-	// payload) takes precedence over the server-side RRContext value.
+	// SI-10/AU-3: cluster attribution is server-owned. The LLM-facing
+	// present_decision contract does not authorize a model-supplied cluster_id.
 	if rc := bridge.RRContext(); rc != nil && rc.ClusterID != "" {
-		if _, exists := data["cluster_id"]; !exists {
-			data["cluster_id"] = rc.ClusterID
-		}
+		data["cluster_id"] = rc.ClusterID
 	}
 
 	summary, _ := data["summary"].(string)
@@ -424,9 +426,9 @@ func projectDecisionRCAClassification(bridge *EventBridge, data map[string]any) 
 	if !ok {
 		return
 	}
-	rca := make(map[string]any, len(rawRCA)+2)
-	for key, value := range rawRCA {
-		if key != "severity" && key != "provisional" {
+	rca := make(map[string]any, 14)
+	for _, key := range []string{"explanation", "confidence", "causal_chain", "target", "root_cause", "affected_components", "evidence", "tool_calls_count", "llm_turns", "prompt_tokens", "completion_tokens", "total_tokens"} {
+		if value, ok := rawRCA[key]; ok {
 			rca[key] = value
 		}
 	}

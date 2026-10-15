@@ -19,6 +19,12 @@
     "summary": {
       "type": "string"
     },
+    "selected_workflow": {
+      "$ref": "#/$defs/selected_workflow"
+    },
+    "selection_assessment": {
+      "$ref": "#/$defs/selection_assessment"
+    },
     "rca": {
       "type": "object",
       "required": ["explanation"],
@@ -87,5 +93,84 @@
       "required": ["kind", "name", "namespace"]
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "\\S"
+    },
+    "reasoning_part": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "repeat_justification": {
+      "type": "object",
+      "required": ["evidence_basis", "prior_outcome_relevance", "expected_mechanism"],
+      "properties": {
+        "evidence_basis": { "$ref": "#/$defs/reasoning_part" },
+        "prior_outcome_relevance": { "$ref": "#/$defs/reasoning_part" },
+        "expected_mechanism": { "$ref": "#/$defs/reasoning_part" }
+      },
+      "additionalProperties": false
+    },
+    "repeat_justification_assessment": {
+      "type": "object",
+      "description": "Rejected reasoning may be incomplete. Invalid or oversized parts are omitted, never truncated.",
+      "properties": {
+        "evidence_basis": { "$ref": "#/$defs/reasoning_part" },
+        "prior_outcome_relevance": { "$ref": "#/$defs/reasoning_part" },
+        "expected_mechanism": { "$ref": "#/$defs/reasoning_part" }
+      },
+      "additionalProperties": false
+    },
+    "selection_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "validation_outcome": {
+      "type": "string",
+      "enum": ["accepted", "rejected", "not_required"]
+    },
+    "handoff_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "selected_workflow": {
+      "type": "object",
+      "description": "Server-owned live selection context, not execution configuration or prior-attempt links (DD-KA-2496).",
+      "required": ["workflow_id", "workflow_name"],
+      "properties": {
+        "workflow_id": { "$ref": "#/$defs/identity" },
+        "workflow_name": { "$ref": "#/$defs/identity" },
+        "workflow_selection_confidence": { "$ref": "#/$defs/selection_confidence" },
+        "repeat_justification": { "$ref": "#/$defs/repeat_justification" },
+        "repeat_justification_required": { "type": "boolean" },
+        "prior_workflow_match": { "type": "boolean" },
+        "repeat_validation_outcome": { "$ref": "#/$defs/validation_outcome" },
+        "handoff_digest": { "$ref": "#/$defs/handoff_digest" }
+      },
+      "additionalProperties": false
+    },
+    "selection_assessment": {
+      "type": "object",
+      "description": "Server-owned non-executable rejected proposal; never carries a selected workflow_id (DD-KA-2496).",
+      "required": ["proposed_workflow_id"],
+      "properties": {
+        "proposed_workflow_id": { "$ref": "#/$defs/identity" },
+        "workflow_name": { "$ref": "#/$defs/identity" },
+        "workflow_selection_confidence": { "$ref": "#/$defs/selection_confidence" },
+        "repeat_justification": { "$ref": "#/$defs/repeat_justification_assessment" },
+        "repeat_justification_required": { "type": "boolean" },
+        "prior_workflow_match": { "type": "boolean" },
+        "repeat_validation_outcome": { "$ref": "#/$defs/validation_outcome" },
+        "handoff_digest": { "$ref": "#/$defs/handoff_digest" }
+      },
+      "additionalProperties": false
+    }
+  }
 }

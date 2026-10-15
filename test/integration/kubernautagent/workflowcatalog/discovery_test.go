@@ -323,10 +323,21 @@ var _ = Describe("IT-KA-1677-DISC Workflow Catalog discovery (Catalog wrapping C
 		disabledRW.Status.CatalogStatus = sharedtypes.CatalogStatusDisabled
 		Expect(k8sClient.Status().Update(ctx, disabledRW)).To(Succeed())
 
-		Eventually(func() (int, error) {
-			_, total, err := catalog.List(ctx, &models.WorkflowSearchFilters{}, 50, 0)
-			return total, err
-		}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 2), "List with no filters must see workflows of every status once the informer observes them")
+		// BR-WORKFLOW-006 / BR-STORAGE-012: observing an object creation
+		// does not prove that the informer has received its later status update.
+		// Wait for both owned fixtures, not a count satisfied by other specs.
+		Eventually(func(g Gomega) {
+			active, _, err := catalog.List(ctx, &models.WorkflowSearchFilters{Status: []string{"Active"}, WorkflowName: nameActive}, 50, 0)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(active).To(HaveLen(1))
+			disabled, _, err := catalog.List(ctx, &models.WorkflowSearchFilters{Status: []string{"Disabled"}, WorkflowName: nameDisabled}, 50, 0)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(disabled).To(HaveLen(1))
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "the informer must observe both owned workflow status updates")
+
+		_, total, err := catalog.List(ctx, &models.WorkflowSearchFilters{}, 50, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(total).To(BeNumerically(">=", 2), "List with no filters must see workflows of every status once the informer observes them")
 
 		results, _, err := catalog.List(ctx, &models.WorkflowSearchFilters{WorkflowName: nameActive}, 50, 0)
 		Expect(err).ToNot(HaveOccurred())
