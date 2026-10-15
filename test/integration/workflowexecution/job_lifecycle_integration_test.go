@@ -373,13 +373,17 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
-			Expect(err).NotTo(HaveOccurred())
-			if updated.Annotations == nil {
-				updated.Annotations = make(map[string]string)
-			}
-			updated.Annotations["test.kubernaut.ai/reentry-probe"] = "true"
-			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			Eventually(func() error {
+				updated, getErr := getWFE(wfe.Name, wfe.Namespace)
+				if getErr != nil {
+					return getErr
+				}
+				if updated.Annotations == nil {
+					updated.Annotations = make(map[string]string)
+				}
+				updated.Annotations["test.kubernaut.ai/reentry-probe"] = "true"
+				return k8sClient.Update(ctx, updated)
+			}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 			Eventually(func() string {
 				current, getErr := getWFE(wfe.Name, wfe.Namespace)
 				if getErr != nil {
@@ -393,7 +397,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				"kubernaut.ai/workflow-execution": wfe.Name,
 			})).To(Succeed())
 			Expect(jobs.Items).To(HaveLen(1))
-			updated, err = getWFE(wfe.Name, wfe.Namespace)
+			updated, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated.Status.ExecutionRef).NotTo(BeNil())
 			Expect(updated.Status.ExecutionRef.Name).To(Equal(job.Name))
