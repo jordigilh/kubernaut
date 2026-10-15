@@ -528,19 +528,39 @@ func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
 	return len(labels.FailedDetections) >= len(enrichment.AllDetectionCategories)
 }
 
-// EnrichmentCacheKey returns the dedup cache key for a (kind, name, namespace) tuple (#764).
+type enrichmentTargetRef struct {
+	Kind       string
+	Name       string
+	Namespace  string
+	APIVersion string
+}
+
+// EnrichmentCacheKey returns the legacy dedup cache key for a
+// (kind, name, namespace) tuple (#764). Callers with a trusted API version
+// should use EnrichmentCacheKeyWithAPIVersion.
 func EnrichmentCacheKey(kind, name, namespace string) string {
 	return kind + "/" + name + "/" + namespace
 }
 
-func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, kind, name, namespace, clusterID, incidentID string) *enrichment.EnrichmentResult {
-	key := EnrichmentCacheKey(kind, name, namespace)
+// EnrichmentCacheKeyWithAPIVersion keeps API-group/version part of the
+// target identity so two resources sharing kind/name/namespace cannot reuse
+// one another's spec hash or remediation history (DD-KA-2496).
+func EnrichmentCacheKeyWithAPIVersion(kind, name, namespace, apiVersion string) string {
+	if apiVersion == "" {
+		return EnrichmentCacheKey(kind, name, namespace)
+	}
+	return kind + "/" + apiVersion + "/" + name + "/" + namespace
+}
+
+func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, target enrichmentTargetRef, clusterID, incidentID string) *enrichment.EnrichmentResult {
+	key := EnrichmentCacheKeyWithAPIVersion(target.Kind, target.Name, target.Namespace, target.APIVersion)
 	if cached, ok := cache[key]; ok {
 		inv.logger.Info("enrichment cache hit, reusing cached result",
-			"kind", kind, "name", name, "namespace", namespace)
+			"kind", target.Kind, "name", target.Name, "namespace", target.Namespace,
+			"api_version", target.APIVersion)
 		return cached
 	}
-	result := inv.resolveEnrichment(ctx, kind, name, namespace, clusterID, incidentID)
+	result := inv.resolveEnrichment(ctx, target, clusterID, incidentID)
 	cache[key] = result
 	return result
 }

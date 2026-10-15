@@ -119,6 +119,8 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult)
 // server-owned context for a history-aware continuation. Free-form model output
 // is sanitized before it is placed in the next user message (DD-KA-2511,
 // FedRAMP SI-10, OWASP ASVS V2.2.x).
+//
+//nolint:gocyclo // each optional RCA field has an independent sanitized rendering contract
 func BuildRCAProvisionalReviewSection(result *katypes.InvestigationResult) string {
 	if result == nil {
 		return ""
@@ -164,7 +166,11 @@ func BuildRCAProvisionalReviewSection(result *katypes.InvestigationResult) strin
 	if result.CausalMechanismStatus != "" {
 		lines = append(lines, "Causal mechanism status: "+sanitizeField(result.CausalMechanismStatus))
 	}
-	lines = append(lines, fmt.Sprintf("Confidence: %.4f", result.Confidence))
+	if result.ConfidenceSet {
+		lines = append(lines, fmt.Sprintf("Confidence: %.4f", result.Confidence))
+	} else {
+		lines = append(lines, "Confidence: unknown")
+	}
 	if result.InvestigationOutcome != "" {
 		lines = append(lines, "Investigation outcome: "+sanitizeField(result.InvestigationOutcome))
 	}
@@ -188,7 +194,7 @@ func BuildRCAHistoryReviewSection(result *enrichment.RemediationHistoryResult) s
 	if result.CurrentSpecHash != "" {
 		lines = append(lines, "Current target spec hash: "+sanitizeField(result.CurrentSpecHash))
 	}
-	lines = append(lines, renderChronologicalHistory(result, nil)...)
+	lines = append(lines, renderChronologicalHistory(result, DetectSpecDriftCausalChains(result.Tier1))...)
 	return strings.Join(lines, "\n")
 }
 
@@ -334,6 +340,31 @@ func renderRemediationHistoryTemplate(data remediationHistoryTemplateData) strin
 
 // FormatTier1Entry formats a single Tier1 detailed entry for the prompt.
 // 1:1 port of KA _format_tier1_entry().
+func appendSpecDriftAssessment(lines []string, entry enrichment.Tier1Entry, causalChains map[string]string) []string {
+	if entry.AssessmentReason != eav1.AssessmentReasonSpecDrift {
+		return lines
+	}
+	if causalChains != nil {
+		if followupUID, ok := causalChains[entry.RemediationUID]; ok {
+			return append(lines, fmt.Sprintf(
+				"  **Assessment: INCONCLUSIVE (spec drift -- led to follow-up remediation)** -- "+
+					"The target resource spec changed after this remediation, and a subsequent "+
+					"remediation (%s) was triggered from the resulting state. This suggests "+
+					"the outcome was unstable, but the workflow may still work under different "+
+					"conditions. Use with caution.",
+				sanitizeField(followupUID),
+			))
+		}
+	}
+	return append(lines,
+		"  **Assessment: INCONCLUSIVE (spec drift)** -- The target resource spec was "+
+			"modified by an external actor during the assessment window, invalidating "+
+			"effectiveness data. This workflow may still be viable under different "+
+			"conditions. The spec change could indicate a competing controller, GitOps "+
+			"sync, or manual edit that is itself relevant to the root cause.",
+	)
+}
+
 func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]string) string {
 	recorded := formatHistoryRecordedTime(entry.CompletedAt)
 	action := withDefault(sanitizeField(entry.ActionType), unknownHistoryValue)
@@ -348,29 +379,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 		fmt.Sprintf("  Assessment: %s", withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending")),
 	}
 
-	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
-		if causalChains != nil {
-			if followupUID, ok := causalChains[entry.RemediationUID]; ok {
-				lines = append(lines, fmt.Sprintf(
-					"  **Assessment: INCONCLUSIVE (spec drift -- led to follow-up remediation)** -- "+
-						"The target resource spec changed after this remediation, and a subsequent "+
-						"remediation (%s) was triggered from the resulting state. This suggests "+
-						"the outcome was unstable, but the workflow may still work under different "+
-						"conditions. Use with caution.",
-					sanitizeField(followupUID),
-				))
-				return strings.Join(lines, "\n")
-			}
-		}
-		lines = append(lines,
-			"  **Assessment: INCONCLUSIVE (spec drift)** -- The target resource spec was "+
-				"modified by an external actor during the assessment window, invalidating "+
-				"effectiveness data. This workflow may still be viable under different "+
-				"conditions. The spec change could indicate a competing controller, GitOps "+
-				"sync, or manual edit that is itself relevant to the root cause.",
-		)
-		return strings.Join(lines, "\n")
-	}
+	lines = appendSpecDriftAssessment(lines, entry, causalChains)
 
 	if entry.EffectivenessScore != nil {
 		level := EffectivenessLevel(entry.EffectivenessScore)

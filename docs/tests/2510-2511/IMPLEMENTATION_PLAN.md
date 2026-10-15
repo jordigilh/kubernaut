@@ -1,6 +1,6 @@
 # Implementation Plan: #2510/#2511
 
-**Status**: Implemented; runtime integration/E2E re-run pending environment capacity
+**Status**: Implemented; CI and focused helios08 runtime E2E validation complete
 **Test plan**: [TEST_PLAN.md](TEST_PLAN.md)
 **Design**: [DD-KA-2511](../../architecture/decisions/DD-KA-2511-generic-recurrent-rca-continuation.md)
 
@@ -43,4 +43,6 @@ error observability, and remove duplication without creating new components.
 - `make test`
 
 Then run affected DataStorage, KA, Mock LLM, integration, fleet and full-pipeline
-targets. Unrelated baseline failures remain separately classified.
+targets. CI fullpipeline/KA E2E and focused helios08 journeys passed; six
+pre-existing KA integration label/re-enrichment failures remain separately
+classified from this feature.

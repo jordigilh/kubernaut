@@ -82,6 +82,10 @@ type InvestigationResult struct {
 	RemediationTarget RemediationTarget      `json:"remediation_target,omitempty"`
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`
 	Confidence        float64                `json:"confidence"`
+	// ConfidenceSet distinguishes an explicit zero from an omitted confidence
+	// during server-assisted RCA continuation merging. It is internal
+	// bookkeeping and never crosses the API boundary.
+	ConfidenceSet bool `json:"-"`
 
 	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
 	ExecutionBundle       string                `json:"execution_bundle,omitempty"`

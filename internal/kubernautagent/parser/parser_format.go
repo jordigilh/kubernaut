@@ -83,6 +83,7 @@ func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow, logg
 	result.WorkflowSelectionConfidence = wf.Confidence
 	if wf.Confidence != nil {
 		result.Confidence = *wf.Confidence
+		result.ConfidenceSet = true
 	}
 	applyRepeatJustification(result, wf.RepeatJustification, logger)
 	result.Reason = wf.Rationale
@@ -131,8 +132,9 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 
 	// Top-level confidence serves as fallback when selected_workflow is absent
 	// (e.g., not-actionable outcomes where the LLM still provides a confidence score).
-	if resp.Confidence > 0 {
-		result.Confidence = resp.Confidence
+	if resp.Confidence != nil {
+		result.Confidence = *resp.Confidence
+		result.ConfidenceSet = true
 	}
 	applyLLMWorkflow(result, resp.Workflow, logger)
 
@@ -158,7 +160,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	// recognizable signal (confidence, RCA, or workflow). HAPI v1.2.1 has no such
 	// guard — all parsed JSON flows through outcome routing. We require confidence > 0
 	// as a minimum to reject truly garbage JSON (e.g., {"foo": "bar"}).
-	hasContent := result.RCASummary != "" || result.WorkflowID != "" || resp.Confidence > 0
+	hasContent := result.RCASummary != "" || result.WorkflowID != "" || resp.Confidence != nil && *resp.Confidence > 0
 	if !hasContent {
 		return nil, &ErrNoRecognizedFields{}
 	}
@@ -167,7 +169,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	// caused by json.Unmarshal silently skipping type-mismatched fields or the inner
 	// RCA object missing the required "summary" field. Reject so the investigator's
 	// retryRCASubmit can request the missing data. See #795 preflight audit.
-	if resp.Confidence > 0 && result.RCASummary == "" && result.WorkflowID == "" {
+	if resp.Confidence != nil && *resp.Confidence > 0 && result.RCASummary == "" && result.WorkflowID == "" {
 		return nil, &ErrNoRecognizedFields{}
 	}
 
@@ -371,6 +373,7 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 		}
 		if result.Confidence < confidenceFloor {
 			result.Confidence = confidenceFloor
+			result.ConfidenceSet = true
 		}
 	}
 

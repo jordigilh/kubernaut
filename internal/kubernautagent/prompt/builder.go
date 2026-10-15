@@ -364,12 +364,12 @@ var injectionPatterns = regexp.MustCompile(
 	`(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|disregard\s+(all\s+)?prior|forget\s+(all\s+)?previous|system\s*:\s*you\s+are)`,
 )
 
-// credentialPatterns prevents audit-derived identifiers and names from
-// carrying credential-like values into an LLM prompt. History is server-owned
-// evidence, but workflow names and other free-form fields may still contain
-// accidental secrets (BR-KA-2511, FedRAMP SI-10, OWASP ASVS V2.2.x).
+// credentialPatterns mirrors the shared G4 field rules for server-owned prompt
+// values. Prompt builders intentionally do not accept a context, so these
+// bounded patterns cover free-form history identifiers without invoking the
+// context-aware tool-output sanitizer.
 var credentialPatterns = regexp.MustCompile(
-	`(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;|]+)`,
+	`(?i)(?:authorization)[ \t]*:[ \t]*[^\n,;|]+|(?:password|passwd|pwd|api[_-]?key|apikey|token|access[_-]?token|secret|client_secret|credential|credentials)[ \t]*[:=][ \t]*["']?[^\s"',}]+["']?`,
 )
 
 func withDefault(value, fallback string) string {

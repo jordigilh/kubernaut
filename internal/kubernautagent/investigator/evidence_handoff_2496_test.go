@@ -351,6 +351,38 @@ var _ = Describe("#2496 evidence handoff observation privacy", func() {
 		Expect(history.Tier1[0].RemediationUID).To(Equal("newer"), "sorting the packet cannot reorder authoritative source history")
 	})
 
+	It("UT-KA-2511-011: frozen history preserves applied-state and spec-change evidence across tiers", func() {
+		currentHash := "sha256:current"
+		history := &enrichment.RemediationHistoryResult{
+			CurrentSpecHash: currentHash,
+			Tier1: []enrichment.Tier1Entry{{
+				RemediationUID: "tier1-applied", AppliedState: "applied", SpecChangeStatus: "unchanged",
+				PreRemediationSpecHash: "sha256:pre1", PostRemediationSpecHash: "sha256:post1",
+			}},
+			Tier2: []enrichment.Tier2Summary{{
+				RemediationUID: "tier2-applied", AppliedState: "partially_applied", SpecChangeStatus: "changed",
+				PreRemediationSpecHash: "sha256:pre2", PostRemediationSpecHash: "sha256:post2",
+			}},
+		}
+		packet, err := buildEvidenceHandoff(handoffInput{
+			Signal:     katypes.SignalContext{Namespace: "prod", ResourceKind: "Deployment", ResourceName: "api", ResourceAPIVersion: "apps/v1"},
+			EnrichData: &prompt.EnrichmentData{HistoryResult: history},
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		wire, _, err := packet.serializeFrozen(time.Now().UTC(), katypes.DefaultMaxEvidenceHandoffBytes)
+		Expect(err).NotTo(HaveOccurred())
+		var decoded evidenceHandoff
+		Expect(json.Unmarshal([]byte(wire), &decoded)).To(Succeed())
+		Expect(decoded.Context.CurrentSpecHash).To(HaveValue(Equal(currentHash)))
+		Expect(decoded.PriorAttempts).To(HaveLen(2))
+		Expect(decoded.PriorAttempts[0].RecordedState.AppliedState).To(HaveValue(Equal("applied")))
+		Expect(decoded.PriorAttempts[0].RecordedState.SpecChangeStatus).To(HaveValue(Equal("unchanged")))
+		Expect(decoded.PriorAttempts[0].RecordedState.PreSpecHash).To(HaveValue(Equal("sha256:pre1")))
+		Expect(decoded.PriorAttempts[1].RecordedState.AppliedState).To(HaveValue(Equal("partially_applied")))
+		Expect(decoded.PriorAttempts[1].RecordedState.SpecChangeStatus).To(HaveValue(Equal("changed")))
+		Expect(decoded.PriorAttempts[1].RecordedState.PostSpecHash).To(HaveValue(Equal("sha256:post2")))
+	})
+
 	It("UT-KA-2496-010: an unparseable target API version stays unknown without changing the existing API gate", func() {
 		inv := New(Config{Logger: logr.Discard()})
 		frozen, err := inv.freezeEvidenceHandoff(context.Background(), handoffInput{

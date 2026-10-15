@@ -99,11 +99,13 @@ type handoffPriorAssessment struct {
 }
 
 type handoffPriorState struct {
-	PreSpecHash  *string                  `json:"pre_spec_hash"`
-	PostSpecHash *string                  `json:"post_spec_hash"`
-	HashMatch    *string                  `json:"hash_match"`
-	HealthChecks *enrichment.HealthChecks `json:"health_checks"`
-	MetricDeltas *enrichment.MetricDeltas `json:"metric_deltas"`
+	PreSpecHash      *string                  `json:"pre_spec_hash"`
+	PostSpecHash     *string                  `json:"post_spec_hash"`
+	HashMatch        *string                  `json:"hash_match"`
+	AppliedState     *string                  `json:"applied_state"`
+	SpecChangeStatus *string                  `json:"spec_change_status"`
+	HealthChecks     *enrichment.HealthChecks `json:"health_checks"`
+	MetricDeltas     *enrichment.MetricDeltas `json:"metric_deltas"`
 }
 
 type handoffContext struct {
@@ -115,6 +117,7 @@ type handoffContext struct {
 	RegressionDetected *bool                                    `json:"regression_detected"`
 	SignalFiringTime   *string                                  `json:"signal_firing_time"`
 	SignalReceivedTime *string                                  `json:"signal_received_time"`
+	CurrentSpecHash    *string                                  `json:"current_spec_hash"`
 }
 
 // source is deep-copied and sanitized before any projection is rendered. It is
@@ -312,6 +315,7 @@ func (packet *evidenceHandoff) projectEnrichment(data *prompt.EnrichmentData) {
 		return
 	}
 	packet.Context.Tier1Window, packet.Context.Tier2Window = optionalHandoffString(h.Tier1Window), optionalHandoffString(h.Tier2Window)
+	packet.Context.CurrentSpecHash = optionalHandoffString(h.CurrentSpecHash)
 	packet.Context.RegressionDetected = &h.RegressionDetected
 	packet.PriorAttempts = projectHandoffHistory(h)
 }
@@ -326,7 +330,8 @@ func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []hando
 			Assessment: handoffPriorAssessment{Reason: optionalHandoffString(prior.AssessmentReason), EffectivenessScore: prior.EffectivenessScore,
 				SignalResolved: prior.SignalResolved, Outcome: optionalHandoffString(prior.Outcome), CompletedValid: enrichment.IsCompletedValidAssessment(prior.AssessmentReason, prior.EffectivenessScore)},
 			RecordedState: handoffPriorState{PreSpecHash: optionalHandoffString(prior.PreRemediationSpecHash), PostSpecHash: optionalHandoffString(prior.PostRemediationSpecHash),
-				HashMatch: optionalHandoffString(prior.HashMatch), HealthChecks: prior.HealthChecks, MetricDeltas: prior.MetricDeltas},
+				HashMatch: optionalHandoffString(prior.HashMatch), AppliedState: optionalHandoffString(prior.AppliedState),
+				SpecChangeStatus: optionalHandoffString(prior.SpecChangeStatus), HealthChecks: prior.HealthChecks, MetricDeltas: prior.MetricDeltas},
 		})
 	}
 	// Grow reserves the second tier without unchecked allocation-size addition.
@@ -338,7 +343,8 @@ func projectHandoffHistory(history *enrichment.RemediationHistoryResult) []hando
 			RecordedAt: handoffRecordedTime(prior.CompletedAt),
 			Assessment: handoffPriorAssessment{Reason: optionalHandoffString(prior.AssessmentReason), EffectivenessScore: prior.EffectivenessScore,
 				SignalResolved: prior.SignalResolved, Outcome: optionalHandoffString(prior.Outcome), CompletedValid: enrichment.IsCompletedValidAssessment(prior.AssessmentReason, prior.EffectivenessScore)},
-			RecordedState: handoffPriorState{HashMatch: optionalHandoffString(prior.HashMatch)},
+			RecordedState: handoffPriorState{PreSpecHash: optionalHandoffString(prior.PreRemediationSpecHash), PostSpecHash: optionalHandoffString(prior.PostRemediationSpecHash),
+				HashMatch: optionalHandoffString(prior.HashMatch), AppliedState: optionalHandoffString(prior.AppliedState), SpecChangeStatus: optionalHandoffString(prior.SpecChangeStatus)},
 		})
 	}
 	return attempts

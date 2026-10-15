@@ -21,6 +21,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type historyFailureDSClient2511 struct{}
@@ -49,6 +51,16 @@ func (historySpecHashFailureK8sClient2511) GetSpecHash(context.Context, string, 
 	return "", errors.New("simulated spec hash outage")
 }
 
+type historyForbiddenSpecHashK8sClient2511 struct{}
+
+func (historyForbiddenSpecHashK8sClient2511) GetOwnerChain(context.Context, string, string, string, string) ([]enrichment.OwnerChainEntry, error) {
+	return nil, nil
+}
+
+func (historyForbiddenSpecHashK8sClient2511) GetSpecHash(context.Context, string, string, string, string) (string, error) {
+	return "", apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "api", errors.New("forbidden"))
+}
+
 type cancelAfterFirstChatClient2511 struct {
 	inner  gateMockLLMClient
 	cancel context.CancelFunc
@@ -63,6 +75,27 @@ func (c *cancelAfterFirstChatClient2511) StreamChat(ctx context.Context, req llm
 func (c *cancelAfterFirstChatClient2511) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	response, err := c.inner.Chat(ctx, req)
 	c.cancel()
+	return response, err
+}
+
+type cancelDuringContinuationClient2511 struct {
+	inner    gateMockLLMClient
+	cancel   context.CancelFunc
+	chatCall int
+}
+
+func (c *cancelDuringContinuationClient2511) Close() error { return nil }
+
+func (c *cancelDuringContinuationClient2511) StreamChat(ctx context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return c.Chat(ctx, req)
+}
+
+func (c *cancelDuringContinuationClient2511) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	response, err := c.inner.Chat(ctx, req)
+	c.chatCall++
+	if c.chatCall == 2 {
+		c.cancel()
+	}
 	return response, err
 }
 
@@ -94,6 +127,8 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.RCASummary).To(Equal("initial"), "budget exhaustion must preserve the accepted provisional RCA")
+		Expect(result.RemediationTarget.Name).To(Equal("api-a"), "budget exhaustion must preserve the accepted provisional target")
 		Expect(client.calls).To(HaveLen(1), "continuation must not obtain an extra provider turn after maxTurns is exhausted")
 	})
 
@@ -183,4 +218,67 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
 		Expect(client.calls).To(HaveLen(1), "spec-hash failure must not permit an ungrounded continuation")
 	})
+
+	It("IT-KA-2511-010: fails closed when forbidden spec-hash access prevents history acquisition", func() {
+		client := &gateMockLLMClient{responses: []llm.ChatResponse{{
+			ToolCalls: []llm.ToolCall{{
+				ID: "forbidden-spec-hash-submit", Name: investigator.SubmitResultToolName,
+				Arguments: `{"root_cause_analysis":{"summary":"forbidden hash","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod","api_version":"apps/v1"}},"confidence":0.8}`,
+			}},
+		}}}
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		inv := newTestInvestigator(investigator.Config{
+			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
+			Enricher:   enrichment.NewEnricher(&historyForbiddenSpecHashK8sClient2511{}, historyFailureDSClient2511{}, &gateRecordingAuditStore{}, logr.Discard()),
+			AuditStore: &gateRecordingAuditStore{}, Logger: logr.Discard(), MaxTurns: 4,
+			PhaseTools: investigator.DefaultPhaseToolMap(),
+		})
+
+		result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+			ResourceKind: "Pod", ResourceName: "api-pod", Name: "TLSHandshakeFailure", Namespace: "prod", Severity: "high",
+			Message: "forbidden history",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+		Expect(client.calls).To(HaveLen(1), "forbidden history acquisition must not permit an ungrounded continuation")
+	})
+
+	It("IT-KA-2511-014: preserves cancellation when continuation retry is interrupted", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		client := &cancelDuringContinuationClient2511{
+			inner: gateMockLLMClient{responses: []llm.ChatResponse{
+				{ToolCalls: []llm.ToolCall{{
+					ID: "retry-cancel-initial", Name: investigator.SubmitResultToolName,
+					Arguments: `{"root_cause_analysis":{"summary":"preserve me","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod","api_version":"apps/v1"}},"confidence":0.8}`,
+				}}},
+				{Message: llm.Message{Role: "assistant", Content: "malformed continuation"}},
+			}},
+			cancel: cancel,
+		}
+		ds := &recurrentHistoryClient2511{history: map[string]*enrichment.RemediationHistoryResult{
+			"Deployment/api/prod": recurrentHistory2511("prod/Deployment/api", "rotate_certificate", "TLSHandshakeFailure"),
+		}}
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		inv := newTestInvestigator(investigator.Config{
+			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
+			Enricher:   enrichment.NewEnricher(&gateK8sClient{}, ds, &gateRecordingAuditStore{}, logr.Discard()),
+			AuditStore: &gateRecordingAuditStore{}, Logger: logr.Discard(), MaxTurns: 4,
+			PhaseTools: investigator.DefaultPhaseToolMap(),
+		})
+
+		result, err := inv.Investigate(ctx, katypes.SignalContext{
+			ResourceKind: "Pod", ResourceName: "api-pod", Name: "TLSHandshakeFailure", Namespace: "prod", Severity: "high",
+			Message: "cancel continuation retry",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Cancelled).To(BeTrue())
+		Expect(result.RCASummary).To(Equal("preserve me"))
+		Expect(result.HumanReviewReason).NotTo(Equal("llm_parsing_error"))
+		Expect(client.inner.calls).To(HaveLen(2), "cancellation must prevent the parse retry provider call")
+	})
+
 })

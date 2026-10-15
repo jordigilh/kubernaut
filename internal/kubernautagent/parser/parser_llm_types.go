@@ -34,7 +34,7 @@ type llmResponse struct {
 	RCAAlt               *llmRCA                `json:"rootCauseAnalysis,omitempty"`
 	Workflow             *llmWorkflow           `json:"selected_workflow"`
 	AlternativeWorkflows []llmAlternative       `json:"alternative_workflows,omitempty"`
-	Confidence           float64                `json:"confidence,omitempty"`
+	Confidence           *float64               `json:"confidence,omitempty"`
 	Actionable           *bool                  `json:"actionable,omitempty"`
 	InvestigationOutcome string                 `json:"investigation_outcome,omitempty"`
 	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`

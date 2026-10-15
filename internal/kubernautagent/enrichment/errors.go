@@ -23,6 +23,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ErrHistoryUnavailable marks a required target-history acquisition failure.
+// Optional owner/label enrichment failures deliberately do not use this
+// sentinel so existing best-effort enrichment behavior remains intact.
+var ErrHistoryUnavailable = errors.New("target history unavailable")
+
+// IsHistoryUnavailableError reports whether err represents a required
+// spec-hash/history acquisition failure.
+func IsHistoryUnavailableError(err error) bool {
+	return errors.Is(err, ErrHistoryUnavailable)
+}
+
 // IsNotFoundError returns true when err (or any error in its chain) is a
 // Kubernetes NotFound status error. Uses errors.As to handle wrapping by
 // K8sAdapter (fmt.Errorf("k8s adapter: get %s/%s in %s: %w", ...)).

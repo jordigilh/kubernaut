@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -539,18 +540,23 @@ type rcaHistoryReviewParams struct {
 func (inv *Investigator) resolveRCAReviewEnrichment(ctx context.Context, p rcaHistoryReviewParams, result *katypes.InvestigationResult, currentTargetKey string) (*enrichment.EnrichmentResult, string) {
 	kind, name, namespace := ResolveEnrichmentTarget(p.Signal, result)
 	namespace = inv.normalizeNamespace(kind, namespace)
-	targetKey := EnrichmentCacheKey(kind, name, namespace)
+	apiVersion := p.Signal.ResourceAPIVersion
+	if result != nil && result.RemediationTarget.Kind != "" {
+		apiVersion = result.RemediationTarget.APIVersion
+	}
+	target := enrichmentTargetRef{Kind: kind, Name: name, Namespace: namespace, APIVersion: apiVersion}
+	targetKey := EnrichmentCacheKeyWithAPIVersion(target.Kind, target.Name, target.Namespace, target.APIVersion)
 	if targetKey == currentTargetKey {
 		return p.Enrichment, targetKey
 	}
-	return inv.resolveEnrichmentCached(ctx, p.EnrichmentMap, kind, name, namespace, p.Signal.ClusterID, p.Signal.IncidentID), targetKey
+	return inv.resolveEnrichmentCached(ctx, p.EnrichmentMap, target, p.Signal.ClusterID, p.Signal.IncidentID), targetKey
 }
 
 // mergeRCAContinuationResult preserves accepted RCA evidence when a
 // history-review response is structurally valid but omits optional fields.
 // A changed target is always authoritative; target fields are inherited only
 // when the continuation omitted the target or repeated the same identity.
-func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResult) {
+func preserveRCAContinuationCore(previous, merged *katypes.InvestigationResult) {
 	if merged.RCASummary == "" {
 		merged.RCASummary = previous.RCASummary
 	}
@@ -569,6 +575,10 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 	if merged.CausalMechanismStatus == "" {
 		merged.CausalMechanismStatus = previous.CausalMechanismStatus
 	}
+}
+
+func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResult) {
+	preserveRCAContinuationCore(previous, merged)
 	if len(merged.ContributingFactors) == 0 {
 		merged.ContributingFactors = append([]string(nil), previous.ContributingFactors...)
 	}
@@ -581,11 +591,19 @@ func preserveRCAContinuationEvidence(previous, merged *katypes.InvestigationResu
 	if merged.RCAConfidence == nil {
 		merged.RCAConfidence = previous.RCAConfidence
 	}
-	if merged.Confidence == 0 && previous.Confidence != 0 {
+	if !merged.ConfidenceSet && merged.Confidence == 0 && previous.Confidence != 0 {
 		merged.Confidence = previous.Confidence
+	}
+	if !merged.ConfidenceSet && previous.ConfidenceSet {
+		merged.Confidence = previous.Confidence
+		merged.ConfidenceSet = true
 	}
 	if len(previous.Warnings) > 0 {
 		merged.Warnings = append(append([]string(nil), previous.Warnings...), merged.Warnings...)
+	}
+	if merged.IsActionable == nil && previous.IsActionable != nil {
+		actionable := *previous.IsActionable
+		merged.IsActionable = &actionable
 	}
 }
 
@@ -619,6 +637,19 @@ func mergeRCAContinuationResult(previous, updated *katypes.InvestigationResult) 
 	return &merged
 }
 
+func markRCAContinuationCancelled(result *katypes.InvestigationResult, messages []llm.Message, budget *rcaLoopBudget) *katypes.InvestigationResult {
+	if result == nil {
+		result = &katypes.InvestigationResult{}
+	}
+	result.Cancelled = true
+	result.CancelledPhase = string(katypes.PhaseRCA)
+	result.AccumulatedMessages = messagesToAuditFormat(messages)
+	if budget != nil {
+		result.CancelledAtTurn = budget.used
+	}
+	return result
+}
+
 func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHistoryReviewParams, result *katypes.InvestigationResult, messages []llm.Message, history *enrichment.RemediationHistoryResult) (*katypes.InvestigationResult, []llm.Message, bool, error) {
 	provisionalPrompt := prompt.BuildRCAProvisionalReviewSection(result)
 	reviewPrompt := prompt.BuildRCAHistoryReviewSection(history)
@@ -639,7 +670,7 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 
 	finalized, content, reasoning, done := inv.classifyRCALoopResult(loopRes)
 	if done {
-		return finalized, messages, true, nil
+		return mergeRCAContinuationResult(result, finalized), messages, true, nil
 	}
 	updated, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
@@ -650,6 +681,10 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 		}
 	}
 	if parseErr != nil {
+		if ctx.Err() != nil {
+			//nolint:nilerr // cancellation is represented by the typed result
+			return markRCAContinuationCancelled(result, messages, p.LLMContext.rcaBudget), messages, true, nil
+		}
 		result.HumanReviewNeeded = true
 		result.HumanReviewReason = "llm_parsing_error"
 		result.Warnings = append(result.Warnings, "history-aware RCA response could not be parsed after retry")
@@ -660,14 +695,30 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 	updated = mergeRCAContinuationResult(result, updated)
 	updated.Reasoning = toReasoningSummary(reasoning)
 	applySignalSeverity(updated, p.Signal)
+	accepted := updated
 	updated = inv.sameKindValidationGate(ctx, updated, p.Signal, messages, p.LLMContext)
 	if updated.HumanReviewNeeded {
 		updated.HumanReviewNeeded = false
 		updated.HumanReviewReason = ""
 	}
 	updated = inv.apiVersionValidationGate(ctx, updated, messages, p.LLMContext)
-	updated = mergeRCAContinuationResult(result, updated)
+	if ctx.Err() != nil {
+		//nolint:nilerr // cancellation is represented by the typed result
+		return markRCAContinuationCancelled(accepted, messages, p.LLMContext.rcaBudget), messages, true, nil
+	}
+	updated = mergeRCAContinuationResult(accepted, updated)
 	return updated, messages, false, nil
+}
+
+func (inv *Investigator) resolveRCAContinuationEnrichment(ctx context.Context, p rcaHistoryReviewParams, result *katypes.InvestigationResult, currentTargetKey string) (*enrichment.EnrichmentResult, string, bool) {
+	if ctx.Err() != nil {
+		return nil, currentTargetKey, true
+	}
+	currentEnrichment, targetKey := inv.resolveRCAReviewEnrichment(ctx, p, result, currentTargetKey)
+	if ctx.Err() != nil {
+		return currentEnrichment, targetKey, true
+	}
+	return currentEnrichment, targetKey, false
 }
 
 func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistoryReviewParams) (*katypes.InvestigationResult, []llm.Message, *enrichment.EnrichmentResult, error) {
@@ -678,10 +729,14 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 	reviewedTargets := make(map[string]struct{})
 	kind, name, namespace := ResolveEnrichmentTarget(p.Signal, nil)
 	namespace = inv.normalizeNamespace(kind, namespace)
-	currentTargetKey := EnrichmentCacheKey(kind, name, namespace)
+	currentTargetKey := EnrichmentCacheKeyWithAPIVersion(kind, name, namespace, p.Signal.ResourceAPIVersion)
 
 	for {
-		currentEnrichment, targetKey := inv.resolveRCAReviewEnrichment(ctx, p, result, currentTargetKey)
+		currentEnrichment, targetKey, cancelled := inv.resolveRCAContinuationEnrichment(ctx, p, result, currentTargetKey)
+		if cancelled {
+			//nolint:nilerr // cancellation is represented by the typed result
+			return markRCAContinuationCancelled(result, messages, p.LLMContext.rcaBudget), messages, p.Enrichment, nil
+		}
 		if currentEnrichment == nil {
 			return result, messages, currentEnrichment, nil
 		}
@@ -743,7 +798,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
-	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.ClusterID, signal.IncidentID)
+	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, enrichmentTargetRef{
+		Kind: signalKind, Name: signalName, Namespace: signalNS, APIVersion: signal.ResourceAPIVersion,
+	}, signal.ClusterID, signal.IncidentID)
 	tokens := &TokenAccumulator{}
 
 	rcaLLMContext := LLMInvocationContext{
@@ -819,7 +876,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	// different. H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(ctx, reEnrichWorkflowTargetParams{
 		Signal: p.Signal, RCAResult: p.RCAResult, EnrichData: p.EnrichData, EnrichmentCache: p.EnrichmentCache,
-		SignalKind: p.SignalKind, SignalName: p.SignalName, SignalNS: p.SignalNS,
+		SignalKind: p.SignalKind, SignalName: p.SignalName, SignalNS: p.SignalNS, SignalAPIVersion: p.Signal.ResourceAPIVersion,
 	})
 	if hardFailed {
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
@@ -927,11 +984,11 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 // reEnrichWorkflowTarget. Extracted per AGENTS.md's 8+-param
 // Options-pattern rule.
 type reEnrichWorkflowTargetParams struct {
-	Signal                           katypes.SignalContext
-	RCAResult                        *katypes.InvestigationResult
-	EnrichData                       *enrichment.EnrichmentResult
-	EnrichmentCache                  map[string]*enrichment.EnrichmentResult
-	SignalKind, SignalName, SignalNS string
+	Signal                                             katypes.SignalContext
+	RCAResult                                          *katypes.InvestigationResult
+	EnrichData                                         *enrichment.EnrichmentResult
+	EnrichmentCache                                    map[string]*enrichment.EnrichmentResult
+	SignalKind, SignalName, SignalNS, SignalAPIVersion string
 }
 
 // reEnrichWorkflowTarget re-enriches using the RCA-identified remediation
@@ -946,8 +1003,12 @@ func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichW
 	workflowSignal = signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
+	postRCAAPIVersion := p.SignalAPIVersion
+	if rcaResult != nil && rcaResult.RemediationTarget.Kind != "" {
+		postRCAAPIVersion = rcaResult.RemediationTarget.APIVersion
+	}
 
-	targetUnchanged := postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS
+	targetUnchanged := postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS && postRCAAPIVersion == p.SignalAPIVersion
 	if targetUnchanged {
 		if enrichData != nil && enrichData.TargetResourceDeleted {
 			rcaResult.Warnings = append(rcaResult.Warnings,
@@ -959,7 +1020,7 @@ func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichW
 	enrichData, hardFailed = inv.applyReEnrichedTarget(ctx, reEnrichedTargetParams{
 		EnrichmentCache: enrichmentCache, RCAResult: rcaResult, WorkflowSignal: &workflowSignal,
 		EnrichData: enrichData, Signal: signal, SignalKind: signalKind, SignalName: signalName,
-		PostRCAKind: postRCAKind, PostRCAName: postRCAName, PostRCANS: postRCANS,
+		PostRCAKind: postRCAKind, PostRCAName: postRCAName, PostRCANS: postRCANS, PostRCAAPIVersion: postRCAAPIVersion,
 	})
 	return workflowSignal, enrichData, hardFailed
 }
@@ -967,13 +1028,13 @@ func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichW
 // reEnrichedTargetParams groups the fields needed by applyReEnrichedTarget.
 // Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type reEnrichedTargetParams struct {
-	EnrichmentCache                     map[string]*enrichment.EnrichmentResult
-	RCAResult                           *katypes.InvestigationResult
-	WorkflowSignal                      *katypes.SignalContext
-	EnrichData                          *enrichment.EnrichmentResult
-	Signal                              katypes.SignalContext
-	SignalKind, SignalName              string
-	PostRCAKind, PostRCAName, PostRCANS string
+	EnrichmentCache                                        map[string]*enrichment.EnrichmentResult
+	RCAResult                                              *katypes.InvestigationResult
+	WorkflowSignal                                         *katypes.SignalContext
+	EnrichData                                             *enrichment.EnrichmentResult
+	Signal                                                 katypes.SignalContext
+	SignalKind, SignalName                                 string
+	PostRCAKind, PostRCAName, PostRCANS, PostRCAAPIVersion string
 }
 
 // applyReEnrichedTarget handles the RCA-target-changed branch of
@@ -987,7 +1048,9 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 		"signal", p.SignalKind+"/"+p.SignalName,
 		"rca_target", p.PostRCAKind+"/"+p.PostRCAName,
 	)
-	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.Signal.ClusterID, p.Signal.IncidentID)
+	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, enrichmentTargetRef{
+		Kind: p.PostRCAKind, Name: p.PostRCAName, Namespace: p.PostRCANS, APIVersion: p.PostRCAAPIVersion,
+	}, p.Signal.ClusterID, p.Signal.IncidentID)
 
 	// BR-KA-261 AC#7 / #704: check HardFail BEFORE label merge
 	// to prevent the merge from silently dropping the failure signal.
@@ -1162,16 +1225,24 @@ func ResolveEnrichmentTarget(signal katypes.SignalContext, rcaResult *katypes.In
 	return kind, name, signal.Namespace
 }
 
-func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, namespace, clusterID, incidentID string) *enrichment.EnrichmentResult {
+func (inv *Investigator) resolveEnrichment(ctx context.Context, target enrichmentTargetRef, clusterID, incidentID string) *enrichment.EnrichmentResult {
 	if inv.enricher == nil {
 		return nil
 	}
 	result, err := inv.enricher.Enrich(ctx, enrichment.EnrichRequest{
-		Kind: kind, Name: name, Namespace: namespace,
+		Kind: target.Kind, Name: target.Name, Namespace: target.Namespace, APIVersion: target.APIVersion,
 		ClusterID: clusterID, IncidentID: incidentID,
 	})
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
+		if enrichment.IsHistoryUnavailableError(err) || errors.Is(err, enrichment.ErrRBACForbidden) {
+			return &enrichment.EnrichmentResult{
+				ResourceKind:       target.Kind,
+				ResourceName:       target.Name,
+				ResourceNamespace:  target.Namespace,
+				HistoryUnavailable: true,
+			}
+		}
 		// Preserve the existing best-effort behavior for unrelated enrichment
 		// failures (for example optional label/RBAC reads). History/spec-hash
 		// acquisition failures are represented explicitly by EnrichmentResult.

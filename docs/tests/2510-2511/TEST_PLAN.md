@@ -1,7 +1,7 @@
 # Test Plan: Generic Recurrent RCA and Applied-State History
 
 **ID**: TP-KA-2510-2511-v1.0
-**Status**: Implemented — scoped validation complete; E2E runtime blocked by Podman capacity
+**Status**: Implemented — scoped validation complete; CI and focused helios08 E2E passed
 **Date**: 2026-10-14
 **BRs**: BR-KA-016, BR-AUDIT-005
 **DD**: DD-KA-2511
@@ -27,6 +27,12 @@
 | UT-KA-2511-004 | Existing max-turn/tool budgets bound continuation. | SI-10, ASVS V2.3.1 |
 | UT-KA-2511-005 | Failed acquisition/exhaustion follows existing review path. | AU-3, CC7.2 |
 | UT-KA-2511-006 | Mechanism status enum survives parser/result/audit boundaries. | AU-3, ASVS V16.2.x |
+| UT-KA-2511-007 | Invalid flat mechanism status is rejected. | SI-10, ASVS V16.2.x |
+| UT-KA-2511-008 | Explicit zero confidence remains distinct from omitted confidence. | SI-10, AU-3 |
+| UT-KA-2511-011 | Applied-state/spec-change evidence survives the frozen handoff. | AU-3, CC7.2 |
+| UT-KA-2511-012 | Prior non-actionable state survives an omitted continuation field. | SI-10, AC-4 |
+| UT-KA-2511-013 | Explicit zero continuation confidence is not backfilled. | SI-10, AU-3 |
+| UT-KA-2511-014 | Cancellation during continuation parse retry remains cancellation, not parse failure. | SI-10, ASVS V2.3.1 |
 | UT-MOCK-2511-001 | Mock provider models provisional RCA, history continuation and changed target generically. | BR-KA-016 |
 | UT-MOCK-2511-002 | OOM and non-memory fixtures use the same provider conversation contract. | BR-KA-016 |
 | IT-DS-2510-001 | Authenticated DS route/generated client preserves applied-state fields. | AU-3, CC7.2 |
@@ -36,6 +42,7 @@
 | IT-KA-2511-004 | Final mechanism status reaches typed audit boundaries. | AU-2/AU-3, CC7.2 |
 | IT-KA-2511-005 | History/spec-hash acquisition failure is observable and fail-closed. | SI-10, AU-3, CC7.2 |
 | IT-KA-2511-006 | Cancellation before continuation prevents an ungrounded provider turn. | SI-10, ASVS V2.3.1 |
+| IT-KA-2511-010 | Forbidden spec-hash/history access fails closed before continuation. | SI-10, AU-3, CC7.2 |
 | IT-MOCK-2511-001 | Mock LLM HTTP ordering is proven. | BR-KA-016 |
 | E2E-FP-2511-001 | OOM/informer recurrence uses history-aware RCA. | Scoped controls |
 | E2E-FP-2511-002 | Non-memory recurrence uses the identical path. | Scoped controls |
@@ -74,11 +81,10 @@ These updates are part of feature delivery, not post-CI remediation.
 | `make test-unit-kubernautagent` | Passed |
 | `make test-unit-mock-llm` | Passed |
 | `make test-integration-datastorage` | Passed |
-| `make test-integration-kubernautagent` | Blocked in setup: synchronized suite timed out while building the DataStorage image; 0 investigator specs executed |
-| `make test-e2e-fullpipeline GINKGO_FOCUS=2496 TEST_PROCS=1` | Blocked in infrastructure setup: Podman `/var/tmp`/container storage exhausted; 0 specs executed |
-| `make test-e2e-fleet` | Not run after the shared Podman capacity failure; it uses the same image-build prerequisite |
+| `make test-integration-kubernautagent` | Local setup was capacity-limited; CI executed the lane with six unrelated baseline label/re-enrichment failures |
+| `make test-e2e-fullpipeline GINKGO_FOCUS=2496 TEST_PROCS=1` | Passed in CI; focused `E2E-1293-006` and `E2E-FP-2496-002` also passed on helios08 |
+| `make test-e2e-fleet` | Passed in CI run 38758198869 |
 
-The full-pipeline focus-filter smoke invocation using `history-2496` ran zero
-specs because that label is not part of the Ginkgo focus text; it is not counted
-as validation. The corrected `2496` invocation reached image setup and was
-blocked before test execution.
+The helios08 run used amd64 artifacts from CI run 38758198869, kept the
+`fullpipeline-e2e` Kind cluster, and verified context reconstruction plus
+same-action-family alternate workflow eligibility.

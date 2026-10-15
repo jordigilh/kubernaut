@@ -432,7 +432,8 @@ func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, a
 	computed, err := e.effectiveK8s(ctx).GetSpecHash(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		if isForbiddenError(err) {
-			return "", true, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
+			forbidden := fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
+			return "", true, fmt.Errorf("%w: %w", ErrHistoryUnavailable, forbidden)
 		}
 		// A deleted target or an unavailable API mapping is sparse evidence,
 		// not a history backend outage (DD-KA-006 / Issue #1039).

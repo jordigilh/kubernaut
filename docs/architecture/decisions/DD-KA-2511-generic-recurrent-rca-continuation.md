@@ -1,6 +1,6 @@
 # DD-KA-2511: Generic Recurrent RCA Continuation
 
-**Status**: Authoritative; implementation complete pending runtime E2E capacity recovery
+**Status**: Authoritative; implementation and scoped runtime E2E validation complete
 **Date**: 2026-10-14
 **Issues**: #2510, #2511
 **Authority**: BR-KA-016, BR-AUDIT-005, DD-KA-016. This decision supersedes the Phase 1/RCA timing statements in DD-KA-2496 v1.2 and ADR-055 v2.1; their target-scoping, handoff and Phase 3 contracts remain authoritative.
