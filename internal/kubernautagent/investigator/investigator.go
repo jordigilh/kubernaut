@@ -726,6 +726,12 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 	if result == nil || result.Cancelled || result.HumanReviewNeeded {
 		return result, messages, p.Enrichment, nil
 	}
+	// Keep the signal-target labels available as a fallback throughout RCA
+	// continuation. A changed target can be unavailable to the label detector;
+	// in that case the target enrichment must retain its own history/identity
+	// while the existing all-failed-label preservation contract supplies the
+	// original labels to workflow discovery (ADR-056, DD-KA-2511).
+	signalEnrichment := p.Enrichment
 	reviewedTargets := make(map[string]struct{})
 	kind, name, namespace := ResolveEnrichmentTarget(p.Signal, nil)
 	namespace = inv.normalizeNamespace(kind, namespace)
@@ -737,6 +743,7 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 			//nolint:nilerr // cancellation is represented by the typed result
 			return markRCAContinuationCancelled(result, messages, p.LLMContext.rcaBudget), messages, p.Enrichment, nil
 		}
+		currentEnrichment = preserveSignalTargetLabelsOnFailedRCAEnrichment(currentEnrichment, signalEnrichment)
 		if currentEnrichment == nil {
 			return result, messages, currentEnrichment, nil
 		}

@@ -528,6 +528,24 @@ func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
 	return len(labels.FailedDetections) >= len(enrichment.AllDetectionCategories)
 }
 
+// preserveSignalTargetLabelsOnFailedRCAEnrichment keeps the original
+// signal-target labels when an RCA target cannot be resolved by the label
+// detector. The returned enrichment still carries the RCA target's owner,
+// history, and availability state; only the label fallback is copied. This
+// prevents a target-scoped continuation lookup from erasing the labels used by
+// the existing workflow-discovery safety contract (ADR-056, DD-KA-2511).
+func preserveSignalTargetLabelsOnFailedRCAEnrichment(current, signal *enrichment.EnrichmentResult) *enrichment.EnrichmentResult {
+	if current == nil || signal == nil || current == signal ||
+		!allLabelDetectionsFailed(current.DetectedLabels) ||
+		signal.DetectedLabels == nil || allLabelDetectionsFailed(signal.DetectedLabels) {
+		return current
+	}
+
+	preserved := *current
+	preserved.DetectedLabels = signal.DetectedLabels
+	return &preserved
+}
+
 type enrichmentTargetRef struct {
 	Kind       string
 	Name       string
