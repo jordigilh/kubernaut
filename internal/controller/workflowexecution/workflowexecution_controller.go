@@ -545,8 +545,10 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	if wfe.Spec.WorkflowRef.ExecutionBundle == "" {
 		return fmt.Errorf("workflowRef.executionBundle is required")
 	}
-	if _, err := name.ParseReference(wfe.Spec.WorkflowRef.ExecutionBundle); err != nil {
-		return fmt.Errorf("workflowRef.executionBundle must be a valid OCI image reference: %w", err)
+	if wfe.Spec.WorkflowRef.ExecutionEngine != "ansible" {
+		if _, err := name.ParseReference(wfe.Spec.WorkflowRef.ExecutionBundle); err != nil {
+			return fmt.Errorf("workflowRef.executionBundle must be a valid OCI image reference: %w", err)
+		}
 	}
 
 	// Validate target resource is required
