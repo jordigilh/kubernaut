@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -213,17 +214,18 @@ func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) *workflowcat
 // matching the original inline main() behavior
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4f).
 func buildLLMClients(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig, logger logr.Logger) (*llm.SwappableClient, map[katypes.Phase]*llm.SwappableClient) {
-	llmClient, err := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(cfg.AI.LLM, llmRuntime))
+	resolvedBase, err := kaconfig.ResolveEffectiveLLM(cfg.AI.LLM, *llmRuntime, nil, "ai.llm")
 	if err != nil {
-		logger.Error(err, "failed to create LLM client", "provider", cfg.AI.LLM.Provider)
+		logger.Error(err, "failed to resolve investigation LLM profile")
+		os.Exit(1)
+	}
+	llmClient, err := buildLLMClientFromConfig(context.Background(), resolvedBase)
+	if err != nil {
+		logger.Error(err, "failed to create LLM client", "provider", resolvedBase.Provider)
 		os.Exit(1)
 	}
 
-	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model, llm.RuntimeParams{
-		Temperature:    llmRuntime.Temperature,
-		TimeoutSeconds: llmRuntime.TimeoutSeconds,
-		MaxRetries:     llmRuntime.MaxRetries,
-	})
+	swappable, err := llm.NewSwappableClient(llmClient, resolvedBase.Model, runtimeParamsFromLLMConfig(resolvedBase))
 	if err != nil {
 		logger.Error(err, "failed to create swappable LLM client")
 		os.Exit(1)
@@ -233,29 +235,24 @@ func buildLLMClients(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 	// the alignment evaluator, so that the PinDecorator can be set at
 	// construction time.
 	phaseSwappables := make(map[katypes.Phase]*llm.SwappableClient)
-	for phaseName, override := range llmRuntime.PhaseModels {
-		phaseLLM, phaseRT := llmRuntime.EffectivePhaseConfig(phaseName, cfg.AI.LLM, *llmRuntime)
-		merged := mergeLLMConfig(phaseLLM, &phaseRT)
-		// #1726: a phase override's own apiKeyFile (distinct from the base
-		// profile's) must be resolved into APIKey here — EffectivePhaseConfig
-		// only produces the correct APIKeyFile, it does not read it.
-		// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
-		if err := merged.ResolveAPIKey(); err != nil {
-			logger.Error(err, "failed to resolve phase LLM api key file",
-				"phase", phaseName, "apiKeyFile", merged.APIKeyFile)
+	for phaseName, profile := range llmRuntime.PhaseModels {
+		if profile == nil {
+			logger.Error(nil, "phase LLM profile is nil", "phase", phaseName)
 			os.Exit(1)
 		}
-		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), merged)
+		resolvedPhase, resolveErr := kaconfig.ResolveEffectiveLLM(
+			cfg.AI.LLM, *llmRuntime, profile, fmt.Sprintf("phaseModels[%q]", phaseName))
+		if resolveErr != nil {
+			logger.Error(resolveErr, "failed to resolve phase LLM profile", "phase", phaseName)
+			os.Exit(1)
+		}
+		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), resolvedPhase)
 		if phaseErr != nil {
 			logger.Error(phaseErr, "failed to build phase LLM client",
-				"phase", phaseName, "model", override.Model)
+				"phase", phaseName, "model", resolvedPhase.Model)
 			os.Exit(1)
 		}
-		phaseSw, phaseSwErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
-			Temperature:    phaseRT.Temperature,
-			TimeoutSeconds: phaseRT.TimeoutSeconds,
-			MaxRetries:     phaseRT.MaxRetries,
-		})
+		phaseSw, phaseSwErr := llm.NewSwappableClient(phaseClient, resolvedPhase.Model, runtimeParamsFromLLMConfig(resolvedPhase))
 		if phaseSwErr != nil {
 			logger.Error(phaseSwErr, "failed to create phase SwappableClient",
 				"phase", phaseName)
@@ -263,7 +260,7 @@ func buildLLMClients(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 		}
 		phaseSwappables[katypes.Phase(phaseName)] = phaseSw
 		logger.Info("per-phase LLM client initialized",
-			"phase", phaseName, "model", phaseRT.Model, "override_model", override.Model)
+			"phase", phaseName, "model", resolvedPhase.Model)
 	}
 
 	return swappable, phaseSwappables
@@ -295,24 +292,19 @@ func buildAlignmentStack(
 		shadowClient = instrumentedLLM
 		logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 	} else {
-		alignStaticCfg, alignRtCfg := alignCfg.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
-		merged := mergeLLMConfig(alignStaticCfg, &alignRtCfg)
-		// #1726: the shadow/alignment-checker's own apiKeyFile (distinct from
-		// the base profile's) must be resolved into APIKey here — EffectiveLLM
-		// only produces the correct APIKeyFile, it does not read it.
-		// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
-		if err := merged.ResolveAPIKey(); err != nil {
-			logger.Error(err, "failed to resolve shadow agent LLM api key file (fail-closed)",
-				"apiKeyFile", merged.APIKeyFile)
+		resolvedAlignment, resolveErr := kaconfig.ResolveEffectiveLLM(
+			cfg.AI.LLM, *llmRuntime, alignCfg.LLM, "ai.alignmentCheck.llm")
+		if resolveErr != nil {
+			logger.Error(resolveErr, "failed to resolve shadow agent LLM profile (fail-closed)")
 			os.Exit(1)
 		}
-		raw, alignErr := buildLLMClientFromConfig(context.Background(), merged)
+		raw, alignErr := buildLLMClientFromConfig(context.Background(), resolvedAlignment)
 		if alignErr != nil {
 			logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
 			os.Exit(1)
 		}
 		shadowClient = llm.NewInstrumentedClient(raw)
-		logger.Info("shadow agent using dedicated LLM client", "model", alignRtCfg.Model)
+		logger.Info("shadow agent using dedicated LLM client", "model", resolvedAlignment.Model)
 	}
 	if shadowClient != nil {
 		alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{

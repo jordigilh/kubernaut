@@ -382,6 +382,8 @@ kubernautAgent:
     service:
         nodePort: 0
         type: ClusterIP
+    session:
+        maxConcurrentInvestigations: 50
 monitoring:
     alertManager:
         enabled: false

@@ -1,5 +1,13 @@
 # DD-PLATFORM-007: LLM Profile Consolidation (Helm Chart)
 
+> **Amendment 2026-10-15 (kubernaut#2515 / DD-LLM-012):** This decision's
+> original Helm-only rendering scope remains historical. Kubernaut Agent now
+> consumes sibling workflow/alignment selections as complete
+> `types.LLMConfig` profiles; `LLMOverrideConfig` partial inheritance is
+> retired. Runtime resolution and credential/transport isolation are governed
+> by BR-AI-090 and DD-LLM-012. Operator rendering parity remains tracked by
+> kubernaut-operator#419.
+
 **Date**: July 25, 2026
 **Status**: 🟢 **IMPLEMENTED** (amended 2026-08-02 by kubernaut#1861 — see Addendum)
 **Decision Date**: 2026-07-25

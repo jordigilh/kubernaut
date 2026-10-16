@@ -221,7 +221,7 @@ func (c *LLMConfig) Validate(prefix string) error {
 // the effective provider. Thin wrapper over ValidateReasoningConfig — see
 // that function for the shared rule. Also used, with a different effective
 // provider, to validate per-phase and per-alignment-check Reasoning
-// overrides (#1616, BR-AI-086) via LLMOverrideConfig in
+// profiles (#1616, BR-AI-086) via the complete profile resolver in
 // internal/kubernautagent/config, avoiding duplicating this logic there.
 func (c *LLMConfig) validateReasoning(prefix string) error {
 	return ValidateReasoningConfig(prefix, c.Reasoning, c.Provider)
@@ -279,30 +279,29 @@ func (c *LLMConfig) validateProviderAndModel(prefix string) error {
 }
 
 // validateProviderRequiredFields checks provider-specific required fields:
-// Vertex AI project/location, an API key (Gemini/Anthropic/OpenAI, unless
-// OAuth2 is enabled), and an endpoint (OpenAI/OpenAI-compatible).
+// Vertex AI project/location, an API key file or already-resolved API key
+// (Gemini/Anthropic/OpenAI, unless OAuth2 is enabled), and an endpoint
+// (OpenAI/OpenAI-compatible).
 func (c *LLMConfig) validateProviderRequiredFields(prefix string) error {
-	if c.Provider == LLMProviderVertexAI {
+	switch c.Provider {
+	case LLMProviderVertexAI:
 		if c.VertexProject == "" {
 			return fmt.Errorf("%s.vertexProject is required for provider %q", prefix, c.Provider)
 		}
 		if c.VertexLocation == "" {
 			return fmt.Errorf("%s.vertexLocation is required for provider %q", prefix, c.Provider)
 		}
-	}
-
-	if (c.Provider == LLMProviderGemini || c.Provider == LLMProviderAnthropic) &&
-		c.APIKeyFile == "" && !c.OAuth2.Enabled {
-		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, c.Provider)
-	}
-
-	if (c.Provider == LLMProviderOpenAI || c.Provider == LLMProviderOpenAICompatible) &&
-		c.Endpoint == "" {
-		return fmt.Errorf("%s.endpoint is required for provider %q", prefix, c.Provider)
-	}
-
-	if c.Provider == LLMProviderOpenAI && c.APIKeyFile == "" && !c.OAuth2.Enabled {
-		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, c.Provider)
+	case LLMProviderGemini, LLMProviderAnthropic:
+		if c.APIKeyFile == "" && c.APIKey == "" && !c.OAuth2.Enabled {
+			return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, c.Provider)
+		}
+	case LLMProviderOpenAI, LLMProviderOpenAICompatible:
+		if c.Endpoint == "" {
+			return fmt.Errorf("%s.endpoint is required for provider %q", prefix, c.Provider)
+		}
+		if c.Provider == LLMProviderOpenAI && c.APIKeyFile == "" && c.APIKey == "" && !c.OAuth2.Enabled {
+			return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, c.Provider)
+		}
 	}
 	return nil
 }

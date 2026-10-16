@@ -1,0 +1,45 @@
+suite: "KubernautAgent runtime session capacity (BR-AA-KA-065, DD-AA-KA-001)"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "IT-PLATFORM-KA-065-001: renders the 50-investigation runtime capacity default"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxConcurrentInvestigations: 50$"
+
+  - it: "IT-PLATFORM-KA-065-002: renders an operator-configured investigation capacity"
+    set:
+      kubernautAgent:
+        session:
+          maxConcurrentInvestigations: 75
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*maxConcurrentInvestigations: 75$"
