@@ -4,11 +4,17 @@
 **Category**: Kubernaut Agent — LLM Credential Management
 **Priority**: **P1 (HIGH)** — Credential-confusion defect blocking a planned enhancement
 **Target Version**: **V1.6**
-**Status**: ✅ Implemented
+**Status**: ✅ Implemented; sibling partial-override contract superseded by BR-AI-090 / #2515
 **Date**: July 24, 2026
 **GitHub Issues**: [#1726](https://github.com/jordigilh/kubernaut/issues/1726)
 **Related**: [BR-AI-1470](../tests/1470/TEST_PLAN.md) (per-phase LLM model routing — the feature whose
 implicit contract this closes a gap in), [kubernaut-operator#233](https://github.com/jordigilh/kubernaut-operator/issues/233) (blocked by this BR)
+
+> **2026-10-15 amendment**: BR-AI-090/#2515 retires `LLMOverrideConfig` partial
+> inheritance. Distinct phase and alignment profiles now provide complete
+> `types.LLMConfig` values and resolve their own credentials/transport settings.
+> The credential-isolation acceptance criteria below remain applicable; the
+> legacy "no apiKeyFile inherits the base key" criterion is superseded.
 
 ---
 

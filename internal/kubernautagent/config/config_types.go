@@ -138,11 +138,11 @@ type LLMRuntimeConfig struct {
 	// temperature parameter outright with a 400 if it is present at all,
 	// so it must be omitted from the wire request rather than defaulted to
 	// a numeric value when the operator never set it.
-	Temperature    *float64                      `yaml:"temperature,omitempty"`
-	MaxRetries     int                           `yaml:"maxRetries"`
-	TimeoutSeconds int                           `yaml:"timeoutSeconds"`
-	CustomHeaders  []types.LLMHeaderDef          `yaml:"customHeaders,omitempty"`
-	PhaseModels    map[string]*LLMOverrideConfig `yaml:"phaseModels,omitempty"`
+	Temperature    *float64                    `yaml:"temperature,omitempty"`
+	MaxRetries     int                         `yaml:"maxRetries"`
+	TimeoutSeconds int                         `yaml:"timeoutSeconds"`
+	CustomHeaders  []types.LLMHeaderDef        `yaml:"customHeaders,omitempty"`
+	PhaseModels    map[string]*types.LLMConfig `yaml:"phaseModels,omitempty"`
 	// Resolved at runtime from APIKeyFile. Not serialized.
 	APIKey string `yaml:"-"`
 }
@@ -152,57 +152,6 @@ var ValidPhaseNames = map[string]bool{
 	"rca":                true,
 	"workflow_discovery": true,
 	"validation":         true,
-}
-
-// EffectivePhaseConfig returns a merged set of static + runtime fields for the
-// given phase. If PhaseModels contains an override for the phase, non-empty
-// fields win over the base values. If no override exists, the base values are
-// returned unchanged. Follows the same merge pattern as
-// AlignmentCheckConfig.EffectiveLLM().
-//
-// Reasoning is a tuning field, not identity (#1616, BR-AI-086, DD-LLM-008):
-// unlike Provider/Model, changing only a phase's Reasoning across a hot
-// reload is not subject to the #1599 restart-required identity lock — see
-// validatePhaseIdentity (cmd/kubernautagent/llm_builder.go), which compares
-// only Provider/Model between boot and reload snapshots.
-func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMConfig, baseRuntime LLMRuntimeConfig) (types.LLMConfig, LLMRuntimeConfig) {
-	if len(r.PhaseModels) == 0 {
-		return baseLLM, baseRuntime
-	}
-	override, ok := r.PhaseModels[phase]
-	if !ok || override == nil {
-		return baseLLM, baseRuntime
-	}
-	staticOut := baseLLM
-	runtimeOut := baseRuntime
-	if override.Provider != "" {
-		staticOut.Provider = override.Provider
-	}
-	if override.AzureAPIVersion != "" {
-		staticOut.AzureAPIVersion = override.AzureAPIVersion
-	}
-	if override.VertexProject != "" {
-		staticOut.VertexProject = override.VertexProject
-	}
-	if override.VertexLocation != "" {
-		staticOut.VertexLocation = override.VertexLocation
-	}
-	if override.Model != "" {
-		runtimeOut.Model = override.Model
-	}
-	if override.Endpoint != "" {
-		runtimeOut.Endpoint = override.Endpoint
-	}
-	if override.APIKeyFile != "" {
-		runtimeOut.APIKeyFile = override.APIKeyFile
-	}
-	if override.Reasoning != nil {
-		staticOut.Reasoning = override.Reasoning
-	}
-	if override.Temperature != nil {
-		runtimeOut.Temperature = override.Temperature
-	}
-	return staticOut, runtimeOut
 }
 
 type DataStorageConfig struct {
@@ -479,7 +428,7 @@ const (
 type AlignmentCheckConfig struct {
 	Enabled         bool                  `yaml:"enabled"`
 	Mode            AlignmentMode         `yaml:"mode"`
-	LLM             *LLMOverrideConfig    `yaml:"llm"`
+	LLM             *types.LLMConfig      `yaml:"llm"`
 	Timeout         time.Duration         `yaml:"timeout"`
 	MaxStepTokens   int                   `yaml:"maxStepTokens"`
 	MaxRetries      int                   `yaml:"maxRetries"`
@@ -500,72 +449,4 @@ type GroundingReviewConfig struct {
 // CanaryConfig controls per-investigation canary integrity checks.
 type CanaryConfig struct {
 	ForceEscalation bool `yaml:"forceEscalation"`
-}
-
-// LLMOverrideConfig allows a phase (via LLMRuntimeConfig.PhaseModels) or the
-// alignment checker (via AlignmentCheckConfig.LLM) to use a different LLM
-// than the primary investigator. All fields are optional; non-zero fields
-// override the corresponding base values.
-type LLMOverrideConfig struct {
-	Provider        string `yaml:"provider"`
-	Endpoint        string `yaml:"endpoint"`
-	Model           string `yaml:"model"`
-	APIKeyFile      string `yaml:"apiKeyFile,omitempty"`
-	AzureAPIVersion string `yaml:"azureApiVersion"`
-	VertexProject   string `yaml:"vertexProject"`
-	VertexLocation  string `yaml:"vertexLocation"`
-	// Reasoning tunes reasoning/thinking-token behavior independently of the
-	// base ai.llm.reasoning config (#1616, BR-AI-086). Nil means "inherit
-	// base reasoning unchanged". Not part of LLM identity (DD-LLM-008): a
-	// hot-reload changing only this field is not subject to the
-	// restart-required identity lock.
-	Reasoning *types.LLMReasoningConfig `yaml:"reasoning,omitempty"`
-	// Temperature overrides the base/phase temperature (#1749). Nil means
-	// "inherit the base value unchanged" — not "force omission" —
-	// mirroring LLMRuntimeConfig.Temperature's pointer semantics.
-	Temperature *float64 `yaml:"temperature,omitempty"`
-}
-
-// EffectiveLLM returns a merged set of static + runtime fields for the
-// alignment checker client builder. If override fields are set, they win.
-//
-// Reasoning is a tuning field, not identity (#1616, BR-AI-086, DD-LLM-008):
-// the shadow/alignment-checker LLM is never subject to the #1599
-// restart-required identity lock in the first place (only the primary
-// investigator's per-phase identity is), so a Reasoning-only override here
-// always applies immediately.
-func (c *AlignmentCheckConfig) EffectiveLLM(base types.LLMConfig, runtime LLMRuntimeConfig) (types.LLMConfig, LLMRuntimeConfig) {
-	if c.LLM == nil {
-		return base, runtime
-	}
-	staticOut := base
-	runtimeOut := runtime
-	if c.LLM.Provider != "" {
-		staticOut.Provider = c.LLM.Provider
-	}
-	if c.LLM.AzureAPIVersion != "" {
-		staticOut.AzureAPIVersion = c.LLM.AzureAPIVersion
-	}
-	if c.LLM.VertexProject != "" {
-		staticOut.VertexProject = c.LLM.VertexProject
-	}
-	if c.LLM.VertexLocation != "" {
-		staticOut.VertexLocation = c.LLM.VertexLocation
-	}
-	if c.LLM.Model != "" {
-		runtimeOut.Model = c.LLM.Model
-	}
-	if c.LLM.Endpoint != "" {
-		runtimeOut.Endpoint = c.LLM.Endpoint
-	}
-	if c.LLM.APIKeyFile != "" {
-		runtimeOut.APIKeyFile = c.LLM.APIKeyFile
-	}
-	if c.LLM.Reasoning != nil {
-		staticOut.Reasoning = c.LLM.Reasoning
-	}
-	if c.LLM.Temperature != nil {
-		runtimeOut.Temperature = c.LLM.Temperature
-	}
-	return staticOut, runtimeOut
 }

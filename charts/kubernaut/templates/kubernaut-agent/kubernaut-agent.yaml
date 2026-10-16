@@ -47,6 +47,8 @@ being set (BR-PLATFORM-010).
 */}}
 {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- $kaBaseAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaProfile.provider) }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -62,24 +64,37 @@ being set (BR-PLATFORM-010).
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
 {{- end }}
 {{- /*
-Multi-Secret-volume mounting (DD-PLATFORM-007): a phaseModels/alignmentCheck
-override only gets its own dedicated mount when its resolved
-credentialsSecretName differs from KA's base profile -- otherwise it
-inherits the base's already-mounted "llm-credentials-file" path. Sorted
-iteration keeps the rendered Deployment deterministic (mirrors the
-Operator's sort.Strings(phases)).
+Multi-Secret-volume mounting (DD-LLM-012): complete sibling profiles get
+dedicated API-key and/or OAuth2 credential mounts whenever their selected
+Secret differs from the base profile. Sorted iteration keeps the rendered
+Deployment deterministic.
 */}}
 {{- $kaPhaseMounts := list }}
 {{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
 {{- $p := index $kaPhaseProfiles $phase }}
-{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
-{{- $kaPhaseMounts = append $kaPhaseMounts (dict "phase" $phase "profile" $p) }}
+{{- $pOAuth2 := $p.oauth2 | default dict }}
+{{- if and $pOAuth2.enabled (not $pOAuth2.credentialsSecretRef) }}
+{{- fail (printf "phaseModels.%s profile oauth2.credentialsSecretRef is required when oauth2.enabled=true" $phase) }}
+{{- end }}
+{{- $needsAPI := ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $needsOAuth2 := and $pOAuth2.enabled (ne $pOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- if or $needsAPI $needsOAuth2 }}
+{{- $kaPhaseMounts = append $kaPhaseMounts (dict "phase" $phase "profile" $p "needsAPI" $needsAPI "needsOAuth2" $needsOAuth2) }}
 {{- end }}
 {{- end }}
 {{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
-{{- $kaAlignmentAPIKeyFile := "" }}
+{{- $kaAlignmentAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaAlignmentProfile.provider) }}
 {{- if $kaAlignmentNeedsMount }}
 {{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end }}
+{{- $kaAlignmentOAuth2 := $kaAlignmentProfile.oauth2 | default dict }}
+{{- if and .Values.kubernautAgent.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (not $kaAlignmentOAuth2.credentialsSecretRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true" $kaAlignmentProfileRef) }}
+{{- end }}
+{{- $kaAlignmentOAuth2NeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (ne $kaAlignmentOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $kaAlignmentOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+{{- $kaAlignmentOAuth2Dir = "/etc/kubernaut-agent/alignment-check-oauth2" }}
 {{- end }}
 {{- /*
 checksum/config + checksum/llm-runtime (Issue #1737 gap) need this content
@@ -100,19 +115,32 @@ rather than reusing a single file-top $afInteractiveV.
 {{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
 {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- $kaBaseAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaProfile.provider) }}
 {{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaEffectiveRef }}
 {{- $kaAlignmentProfile := dict }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
 {{- end }}
 {{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
-{{- $kaAlignmentAPIKeyFile := "" }}
+{{- $kaAlignmentAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $kaAlignmentProfile.provider) }}
 {{- if $kaAlignmentNeedsMount }}
 {{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end -}}
+{{- $kaAlignmentOAuth2 := $kaAlignmentProfile.oauth2 | default dict }}
+{{- if and $v.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (not $kaAlignmentOAuth2.credentialsSecretRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true" $kaAlignmentProfileRef) }}
+{{- end }}
+{{- $kaAlignmentOAuth2NeedsMount := and $v.alignmentCheck.enabled $kaAlignmentOAuth2.enabled (ne $kaAlignmentOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $kaAlignmentOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+{{- $kaAlignmentOAuth2Dir = "/etc/kubernaut-agent/alignment-check-oauth2" }}
 {{- end -}}
 runtime:
   logging:
     level: {{ $v.logging.level | quote }}
+  session:
+    maxConcurrentInvestigations: {{ $v.session.maxConcurrentInvestigations }}
   # GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
   # Shared across Gateway/DataStorage/KubernautAgent (top-level .Values.telemetry).
   # Empty endpoint + logSink=false (default) disables tracing entirely. Network
@@ -147,6 +175,7 @@ runtime:
 ai:
   llm:
     provider: {{ $kaProfile.provider | quote }}
+    apiKeyFile: {{ $kaBaseAPIKeyFile | quote }}
 {{- $kaOAuth2 := $kaProfile.oauth2 | default dict }}
 {{- if $kaOAuth2.enabled }}
     oauth2:
@@ -169,8 +198,17 @@ ai:
 {{- if $kaProfile.azureApiVersion }}
     azureApiVersion: {{ $kaProfile.azureApiVersion | quote }}
 {{- end }}
+{{- if $kaProfile.bedrockRegion }}
+    bedrockRegion: {{ $kaProfile.bedrockRegion | quote }}
+{{- end }}
 {{- if $kaProfile.tlsCaFile }}
     tlsCaFile: {{ $kaProfile.tlsCaFile | quote }}
+{{- end }}
+{{- if $kaProfile.tlsCertFile }}
+    tlsCertFile: {{ $kaProfile.tlsCertFile | quote }}
+{{- end }}
+{{- if $kaProfile.tlsKeyFile }}
+    tlsKeyFile: {{ $kaProfile.tlsKeyFile | quote }}
 {{- end }}
 {{- $kaReasoning := $kaProfile.reasoning | default dict }}
 {{- if or $kaReasoning.enabled $kaReasoning.capabilityOverride $kaReasoning.effort }}
@@ -202,7 +240,7 @@ ai:
     timeout: {{ $v.alignmentCheck.timeout }}
     maxStepTokens: {{ $v.alignmentCheck.maxStepTokens }}
     llm:
-      {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 6 }}
+      {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile "oauth2CredentialsDir" $kaAlignmentOAuth2Dir) | nindent 6 }}
 {{- end }}
 {{- if $afInteractiveV.enabled }}
 interactive:
@@ -311,6 +349,7 @@ default unchanged (see mcpclient.ResilienceConfigFromFleet). */}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
 {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -330,18 +369,32 @@ endpoint: {{ $kaProfile.endpoint | default "" | quote }}
 {{- if hasKey $kaProfile "temperature" }}
 temperature: {{ $kaProfile.temperature }}
 {{- end }}
-maxRetries: {{ $kaProfile.maxRetries | default 3 }}
-timeoutSeconds: {{ $kaProfile.timeoutSeconds | default 120 }}
+{{- if hasKey $kaProfile "maxRetries" }}
+maxRetries: {{ $kaProfile.maxRetries }}
+{{- else }}
+maxRetries: 3
+{{- end }}
+{{- if hasKey $kaProfile "timeoutSeconds" }}
+timeoutSeconds: {{ $kaProfile.timeoutSeconds }}
+{{- else }}
+timeoutSeconds: 120
+{{- end }}
 {{- if $kaPhaseProfiles }}
 phaseModels:
 {{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
 {{- $p := index $kaPhaseProfiles $phase }}
 {{- $phaseAPIKeyFile := "" }}
+{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/credentials" "provider" $p.provider) }}
 {{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
 {{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" (printf "/etc/kubernaut-agent/phase-credentials/%s" $phase) "provider" $p.provider) }}
 {{- end }}
+{{- $phaseOAuth2 := $p.oauth2 | default dict }}
+{{- $phaseOAuth2Dir := "/etc/kubernaut-agent/oauth2" }}
+{{- if and $phaseOAuth2.enabled (ne $phaseOAuth2.credentialsSecretRef $kaBaseOAuth2.credentialsSecretRef) }}
+{{- $phaseOAuth2Dir = printf "/etc/kubernaut-agent/phase-oauth2/%s" $phase }}
+{{- end }}
   {{ $phase }}:
-    {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile) | nindent 4 }}
+    {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile "oauth2CredentialsDir" $phaseOAuth2Dir) | nindent 4 }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -672,13 +725,25 @@ spec:
               readOnly: true
 {{- end }}
 {{- range $kaPhaseMounts }}
+{{- if .needsAPI }}
             - name: phase-credentials-{{ .phase }}
               mountPath: /etc/kubernaut-agent/phase-credentials/{{ .phase }}
               readOnly: true
 {{- end }}
+{{- if .needsOAuth2 }}
+            - name: phase-oauth2-credentials-{{ .phase }}
+              mountPath: /etc/kubernaut-agent/phase-oauth2/{{ .phase }}
+              readOnly: true
+{{- end }}
+{{- end }}
 {{- if $kaAlignmentNeedsMount }}
             - name: alignment-check-credentials
               mountPath: /etc/kubernaut-agent/alignment-check-credentials
+              readOnly: true
+{{- end }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+            - name: alignment-check-oauth2-credentials
+              mountPath: /etc/kubernaut-agent/alignment-check-oauth2
               readOnly: true
 {{- end }}
             {{- if include "kubernaut.agent.tlsEnabled" . }}
@@ -739,14 +804,26 @@ spec:
             secretName: {{ $kaFleetPreamble.oauth2.credentialsSecretRef }}
 {{- end }}
 {{- range $kaPhaseMounts }}
+{{- if .needsAPI }}
         - name: phase-credentials-{{ .phase }}
           secret:
             secretName: {{ .profile.credentialsSecretName }}
+{{- end }}
+{{- if .needsOAuth2 }}
+        - name: phase-oauth2-credentials-{{ .phase }}
+          secret:
+            secretName: {{ .profile.oauth2.credentialsSecretRef }}
+{{- end }}
 {{- end }}
 {{- if $kaAlignmentNeedsMount }}
         - name: alignment-check-credentials
           secret:
             secretName: {{ $kaAlignmentProfile.credentialsSecretName }}
+{{- end }}
+{{- if $kaAlignmentOAuth2NeedsMount }}
+        - name: alignment-check-oauth2-credentials
+          secret:
+            secretName: {{ $kaAlignmentOAuth2.credentialsSecretRef }}
 {{- end }}
         {{- if include "kubernaut.agent.tlsEnabled" . }}
         {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap

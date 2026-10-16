@@ -102,6 +102,9 @@ global:
     #   vertexLocation: ""
     #   azureApiVersion: ""
     #   tlsCaFile: ""
+    #   tlsCertFile: ""
+    #   tlsKeyFile: ""
+    #   bedrockRegion: ""
     #   oauth2:
     #     enabled: false
     #     tokenURL: ""
@@ -539,6 +542,11 @@ kubernautAgent:
     limits:
       cpu: 1000m
       memory: 1Gi
+  # -- Runtime session admission capacity. The application default is 10;
+  # the chart default is raised to 50 so a single agent replica can sustain
+  # normal concurrent autonomous and interactive investigations.
+  session: {}
+    # maxConcurrentInvestigations: 50
   # -- Name of an entry in global.llmProfiles used for KA's investigator LLM
   # calls (DD-PLATFORM-007). When omitted, inferred automatically if
   # global.llmProfiles defines exactly one profile (Issue #1987, DD-PLATFORM-006
