@@ -148,6 +148,7 @@ type AuditEvent struct {
 	// PRIMARY IDENTIFIERS (4 columns)
 	// ========================================
 	EventID        uuid.UUID `json:"event_id"`
+	IdempotencyKey bool      `json:"-"`
 	EventTimestamp time.Time `json:"event_timestamp"`
 	EventDate      DateOnly  `json:"event_date"` // Generated column for partitioning (serializes as "YYYY-MM-DD")
 	EventType      string    `json:"event_type"` // e.g., gateway.signal.received

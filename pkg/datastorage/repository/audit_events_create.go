@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,6 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/txretry"
 )
+
+// ErrAuditEventIDConflict indicates that a client-supplied event_id is already
+// bound to different logical event content. It is a permanent client conflict,
+// not a transient database outage and must not be sent to the DLQ.
+var ErrAuditEventIDConflict = errors.New("audit event idempotency conflict")
 
 // Single-event Create for the unified audit_events table (ADR-034 hash
 // chain). Split from audit_events_repository.go (GO-ANTIPATTERN-AUDIT-2026-07-01
@@ -83,6 +89,7 @@ func normalizeCreateEvent(event *AuditEvent) ([]byte, string, error) {
 	if version == "" {
 		version = "1.0"
 	}
+	event.Version = version
 
 	// CRITICAL: Set default retention days BEFORE hash calculation so the hash
 	// includes the correct retention_days value (2555) instead of 0, matching
@@ -106,49 +113,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	// Calculate event_date from event_timestamp (28-column INSERT below)
 	eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
-	// ========================================
-	// SOC2 Gap #9: Hash Chain Integration
-	// ========================================
-	// Wrap the transactional portion in a retry loop so that transient
-	// PostgreSQL deadlocks (40P01) are retried transparently. The hash
-	// fields are recalculated on each attempt because they depend on the
-	// current chain head, which may change between retries.
 	err = txretry.WithSerializableRetry(ctx, 3, func() error {
-		event.EventHash = ""
-		event.PreviousEventHash = ""
-
-		tx, txErr := r.db.BeginTx(ctx, nil)
-		if txErr != nil {
-			return fmt.Errorf("failed to begin transaction: %w", txErr)
-		}
-		defer func() {
-			if txErr != nil {
-				_ = tx.Rollback()
-			}
-		}()
-
-		previousHash, txErr := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
-		if txErr != nil {
-			return fmt.Errorf("failed to get previous event hash: %w", txErr)
-		}
-
-		eventHash, txErr := r.hashEvent(previousHash, event)
-		if txErr != nil {
-			return fmt.Errorf("failed to calculate event hash: %w", txErr)
-		}
-
-		event.EventHash = eventHash
-		event.PreviousEventHash = previousHash
-
-		txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate)
-		if txErr != nil {
-			return fmt.Errorf("failed to insert audit event: %w", txErr)
-		}
-
-		if txErr = tx.Commit(); txErr != nil {
-			return fmt.Errorf("failed to commit transaction: %w", txErr)
-		}
-		return nil
+		return r.persistCreateEvent(ctx, event, eventDataJSON, version, eventDate)
 	})
 	if err != nil {
 		return nil, err
@@ -164,6 +130,51 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	)
 
 	return event, nil
+}
+
+func (r *AuditEventsRepository) persistCreateEvent(ctx context.Context, event *AuditEvent, eventDataJSON []byte, version string, eventDate time.Time) (txErr error) {
+	event.EventHash = ""
+	event.PreviousEventHash = ""
+	tx, txErr := r.db.BeginTx(ctx, nil)
+	if txErr != nil {
+		return fmt.Errorf("failed to begin transaction: %w", txErr)
+	}
+	defer func() {
+		if txErr != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	previousHash, txErr := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+	if txErr != nil {
+		return fmt.Errorf("failed to get previous event hash: %w", txErr)
+	}
+	eventHash, txErr := r.hashEvent(previousHash, event)
+	if txErr != nil {
+		return fmt.Errorf("failed to calculate event hash: %w", txErr)
+	}
+	event.EventHash = eventHash
+	event.PreviousEventHash = previousHash
+
+	if event.IdempotencyKey {
+		claimed, existingHash, existingPrevious, claimErr := claimAuditEventID(ctx, tx, event)
+		if claimErr != nil {
+			return fmt.Errorf("claim audit event id: %w", claimErr)
+		}
+		if !claimed {
+			event.EventHash = existingHash
+			event.PreviousEventHash = existingPrevious
+		} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
+			return fmt.Errorf("failed to insert audit event: %w", txErr)
+		}
+	} else if txErr = execCreateInsert(ctx, tx, event, eventDataJSON, version, eventDate); txErr != nil {
+		return fmt.Errorf("failed to insert audit event: %w", txErr)
+	}
+
+	if txErr = tx.Commit(); txErr != nil {
+		return fmt.Errorf("failed to commit transaction: %w", txErr)
+	}
+	return nil
 }
 
 // createAuditEventSQL is the single-row INSERT used by execCreateInsert.
@@ -211,7 +222,7 @@ func execCreateInsert(ctx context.Context, tx *sql.Tx, event *AuditEvent, eventD
 	}
 
 	var ignoredTimestamp time.Time
-	return tx.QueryRowContext(ctx, createAuditEventSQL,
+	err := tx.QueryRowContext(ctx, createAuditEventSQL,
 		event.EventID,
 		version,
 		event.EventTimestamp,
@@ -245,4 +256,48 @@ func execCreateInsert(ctx context.Context, tx *sql.Tx, event *AuditEvent, eventD
 		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),
 		sqlutil.ToNullTime(event.LegalHoldPlacedAt),
 	).Scan(&ignoredTimestamp)
+	return err
+}
+
+const claimAuditEventIDSQL = `
+	INSERT INTO audit_event_idempotency (
+		event_id, event_type, event_action, correlation_id, event_fingerprint, event_hash, previous_event_hash
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	ON CONFLICT (event_id) DO NOTHING
+	RETURNING event_fingerprint, event_hash, previous_event_hash
+`
+
+func claimAuditEventID(ctx context.Context, tx *sql.Tx, event *AuditEvent) (bool, string, string, error) {
+	fingerprint, err := idempotencyFingerprint(event)
+	if err != nil {
+		return false, "", "", err
+	}
+	var existingFingerprint, eventHash, previousHash string
+	err = tx.QueryRowContext(ctx, claimAuditEventIDSQL,
+		event.EventID,
+		event.EventType,
+		event.EventAction,
+		event.CorrelationID,
+		fingerprint,
+		event.EventHash,
+		event.PreviousEventHash,
+	).Scan(&existingFingerprint, &eventHash, &previousHash)
+	if err == nil {
+		return true, eventHash, previousHash, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, "", "", err
+	}
+
+	var existingType, existingAction, existingCorrelation string
+	if err := tx.QueryRowContext(ctx,
+		"SELECT event_type, event_action, correlation_id, event_fingerprint, event_hash, previous_event_hash FROM audit_event_idempotency WHERE event_id = $1",
+		event.EventID,
+	).Scan(&existingType, &existingAction, &existingCorrelation, &existingFingerprint, &eventHash, &previousHash); err != nil {
+		return false, "", "", err
+	}
+	if existingType != event.EventType || existingAction != event.EventAction || existingCorrelation != event.CorrelationID || existingFingerprint != fingerprint {
+		return false, "", "", fmt.Errorf("%w: event id %s is already bound to a different logical event", ErrAuditEventIDConflict, event.EventID)
+	}
+	return false, eventHash, previousHash, nil
 }

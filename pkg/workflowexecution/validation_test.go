@@ -20,6 +20,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -108,6 +109,31 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 			Expect(err).ToNot(HaveOccurred(), "Valid container image should be accepted")
 
 			GinkgoWriter.Println("✅ Valid container image accepted")
+		})
+	})
+
+	Context("Job identity validation", func() {
+		It("should reject a new Job WFE with a named RR but no RR UID", func() {
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-job-identity", Namespace: "default"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "rr-missing-uid",
+						Namespace: "kubernaut-system",
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/job:v1",
+							ExecutionEngine: "job",
+						},
+					},
+					TargetResource: "default/deployment/test-app",
+				},
+			}
+
+			err := reconciler.ValidateSpec(wfe)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("remediationRequestRef.uid is required"))
 		})
 	})
 

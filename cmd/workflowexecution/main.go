@@ -287,6 +287,7 @@ func run() int {
 		PhaseManager:             phaseManager,
 		AuditManager:             auditManager,
 		ExecutorRegistry:         executorRegistry,
+		ClientFactory:            clientFactory,
 	})
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")

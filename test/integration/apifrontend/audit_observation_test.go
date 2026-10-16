@@ -60,7 +60,7 @@ var _ = Describe("BR-AUDIT-005: same-second PostgreSQL/DS observation", func() {
 		target := insert(1)
 		firstPage, err := client.QueryAuditEvents(ctx, params)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(firstPage.Data).ToNot(ContainElement(HaveField("EventID", ogenclient.NewOptUUID(target))))
+		Expect(firstPage.Data).ToNot(ContainElement(HaveField("EventID", ogenclient.NewOptNilUUID(target))))
 		rows, err := infrastructure.QueryAuditSnapshot(ctx, client, params)
 		Expect(err).ToNot(HaveOccurred())
 		match, ok := infrastructure.FindNewToolAudit(rows, infrastructure.AuditObservation{

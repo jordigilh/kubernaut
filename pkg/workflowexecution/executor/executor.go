@@ -24,11 +24,18 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
+
+// ErrExecutionIdentityMismatch indicates that the named execution resource
+// belongs to a different workflow or has a different immutable template. It
+// is terminal for the WFE: retrying would risk observing or adopting foreign
+// execution state.
+var ErrExecutionIdentityMismatch = errors.New("execution resource identity mismatch")
 
 // CreateOptions carries optional configuration for execution resource creation.
 // Using a struct allows adding new fields without breaking the interface.
@@ -78,8 +85,11 @@ type Executor interface {
 	// AWX job) in the specified execution namespace. Returns a CreateResult
 	// containing the resource name and any non-fatal warnings.
 	//
-	// The execution resource name MUST be deterministic based on targetResource
-	// to provide atomic resource locking (DD-WE-003).
+	// Execution-resource identity is backend-specific. Tekton retains its
+	// target-derived compatibility identity, while Job uses the immutable
+	// RemediationRequest/WFE identity from JobExecutionResourceName (DD-WE-010).
+	// Active-target locking is owned by RemediationOrchestrator (DD-RO-002), not
+	// by assuming that every backend name is a target lock.
 	//
 	// DD-WE-006: opts.Dependencies carries schema-declared infrastructure dependencies
 	// to be mounted as volumes (Job) or workspace bindings (Tekton).

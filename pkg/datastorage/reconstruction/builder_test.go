@@ -36,6 +36,7 @@ var _ = Describe("RemediationRequest Builder", func() {
 			// Validates builder creates K8s-compliant CRD structure
 			correlationID := "test-correlation-123"
 			rrFields := &reconstructionpkg.ReconstructedRRFields{
+				RemediationRequestUID: "550e8400-e29b-41d4-a716-446655440006",
 				Spec: &remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
 					SignalType:        "alert",
@@ -64,6 +65,10 @@ var _ = Describe("RemediationRequest Builder", func() {
 			Expect(rr.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "kubernaut-datastorage"))
 			Expect(rr.Labels).To(HaveKeyWithValue("kubernaut.ai/reconstructed", "true"))
 			Expect(rr.Labels).To(HaveKeyWithValue("kubernaut.ai/correlation-id", correlationID))
+			Expect(rr.Annotations).To(HaveKeyWithValue(
+				reconstructionpkg.AnnotationOriginalRemediationRequestUID,
+				"550e8400-e29b-41d4-a716-446655440006",
+			))
 
 			// Validate Spec and Status are populated
 			Expect(rr.Spec.SignalName).To(Equal("HighCPU"))

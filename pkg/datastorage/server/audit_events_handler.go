@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -242,6 +243,10 @@ func (s *Server) persistAuditEventWithDLQFallback(ctx context.Context, w http.Re
 	s.metrics.WriteDuration.WithLabelValues("audit_events").Observe(duration)
 
 	if err != nil {
+		if errors.Is(err, repository.ErrAuditEventIDConflict) {
+			response.WriteRFC7807ErrorWithRequestID(w, http.StatusConflict, "audit_event_id_conflict", "Audit Event ID Conflict", err.Error(), r.URL.Path, s.logger)
+			return
+		}
 		s.logger.Error(err, "Database write failed",
 			"event_type", req.EventType,
 			"correlation_id", req.CorrelationID,

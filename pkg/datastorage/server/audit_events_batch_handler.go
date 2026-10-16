@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -263,6 +264,16 @@ func (s *Server) persistAuditEventsBatch(ctx context.Context, w http.ResponseWri
 	s.metrics.WriteDuration.WithLabelValues("audit_events_batch").Observe(duration)
 
 	if err != nil {
+		if errors.Is(err, repository.ErrAuditEventIDConflict) {
+			writeValidationRFC7807Error(w, &validation.RFC7807Problem{
+				Type:     "https://kubernaut.ai/problems/audit-event-id-conflict",
+				Title:    "Audit Event ID Conflict",
+				Status:   http.StatusConflict,
+				Detail:   err.Error(),
+				Instance: r.URL.Path,
+			}, s)
+			return
+		}
 		s.handleBatchWriteFailure(w, r, auditEvents, err, duration) //nolint:contextcheck // DD-009 per-item DLQ fallback is a last-resort integrity path; must not risk losing events to the same request context that saw the primary write fail
 		return
 	}

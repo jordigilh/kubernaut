@@ -149,6 +149,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			priorWFE.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-1 * time.Minute)}
 
 			wfe := buildPendingWFE("wfe-cooldown-current", targetResource)
+			wfe.Spec.WorkflowRef.WorkflowID = priorWFE.Spec.WorkflowRef.WorkflowID
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
@@ -247,8 +248,20 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(mockStore.events).To(BeEmpty(),
-				"workflow.selection.completed must be skipped once the execution resource already exists (BR-AUDIT-005 idempotency, prevents SOC2 CC8.1 duplicate-event corruption), got: %d event(s)", len(mockStore.events))
+			selectionEvents := 0
+			startedEvents := 0
+			for _, event := range mockStore.events {
+				switch event.EventType {
+				case audit.EventTypeSelectionCompleted:
+					selectionEvents++
+				case audit.EventTypeExecutionStarted:
+					startedEvents++
+				}
+			}
+			Expect(selectionEvents).To(Equal(0),
+				"workflow.selection.completed must be skipped once the execution resource already exists")
+			Expect(startedEvents).To(Equal(1),
+				"existing same-owner PipelineRun must still produce exactly one execution.started audit event")
 		})
 
 		It("should emit workflow.selection.completed exactly once when the execution resource does not yet exist", func() {

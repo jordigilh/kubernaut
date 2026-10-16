@@ -45,6 +45,8 @@ func newTektonScheme() *runtime.Scheme {
 // UT-WE-054-TEK: TektonExecutor unit tests
 // Authority: BR-WE-014 (Workflow Execution Backend), BR-FLEET-054
 // FedRAMP: AC-6 (Least Privilege) -- SA injection, AU-3 (Audit Content) -- labels
+const testExecutionNamespace = "kubernaut-workflows"
+
 var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 	var (
 		ctx       context.Context
@@ -55,7 +57,7 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		scheme = newTektonScheme()
-		namespace = "kubernaut-workflows"
+		namespace = testExecutionNamespace
 	})
 
 	Describe("Engine", func() {

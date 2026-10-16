@@ -31,13 +31,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -97,12 +97,12 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			"remote cluster must have pods in kube-system")
 	})
 
-	It("E2E-FLEET-012 [AC-3, AC-4, AC-6, ASVS V4.1.1, V4.1.5]: should classify a deterministic Job collision from the remote cluster", func() {
+	It("E2E-FLEET-012 [AC-3, AC-4, AC-6, ASVS V4.1.1, V4.1.5]: should fail closed on a foreign remote Job identity collision", func() {
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 
 		const oldOwner = "wfe-remote-collision-owner"
 		targetResource := fmt.Sprintf("default/deployment/e2e-remote-iscompleted-%s", uuid.New().String()[:8])
-		jobName := weexecutor.ExecutionResourceName(targetResource)
+		jobName := ""
 		wfeName := "e2e-remote-iscompleted-" + uuid.New().String()[:8]
 
 		newCollisionJob := func(suspend bool) *batchv1.Job {
@@ -133,35 +133,10 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			}
 		}
 
-		By("Creating a naturally completed Job on the remote cluster and a non-terminal hub shadow")
-		remoteJob := newCollisionJob(false)
-		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
-		DeferCleanup(func() {
-			_ = remoteK8sClient.Delete(context.Background(), remoteJob)
-		})
-		Eventually(func(g Gomega) {
-			latest := &batchv1.Job{}
-			g.Expect(remoteK8sClient.Get(ctx, client.ObjectKeyFromObject(remoteJob), latest)).To(Succeed())
-			completed := false
-			for _, condition := range latest.Status.Conditions {
-				if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
-					completed = true
-					break
-				}
-			}
-			g.Expect(completed).To(BeTrue(), "remote Job should be completed by the Kubernetes Job controller")
-		}, timeout, interval).Should(Succeed())
-
-		hubShadow := newCollisionJob(true)
-		Expect(k8sClient.Create(ctx, hubShadow)).To(Succeed())
-		DeferCleanup(func() {
-			_ = k8sClient.Delete(context.Background(), hubShadow)
-		})
-
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{Name: wfeName, Namespace: namespace},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				RemediationRequestRef: corev1.ObjectReference{Name: "rr-" + wfeName, Namespace: namespace},
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-" + wfeName, Namespace: namespace, UID: types.UID(uuid.NewString())},
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      workflowUUIDs["crashloop-config-fix-v1:production"],
@@ -176,21 +151,49 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 				ClusterID:      "remote-cluster",
 			},
 		}
-
-		By("Submitting a WorkflowExecution whose deterministic Job already exists remotely")
+		By("Creating the WorkflowExecution and waiting for its API-assigned Job identity")
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		DeferCleanup(func() {
+			if jobName != "" {
+				_ = remoteK8sClient.Delete(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+					Name: jobName, Namespace: infrastructure.ExecutionNamespace,
+				}})
+			}
+		})
 		DeferCleanup(func() {
 			if err := k8sClient.Delete(context.Background(), wfe); err != nil && !apierrors.IsNotFound(err) {
 				GinkgoWriter.Printf("failed to clean up WFE %s: %v\n", wfe.Name, err)
 			}
 		})
 
-		By("Verifying the production collision path recreates the Job on the remote cluster")
 		Eventually(func(g Gomega) {
-			var recreated batchv1.Job
-			g.Expect(remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &recreated)).To(Succeed())
-			g.Expect(recreated.Labels["kubernaut.ai/workflow-execution"]).To(Equal(wfe.Name),
-				"remote IsCompleted must classify the completed remote Job as stale and permit recreation")
+			var currentWFE workflowexecutionv1alpha1.WorkflowExecution
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &currentWFE)).To(Succeed())
+			g.Expect(currentWFE.Status.ExecutionRef).NotTo(BeNil())
+			jobName = currentWFE.Status.ExecutionRef.Name
 		}, timeout, interval).Should(Succeed())
+
+		By("Replacing the created remote Job with a foreign Job using the same name")
+		var createdJob batchv1.Job
+		Eventually(func() error {
+			return remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &createdJob)
+		}, timeout, interval).Should(Succeed())
+		Expect(remoteK8sClient.Delete(ctx, &createdJob)).To(Succeed())
+		Eventually(func() bool {
+			var deleted batchv1.Job
+			return apierrors.IsNotFound(remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &deleted))
+		}, timeout, interval).Should(BeTrue())
+		remoteJob := newCollisionJob(true)
+		Expect(remoteK8sClient.Create(ctx, remoteJob)).To(Succeed())
+
+		By("Verifying the production status path fails closed without adopting the remote Job")
+		Eventually(func(g Gomega) {
+			var currentWFE workflowexecutionv1alpha1.WorkflowExecution
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &currentWFE)).To(Succeed())
+			g.Expect(currentWFE.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		}, timeout, interval).Should(Succeed())
+		var unchanged batchv1.Job
+		Expect(remoteK8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &unchanged)).To(Succeed())
+		Expect(unchanged.Labels["kubernaut.ai/workflow-execution"]).To(Equal(oldOwner))
 	})
 })

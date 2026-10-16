@@ -277,21 +277,22 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 
 // buildPipelineRun creates a PipelineRun with bundle resolver
 // ========================================
-// RESOURCE LOCK PERSISTENCE (DD-WE-003)
+// TEKTON RESOURCE IDENTITY (DD-WE-003)
 // ========================================
-// The PipelineRun IS the lock. Its existence means the resource is locked.
-// Deterministic naming ensures Kubernetes atomically prevents race conditions.
+// This target-derived PipelineRun name is a Tekton compatibility identity.
+// RemediationOrchestrator owns active-target locking; Job-backed executions use
+// the per-RR/WFE identity in DD-WE-010.
 
-// pipelineRunName generates a deterministic name based on target resource.
-// Two WFEs targeting the same resource generate the same name.
-// Kubernetes rejects duplicate creation, providing atomic locking.
+// pipelineRunName generates the legacy deterministic Tekton name based on the
+// target resource. Two WFEs targeting the same resource generate the same
+// PipelineRun identity; this is not the Job backend contract.
 func pipelineRunName(targetResource string) string {
     h := sha256.Sum256([]byte(targetResource))
     return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
 }
 
-// BuildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002)
-// Uses deterministic name for atomic locking (DD-WE-003)
+// BuildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002).
+// Its target-derived identity is separate from RO's active-target lock.
 // Updated in v4.1: Added kind param, fixed ServiceAccountName location
 func (r *WorkflowExecutionReconciler) BuildPipelineRun(
     wfe *workflowexecutionv1.WorkflowExecution,
@@ -307,7 +308,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(
 
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
-            // CRITICAL: Deterministic name = atomic lock (DD-WE-003)
+            // Tekton compatibility identity (DD-WE-003); RO remains lock authority.
             Name:      PipelineRunName(wfe.Spec.TargetResource),
             Namespace: r.ExecutionNamespace,  // Always "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
@@ -710,4 +711,3 @@ func CheckTektonAvailable(ctx context.Context, restMapper meta.RESTMapper) error
 - `wasExecutionFailure: true` → During-execution failure - requires manual review
 
 ---
-

@@ -43,6 +43,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -52,6 +53,18 @@ import (
 
 // ServiceName is the canonical service identifier for audit events.
 const ServiceName = "workflowexecution-controller"
+
+func workflowExecutionAuditEventID(wfe *workflowexecutionv1alpha1.WorkflowExecution, eventType string) uuid.UUID {
+	key := fmt.Sprintf("workflowexecution/%s/%s/%s/%s/%s/%s",
+		wfe.Namespace,
+		wfe.Name,
+		wfe.UID,
+		wfe.Spec.RemediationRequestRef.UID,
+		wfe.Spec.ClusterID,
+		eventType,
+	)
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(key))
+}
 
 // Event category for WorkflowExecution audit events (ADR-034 v1.5: Service-level category)
 // Per ADR-034 v1.5: ALL events from WorkflowExecution controller use "workflowexecution" category
@@ -104,8 +117,15 @@ const (
 //	auditMgr := audit.NewManager(auditStore, logger)
 //	err := auditMgr.RecordExecutionWorkflowStarted(ctx, wfe, pipelineRunName, namespace)
 type Manager struct {
-	store  audit.AuditStore
-	logger logr.Logger
+	store              audit.AuditStore
+	logger             logr.Logger
+	executionNamespace string
+}
+
+// SetExecutionNamespace supplies the dedicated backend-resource namespace for
+// terminal audit payloads, which only receive the WFE object directly.
+func (m *Manager) SetExecutionNamespace(namespace string) {
+	m.executionNamespace = namespace
 }
 
 // NewManager creates a new audit manager.
@@ -121,6 +141,21 @@ func NewManager(store audit.AuditStore, logger logr.Logger) *Manager {
 		store:  store,
 		logger: logger,
 	}
+}
+
+// storeMandatoryAudit verifies both enqueue and persistence. BufferedAuditStore
+// intentionally exposes an asynchronous StoreAudit API, so lifecycle events
+// must Flush before the controller records AuditRecorded=True; otherwise a
+// later transport failure could silently acknowledge a missing compliance
+// event (ADR-032, DD-AUDIT-010).
+func (m *Manager) storeMandatoryAudit(ctx context.Context, event *api.AuditEventRequest) error {
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		return err
+	}
+	if err := m.store.Flush(ctx); err != nil {
+		return fmt.Errorf("flush mandatory audit event: %w", err)
+	}
+	return nil
 }
 
 // RecordWorkflowCompleted records a workflow.completed audit event.
@@ -160,6 +195,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, EventTypeSelectionCompleted)
+	audit.SetEventID(event, workflowExecutionAuditEventID(wfe, EventTypeSelectionCompleted))
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, "completed") // "workflowexecution.selection.completed" → "completed"
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -194,10 +230,11 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource,
 	}
+	setExecutionResourceIdentity(&payload, wfe, "", "")
 	// Use proper Gap #5 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(payload)
 
-	if err := m.store.StoreAudit(ctx, event); err != nil {
+	if err := m.storeMandatoryAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
 			"action", EventTypeSelectionCompleted,
 			"wfe", wfe.Name,
@@ -243,6 +280,7 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, EventTypeExecutionStarted)
+	audit.SetEventID(event, workflowExecutionAuditEventID(wfe, EventTypeExecutionStarted))
 	audit.SetEventCategory(event, CategoryWorkflowExecution) // Per ADR-034 v1.5: workflowexecution category
 	audit.SetEventAction(event, "started")                   // "workflowexecution.execution.started" → "started"
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -263,12 +301,12 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildExecutionStartedPayload(wfe, pipelineRunName)
+	payload := buildExecutionStartedPayload(wfe, pipelineRunName, pipelineRunNamespace)
 
 	// Use proper Gap #6 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(payload)
 
-	if err := m.store.StoreAudit(ctx, event); err != nil {
+	if err := m.storeMandatoryAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
 			"action", EventTypeExecutionStarted,
 			"wfe", wfe.Name,
@@ -315,7 +353,7 @@ func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *wor
 // parameters for SOC2 chain of custody (Issue #103). Extracted from
 // RecordExecutionWorkflowStarted (Wave 6 6e-ii GREEN: funlen remediation) —
 // pure code motion, no behavior change.
-func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, pipelineRunName string) api.WorkflowExecutionAuditPayload {
+func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, pipelineRunName string, resourceNamespaces ...string) api.WorkflowExecutionAuditPayload {
 	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
 	phase := wfe.Status.Phase
 	if phase == "" {
@@ -330,6 +368,11 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
+	resourceNamespace := ""
+	if len(resourceNamespaces) > 0 {
+		resourceNamespace = resourceNamespaces[0]
+	}
+	setExecutionResourceIdentity(&payload, wfe, pipelineRunName, resourceNamespace)
 	setWorkflowIdentifiers(&payload, wfe)
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
@@ -367,6 +410,7 @@ func (m *Manager) recordAuditEvent(
 	// Event type = action (e.g., "workflowexecution.workflow.started")
 	// Service context is provided by event_category and actor fields
 	audit.SetEventType(event, action)
+	audit.SetEventID(event, workflowExecutionAuditEventID(wfe, action))
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	// Event action = just the action part (e.g., "started" from "workflow.started")
 	// Split on "." and take the last part
@@ -395,7 +439,7 @@ func (m *Manager) recordAuditEvent(
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildWorkflowExecutionAuditPayload(wfe)
+	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
 
 	// Set event data using ogen union constructor based on action
 	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
@@ -409,7 +453,7 @@ func (m *Manager) recordAuditEvent(
 
 	// Store audit event - MANDATORY per ADR-032
 	// ADR-032: "Write Verification - audit write failures must be detected and handled"
-	if err := m.store.StoreAudit(ctx, event); err != nil {
+	if err := m.storeMandatoryAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
 			"action", action,
 			"wfe", wfe.Name,
@@ -448,7 +492,7 @@ func mapOutcomeToOgen(outcome string) api.AuditEventRequestEventOutcome {
 // failure summary, PipelineRun linkage, and SOC2 chain-of-custody parameters
 // (Issue #103). Extracted from recordAuditEvent (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
-func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution) api.WorkflowExecutionAuditPayload {
+func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceNamespaces ...string) api.WorkflowExecutionAuditPayload {
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
@@ -458,6 +502,15 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		ExecutionName:   wfe.Name,
 	}
 	setWorkflowIdentifiers(&payload, wfe)
+	resourceName := ""
+	if wfe.Status.ExecutionRef != nil {
+		resourceName = wfe.Status.ExecutionRef.Name
+	}
+	resourceNamespace := ""
+	if len(resourceNamespaces) > 0 {
+		resourceNamespace = resourceNamespaces[0]
+	}
+	setExecutionResourceIdentity(&payload, wfe, resourceName, resourceNamespace)
 
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
@@ -494,6 +547,35 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}
 	return payload
+}
+
+func setExecutionResourceIdentity(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName, resourceNamespace string) {
+	var resourceKind string
+	switch wfe.Spec.WorkflowRef.ExecutionEngine {
+	case "job":
+		resourceKind = "Job"
+	case workflowexecutionv1alpha1.ExecutionEngineTekton:
+		resourceKind = "PipelineRun"
+	case "ansible":
+		resourceKind = "AnsibleJob"
+	default:
+		resourceKind = wfe.Spec.WorkflowRef.ExecutionEngine
+	}
+	if resourceKind != "" {
+		payload.ExecutionResourceKind.SetTo(resourceKind)
+	}
+	if resourceName != "" {
+		payload.ExecutionResourceName.SetTo(resourceName)
+	}
+	if resourceNamespace != "" {
+		payload.ExecutionResourceNamespace.SetTo(resourceNamespace)
+	}
+	if wfe.Spec.ClusterID != "" {
+		payload.ExecutionClusterID.SetTo(wfe.Spec.ClusterID)
+	}
+	if rrUID, err := uuid.Parse(string(wfe.Spec.RemediationRequestRef.UID)); err == nil {
+		payload.RemediationRequestUID.SetTo(rrUID)
+	}
 }
 
 // buildFailureErrorDetails constructs the standardized SOC2 error_details
@@ -574,6 +656,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Build audit event
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, EventTypeFailed)
+	audit.SetEventID(event, workflowExecutionAuditEventID(wfe, EventTypeFailed))
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, ActionFailed)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
@@ -592,7 +675,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := buildWorkflowExecutionAuditPayload(wfe)
+	payload := buildWorkflowExecutionAuditPayload(wfe, m.executionNamespace)
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
 	// **Refactoring**: 2026-01-22 - Use shared helper for type-safe component enum conversion
@@ -608,7 +691,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(payload)
 
 	// Store audit event
-	if err := m.store.StoreAudit(ctx, event); err != nil {
+	if err := m.storeMandatoryAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
 			"action", EventTypeFailed,
 			"wfe", wfe.Name,
@@ -667,7 +750,7 @@ func (m *Manager) RecordConfigReloaded(ctx context.Context, component string, re
 		})
 	}
 
-	if err := m.store.StoreAudit(ctx, event); err != nil {
+	if err := m.storeMandatoryAudit(ctx, event); err != nil {
 		m.logger.Error(err, "Failed to store config reload audit event", "component", component)
 	}
 }

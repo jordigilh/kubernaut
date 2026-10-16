@@ -34,8 +34,8 @@ var _ = Describe("UT-WE-2392-RET: failed execution retention lifecycle (BR-WE-01
 	It("UT-WE-2392-RET-001: calculates remaining retention from terminal completion time", func() {
 		completedAt := metav1.NewTime(time.Now().Add(-30 * time.Second))
 		r := &WorkflowExecutionReconciler{
-			RetainFailedExecutions:   true,
-			FailedExecutionRetention: 2 * time.Minute,
+			retainFailedExecutions:   true,
+			failedExecutionRetention: 2 * time.Minute,
 		}
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -53,8 +53,8 @@ var _ = Describe("UT-WE-2392-RET: failed execution retention lifecycle (BR-WE-01
 
 	It("UT-WE-2392-RET-002: does not retain completed executions", func() {
 		r := &WorkflowExecutionReconciler{
-			RetainFailedExecutions:   true,
-			FailedExecutionRetention: 2 * time.Minute,
+			retainFailedExecutions:   true,
+			failedExecutionRetention: 2 * time.Minute,
 		}
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -71,8 +71,8 @@ var _ = Describe("UT-WE-2392-RET: failed execution retention lifecycle (BR-WE-01
 	It("UT-WE-2392-RET-003: retains a failed WFE being deleted when completion time is absent", func() {
 		deletedAt := metav1.NewTime(time.Now())
 		r := &WorkflowExecutionReconciler{
-			RetainFailedExecutions:   true,
-			FailedExecutionRetention: 2 * time.Minute,
+			retainFailedExecutions:   true,
+			failedExecutionRetention: 2 * time.Minute,
 		}
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletedAt},

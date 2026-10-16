@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -35,6 +36,11 @@ func NewAuditEventRequest() *ogenclient.AuditEventRequest {
 		Version:        version,
 		EventTimestamp: now,
 	}
+}
+
+// SetEventID sets the optional client-supplied audit idempotency key (DD-AUDIT-010).
+func SetEventID(e *ogenclient.AuditEventRequest, eventID uuid.UUID) {
+	e.EventID.SetTo(eventID)
 }
 
 // SetEventType sets the event type

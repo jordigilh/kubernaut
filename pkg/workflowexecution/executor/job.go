@@ -18,8 +18,12 @@ package executor
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,9 +60,26 @@ const (
 	minJobActiveDeadlineSeconds = 1
 
 	// jobDeletionPollInterval and jobDeletionTimeout cover asynchronous remote
-	// delete acknowledgements before a deterministic Job name is recreated.
+	// delete acknowledgements for the legacy cleanup path. New Job identities do
+	// not require deletion before creation (DD-WE-010).
 	jobDeletionPollInterval = 100 * time.Millisecond
 	jobDeletionTimeout      = 30 * time.Second
+
+	jobNamePrefix              = "wfe-"
+	jobAttemptSuffixLength     = 4
+	maxKubernetesJobNameLength = 63
+)
+
+const (
+	jobWorkflowExecutionLabel     = "kubernaut.ai/workflow-execution"
+	jobWorkflowExecutionUIDLabel  = "kubernaut.ai/workflow-execution-uid"
+	jobRemediationRequestLabel    = "kubernaut.ai/remediation-request"
+	jobRemediationRequestNSLabel  = "kubernaut.ai/remediation-request-namespace"
+	jobRemediationRequestUIDLabel = "kubernaut.ai/remediation-request-uid"
+	jobWorkflowIDLabel            = "kubernaut.ai/workflow-id"
+	jobSourceNamespaceLabel       = "kubernaut.ai/source-namespace"
+	jobTargetResourceLabel        = "kubernaut.ai/target-resource"
+	jobExecutionEngineLabel       = "kubernaut.ai/execution-engine"
 )
 
 // podMountFailureReasons are the kubelet Event reasons that indicate a Pod
@@ -128,6 +149,303 @@ func (j *JobExecutor) Engine() string {
 	return "job"
 }
 
+// JobExecutionResourceName returns the immutable Job identity for one
+// WorkflowExecution attempt (DD-WE-010). A RemediationRequest UID separates
+// sequential remediation cycles, while the WFE UID suffix separates attempts
+// associated with one RR. The normal UUID shape is 45 characters long:
+// wfe-<full RR UID>-<four-character WFE UID suffix>.
+//
+// Objects created before RR UID propagation may not have a reference UID. They
+// retain the old target-derived name as a migration/test fallback; production
+// WorkflowExecutions created by RemediationOrchestrator always carry the RR
+// UID in spec.remediationRequestRef.
+func JobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	if wfe == nil {
+		return ""
+	}
+
+	rrUID := sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
+	if rrUID == "" {
+		return ExecutionResourceName(wfe.Spec.TargetResource)
+	}
+
+	suffix := jobAttemptSuffix(wfe)
+	maxRRUIDLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
+	if len(rrUID) > maxRRUIDLength {
+		rrUID = strings.TrimRight(rrUID[:maxRRUIDLength], "-")
+	}
+	return fmt.Sprintf("%s%s-%s", jobNamePrefix, rrUID, suffix)
+}
+
+func sanitizeJobNamePart(value string) string {
+	value = strings.ToLower(value)
+	var builder strings.Builder
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z':
+			builder.WriteRune(char)
+		case char >= '0' && char <= '9':
+			builder.WriteRune(char)
+		case char == '-':
+			builder.WriteRune(char)
+		default:
+			builder.WriteByte('-')
+		}
+	}
+	return strings.Trim(builder.String(), "-")
+}
+
+func jobAttemptSuffix(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	uid := sanitizeJobNamePart(string(wfe.UID))
+	if len(uid) >= jobAttemptSuffixLength {
+		return uid[len(uid)-jobAttemptSuffixLength:]
+	}
+
+	// A WFE UID is assigned by the API server before production reconciliation.
+	// Hash the immutable namespace/name only for direct unit fixtures that have
+	// not gone through the API server yet.
+	hash := sha256.Sum256([]byte(wfe.Namespace + "/" + wfe.Name))
+	return hex.EncodeToString(hash[:])[:jobAttemptSuffixLength]
+}
+
+// jobNameForWFE returns the Job name that a WFE is authorized to observe or
+// clean up. New WFEs use JobExecutionResourceName. Existing WFEs may already
+// have Status.ExecutionRef set to the pre-DD-WE-010 target-derived name; that
+// recorded legacy reference is accepted during migration, but arbitrary names
+// are rejected to prevent adoption of unrelated Jobs.
+func jobNameForWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	expectedName := JobExecutionResourceName(wfe)
+	if wfe.Status.ExecutionRef == nil || wfe.Status.ExecutionRef.Name == "" {
+		if wfe.Spec.RemediationRequestRef.UID == "" {
+			return "", fmt.Errorf("legacy Job access requires Status.ExecutionRef for WFE %s/%s", wfe.Namespace, wfe.Name)
+		}
+		return expectedName, nil
+	}
+
+	recordedName := wfe.Status.ExecutionRef.Name
+	if recordedName == expectedName || recordedName == ExecutionResourceName(wfe.Spec.TargetResource) {
+		return recordedName, nil
+	}
+	return "", fmt.Errorf("execution ref %q does not match expected Job %q for WFE %s/%s", recordedName, expectedName, wfe.Namespace, wfe.Name)
+}
+
+func jobProvenanceMetadata(wfe *workflowexecutionv1alpha1.WorkflowExecution) (map[string]string, map[string]string) {
+	labels := map[string]string{
+		jobWorkflowExecutionLabel: jobLabelValue(wfe.Name),
+		jobWorkflowIDLabel:        jobLabelValue(wfe.Spec.WorkflowRef.WorkflowID),
+		jobTargetResourceLabel:    sanitizeLabelValue(wfe.Spec.TargetResource),
+		jobSourceNamespaceLabel:   jobLabelValue(wfe.Namespace),
+		jobExecutionEngineLabel:   "job",
+	}
+	annotations := map[string]string{
+		jobWorkflowExecutionLabel: wfe.Name,
+		jobWorkflowIDLabel:        wfe.Spec.WorkflowRef.WorkflowID,
+		jobTargetResourceLabel:    wfe.Spec.TargetResource,
+		jobSourceNamespaceLabel:   wfe.Namespace,
+	}
+
+	if wfe.UID != "" {
+		labels[jobWorkflowExecutionUIDLabel] = jobLabelValue(string(wfe.UID))
+		annotations[jobWorkflowExecutionUIDLabel] = string(wfe.UID)
+	}
+	if ref := wfe.Spec.RemediationRequestRef; ref.Name != "" {
+		labels[jobRemediationRequestLabel] = jobLabelValue(ref.Name)
+		annotations[jobRemediationRequestLabel] = ref.Name
+	}
+	if ref := wfe.Spec.RemediationRequestRef; ref.Namespace != "" {
+		labels[jobRemediationRequestNSLabel] = jobLabelValue(ref.Namespace)
+		annotations[jobRemediationRequestNSLabel] = ref.Namespace
+	}
+	if ref := wfe.Spec.RemediationRequestRef; ref.UID != "" {
+		labels[jobRemediationRequestUIDLabel] = jobLabelValue(string(ref.UID))
+		annotations[jobRemediationRequestUIDLabel] = string(ref.UID)
+	}
+	return labels, annotations
+}
+
+func jobLabelValue(value string) string {
+	return sanitizeLabelValue(value)
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
+}
+
+func jobIdentityMatches(existing, expected *batchv1.Job) bool {
+	if !jobProvenanceAndImageMatches(existing, expected) {
+		return false
+	}
+	if !jobExecutionTemplateMatches(existing, expected) {
+		return false
+	}
+	return true
+}
+
+// jobProvenanceAndImageMatches is the status/cleanup-safe identity check. The
+// controller cannot reconstruct CreateOptions after a restart, so status and
+// cleanup validate the authoritative name, exact image, and corroborating
+// provenance without comparing option-dependent volume/env projections. The
+// create AlreadyExists path uses jobIdentityMatches for the stricter template
+// comparison before adopting an existing same-name Job.
+func jobProvenanceAndImageMatches(existing, expected *batchv1.Job) bool {
+	if existing.Name != expected.Name || len(existing.Spec.Template.Spec.Containers) != 1 || len(expected.Spec.Template.Spec.Containers) != 1 {
+		return false
+	}
+	if existing.Spec.Template.Spec.Containers[0].Image != expected.Spec.Template.Spec.Containers[0].Image {
+		return false
+	}
+
+	identityLabels := []string{
+		jobWorkflowExecutionLabel,
+		jobWorkflowExecutionUIDLabel,
+		jobRemediationRequestLabel,
+		jobRemediationRequestNSLabel,
+		jobRemediationRequestUIDLabel,
+		jobWorkflowIDLabel,
+		jobSourceNamespaceLabel,
+		jobExecutionEngineLabel,
+	}
+	for _, key := range identityLabels {
+		expectedValue, expectedSet := expected.Labels[key]
+		if !expectedSet || expectedValue == "" {
+			continue
+		}
+		if existing.Labels[key] != expectedValue {
+			return false
+		}
+	}
+	return true
+}
+
+// jobExecutionTemplateMatches compares the deterministic execution projection
+// while excluding mutable/time-derived fields such as TTL and the relative
+// active deadline. Environment, mounts, and volumes are normalized because
+// parameter maps and dependency maps are not ordered.
+func jobExecutionTemplateMatches(existing, expected *batchv1.Job) bool {
+	existingPod := existing.Spec.Template.Spec
+	expectedPod := expected.Spec.Template.Spec
+	if existingPod.ServiceAccountName != expectedPod.ServiceAccountName ||
+		existingPod.RestartPolicy != expectedPod.RestartPolicy ||
+		!reflect.DeepEqual(existingPod.SecurityContext, expectedPod.SecurityContext) ||
+		!reflect.DeepEqual(normalizedVolumes(existingPod.Volumes), normalizedVolumes(expectedPod.Volumes)) ||
+		!reflect.DeepEqual(normalizedContainer(existingPod.Containers[0]), normalizedContainer(expectedPod.Containers[0])) {
+		return false
+	}
+	return reflect.DeepEqual(existing.Spec.PodFailurePolicy, expected.Spec.PodFailurePolicy) &&
+		reflect.DeepEqual(existing.Spec.PodReplacementPolicy, expected.Spec.PodReplacementPolicy) &&
+		int32Value(existing.Spec.BackoffLimit) == int32Value(expected.Spec.BackoffLimit)
+}
+
+func normalizedContainer(container corev1.Container) corev1.Container {
+	if container.ImagePullPolicy == "" {
+		container.ImagePullPolicy = defaultImagePullPolicy(container.Image)
+	}
+	if container.TerminationMessagePath == "" {
+		container.TerminationMessagePath = corev1.TerminationMessagePathDefault
+	}
+	if container.TerminationMessagePolicy == "" {
+		container.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+	}
+	container.Env = append([]corev1.EnvVar(nil), container.Env...)
+	sort.Slice(container.Env, func(i, j int) bool { return container.Env[i].Name < container.Env[j].Name })
+	container.EnvFrom = append([]corev1.EnvFromSource(nil), container.EnvFrom...)
+	sort.Slice(container.EnvFrom, func(i, j int) bool {
+		return envFromKey(container.EnvFrom[i]) < envFromKey(container.EnvFrom[j])
+	})
+	container.VolumeMounts = append([]corev1.VolumeMount(nil), container.VolumeMounts...)
+	sort.Slice(container.VolumeMounts, func(i, j int) bool { return container.VolumeMounts[i].Name < container.VolumeMounts[j].Name })
+	return container
+}
+
+func defaultImagePullPolicy(image string) corev1.PullPolicy {
+	if strings.Contains(image, "@sha256:") {
+		return corev1.PullIfNotPresent
+	}
+	lastSlash := strings.LastIndex(image, "/")
+	lastColon := strings.LastIndex(image, ":")
+	if lastColon <= lastSlash || strings.HasSuffix(image, ":latest") {
+		return corev1.PullAlways
+	}
+	return corev1.PullIfNotPresent
+}
+
+func normalizedVolumes(volumes []corev1.Volume) []corev1.Volume {
+	result := append([]corev1.Volume(nil), volumes...)
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+func envFromKey(source corev1.EnvFromSource) string {
+	if source.ConfigMapRef != nil {
+		return "configmap/" + source.ConfigMapRef.Name
+	}
+	if source.SecretRef != nil {
+		return "secret/" + source.SecretRef.Name
+	}
+	return ""
+}
+
+func int32Value(value *int32) int32 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+// jobCanBeDeletedByWFE applies the strong identity checks available to a
+// cleanup operation. Labels are only corroborating provenance hints: the
+// expected name and Status.ExecutionRef are checked by the caller, and a
+// production WFE also requires its immutable UID/RR UID hints and exact image
+// before deletion. Legacy objects without either UID retain the historical
+// label-only compatibility path.
+func jobCanBeDeletedByWFE(existing, expected *batchv1.Job, wfe *workflowexecutionv1alpha1.WorkflowExecution) bool {
+	if existing.Name != expected.Name || !jobOwnerMetadataMatches(existing, wfe.Name) {
+		return false
+	}
+	strongIdentity := wfe.UID != "" || wfe.Spec.RemediationRequestRef.UID != ""
+	if existing.Name == ExecutionResourceName(wfe.Spec.TargetResource) &&
+		(existing.Name != JobExecutionResourceName(wfe) ||
+			existing.Labels[jobWorkflowExecutionUIDLabel] == "" ||
+			existing.Labels[jobRemediationRequestUIDLabel] == "") {
+		if !strongIdentity {
+			return true
+		}
+		return legacyJobIdentityMatches(existing, expected, wfe)
+	}
+	if strongIdentity {
+		return jobProvenanceAndImageMatches(existing, expected)
+	}
+	return true
+}
+
+func jobOwnerMetadataMatches(existing *batchv1.Job, wfeName string) bool {
+	if existing.Labels[jobWorkflowExecutionLabel] == wfeName {
+		return true
+	}
+	return existing.Annotations[jobWorkflowExecutionLabel] == wfeName
+}
+
+// legacyJobIdentityMatches supports cleanup of Jobs created before DD-WE-010.
+// The recorded legacy name and exact image are checked by the caller; legacy
+// labels provide the remaining owner corroboration without becoming an
+// authorization path for new Jobs.
+func legacyJobIdentityMatches(existing, expected *batchv1.Job, wfe *workflowexecutionv1alpha1.WorkflowExecution) bool {
+	if len(existing.Spec.Template.Spec.Containers) != 1 || len(expected.Spec.Template.Spec.Containers) != 1 {
+		return false
+	}
+	if existing.Spec.Template.Spec.Containers[0].Image != expected.Spec.Template.Spec.Containers[0].Image {
+		return false
+	}
+	return jobOwnerMetadataMatches(existing, wfe.Name) &&
+		existing.Labels[jobSourceNamespaceLabel] == wfe.Namespace &&
+		existing.Labels[jobWorkflowIDLabel] == expected.Labels[jobWorkflowIDLabel] &&
+		existing.Labels[jobExecutionEngineLabel] == "job"
+}
+
 // Create builds and creates a Kubernetes Job in the execution namespace.
 // Returns the name of the created Job.
 //
@@ -143,7 +461,26 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 	job := j.buildJob(ctx, wfe, namespace, opts)
 
 	if err := c.Create(ctx, job); err != nil {
-		return nil, err // Preserve original error for IsAlreadyExists checks
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, err // Preserve original error for controller classification
+		}
+
+		// A deterministic name makes a lost status update safe to retry. Never
+		// adopt or delete a resource that only happens to occupy the name: the
+		// exact immutable bundle image and provenance identity must match.
+		var existing batchv1.Job
+		existing.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+		if getErr := c.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: namespace}, &existing); getErr != nil {
+			return nil, fmt.Errorf("verify existing Job %s/%s after create collision: %w", namespace, job.Name, getErr)
+		}
+		if !jobIdentityMatches(&existing, job) {
+			collisionErr := fmt.Errorf("execution Job %s/%s already exists with mismatched identity or image", namespace, job.Name)
+			log.FromContext(ctx).Error(collisionErr, "refusing to adopt existing execution Job")
+			// Keep AlreadyExists classification for the controller's fail-closed
+			// collision/audit path; no delete or replacement is attempted here.
+			return nil, err
+		}
+		return &CreateResult{ResourceName: job.Name}, nil
 	}
 	return &CreateResult{ResourceName: job.Name}, nil
 }
@@ -159,6 +496,10 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 	if wfe.Status.ExecutionRef == nil {
 		return nil, fmt.Errorf("no execution ref set on WFE %s/%s", wfe.Namespace, wfe.Name)
 	}
+	jobName, nameErr := jobNameForWFE(wfe)
+	if nameErr != nil {
+		return nil, nameErr
+	}
 
 	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
 	if err != nil {
@@ -172,58 +513,55 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 	var job batchv1.Job
 	job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 	if err := c.Get(ctx, client.ObjectKey{
-		Name:      wfe.Status.ExecutionRef.Name,
+		Name:      jobName,
 		Namespace: namespace,
 	}, &job); err != nil {
 		return nil, err
 	}
+	if wfe.UID != "" || wfe.Spec.RemediationRequestRef.UID != "" {
+		expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+		expected.Name = jobName
+		matches := jobProvenanceAndImageMatches(&job, expected)
+		if jobName == ExecutionResourceName(wfe.Spec.TargetResource) && jobName != JobExecutionResourceName(wfe) {
+			matches = legacyJobIdentityMatches(&job, expected, wfe)
+		}
+		if !matches {
+			return nil, fmt.Errorf("%w: execution Job %s/%s has mismatched identity or image", ErrExecutionIdentityMismatch, namespace, jobName)
+		}
+	}
 
 	summary := j.buildStatusSummary(ctx, c, &job)
 
-	// Check Job conditions for terminal states
+	return j.executionResultForJob(ctx, c, &job, summary), nil
+}
+
+func (j *JobExecutor) executionResultForJob(ctx context.Context, c ExecutorClient, job *batchv1.Job, summary *workflowexecutionv1alpha1.ExecutionStatusSummary) *ExecutionResult {
 	for _, condition := range job.Status.Conditions {
 		switch condition.Type {
 		case batchv1.JobComplete:
 			if condition.Status == corev1.ConditionTrue {
-				return &ExecutionResult{
-					Phase:   workflowexecutionv1alpha1.PhaseCompleted,
-					Reason:  string(condition.Type),
-					Message: condition.Message,
-					Summary: summary,
-				}, nil
+				return &ExecutionResult{Phase: workflowexecutionv1alpha1.PhaseCompleted, Reason: string(condition.Type), Message: condition.Message, Summary: summary}
 			}
 		case batchv1.JobFailed:
 			if condition.Status == corev1.ConditionTrue {
 				message := condition.Message
-				if enriched := j.enrichFailureMessage(ctx, c, &job); enriched != "" {
+				if enriched := j.enrichFailureMessage(ctx, c, job); enriched != "" {
 					message = enriched
 				}
-				// BR-WORKFLOW-008: MarkFailed persists FailureDetails.Message from
-				// summary.Message (not this result's top-level Message), so the
-				// enrichment must also be reflected there or the specific missing
-				// dependency detail never reaches the WFE status / K8s Event.
 				summary.Message = message
-				return &ExecutionResult{
-					Phase:   workflowexecutionv1alpha1.PhaseFailed,
-					Reason:  condition.Reason,
-					Message: message,
-					Summary: summary,
-				}, nil
+				return &ExecutionResult{Phase: workflowexecutionv1alpha1.PhaseFailed, Reason: condition.Reason, Message: message, Summary: summary}
 			}
-		default:
-			// Suspended/FailureTarget/SuccessCriteriaMet are non-terminal
-			// signals -- only Complete/Failed determine this loop's
-			// outcome; anything else falls through to "still running".
+		case batchv1.JobSuspended, batchv1.JobFailureTarget, batchv1.JobSuccessCriteriaMet:
+			// Non-terminal signals; only Complete and Failed determine the
+			// WorkflowExecution phase.
 		}
 	}
-
-	// No terminal condition yet - Job is still running
 	return &ExecutionResult{
 		Phase:   workflowexecutionv1alpha1.PhaseRunning,
 		Reason:  "Running",
 		Message: fmt.Sprintf("Job running (%d/%d pods active)", job.Status.Active, pointerInt32(job.Spec.Completions, 1)),
 		Summary: summary,
-	}, nil
+	}
 }
 
 // jobPodNameSuffixLength is the length of the random suffix Kubernetes
@@ -366,9 +704,10 @@ func activeDeadlineSecondsFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 	return minJobActiveDeadlineSeconds
 }
 
-// IsCompleted checks whether the existing Job for the given target resource is
-// in a terminal state (Succeeded or Failed). Used by the controller to determine
-// if a stale completed Job can be cleaned up before retrying creation (Issue #374).
+// IsCompleted checks whether the legacy target-derived Job for the given target
+// resource is in a terminal state. It is retained for compatibility with older
+// callers and tests; current Job creation and collision handling use the
+// per-WFE identity from JobExecutionResourceName instead (DD-WE-010).
 //
 // Returns (true, nil) if the Job has a terminal condition (JobComplete or JobFailed).
 // Returns (false, nil) if the Job is still running (no terminal condition).
@@ -400,17 +739,18 @@ func (j *JobExecutor) IsCompleted(ctx context.Context, clusterID string, targetR
 // Cleanup deletes the Job in the execution namespace.
 // Returns nil if the Job doesn't exist (idempotent).
 //
-// Issue #383: Before deleting, verify the Job's kubernaut.ai/workflow-execution
-// label matches this WFE's name. Because the Job name is deterministic (derived
-// from TargetResource), a newer WFE for the same target may have already
-// replaced the Job. Deleting without this check would destroy the new WFE's Job.
+// DD-WE-010: cleanup uses the WFE's recorded execution reference and expected
+// per-WFE name. A mismatched identity or image is left untouched.
 func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
 	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
 	if err != nil {
 		return fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
 	}
 
-	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
+	jobName, nameErr := jobNameForWFE(wfe)
+	if nameErr != nil {
+		return nameErr
+	}
 
 	var existing batchv1.Job
 	existing.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
@@ -421,7 +761,10 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 		return fmt.Errorf("failed to get Job %s/%s for ownership check: %w", namespace, jobName, err)
 	}
 
-	if owner := existing.Labels["kubernaut.ai/workflow-execution"]; owner != wfe.Name {
+	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	expected.Name = jobName
+	if !jobCanBeDeletedByWFE(&existing, expected, wfe) {
+		log.FromContext(ctx).Info("refusing to delete execution Job with mismatched identity or image", "job", jobName, "wfe", wfe.Name)
 		return nil // Job belongs to a different WFE; leave it alone
 	}
 
@@ -469,7 +812,8 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 	volumes = append(volumes, scratchSpaceVolume())
 	mounts = append(mounts, scratchSpaceVolumeMount())
 
-	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
+	jobName := JobExecutionResourceName(wfe)
+	labels, annotations := jobProvenanceMetadata(wfe)
 
 	var backoffLimit int32 = 0
 	var ttlSeconds int32 = 600
@@ -481,18 +825,10 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/workflow-execution": wfe.Name,
-				"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
-				"kubernaut.ai/target-resource":    sanitizeLabelValue(wfe.Spec.TargetResource),
-				"kubernaut.ai/source-namespace":   wfe.Namespace,
-				"kubernaut.ai/execution-engine":   "job",
-			},
-			Annotations: map[string]string{
-				"kubernaut.ai/target-resource": wfe.Spec.TargetResource,
-			},
+			Name:        jobName,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
@@ -502,10 +838,8 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 			PodReplacementPolicy:    ptr.To(batchv1.Failed),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"kubernaut.ai/workflow-execution": wfe.Name,
-						"kubernaut.ai/execution-engine":   "job",
-					},
+					Labels:      cloneStringMap(labels),
+					Annotations: cloneStringMap(annotations),
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
@@ -578,13 +912,14 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
+	defaultMode := int32(0644)
 
 	for _, s := range deps.Secrets {
 		volName := "secret-" + s.Name
 		volumes = append(volumes, corev1.Volume{
 			Name: volName,
 			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: s.Name},
+				Secret: &corev1.SecretVolumeSource{SecretName: s.Name, DefaultMode: &defaultMode},
 			},
 		})
 		mounts = append(mounts, corev1.VolumeMount{
@@ -601,6 +936,7 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name},
+					DefaultMode:          &defaultMode,
 				},
 			},
 		})

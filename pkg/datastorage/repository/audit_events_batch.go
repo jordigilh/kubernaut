@@ -268,11 +268,16 @@ func (r *AuditEventsRepository) insertBatchByCorrelation(
 		lastHashByCorrelation[correlationID] = previousHash
 
 		for _, ie := range eventsByCorrelation[correlationID] {
-			newHash, err := r.insertBatchEvent(ctx, stmt, ie.event, lastHashByCorrelation[correlationID])
+			newHash, inserted, err := r.insertBatchEvent(ctx, tx, stmt, ie.event, lastHashByCorrelation[correlationID])
 			if err != nil {
 				return nil, err
 			}
-			lastHashByCorrelation[correlationID] = newHash
+			// A replayed event may be older than the current chain head returned
+			// by getPreviousEventHash. Keep the current head for subsequent new
+			// events instead of rewinding the chain to the duplicate's old hash.
+			if inserted {
+				lastHashByCorrelation[correlationID] = newHash
+			}
 			result[ie.originalIndex] = ie.event
 		}
 	}
@@ -283,18 +288,29 @@ func (r *AuditEventsRepository) insertBatchByCorrelation(
 // insertBatchEvent computes event's hash-chain link from previousHash,
 // stamps it onto event, and executes the prepared batch INSERT. It returns
 // the newly computed event hash (the next event's previousHash) on success.
-func (r *AuditEventsRepository) insertBatchEvent(ctx context.Context, stmt *sql.Stmt, event *AuditEvent, previousHash string) (string, error) {
+func (r *AuditEventsRepository) insertBatchEvent(ctx context.Context, tx *sql.Tx, stmt *sql.Stmt, event *AuditEvent, previousHash string) (string, bool, error) {
 	eventDataJSON, eventHash, err := r.stampBatchEventHash(event, previousHash)
 	if err != nil {
-		return "", err
+		return "", false, err
+	}
+	if event.IdempotencyKey {
+		claimed, existingHash, existingPrevious, claimErr := claimAuditEventID(ctx, tx, event)
+		if claimErr != nil {
+			return "", false, fmt.Errorf("claim audit event id %s: %w", event.EventID, claimErr)
+		}
+		if !claimed {
+			event.EventHash = existingHash
+			event.PreviousEventHash = existingPrevious
+			return existingHash, false, nil
+		}
 	}
 
 	var returnedTimestamp time.Time
 	if err := stmt.QueryRowContext(ctx, buildBatchInsertArgs(event, eventDataJSON)...).Scan(&returnedTimestamp); err != nil {
-		return "", fmt.Errorf("failed to insert event %s: %w", event.EventID, err)
+		return "", false, fmt.Errorf("failed to insert event %s: %w", event.EventID, err)
 	}
 
-	return eventHash, nil
+	return eventHash, true, nil
 }
 
 // stampBatchEventHash marshals event.EventData, computes the hash-chain link

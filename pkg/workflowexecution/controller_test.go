@@ -51,6 +51,7 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -2465,6 +2466,49 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.RequeueAfter).To(BeNumerically(">", 1*time.Minute))
 			})
+
+			It("UT-WE-2512-016: retries a terminal audit that failed after the phase was persisted", func() {
+				completionTime := metav1.NewTime(time.Now())
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-terminal-audit-retry", Namespace: "default"},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{Name: "rr-terminal-audit-retry", Namespace: "default"},
+						TargetResource:        defaultDeploymentMyApp,
+					},
+					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
+						CompletionTime: &completionTime,
+					},
+				}
+				store := &mockAuditStore{err: fmt.Errorf("audit unavailable")}
+				fakeClient = fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+					WithObjects(wfe).
+					Build()
+				reconciler = &workflowexecution.WorkflowExecutionReconciler{
+					Client:             fakeClient,
+					Scheme:             scheme,
+					Recorder:           recorder,
+					ExecutionNamespace: "kubernaut-workflows",
+					CooldownPeriod:     time.Hour,
+					AuditManager:       audit.NewManager(store, logr.Discard()),
+					StatusManager:      status.NewManager(fakeClient),
+				}
+
+				_, err := reconciler.ReconcileTerminal(ctx, wfe)
+				Expect(err).To(HaveOccurred())
+				store.err = nil
+
+				result, err := reconciler.ReconcileTerminal(ctx, wfe)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 50*time.Minute))
+
+				persisted := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(wfe), persisted)).To(Succeed())
+				Expect(weconditions.IsConditionTrue(persisted, weconditions.ConditionAuditRecorded)).To(BeTrue())
+				Expect(store.events).To(HaveLen(1))
+			})
 		})
 	})
 
@@ -4837,6 +4881,40 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// ✅ Controller will receive reconcile request for "payment-ns/my-workflow-execution"
 			// ✅ Status will be synchronized from PipelineRun to WorkflowExecution
 			// ✅ Failures will be detected and reported to user (BR-WE-003)
+		})
+
+		It("UT-WE-2512-013: uses the full WFE UID when the WFE name exceeds label length", func() {
+			longName := "wfe-" + strings.Repeat("long-name-", 8)
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      longName,
+					Namespace: "payment-ns",
+					UID:       types.UID("123e4567-e89b-12d3-a456-426614174013"),
+				},
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(wfe).
+				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "metadata.uid", func(obj client.Object) []string {
+					return []string{string(obj.(*workflowexecutionv1alpha1.WorkflowExecution).UID)}
+				}).
+				Build()
+			reconciler.Client = fakeClient
+
+			pr := &tektonv1.PipelineRun{ObjectMeta: metav1.ObjectMeta{
+				Name:      "job-long-wfe-name",
+				Namespace: "kubernaut-workflows",
+				Labels: map[string]string{
+					"kubernaut.ai/workflow-execution":     longName[:63],
+					"kubernaut.ai/source-namespace":       wfe.Namespace,
+					"kubernaut.ai/workflow-execution-uid": string(wfe.UID),
+				},
+			}}
+
+			requests := reconciler.FindWFEForOwnedResource(ctx, pr)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Name).To(Equal(longName))
+			Expect(requests[0].Namespace).To(Equal(wfe.Namespace))
 		})
 
 		It("should return nil when PipelineRun lacks required labels", func() {
