@@ -48,12 +48,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -543,6 +545,11 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	if wfe.Spec.WorkflowRef.ExecutionBundle == "" {
 		return fmt.Errorf("workflowRef.executionBundle is required")
 	}
+	if wfe.Spec.WorkflowRef.ExecutionEngine != executionEngineAnsible {
+		if _, err := name.ParseReference(wfe.Spec.WorkflowRef.ExecutionBundle); err != nil {
+			return fmt.Errorf("workflowRef.executionBundle must be a valid OCI image reference: %w", err)
+		}
+	}
 
 	// Validate target resource is required
 	if wfe.Spec.TargetResource == "" {
@@ -571,13 +578,35 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 		return fmt.Errorf("targetResource must be in format {namespace}/{kind}/{name} (namespaced) or {kind}/{name} (cluster-scoped), got %d parts", len(parts))
 	}
 
-	// Validate each part is non-empty
+	if err := validateTargetResourceParts(parts); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateTargetResourceParts(parts []string) error {
 	for i, part := range parts {
 		if part == "" {
 			return fmt.Errorf("targetResource has empty part at position %d", i)
 		}
 	}
 
+	if len(parts) == 3 {
+		if errs := validation.IsDNS1123Label(parts[0]); len(errs) > 0 {
+			return fmt.Errorf("targetResource namespace is invalid: %s", strings.Join(errs, "; "))
+		}
+		parts = parts[1:]
+	}
+
+	// Kubernetes kinds are conventionally title-cased, so validate a lowercase
+	// projection while preserving the original target string for execution.
+	if errs := validation.IsDNS1123Subdomain(strings.ToLower(parts[0])); len(errs) > 0 {
+		return fmt.Errorf("targetResource kind is invalid: %s", strings.Join(errs, "; "))
+	}
+	if errs := validation.IsDNS1123Subdomain(parts[1]); len(errs) > 0 {
+		return fmt.Errorf("targetResource name is invalid: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 
@@ -597,7 +626,7 @@ func engineGuidance(engine string) string {
 	switch engine {
 	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		return `install Tekton Pipelines CRDs or use executionEngine: "job"`
-	case "ansible":
+	case executionEngineAnsible:
 		return "configure ansible section in workflowexecution config"
 	default:
 		return "check controller configuration and logs"

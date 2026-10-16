@@ -177,7 +177,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Verifying container spec")
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			container := job.Spec.Template.Spec.Containers[0]
-			Expect(container.Image).To(Equal("ghcr.io/kubernaut/workflows/test@sha256:abc123"))
+			Expect(container.Image).To(Equal("ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 			Expect(container.Name).To(Equal("workflow"))
 
 			By("Verifying environment variables include TARGET_RESOURCE and parameters")

@@ -39,6 +39,7 @@ package audit
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,6 +87,26 @@ const (
 // retryable, non-specific failure (OOMKilled, ResourceExhausted,
 // DeadlineExceeded, TaskFailed, or unknown).
 const errCodePipelineFailed = "ERR_PIPELINE_FAILED"
+
+const redactedAuditParameter = "[REDACTED]"
+
+var sensitiveAuditParameterKey = regexp.MustCompile(`(?i)(^|[_-])(password|passwd|pass|secret|token|api[_-]?key|private[_-]?key|credential|auth|authorization|bearer|webhook)([_-]|$)`)
+
+// sanitizeAuditParameters preserves parameter names and non-sensitive values
+// for AU-3/CC7.2 reconstruction while preventing common credential-bearing
+// parameter keys from being written to durable audit storage (ASVS V7.1.1,
+// V7.2.1; AU-9/AU-11).
+func sanitizeAuditParameters(parameters map[string]string) api.WorkflowExecutionAuditPayloadParameters {
+	sanitized := make(api.WorkflowExecutionAuditPayloadParameters, len(parameters))
+	for key, value := range parameters {
+		if sensitiveAuditParameterKey.MatchString(key) {
+			sanitized[key] = redactedAuditParameter
+			continue
+		}
+		sanitized[key] = value
+	}
+	return sanitized
+}
 
 // Event types for WorkflowExecution audit events (per ADR-034 v1.5 + OpenAPI spec)
 // Per ADR-034 v1.5: ALL event types from WorkflowExecution controller use "workflowexecution" prefix
@@ -349,7 +370,7 @@ func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *wor
 
 // buildExecutionStartedPayload builds the WorkflowExecutionAuditPayload for
 // an execution.workflow.started event (Gap #6), defaulting Phase to
-// "Pending" when the WFE phase is not yet set and including execution
+// "Pending" when the WFE phase is not yet set and including sanitized execution
 // parameters for SOC2 chain of custody (Issue #103). Extracted from
 // RecordExecutionWorkflowStarted (Wave 6 6e-ii GREEN: funlen remediation) —
 // pure code motion, no behavior change.
@@ -377,7 +398,7 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
+		payload.Parameters.SetTo(sanitizeAuditParameters(wfe.Spec.Parameters))
 	}
 	return payload
 }
@@ -489,7 +510,7 @@ func mapOutcomeToOgen(outcome string) api.AuditEventRequestEventOutcome {
 // buildWorkflowExecutionAuditPayload builds the common WorkflowExecutionAuditPayload
 // fields shared by recordAuditEvent and recordFailureAuditWithDetails: identity
 // (workflow/version/target/phase/image/name), timing (started/completed/duration),
-// failure summary, PipelineRun linkage, and SOC2 chain-of-custody parameters
+// failure summary, PipelineRun linkage, and sanitized SOC2 chain-of-custody parameters
 // (Issue #103). Extracted from recordAuditEvent (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceNamespaces ...string) api.WorkflowExecutionAuditPayload {
@@ -544,7 +565,7 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
+		payload.Parameters.SetTo(sanitizeAuditParameters(wfe.Spec.Parameters))
 	}
 	return payload
 }
