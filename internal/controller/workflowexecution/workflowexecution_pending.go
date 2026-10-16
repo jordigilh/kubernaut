@@ -45,7 +45,10 @@ import (
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
-const executionEngineJob = "job"
+const (
+	executionEngineAnsible = "ansible"
+	executionEngineJob     = "job"
+)
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from
 // wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
@@ -333,7 +336,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		default:
 			return resourceName, ctrl.Result{}, fmt.Errorf("check existing PipelineRun %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
-	case "ansible":
+	case executionEngineAnsible:
 		// AWX manages jobs externally — no K8s resource to check.
 		// Use ExecutionRef as the idempotency signal.
 		resourceExists = wfe.Status.ExecutionRef != nil

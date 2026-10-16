@@ -545,7 +545,7 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	if wfe.Spec.WorkflowRef.ExecutionBundle == "" {
 		return fmt.Errorf("workflowRef.executionBundle is required")
 	}
-	if wfe.Spec.WorkflowRef.ExecutionEngine != "ansible" {
+	if wfe.Spec.WorkflowRef.ExecutionEngine != executionEngineAnsible {
 		if _, err := name.ParseReference(wfe.Spec.WorkflowRef.ExecutionBundle); err != nil {
 			return fmt.Errorf("workflowRef.executionBundle must be a valid OCI image reference: %w", err)
 		}
@@ -626,7 +626,7 @@ func engineGuidance(engine string) string {
 	switch engine {
 	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		return `install Tekton Pipelines CRDs or use executionEngine: "job"`
-	case "ansible":
+	case executionEngineAnsible:
 		return "configure ansible section in workflowexecution config"
 	default:
 		return "check controller configuration and logs"

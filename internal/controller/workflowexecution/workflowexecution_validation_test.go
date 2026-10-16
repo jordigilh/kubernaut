@@ -68,7 +68,7 @@ var _ = Describe("WorkflowExecution input validation [SI-10, ASVS V5.1.x]", func
 
 	It("UT-WE-2512-014: accepts Ansible playbook URLs instead of applying OCI image validation", func() {
 		wfe := newValidationWFE("prod/Deployment/api", "https://github.com/kubernaut/playbooks.git")
-		wfe.Spec.WorkflowRef.ExecutionEngine = "ansible"
+		wfe.Spec.WorkflowRef.ExecutionEngine = executionEngineAnsible
 		Expect((&WorkflowExecutionReconciler{}).ValidateSpec(wfe)).To(Succeed())
 	})
 })
