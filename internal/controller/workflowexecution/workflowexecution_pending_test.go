@@ -45,7 +45,7 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		r = &WorkflowExecutionReconciler{RetainFailedExecutions: true}
+		r = &WorkflowExecutionReconciler{retainFailedExecutions: true}
 
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{

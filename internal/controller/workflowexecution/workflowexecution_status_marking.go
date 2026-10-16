@@ -122,7 +122,9 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// lived inside that closure and re-fired on every RetryOnConflict retry,
 	// producing duplicate workflow.completed audit events for one logical
 	// completion. See DD-WE-009.
-	r.recordTerminalAudit(ctx, wfe, "workflow.completed", r.AuditManager.RecordWorkflowCompleted, logger)
+	if err := r.recordTerminalAudit(ctx, wfe, "workflow.completed", r.AuditManager.RecordWorkflowCompleted, logger); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Day 7: Record metrics (BR-WE-008)
 	// DD-METRICS-001: Use injected metrics instead of global function
@@ -258,7 +260,9 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	// Issue #1597: audit recorded exactly once, AFTER the phase-transition
 	// AtomicStatusUpdate above has durably committed (see MarkCompleted /
 	// DD-WE-009 for the full rationale).
-	r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger)
+	if err := r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Day 7: Record metrics (BR-WE-008)
 	// DD-METRICS-001: Use injected metrics instead of global function
@@ -306,7 +310,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) resolveMarkFailedDetails(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun, summary []*workflowexecutionv1alpha1.ExecutionStatusSummary) (*workflowexecutionv1alpha1.FailureDetails, string, string) {
 	// Extract failure details (Day 7: includes TaskRun-specific fields, Day 6 Extension: WasExecutionFailure)
-	failureDetails := r.ExtractFailureDetails(ctx, pr, wfe.Status.StartTime)
+	failureDetails := r.ExtractFailureDetails(ctx, pr, wfe.Status.StartTime, wfe.Spec.ClusterID)
 
 	// BR-WE-015: For non-Tekton executors (ansible, job), the PipelineRun is nil and
 	// ExtractFailureDetails defaults to "Unknown". Override with the executor's summary
@@ -523,7 +527,9 @@ func (r *WorkflowExecutionReconciler) markFailedInternal(
 		return err
 	}
 
-	r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger)
+	if err := r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger); err != nil {
+		return err
+	}
 
 	if r.Metrics != nil {
 		r.Metrics.RecordWorkflowFailure(0)
@@ -547,11 +553,13 @@ func (r *WorkflowExecutionReconciler) recordTerminalAudit(
 	eventName string,
 	auditFn func(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error,
 	logger logr.Logger,
-) {
+) error {
 	succeeded, reason, message := true, weconditions.ReasonAuditSucceeded,
 		fmt.Sprintf("Audit event %s recorded to DataStorage", eventName)
+	var auditErr error
 	if err := auditFn(ctx, wfe); err != nil {
-		logger.V(1).Info(fmt.Sprintf("Failed to record %s audit event", eventName), "error", err)
+		logger.Error(err, fmt.Sprintf("Failed to record %s audit event", eventName))
+		auditErr = fmt.Errorf("mandatory %s audit event failed: %w", eventName, err)
 		succeeded, reason, message = false, weconditions.ReasonAuditFailed,
 			fmt.Sprintf("Failed to record audit event: %v", err)
 	}
@@ -561,7 +569,12 @@ func (r *WorkflowExecutionReconciler) recordTerminalAudit(
 		return nil
 	}); err != nil {
 		logger.Error(err, "Failed to persist AuditRecorded condition", "event", eventName)
+		if auditErr == nil {
+			return fmt.Errorf("persist AuditRecorded condition for %s: %w", eventName, err)
+		}
+		return fmt.Errorf("%w; persist AuditRecorded condition: %w", auditErr, err)
 	}
+	return auditErr
 }
 
 // ========================================

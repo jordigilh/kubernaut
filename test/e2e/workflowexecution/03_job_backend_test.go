@@ -27,10 +27,12 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	"github.com/google/uuid"
@@ -157,6 +159,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -249,6 +252,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -371,6 +375,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
 						Namespace:  controllerNamespace,
+						UID:        types.UID(uuid.NewString()),
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
@@ -564,15 +569,14 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 	//     proves the controller wiring via envtest with a real reconciler
 	// See docs/testing/BR-WE-014/E2E_TEST_PLAN_BR_WE_014.md for the updated scope note.
 
-	Context("E2E-WE-014-006: Deterministic Job Naming for Resource Locking", func() {
-		It("should use deterministic Job name based on targetResource (BR-WE-014, BR-WE-009)", func() {
-			// Business Outcome: Deterministic Job naming enables resource locking
-			// via AlreadyExists errors (DD-WE-003: Lock Persistence via Deterministic Name).
+	Context("E2E-WE-2512-001: Per-WFE Job identity", func() {
+		It("should use the full RR UID and WFE suffix, not targetResource (BR-WE-014, BR-WE-019)", func() {
+			// Business Outcome: Per-WFE identity prevents retained Jobs/Pods from
+			// being reused; active-target locking remains an RO concern.
 			//
-			// Note: The full concurrent resource locking scenario (two WFEs competing for the
-			// same Job name) is validated in integration tests (IT-WE-014-xxx) where timing
-			// can be controlled. The E2E test validates the deterministic naming mechanism
-			// that enables locking: same targetResource → same Job name.
+			// Note: active-target locking is owned by RemediationOrchestrator and is
+			// validated in IT-RO-2512-001. This E2E test validates the immutable
+			// per-RR/WFE execution identity and status reference.
 			testName := fmt.Sprintf("e2e-job-naming-%s", uuid.New().String()[:8])
 			targetResource := fmt.Sprintf("default/deployment/naming-test-%s", uuid.New().String()[:8])
 			wfe := createTestJobWFE(testName, targetResource)
@@ -607,10 +611,9 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 
 			job := jobList.Items[0]
 
-			// DD-WE-003: Job name format is wfe-<sha256(targetResource)[:16]>
-			Expect(job.Name).To(HavePrefix("wfe-"),
-				"Job name should follow deterministic naming convention (wfe- prefix)")
-			Expect(job.Name).To(HaveLen(20), "Job name should be wfe- + 16 hex chars = 20 chars total")
+			Expect(job.Name).To(Equal(weexecutor.JobExecutionResourceName(wfe)),
+				"Job name should follow the immutable RR/WFE identity")
+			Expect(job.Name).To(HaveLen(45), "standard RR UUID + WFE suffix Job name should be 45 characters")
 
 			By("Verifying ExecutionRef in WFE status matches the deterministic Job name")
 			running, err := getWFE(wfe.Name, wfe.Namespace)
@@ -718,6 +721,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				Kind:       "RemediationRequest",
 				Name:       "test-rr-" + name,
 				Namespace:  controllerNamespace,
+				UID:        types.UID(uuid.NewString()),
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{

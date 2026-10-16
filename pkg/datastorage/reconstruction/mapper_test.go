@@ -526,4 +526,29 @@ var _ = Describe("Audit Event Mapper", func() {
 				"CC8.1: FailureReason value must be preserved through merge")
 		})
 	})
+
+	Context("MAPPER-WE-UID: isolate recreated RR lifecycles", func() {
+		It("UT-DS-AUDIT-2512-004: rejects audit events from different RR UIDs instead of merging them", func() {
+			gatewayData := reconstructionpkg.ParsedAuditData{
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
+				SignalName:        "HighCPU",
+				SignalFingerprint: "uid-isolation-fingerprint",
+			}
+			firstExecution := reconstructionpkg.ParsedAuditData{
+				EventType:             "workflowexecution.execution.started",
+				RemediationRequestUID: "550e8400-e29b-41d4-a716-446655440001",
+			}
+			secondExecution := reconstructionpkg.ParsedAuditData{
+				EventType:             "workflowexecution.execution.started",
+				RemediationRequestUID: "550e8400-e29b-41d4-a716-446655440002",
+			}
+
+			_, err := reconstructionpkg.MergeAuditData([]reconstructionpkg.ParsedAuditData{
+				gatewayData, firstExecution, secondExecution,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("multiple remediation request UIDs"))
+		})
+	})
 })

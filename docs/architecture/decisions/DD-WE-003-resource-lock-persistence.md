@@ -1,9 +1,9 @@
 # DD-WE-003: Resource Lock Persistence via Deterministic Naming
 
 **Status**: Approved
-**Version**: 1.3
+**Version**: 1.4
 **Date**: 2025-12-01
-**Updated**: 2026-03-04
+**Updated**: 2026-10-14
 **Confidence**: 95%
 **Author**: Kubernaut Architecture Team
 
@@ -11,7 +11,12 @@
 
 ## Decision Summary
 
-The WorkflowExecution Controller uses **deterministic execution resource naming** (based on target resource hash) as an atomic locking mechanism. Kubernetes API uniqueness enforcement prevents concurrent duplicate execution on the same target resource. This document defines the lock lifecycle, including cleanup semantics for completed Jobs that would otherwise block sequential remediation cycles.
+The WorkflowExecution Controller uses deterministic execution-resource names for
+backend idempotency, while **RemediationOrchestrator owns active-target locking**
+through its routing checks and distributed Lease (DD-RO-002). Tekton retains its
+target-derived compatibility name. Job-backed WorkflowExecutions use the
+per-RR/per-WFE identity defined by DD-WE-010 so retained Jobs and Pods cannot be
+reused across remediation cycles.
 
 ---
 
@@ -32,9 +37,9 @@ Without a locking mechanism, two concurrent WFEs targeting the same resource cou
 
 ## Design Decision
 
-### Deterministic Naming as Atomic Lock
+### Backend-specific deterministic identity
 
-Execution resource names are derived deterministically from the target resource:
+Tekton's compatibility identity remains derived from the target resource:
 
 ```
 name = "wfe-" + sha256(targetResource)[:16]
@@ -42,14 +47,24 @@ name = "wfe-" + sha256(targetResource)[:16]
 
 For example, `targetResource = "default/deployment/my-app"` always produces `wfe-bd773c9f25ac4e1b`.
 
-When a second WFE targets the same resource, it generates the identical name. The Kubernetes API rejects the duplicate creation with `AlreadyExists`, which the controller interprets as "target resource is locked".
+Job identity is not a target lock. It is:
+
+```
+name = "wfe-" + full(spec.remediationRequestRef.uid) + "-" + last-four(wfe.metadata.uid)
+```
+
+For a standard UUID this is 45 characters. A same-WFE retry reuses the same
+name idempotently; a new RR/WFE cycle targeting the same resource receives a
+different name. The Kubernetes API's `AlreadyExists` result is therefore a
+same-WFE idempotency/collision signal, not a replacement permission.
 
 ### Lock Lifecycle
 
 ```
 1. WFE created (Pending phase)
    |
-2. exec.Create() -> Job/PipelineRun created -> LOCK ACQUIRED
+2. RO routing/Lease grants active-target admission; exec.Create() creates the
+   backend resource with engine-specific identity
    |
 3. Execution runs (Running phase)
    |
@@ -66,17 +81,26 @@ When a second WFE targets the same resource, it generates the identical name. Th
 
 Jobs set `ttlSecondsAfterFinished: 600` (10 minutes) as a secondary cleanup mechanism. If the controller fails to clean up (e.g., WFE CR deleted before ReconcileTerminal runs), the K8s TTL controller eventually removes the Job.
 
-### Pre-Execution Cleanup of Completed Jobs (Issue #374)
+### Pre-Execution Collision Handling
 
-When `AlreadyExists` is returned during Job creation, the controller checks the state of the existing Job:
+When `AlreadyExists` is returned during execution-resource creation:
 
-- **Running Job (from another WFE)**: The lock is valid. The WFE is marked as `Failed` with `FailureReason=Deduplicated` and `DeduplicatedBy=<originalWFE>` (Issue #190) via `MarkFailedAsDeduplicated`, which uses `markFailedInternal` to ensure a `workflow.failed` audit event is emitted (ADR-032 compliance). The RO sets `DeduplicatedByWE` on the RR and polls the original WFE to inherit its outcome (Completed or Failed) without going through Verifying. Inherited transitions emit `orchestrator.lifecycle.completed` or `orchestrator.lifecycle.failed` audit events respectively (DD-RO-002-ADDENDUM). Inherited failures use `FailurePhaseDeduplicated` and do not count toward consecutive failure blocking.
-- **Running Job (our own)**: The controller treats this as a valid re-entry and transitions to Running (no collision).
-- **Completed/Failed Job**: The lock is stale. The controller deletes the completed Job and retries creation. This handles cases where ReconcileTerminal hasn't run yet (cooldown), TTL hasn't fired, or the Job was orphaned.
+- **Legacy target-derived collision**: a running resource can still be
+  classified as `Deduplicated` for compatibility with pre-RR-UID fixtures.
+  The WFE is marked as `Failed` with `FailureReason=Deduplicated` and
+  `DeduplicatedBy=<originalWFE>` (Issue #190) via `MarkFailedAsDeduplicated`;
+  no retained Job is deleted.
+- **Job backend**: the executor verifies the expected name, WFE/RR provenance
+  hints, and exact immutable bundle image. An exact same-WFE resource is treated
+  as idempotent. A foreign, name-mismatched, or image-mismatched resource fails
+  closed and is never deleted or adopted, regardless of terminal state or TTL.
 
-#### Background GC Requeue (Issue #383)
+#### Background GC and retention
 
-Cleanup uses `DeletePropagationBackground`, so the API server accepts the delete but the Job object may still exist until the garbage collector removes it. If the immediate retry `Create` gets `AlreadyExists` again, the controller requeues (500ms) instead of permanently failing the WFE. The next reconciliation finds the Job gone and creation succeeds. This eliminates an intermittent race where the GC lag caused WFEs to be incorrectly marked as `Failed`.
+Cleanup uses `DeletePropagationBackground` for the owning WFE's recorded
+execution reference. Retention/TTL is not an input to Job identity, and no old
+Job is deleted merely to make a new Job possible. This keeps completed/failed
+diagnostics available while the next RR cycle creates its own resource.
 
 This ensures sequential remediation cycles are not blocked by stale completed Jobs while concurrent execution prevention remains intact.
 
@@ -86,7 +110,7 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 
 | Alternative | Rejected Because |
 |------------|------------------|
-| Random Job names | Removes locking semantics; two WFEs could run concurrently on the same target |
+| Random Job names | Weakens same-WFE idempotency; a lost create response could create duplicate Jobs |
 | External lock store (Redis, etcd) | Adds infrastructure dependency; K8s API already provides atomic uniqueness |
 | Lower TTL only | TTL cleanup is asynchronous and not guaranteed to fire before the next cycle |
 
@@ -108,12 +132,13 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 
 | Component | File | Function |
 |-----------|------|----------|
-| Name generation | `pkg/workflowexecution/executor/tekton.go` | `ExecutionResourceName()` |
+| Tekton name generation | `pkg/workflowexecution/executor/tekton.go` | `ExecutionResourceName()` |
 | Job creation | `pkg/workflowexecution/executor/job.go` | `Create()`, `buildJob()` |
+| Job identity | `pkg/workflowexecution/executor/job.go` | `JobExecutionResourceName()` |
 | AlreadyExists handler | `internal/controller/workflowexecution/workflowexecution_controller.go` | `reconcilePending()` |
-| Pre-execution cleanup | `internal/controller/workflowexecution/workflowexecution_controller.go` | `handleJobAlreadyExists()` |
+| Job collision verification | `pkg/workflowexecution/executor/job.go` | same-WFE idempotency / fail-closed collision |
 | Cooldown + cleanup | `internal/controller/workflowexecution/workflowexecution_controller.go` | `ReconcileTerminal()` |
-| Job terminal check | `pkg/workflowexecution/executor/job.go` | `IsCompleted(ctx, targetResource, namespace)` |
+| Job cleanup identity | `pkg/workflowexecution/executor/job.go` | `Cleanup()` via `Status.ExecutionRef` |
 
 ---
 
@@ -125,3 +150,4 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 | 1.1 | 2026-03-14 | Added pre-execution cleanup of completed Jobs (Issue #374) |
 | 1.2 | 2026-03-04 | Fixed background GC race with requeue-on-pending (Issue #383) |
 | 1.3 | 2026-03-04 | Added execution-time dedup classification via MarkFailedAsDeduplicated, DeduplicatedBy field, and audit trail for inherited RO transitions (Issue #190) |
+| 1.4 | 2026-10-14 | Job identity moved to full RR UID + WFE suffix; RO remains lock authority; retained Job replacement removed (Issue #2512, DD-WE-010) |

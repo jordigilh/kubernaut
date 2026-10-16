@@ -8688,6 +8688,8 @@ func (*AsyncAcceptanceResponse) createAuditEventRes() {}
 // Merged schema.
 // Ref: #/components/schemas/AuditEvent
 type AuditEvent struct {
+	// Merged property.
+	EventID OptNilUUID `json:"event_id"`
 	// Schema version (e.g., "1.0").
 	Version string `json:"version"`
 	// Event type identifier (e.g., gateway.signal.received).
@@ -8748,7 +8750,6 @@ type AuditEvent struct {
 	// Go client uses interface{} for clean code ergonomics.
 	// See DD-AUDIT-004 for structured type requirements.
 	EventData AuditEventEventData `json:"event_data"`
-	EventID   OptUUID             `json:"event_id"`
 	// Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage.
 	EventDate OptNilDate `json:"event_date"`
 	// SHA-256 chain hash computed at write time (query/export responses).
@@ -8758,6 +8759,11 @@ type AuditEvent struct {
 	LegalHoldReason   OptNilString   `json:"legal_hold_reason"`
 	LegalHoldPlacedBy OptNilString   `json:"legal_hold_placed_by"`
 	LegalHoldPlacedAt OptNilDateTime `json:"legal_hold_placed_at"`
+}
+
+// GetEventID returns the value of EventID.
+func (s *AuditEvent) GetEventID() OptNilUUID {
+	return s.EventID
 }
 
 // GetVersion returns the value of Version.
@@ -8875,11 +8881,6 @@ func (s *AuditEvent) GetEventData() AuditEventEventData {
 	return s.EventData
 }
 
-// GetEventID returns the value of EventID.
-func (s *AuditEvent) GetEventID() OptUUID {
-	return s.EventID
-}
-
 // GetEventDate returns the value of EventDate.
 func (s *AuditEvent) GetEventDate() OptNilDate {
 	return s.EventDate
@@ -8913,6 +8914,11 @@ func (s *AuditEvent) GetLegalHoldPlacedBy() OptNilString {
 // GetLegalHoldPlacedAt returns the value of LegalHoldPlacedAt.
 func (s *AuditEvent) GetLegalHoldPlacedAt() OptNilDateTime {
 	return s.LegalHoldPlacedAt
+}
+
+// SetEventID sets the value of EventID.
+func (s *AuditEvent) SetEventID(val OptNilUUID) {
+	s.EventID = val
 }
 
 // SetVersion sets the value of Version.
@@ -9028,11 +9034,6 @@ func (s *AuditEvent) SetIsSensitive(val OptNilBool) {
 // SetEventData sets the value of EventData.
 func (s *AuditEvent) SetEventData(val AuditEventEventData) {
 	s.EventData = val
-}
-
-// SetEventID sets the value of EventID.
-func (s *AuditEvent) SetEventID(val OptUUID) {
-	s.EventID = val
 }
 
 // SetEventDate sets the value of EventDate.
@@ -13034,6 +13035,9 @@ func (s *AuditEventEventOutcome) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/AuditEventRequest
 type AuditEventRequest struct {
+	// Optional client-supplied idempotency key. When present, repeated
+	// writes of the same logical event are deduplicated by DataStorage.
+	EventID OptNilUUID `json:"event_id"`
 	// Schema version (e.g., "1.0").
 	Version string `json:"version"`
 	// Event type identifier (e.g., gateway.signal.received).
@@ -13094,6 +13098,11 @@ type AuditEventRequest struct {
 	// Go client uses interface{} for clean code ergonomics.
 	// See DD-AUDIT-004 for structured type requirements.
 	EventData AuditEventRequestEventData `json:"event_data"`
+}
+
+// GetEventID returns the value of EventID.
+func (s *AuditEventRequest) GetEventID() OptNilUUID {
+	return s.EventID
 }
 
 // GetVersion returns the value of Version.
@@ -13209,6 +13218,11 @@ func (s *AuditEventRequest) GetIsSensitive() OptNilBool {
 // GetEventData returns the value of EventData.
 func (s *AuditEventRequest) GetEventData() AuditEventRequestEventData {
 	return s.EventData
+}
+
+// SetEventID sets the value of EventID.
+func (s *AuditEventRequest) SetEventID(val OptNilUUID) {
+	s.EventID = val
 }
 
 // SetVersion sets the value of Version.
@@ -35860,6 +35874,16 @@ type WorkflowExecutionAuditPayload struct {
 	ContainerImage string `json:"container_image"`
 	// Name of the WorkflowExecution CRD.
 	ExecutionName string `json:"execution_name"`
+	// Kind of the backend execution resource (Job, PipelineRun, or external run).
+	ExecutionResourceKind OptString `json:"execution_resource_kind"`
+	// Name or identifier of the backend execution resource.
+	ExecutionResourceName OptString `json:"execution_resource_name"`
+	// Namespace of the backend execution resource when applicable.
+	ExecutionResourceNamespace OptString `json:"execution_resource_namespace"`
+	// Cluster where the backend execution resource runs.
+	ExecutionClusterID OptString `json:"execution_cluster_id"`
+	// Immutable UID of the parent RemediationRequest.
+	RemediationRequestUID OptUUID `json:"remediation_request_uid"`
 	// When the PipelineRun started execution.
 	StartedAt OptDateTime `json:"started_at"`
 	// When the PipelineRun finished (success or failure).
@@ -35927,6 +35951,31 @@ func (s *WorkflowExecutionAuditPayload) GetContainerImage() string {
 // GetExecutionName returns the value of ExecutionName.
 func (s *WorkflowExecutionAuditPayload) GetExecutionName() string {
 	return s.ExecutionName
+}
+
+// GetExecutionResourceKind returns the value of ExecutionResourceKind.
+func (s *WorkflowExecutionAuditPayload) GetExecutionResourceKind() OptString {
+	return s.ExecutionResourceKind
+}
+
+// GetExecutionResourceName returns the value of ExecutionResourceName.
+func (s *WorkflowExecutionAuditPayload) GetExecutionResourceName() OptString {
+	return s.ExecutionResourceName
+}
+
+// GetExecutionResourceNamespace returns the value of ExecutionResourceNamespace.
+func (s *WorkflowExecutionAuditPayload) GetExecutionResourceNamespace() OptString {
+	return s.ExecutionResourceNamespace
+}
+
+// GetExecutionClusterID returns the value of ExecutionClusterID.
+func (s *WorkflowExecutionAuditPayload) GetExecutionClusterID() OptString {
+	return s.ExecutionClusterID
+}
+
+// GetRemediationRequestUID returns the value of RemediationRequestUID.
+func (s *WorkflowExecutionAuditPayload) GetRemediationRequestUID() OptUUID {
+	return s.RemediationRequestUID
 }
 
 // GetStartedAt returns the value of StartedAt.
@@ -36022,6 +36071,31 @@ func (s *WorkflowExecutionAuditPayload) SetContainerImage(val string) {
 // SetExecutionName sets the value of ExecutionName.
 func (s *WorkflowExecutionAuditPayload) SetExecutionName(val string) {
 	s.ExecutionName = val
+}
+
+// SetExecutionResourceKind sets the value of ExecutionResourceKind.
+func (s *WorkflowExecutionAuditPayload) SetExecutionResourceKind(val OptString) {
+	s.ExecutionResourceKind = val
+}
+
+// SetExecutionResourceName sets the value of ExecutionResourceName.
+func (s *WorkflowExecutionAuditPayload) SetExecutionResourceName(val OptString) {
+	s.ExecutionResourceName = val
+}
+
+// SetExecutionResourceNamespace sets the value of ExecutionResourceNamespace.
+func (s *WorkflowExecutionAuditPayload) SetExecutionResourceNamespace(val OptString) {
+	s.ExecutionResourceNamespace = val
+}
+
+// SetExecutionClusterID sets the value of ExecutionClusterID.
+func (s *WorkflowExecutionAuditPayload) SetExecutionClusterID(val OptString) {
+	s.ExecutionClusterID = val
+}
+
+// SetRemediationRequestUID sets the value of RemediationRequestUID.
+func (s *WorkflowExecutionAuditPayload) SetRemediationRequestUID(val OptUUID) {
+	s.RemediationRequestUID = val
 }
 
 // SetStartedAt sets the value of StartedAt.

@@ -1741,6 +1741,13 @@ components:
         - correlation_id
         - event_data
       properties:
+        event_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Optional client-supplied idempotency key. When present, repeated
+            writes of the same logical event are deduplicated by DataStorage.
         version:
           type: string
           minLength: 1
@@ -3289,6 +3296,24 @@ components:
           type: string
           description: Name of the WorkflowExecution CRD
           example: "restart-payment-api-2025-12-17-abc123"
+
+        # Generic execution reference (DD-AUDIT-010)
+        execution_resource_kind:
+          type: string
+          description: Kind of the backend execution resource (Job, PipelineRun, or external run)
+        execution_resource_name:
+          type: string
+          description: Name or identifier of the backend execution resource
+        execution_resource_namespace:
+          type: string
+          description: Namespace of the backend execution resource when applicable
+        execution_cluster_id:
+          type: string
+          description: Cluster where the backend execution resource runs
+        remediation_request_uid:
+          type: string
+          format: uuid
+          description: Immutable UID of the parent RemediationRequest
 
         # Timing Fields (conditional)
         started_at:

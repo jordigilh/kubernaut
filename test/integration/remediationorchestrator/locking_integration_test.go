@@ -33,6 +33,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -151,8 +152,10 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 		return rr, ai
 	}
 
-	// IT-RO-189-001: Two RRs same target, parallel reconciles = only one WFE
-	Describe("IT-RO-189-001: Two RRs same target = only one WFE", func() {
+	// IT-RO-189-001 / IT-RO-2512-001: Two RRs same target, parallel
+	// reconciles = only one active WFE even though their candidate Job names
+	// are unique. BR-WE-009, FedRAMP SC-5, SOC2 CC7.2.
+	Describe("IT-RO-189-001 / IT-RO-2512-001: RO lock survives unique Job identities", func() {
 		It("should create only one WFE when two RRs target the same resource", func() {
 			ns := createTestNamespace(ctx, "locking-dedup")
 			defer deleteTestNamespace(ns)
@@ -202,6 +205,25 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				}
 			}
 			Expect(activeCount).To(Equal(1), "only one active WFE should exist for the target")
+
+			activeWFEs := make([]workflowexecutionv1.WorkflowExecution, 0, 1)
+			for _, wfe := range wfeList.Items {
+				if wfe.Spec.TargetResource == targetResource &&
+					wfe.Status.Phase != workflowexecutionv1.PhaseCompleted &&
+					wfe.Status.Phase != workflowexecutionv1.PhaseFailed {
+					activeWFEs = append(activeWFEs, wfe)
+				}
+			}
+			Expect(activeWFEs).To(HaveLen(1))
+			candidate := activeWFEs[0].DeepCopy()
+			candidate.Name = "candidate-for-rr2"
+			candidate.UID = types.UID("candidate-wfe-rr2-uid")
+			candidate.Spec.RemediationRequestRef.UID = rr2.UID
+			Expect(weexecutor.JobExecutionResourceName(candidate)).ToNot(Equal(
+				weexecutor.JobExecutionResourceName(&activeWFEs[0]),
+			), "a second RR/WFE candidate has a distinct Job identity")
+			Expect(activeCount).To(Equal(1),
+				"RO must still block the second candidate; Job-name uniqueness is not authorization")
 
 			_ = rr1 // used in advanceToAnalyzing
 		})

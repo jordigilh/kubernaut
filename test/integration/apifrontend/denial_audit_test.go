@@ -123,10 +123,12 @@ var _ = Describe("BR-AUDIT-001 / BR-AUDIT-005: schema-valid denied dispatch (AU-
 			body, _ := denialRPC(server.URL+"/mcp", token, sessionID, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kubernaut_list_remediations","arguments":{}}}`)
 			Expect(body).To(ContainSubstring(`"isError":true`))
 			Expect(reads.Load()).To(BeZero(), "denied tool must not reach the external Kubernetes API")
-			Expect(store.Flush(context.Background())).To(Succeed())
 			if storeFailure {
+				Expect(store.Flush(context.Background())).To(HaveOccurred(),
+					"mandatory audit flush must surface the unavailable backend")
 				Eventually(func() int { return logs.FilterLevelExact(zapcore.ErrorLevel).Len() }, 5*time.Second, 20*time.Millisecond).Should(BeNumerically(">", 0))
 			} else {
+				Expect(store.Flush(context.Background())).To(Succeed())
 				assertPersistedDenial(actor, "mcp")
 			}
 			Expect(fmt.Sprint(logs.All())).ToNot(ContainSubstring(token), "audit errors must not leak JWTs")

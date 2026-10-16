@@ -47,6 +47,10 @@ const (
 	// AnnotationReconstructionSource indicates the source of reconstruction data
 	AnnotationReconstructionSource = "kubernaut.ai/reconstruction-source"
 
+	// AnnotationOriginalRemediationRequestUID preserves the immutable UID from
+	// the source audit trace when the reconstructed CR receives a new API UID.
+	AnnotationOriginalRemediationRequestUID = "kubernaut.ai/original-remediation-request-uid"
+
 	// FinalizerAuditRetention prevents deletion until audit trail is complete
 	FinalizerAuditRetention = "kubernaut.ai/audit-retention"
 )
@@ -99,6 +103,9 @@ func BuildRemediationRequest(correlationID string, rrFields *ReconstructedRRFiel
 			},
 		},
 		Spec: *rrFields.Spec,
+	}
+	if rrFields.RemediationRequestUID != "" {
+		rr.Annotations[AnnotationOriginalRemediationRequestUID] = rrFields.RemediationRequestUID
 	}
 
 	// Populate Status if provided (Status fields are optional)

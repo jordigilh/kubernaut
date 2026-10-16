@@ -28,9 +28,10 @@ import (
 // BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
 type ParsedAuditData struct {
 	// Metadata
-	EventType     string
-	CorrelationID string
-	ClusterID     string // DD-AUDIT-003 v2.2: cluster provenance for fleet reconstruction (CC8.1)
+	EventType             string
+	CorrelationID         string
+	ClusterID             string // DD-AUDIT-003 v2.2: cluster provenance for fleet reconstruction (CC8.1)
+	RemediationRequestUID string // DD-AUDIT-010: immutable RR identity
 
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
@@ -75,10 +76,12 @@ type WorkflowRefData struct {
 
 // ExecutionRefData represents execution reference extracted from workflowexecution.execution.started event (Gap #6).
 type ExecutionRefData struct {
-	APIVersion string
-	Kind       string
-	Name       string
-	Namespace  string
+	APIVersion            string
+	Kind                  string
+	Name                  string
+	Namespace             string
+	ClusterID             string
+	RemediationRequestUID string
 }
 
 // ErrorDetailsData represents standardized error details extracted from failed audit events (DD-ERROR-001).
@@ -193,6 +196,7 @@ func parseOrchestratorLifecycleCreated(event ogenclient.AuditEvent) (*ParsedAudi
 
 // parseOrchestratorLifecycleCompleted extracts outcome/duration from orchestrator.lifecycle.completed event.
 // BR-AUDIT-005 v2.0: RR status reconstruction (CC8.1)
+//
 //nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseOrchestratorLifecycleCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
@@ -214,6 +218,7 @@ func parseOrchestratorLifecycleCompleted(event ogenclient.AuditEvent) (*ParsedAu
 
 // parseOrchestratorLifecycleFailed extracts error_details from orchestrator.lifecycle.failed event.
 // BR-AUDIT-005 v2.0 Gap #7: Standardized error_details for RR reconstruction (CC8.1)
+//
 //nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseOrchestratorLifecycleFailed(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
@@ -287,6 +292,7 @@ func normalizeSignalType(s string) string {
 }
 
 // parseAIAnalysisCompleted extracts provider data from aianalysis.analysis.completed event (Gap #4).
+//
 //nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.AIAnalysisAuditPayload
@@ -310,6 +316,7 @@ func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, er
 }
 
 // parseWorkflowSelectionCompleted extracts workflow reference from workflowexecution.selection.completed event (Gap #5).
+//
 //nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseWorkflowSelectionCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.WorkflowExecutionAuditPayload
@@ -325,11 +332,18 @@ func parseWorkflowSelectionCompleted(event ogenclient.AuditEvent) (*ParsedAuditD
 		Version:        payload.WorkflowVersion,
 		ContainerImage: payload.ContainerImage,
 	}
+	if payload.ExecutionClusterID.IsSet() {
+		data.ClusterID = payload.ExecutionClusterID.Value
+	}
+	if payload.RemediationRequestUID.IsSet() {
+		data.RemediationRequestUID = payload.RemediationRequestUID.Value.String()
+	}
 
 	return data, nil
 }
 
 // parseExecutionWorkflowStarted extracts execution reference from workflowexecution.execution.started event (Gap #6).
+//
 //nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseExecutionWorkflowStarted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.WorkflowExecutionAuditPayload
@@ -349,6 +363,23 @@ func parseExecutionWorkflowStarted(event ogenclient.AuditEvent) (*ParsedAuditDat
 		Kind:       "WorkflowExecution",
 		Name:       payload.ExecutionName, // WFE CRD name
 		Namespace:  event.Namespace.Value,
+	}
+	if payload.ExecutionResourceKind.IsSet() {
+		data.ExecutionRef.Kind = payload.ExecutionResourceKind.Value
+	}
+	if payload.ExecutionResourceName.IsSet() {
+		data.ExecutionRef.Name = payload.ExecutionResourceName.Value
+	}
+	if payload.ExecutionResourceNamespace.IsSet() {
+		data.ExecutionRef.Namespace = payload.ExecutionResourceNamespace.Value
+	}
+	if payload.ExecutionClusterID.IsSet() {
+		data.ExecutionRef.ClusterID = payload.ExecutionClusterID.Value
+		data.ClusterID = payload.ExecutionClusterID.Value
+	}
+	if payload.RemediationRequestUID.IsSet() {
+		data.ExecutionRef.RemediationRequestUID = payload.RemediationRequestUID.Value.String()
+		data.RemediationRequestUID = payload.RemediationRequestUID.Value.String()
 	}
 
 	return data, nil

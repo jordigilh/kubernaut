@@ -40,6 +40,7 @@ func ConvertFromAuditEvent(event *audit.AuditEvent) (*AuditEvent, error) {
 
 	return &AuditEvent{
 		EventID:           event.EventID,
+		IdempotencyKey:    event.IdempotencyKey,
 		Version:           event.EventVersion,
 		EventTimestamp:    event.EventTimestamp,
 		EventDate:         DateOnly(event.EventTimestamp.Truncate(24 * time.Hour)),

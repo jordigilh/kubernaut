@@ -28,7 +28,7 @@ var _ = Describe("BR-AUDIT-005: fresh structured tool evidence (AU-3, CC7.2)", f
 		wrongAction.EventAction = "denied"
 		old := toolObservationEvent("owned-actor", start.Add(-time.Hour))
 		missingID := fresh
-		missingID.EventID = ogenclient.OptUUID{}
+		missingID.EventID = ogenclient.OptNilUUID{}
 		missingCorrelation := fresh
 		missingCorrelation.CorrelationID = ""
 		wrongTool := fresh
@@ -165,7 +165,7 @@ var _ = Describe("BR-AUDIT-005: fresh structured tool evidence (AU-3, CC7.2)", f
 
 	It("UT-AF-2501-004: rows without persisted UUIDs cannot form a complete baseline", func() {
 		event := toolObservationEvent("owned-actor", time.Now().UTC())
-		event.EventID = ogenclient.OptUUID{}
+		event.EventID = ogenclient.OptNilUUID{}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			defer GinkgoRecover()
 			var encoder jx.Encoder
@@ -185,7 +185,7 @@ var _ = Describe("BR-AUDIT-005: fresh structured tool evidence (AU-3, CC7.2)", f
 
 func toolObservationEvent(actor string, timestamp time.Time) ogenclient.AuditEvent {
 	return ogenclient.AuditEvent{Version: "1.0", EventType: "apifrontend.tool.executed", EventCategory: "apifrontend",
-		EventAction: "executed", EventOutcome: "success", EventTimestamp: timestamp, EventID: ogenclient.NewOptUUID(uuid.New()),
+		EventAction: "executed", EventOutcome: "success", EventTimestamp: timestamp, EventID: ogenclient.NewOptNilUUID(uuid.New()),
 		ActorType: ogenclient.NewOptString("user"), ActorID: ogenclient.NewOptString(actor), CorrelationID: uuid.NewString(),
 		EventData: ogenclient.NewApifrontendToolExecutedPayloadAuditEventEventData(ogenclient.ApifrontendToolExecutedPayload{
 			EventType: "apifrontend.tool.executed", ToolName: "kubernaut_list_remediations", ToolOutcome: "success", SessionID: "",

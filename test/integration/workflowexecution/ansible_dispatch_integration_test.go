@@ -27,8 +27,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,6 +52,7 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 	Context("controller dispatch without ansible executor registered", func() {
 		It("IT-WE-2390-003: should preserve engineConfig before failing WFE with UnsupportedEngine when ansible executor is not registered", func() {
 			targetResource := fmt.Sprintf("default/deployment/ansible-dispatch-%d", time.Now().UnixNano())
+			wfeName := fmt.Sprintf("ansible-it-%d", time.Now().UnixNano())
 
 			engineConfig, err := json.Marshal(map[string]interface{}{
 				"playbookPath":    "playbooks/restart.yml",
@@ -60,10 +63,17 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("ansible-it-%d", time.Now().UnixNano()),
+					Name:      wfeName,
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "ansible-it-rr-" + wfeName,
+						Namespace:  DefaultNamespace,
+						UID:        types.UID("ansible-it-rr-" + wfeName),
+					},
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{

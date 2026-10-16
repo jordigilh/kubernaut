@@ -94,6 +94,7 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 	}
 
 	var pr tektonv1.PipelineRun
+	pr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
 	if err := c.Get(ctx, client.ObjectKey{
 		Name:      wfe.Status.ExecutionRef.Name,
 		Namespace: namespace,
@@ -156,6 +157,7 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 	prName := ExecutionResourceName(wfe.Spec.TargetResource)
 
 	var existing tektonv1.PipelineRun
+	existing.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("PipelineRun"))
 	if err := c.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil // Already gone
