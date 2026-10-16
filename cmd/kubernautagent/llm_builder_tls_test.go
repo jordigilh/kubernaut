@@ -20,7 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -32,10 +32,7 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 	It("returns a non-nil transport when tlsCaFile is set", func() {
 		caPath := generateTestCACert(GinkgoTB(), "Test CA")
 
-		cfg := kaconfig.DefaultConfig()
-		cfg.AI.LLM.TLSCaFile = caPath
-
-		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6", VertexProject: "test-project", VertexLocation: "us-central1", TLSCaFile: caPath}
 
 		transport, err := buildTransportChain(merged)
 		Expect(err).NotTo(HaveOccurred())
@@ -47,9 +44,7 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 	// the vanilla default-config path -- this is the "no custom TLS/OAuth2/
 	// headers/circuit-breaker" case, previously asserted as nil.
 	It("returns a non-nil (otelhttp-wrapped) transport when no custom TLS config is set", func() {
-		cfg := kaconfig.DefaultConfig()
-
-		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6", VertexProject: "test-project", VertexLocation: "us-central1"}
 
 		transport, err := buildTransportChain(merged)
 		Expect(err).NotTo(HaveOccurred())
@@ -58,10 +53,7 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 
 	// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
 	It("returns an error for an invalid CA file (fail-hard per SC-8)", func() {
-		cfg := kaconfig.DefaultConfig()
-		cfg.AI.LLM.TLSCaFile = pathCaCrt
-
-		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6", VertexProject: "test-project", VertexLocation: "us-central1", TLSCaFile: pathCaCrt}
 
 		_, err := buildTransportChain(merged)
 		Expect(err).To(HaveOccurred())
@@ -72,12 +64,7 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 		caPath := generateTestCACert(GinkgoTB(), "Test CA")
 		certPath, keyPath := generateTestClientCert(GinkgoTB(), caPath)
 
-		cfg := kaconfig.DefaultConfig()
-		cfg.AI.LLM.TLSCaFile = caPath
-		cfg.AI.LLM.TLSCertFile = certPath
-		cfg.AI.LLM.TLSKeyFile = keyPath
-
-		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6", VertexProject: "test-project", VertexLocation: "us-central1", TLSCaFile: caPath, TLSCertFile: certPath, TLSKeyFile: keyPath}
 
 		chain, err := buildTransportChain(merged)
 		Expect(err).NotTo(HaveOccurred())

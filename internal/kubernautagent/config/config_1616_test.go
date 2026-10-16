@@ -19,123 +19,69 @@ package config_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// Per-Phase Reasoning/Effort Overrides — #1616, BR-AI-086.
-//
-// Root cause (confirmed during due diligence): LLMOverrideConfig had no
-// Reasoning field at all, so EffectivePhaseConfig never overrode it and
-// every phase silently inherited base ai.llm.reasoning regardless of
-// phaseModels. See docs/tests/1616/TEST_PLAN.md and IMPLEMENTATION_PLAN.md.
-var _ = Describe("Per-Phase Reasoning/Effort Overrides — #1616", func() {
+var _ = Describe("complete profile reasoning configuration — #1616", func() {
+	It("UT-AI-1616-001 resolves a phase profile's reasoning settings", func() {
+		profile := &types.LLMConfig{
+			Provider:       types.LLMProviderVertexAI,
+			Model:          "claude-sonnet-4-6",
+			VertexProject:  "workflow-project",
+			VertexLocation: "us-central1",
+			Reasoning:      &types.LLMReasoningConfig{Enabled: true, Effort: "high"},
+		}
 
-	Describe("UT-AI-1616-001 (CM-6): EffectivePhaseConfig applies the phase override's Reasoning when set", func() {
-		It("should override Reasoning, not inherit the base's", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model: "default-model",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"rca": {
-						Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "high"},
-					},
-				},
-			}
-			baseLLM := types.LLMConfig{
-				Provider:  "anthropic",
-				Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "low"},
-			}
-			baseRT := config.LLMRuntimeConfig{Model: "base-model"}
+		resolved, err := config.ResolveEffectiveLLM(
+			types.LLMConfig{Provider: types.LLMProviderVertexAI, VertexProject: "base-project", VertexLocation: "us-central1", Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "low"}},
+			config.LLMRuntimeConfig{Model: "base-model", Temperature: ptr.To(0.7)},
+			profile,
+			"phaseModels[\"rca\"]",
+		)
 
-			outLLM, _ := rt.EffectivePhaseConfig("rca", baseLLM, baseRT)
-
-			Expect(outLLM.Reasoning).NotTo(BeNil())
-			Expect(outLLM.Reasoning.Effort).To(Equal("high"), "the phase override's Reasoning must win over the base's")
-			Expect(outLLM.Reasoning.Enabled).To(BeTrue())
-		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.Reasoning).NotTo(BeNil())
+		Expect(resolved.Reasoning.Effort).To(Equal("high"))
 	})
 
-	Describe("UT-AI-1616-002 (CM-6): EffectivePhaseConfig falls back to base Reasoning when the override has none", func() {
-		It("should leave base Reasoning unchanged when the phase override does not set it (regression, mirrors UT-AI-1470-002a)", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model: "default-model",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"workflow_discovery": {Model: "fast-model"},
+	It("UT-AI-1616-002 validates reasoning against the complete profile provider", func() {
+		rt := &config.LLMRuntimeConfig{
+			Model:    "base-model",
+			Endpoint: "http://base",
+			PhaseModels: map[string]*types.LLMConfig{
+				"rca": {
+					Provider:   types.LLMProviderAnthropic,
+					Model:      "claude-sonnet-4-6",
+					Reasoning:  &types.LLMReasoningConfig{Enabled: true, Effort: "none"},
+					APIKeyFile: "/etc/credentials/anthropic",
 				},
-			}
-			baseReasoning := &types.LLMReasoningConfig{Enabled: true, Effort: "medium"}
-			baseLLM := types.LLMConfig{Provider: "openai", Reasoning: baseReasoning}
-			baseRT := config.LLMRuntimeConfig{Model: "base-model"}
+			},
+		}
 
-			outLLM, _ := rt.EffectivePhaseConfig("workflow_discovery", baseLLM, baseRT)
+		err := rt.Validate(types.LLMProviderOpenAICompatible)
 
-			Expect(outLLM.Reasoning).To(Equal(baseReasoning), "base Reasoning must be preserved when the override doesn't set it")
-		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("effort: none"))
 	})
 
-	Describe("UT-AI-1616-003 (CM-6): a reasoning-only phase override is not rejected as empty", func() {
-		It("should accept a phase override that sets only reasoning", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model:    "test-model",
-				Endpoint: "http://localhost",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"rca": {
-						Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "high"},
-					},
+	It("UT-AI-1616-003 accepts a complete reasoning profile for a non-Anthropic provider", func() {
+		rt := &config.LLMRuntimeConfig{
+			Model:    "base-model",
+			Endpoint: "http://base",
+			PhaseModels: map[string]*types.LLMConfig{
+				"rca": {
+					Provider:   types.LLMProviderOpenAICompatible,
+					Model:      "gpt-5",
+					Endpoint:   "http://workflow",
+					APIKeyFile: "/etc/credentials/openai",
+					Reasoning:  &types.LLMReasoningConfig{Enabled: true, Effort: "high"},
 				},
-			}
-			Expect(rt.Validate("openai")).To(Succeed(), "a reasoning-only override sets a real field and must not be rejected as an empty no-op override")
-		})
-	})
+			},
+		}
 
-	Describe("UT-AI-1616-004 (SI-10): Validate rejects an invalid effort value on a phase override", func() {
-		It("should reject an unrecognized effort value", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model:    "test-model",
-				Endpoint: "http://localhost",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"rca": {
-						Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "extreme"},
-					},
-				},
-			}
-			err := rt.Validate("openai")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("effort"))
-		})
-	})
-
-	Describe("UT-AI-1616-005 (SI-10): Validate rejects the Anthropic none+enabled contradiction on a phase override's effective provider", func() {
-		It("should reject effort: none + enabled: true when the override inherits an Anthropic-family base provider", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model:    "test-model",
-				Endpoint: "http://localhost",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"rca": {
-						// No override.Provider set: effective provider must
-						// fall back to the base provider passed to Validate.
-						Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "none"},
-					},
-				},
-			}
-			err := rt.Validate("anthropic")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("effort: none"))
-		})
-
-		It("should accept effort: none + enabled: true when the override's own provider is not Anthropic-family, even if base is", func() {
-			rt := &config.LLMRuntimeConfig{
-				Model:    "test-model",
-				Endpoint: "http://localhost",
-				PhaseModels: map[string]*config.LLMOverrideConfig{
-					"rca": {
-						Provider:  "openai",
-						Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "none"},
-					},
-				},
-			}
-			Expect(rt.Validate("anthropic")).To(Succeed(), "the override's own provider (openai) is the effective provider, not the base's (anthropic)")
-		})
+		Expect(rt.Validate(types.LLMProviderOpenAICompatible)).To(Succeed())
 	})
 })

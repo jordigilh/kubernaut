@@ -224,7 +224,7 @@ tests:
           path: data['llm-runtime.yaml']
           pattern: 'provider: "?openai_compatible"?'
 
-  - it: "IT-PLATFORM-LLM-004: phaseModels omits azureApiVersion/bedrockRegion from the rendered override (matches Operator precedent)"
+  - it: "IT-PLATFORM-LLM-009: phaseModels renders complete profile fields"
     set:
       global:
         llmProfiles:
@@ -245,9 +245,83 @@ tests:
       path: metadata.name
       value: kubernaut-agent-llm-runtime
     asserts:
-      - notMatchRegex:
+       - matchRegex:
+           path: data['llm-runtime.yaml']
+           pattern: 'azureApiVersion: "?2024-10-21"?'
+       - matchRegex:
+           path: data['llm-runtime.yaml']
+           pattern: "apiKeyFile: \"/etc/kubernaut-agent/phase-credentials/rca/api_key\""
+
+  - it: "IT-PLATFORM-LLM-010: phase OAuth2 credentials use an isolated directory"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: openai_compatible
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://primary.example/v1"
+            oauth2:
+              enabled: true
+              tokenURL: "https://idp.example/token"
+              credentialsSecretRef: oauth-primary
+          workflow:
+            provider: openai_compatible
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://workflow.example/v1"
+            oauth2:
+              enabled: true
+              tokenURL: "https://idp.example/token"
+              credentialsSecretRef: oauth-workflow
+      kubernautAgent:
+        phaseModels:
+          workflow_discovery: workflow
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
           path: data['llm-runtime.yaml']
-          pattern: "azureApiVersion"
+          pattern: 'credentialsDir: "?/etc/kubernaut-agent/phase-oauth2/workflow_discovery"?'
+
+  - it: "IT-PLATFORM-LLM-010: phase OAuth2 credentials get an isolated Secret mount"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: openai_compatible
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://primary.example/v1"
+            oauth2:
+              enabled: true
+              tokenURL: "https://idp.example/token"
+              credentialsSecretRef: oauth-primary
+          workflow:
+            provider: openai_compatible
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://workflow.example/v1"
+            oauth2:
+              enabled: true
+              tokenURL: "https://idp.example/token"
+              credentialsSecretRef: oauth-workflow
+      kubernautAgent:
+        phaseModels:
+          workflow_discovery: workflow
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: phase-oauth2-credentials-workflow_discovery
+            secret:
+              secretName: oauth-workflow
 
   - it: "IT-PLATFORM-LLM-004: an undefined phaseModels profile name fails the render"
     set:
@@ -310,9 +384,40 @@ tests:
       path: metadata.name
       value: kubernaut-agent-config
     asserts:
+       - matchRegex:
+           path: data['config.yaml']
+           pattern: '(?s)alignmentCheck:.*llm:.*provider: "?openai"?'
+
+  - it: "IT-PLATFORM-LLM-012: shared Secret uses the alignment provider credential filename"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: vertex_ai
+            model: claude-sonnet-4-6
+            credentialsSecretName: llm-credentials-shared
+            vertexProject: kubernaut-test
+            vertexLocation: us-central1
+          alignment:
+            provider: openai_compatible
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-shared
+            endpoint: "https://gateway.example/v1"
+      kubernautAgent:
+        alignmentCheck:
+          enabled: true
+          llmProfileRef: alignment
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: '(?s)alignmentCheck:.*llm:.*provider: "?openai"?'
+          pattern: 'ai:\n\s+llm:\n\s+provider: "?vertex_ai"?\n\s+apiKeyFile: "?/etc/kubernaut-agent/credentials/credentials\.json"?'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)alignmentCheck:.*llm:.*apiKeyFile: "?/etc/kubernaut-agent/credentials/api_key"?'
 
   - it: "IT-PLATFORM-LLM-005: alignmentCheck renders apiKeyFile, never the dead apiKey field (kubernaut#1726-class bug fix)"
     set:

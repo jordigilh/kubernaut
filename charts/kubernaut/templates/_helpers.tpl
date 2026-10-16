@@ -1541,31 +1541,21 @@ Usage:
 {{- end }}
 
 {{/*
-Render one phase-shaped LLM override's field subset (DD-PLATFORM-007):
-provider/model/endpoint/vertexProject/vertexLocation/reasoning, plus a
-conditional apiKeyFile supplied by the caller. Shared by
+Render one complete sibling LLM profile (DD-LLM-012): provider/model/endpoint,
+credentials, provider-specific settings, retry/timeout, OAuth2, TLS/mTLS, and
+reasoning. Shared by
 kubernautAgent.phaseModels (Kubernaut Agent's LLMRuntimeConfig.PhaseModels)
-and kubernautAgent.alignmentCheck.llm (AlignmentCheckConfig.LLM) -- both
-consume the identical Go type (internal/kubernautagent/config.
-LLMOverrideConfig), which has no oauth2/tlsCaFile fields, so neither is
-rendered here. Deliberately excludes azureApiVersion/bedrockRegion even
-though LLMOverrideConfig has both fields -- matches the Kubernaut
-Operator's own configmaps.go rendering precedent for phaseModels (verified:
-llmPhaseOverrideYAML has no azureApiVersion/bedrockRegion field), which
-this chart mirrors for both consumers of LLMOverrideConfig for consistency.
-apiKeyFile is rendered verbatim when non-empty -- the caller computes the
-correct mount path (or passes "" when the resolved profile shares the
-base/KA profile's credentialsSecretName and should inherit its mount).
+and kubernautAgent.alignmentCheck.llm (AlignmentCheckConfig.LLM).
+The caller always supplies an explicit apiKeyFile path, even when a sibling
+intentionally shares the base profile's mounted credential.
 Usage:
   {{ include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $apiKeyFile) | nindent 8 }}
 */}}
 {{- define "kubernaut.llm.overrideBlock" -}}
 {{- $p := .profile -}}
 provider: {{ $p.provider | quote }}
-{{- if $p.model }}
 model: {{ $p.model | quote }}
-{{- end }}
-{{- if $p.endpoint }}
+{{- if hasKey $p "endpoint" }}
 endpoint: {{ $p.endpoint | quote }}
 {{- end }}
 {{- if $p.vertexProject }}
@@ -1573,6 +1563,47 @@ vertexProject: {{ $p.vertexProject | quote }}
 {{- end }}
 {{- if $p.vertexLocation }}
 vertexLocation: {{ $p.vertexLocation | quote }}
+{{- end }}
+{{- if $p.azureApiVersion }}
+azureApiVersion: {{ $p.azureApiVersion | quote }}
+{{- end }}
+{{- if $p.bedrockRegion }}
+bedrockRegion: {{ $p.bedrockRegion | quote }}
+{{- end }}
+{{- if $p.tlsCaFile }}
+tlsCaFile: {{ $p.tlsCaFile | quote }}
+{{- end }}
+{{- if $p.tlsCertFile }}
+tlsCertFile: {{ $p.tlsCertFile | quote }}
+{{- end }}
+{{- if $p.tlsKeyFile }}
+tlsKeyFile: {{ $p.tlsKeyFile | quote }}
+{{- end }}
+{{- $oauth2 := $p.oauth2 | default dict -}}
+{{- if $oauth2.enabled }}
+oauth2:
+  enabled: true
+  tokenURL: {{ $oauth2.tokenURL | quote }}
+  credentialsDir: {{ .oauth2CredentialsDir | default "/etc/kubernaut-agent/oauth2" | quote }}
+{{- if $oauth2.scopes }}
+  scopes:
+{{- range (splitList " " $oauth2.scopes) }}
+    - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if hasKey $p "temperature" }}
+temperature: {{ $p.temperature }}
+{{- end }}
+{{- if hasKey $p "maxRetries" }}
+maxRetries: {{ $p.maxRetries }}
+{{- else }}
+maxRetries: 3
+{{- end }}
+{{- if hasKey $p "timeoutSeconds" }}
+timeoutSeconds: {{ $p.timeoutSeconds }}
+{{- else }}
+timeoutSeconds: 120
 {{- end }}
 {{- $reasoning := $p.reasoning | default dict -}}
 {{- if or $reasoning.enabled $reasoning.effort $reasoning.capabilityOverride $reasoning.budgetTokens }}
@@ -1590,9 +1621,7 @@ reasoning:
   capabilityOverride: {{ $reasoning.capabilityOverride | quote }}
 {{- end }}
 {{- end }}
-{{- if .apiKeyFile }}
 apiKeyFile: {{ .apiKeyFile | quote }}
-{{- end }}
 {{- end }}
 
 {{/*

@@ -28,7 +28,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // UT-1519-011 (GAP-14 / Issue #1519): buildTransportChain's outbound LLM
@@ -46,9 +46,7 @@ func TestBuildTransportChain_CarriesActiveSpan(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := kaconfig.DefaultConfig()
-	rt := &kaconfig.LLMRuntimeConfig{}
-	merged := mergeLLMConfig(cfg.AI.LLM, rt)
+	merged := types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6", VertexProject: "test-project", VertexLocation: "us-central1"}
 
 	chain, err := buildTransportChain(merged)
 	if err != nil {
