@@ -935,7 +935,11 @@ data:
   config.yaml: |
     logLevel: debug
     logFormat: json
-    maxEventAgeSeconds: 300
+    # FullPipeline runs many specs concurrently; event-exporter can backlog
+    # valid Warning events while processing cluster-wide metadata. Keep this
+    # above the 10-minute lifecycle budget so delayed delivery does not discard
+    # the event that drives E2E-FP-118-001 (BR-E2E-001).
+    maxEventAgeSeconds: 900
     kubeQPS: 50
     kubeBurst: 100
     route:

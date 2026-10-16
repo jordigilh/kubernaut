@@ -181,6 +181,14 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 	})
 })
 
+var _ = Describe("FullPipeline event exporter resilience", func() {
+	It("UT-INFRA-FP-EVENT-001: keeps Warning events fresh for the full lifecycle budget", func() {
+		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
+		Expect(manifest).To(ContainSubstring("maxEventAgeSeconds: 900"),
+			"the event exporter freshness window must exceed the 10-minute FullPipeline lifecycle budget")
+	})
+})
+
 var _ = Describe("kube-mcp-server E2E configuration", func() {
 	It("UT-INFRA-FLEET-030: pins the E2E image to the current validated digest", func() {
 		Expect(KubeMCPServerImage).To(Equal("ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"))
