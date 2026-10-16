@@ -1,0 +1,32 @@
+suite: "WorkflowExecution runner RBAC least privilege (AC-6, ASVS V4.1.3)"
+templates:
+  - templates/workflowexecution/workflowexecution.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "legacy workflow-runner ClusterRole has no permissions"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-workflow-runner
+    asserts:
+      - equal:
+          path: rules
+          value: []
