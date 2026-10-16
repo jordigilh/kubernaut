@@ -31,6 +31,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	sigyaml "sigs.k8s.io/yaml"
 
@@ -185,11 +186,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// subsequent restarts from generating additional RRs that could trigger
 		// the RO's IneffectiveChain detection (threshold: 3 ineffective RRs for
 		// the same target), which would block WorkflowExecution creation.
-		dep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
-		zero := int32(0)
-		dep.Spec.Replicas = &zero
-		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			dep := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep); err != nil {
+				return err
+			}
+			zero := int32(0)
+			dep.Spec.Replicas = &zero
+			return k8sClient.Update(ctx, dep)
+		})).To(Succeed())
 		GinkgoWriter.Println("  ✅ Scaled memory-eater to 0 replicas (prevent RR storm)")
 
 		// ================================================================
@@ -362,11 +367,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// start to become Ready before EM's one-shot health check fires.
 		// ================================================================
 		By("Step 7b: Scaling memory-eater back up and verifying recovery under the new memory limit")
-		dep = &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
-		one := int32(1)
-		dep.Spec.Replicas = &one
-		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			dep := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep); err != nil {
+				return err
+			}
+			one := int32(1)
+			dep.Spec.Replicas = &one
+			return k8sClient.Update(ctx, dep)
+		})).To(Succeed())
 		GinkgoWriter.Println("  ✅ Scaled memory-eater back to 1 replica (real fix applied, safe to resume)")
 
 		Eventually(func(g Gomega) {
