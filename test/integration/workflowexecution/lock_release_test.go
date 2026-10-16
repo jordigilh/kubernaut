@@ -58,7 +58,7 @@ var _ = Describe("Lock Release After Terminal Phase (Issue #375, DD-WE-003)", fu
 		By("Simulating Job completion for WFE1")
 		job1, err := waitForJobCreation(wfe1.Name, 5*time.Second)
 		Expect(err).ToNot(HaveOccurred())
-		expectedJobName := executor.ExecutionResourceName(targetResource)
+		expectedJobName := executor.JobExecutionResourceName(wfe1)
 		Expect(job1.Name).To(Equal(expectedJobName))
 		Expect(simulateJobCompletion(job1, true)).To(Succeed())
 

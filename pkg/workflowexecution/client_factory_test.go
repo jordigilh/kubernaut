@@ -220,7 +220,7 @@ var _ = Describe("ClientFactory (BR-FLEET-054)", func() {
 					TargetResource: targetResource,
 				},
 			}
-			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: "wfe-remote-job"}
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: executor.JobExecutionResourceName(wfe)}
 
 			result, err := je.GetStatus(ctx, wfe, "kubernaut-workflows")
 			Expect(err).ToNot(HaveOccurred(),

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -476,6 +477,10 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
 	wfe.Spec.WorkflowRef.ExecutionEngine = "job"
+	// Production WorkflowExecutionCreator copies the parent RR UID into this
+	// immutable reference. Job-backend integration fixtures must do the same so
+	// they exercise DD-WE-010 rather than the legacy target-name fallback.
+	wfe.Spec.RemediationRequestRef.UID = types.UID(uuid.NewString())
 	return wfe
 }
 

@@ -60,8 +60,16 @@ import (
 // FindFailedTaskRun finds the first failed TaskRun in a PipelineRun's ChildReferences
 // Returns the TaskRun, its index in ChildReferences, and any error
 // Returns (nil, -1, nil) if no failed TaskRun is found
-func (r *WorkflowExecutionReconciler) FindFailedTaskRun(ctx context.Context, pr *tektonv1.PipelineRun) (*tektonv1.TaskRun, int, error) {
+func (r *WorkflowExecutionReconciler) FindFailedTaskRun(ctx context.Context, pr *tektonv1.PipelineRun, clusterIDs ...string) (*tektonv1.TaskRun, int, error) {
 	logger := log.FromContext(ctx)
+	clusterID := ""
+	if len(clusterIDs) > 0 {
+		clusterID = clusterIDs[0]
+	}
+	executionClient, clientErr := r.executionClientFor(ctx, clusterID)
+	if clientErr != nil {
+		return nil, -1, fmt.Errorf("get client for TaskRun failure analysis: %w", clientErr)
+	}
 
 	for i, ref := range pr.Status.ChildReferences {
 		// Skip non-TaskRun references (e.g., Run, CustomRun)
@@ -71,7 +79,8 @@ func (r *WorkflowExecutionReconciler) FindFailedTaskRun(ctx context.Context, pr 
 
 		// Fetch the TaskRun
 		var tr tektonv1.TaskRun
-		if err := r.Get(ctx, client.ObjectKey{
+		tr.SetGroupVersionKind(tektonv1.SchemeGroupVersion.WithKind("TaskRun"))
+		if err := executionClient.Get(ctx, client.ObjectKey{
 			Name:      ref.Name,
 			Namespace: pr.Namespace,
 		}, &tr); err != nil {
@@ -105,7 +114,7 @@ func (r *WorkflowExecutionReconciler) FindFailedTaskRun(ctx context.Context, pr 
 // Day 7: Now includes TaskRun-specific fields (FailedTaskName, FailedTaskIndex, ExitCode)
 // Day 6 Extension (BR-WE-012): Includes WasExecutionFailure for backoff decisions
 // Maps Tekton failure reasons to our FailureReason enum
-func (r *WorkflowExecutionReconciler) ExtractFailureDetails(ctx context.Context, pr *tektonv1.PipelineRun, startTime *metav1.Time) *workflowexecutionv1alpha1.FailureDetails {
+func (r *WorkflowExecutionReconciler) ExtractFailureDetails(ctx context.Context, pr *tektonv1.PipelineRun, startTime *metav1.Time, clusterIDs ...string) *workflowexecutionv1alpha1.FailureDetails {
 	details := &workflowexecutionv1alpha1.FailureDetails{
 		FailedAt:            metav1.Now(),
 		Reason:              workflowexecutionv1alpha1.FailureReasonUnknown,
@@ -135,7 +144,7 @@ func (r *WorkflowExecutionReconciler) ExtractFailureDetails(ctx context.Context,
 	// ========================================
 	// Day 7: Extract TaskRun-specific fields
 	// ========================================
-	failedTaskRun, index, err := r.FindFailedTaskRun(ctx, pr)
+	failedTaskRun, index, err := r.FindFailedTaskRun(ctx, pr, clusterIDs...)
 	if err == nil && failedTaskRun != nil {
 		details.FailedTaskName = failedTaskRun.Name
 		details.FailedTaskIndex = index

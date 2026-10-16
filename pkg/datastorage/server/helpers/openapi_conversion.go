@@ -79,8 +79,13 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	// D1/DF-H1: RetentionDays MUST be set before DLQ serialization so that
 	// replay Validate() (which requires RetentionDays > 0) never rejects
 	// events that succeeded on the synchronous DB path.
+	eventID := uuid.New()
+	if req.EventID.IsSet() && !req.EventID.Null {
+		eventID = req.EventID.Value
+	}
 	event := &audit.AuditEvent{
-		EventID:        uuid.New(), // Generate new UUID
+		EventID:        eventID,
+		IdempotencyKey: req.EventID.IsSet() && !req.EventID.Null,
 		EventVersion:   req.Version,
 		EventTimestamp: req.EventTimestamp,
 		EventType:      req.EventType,

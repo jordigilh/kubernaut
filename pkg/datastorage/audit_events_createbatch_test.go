@@ -18,11 +18,15 @@ package datastorage_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -109,6 +113,71 @@ var _ = Describe("AuditEventsRepository.CreateBatch", func() {
 		Expect(created[0].HashAlgorithm).To(Equal(repository.HashAlgorithmSHA256Unkeyed))
 		Expect(created[0].PreviousEventHash).To(BeEmpty(), "the first event for a fresh correlation_id has no previous hash")
 		Expect(created[0].EventHash).ToNot(BeEmpty())
+		Expect(mock.ExpectationsWereMet()).To(Succeed())
+	})
+
+	It("UT-DS-AUDIT-2512-003: deduplicates a repeated client-supplied event ID in a batch without advancing the hash chain", func() {
+		eventID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440098")
+		event := &repository.AuditEvent{
+			EventID:        eventID,
+			IdempotencyKey: true,
+			EventType:      "workflowexecution.execution.started",
+			EventCategory:  "workflowexecution",
+			EventAction:    "started",
+			EventOutcome:   "success",
+			CorrelationID:  "batch-idempotent",
+			EventData:      map[string]interface{}{},
+		}
+		fingerprint := testIdempotencyFingerprint(event)
+
+		mock.ExpectBegin()
+		mock.ExpectPrepare("INSERT INTO audit_events")
+		mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("batch-idempotent").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery("SELECT event_hash").WithArgs("batch-idempotent").WillReturnRows(sqlmock.NewRows([]string{"event_hash"}))
+		mock.ExpectQuery("INSERT INTO audit_event_idempotency").WillReturnRows(sqlmock.NewRows([]string{"event_hash", "previous_event_hash"}))
+		mock.ExpectQuery("SELECT event_type, event_action, correlation_id, event_fingerprint, event_hash, previous_event_hash FROM audit_event_idempotency").WithArgs(eventID).WillReturnRows(
+			sqlmock.NewRows([]string{"event_type", "event_action", "correlation_id", "event_fingerprint", "event_hash", "previous_event_hash"}).AddRow("workflowexecution.execution.started", "started", "batch-idempotent", fingerprint, "existing-hash", ""),
+		)
+		mock.ExpectCommit()
+
+		created, err := repo.CreateBatch(ctx, []*repository.AuditEvent{event})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created).To(HaveLen(1))
+		Expect(created[0].EventID).To(Equal(eventID))
+		Expect(created[0].EventHash).To(Equal("existing-hash"))
+		Expect(mock.ExpectationsWereMet()).To(Succeed())
+	})
+
+	It("UT-DS-AUDIT-2512-002: deduplicates a repeated client-supplied event ID on the single-event path", func() {
+		eventID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440097")
+		event := &repository.AuditEvent{
+			EventID:        eventID,
+			IdempotencyKey: true,
+			EventType:      "workflowexecution.execution.started",
+			EventCategory:  "workflowexecution",
+			EventAction:    "started",
+			EventOutcome:   "success",
+			CorrelationID:  "single-idempotent",
+			EventData:      map[string]interface{}{},
+			Version:        "1.0",
+			RetentionDays:  2555,
+		}
+		fingerprint := testIdempotencyFingerprint(event)
+
+		mock.ExpectBegin()
+		mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("single-idempotent").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery("SELECT event_hash").WithArgs("single-idempotent").WillReturnRows(sqlmock.NewRows([]string{"event_hash"}))
+		mock.ExpectQuery("INSERT INTO audit_event_idempotency").WillReturnRows(sqlmock.NewRows([]string{"event_fingerprint", "event_hash", "previous_event_hash"}))
+		mock.ExpectQuery("SELECT event_type, event_action, correlation_id, event_fingerprint, event_hash, previous_event_hash FROM audit_event_idempotency").WithArgs(eventID).WillReturnRows(
+			sqlmock.NewRows([]string{"event_type", "event_action", "correlation_id", "event_fingerprint", "event_hash", "previous_event_hash"}).AddRow("workflowexecution.execution.started", "started", "single-idempotent", fingerprint, "existing-single-hash", "previous-single-hash"),
+		)
+		mock.ExpectCommit()
+
+		created, err := repo.Create(ctx, event)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.EventID).To(Equal(eventID))
+		Expect(created.EventHash).To(Equal("existing-single-hash"))
+		Expect(created.PreviousEventHash).To(Equal("previous-single-hash"))
 		Expect(mock.ExpectationsWereMet()).To(Succeed())
 	})
 
@@ -203,3 +272,25 @@ var _ = Describe("AuditEventsRepository.CreateBatch", func() {
 		Expect(mock.ExpectationsWereMet()).To(Succeed())
 	})
 })
+
+func testIdempotencyFingerprint(event *repository.AuditEvent) string {
+	copyEvent := *event
+	copyEvent.EventID = uuid.Nil
+	copyEvent.EventTimestamp = time.Time{}
+	copyEvent.EventDate = repository.DateOnly{}
+	copyEvent.Version = "1.0"
+	copyEvent.RetentionDays = 2555
+	copyEvent.EventHash = ""
+	copyEvent.PreviousEventHash = ""
+	copyEvent.HashAlgorithm = ""
+	copyEvent.LegalHold = false
+	copyEvent.LegalHoldReason = ""
+	copyEvent.LegalHoldPlacedBy = ""
+	copyEvent.LegalHoldPlacedAt = nil
+	payload, err := json.Marshal(copyEvent)
+	if err != nil {
+		panic(err)
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:])
+}

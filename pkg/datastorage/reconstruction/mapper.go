@@ -30,8 +30,9 @@ import (
 // from audit trail data. This structure is designed to be merged from multiple
 // audit events and then converted to a complete RR CRD.
 type ReconstructedRRFields struct {
-	Spec   *remediationv1.RemediationRequestSpec
-	Status *remediationv1.RemediationRequestStatus
+	Spec                  *remediationv1.RemediationRequestSpec
+	Status                *remediationv1.RemediationRequestStatus
+	RemediationRequestUID string
 }
 
 // rrFieldMappers dispatches MapToRRFields by event type, replacing a large
@@ -56,8 +57,9 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 	}
 
 	result := &ReconstructedRRFields{
-		Spec:   &remediationv1.RemediationRequestSpec{},
-		Status: &remediationv1.RemediationRequestStatus{},
+		Spec:                  &remediationv1.RemediationRequestSpec{},
+		Status:                &remediationv1.RemediationRequestStatus{},
+		RemediationRequestUID: parsedData.RemediationRequestUID,
 	}
 
 	if mapper, ok := rrFieldMappers[parsedData.EventType]; ok {
@@ -268,6 +270,12 @@ func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 
 		mergeSpecFields(result.Spec, eventFields.Spec)
 		mergeStatusFields(result.Status, eventFields.Status)
+		if eventFields.RemediationRequestUID != "" {
+			if result.RemediationRequestUID != "" && result.RemediationRequestUID != eventFields.RemediationRequestUID {
+				return nil, fmt.Errorf("audit events contain multiple remediation request UIDs: %s and %s", result.RemediationRequestUID, eventFields.RemediationRequestUID)
+			}
+			result.RemediationRequestUID = eventFields.RemediationRequestUID
+		}
 	}
 
 	return result, nil

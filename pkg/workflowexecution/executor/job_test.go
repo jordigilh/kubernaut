@@ -19,6 +19,7 @@ package executor_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -31,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -1032,6 +1034,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			je := executor.NewJobExecutorWithFactory(factory)
 
 			wfe := newTestWFE("wfe-cleanup", "default/deployment/cleanup", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
 
 			err := je.Cleanup(ctx, wfe, namespace)
 			Expect(err).ToNot(HaveOccurred())
@@ -1057,6 +1060,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			je := executor.NewJobExecutorWithFactory(factory)
 
 			wfe := newTestWFE("wfe-old", "default/deployment/shared", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
 
 			err := je.Cleanup(ctx, wfe, namespace)
 			Expect(err).ToNot(HaveOccurred())
@@ -1072,6 +1076,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			je := executor.NewJobExecutorWithFactory(factory)
 
 			wfe := newTestWFE("wfe-gone", "default/deployment/gone", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: executor.ExecutionResourceName(wfe.Spec.TargetResource)}
 
 			err := je.Cleanup(ctx, wfe, namespace)
 			Expect(err).ToNot(HaveOccurred())
@@ -1094,6 +1099,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			je := executor.NewJobExecutorWithFactory(factory)
 
 			wfe := newTestWFE("wfe-remote-cleanup", "default/deployment/remote-cleanup", "remote-cluster")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
 			Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed())
 
 			var deleted batchv1.Job
@@ -1183,5 +1189,349 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(factory.lastClusterID).To(Equal(""),
 				"AC-3: IsCompleted with empty clusterID should use local client")
 		})
+	})
+})
+
+// UT-WE-2512: Job identity must follow the immutable RR/WFE execution identity,
+// not the target resource. BR-WE-014/011, FedRAMP AU-3/AU-9, SOC2 CC7.2,
+// OWASP ASVS V4.1.3/V5.1.x.
+var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
+	var (
+		ctx       context.Context
+		scheme    *runtime.Scheme
+		namespace string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = newTestScheme()
+		namespace = "kubernaut-workflows"
+	})
+
+	It("UT-WE-2512-001: includes the full RR UUID and bounded WFE suffix in a valid Job name", func() {
+		wfe := newTestWFE("wfe-rr-2512-a", "default/deployment/same-target", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174000")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-a",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440000"),
+		}
+
+		name := executor.JobExecutionResourceName(wfe)
+
+		Expect(name).To(HavePrefix("wfe-" + string(wfe.Spec.RemediationRequestRef.UID) + "-"))
+		Expect(name).To(HaveLen(45))
+		Expect(name).To(MatchRegexp(`^wfe-[0-9a-f-]{36}-[0-9a-f]{4}$`))
+
+		otherRR := wfe.DeepCopy()
+		otherRR.Spec.RemediationRequestRef.UID = types.UID("550e8400-e29b-41d4-a716-446655440001")
+		Expect(executor.JobExecutionResourceName(otherRR)).NotTo(Equal(name),
+			"different RR UUIDs must never reuse a Job identity for the same target")
+	})
+
+	It("UT-WE-2512-006: bounds long metadata labels and keeps full provenance in annotations", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		longWFEName := "wfe-" + strings.Repeat("long-name-", 20)
+		longTarget := "default/deployment/" + strings.Repeat("target-", 20)
+		longRRName := "rr-" + strings.Repeat("remediation-", 20)
+		secretOutput := "secret-workflow-output-must-not-be-a-label"
+		wfe := newTestWFE(longWFEName, longTarget, "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174006")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      longRRName,
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440006"),
+		}
+		wfe.Spec.Parameters = map[string]string{"workflow_output": secretOutput}
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		job := &batchv1.Job{}
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, job)).To(Succeed())
+
+		Expect(len(job.Name)).To(BeNumerically("<=", 63))
+		Expect(job.Name).To(Equal(executor.JobExecutionResourceName(wfe)))
+		Expect(job.Labels["kubernaut.ai/workflow-execution"]).To(HaveLen(63))
+		Expect(job.Labels["kubernaut.ai/workflow-execution"]).NotTo(ContainSubstring(secretOutput))
+		Expect(job.Labels["kubernaut.ai/target-resource"]).To(HaveLen(63))
+		Expect(job.Annotations["kubernaut.ai/workflow-execution"]).To(Equal(longWFEName))
+		Expect(job.Annotations["kubernaut.ai/target-resource"]).To(Equal(longTarget))
+		Expect(job.Annotations["kubernaut.ai/remediation-request"]).To(Equal(longRRName))
+		Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed(),
+			"full WFE ownership annotation must authorize cleanup when the label is truncated")
+	})
+
+	It("UT-WE-2512-002: re-creating the same WFE is idempotent and does not create a second Job", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newTestWFE("wfe-rr-2512-idempotent", "default/deployment/idempotent", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174001")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-idempotent",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440002"),
+		}
+
+		first, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		second, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(second.ResourceName).To(Equal(first.ResourceName))
+
+		jobs := &batchv1.JobList{}
+		Expect(fakeClient.List(ctx, jobs, client.InNamespace(namespace))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1), "a same-WFE retry must not create a second Job")
+	})
+
+	It("UT-WE-2512-003: projects the exact bundle and RR/WFE provenance metadata", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newTestWFE("wfe-rr-2512-metadata", "default/deployment/metadata", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174003")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-metadata",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440003"),
+		}
+		wfe.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/standard:v2@sha256:bundle-b"
+
+		result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		job := &batchv1.Job{}
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, job)).To(Succeed())
+		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
+		Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle))
+		Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution", wfe.Name))
+		Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution-uid", string(wfe.UID)))
+		Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", wfe.Spec.RemediationRequestRef.Name))
+		Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request-namespace", wfe.Spec.RemediationRequestRef.Namespace))
+		Expect(job.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request-uid", string(wfe.Spec.RemediationRequestRef.UID)))
+		Expect(job.Spec.Template.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution-uid", string(wfe.UID)))
+		Expect(job.Spec.Template.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request-uid", string(wfe.Spec.RemediationRequestRef.UID)))
+		Expect(job.Spec.Template.Annotations).To(HaveKeyWithValue("kubernaut.ai/remediation-request-uid", string(wfe.Spec.RemediationRequestRef.UID)))
+	})
+
+	It("UT-WE-2512-005: retention policy changes do not change Job identity or image", func() {
+		wfe := newTestWFE("wfe-rr-2512-retention", "default/deployment/retention", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174005")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-retention",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440005"),
+		}
+		wfe.Spec.WorkflowRef.ExecutionBundle = "registry.example.com/workflows/retained@sha256:bundle"
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+
+		retained, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{RetainFailedExecutions: true})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(retained.ResourceName).To(Equal(executor.JobExecutionResourceName(wfe)))
+		Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed())
+
+		// Use a fresh client because the first assertion intentionally exercises
+		// cleanup; the identity helper must remain independent of TTL policy.
+		freshClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je = executor.NewJobExecutorWithFactory(&mockClientFactory{client: freshClient})
+		standard, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(standard.ResourceName).To(Equal(retained.ResourceName))
+		var job batchv1.Job
+		Expect(freshClient.Get(ctx, client.ObjectKey{Name: standard.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+		Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle))
+	})
+
+	It("UT-WE-2512-004: cleanup follows Status.ExecutionRef instead of target-derived identity", func() {
+		wfe := newTestWFE("wfe-rr-2512-cleanup", "default/deployment/cleanup", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174004")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-cleanup",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440004"),
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
+
+		Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed())
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, &batchv1.Job{})).To(HaveOccurred())
+	})
+
+	It("UT-WE-2512-007: fails closed on a foreign Job occupying the expected identity", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newTestWFE("wfe-rr-2512-foreign", "default/deployment/foreign", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174007")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-foreign",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440007"),
+		}
+		jobName := executor.JobExecutionResourceName(wfe)
+		foreign := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/workflow-execution":     "wfe-foreign-owner",
+				"kubernaut.ai/workflow-execution-uid": "123e4567-e89b-12d3-a456-426614174099",
+			},
+		}, Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "workflow", Image: "registry.example.com/workflows/foreign:v9"}},
+		}}}}
+		Expect(fakeClient.Create(ctx, foreign)).To(Succeed())
+
+		_, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).To(HaveOccurred(), "a foreign same-name Job must not be adopted")
+
+		var remaining batchv1.Job
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &remaining)).To(Succeed())
+		Expect(remaining.Spec.Template.Spec.Containers[0].Image).To(Equal("registry.example.com/workflows/foreign:v9"),
+			"the foreign Job must not be deleted or replaced")
+	})
+
+	It("UT-WE-2512-010: fails closed when a same-image Job has a different execution template", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+		wfe := newTestWFE("wfe-rr-2512-template", "default/deployment/template", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174010")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-template",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440010"),
+		}
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		foreign := &batchv1.Job{}
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, foreign)).To(Succeed())
+		Expect(fakeClient.Delete(ctx, foreign)).To(Succeed())
+		foreign.ResourceVersion = ""
+		foreign.UID = ""
+		foreign.CreationTimestamp = metav1.Time{}
+		foreign.Spec.Template.Spec.Containers[0].Env = append(foreign.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{Name: "TAMPERED_TEMPLATE", Value: "true"})
+		Expect(fakeClient.Create(ctx, foreign)).To(Succeed())
+
+		_, err = je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).To(HaveOccurred(), "same-name same-image template mutation must fail closed")
+		remaining := &batchv1.Job{}
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: created.ResourceName, Namespace: namespace}, remaining)).To(Succeed())
+		Expect(remaining.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			HaveField("Name", "TAMPERED_TEMPLATE"),
+		))
+	})
+
+	It("UT-WE-2512-011: reads a legacy target-named Job through an existing WFE execution reference", func() {
+		wfe := newTestWFE("wfe-rr-2512-legacy-status", "default/deployment/legacy-status", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174011")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-legacy-status",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440011"),
+		}
+		legacyName := executor.ExecutionResourceName(wfe.Spec.TargetResource)
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: legacyName}
+		legacyJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      legacyName,
+				Namespace: namespace,
+				Labels: map[string]string{
+					"kubernaut.ai/workflow-execution": wfe.Name,
+					"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+					"kubernaut.ai/source-namespace":   wfe.Namespace,
+					"kubernaut.ai/execution-engine":   "job",
+				},
+			},
+			Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "workflow", Image: wfe.Spec.WorkflowRef.ExecutionBundle}},
+			}}},
+			Status: batchv1.JobStatus{
+				Succeeded:  1,
+				Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacyJob).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+
+		result, err := je.GetStatus(ctx, wfe, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+	})
+
+	It("UT-WE-2512-012: cleans up a legacy target-named Job through its recorded reference", func() {
+		wfe := newTestWFE("wfe-rr-2512-legacy-cleanup", "default/deployment/legacy-cleanup", "")
+		wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174012")
+		wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+			Name:      "rr-2512-legacy-cleanup",
+			Namespace: "kubernaut-system",
+			UID:       types.UID("550e8400-e29b-41d4-a716-446655440012"),
+		}
+		legacyName := executor.ExecutionResourceName(wfe.Spec.TargetResource)
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: legacyName}
+		legacyJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      legacyName,
+				Namespace: namespace,
+				Labels: map[string]string{
+					"kubernaut.ai/workflow-execution": wfe.Name,
+					"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+					"kubernaut.ai/source-namespace":   wfe.Namespace,
+					"kubernaut.ai/execution-engine":   "job",
+				},
+			},
+			Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "workflow", Image: wfe.Spec.WorkflowRef.ExecutionBundle}},
+			}}},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacyJob).Build()
+		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+
+		Expect(je.Cleanup(ctx, wfe, namespace)).To(Succeed())
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: legacyName, Namespace: namespace}, &batchv1.Job{})).To(HaveOccurred())
+	})
+
+	It("UT-WE-2512-015: rejects legacy status from a wrong owner or image", func() {
+		cases := []struct {
+			name          string
+			owner         string
+			image         string
+			expectedImage string
+		}{
+			{name: "wrong-owner", owner: "other-wfe", image: "registry.example.com/workflow:v1", expectedImage: "registry.example.com/workflow:v1"},
+			{name: "wrong-image", owner: "wfe-rr-2512-legacy-negative", image: "registry.example.com/foreign:v9", expectedImage: "registry.example.com/workflow:v1"},
+		}
+		for _, tc := range cases {
+			wfe := newTestWFE("wfe-rr-2512-legacy-negative", "default/deployment/legacy-negative-"+tc.name, "")
+			wfe.UID = types.UID("123e4567-e89b-12d3-a456-426614174015")
+			wfe.Spec.RemediationRequestRef = corev1.ObjectReference{
+				Name: "rr-2512-legacy-negative", Namespace: "kubernaut-system",
+				UID: types.UID("550e8400-e29b-41d4-a716-446655440015"),
+			}
+			wfe.Spec.WorkflowRef.ExecutionBundle = tc.expectedImage
+			legacyName := executor.ExecutionResourceName(wfe.Spec.TargetResource)
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: legacyName}
+			legacyJob := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: legacyName, Namespace: namespace,
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": tc.owner,
+						"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+						"kubernaut.ai/source-namespace":   wfe.Namespace,
+						"kubernaut.ai/execution-engine":   "job",
+					},
+				},
+				Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "workflow", Image: tc.image}},
+				}}},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacyJob).Build()
+			je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
+
+			_, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).To(HaveOccurred(), tc.name+": legacy mismatch must fail closed")
+		}
 	})
 })

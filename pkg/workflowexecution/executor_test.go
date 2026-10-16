@@ -230,9 +230,10 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 
 	Context("GetStatus", func() {
 		It("should return Running for active Job (UT-WE-014-030)", func() {
+			targetResource := "default/deployment/status-running"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-job",
+					Name:      executor.ExecutionResourceName(targetResource),
 					Namespace: "kubernaut-workflows",
 				},
 				Status: batchv1.JobStatus{
@@ -243,8 +244,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: "test-job"},
+					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName(targetResource)},
 				},
 			}
 
@@ -254,9 +256,10 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 		})
 
 		It("should return Completed for succeeded Job (UT-WE-014-031)", func() {
+			targetResource := "default/deployment/status-complete"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-job-complete",
+					Name:      executor.ExecutionResourceName(targetResource),
 					Namespace: "kubernaut-workflows",
 				},
 				Status: batchv1.JobStatus{
@@ -274,8 +277,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: "test-job-complete"},
+					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName(targetResource)},
 				},
 			}
 
@@ -285,9 +289,10 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 		})
 
 		It("should return Failed for failed Job (UT-WE-014-032)", func() {
+			targetResource := "default/deployment/status-failed"
 			job := &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-job-failed",
+					Name:      executor.ExecutionResourceName(targetResource),
 					Namespace: "kubernaut-workflows",
 				},
 				Status: batchv1.JobStatus{
@@ -306,8 +311,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 			jobExec = executor.NewJobExecutor(k8sClient)
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionRef: &corev1.LocalObjectReference{Name: "test-job-failed"},
+					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName(targetResource)},
 				},
 			}
 
@@ -357,6 +363,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 						},
 					},
 				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionRef: &corev1.LocalObjectReference{Name: jobName},
+				},
 			}
 
 			err := jobExec.Cleanup(ctx, wfe, "kubernaut-workflows")
@@ -383,6 +392,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 							ExecutionEngine: "job",
 						},
 					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					ExecutionRef: &corev1.LocalObjectReference{Name: executor.ExecutionResourceName("default/deployment/nonexistent")},
 				},
 			}
 

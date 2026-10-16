@@ -45,6 +45,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -88,8 +89,12 @@ const (
 	// Per finalizers-lifecycle.md: domain/resource-cleanup pattern
 	FinalizerName = "workflowexecution.kubernaut.ai/workflowexecution-cleanup"
 
-	// DefaultCooldownPeriod is the default time between workflow executions on same target
+	// DefaultCooldownPeriod is the default time between executions of the same
+	// workflow on the same target (BR-WE-010). RemediationOrchestrator owns the
+	// active-target lock for different workflows (DD-RO-002).
 	DefaultCooldownPeriod = 5 * time.Minute
+
+	workflowExecutionUIDLabel = "kubernaut.ai/workflow-execution-uid"
 )
 
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
@@ -143,12 +148,11 @@ type WorkflowExecutionReconciler struct {
 	// Default: 5 minutes
 	CooldownPeriod time.Duration
 
-	// RetainFailedExecutions keeps failed execution resources available for
-	// bounded diagnosis (BR-WE-019, FedRAMP AU-11).
-	RetainFailedExecutions bool
-
-	// FailedExecutionRetention is the bounded failed-resource retention period.
-	FailedExecutionRetention time.Duration
+	// Failed-execution retention configuration is guarded because integration
+	// tests reconfigure the live reconciler while its workers are running.
+	retentionMu              sync.RWMutex
+	retainFailedExecutions   bool
+	failedExecutionRetention time.Duration
 
 	// AuditStore for writing audit events (BR-WE-005, ADR-032)
 	// Uses pkg/audit buffered store via Data Storage Service
@@ -173,6 +177,10 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
+
+	// ClientFactory routes controller-side execution-resource reads to the same
+	// local/remote cluster as the selected executor (BR-FLEET-054).
+	ClientFactory weexecutor.ClientFactory
 }
 
 // ReconcilerOptions groups the business-specific dependencies for the
@@ -189,6 +197,7 @@ type ReconcilerOptions struct {
 	PhaseManager             *wephase.Manager
 	AuditManager             *weaudit.Manager
 	ExecutorRegistry         *weexecutor.Registry
+	ClientFactory            weexecutor.ClientFactory
 }
 
 // NewReconciler creates a WorkflowExecutionReconciler, extracting
@@ -196,6 +205,9 @@ type ReconcilerOptions struct {
 // and business fields from opts. This reduces the parameter count at the call
 // site from ~13 fields to 2 (mgr + opts).
 func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionReconciler {
+	if opts.AuditManager != nil {
+		opts.AuditManager.SetExecutionNamespace(opts.ExecutionNamespace)
+	}
 	return &WorkflowExecutionReconciler{
 		Client:                   mgr.GetClient(),
 		APIReader:                mgr.GetAPIReader(),
@@ -205,13 +217,44 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		StatusManager:            opts.StatusManager,
 		ExecutionNamespace:       opts.ExecutionNamespace,
 		CooldownPeriod:           opts.CooldownPeriod,
-		RetainFailedExecutions:   opts.RetainFailedExecutions,
-		FailedExecutionRetention: opts.FailedExecutionRetention,
+		retainFailedExecutions:   opts.RetainFailedExecutions,
+		failedExecutionRetention: opts.FailedExecutionRetention,
 		AuditStore:               opts.AuditStore,
 		PhaseManager:             opts.PhaseManager,
 		AuditManager:             opts.AuditManager,
 		ExecutorRegistry:         opts.ExecutorRegistry,
+		ClientFactory:            opts.ClientFactory,
 	}
+}
+
+// FailedExecutionRetentionConfig returns a consistent snapshot of the
+// failed-execution retention configuration.
+func (r *WorkflowExecutionReconciler) FailedExecutionRetentionConfig() (bool, time.Duration) {
+	r.retentionMu.RLock()
+	defer r.retentionMu.RUnlock()
+	return r.retainFailedExecutions, r.failedExecutionRetention
+}
+
+// SetFailedExecutionRetention updates the failed-execution retention
+// configuration atomically for subsequent reconciles.
+func (r *WorkflowExecutionReconciler) SetFailedExecutionRetention(retain bool, retention time.Duration) {
+	r.retentionMu.Lock()
+	defer r.retentionMu.Unlock()
+	r.retainFailedExecutions = retain
+	r.failedExecutionRetention = retention
+}
+
+// executionClientFor returns the cluster-aware execution-resource client used
+// by controller-side existence and collision checks. Direct unit/integration
+// reconcilers without a factory retain the local client fallback.
+func (r *WorkflowExecutionReconciler) executionClientFor(ctx context.Context, clusterID string) (weexecutor.ExecutorClient, error) {
+	if r.ClientFactory != nil {
+		return r.ClientFactory.ClientFor(ctx, clusterID)
+	}
+	if r.Client == nil {
+		return nil, fmt.Errorf("execution client is not configured")
+	}
+	return r.Client, nil
 }
 
 // ========================================
@@ -313,6 +356,9 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := registerTargetResourceIndex(mgr); err != nil {
 		return err
 	}
+	if err := registerWorkflowExecutionUIDIndex(mgr); err != nil {
+		return err
+	}
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
@@ -382,6 +428,24 @@ func registerTargetResourceIndex(mgr ctrl.Manager) error {
 	return nil
 }
 
+func registerWorkflowExecutionUIDIndex(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&workflowexecutionv1alpha1.WorkflowExecution{},
+		"metadata.uid",
+		func(obj client.Object) []string {
+			wfe, ok := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
+			if !ok || wfe.UID == "" {
+				return nil
+			}
+			return []string{string(wfe.UID)}
+		},
+	); err != nil && !k8serrors.IsIndexerConflict(err) {
+		return fmt.Errorf("failed to create field index on metadata.uid: %w", err)
+	}
+	return nil
+}
+
 // hasWorkflowExecutionLabel reports whether the given labels carry the
 // kubernaut.ai/workflow-execution marker used by owned PipelineRuns/Jobs.
 func hasWorkflowExecutionLabel(labels map[string]string) bool {
@@ -430,6 +494,30 @@ func (r *WorkflowExecutionReconciler) FindWFEForOwnedResource(ctx context.Contex
 
 	wfeName := labels["kubernaut.ai/workflow-execution"]
 	sourceNS := labels["kubernaut.ai/source-namespace"]
+	wfeUID := labels[workflowExecutionUIDLabel]
+	if wfeUID != "" {
+		if r.Client == nil {
+			return nil
+		}
+		wfeList := &workflowexecutionv1alpha1.WorkflowExecutionList{}
+		listOpts := []client.ListOption{client.MatchingFields{"metadata.uid": wfeUID}}
+		if sourceNS != "" {
+			listOpts = append(listOpts, client.InNamespace(sourceNS))
+		}
+		if err := r.List(ctx, wfeList, listOpts...); err == nil && len(wfeList.Items) == 1 {
+			wfe := &wfeList.Items[0]
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace},
+			}}
+		}
+		// A present UID label that cannot resolve uniquely must fail closed;
+		// mutable/truncated name metadata cannot safely select a different WFE.
+		return nil
+	}
+
+	if annotationName := obj.GetAnnotations()["kubernaut.ai/workflow-execution"]; annotationName != "" {
+		wfeName = annotationName
+	}
 
 	if wfeName == "" || sourceNS == "" {
 		return nil
@@ -459,6 +547,16 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	// Validate target resource is required
 	if wfe.Spec.TargetResource == "" {
 		return fmt.Errorf("targetResource is required")
+	}
+
+	// DD-WE-010: New Job-backed WFEs require the parent RR UID so the Job name
+	// cannot fall back to the target-derived legacy identity. Existing WFEs with
+	// a recorded ExecutionRef are allowed through for migration cleanup/status.
+	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob &&
+		wfe.Spec.RemediationRequestRef.Name != "" &&
+		wfe.Spec.RemediationRequestRef.UID == "" &&
+		wfe.Status.ExecutionRef == nil {
+		return fmt.Errorf("remediationRequestRef.uid is required for new Job execution")
 	}
 
 	// Validate targetResource format per DD-WE-001:
