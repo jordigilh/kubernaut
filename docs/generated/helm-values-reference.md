@@ -442,6 +442,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `resources.requests.memory` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `service.nodePort` | integer | SPIKE (Issue #1737): pin an explicit NodePort for the service's primary port when type=NodePort (must be in the 30000-32767 range per Kubernetes' default --service-node-port-range). 0 (default) preserves existing behavior -- Kubernetes auto-assigns a port. Intended for test/CI environments that need a deterministic, host-accessible port; production deployments should generally leave this unset and use an Ingress/Gateway instead. | `0` | No |
 | `service.type` | string | Kubernetes Service type | `"ClusterIP"` | No |
+| `session.maxConcurrentInvestigations` | integer | Maximum number of concurrent non-terminal investigations handled by one Kubernaut Agent replica. | `50` | No |
 | `tolerations` | array of object | Pod tolerations (overrides global.tolerations for this component) | `` | No |
 | `topologySpreadConstraints` | array of object | Kubernetes topology spread constraints | `` | No |
 

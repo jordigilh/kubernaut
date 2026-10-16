@@ -2425,6 +2425,19 @@
         "resources": {
           "$ref": "#/definitions/resources"
         },
+        "session": {
+          "type": "object",
+          "description": "Runtime investigation session admission capacity.",
+          "additionalProperties": false,
+          "properties": {
+            "maxConcurrentInvestigations": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "description": "Maximum number of concurrent non-terminal investigations handled by one Kubernaut Agent replica."
+            }
+          }
+        },
         "service": {
           "$ref": "#/definitions/serviceConfig"
         },

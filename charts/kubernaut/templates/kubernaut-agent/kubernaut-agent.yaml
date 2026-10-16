@@ -139,6 +139,8 @@ rather than reusing a single file-top $afInteractiveV.
 runtime:
   logging:
     level: {{ $v.logging.level | quote }}
+  session:
+    maxConcurrentInvestigations: {{ $v.session.maxConcurrentInvestigations }}
   # GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
   # Shared across Gateway/DataStorage/KubernautAgent (top-level .Values.telemetry).
   # Empty endpoint + logSink=false (default) disables tracing entirely. Network
