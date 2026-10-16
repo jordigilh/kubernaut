@@ -285,6 +285,18 @@ func jobIdentityMatches(existing, expected *batchv1.Job) bool {
 	return true
 }
 
+// IsExpectedJob reports whether an existing Job is safe to treat as the
+// current WFE's idempotent execution resource. It is used by pending audit
+// idempotency as well as the create collision path; a same-name foreign Job
+// must not suppress audit evidence before the executor verifies ownership.
+func (j *JobExecutor) IsExpectedJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, existing *batchv1.Job, namespace string) bool {
+	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	if wfe.Spec.RemediationRequestRef.UID == "" && wfe.Status.ExecutionRef == nil {
+		return jobCanBeDeletedByWFE(existing, expected, wfe)
+	}
+	return jobIdentityMatches(existing, expected)
+}
+
 // jobProvenanceAndImageMatches is the status/cleanup-safe identity check. The
 // controller cannot reconstruct CreateOptions after a restart, so status and
 // cleanup validate the authoritative name, exact image, and corroborating

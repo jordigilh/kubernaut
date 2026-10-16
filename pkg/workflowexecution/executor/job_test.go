@@ -1382,6 +1382,8 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 			Containers: []corev1.Container{{Name: "workflow", Image: "registry.example.com/workflows/foreign:v9"}},
 		}}}}
 		Expect(fakeClient.Create(ctx, foreign)).To(Succeed())
+		Expect(je.IsExpectedJob(ctx, wfe, foreign, namespace)).To(BeFalse(),
+			"foreign same-name Jobs must not suppress workflow-selection audit idempotency")
 
 		_, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 		Expect(err).To(HaveOccurred(), "a foreign same-name Job must not be adopted")

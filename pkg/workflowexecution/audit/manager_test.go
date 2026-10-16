@@ -175,3 +175,26 @@ var _ = Describe("DD-AUDIT-010 idempotent execution audit identity", func() {
 		Expect(payload.RemediationRequestUID.Value.String()).To(Equal(string(wfe.Spec.RemediationRequestRef.UID)))
 	})
 })
+
+var _ = Describe("Audit parameter redaction [AU-3, AU-9, AU-11, ASVS V7.1.1/V7.2.1]", func() {
+	It("UT-WE-AUDIT-2512-003: redacts credential-like parameters while preserving safe reconstruction fields", func() {
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				Parameters: map[string]string{
+					"DB_PASSWORD":  "do-not-persist",
+					"ACCESS_TOKEN": "do-not-persist",
+					"REPLICAS":     "3",
+				},
+			},
+		}
+
+		started := buildExecutionStartedPayload(wfe, "wfe-job")
+		completed := buildWorkflowExecutionAuditPayload(wfe)
+
+		Expect(started.Parameters.IsSet()).To(BeTrue())
+		Expect(started.Parameters.Value["DB_PASSWORD"]).To(Equal(redactedAuditParameter))
+		Expect(started.Parameters.Value["ACCESS_TOKEN"]).To(Equal(redactedAuditParameter))
+		Expect(started.Parameters.Value["REPLICAS"]).To(Equal("3"))
+		Expect(completed.Parameters.Value["DB_PASSWORD"]).To(Equal(redactedAuditParameter))
+	})
+})
