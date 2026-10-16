@@ -1,5 +1,10 @@
 # Test Plan: Per-Phase Reasoning/Effort Overrides for `phaseModels`
 
+> **2026-10-15 amendment:** Reasoning is now tested as part of complete sibling
+> `types.LLMConfig` profiles under BR-AI-090/#2515. See
+> [TP-2515](../2515/TEST_PLAN.md); the former partial-override implementation
+> is no longer supported.
+
 **Test Plan Identifier**: TP-1616-v1.0
 **Feature**: `LLMOverrideConfig.Reasoning` wired through `EffectivePhaseConfig` (KA `phaseModels`) and `AlignmentCheckConfig.EffectiveLLM` (shadow LLM); removal of the dead static `types.LLMConfig.PhaseModels`/`types.LLMOverride` duplicate
 **Version**: 1.0

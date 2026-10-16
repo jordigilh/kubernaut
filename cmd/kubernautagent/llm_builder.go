@@ -29,7 +29,6 @@ import (
 	"google.golang.org/genai"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -371,36 +370,21 @@ func (t *otelCloseAwareTransport) CloseIdleConnections() {
 	}
 }
 
-// mergeLLMConfig merges runtime (hot-reloadable) fields from an LLMRuntimeConfig
-// into a base types.LLMConfig. Static fields (provider, TLS, OAuth2, CB) come from
-// the base; runtime fields (model, endpoint, apiKeyFile, temperature, etc.) come from rt.
-func mergeLLMConfig(base types.LLMConfig, rt *kaconfig.LLMRuntimeConfig) types.LLMConfig {
-	merged := base
-	merged.Model = rt.Model
-	merged.Endpoint = rt.Endpoint
-	if rt.APIKeyFile != "" {
-		merged.APIKeyFile = rt.APIKeyFile
+func runtimeParamsFromLLMConfig(cfg types.LLMConfig) llm.RuntimeParams {
+	maxRetries := 0
+	if cfg.MaxRetries != nil {
+		maxRetries = *cfg.MaxRetries
 	}
-	if rt.APIKey != "" {
-		merged.APIKey = rt.APIKey
+	return llm.RuntimeParams{
+		Temperature:    cfg.Temperature,
+		TimeoutSeconds: cfg.TimeoutSeconds,
+		MaxRetries:     maxRetries,
 	}
-	merged.TimeoutSeconds = rt.TimeoutSeconds
-	merged.CustomHeaders = rt.CustomHeaders
-	// #1749: rt.Temperature is already *float64 — a direct pointer copy
-	// preserves "not configured" (nil) exactly, unlike the previous
-	// `if rt.Temperature != 0` check, which conflated "unset" with
-	// "explicitly configured as 0" and violated BR-KA-266.
-	merged.Temperature = rt.Temperature
-	if rt.MaxRetries != 0 {
-		r := rt.MaxRetries
-		merged.MaxRetries = &r
-	}
-	return merged
 }
 
 // llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime
-// config file changes. It parses the new content, validates it, merges with
-// static config, builds a new LLM client, and swaps it into the SwappableClient.
+// config file changes. It parses the new content, validates complete profiles,
+// resolves the investigation client, and swaps it into the SwappableClient.
 //
 // #1599 / DD-LLM-008: LLM identity (provider+model, at both base and
 // per-phase-override level) is immutable after process start — a
@@ -427,19 +411,17 @@ func llmRuntimeReloadCallback(
 			return err
 		}
 
-		merged := mergeLLMConfig(staticCfg.AI.LLM, rt)
-		resolveAPIKeyForReload(&merged, staticCfg.AI.LLM.Provider, logger)
+		resolved, err := kaconfig.ResolveEffectiveLLM(staticCfg.AI.LLM, *rt, nil, "ai.llm")
+		if err != nil {
+			return fmt.Errorf("reload: resolving LLM profile: %w", err)
+		}
 
-		newClient, err := buildLLMClientFromConfig(context.Background(), merged)
+		newClient, err := buildLLMClientFromConfig(context.Background(), resolved)
 		if err != nil {
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
-		if err := swappable.Swap(newClient, rt.Model, llm.RuntimeParams{
-			Temperature:    rt.Temperature,
-			TimeoutSeconds: rt.TimeoutSeconds,
-			MaxRetries:     rt.MaxRetries,
-		}); err != nil {
+		if err := swappable.Swap(newClient, resolved.Model, runtimeParamsFromLLMConfig(resolved)); err != nil {
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 
@@ -447,8 +429,8 @@ func llmRuntimeReloadCallback(
 			"event", "llm_runtime_reload",
 			"status", "success",
 			"old_model", oldModel,
-			"new_model", rt.Model,
-			"new_endpoint", rt.Endpoint,
+			"new_model", resolved.Model,
+			"new_endpoint", resolved.Endpoint,
 		)
 
 		if phaseResolver != nil {
@@ -460,7 +442,7 @@ func llmRuntimeReloadCallback(
 
 // parseAndAuthorizeReload parses, validates, and applies the #1599
 // restart-required identity lock to a candidate llm-runtime reload payload.
-// Returns the parsed *kaconfig.LLMRuntimeConfig on success (safe to merge and
+// Returns the parsed *kaconfig.LLMRuntimeConfig on success (safe to resolve and
 // apply), or an error if the content is empty, malformed, fails field
 // validation, or would change base or per-phase LLM identity. Extracted from
 // llmRuntimeReloadCallback to keep that function's cognitive complexity
@@ -516,7 +498,7 @@ func parseAndAuthorizeReload(
 // reload candidate. Per #1599, phase identity is subject to the same
 // restart-required rule as base identity; hot-reload may only alter
 // non-identity tuning fields (endpoint, temperature, timeouts, headers,
-// custom auth) within a phase override, whether that override is new,
+// custom auth) within a complete phase profile, whether that profile is new,
 // existing, or being removed. Returns a single error naming every phase
 // that would require a restart, or nil if the candidate is safe to apply.
 func validatePhaseIdentity(staticCfg *kaconfig.Config, bootRuntime, rt *kaconfig.LLMRuntimeConfig) error {
@@ -530,11 +512,11 @@ func validatePhaseIdentity(staticCfg *kaconfig.Config, bootRuntime, rt *kaconfig
 
 	violations := make([]string, 0, len(phases))
 	for name := range phases {
-		bootLLM, bootRT := bootRuntime.EffectivePhaseConfig(name, staticCfg.AI.LLM, *bootRuntime)
-		newLLM, newRT := rt.EffectivePhaseConfig(name, staticCfg.AI.LLM, *rt)
-		if bootLLM.Provider != newLLM.Provider || bootRT.Model != newRT.Model {
+		bootProvider, bootModel := phaseIdentity(staticCfg.AI.LLM, *bootRuntime, bootRuntime.PhaseModels[name])
+		newProvider, newModel := phaseIdentity(staticCfg.AI.LLM, *rt, rt.PhaseModels[name])
+		if bootProvider != newProvider || bootModel != newModel {
 			violations = append(violations, fmt.Sprintf("%s: %s/%s -> %s/%s",
-				name, bootLLM.Provider, bootRT.Model, newLLM.Provider, newRT.Model))
+				name, bootProvider, bootModel, newProvider, newModel))
 		}
 	}
 	if len(violations) == 0 {
@@ -544,34 +526,26 @@ func validatePhaseIdentity(staticCfg *kaconfig.Config, bootRuntime, rt *kaconfig
 	return fmt.Errorf("phase identity change requires a process restart (see #1599): %s", strings.Join(violations, "; "))
 }
 
-// resolveAPIKeyForReload fills in merged.APIKey when the runtime reload
-// payload did not carry one directly, falling back first to apiKeyFile and
-// then to the Helm-mounted credentials directory. Mutates merged in place.
-func resolveAPIKeyForReload(merged *types.LLMConfig, provider string, logger logr.Logger) {
-	if merged.APIKey != "" {
-		return
+// phaseIdentity returns the provider/model identity for a complete phase
+// profile, or the base investigation identity when that phase is absent.
+// Identity validation deliberately avoids credential or transport resolution;
+// the full resolver runs only after the candidate has passed this lock.
+func phaseIdentity(static types.LLMConfig, runtime kaconfig.LLMRuntimeConfig, profile *types.LLMConfig) (string, string) {
+	if profile != nil {
+		return profile.Provider, profile.Model
 	}
-	if merged.APIKeyFile != "" {
-		if err := merged.ResolveAPIKey(); err != nil {
-			logger.Info("llm_runtime_reload: apiKeyFile resolution failed, falling back to credentials dir",
-				"error", err, "apiKeyFile", merged.APIKeyFile)
-		}
+	model := runtime.Model
+	if model == "" {
+		model = static.Model
 	}
-	if merged.APIKey == "" {
-		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		merged.APIKey = credentials.ResolveCredentialsFile(provider, credDir, logger)
-	}
+	return static.Provider, model
 }
 
 // swapExistingPhaseClient hot-swaps an already-registered phase SwappableClient
 // with the newly-built phaseClient/phaseRT, logging the model transition.
-func swapExistingPhaseClient(existing *llm.SwappableClient, phaseName string, phaseClient llm.Client, phaseRT kaconfig.LLMRuntimeConfig, logger logr.Logger) {
+func swapExistingPhaseClient(existing *llm.SwappableClient, phaseName string, phaseClient llm.Client, resolved types.LLMConfig, logger logr.Logger) {
 	oldModel := existing.ModelName()
-	if swapErr := existing.Swap(phaseClient, phaseRT.Model, llm.RuntimeParams{
-		Temperature:    phaseRT.Temperature,
-		TimeoutSeconds: phaseRT.TimeoutSeconds,
-		MaxRetries:     phaseRT.MaxRetries,
-	}); swapErr != nil {
+	if swapErr := existing.Swap(phaseClient, resolved.Model, runtimeParamsFromLLMConfig(resolved)); swapErr != nil {
 		logger.Error(swapErr, "reload: failed to swap phase client",
 			"phase", phaseName)
 		return
@@ -580,18 +554,14 @@ func swapExistingPhaseClient(existing *llm.SwappableClient, phaseName string, ph
 		"event", "llm_runtime_reload",
 		"phase", phaseName,
 		"old_model", oldModel,
-		"new_model", phaseRT.Model,
+		"new_model", resolved.Model,
 	)
 }
 
 // registerNewPhaseClient creates and registers a SwappableClient for a phase
 // that does not yet have one on the resolver.
-func registerNewPhaseClient(resolver *investigator.DefaultPhaseResolver, phase katypes.Phase, phaseName string, phaseClient llm.Client, phaseRT kaconfig.LLMRuntimeConfig, logger logr.Logger) {
-	newSw, swErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
-		Temperature:    phaseRT.Temperature,
-		TimeoutSeconds: phaseRT.TimeoutSeconds,
-		MaxRetries:     phaseRT.MaxRetries,
-	})
+func registerNewPhaseClient(resolver *investigator.DefaultPhaseResolver, phase katypes.Phase, phaseName string, phaseClient llm.Client, resolved types.LLMConfig, logger logr.Logger) {
+	newSw, swErr := llm.NewSwappableClient(phaseClient, resolved.Model, runtimeParamsFromLLMConfig(resolved))
 	if swErr != nil {
 		logger.Error(swErr, "reload: failed to create phase SwappableClient",
 			"phase", phaseName)
@@ -601,7 +571,7 @@ func registerNewPhaseClient(resolver *investigator.DefaultPhaseResolver, phase k
 	logger.Info("llm_runtime_reload phase_model added",
 		"event", "llm_runtime_reload",
 		"phase", phaseName,
-		"model", phaseRT.Model,
+		"model", resolved.Model,
 	)
 }
 
@@ -612,52 +582,32 @@ func reloadSinglePhaseClient(
 	rt *kaconfig.LLMRuntimeConfig,
 	resolver *investigator.DefaultPhaseResolver,
 	phaseName string,
-	override *kaconfig.LLMOverrideConfig,
+	profile *types.LLMConfig,
 	logger logr.Logger,
 ) {
 	phase := katypes.Phase(phaseName)
-	phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
-	merged := mergeLLMConfig(phaseLLM, &phaseRT)
-	// #1726: a phase override's own apiKeyFile (distinct from the base
-	// profile's) must be resolved into APIKey here — EffectivePhaseConfig
-	// only produces the correct APIKeyFile, it does not read it.
-	// An apiKeyFile that IS set but fails to resolve must reject this
-	// phase's client outright (IT-KA-1726-005, SI-10) — never fall back
-	// silently, so this early-return stays unconditional.
-	if err := merged.ResolveAPIKey(); err != nil {
-		logger.Error(err, "reload: failed to resolve phase LLM api key file",
-			"phase", phaseName, "apiKeyFile", merged.APIKeyFile)
+	if profile == nil {
+		logger.Error(nil, "reload: phase LLM profile is nil", "phase", phaseName)
 		return
 	}
-	// Issue #2341: a phase with no apiKeyFile override at all -- the common
-	// case, since Helm only renders one when the phase's
-	// credentialsSecretName differs from the base's
-	// (charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml) --
-	// and whose base runtime config never carried a resolved APIKey either
-	// (the base profile's own APIKey resolution at line ~431 is local to
-	// that call site, never written back into the shared LLMRuntimeConfig)
-	// left merged.APIKey empty here for file-based providers like vertex_ai.
-	// The client then fell through to plain GCP ADC lookup, which fails
-	// inside the pod (no metadata server, no GOOGLE_APPLICATION_CREDENTIALS).
-	// Guarding on APIKeyFile == "" keeps this fallback from ever firing for
-	// the reject-on-unreadable-file case above -- it only applies when there
-	// was no apiKeyFile to begin with.
-	if merged.APIKey == "" && merged.APIKeyFile == "" {
-		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		merged.APIKey = credentials.ResolveCredentialsFile(merged.Provider, credDir, logger)
+	resolved, resolveErr := kaconfig.ResolveEffectiveLLM(
+		staticCfg.AI.LLM, *rt, profile, fmt.Sprintf("phaseModels[%q]", phaseName))
+	if resolveErr != nil {
+		logger.Error(resolveErr, "reload: failed to resolve phase LLM profile", "phase", phaseName)
+		return
 	}
 
-	phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
+	phaseClient, err := buildLLMClientFromConfig(context.Background(), resolved)
 	if err != nil {
 		logger.Error(err, "reload: failed to build phase LLM client",
-			"phase", phaseName, "model", override.Model)
+			"phase", phaseName, "model", resolved.Model)
 		return
 	}
 
 	if existing := resolver.PhaseSwappable(phase); existing != nil {
-		swapExistingPhaseClient(existing, phaseName, phaseClient, phaseRT, logger)
+		swapExistingPhaseClient(existing, phaseName, phaseClient, resolved, logger)
 	} else {
-		registerNewPhaseClient(resolver, phase, phaseName, phaseClient, phaseRT, logger)
+		registerNewPhaseClient(resolver, phase, phaseName, phaseClient, resolved, logger)
 	}
 }
 

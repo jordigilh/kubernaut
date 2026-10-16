@@ -1,5 +1,9 @@
 # Test Plan — #1470: Per-Phase LLM Model Routing
 
+> **2026-10-15 amendment:** The partial `LLMOverrideConfig` contract tested by
+> this historical plan is retired by BR-AI-090/#2515. Current complete-profile
+> and reload coverage is maintained in [TP-2515](../2515/TEST_PLAN.md).
+
 **IEEE 829 Compliant** | **Issue**: [#1470](https://github.com/jordigilh/kubernaut/issues/1470) | **Milestone**: v1.5
 
 ## 1. Test Plan Identifier

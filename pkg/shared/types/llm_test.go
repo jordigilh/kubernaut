@@ -202,6 +202,18 @@ var _ = Describe("UT-SH-1488-009: Validate accepts openai_compatible keyless", f
 	})
 })
 
+var _ = Describe("UT-SH-2515-001: Validate accepts an already-resolved API key", func() {
+	It("should accept runtime-resolved credentials without an APIKeyFile", func() {
+		cfg := types.LLMConfig{
+			Provider: types.LLMProviderOpenAI,
+			Model:    "gpt-4o",
+			Endpoint: "https://gateway.example/v1",
+			APIKey:   "resolved-at-startup",
+		}
+		Expect(cfg.Validate("ai.llm")).To(Succeed())
+	})
+})
+
 var _ = Describe("UT-SH-1488-010: YAML round-trip AF format", func() {
 	It("should round-trip AF-style config preserving all fields", func() {
 		temp := 0.7

@@ -251,7 +251,7 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 | `maxRetries` | int | `0` if omitted | None in `Validate` | Retry attempts = `maxAttempts = 1 + maxRetries`; if `maxAttempts < 1` it is clamped to `1` in chat helper. Applies uniformly to both the non-streaming (`ChatWithParams`) and streaming (`chatOrStream`, used whenever an SSE observer is attached) call paths — the streaming path previously made exactly one attempt regardless of this setting ([#1612](https://github.com/jordigilh/kubernaut/issues/1612)). Retries are skipped early once a permanent client error (400/401/403/404-class) is classified ([#1585](https://github.com/jordigilh/kubernaut/issues/1585)) or, on the streaming path only, once any token has already been delivered to the observer for the current attempt. |
 | `timeoutSeconds` | int | `0` if omitted | None | If `<= 0`, per-chat wrapper does not add `context.WithTimeout` (relies on parent context). The `anthropicfamily`/`openai` clients still use a **120s** default HTTP client timeout when a custom transport stack is built. |
 | `customHeaders` | array | `nil` | Each entry validated; see below | Extra outbound headers on LLM HTTP stack. |
-| `phaseModels` | map of `LLMOverrideConfig`, keyed by phase name | `nil` | See §6.1 | Per-phase LLM overrides (#1470). Identity fields (`provider`, `model`) within an override are subject to the same restart-required rule as base `model` — see §6.1. |
+| `phaseModels` | map of complete `types.LLMConfig`, keyed by phase name | `nil` | See §6.1 | Independent per-phase LLM profiles (#1470, #2515). Provider/model identity remains subject to the restart-required rule. |
 
 **`model` is immutable after process start** ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
 [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
@@ -266,45 +266,37 @@ actually change `model`, these are equivalent in practice. To change the
 model or provider, edit the config and restart the pod (see §13 for how that
 restart is triggered, or isn't, depending on deployment topology).
 
-### 6.1 `phaseModels.<phase>` (per-phase LLM override, #1470)
+### 6.1 `phaseModels.<phase>` (complete per-phase LLM profile, #1470, #2515)
 
 Each key under `phaseModels` must be a valid phase name (`workflow_discovery`,
-`rca`, `validation`, ...). The value is an `LLMOverrideConfig` — the same
-struct type used by `ai.alignmentCheck.llm` (§7.1), but here it lives in the
-**hot-reloadable** runtime file, not the static one.
+`rca`, `validation`, ...). The value is a **complete** `types.LLMConfig`, not
+a partial override. Every provider, endpoint, credential, OAuth2, TLS/mTLS,
+Vertex, reasoning, retry, and timeout field belongs to the selected phase.
+Unset fields are not inherited from `ai.llm`.
 
-| YAML key | Type | Default | Description |
-|----------|------|---------|-------------|
-| `provider` | string | (empty) | Overrides base `ai.llm.provider` for this phase when non-empty. **Identity field — restart required to change, see below.** |
-| `model` | string | (empty) | Overrides base runtime `model` for this phase when non-empty. **Identity field — restart required to change, see below.** |
-| `endpoint` | string | (empty) | Overrides base runtime `endpoint` for this phase when non-empty. Hot-reloadable. |
-| `apiKeyFile` | string | (empty) | Overrides base `apiKeyFile` for this phase when non-empty. Hot-reloadable. |
-| `azureApiVersion` | string | (empty) | Overrides static Azure API version for this phase when non-empty (#1600). Hot-reloadable. |
-| `vertexProject` | string | (empty) | Overrides static Vertex project for this phase when non-empty. Hot-reloadable. |
-| `vertexLocation` | string | (empty) | Overrides static Vertex location for this phase when non-empty. Hot-reloadable. |
-| `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for this phase when non-nil (#1616, BR-AI-086). **Tuning field, not identity** — the restart-required identity check below never inspects this field, so a reload that changes *only* `reasoning` (no `provider`/`model` change, for this phase or any other) is always accepted. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+A profile intentionally shared with investigation may repeat the same values and
+mounted credential paths. That is explicit sharing, not zero-value inheritance.
 
-`bedrockRegion` was removed from `LLMOverrideConfig` (#2258) — it was dead plumbing for a provider this override type can never select. The base `ai.llm.bedrockRegion` (§4.1, `types.LLMConfig`) remains, reserved for native Bedrock support (#1582), but per-phase/per-alignment-check overrides can no longer touch it.
+| YAML key | Type | Description |
+|----------|------|-------------|
+| `provider` | string | Required provider identity. |
+| `model` | string | Required model identity. Provider/model changes require restart. |
+| `endpoint` | string | Profile endpoint; it does not inherit the investigation endpoint. |
+| `apiKeyFile` | string | Profile credential file; it does not inherit the investigation key. |
+| `vertexProject`, `vertexLocation` | string | Vertex profile settings. |
+| `azureApiVersion`, `bedrockRegion` | string | Provider-specific profile settings. |
+| `tlsCaFile`, `tlsCertFile`, `tlsKeyFile` | string | Profile TLS/mTLS settings. |
+| `oauth2` | object | Profile token URL, scopes, and mounted credentials directory. |
+| `temperature`, `maxRetries`, `timeoutSeconds` | scalar | Profile runtime tuning. |
+| `reasoning` | object | Profile reasoning/thinking configuration. |
 
-An override's *effective identity* is `provider` (falling back to base
-`ai.llm.provider` when empty) + `model` (falling back to base runtime `model`
-when empty) — not the literal override fields. Per #1599 / DD-LLM-008, a
-hot-reload is rejected if it would change any phase's effective identity,
-whether that's because:
+The complete profile is validated with the same `types.LLMConfig.Validate`
+contract as investigation. Its API-key and OAuth2 credentials are resolved
+independently before the phase client is built or reloaded.
 
-- an **existing** phase override's `provider`/`model` changed,
-- a **new** phase override is added whose effective identity differs from
-  base (e.g. adding `phaseModels.rca.model: claude-sonnet` when the base
-  model is `gpt-4o`), or
-- an **existing** phase override is **removed** and falling back to base
-  would change that phase's effective identity (e.g. removing an override
-  that pinned `rca` to a different provider than base).
-
-Adding, tuning, or removing a phase override is accepted whenever doing so
-does **not** change that phase's effective identity — for example, adding a
-new override that only sets `endpoint` (inheriting the base model/provider),
-or removing an override that only ever set `endpoint` (so removal falls back
-to the same effective identity it already had).
+A hot reload is rejected if the effective provider/model changes. Endpoint,
+credentials, OAuth2, TLS/mTLS, reasoning, retry, timeout, and header changes
+remain reloadable when the resulting complete profile validates.
 
 ### 6.2 `customHeaders[]`
 
@@ -331,29 +323,23 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 |----------|------|---------|-------------------------|-------------|
 | `enabled` | bool | `false` | — | Enables wrapper + evaluator. |
 | `mode` | string | `enforce` | Must be `enforce` or `monitor` | Enforcement vs observability-only behavior. |
-| `llm` | object (`LLMOverrideConfig`) | `null` | Shadow client validated at startup when non-nil overrides used | Partial override of primary static + runtime LLM for shadow only. See merge rules in code: `EffectiveLLM`. |
+| `llm` | object (`types.LLMConfig`) | `null` | Complete shadow profile validated at startup when present | Independent profile; unset fields do not inherit from investigation. |
 | `timeout` | duration | `10s` | Positive | Evaluator/step timeout budget. |
 | `verdictTimeout` | duration | `30s` | Positive | Verdict aggregation timeout used by investigator wrapper. |
 | `maxStepTokens` | int | `500` | Positive | Cap for alignment step payloads. |
 | `maxRetries` | int | `1` | `>= 0` | Evaluator retries. |
 | `canary.forceEscalation` | bool | `true` | None | Passed to investigator wrapper (`CanaryForceEscalation`). |
 
-### 7.1 `ai.alignmentCheck.llm` overrides (`LLMOverrideConfig`)
+### 7.1 `ai.alignmentCheck.llm` (complete dedicated LLM profile, #2515)
 
-| YAML key | Type | Default | Description |
-|----------|------|---------|-------------|
-| `provider` | string | (empty) | Overrides static provider when non-empty. |
-| `endpoint` | string | (empty) | Overrides runtime endpoint when non-empty. |
-| `model` | string | (empty) | Overrides runtime model when non-empty. |
-| `apiKey` | string | (empty) | Overrides runtime apiKey when non-empty (sensitive). Does not bypass separate credential-dir resolution unless set in YAML/runtime merge. |
-| `azureApiVersion` | string | (empty) | Overrides static Azure API version when non-empty (#1600). |
-| `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
-| `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
-| `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for the shadow/alignment-checker LLM when non-nil (#1616, BR-AI-086). Since this whole section is static (no hot-reload), there is no identity-lock interaction to consider — a change here, like any other field in this table, simply requires a restart. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
+When present, `ai.alignmentCheck.llm` is a complete `types.LLMConfig`. It does
+not inherit provider, model, endpoint, credentials, OAuth2, TLS/mTLS, Vertex,
+reasoning, retry, or timeout fields from `ai.llm`. When absent, the existing
+intentional shared-client behavior is used.
 
-`bedrockRegion` was removed from this override type (#2258) — same rationale as §6.1.
-
-Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for the LLM client's transport chain.
+The profile is validated and its API-key/OAuth2 credentials are resolved at
+startup. Configuration errors fail closed when alignment is enabled. Secret
+contents are never written to logs.
 
 ### 7.2 Enforcement modes and circuit breaker
 
@@ -449,7 +435,7 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Location | Sensitive material |
 |----------|-------------------|
 | `LLMRuntimeConfig.apiKey` | API key inline |
-| Alignment `LLMOverrideConfig.apiKey` | Shadow model key override |
+| Complete sibling `types.LLMConfig.apiKeyFile` / resolved `APIKey` | Per-agent provider key material |
 | `oauth2.credentialsDir` files `client-id`, `client-secret` | OAuth2 client credentials |
 | `customHeaders[].value`, `secretKeyRef` backing env, `filePath` targets | Bearer tokens / static secrets |
 | `integrations.dataStorage.saTokenPath` file | ServiceAccount JWT |
