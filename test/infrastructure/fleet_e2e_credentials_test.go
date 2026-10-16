@@ -184,8 +184,10 @@ var _ = Describe("Fleet-only identity and webhook setup", func() {
 var _ = Describe("FullPipeline event exporter resilience", func() {
 	It("UT-INFRA-FP-EVENT-001: keeps Warning events fresh for the full lifecycle budget", func() {
 		manifest := buildEventExporterManifest("kubernaut-system", "test-token")
-		Expect(manifest).To(ContainSubstring("maxEventAgeSeconds: 900"),
-			"the event exporter freshness window must exceed the 10-minute FullPipeline lifecycle budget")
+		Expect(manifest).To(ContainSubstring("omitLookup: true"),
+			"the event exporter must avoid cluster-wide metadata lookups that backlog Warning events")
+		Expect(manifest).To(ContainSubstring("maxEventAgeSeconds: 300"),
+			"the exporter window must stay aligned with Gateway's 5-minute event freshness guard")
 	})
 })
 

@@ -935,11 +935,12 @@ data:
   config.yaml: |
     logLevel: debug
     logFormat: json
-    # FullPipeline runs many specs concurrently; event-exporter can backlog
-    # valid Warning events while processing cluster-wide metadata. Keep this
-    # above the 10-minute lifecycle budget so delayed delivery does not discard
-    # the event that drives E2E-FP-118-001 (BR-E2E-001).
-    maxEventAgeSeconds: 900
+    # The event payload already contains the involved object; Gateway performs
+    # authoritative owner resolution. Avoid cluster-wide metadata lookups here
+    # so parallel FullPipeline specs do not backlog Warning events past the
+    # Gateway freshness guard (BR-E2E-001).
+    omitLookup: true
+    maxEventAgeSeconds: 300
     kubeQPS: 50
     kubeBurst: 100
     route:
