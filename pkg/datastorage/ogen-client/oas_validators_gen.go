@@ -6848,10 +6848,41 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.CausalMechanismStatus.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "causalMechanismStatus",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Validate() error {
+	switch s {
+	case "verified":
+		return nil
+	case "probable":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s IncidentResponseDataRootCauseAnalysisSeverity) Validate() error {
@@ -8307,6 +8338,42 @@ func (s *RemediationHistoryEntry) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.AppliedState.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "appliedState",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.SpecChangeStatus.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "specChangeStatus",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.MetricDeltas.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -8348,6 +8415,19 @@ func (s *RemediationHistoryEntry) Validate() error {
 	return nil
 }
 
+func (s RemediationHistoryEntryAppliedState) Validate() error {
+	switch s {
+	case "confirmed":
+		return nil
+	case "not_confirmed":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s RemediationHistoryEntryAssessmentReason) Validate() error {
 	switch s {
 	case "Full":
@@ -8378,6 +8458,25 @@ func (s RemediationHistoryEntryHashMatch) Validate() error {
 	case "postRemediation":
 		return nil
 	case "none":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationHistoryEntrySpecChangeStatus) Validate() error {
+	switch s {
+	case "post_hash_matches_current":
+		return nil
+	case "pre_hash_matches_current":
+		return nil
+	case "no_execution":
+		return nil
+	case "hashes_differ_from_current":
+		return nil
+	case "hashes_unavailable":
+		return nil
+	case "hashes_contradictory":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -8465,6 +8564,42 @@ func (s *RemediationHistorySummary) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.AppliedState.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "appliedState",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.SpecChangeStatus.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "specChangeStatus",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.AssessmentReason.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -8486,6 +8621,19 @@ func (s *RemediationHistorySummary) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s RemediationHistorySummaryAppliedState) Validate() error {
+	switch s {
+	case "confirmed":
+		return nil
+	case "not_confirmed":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s RemediationHistorySummaryAssessmentReason) Validate() error {
@@ -8518,6 +8666,25 @@ func (s RemediationHistorySummaryHashMatch) Validate() error {
 	case "postRemediation":
 		return nil
 	case "none":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationHistorySummarySpecChangeStatus) Validate() error {
+	switch s {
+	case "post_hash_matches_current":
+		return nil
+	case "pre_hash_matches_current":
+		return nil
+	case "no_execution":
+		return nil
+	case "hashes_differ_from_current":
+		return nil
+	case "hashes_unavailable":
+		return nil
+	case "hashes_contradictory":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

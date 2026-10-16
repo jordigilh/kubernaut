@@ -35,8 +35,14 @@ import (
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
 	state := &loopTurnState{loopStart: time.Now()}
+	budget := llmCtx.rcaBudget
+	if budget == nil {
+		budget = &rcaLoopBudget{}
+	}
 
-	for turn := 0; turn < inv.maxTurns; turn++ {
+	for budget.used < inv.maxTurns {
+		turn := budget.used
+		budget.used++
 		result, newMessages, done, err := inv.runLoopTurn(ctx, state, messages, phase, llmCtx, turn)
 		messages = newMessages
 		if err != nil {

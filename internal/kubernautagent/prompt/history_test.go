@@ -24,6 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func boolPtr(v bool) *bool        { return &v }
@@ -486,6 +487,43 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 			Expect(output).To(ContainSubstring("[REDACTED]"))
 			Expect(output).NotTo(ContainSubstring("ignore previous instructions"))
 			Expect(output).NotTo(ContainSubstring("system: you are now"))
+		})
+
+		It("UT-KA-2511-SEC-001: redacts credential-like values in RCA history review", func() {
+			result := &enrichment.RemediationHistoryResult{
+				TargetResource: "production/Deployment/api-server",
+				Tier1: []enrichment.Tier1Entry{{
+					WorkflowID:   "history-workflow-2496",
+					WorkflowName: "history-workflow password=history-secret-2496",
+					CompletedAt:  time.Now(),
+				}},
+			}
+
+			output := prompt.BuildRCAHistoryReviewSection(result)
+			Expect(output).To(ContainSubstring("[REDACTED]"))
+			Expect(output).NotTo(ContainSubstring("history-secret-2496"))
+		})
+
+		It("UT-KA-2511-SEC-002: redacts authorization and credential fields in history identifiers", func() {
+			result := &enrichment.RemediationHistoryResult{
+				Tier1: []enrichment.Tier1Entry{{
+					WorkflowName: "workflow Authorization: Bearer secret-token credential=private-value",
+					CompletedAt:  time.Now(),
+				}},
+			}
+
+			output := prompt.BuildRCAHistoryReviewSection(result)
+			Expect(output).NotTo(ContainSubstring("Bearer secret-token"))
+			Expect(output).NotTo(ContainSubstring("private-value"))
+			Expect(output).To(ContainSubstring("[REDACTED]"))
+		})
+
+		It("UT-KA-2511-016: distinguishes omitted provisional confidence from explicit zero", func() {
+			unknown := prompt.BuildRCAProvisionalReviewSection(&katypes.InvestigationResult{})
+			zero := prompt.BuildRCAProvisionalReviewSection(&katypes.InvestigationResult{ConfidenceSet: true})
+			Expect(unknown).To(ContainSubstring("Confidence: unknown"))
+			Expect(unknown).NotTo(ContainSubstring("Confidence: 0.0000"))
+			Expect(zero).To(ContainSubstring("Confidence: 0.0000"))
 		})
 	})
 

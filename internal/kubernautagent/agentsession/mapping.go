@@ -225,6 +225,9 @@ func buildRootCauseAnalysisMap(r *katypes.InvestigationResult) map[string]interf
 	if len(r.CausalChain) > 0 {
 		rca["causal_chain"] = r.CausalChain
 	}
+	if r.CausalMechanismStatus != "" {
+		rca["causal_mechanism_status"] = r.CausalMechanismStatus
+	}
 	if r.DueDiligence != nil {
 		rca["due_diligence"] = r.DueDiligence
 	}

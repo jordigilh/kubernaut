@@ -26,6 +26,7 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // notAvailable is the placeholder rendered in prompt text when a value is
@@ -108,6 +109,93 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult)
 	}
 
 	return renderRemediationHistoryTemplate(data)
+}
+
+// BuildRCAHistoryReviewSection renders target-scoped history for the
+// server-assisted RCA continuation. It intentionally excludes workflow
+// selection instructions because the RCA loop has not reached discovery yet.
+// BR-KA-016 / DD-KA-2511: prior remediation history is evidence, not background.
+// BuildRCAProvisionalReviewSection renders the accepted provisional RCA as
+// server-owned context for a history-aware continuation. Free-form model output
+// is sanitized before it is placed in the next user message (DD-KA-2511,
+// FedRAMP SI-10, OWASP ASVS V2.2.x).
+//
+//nolint:gocyclo // each optional RCA field has an independent sanitized rendering contract
+func BuildRCAProvisionalReviewSection(result *katypes.InvestigationResult) string {
+	if result == nil {
+		return ""
+	}
+
+	lines := []string{
+		"## PROVISIONAL RCA",
+		"This is the server-preserved provisional RCA from the preceding submit_result. Re-evaluate it using the current target-scoped evidence; do not treat it as final authority.",
+	}
+	if result.RCASummary != "" {
+		lines = append(lines, "Summary: "+sanitizeField(result.RCASummary))
+	}
+	if result.SignalName != "" {
+		lines = append(lines, "Signal: "+sanitizeField(result.SignalName))
+	}
+	if result.Severity != "" {
+		lines = append(lines, "Severity: "+sanitizeField(result.Severity))
+	}
+	if result.RemediationTarget.Kind != "" || result.RemediationTarget.Name != "" {
+		target := sanitizeField(result.RemediationTarget.Kind) + "/" + sanitizeField(result.RemediationTarget.Name)
+		if result.RemediationTarget.Namespace != "" {
+			target += " (namespace: " + sanitizeField(result.RemediationTarget.Namespace) + ")"
+		}
+		if result.RemediationTarget.APIVersion != "" {
+			target += " (api_version: " + sanitizeField(result.RemediationTarget.APIVersion) + ")"
+		}
+		lines = append(lines, "Target: "+target)
+	}
+	if len(result.ContributingFactors) > 0 {
+		factors := make([]string, len(result.ContributingFactors))
+		for i, factor := range result.ContributingFactors {
+			factors[i] = sanitizeField(factor)
+		}
+		lines = append(lines, "Contributing factors: "+strings.Join(factors, "; "))
+	}
+	if len(result.CausalChain) > 0 {
+		chain := make([]string, len(result.CausalChain))
+		for i, step := range result.CausalChain {
+			chain[i] = sanitizeField(step)
+		}
+		lines = append(lines, "Causal chain: "+strings.Join(chain, " -> "))
+	}
+	if result.CausalMechanismStatus != "" {
+		lines = append(lines, "Causal mechanism status: "+sanitizeField(result.CausalMechanismStatus))
+	}
+	if result.ConfidenceSet {
+		lines = append(lines, fmt.Sprintf("Confidence: %.4f", result.Confidence))
+	} else {
+		lines = append(lines, "Confidence: unknown")
+	}
+	if result.InvestigationOutcome != "" {
+		lines = append(lines, "Investigation outcome: "+sanitizeField(result.InvestigationOutcome))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func BuildRCAHistoryReviewSection(result *enrichment.RemediationHistoryResult) string {
+	if result == nil || len(result.Tier1) == 0 && len(result.Tier2) == 0 {
+		return ""
+	}
+
+	lines := []string{
+		"## PRIOR REMEDIATION HISTORY REVIEW",
+		fmt.Sprintf("Target: %s", withDefault(sanitizeField(result.TargetResource), unknownHistoryValue)),
+		"Prior remediation history is evidence, not background. Do not restate the prior RCA solely because the same symptom remains.",
+		"Re-evaluate the causal mechanism using current observations, prior application/effectiveness evidence, contradictory evidence, and the current target state.",
+		"Explicitly classify the deeper causal mechanism as verified, probable, or unknown. Do not infer a mechanism from a symptom or an effectiveness score alone.",
+		"If the RCA target changes, continue investigating the newly identified target; the server will provide target-scoped history for it.",
+		"Recorded prior attempts:",
+	}
+	if result.CurrentSpecHash != "" {
+		lines = append(lines, "Current target spec hash: "+sanitizeField(result.CurrentSpecHash))
+	}
+	lines = append(lines, renderChronologicalHistory(result, DetectSpecDriftCausalChains(result.Tier1))...)
+	return strings.Join(lines, "\n")
 }
 
 type chronologicalHistoryEntry struct {
@@ -252,6 +340,31 @@ func renderRemediationHistoryTemplate(data remediationHistoryTemplateData) strin
 
 // FormatTier1Entry formats a single Tier1 detailed entry for the prompt.
 // 1:1 port of KA _format_tier1_entry().
+func appendSpecDriftAssessment(lines []string, entry enrichment.Tier1Entry, causalChains map[string]string) []string {
+	if entry.AssessmentReason != eav1.AssessmentReasonSpecDrift {
+		return lines
+	}
+	if causalChains != nil {
+		if followupUID, ok := causalChains[entry.RemediationUID]; ok {
+			return append(lines, fmt.Sprintf(
+				"  **Assessment: INCONCLUSIVE (spec drift -- led to follow-up remediation)** -- "+
+					"The target resource spec changed after this remediation, and a subsequent "+
+					"remediation (%s) was triggered from the resulting state. This suggests "+
+					"the outcome was unstable, but the workflow may still work under different "+
+					"conditions. Use with caution.",
+				sanitizeField(followupUID),
+			))
+		}
+	}
+	return append(lines,
+		"  **Assessment: INCONCLUSIVE (spec drift)** -- The target resource spec was "+
+			"modified by an external actor during the assessment window, invalidating "+
+			"effectiveness data. This workflow may still be viable under different "+
+			"conditions. The spec change could indicate a competing controller, GitOps "+
+			"sync, or manual edit that is itself relevant to the root cause.",
+	)
+}
+
 func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]string) string {
 	recorded := formatHistoryRecordedTime(entry.CompletedAt)
 	action := withDefault(sanitizeField(entry.ActionType), unknownHistoryValue)
@@ -266,29 +379,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 		fmt.Sprintf("  Assessment: %s", withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending")),
 	}
 
-	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
-		if causalChains != nil {
-			if followupUID, ok := causalChains[entry.RemediationUID]; ok {
-				lines = append(lines, fmt.Sprintf(
-					"  **Assessment: INCONCLUSIVE (spec drift -- led to follow-up remediation)** -- "+
-						"The target resource spec changed after this remediation, and a subsequent "+
-						"remediation (%s) was triggered from the resulting state. This suggests "+
-						"the outcome was unstable, but the workflow may still work under different "+
-						"conditions. Use with caution.",
-					sanitizeField(followupUID),
-				))
-				return strings.Join(lines, "\n")
-			}
-		}
-		lines = append(lines,
-			"  **Assessment: INCONCLUSIVE (spec drift)** -- The target resource spec was "+
-				"modified by an external actor during the assessment window, invalidating "+
-				"effectiveness data. This workflow may still be viable under different "+
-				"conditions. The spec change could indicate a competing controller, GitOps "+
-				"sync, or manual edit that is itself relevant to the root cause.",
-		)
-		return strings.Join(lines, "\n")
-	}
+	lines = appendSpecDriftAssessment(lines, entry, causalChains)
 
 	if entry.EffectivenessScore != nil {
 		level := EffectivenessLevel(entry.EffectivenessScore)
@@ -297,6 +388,17 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 
 	if entry.HashMatch != "" && entry.HashMatch != "none" {
 		lines = append(lines, fmt.Sprintf("  Hash match: %s", sanitizeField(entry.HashMatch)))
+	}
+	if entry.AppliedState != "" {
+		lines = append(lines, fmt.Sprintf("  Applied state: %s", sanitizeField(entry.AppliedState)))
+	}
+	if entry.SpecChangeStatus != "" {
+		lines = append(lines, fmt.Sprintf("  Spec change status: %s", sanitizeField(entry.SpecChangeStatus)))
+	}
+	if entry.PreRemediationSpecHash != "" || entry.PostRemediationSpecHash != "" {
+		lines = append(lines, fmt.Sprintf("  Spec hashes: pre=%s | post=%s",
+			withDefault(sanitizeField(entry.PreRemediationSpecHash), unknownHistoryValue),
+			withDefault(sanitizeField(entry.PostRemediationSpecHash), unknownHistoryValue)))
 	}
 
 	if entry.SignalResolved != nil {
@@ -342,9 +444,13 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 	if entry.SignalResolved != nil {
 		resolved = boolYesNo(*entry.SignalResolved)
 	}
-	return fmt.Sprintf("- %s (Recorded at: %s): %s | Action type: %s -> %s, effectiveness=%s, signal_resolved=%s, assessment=%s, hashMatch=%s",
+	return fmt.Sprintf("- %s (Recorded at: %s): %s | Action type: %s -> %s, effectiveness=%s, signal_resolved=%s, assessment=%s, hashMatch=%s, applied_state=%s, spec_change_status=%s, pre_hash=%s, post_hash=%s",
 		sanitizeField(entry.RemediationUID), recorded, formatHistorySelection(entry.WorkflowID, entry.WorkflowName, entry.WorkflowSelectionConfidence),
-		action, outcome, scoreText, resolved, withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending"), hashMatch)
+		action, outcome, scoreText, resolved, withDefault(sanitizeField(entry.AssessmentReason), "unknown/pending"), hashMatch,
+		withDefault(sanitizeField(entry.AppliedState), unknownHistoryValue),
+		withDefault(sanitizeField(entry.SpecChangeStatus), unknownHistoryValue),
+		withDefault(sanitizeField(entry.PreRemediationSpecHash), unknownHistoryValue),
+		withDefault(sanitizeField(entry.PostRemediationSpecHash), unknownHistoryValue))
 }
 
 const unknownHistoryValue = "unknown"

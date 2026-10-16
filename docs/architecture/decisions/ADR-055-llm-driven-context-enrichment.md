@@ -1,6 +1,6 @@
 # ADR-055: Post-RCA Context Enrichment (Target-Scoped, Not Signal-Scoped)
 
-**Status**: ACCEPTED
+**Status**: ACCEPTED; **Phase 1/RCA timing section partially superseded by DD-KA-2511**
 **Decision Date**: 2026-02-12
 **Version**: 2.0 (Go rewrite)
 **Confidence**: 90%
@@ -15,6 +15,7 @@
 | 1.0–1.5 | 2026-02-12 to 2026-03-25 | Architecture Team | Historical evolution under the Python-era implementation: proposed moving context enrichment from pre-LLM computation to an LLM-driven tool call (`get_namespaced_resource_context` / `get_cluster_resource_context`), then to a `HAPI`-internal `EnrichmentService` (Issue #529). Superseded by v2.0 below; see git history for the original entries. |
 | 2.0 | 2026-08-02 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). **Key correction**: the decision this ADR records — compute owner-chain/spec-hash/history context for the RCA-identified target, not the pre-RCA signal source — is unchanged and confirmed implemented. But the *mechanism* is not what v1.0–v1.4 decided: KA does not wait for the LLM to call a resource-context tool. `Investigator.resolveEnrichment` (`internal/kubernautagent/investigator/investigator.go`) runs automatically once the RCA target is resolved (`ResolveEnrichmentTarget`), calling `enrichment.Enricher.Enrich` (`internal/kubernautagent/enrichment/enricher.go`) unconditionally, for every investigation. The `get_namespaced_resource_context`/`get_cluster_resource_context` LLM tools (`internal/kubernautagent/tools/custom/resource_context.go`) still exist and remain registered, but are not the primary or sole trigger — enrichment happens whether or not the LLM calls them. Replaced the Python "Changes Required" migration-plan tables (file paths under `kubernaut-agent/src/...py`, already executed and merged long ago) with a pointer to the current Go implementation and to [DD-KA-016](DD-KA-016-remediation-history-context.md)/[DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md), which are authoritative for current mechanics. Corrected the Rego input field name from the originally-proposed `affected_resource` to the actual implemented `remediation_target` (`pkg/aianalysis/rego/evaluator.go`). Renamed `HAPI` → Kubernaut Agent (KA) throughout. |
 | 2.1 | 2026-10-09 | Architecture Team | **Issues #2496/#2498**: clarify that Phase 1 context/history tool calls are optional and do not pre-inject history; automatic target-only enrichment and frozen handoff are Phase 2 responsibilities; Phase 3 discovery/result submission is server-allow-listed. |
+| 2.2 | 2026-10-15 | Architecture Team | **Issues #2510/#2511**: DD-KA-2511 supersedes the Phase 1/RCA statement that history can never be supplied before RCA completion. Target-scoped history remains server-owned and is now reviewed through a continuation of the existing RCA conversation after a provisional submit; no signal-scoped pre-injection is introduced. |
 
 ---
 
@@ -58,9 +59,14 @@ Signal -> SignalProcessing enriches with OwnerChain (of the signal source)
 
 ### Issue #2496/#2498 phase amendment (v2.1)
 
+> **Superseded in part by DD-KA-2511.** The target-scoping, automatic enrichment,
+> frozen handoff, and Phase 3 allow-list rules below remain authoritative. The
+> Phase 1/RCA rule that history is never supplied before completion is replaced
+> by the DD-KA-2511 server-assisted continuation contract.
+
 The target-scoping decision remains unchanged, but delivery is explicitly phase-scoped:
 
-1. **Phase 1/RCA** starts from the signal and may call resource-context/history tools when relevant. Those calls are optional; history is not pre-injected and the investigation must not require either call to complete.
+1. **Phase 1/RCA** starts from the signal and may call resource-context/history tools when relevant. When server-side target enrichment finds prior history, the first `submit_result` is provisional and KA continues the same conversation with a sanitized history review before final RCA completion. History is never pre-injected from the signal source. If required target history acquisition fails, KA uses the existing observable review/fail-closed path. See DD-KA-2511 for the complete continuation, budget, cancellation and target-change contract.
 2. **Phase 2** resolves one target, automatically obtains only that target's context/history, sanitizes and freezes the handoff, computes its server-side digest, and passes an immutable serialized copy to selection. Source/tool metadata remains in correlated audit records rather than being duplicated in each evidence item.
 3. **Phase 3** receives only the target-scoped handoff and workflow-discovery/result-submission tools. A trusted server-side phase allow-list is checked before registry/external execution; model-provided phase values cannot expand privileges. Overflow, sanitization, freeze or digest failure routes to existing review rather than sending a partial packet.
 

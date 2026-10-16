@@ -91,6 +91,9 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if len(r.CausalChain) > 0 {
 		m["causal_chain"] = r.CausalChain
 	}
+	if r.CausalMechanismStatus != "" {
+		m["causal_mechanism_status"] = r.CausalMechanismStatus
+	}
 	// #2387 (BR-KA-OBSERVABILITY-001, FedRAMP AU-3): server-computed
 	// call-level counts ride the audit trail so a remediation lifecycle is
 	// fully reconstructable from audit traces alone (BR-AUDIT-005). Always

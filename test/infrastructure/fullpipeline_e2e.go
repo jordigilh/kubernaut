@@ -935,6 +935,11 @@ data:
   config.yaml: |
     logLevel: debug
     logFormat: json
+    # The event payload already contains the involved object; Gateway performs
+    # authoritative owner resolution. Avoid cluster-wide metadata lookups here
+    # so parallel FullPipeline specs do not backlog Warning events past the
+    # Gateway freshness guard (BR-E2E-001).
+    omitLookup: true
     maxEventAgeSeconds: 300
     kubeQPS: 50
     kubeBurst: 100

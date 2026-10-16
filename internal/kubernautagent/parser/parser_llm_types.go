@@ -34,7 +34,7 @@ type llmResponse struct {
 	RCAAlt               *llmRCA                `json:"rootCauseAnalysis,omitempty"`
 	Workflow             *llmWorkflow           `json:"selected_workflow"`
 	AlternativeWorkflows []llmAlternative       `json:"alternative_workflows,omitempty"`
-	Confidence           float64                `json:"confidence,omitempty"`
+	Confidence           *float64               `json:"confidence,omitempty"`
 	Actionable           *bool                  `json:"actionable,omitempty"`
 	InvestigationOutcome string                 `json:"investigation_outcome,omitempty"`
 	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
@@ -64,6 +64,7 @@ type llmRCA struct {
 	RemediationTargetAlt  *llmRemTarget               `json:"remediationTarget,omitempty"`
 	InvestigationAnalysis string                      `json:"investigation_analysis,omitempty"`
 	CausalChain           []string                    `json:"causal_chain,omitempty"`
+	CausalMechanismStatus string                      `json:"causal_mechanism_status,omitempty"`
 	DueDiligence          *katypes.DueDiligenceReview `json:"due_diligence,omitempty"`
 }
 

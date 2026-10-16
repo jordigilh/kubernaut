@@ -20,52 +20,42 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-// runRCA does not consume enrichment data: per ADR-055, enrichment moves to
-// HAPI-driven EnrichmentService (Phase 2) and is only sent to the LLM in
-// Phase 3 (workflow selection). The caller (Investigate) retains its own
-// enrichData reference and applies it via InjectRemediationTarget after
-// this returns, independently of this function.
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
+// runRCAWithMessages starts the signal-only RCA conversation and returns its
+// paired history for any server-assisted continuation before RCA completion.
+func (inv *Investigator) runRCAWithMessages(ctx context.Context, signal katypes.SignalContext, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, []llm.Message, error) {
+	if llmCtx.rcaBudget == nil {
+		llmCtx.rcaBudget = &rcaLoopBudget{}
+	}
 	correlationID := llmCtx.CorrelationID
 	promptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
 	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
 	if err != nil {
-		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
+		return nil, nil, fmt.Errorf("rendering investigation prompt: %w", err)
 	}
-
 	messages := []llm.Message{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
-
 	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, llmCtx)
 	if err != nil {
-		return nil, err
+		return nil, messages, err
 	}
-	// #1935/#1936 root cause #2: runLLMLoop's accumulated tool-call history
-	// must flow back into messages before it feeds alignment.NotifyRCAComplete,
-	// retryRCASubmit, sameKindValidationGate, and apiVersionValidationGate
-	// below — otherwise all four operate on a stale [system, user]-only slice
-	// regardless of how many tools actually ran.
-	if extended := loopResultMessages(loopRes); len(extended) > 0 {
+	if cancelled, ok := loopRes.(*CancelledResult); ok {
+		messages = cancelled.Messages
+	} else if extended := loopResultMessages(loopRes); len(extended) > 0 {
 		messages = extended
 	}
-
-	alignment.NotifyRCAComplete(ctx, messages)
-
 	finalized, content, reasoning, done := inv.classifyRCALoopResult(loopRes)
 	if done {
-		return finalized, nil
+		return finalized, messages, nil
 	}
-
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
 		if retried, retriedReasoning := inv.retryRCASubmit(ctx, content, messages, llmCtx); retried != nil {
@@ -75,60 +65,32 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}
 	}
 	if parseErr != nil && ctx.Err() != nil {
-		// nolint:nilerr // intentional: cancellation is converted into a
-		// typed Cancelled result, not propagated as err -- matches the
-		// same idiom in investigator_loop.go (Issue #1546 Tier 3).
-		return &katypes.InvestigationResult{
-			Cancelled:      true,
-			CancelledPhase: string(katypes.PhaseRCA),
-		}, nil
+		//nolint:nilerr // cancellation is represented by a typed result.
+		return &katypes.InvestigationResult{Cancelled: true, CancelledPhase: string(katypes.PhaseRCA)}, messages, nil
 	}
 	if parseErr != nil {
-		inv.logger.Info("RCA parse failed after retry, requesting human review",
-			"error", parseErr.Error(),
-			"correlation_id", correlationID)
+		inv.logger.Info("RCA parse failed after retry, requesting human review", "error", parseErr.Error(), "correlation_id", correlationID)
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
 			HumanReviewReason: "llm_parsing_error",
 			Reason:            "RCA response could not be parsed after retry",
 			Warnings:          []string{"RCA response could not be parsed after retry; human review is required"},
-		}, nil
+		}, messages, nil
 	}
 	result.Reasoning = toReasoningSummary(reasoning)
-
-	// Same-kind sentinel validation gate (Issue #847): when the LLM's
-	// remediation_target.kind matches the signal's resource_kind, the LLM may
-	// be targeting the symptom reporter instead of the actual root cause.
-	// Inject a single correction message and re-run. Max 1 retry.
 	result = inv.sameKindValidationGate(ctx, result, signal, messages, llmCtx)
-
-	// Defense-in-depth: RCA phase must never abort the pipeline via
-	// needs_human_review from the parser. Only gate-level exhaustion (#1044)
-	// is a valid RCA abort. Clear parser-set values BEFORE running the
-	// apiVersion gate so the gate's decision is authoritative.
-	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
 	if result.HumanReviewNeeded {
-		inv.logger.Info("clearing parser-set HumanReviewNeeded during RCA (Phase 3 only)",
-			"reason", result.HumanReviewReason,
-			"correlation_id", correlationID)
+		inv.logger.Info("clearing parser-set HumanReviewNeeded during RCA (Phase 3 only)", "reason", result.HumanReviewReason, "correlation_id", correlationID)
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
-
-	// apiVersion validation gate (Issue #1044): when the remediation target kind
-	// exists in multiple API groups and api_version is missing, the gate retries
-	// once. On exhaustion it sets HumanReviewNeeded=true — a valid RCA abort.
-	// Runs after clearing so its decision is authoritative and not cleared.
 	result = inv.apiVersionValidationGate(ctx, result, messages, llmCtx)
-
-	return result, nil
+	return result, messages, nil
 }
 
-// classifyRCALoopResult converts the raw LoopResult from runLLMLoop into
-// either a fully-finalized InvestigationResult (Cancelled/Exhausted — done
-// true, caller returns it immediately) or the raw content string still to be
-// parsed plus its turn's reasoning block, if any (SubmitResult/TextResult —
-// done false).
+// classifyRCALoopResult converts a loop outcome into a finalized result or
+// content/reasoning that can be parsed by the RCA path.
+
 func (inv *Investigator) classifyRCALoopResult(loopRes LoopResult) (result *katypes.InvestigationResult, content string, reasoning *llm.ReasoningBlock, done bool) {
 	switch r := loopRes.(type) {
 	case *CancelledResult:

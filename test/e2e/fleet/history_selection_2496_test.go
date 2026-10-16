@@ -105,6 +105,11 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		Expect(priorEA.Status.AssessmentReason).To(BeElementOf("Full", "Partial"))
 		Expect(priorEA.Status.Components.MetricsAssessed).To(BeTrue(), "the valid cluster-scoped metric fixture must be assessed")
 		Expect(priorEA.Status.Components.HealthScore).To(HaveValue(BeNumerically(">", 0)))
+		postHistory := fleetScopedHistory2496(targetNS, sourceOrigin, priorEA.Status.Components.PostRemediationSpecHash)
+		Expect(postHistory.Tier1.Chain).To(ContainElement(And(
+			HaveField("AppliedState.Value", ogenclient.RemediationHistoryEntryAppliedStateConfirmed),
+			HaveField("SpecChangeStatus.Value", ogenclient.RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent),
+		)))
 		// Source pre-state and current spoke state really collide. Do not seed
 		// unrelated hashes that would be excluded even without cluster scoping.
 		hash := priorEA.Spec.PreRemediationSpecHash

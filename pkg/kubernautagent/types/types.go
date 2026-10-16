@@ -82,6 +82,10 @@ type InvestigationResult struct {
 	RemediationTarget RemediationTarget      `json:"remediation_target,omitempty"`
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`
 	Confidence        float64                `json:"confidence"`
+	// ConfidenceSet distinguishes an explicit zero from an omitted confidence
+	// during server-assisted RCA continuation merging. It is internal
+	// bookkeeping and never crosses the API boundary.
+	ConfidenceSet bool `json:"-"`
 
 	// Workflow selection (GAP-009: OpenAPI selected_workflow includes execution_bundle)
 	ExecutionBundle       string                `json:"execution_bundle,omitempty"`
@@ -162,8 +166,10 @@ type InvestigationResult struct {
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
 
 	// Adversarial Due Diligence (Issue #847 / DD-KA-847)
-	CausalChain  []string            `json:"causal_chain,omitempty"`
-	DueDiligence *DueDiligenceReview `json:"due_diligence,omitempty"`
+	CausalChain []string `json:"causal_chain,omitempty"`
+	// DD-KA-2511: server-preserved classification from history-aware RCA review.
+	CausalMechanismStatus string              `json:"causal_mechanism_status,omitempty"`
+	DueDiligence          *DueDiligenceReview `json:"due_diligence,omitempty"`
 
 	// Observability
 	Warnings       []string               `json:"warnings,omitempty"`

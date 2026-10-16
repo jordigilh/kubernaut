@@ -35711,6 +35711,12 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.CausalMechanismStatus.Set {
+			e.FieldStart("causalMechanismStatus")
+			s.CausalMechanismStatus.Encode(e)
+		}
+	}
+	{
 		if s.DueDiligence.Set {
 			e.FieldStart("dueDiligence")
 			s.DueDiligence.Encode(e)
@@ -35730,15 +35736,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [8]string{
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [9]string{
 	0: "summary",
 	1: "severity",
 	2: "contributingFactors",
 	3: "remediationTarget",
 	4: "causalChain",
-	5: "dueDiligence",
-	6: "reasoning",
-	7: "reasoningRedacted",
+	5: "causalMechanismStatus",
+	6: "dueDiligence",
+	7: "reasoning",
+	8: "reasoningRedacted",
 }
 
 // Decode decodes IncidentResponseDataRootCauseAnalysis from json.
@@ -35746,7 +35753,7 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysis to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -35821,6 +35828,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"causalChain\"")
 			}
+		case "causalMechanismStatus":
+			if err := func() error {
+				s.CausalMechanismStatus.Reset()
+				if err := s.CausalMechanismStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causalMechanismStatus\"")
+			}
 		case "dueDiligence":
 			if err := func() error {
 				s.DueDiligence.Reset()
@@ -35860,8 +35877,9 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00000111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -35903,6 +35921,48 @@ func (s *IncidentResponseDataRootCauseAnalysis) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataRootCauseAnalysis) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataRootCauseAnalysisCausalMechanismStatus as json.
+func (s IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisCausalMechanismStatus from json.
+func (s *IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysisCausalMechanismStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch IncidentResponseDataRootCauseAnalysisCausalMechanismStatus(v) {
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusVerified
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusProbable
+	case IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatusUnknown
+	default:
+		*s = IncidentResponseDataRootCauseAnalysisCausalMechanismStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisCausalMechanismStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -41242,6 +41302,39 @@ func (s *OptIncidentResponseDataHumanReviewReason) UnmarshalJSON(data []byte) er
 	return s.Decode(d)
 }
 
+// Encode encodes IncidentResponseDataRootCauseAnalysisCausalMechanismStatus as json.
+func (o OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisCausalMechanismStatus from json.
+func (o *OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataRootCauseAnalysisCausalMechanismStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes IncidentResponseDataRootCauseAnalysisDueDiligence as json.
 func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -42466,6 +42559,39 @@ func (s *OptRemediationHealthChecks) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes RemediationHistoryEntryAppliedState as json.
+func (o OptRemediationHistoryEntryAppliedState) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistoryEntryAppliedState from json.
+func (o *OptRemediationHistoryEntryAppliedState) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistoryEntryAppliedState to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistoryEntryAppliedState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistoryEntryAppliedState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes RemediationHistoryEntryHashMatch as json.
 func (o OptRemediationHistoryEntryHashMatch) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -42499,6 +42625,72 @@ func (s *OptRemediationHistoryEntryHashMatch) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes RemediationHistoryEntrySpecChangeStatus as json.
+func (o OptRemediationHistoryEntrySpecChangeStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistoryEntrySpecChangeStatus from json.
+func (o *OptRemediationHistoryEntrySpecChangeStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistoryEntrySpecChangeStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistoryEntrySpecChangeStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistoryEntrySpecChangeStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryAppliedState as json.
+func (o OptRemediationHistorySummaryAppliedState) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistorySummaryAppliedState from json.
+func (o *OptRemediationHistorySummaryAppliedState) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistorySummaryAppliedState to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistorySummaryAppliedState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistorySummaryAppliedState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes RemediationHistorySummaryHashMatch as json.
 func (o OptRemediationHistorySummaryHashMatch) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -42528,6 +42720,39 @@ func (s OptRemediationHistorySummaryHashMatch) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptRemediationHistorySummaryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummarySpecChangeStatus as json.
+func (o OptRemediationHistorySummarySpecChangeStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistorySummarySpecChangeStatus from json.
+func (o *OptRemediationHistorySummarySpecChangeStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistorySummarySpecChangeStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistorySummarySpecChangeStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistorySummarySpecChangeStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -45832,6 +46057,18 @@ func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.AppliedState.Set {
+			e.FieldStart("appliedState")
+			s.AppliedState.Encode(e)
+		}
+	}
+	{
+		if s.SpecChangeStatus.Set {
+			e.FieldStart("specChangeStatus")
+			s.SpecChangeStatus.Encode(e)
+		}
+	}
+	{
 		if s.PreRemediationSpecHash.Set {
 			e.FieldStart("preRemediationSpecHash")
 			s.PreRemediationSpecHash.Encode(e)
@@ -45883,7 +46120,7 @@ func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationHistoryEntry = [19]string{
+var jsonFieldsNameOfRemediationHistoryEntry = [21]string{
 	0:  "remediationUID",
 	1:  "workflowId",
 	2:  "workflowName",
@@ -45895,14 +46132,16 @@ var jsonFieldsNameOfRemediationHistoryEntry = [19]string{
 	8:  "effectivenessScore",
 	9:  "signalResolved",
 	10: "hashMatch",
-	11: "preRemediationSpecHash",
-	12: "postRemediationSpecHash",
-	13: "healthChecks",
-	14: "metricDeltas",
-	15: "sideEffects",
-	16: "completedAt",
-	17: "assessmentReason",
-	18: "assessedAt",
+	11: "appliedState",
+	12: "specChangeStatus",
+	13: "preRemediationSpecHash",
+	14: "postRemediationSpecHash",
+	15: "healthChecks",
+	16: "metricDeltas",
+	17: "sideEffects",
+	18: "completedAt",
+	19: "assessmentReason",
+	20: "assessedAt",
 }
 
 // Decode decodes RemediationHistoryEntry from json.
@@ -46026,6 +46265,26 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hashMatch\"")
 			}
+		case "appliedState":
+			if err := func() error {
+				s.AppliedState.Reset()
+				if err := s.AppliedState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"appliedState\"")
+			}
+		case "specChangeStatus":
+			if err := func() error {
+				s.SpecChangeStatus.Reset()
+				if err := s.SpecChangeStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"specChangeStatus\"")
+			}
 		case "preRemediationSpecHash":
 			if err := func() error {
 				s.PreRemediationSpecHash.Reset()
@@ -46086,7 +46345,7 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sideEffects\"")
 			}
 		case "completedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CompletedAt = v
@@ -46129,7 +46388,7 @@ func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b00000001,
 		0b00000000,
-		0b00000001,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -46171,6 +46430,48 @@ func (s *RemediationHistoryEntry) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationHistoryEntry) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistoryEntryAppliedState as json.
+func (s RemediationHistoryEntryAppliedState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistoryEntryAppliedState from json.
+func (s *RemediationHistoryEntryAppliedState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryEntryAppliedState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistoryEntryAppliedState(v) {
+	case RemediationHistoryEntryAppliedStateConfirmed:
+		*s = RemediationHistoryEntryAppliedStateConfirmed
+	case RemediationHistoryEntryAppliedStateNotConfirmed:
+		*s = RemediationHistoryEntryAppliedStateNotConfirmed
+	case RemediationHistoryEntryAppliedStateUnknown:
+		*s = RemediationHistoryEntryAppliedStateUnknown
+	default:
+		*s = RemediationHistoryEntryAppliedState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistoryEntryAppliedState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryEntryAppliedState) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -46269,6 +46570,54 @@ func (s *RemediationHistoryEntryHashMatch) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes RemediationHistoryEntrySpecChangeStatus as json.
+func (s RemediationHistoryEntrySpecChangeStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistoryEntrySpecChangeStatus from json.
+func (s *RemediationHistoryEntrySpecChangeStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryEntrySpecChangeStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistoryEntrySpecChangeStatus(v) {
+	case RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent
+	case RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusPreHashMatchesCurrent
+	case RemediationHistoryEntrySpecChangeStatusNoExecution:
+		*s = RemediationHistoryEntrySpecChangeStatusNoExecution
+	case RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesDifferFromCurrent
+	case RemediationHistoryEntrySpecChangeStatusHashesUnavailable:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesUnavailable
+	case RemediationHistoryEntrySpecChangeStatusHashesContradictory:
+		*s = RemediationHistoryEntrySpecChangeStatusHashesContradictory
+	default:
+		*s = RemediationHistoryEntrySpecChangeStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistoryEntrySpecChangeStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryEntrySpecChangeStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *RemediationHistorySummary) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -46337,6 +46686,30 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.AppliedState.Set {
+			e.FieldStart("appliedState")
+			s.AppliedState.Encode(e)
+		}
+	}
+	{
+		if s.SpecChangeStatus.Set {
+			e.FieldStart("specChangeStatus")
+			s.SpecChangeStatus.Encode(e)
+		}
+	}
+	{
+		if s.PreRemediationSpecHash.Set {
+			e.FieldStart("preRemediationSpecHash")
+			s.PreRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.PostRemediationSpecHash.Set {
+			e.FieldStart("postRemediationSpecHash")
+			s.PostRemediationSpecHash.Encode(e)
+		}
+	}
+	{
 		if s.AssessmentReason.Set {
 			e.FieldStart("assessmentReason")
 			s.AssessmentReason.Encode(e)
@@ -46348,7 +46721,7 @@ func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationHistorySummary = [12]string{
+var jsonFieldsNameOfRemediationHistorySummary = [16]string{
 	0:  "remediationUID",
 	1:  "workflowId",
 	2:  "workflowName",
@@ -46359,8 +46732,12 @@ var jsonFieldsNameOfRemediationHistorySummary = [12]string{
 	7:  "effectivenessScore",
 	8:  "signalResolved",
 	9:  "hashMatch",
-	10: "assessmentReason",
-	11: "completedAt",
+	10: "appliedState",
+	11: "specChangeStatus",
+	12: "preRemediationSpecHash",
+	13: "postRemediationSpecHash",
+	14: "assessmentReason",
+	15: "completedAt",
 }
 
 // Decode decodes RemediationHistorySummary from json.
@@ -46474,6 +46851,46 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hashMatch\"")
 			}
+		case "appliedState":
+			if err := func() error {
+				s.AppliedState.Reset()
+				if err := s.AppliedState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"appliedState\"")
+			}
+		case "specChangeStatus":
+			if err := func() error {
+				s.SpecChangeStatus.Reset()
+				if err := s.SpecChangeStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"specChangeStatus\"")
+			}
+		case "preRemediationSpecHash":
+			if err := func() error {
+				s.PreRemediationSpecHash.Reset()
+				if err := s.PreRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preRemediationSpecHash\"")
+			}
+		case "postRemediationSpecHash":
+			if err := func() error {
+				s.PostRemediationSpecHash.Reset()
+				if err := s.PostRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"postRemediationSpecHash\"")
+			}
 		case "assessmentReason":
 			if err := func() error {
 				s.AssessmentReason.Reset()
@@ -46485,7 +46902,7 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"assessmentReason\"")
 			}
 		case "completedAt":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CompletedAt = v
@@ -46507,7 +46924,7 @@ func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000001,
-		0b00001000,
+		0b10000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -46549,6 +46966,48 @@ func (s *RemediationHistorySummary) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationHistorySummary) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryAppliedState as json.
+func (s RemediationHistorySummaryAppliedState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistorySummaryAppliedState from json.
+func (s *RemediationHistorySummaryAppliedState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistorySummaryAppliedState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistorySummaryAppliedState(v) {
+	case RemediationHistorySummaryAppliedStateConfirmed:
+		*s = RemediationHistorySummaryAppliedStateConfirmed
+	case RemediationHistorySummaryAppliedStateNotConfirmed:
+		*s = RemediationHistorySummaryAppliedStateNotConfirmed
+	case RemediationHistorySummaryAppliedStateUnknown:
+		*s = RemediationHistorySummaryAppliedStateUnknown
+	default:
+		*s = RemediationHistorySummaryAppliedState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistorySummaryAppliedState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistorySummaryAppliedState) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -46643,6 +47102,54 @@ func (s RemediationHistorySummaryHashMatch) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationHistorySummaryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummarySpecChangeStatus as json.
+func (s RemediationHistorySummarySpecChangeStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistorySummarySpecChangeStatus from json.
+func (s *RemediationHistorySummarySpecChangeStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistorySummarySpecChangeStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistorySummarySpecChangeStatus(v) {
+	case RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusPostHashMatchesCurrent
+	case RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusPreHashMatchesCurrent
+	case RemediationHistorySummarySpecChangeStatusNoExecution:
+		*s = RemediationHistorySummarySpecChangeStatusNoExecution
+	case RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent:
+		*s = RemediationHistorySummarySpecChangeStatusHashesDifferFromCurrent
+	case RemediationHistorySummarySpecChangeStatusHashesUnavailable:
+		*s = RemediationHistorySummarySpecChangeStatusHashesUnavailable
+	case RemediationHistorySummarySpecChangeStatusHashesContradictory:
+		*s = RemediationHistorySummarySpecChangeStatusHashesContradictory
+	default:
+		*s = RemediationHistorySummarySpecChangeStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistorySummarySpecChangeStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistorySummarySpecChangeStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

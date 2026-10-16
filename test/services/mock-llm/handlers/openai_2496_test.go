@@ -135,4 +135,31 @@ var _ = Describe("History-aware external provider fixtures — BR-KA-016", func(
 		Entry("different workflow, same family", "history_different_2496", openai.ToolSubmitResultWithWorkflow, .96, false),
 		Entry("declines available catalog", "history_no_workflow_2496", openai.ToolSubmitResultNoWorkflow, 0., false),
 	)
+
+	It("IT-MOCK-2511-002: repeat-selection fixtures support a provisional RCA history-review turn", func() {
+		registry := scenarios.DefaultRegistry()
+		scenario, found := registry.Get("history_repeat_accepted_2496")
+		Expect(found).To(BeTrue())
+		configured, ok := scenario.(scenarios.ScenarioWithConfig)
+		Expect(ok).To(BeTrue())
+		cfg := configured.Config()
+		server := httptest.NewServer(handlers.NewRouter(registry, false, config.ModeFull))
+		DeferCleanup(server.Close)
+		messages := []openai.Message{{Role: "user", Content: issue2482StringPtr("Signal Name: " + cfg.SignalName)}}
+		rca := postIssue2482OpenAI(server.URL, openai.ChatCompletionRequest{
+			Model: "mock-model", Messages: messages,
+			Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResult}}},
+		})
+		Expect(rca.Choices[0].Message.ToolCalls).To(HaveLen(1))
+		Expect(rca.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolSubmitResult))
+		messages = append(messages, rca.Choices[0].Message)
+		messages = append(messages, openai.Message{Role: "user", Content: issue2482StringPtr("## PRIOR REMEDIATION HISTORY REVIEW\nTarget-scoped prior remediation evidence is available; reassess the causal mechanism.")})
+
+		review := postIssue2482OpenAI(server.URL, openai.ChatCompletionRequest{
+			Model: "mock-model", Messages: messages,
+			Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResult}}},
+		})
+		Expect(review.Choices[0].Message.ToolCalls).To(HaveLen(1))
+		Expect(review.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal(openai.ToolSubmitResult))
+	})
 })

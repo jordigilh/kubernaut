@@ -158,11 +158,16 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
-	rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.ClusterID, signal.IncidentID)
+	signalTarget := enrichmentTargetRef{Kind: signalKind, Name: signalName, Namespace: signalNS, APIVersion: signal.ResourceAPIVersion}
+	rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalTarget, signal.ClusterID, signal.IncidentID)
 
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-	if postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS {
+	postRCAAPIVersion := signal.ResourceAPIVersion
+	if rcaResult != nil && rcaResult.RemediationTarget.Kind != "" {
+		postRCAAPIVersion = rcaResult.RemediationTarget.APIVersion
+	}
+	if postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS && postRCAAPIVersion == signal.ResourceAPIVersion {
 		if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
 			rcaResult.Warnings = append(rcaResult.Warnings,
 				deletedResourceWarning(signalKind, signalName, signalNS))
@@ -172,8 +177,8 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 
 	return inv.reEnrichForRCATargetShift(ctx, reEnrichForRCATargetShiftParams{
 		EnrichmentCache: enrichmentCache, Signal: signal, RCAResult: rcaResult, RawEnrichData: rawEnrichData,
-		SignalKind: signalKind, SignalName: signalName,
-		PostRCAKind: postRCAKind, PostRCAName: postRCAName, PostRCANS: postRCANS,
+		SignalTarget:  signalTarget,
+		PostRCATarget: enrichmentTargetRef{Kind: postRCAKind, Name: postRCAName, Namespace: postRCANS, APIVersion: postRCAAPIVersion},
 		CorrelationID: correlationID,
 	})
 }
@@ -182,12 +187,12 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 // reEnrichForRCATargetShift. Extracted per AGENTS.md's 8+-param
 // Options-pattern rule.
 type reEnrichForRCATargetShiftParams struct {
-	EnrichmentCache                                    map[string]*enrichment.EnrichmentResult
-	Signal                                             katypes.SignalContext
-	RCAResult                                          *katypes.InvestigationResult
-	RawEnrichData                                      *enrichment.EnrichmentResult
-	SignalKind, SignalName                             string
-	PostRCAKind, PostRCAName, PostRCANS, CorrelationID string
+	EnrichmentCache             map[string]*enrichment.EnrichmentResult
+	Signal                      katypes.SignalContext
+	RCAResult                   *katypes.InvestigationResult
+	RawEnrichData               *enrichment.EnrichmentResult
+	SignalTarget, PostRCATarget enrichmentTargetRef
+	CorrelationID               string
 }
 
 // reEnrichForRCATargetShift re-runs enrichment against the RCA-resolved
@@ -198,13 +203,12 @@ type reEnrichForRCATargetShiftParams struct {
 // human review with the rca_incomplete reason.
 func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnrichForRCATargetShiftParams) (*enrichment.EnrichmentResult, bool, *katypes.InvestigationResult) {
 	enrichmentCache, signal, rcaResult, rawEnrichData := p.EnrichmentCache, p.Signal, p.RCAResult, p.RawEnrichData
-	signalKind, signalName := p.SignalKind, p.SignalName
-	postRCAKind, postRCAName, postRCANS, correlationID := p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.CorrelationID
+	signalTarget, postRCATarget, correlationID := p.SignalTarget, p.PostRCATarget, p.CorrelationID
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
-		"signal", signalKind+"/"+signalName,
-		"rca_target", postRCAKind+"/"+postRCAName,
+		"signal", signalTarget.Kind+"/"+signalTarget.Name,
+		"rca_target", postRCATarget.Kind+"/"+postRCATarget.Name,
 		"correlation_id", correlationID)
-	reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.ClusterID, signal.IncidentID)
+	reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCATarget, signal.ClusterID, signal.IncidentID)
 
 	if reEnriched != nil && reEnriched.HardFail {
 		inv.logger.Error(reEnriched.OwnerChainError,
@@ -225,12 +229,12 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 
 	if reEnriched.TargetResourceDeleted {
 		rcaResult.Warnings = append(rcaResult.Warnings,
-			deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+			deletedResourceWarning(postRCATarget.Kind, postRCATarget.Name, postRCATarget.Namespace))
 	}
 
 	if allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 		inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
-			"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
+			"rca_target", postRCATarget.Kind+"/"+postRCATarget.Name, "correlation_id", correlationID)
 		return rawEnrichData, true, nil
 	}
 

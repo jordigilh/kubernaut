@@ -76,6 +76,7 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 
 	result := &RemediationHistoryResult{
 		TargetResource:     historyCtx.TargetResource,
+		CurrentSpecHash:    historyCtx.CurrentSpecHash,
 		RegressionDetected: historyCtx.RegressionDetected,
 		Tier1Window:        historyCtx.Tier1.Window,
 		Tier2Window:        historyCtx.Tier2.Window,
@@ -155,6 +156,12 @@ func applyTier1SpecHashes(entry *Tier1Entry, e ogenclient.RemediationHistoryEntr
 	if e.HashMatch.Set {
 		entry.HashMatch = string(e.HashMatch.Value)
 	}
+	if e.AppliedState.Set {
+		entry.AppliedState = string(e.AppliedState.Value)
+	}
+	if e.SpecChangeStatus.Set {
+		entry.SpecChangeStatus = string(e.SpecChangeStatus.Value)
+	}
 	if e.PreRemediationSpecHash.Set {
 		entry.PreRemediationSpecHash = e.PreRemediationSpecHash.Value
 	}
@@ -190,13 +197,29 @@ func mapTier2Summary(e ogenclient.RemediationHistorySummary) Tier2Summary {
 		v := e.SignalResolved.Value
 		s.SignalResolved = &v
 	}
-	if e.HashMatch.Set {
-		s.HashMatch = string(e.HashMatch.Value)
-	}
+	applyTier2SpecEvidence(&s, e)
 	if e.AssessmentReason.Set && !e.AssessmentReason.Null {
 		s.AssessmentReason = string(e.AssessmentReason.Value)
 	}
 	return s
+}
+
+func applyTier2SpecEvidence(summary *Tier2Summary, entry ogenclient.RemediationHistorySummary) {
+	if entry.HashMatch.Set {
+		summary.HashMatch = string(entry.HashMatch.Value)
+	}
+	if entry.AppliedState.Set {
+		summary.AppliedState = string(entry.AppliedState.Value)
+	}
+	if entry.SpecChangeStatus.Set {
+		summary.SpecChangeStatus = string(entry.SpecChangeStatus.Value)
+	}
+	if entry.PreRemediationSpecHash.Set {
+		summary.PreRemediationSpecHash = entry.PreRemediationSpecHash.Value
+	}
+	if entry.PostRemediationSpecHash.Set {
+		summary.PostRemediationSpecHash = entry.PostRemediationSpecHash.Value
+	}
 }
 
 func mapHealthChecks(hc ogenclient.RemediationHealthChecks) *HealthChecks {

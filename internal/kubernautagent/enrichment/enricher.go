@@ -72,6 +72,7 @@ type DataStorageClient interface {
 // RemediationHistoryResult holds the full DS response mapped to domain types.
 type RemediationHistoryResult struct {
 	TargetResource     string         `json:"target_resource"`
+	CurrentSpecHash    string         `json:"current_spec_hash"`
 	RegressionDetected bool           `json:"regression_detected"`
 	Tier1              []Tier1Entry   `json:"tier1"`
 	Tier1Window        string         `json:"tier1_window"`
@@ -83,21 +84,24 @@ type RemediationHistoryResult struct {
 type Tier1Entry struct {
 	RemediationUID string `json:"remediation_uid"`
 	// DD-KA-2496: current-version RO selection metadata, never inferred.
-	WorkflowID                  string        `json:"workflow_id,omitempty"`
-	WorkflowName                string        `json:"workflow_name,omitempty"`
-	WorkflowSelectionConfidence *float64      `json:"workflow_selection_confidence,omitempty"`
-	SignalType                  string        `json:"signal_type,omitempty"`
-	ActionType                  string        `json:"action_type,omitempty"`
-	Outcome                     string        `json:"outcome,omitempty"`
-	EffectivenessScore          *float64      `json:"effectiveness_score,omitempty"`
-	SignalResolved              *bool         `json:"signal_resolved,omitempty"`
-	HashMatch                   string        `json:"hash_match,omitempty"`
-	PreRemediationSpecHash      string        `json:"pre_remediation_spec_hash,omitempty"`
-	PostRemediationSpecHash     string        `json:"post_remediation_spec_hash,omitempty"`
-	HealthChecks                *HealthChecks `json:"health_checks,omitempty"`
-	MetricDeltas                *MetricDeltas `json:"metric_deltas,omitempty"`
-	AssessmentReason            string        `json:"assessment_reason,omitempty"`
-	CompletedAt                 time.Time     `json:"completed_at"`
+	WorkflowID                  string   `json:"workflow_id,omitempty"`
+	WorkflowName                string   `json:"workflow_name,omitempty"`
+	WorkflowSelectionConfidence *float64 `json:"workflow_selection_confidence,omitempty"`
+	SignalType                  string   `json:"signal_type,omitempty"`
+	ActionType                  string   `json:"action_type,omitempty"`
+	Outcome                     string   `json:"outcome,omitempty"`
+	EffectivenessScore          *float64 `json:"effectiveness_score,omitempty"`
+	SignalResolved              *bool    `json:"signal_resolved,omitempty"`
+	HashMatch                   string   `json:"hash_match,omitempty"`
+	// DD-KA-2511: server-derived application evidence, never model supplied.
+	AppliedState            string        `json:"applied_state,omitempty"`
+	SpecChangeStatus        string        `json:"spec_change_status,omitempty"`
+	PreRemediationSpecHash  string        `json:"pre_remediation_spec_hash,omitempty"`
+	PostRemediationSpecHash string        `json:"post_remediation_spec_hash,omitempty"`
+	HealthChecks            *HealthChecks `json:"health_checks,omitempty"`
+	MetricDeltas            *MetricDeltas `json:"metric_deltas,omitempty"`
+	AssessmentReason        string        `json:"assessment_reason,omitempty"`
+	CompletedAt             time.Time     `json:"completed_at"`
 }
 
 // Tier2Summary is a compact historical remediation record (wider window).
@@ -112,6 +116,10 @@ type Tier2Summary struct {
 	EffectivenessScore          *float64  `json:"effectiveness_score,omitempty"`
 	SignalResolved              *bool     `json:"signal_resolved,omitempty"`
 	HashMatch                   string    `json:"hash_match,omitempty"`
+	AppliedState                string    `json:"applied_state,omitempty"`
+	SpecChangeStatus            string    `json:"spec_change_status,omitempty"`
+	PreRemediationSpecHash      string    `json:"pre_remediation_spec_hash,omitempty"`
+	PostRemediationSpecHash     string    `json:"post_remediation_spec_hash,omitempty"`
 	AssessmentReason            string    `json:"assessment_reason,omitempty"`
 	CompletedAt                 time.Time `json:"completed_at"`
 }
@@ -376,11 +384,12 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 		ResourceNamespace: namespace,
 	}
 
-	resolvedSpecHash, err := e.resolveSpecHash(ctx, kind, name, namespace, apiVersion, specHash)
+	resolvedSpecHash, specHashUnavailable, err := e.resolveSpecHash(ctx, kind, name, namespace, apiVersion, specHash)
 	if err != nil {
 		return nil, err
 	}
 	specHash = resolvedSpecHash
+	result.HistoryUnavailable = specHashUnavailable
 
 	ownerErr, hardErr := e.populateOwnerChain(ctx, kind, name, namespace, apiVersion, result)
 	if hardErr != nil {
@@ -396,7 +405,7 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 		// An empty current hash means no valid history query could be formed
 		// (the DS API correctly returns 400). Preserve unknown/legacy flows;
 		// only a failed valid Phase 2 acquisition requires manual review.
-		result.HistoryUnavailable = specHash != ""
+		result.HistoryUnavailable = result.HistoryUnavailable || specHash != ""
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)
@@ -413,24 +422,31 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 }
 
 // resolveSpecHash returns specHash unchanged if already provided, otherwise
-// auto-computes it from the live resource. A forbidden error is returned to
-// the caller as a hard failure; any other computation error is logged and
-// enrichment proceeds with an empty specHash.
-func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, apiVersion, specHash string) (string, error) {
+// auto-computes it from the live resource. The unavailable flag distinguishes
+// a failed live hash lookup from a successful empty/legacy result so Phase 2
+// can fail closed without breaking the best-effort enrichment API.
+func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, apiVersion, specHash string) (string, bool, error) {
 	if specHash != "" {
-		return specHash, nil
+		return specHash, false, nil
 	}
 	computed, err := e.effectiveK8s(ctx).GetSpecHash(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		if isForbiddenError(err) {
-			return "", fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
+			forbidden := fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
+			return "", true, fmt.Errorf("%w: %w", ErrHistoryUnavailable, forbidden)
+		}
+		// A deleted target or an unavailable API mapping is sparse evidence,
+		// not a history backend outage (DD-KA-006 / Issue #1039).
+		if IsNotFoundError(err) || IsNoMatchError(err) {
+			e.logger.Info("enrichment: target unavailable while computing specHash; proceeding with empty", "resource", namespace+"/"+kind+"/"+name)
+			return "", false, nil
 		}
 		e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 			"resource", namespace+"/"+kind+"/"+name,
 		)
-		return "", nil
+		return "", true, nil
 	}
-	return computed, nil
+	return computed, false, nil
 }
 
 // populateOwnerChain resolves the resource's owner chain and stores it (or

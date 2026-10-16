@@ -231,6 +231,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	for _, scenario := range historySelectionScenarios2496() {
 		r.Register(scenario)
 	}
+	r.Register(recurrentRCA2511Scenario())
 	for _, scenario := range phaseIsolationScenarios2498() {
 		r.Register(scenario)
 	}

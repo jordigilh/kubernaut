@@ -68,6 +68,8 @@ type MockScenarioConfig struct {
 	RepeatJustification *sharedtypes.RepeatJustification
 	// RCAConfidence is independent of the current workflow proposal confidence.
 	RCAConfidence *float64
+	// CausalMechanismStatus is the generic history-aware RCA classification.
+	CausalMechanismStatus string
 	// DeclineWorkflow keeps the workflow in real discovery but submits no
 	// suitable workflow after examining it. It never filters the catalog.
 	DeclineWorkflow bool

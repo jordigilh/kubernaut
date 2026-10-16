@@ -30,7 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
@@ -370,6 +372,21 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			Expect(result).NotTo(BeNil())
 			Expect(ds.capturedSpecHash).To(BeEmpty(),
 				"enricher should proceed with empty specHash on failure")
+			Expect(result.HistoryUnavailable).To(BeTrue(),
+				"spec-hash failure must distinguish unavailable history from a successful empty result")
+		})
+
+		It("should treat a deleted target as sparse evidence rather than a history outage", func() {
+			k8s := &fakeK8sClient{
+				ownerChain:  []enrichment.OwnerChainEntry{},
+				specHashErr: apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, "api-server"),
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Deployment", Name: "api-server", Namespace: "default"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HistoryUnavailable).To(BeFalse())
 		})
 	})
 

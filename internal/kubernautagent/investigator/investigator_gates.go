@@ -372,11 +372,12 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	// retry's other content (e.g. an updated due_diligence.target_accuracy
 	// narrative) is genuinely new and worth keeping. Only the regressed
 	// field itself is backfilled from the pre-retry result.
-	if retryResult.Confidence <= 0 && result.Confidence > 0 {
+	if !retryResult.ConfidenceSet && retryResult.Confidence <= 0 && result.Confidence > 0 {
 		inv.logger.Info("same-kind validation gate: retry lost confidence, keeping original",
 			"original_confidence", result.Confidence,
 			"correlation_id", correlationID)
 		retryResult.Confidence = result.Confidence
+		retryResult.ConfidenceSet = result.ConfidenceSet
 	}
 
 	// The retry is a fresh submission on its own turn: its own Reasoning

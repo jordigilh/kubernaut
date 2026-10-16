@@ -512,7 +512,6 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			k8sClientForLabels := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"api-server": {{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
-					"worker":     {{Kind: "Deployment", Name: "worker", Namespace: "production"}},
 				},
 			}
 			labelEnricher := enrichment.NewEnricher(

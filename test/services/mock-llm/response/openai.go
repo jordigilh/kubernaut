@@ -239,6 +239,9 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		"signal_name":          cfg.SignalName,
 		"contributing_factors": contributingSlice(cfg),
 	}
+	if cfg.CausalMechanismStatus != "" {
+		rca["causal_mechanism_status"] = cfg.CausalMechanismStatus
+	}
 	if cfg.ResourceKind != "" {
 		rt := map[string]string{
 			"kind":      cfg.ResourceKind,
@@ -309,6 +312,9 @@ func rcaOnlyJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		"severity":             cfg.Severity,
 		"signal_name":          cfg.SignalName,
 		"contributing_factors": contributingSlice(cfg),
+	}
+	if cfg.CausalMechanismStatus != "" {
+		rca["causal_mechanism_status"] = cfg.CausalMechanismStatus
 	}
 	if cfg.ResourceKind != "" {
 		rt := map[string]string{

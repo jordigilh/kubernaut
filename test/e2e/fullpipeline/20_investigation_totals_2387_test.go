@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
@@ -156,11 +157,15 @@ var _ = Describe("Investigation Totals on AgentSession Result [E2E-FP-2387-001]"
 		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
 
 		By("Scaling memory-eater to 0 replicas (prevent RR storm)")
-		dep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
-		zero := int32(0)
-		dep.Spec.Replicas = &zero
-		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			dep := &appsv1.Deployment{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep); err != nil {
+				return err
+			}
+			zero := int32(0)
+			dep.Spec.Replicas = &zero
+			return k8sClient.Update(ctx, dep)
+		})).To(Succeed())
 
 		By("Waiting for SignalProcessing to complete")
 		Eventually(func() string {

@@ -86,6 +86,7 @@ func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationRes
 	clearModelSelectionMetadata(&result)
 	if intake.Confidence != nil {
 		result.Confidence = *intake.Confidence
+		result.ConfidenceSet = true
 	}
 	if result.WorkflowID != "" {
 		result.WorkflowSelectionConfidence = intake.Confidence
@@ -103,6 +104,10 @@ func (p *ResultParser) parseFlatResult(coerced string) *katypes.InvestigationRes
 	mergeNestedRemediationTarget(&result, coerced)
 	mergeNestedInvestigationAnalysis(&result, coerced)
 	mergeNestedSelectedWorkflow(&result, coerced, p.logger)
+	if result.CausalMechanismStatus != "" && !isCausalMechanismStatus(result.CausalMechanismStatus) {
+		p.logger.Info("flat result contained an invalid causal mechanism status; ignoring it")
+		result.CausalMechanismStatus = ""
+	}
 	return &result
 }
 

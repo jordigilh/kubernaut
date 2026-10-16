@@ -44,4 +44,10 @@ var _ = Describe("TP-764: Enrichment deduplication (#764)", func() {
 			Expect(key1).To(Equal(key2), "same target -> same key")
 		})
 	})
+
+	It("UT-KA-2511-015: API version is part of the target cache identity", func() {
+		apps := investigator.EnrichmentCacheKeyWithAPIVersion("Route", "api", "prod", "route.openshift.io/v1")
+		gateway := investigator.EnrichmentCacheKeyWithAPIVersion("Route", "api", "prod", "gateway.networking.k8s.io/v1")
+		Expect(apps).NotTo(Equal(gateway))
+	})
 })

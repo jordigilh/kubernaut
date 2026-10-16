@@ -147,6 +147,7 @@ type Phase1Data struct {
 	Confidence            float64
 	InvestigationAnalysis string
 	CausalChain           []string
+	CausalMechanismStatus string
 	DueDiligence          *katypes.DueDiligenceReview
 	RCAConfidence         *float64
 }
@@ -317,6 +318,9 @@ func formatPhase1Assessment(p1 *Phase1Data) string {
 		}
 		parts = append(parts, "- **Contributing Factors**: "+strings.Join(sanitized, "; "))
 	}
+	if p1.CausalMechanismStatus != "" {
+		parts = append(parts, "- **Causal Mechanism Status**: "+sanitizeField(p1.CausalMechanismStatus))
+	}
 	if p1.RemediationTarget.Kind != "" {
 		target := sanitizeField(p1.RemediationTarget.Kind) + "/" + sanitizeField(p1.RemediationTarget.Name)
 		if p1.RemediationTarget.Namespace != "" {
@@ -358,6 +362,14 @@ func sortedLabelString(m map[string]string) string {
 
 var injectionPatterns = regexp.MustCompile(
 	`(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|disregard\s+(all\s+)?prior|forget\s+(all\s+)?previous|system\s*:\s*you\s+are)`,
+)
+
+// credentialPatterns mirrors the shared G4 field rules for server-owned prompt
+// values. Prompt builders intentionally do not accept a context, so these
+// bounded patterns cover free-form history identifiers without invoking the
+// context-aware tool-output sanitizer.
+var credentialPatterns = regexp.MustCompile(
+	`(?i)(?:authorization)[ \t]*:[ \t]*[^\n,;|]+|(?:password|passwd|pwd|api[_-]?key|apikey|token|access[_-]?token|secret|client_secret|credential|credentials)[ \t]*[:=][ \t]*["']?[^\s"',}]+["']?`,
 )
 
 func withDefault(value, fallback string) string {
@@ -422,7 +434,8 @@ func sanitizeMapValues(m map[string]string) map[string]string {
 }
 
 func sanitizeField(s string) string {
-	return injectionPatterns.ReplaceAllString(s, "[REDACTED]")
+	s = injectionPatterns.ReplaceAllString(s, "[REDACTED]")
+	return credentialPatterns.ReplaceAllString(s, "[REDACTED]")
 }
 
 func inferPriority(severity string) string {

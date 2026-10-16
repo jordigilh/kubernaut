@@ -1,10 +1,18 @@
 # DD-KA-2496: History-Aware RCA, Frozen Target Handoff and Repeat Selection
 
-**Status**: Approved for implementation; wiring-first TDD in progress<br>
+**Status**: Approved for implementation; **Section 1 Phase 1/RCA contract partially superseded by DD-KA-2511**<br>
 **Decision Date**: 2026-10-09<br>
-**Version**: 1.2 — concrete handoff/review contracts and server-owned live cluster attribution approved 2026-10-13<br>
+**Version**: 1.3 — Phase 1/RCA continuation amendment recorded by DD-KA-2511 on 2026-10-15<br>
 **Applies To**: Kubernaut Agent, DataStorage, AIAnalysis, Remediation Orchestrator and existing audit/status paths<br>
 **Issues**: [#2496](https://github.com/jordigilh/kubernaut/issues/2496), [#2498](https://github.com/jordigilh/kubernaut/issues/2498)
+
+### Supersession notice
+
+DD-KA-2511 is authoritative for the recurrent-RCA continuation contract. It
+supersedes only the Phase 1/RCA statements below that say history is optional,
+never pre-injected, and that RCA completion must not depend on history. The
+target-scoped enrichment, frozen handoff, workflow identity, repeat-selection,
+and Phase 3 allow-list contracts in this decision remain authoritative.
 
 ---
 
@@ -14,7 +22,7 @@ Implement history-aware RCA and repeat reasoning across two existing paths: past
 
 ### 1. Phase-scoped delivery
 
-- **Phase 1/RCA** may advertise resource-context/history tools, but calls are optional. No remediation history is pre-injected and RCA completion must not depend on either tool.
+- **Phase 1/RCA** may advertise resource-context/history tools. When the server resolves target-scoped history, the initial `submit_result` is provisional and KA continues the same RCA conversation with sanitized server-owned history before final RCA completion, as specified by DD-KA-2511. No signal-scoped history is pre-injected; acquisition failure follows the existing review/fail-closed path.
 - **Phase 2** automatically resolves and enriches exactly one target. It sanitizes, freezes/deep-copies and serializes the authoritative target-scoped handoff for selection. The packet has one `target` field, not `final_target` or a multiple-target model.
 - **Phase 3** exposes only workflow discovery and required result-submission tools. A trusted server-side phase allow-list is checked before registry or external execution. Model-supplied phase arguments are not authoritative; off-phase calls are rejected and observable.
 
@@ -102,7 +110,10 @@ No #2497 runtime reviewer, legacy AA recovery/backfill, new database/registry se
 - [DD-KA-016](DD-KA-016-remediation-history-context.md) — target-scoped history query and assessment semantics.
 - [DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md) — discovery projection and phase separation.
 - [ADR-055](ADR-055-llm-driven-context-enrichment.md) — target-only automatic enrichment timing.
+- [DD-KA-2511](DD-KA-2511-generic-recurrent-rca-continuation.md) — authoritative recurrent-RCA continuation and Phase 1 history-review amendment.
 - [DD-KA-001](DD-KA-001-workflow-response-validation-architecture.md) — existing structural validation/self-correction seam.
 - [DD-WORKFLOW-012](DD-WORKFLOW-012-workflow-immutability-constraints.md) — UUID identity and name/version metadata semantics.
 
-**Implementation note:** production comments and tests implementing this contract must reference `DD-KA-2496`.
+**Implementation note:** production comments and tests implementing the unchanged
+handoff/selection contracts reference `DD-KA-2496`; recurrent-RCA continuation
+code and tests reference `DD-KA-2511`.
