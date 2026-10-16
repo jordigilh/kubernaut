@@ -45,7 +45,10 @@ import (
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
-const executionEngineJob = "job"
+const (
+	executionEngineAnsible = "ansible"
+	executionEngineJob     = "job"
+)
 
 // resolveSchemaMetadata builds executor.CreateOptions directly from
 // wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
@@ -300,7 +303,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
 		switch {
 		case err == nil:
-			resourceExists = true
+			resourceExists = r.jobMatchesPendingWFE(ctx, wfe, resourceName, existingJob, logger)
 		case apierrors.IsNotFound(err):
 			if wfe.Status.ExecutionRef != nil {
 				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
@@ -333,7 +336,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		default:
 			return resourceName, ctrl.Result{}, fmt.Errorf("check existing PipelineRun %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 		}
-	case "ansible":
+	case executionEngineAnsible:
 		// AWX manages jobs externally — no K8s resource to check.
 		// Use ExecutionRef as the idempotency signal.
 		resourceExists = wfe.Status.ExecutionRef != nil
@@ -359,6 +362,25 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	}
 
 	return resourceName, ctrl.Result{}, nil, false
+}
+
+func (r *WorkflowExecutionReconciler) jobMatchesPendingWFE(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, existingJob *batchv1.Job, logger logr.Logger) bool {
+	if r.ExecutorRegistry == nil {
+		return true
+	}
+	exec, err := r.ExecutorRegistry.Get(executionEngineJob)
+	if err != nil {
+		return true
+	}
+	jobExec, ok := exec.(*weexecutor.JobExecutor)
+	if !ok {
+		return true
+	}
+	if jobExec.IsExpectedJob(ctx, wfe, existingJob, r.ExecutionNamespace) {
+		return true
+	}
+	logger.Info("Existing Job name is occupied by a foreign or mismatched resource; selection audit will be recorded", "resource", resourceName)
+	return false
 }
 
 // createPendingExecutionResource dispatches to the engine-specific executor

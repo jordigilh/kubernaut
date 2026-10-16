@@ -156,7 +156,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 							WorkflowName: "k8s-restart-pod-v1",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
-							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 							ExecutionEngine: "tekton",
 							ActionType:      "RestartPod",
 						},
@@ -231,7 +231,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Access flat fields directly
 			Expect(eventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
 			Expect(eventData.WorkflowVersion).To(Equal("v1.0.0"))
-			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
+			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
 			// IT-WE-1661-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowRef
@@ -315,7 +315,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 							ActionType:   "RestartPod",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
-							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
 							ExecutionEngine: "tekton",
 						},
 					},

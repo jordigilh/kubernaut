@@ -56,6 +56,9 @@ different workflow on the same target is not blocked by a stale Job identity.
 | OWASP ASVS V5.1.x | Generated names/labels are bounded and Kubernetes-valid; immutable inputs are not replaced by untrusted values | UT name/metadata scenarios |
 | OWASP ASVS V7.1.1/V7.2.1 | Operational identity and collision decisions are observable without exposing workflow output or credentials | UT/IT metadata and log/event assertions |
 
+All OWASP ASVS identifiers above refer to **ASVS v4.0.3**; the version is
+explicit so future ASVS revisions do not silently change the control baseline.
+
 AC-4 and SC-8 are unchanged by this local naming change; they remain covered by
 the existing fleet/client-factory suites rather than receiving speculative tests.
 

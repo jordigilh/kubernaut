@@ -58,6 +58,9 @@ CC8.1 is recorded as change-management evidence for this implementation plan;
 runtime audit completeness is mapped to CC7.2 per the repository's corrected
 SOC2 mapping.
 
+OWASP ASVS control IDs in this plan are pinned to **ASVS v4.0.3** (V4 access
+control, V5 validation/sanitization/encoding, and V7 error logging/auditing).
+
 ## 3. Risks driving test design
 
 | ID | Risk | Priority | Tests |
@@ -171,6 +174,8 @@ the E2E journey was not run.
 | **UT-WE-2512-014** | Controller-side execution-resource reads route through the configured local/remote ClientFactory (BR-FLEET-054, FedRAMP AC-4/AC-6) | P0 |
 | **UT-WE-2512-015** | Legacy Job status reads fail closed on wrong owner or bundle image (AU-3, AU-9, AC-6) | P0 |
 | **UT-WE-2512-016** | A terminal WFE retries its missing terminal audit after the phase was persisted and records success before cooldown cleanup (AU-2/AU-3, CC7.2) | P0 |
+| **UT-WE-2512-017** | Credential-like workflow parameters are redacted in started/completed audit payloads while non-sensitive parameters remain reconstructable (BR-AUDIT-005, AU-3/AU-9/AU-11, ASVS V7.1.1/V7.2.1) | P0 |
+| **UT-WE-2512-018** | Job pending validation rejects malformed OCI bundles, malformed target identities, and missing RR UIDs on new Job WFEs (BR-WE-014, SI-10, ASVS V5.1.x) | P0 |
 | **UT-AUDIT-2512-001** | Repeated WorkflowExecution lifecycle emission derives the same deterministic event ID for one WFE/action and different IDs for different actions (AU-2/AU-3, CC7.2) | P0 |
 | **UT-AUDIT-2512-002** | WorkflowExecution audit payload carries generic execution reference and immutable RR UID (AU-3, CC7.2) | P0 |
 | **UT-DS-AUDIT-2512-001** | DataStorage preserves a client event ID through request conversion for durable deduplication (AU-2/AU-3, CC7.2) | P0 |

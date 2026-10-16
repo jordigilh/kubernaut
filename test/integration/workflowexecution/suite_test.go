@@ -464,7 +464,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 					WorkflowName:    "test-workflow",
 					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
-					ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+					ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 					ExecutionEngine: "tekton",
 				},
 			},
