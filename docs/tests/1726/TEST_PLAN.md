@@ -1,5 +1,10 @@
 # Test Plan — #1726: Phase-Override `apiKeyFile` Resolution
 
+> **2026-10-15 amendment:** The credential-isolation behavior remains required,
+> but the legacy partial override/inherit contract is superseded by BR-AI-090/#2515.
+> Current complete-profile coverage is maintained in
+> [TP-2515](../2515/TEST_PLAN.md).
+
 **IEEE 829 Compliant** | **Issue**: [#1726](https://github.com/jordigilh/kubernaut/issues/1726) | **Milestone**: v1.6
 
 ## 1. Test Plan Identifier
