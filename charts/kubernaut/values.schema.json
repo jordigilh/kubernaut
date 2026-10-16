@@ -855,6 +855,21 @@
                 "default": "",
                 "description": "Path to PEM CA cert for internal LLM endpoints behind a private CA."
               },
+              "tlsCertFile": {
+                "type": "string",
+                "default": "",
+                "description": "Path to the client certificate for mTLS to the LLM endpoint. Must be set with tlsKeyFile."
+              },
+              "tlsKeyFile": {
+                "type": "string",
+                "default": "",
+                "description": "Path to the client key for mTLS to the LLM endpoint. Must be set with tlsCertFile."
+              },
+              "bedrockRegion": {
+                "type": "string",
+                "default": "",
+                "description": "AWS Bedrock region reserved for the supported provider contract."
+              },
               "oauth2": {
                 "type": "object",
                 "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",

@@ -102,6 +102,9 @@ global:
     #   vertexLocation: ""
     #   azureApiVersion: ""
     #   tlsCaFile: ""
+    #   tlsCertFile: ""
+    #   tlsKeyFile: ""
+    #   bedrockRegion: ""
     #   oauth2:
     #     enabled: false
     #     tokenURL: ""
