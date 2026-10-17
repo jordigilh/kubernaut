@@ -392,6 +392,10 @@ type auditWriterLoopState struct {
 	startTime     time.Time
 }
 
+// maxDataStorageAuditBatchSize is the DataStorage API default limit for
+// POST /api/v1/audit/events/batch (BR-STORAGE-043, Issue #667).
+const maxDataStorageAuditBatchSize = 500
+
 func (s *BufferedAuditStore) backgroundWriter() {
 	defer s.wg.Done()
 
@@ -433,11 +437,15 @@ func (s *BufferedAuditStore) handleShutdown(state *auditWriterLoopState) {
 		batchSizeBeforeFlush := len(state.batch)
 		s.logger.V(1).Info("🛑 Flushing remaining events on shutdown",
 			"batch_size", batchSizeBeforeFlush)
-		if err := s.writeBatchWithRetry(state.batch); err != nil {
+		written, err := s.writeBatchWithRetry(state.batch)
+		if written > 0 {
+			state.batch = state.batch[written:]
+		}
+		if err != nil {
 			s.logger.Error(err, "Shutdown audit flush failed; events remain unacknowledged")
 		}
 		s.logger.Info("✅ Shutdown flush completed",
-			"flushed_count", batchSizeBeforeFlush)
+			"flushed_count", written)
 	}
 	s.logger.Info("🛑 Audit background writer stopped",
 		"total_runtime", time.Since(state.startTime),
@@ -463,16 +471,20 @@ func (s *BufferedAuditStore) handleBufferedEvent(state *auditWriterLoopState, ev
 		"batch_size", batchSizeBeforeFlush,
 		"buffer_utilization", bufferUtilizationBeforeFlush,
 		"time_since_last_flush", timeSinceLastFlush)
-	if err := s.writeBatchWithRetry(state.batch); err != nil {
+	written, err := s.writeBatchWithRetry(state.batch)
+	if written > 0 {
+		state.batch = state.batch[written:]
+	}
+	if err != nil {
 		// Keep the batch for a later tick/explicit Flush. Clearing it here
 		// would turn a transient DataStorage failure into silent audit loss.
-		s.logger.Error(err, "Audit batch flush failed; retaining batch for retry")
+		s.logger.Error(err, "Audit batch flush failed; retaining unsent events for retry",
+			"flushed_count", written)
 		return
 	}
 	state.lastFlushTime = time.Now()
-	state.batch = state.batch[:0]
 	s.logger.V(2).Info("✅ Batch-full flush completed",
-		"flushed_count", batchSizeBeforeFlush,
+		"flushed_count", written,
 		"batch_size_after_flush", len(state.batch),
 		"buffer_utilization_after_flush", len(s.buffer))
 }
@@ -523,15 +535,19 @@ func (s *BufferedAuditStore) handleFlushTick(state *auditWriterLoopState, tickTi
 		"batch_size", batchSizeBeforeFlush,
 		"buffer_utilization", bufferUtilizationBeforeFlush,
 		"time_since_last_flush", timeSinceLastFlush)
-	if err := s.writeBatchWithRetry(state.batch); err != nil {
+	written, err := s.writeBatchWithRetry(state.batch)
+	if written > 0 {
+		state.batch = state.batch[written:]
+	}
+	if err != nil {
 		// Keep the batch in memory so a subsequent tick or Flush can retry it.
-		s.logger.Error(err, "Audit timer flush failed; retaining batch for retry")
+		s.logger.Error(err, "Audit timer flush failed; retaining unsent events for retry",
+			"flushed_count", written)
 		return
 	}
 	state.lastFlushTime = time.Now()
-	state.batch = state.batch[:0]
 	s.logger.V(2).Info("✅ Timer-based flush completed",
-		"flushed_count", batchSizeBeforeFlush,
+		"flushed_count", written,
 		"batch_size_after_flush", len(state.batch),
 		"buffer_utilization_after_flush", len(s.buffer))
 }
@@ -577,15 +593,16 @@ drainLoop:
 		return
 	}
 
-	batchSizeBeforeFlush := len(state.batch)
-	err := s.writeBatchWithRetry(state.batch)
+	written, err := s.writeBatchWithRetry(state.batch)
+	if written > 0 {
+		state.batch = state.batch[written:]
+	}
 	if err == nil {
 		state.lastFlushTime = time.Now()
-		state.batch = state.batch[:0]
 	}
 	if err == nil {
 		s.logger.V(2).Info("✅ Explicit flush completed",
-			"flushed_count", batchSizeBeforeFlush,
+			"flushed_count", written,
 			"drained_from_buffer", drainedCount,
 			"buffer_size_after", len(s.buffer))
 	}
@@ -605,7 +622,27 @@ var writeBatchWithRetryBackoff = backoff.Config{
 	JitterPercent: 10, // Anti-thundering-herd: avoids every replica retrying DataStorage in lockstep
 }
 
-// writeBatchWithRetry writes a batch with exponential backoff (+ jitter) retry logic.
+// writeBatchWithRetry writes a batch in DataStorage-sized chunks. It returns
+// the number of events acknowledged before the first failed chunk and leaves
+// the caller responsible for removing that acknowledged prefix from its
+// in-memory batch.
+func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) (int, error) {
+	written := 0
+	for written < len(batch) {
+		end := written + maxDataStorageAuditBatchSize
+		if end > len(batch) {
+			end = len(batch)
+		}
+		if err := s.writeBatchChunkWithRetry(batch[written:end]); err != nil {
+			return written, err
+		}
+		written = end
+	}
+	return written, nil
+}
+
+// writeBatchChunkWithRetry writes one API-sized batch with exponential
+// backoff (+ jitter) retry logic.
 //
 // Retry strategy (GAP-10/GAP-11: Error differentiation):
 // - 4xx errors (client errors): Do NOT retry - indicates invalid data
@@ -617,7 +654,7 @@ var writeBatchWithRetryBackoff = backoff.Config{
 // - Attempt 2: ~1 second delay
 // - Attempt 3: ~2 second delay
 // - After MaxRetries: Return an error and retain the batch for a later retry
-func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) error {
+func (s *BufferedAuditStore) writeBatchChunkWithRetry(batch []*ogenclient.AuditEventRequest) error {
 	start := time.Now()
 	for attempt := 1; attempt <= s.config.MaxRetries; attempt++ {
 		// Use store-scoped context with per-attempt timeout
