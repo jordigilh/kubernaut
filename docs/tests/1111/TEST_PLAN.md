@@ -92,7 +92,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 ### 4.2 Features Not to be Tested
 
-- **Enrichment correlation fix**: `aiagent.enrichment.completed` uses `signal.IncidentID` (AIAnalysis name) instead of `signal.RemediationID`. This is a design decision, not a bug. Separate issue if alignment is needed.
+- **Enrichment correlation fix (superseded)**: the earlier `IncidentID` exception is superseded by DD-KA-2520-2521. Enrichment and investigation audit events now share the remediation-wide top-level correlation; `IncidentID` remains bounded payload metadata.
 - **Webhook correlation alignment**: `remediationworkflow.admitted.*` uses admission UID. Aligning to RR name would require webhook handler changes. Out of scope.
 - **Never-emitted events** (~14 types): Error/edge-case events with no production emitter path in current scenarios (e.g., `gateway.crd.failed` requires K8s API server errors).
 

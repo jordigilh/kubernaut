@@ -26,8 +26,8 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-var _ = Describe("Enrichment audit correlation — #1111", func() {
-	It("IT-KA-AUDIT-1111-002: uses IncidentID when remediation context differs", func() {
+var _ = Describe("Enrichment audit correlation — #2520-2521", func() {
+	It("IT-KA-AUDIT-2520-001: uses remediation correlation when context differs", func() {
 		rcaClient := newPhaseScriptedRCA("sonnet")
 		resolver := newRecordingPhaseResolver(rcaClient, "default-model")
 		resolver.addPhase(katypes.PhaseRCA, rcaClient, "sonnet")
@@ -41,8 +41,8 @@ var _ = Describe("Enrichment audit correlation — #1111", func() {
 			Namespace:     "default",
 			Severity:      "high",
 			Message:       "OOMKilled",
-			IncidentID:    "incident-1111-002",
-			RemediationID: "remediation-1111-002",
+			IncidentID:    "incident-2520-001",
+			RemediationID: "remediation-2520-001",
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -56,7 +56,7 @@ var _ = Describe("Enrichment audit correlation — #1111", func() {
 			}
 		}
 		Expect(enrichmentEvent).NotTo(BeNil(), "enrichment must emit a completed audit event")
-		Expect(enrichmentEvent.CorrelationID).To(Equal("incident-1111-002"),
-			"enrichment correlation must remain queryable by IncidentID")
+		Expect(enrichmentEvent.CorrelationID).To(Equal("remediation-2520-001"),
+			"enrichment correlation must join the remediation audit timeline")
 	})
 })

@@ -1342,15 +1342,13 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, target enrichmen
 	if inv.enricher == nil {
 		return nil
 	}
-	// Enrichment audit events are queried by IncidentID (TP-1111 / DD-AUDIT-
-	// CORRELATION-001), which intentionally differs from the remediation-wide
-	// correlation used by the rest of the investigation ledger. Preserve the
-	// context fallback for callers that do not provide an IncidentID.
+	// DD-KA-2520-2521 requires one top-level correlation across enrichment and
+	// investigation audit events for a remediation. IncidentID remains bounded
+	// event metadata; the remediation-wide context is authoritative whenever it
+	// is available. Preserve the IncidentID fallback for legacy callers.
 	correlationID := incidentID
-	if correlationID == "" {
-		if value, ok := audit.CorrelationIDFromContext(ctx); ok && value != "" {
-			correlationID = value
-		}
+	if value, ok := audit.CorrelationIDFromContext(ctx); ok && value != "" {
+		correlationID = value
 	}
 	result, err := inv.enricher.Enrich(ctx, enrichment.EnrichRequest{
 		Kind: target.Kind, Name: target.Name, Namespace: target.Namespace, APIVersion: target.APIVersion,
