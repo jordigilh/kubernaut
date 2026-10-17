@@ -310,6 +310,12 @@ type AgentSessionAlignmentVerdict struct {
 // map-extraction helpers (GetStringFromMap, GetFloat64FromMap, etc.)
 // operate generically on the decoded map regardless of source.
 type AgentSessionResult struct {
+	// EvidenceStatus is the bounded server-owned status of optional evidence
+	// sources. It is additive and present on completed investigations when a
+	// source was skipped, partial, failed, or otherwise degraded.
+	// +optional
+	EvidenceStatus *EvidenceStatus `json:"evidenceStatus,omitempty"`
+
 	// IncidentID is KA's investigation identifier for correlation.
 	IncidentID string `json:"incidentID,omitempty"`
 	// Analysis is the natural-language analysis produced by the LLM.
@@ -403,6 +409,11 @@ type AgentSessionStatus struct {
 	// alignment state).
 	// +optional
 	Result *AgentSessionResult `json:"result,omitempty"`
+
+	// EvidenceStatus is retained on failed/cancelled terminal paths where Result
+	// is intentionally absent, so evidence classification is never lost.
+	// +optional
+	EvidenceStatus *EvidenceStatus `json:"evidenceStatus,omitempty"`
 
 	// Error is a curated, user-facing failure message, set on the Failed
 	// transition (SI-11: never a raw internal error string).

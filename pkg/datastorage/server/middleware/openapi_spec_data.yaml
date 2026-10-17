@@ -4958,6 +4958,51 @@ components:
           type: boolean
           description: Whether remediation history was successfully fetched from DataStorage
           example: true
+        cluster_id:
+          type: string
+          maxLength: 253
+          description: Validated target cluster identity associated with the enrichment or recovery observation
+        source:
+          type: string
+          maxLength: 64
+          description: Bounded evidence or recovery source identifier
+        tool_class:
+          type: string
+          enum: [read, mutation, unknown]
+          description: Trusted MCP tool class for recovery telemetry
+        logical_tool:
+          type: string
+          maxLength: 128
+          description: Validated logical MCP tool name; wire prefixes are not persisted
+        attempt:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Bounded recovery attempt number
+        retry_outcome:
+          type: string
+          enum: [retry, success, failed, exhausted, unknown]
+          description: Bounded recovery observation outcome
+        failure_class:
+          type: string
+          enum: [session_reset, http_transient, unauthorized, caller_canceled, permanent, unknown]
+          description: Server-owned transport failure class
+        failure_code:
+          type: string
+          maxLength: 128
+          description: Server-owned bounded failure code; raw dependency error text is excluded
+        evidence_source:
+          type: string
+          enum: [remediation_history, owner_chain, detected_labels, mcp, context_tool]
+          description: Bounded evidence source classification
+        evidence_outcome:
+          type: string
+          enum: [success, partial, skipped, valid_empty, transport_unavailable, schema_client_failure, canceled, sources_truncated]
+          description: Bounded evidence source outcome
+        evidence_failure_code:
+          type: string
+          maxLength: 128
+          description: Server-owned bounded evidence failure code
 
     AIAgentEnrichmentFailedPayload:
       type: object
@@ -4996,6 +5041,51 @@ components:
           type: string
           description: Namespace of the resource (empty for cluster-scoped)
           example: "production"
+        cluster_id:
+          type: string
+          maxLength: 253
+          description: Validated target cluster identity associated with the failed enrichment or recovery observation
+        source:
+          type: string
+          maxLength: 64
+          description: Bounded evidence or recovery source identifier
+        tool_class:
+          type: string
+          enum: [read, mutation, unknown]
+          description: Trusted MCP tool class for recovery telemetry
+        logical_tool:
+          type: string
+          maxLength: 128
+          description: Validated logical MCP tool name; wire prefixes are not persisted
+        attempt:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Bounded recovery attempt number
+        retry_outcome:
+          type: string
+          enum: [retry, success, failed, exhausted, unknown]
+          description: Bounded recovery observation outcome
+        failure_class:
+          type: string
+          enum: [session_reset, http_transient, unauthorized, caller_canceled, permanent, unknown]
+          description: Server-owned transport failure class
+        failure_code:
+          type: string
+          maxLength: 128
+          description: Server-owned bounded failure code; raw dependency error text is excluded
+        evidence_source:
+          type: string
+          enum: [remediation_history, owner_chain, detected_labels, mcp, context_tool]
+          description: Bounded evidence source classification
+        evidence_outcome:
+          type: string
+          enum: [success, partial, skipped, valid_empty, transport_unavailable, schema_client_failure, canceled, sources_truncated]
+          description: Bounded evidence source outcome
+        evidence_failure_code:
+          type: string
+          maxLength: 128
+          description: Server-owned bounded evidence failure code
 
     # DD-KA-2496 / BR-KA-016: selection reasoning is not execution configuration.
     # Rejected/incomplete reasoning has its own non-executable schema, with

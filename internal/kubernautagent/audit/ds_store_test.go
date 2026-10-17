@@ -41,6 +41,7 @@ const (
 	rejectedComplete2496 = "rejected-complete"
 	rejectedAbsent2496   = "rejected-absent"
 	rejectedMinimal2496  = "rejected-minimal"
+	sessionResetFailure  = "session_reset"
 )
 
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
@@ -215,6 +216,16 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			}
 			event.Data["failed_detections"] = []string{}
 			event.Data["remediation_history_fetched"] = true
+			event.Data["cluster_id"] = "prod-east"
+			event.Data["source"] = "bridge_tool"
+			event.Data["tool_class"] = "read"
+			event.Data["logical_tool"] = "resources_get"
+			event.Data["attempt"] = 2
+			event.Data["retry_outcome"] = "success"
+			event.Data["failure_class"] = sessionResetFailure
+			event.Data["failure_code"] = sessionResetFailure
+			event.Data["evidence_source"] = "mcp"
+			event.Data["evidence_outcome"] = "success"
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -225,7 +236,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			payload, ok := req.EventData.GetAIAgentEnrichmentCompletedPayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentEnrichmentCompletedPayload")
-			Expect(payload.EventID).To(Equal("evt-001"))
+			Expect(payload.EventID).To(Equal(event.EventID.String()))
 			Expect(payload.IncidentID).To(Equal(inc001))
 			Expect(payload.RootOwnerKind).To(Equal("Deployment"))
 			Expect(payload.RootOwnerName).To(Equal("api-server"))
@@ -238,6 +249,16 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(payload.FailedDetections.Set).To(BeTrue())
 			Expect(payload.FailedDetections.Value).To(BeEmpty())
 			Expect(payload.RemediationHistoryFetched).To(BeTrue())
+			Expect(payload.ClusterID.Value).To(Equal("prod-east"))
+			Expect(payload.Source.Value).To(Equal("bridge_tool"))
+			Expect(payload.ToolClass.Value).To(Equal(ogenclient.AIAgentEnrichmentCompletedPayloadToolClassRead))
+			Expect(payload.LogicalTool.Value).To(Equal("resources_get"))
+			Expect(payload.Attempt.Value).To(Equal(2))
+			Expect(payload.RetryOutcome.Value).To(Equal(ogenclient.AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess))
+			Expect(payload.FailureClass.Value).To(Equal(ogenclient.AIAgentEnrichmentCompletedPayloadFailureClassSessionReset))
+			Expect(payload.FailureCode.Value).To(Equal(sessionResetFailure))
+			Expect(payload.EvidenceSource.Value).To(Equal(ogenclient.AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp))
+			Expect(payload.EvidenceOutcome.Value).To(Equal(ogenclient.AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess))
 		})
 	})
 
@@ -254,6 +275,14 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event.Data["affected_resource_kind"] = "Pod"
 			event.Data["affected_resource_name"] = "web-abc"
 			event.Data["affected_resource_namespace"] = "default"
+			event.Data["cluster_id"] = "prod-east"
+			event.Data["source"] = "bridge_tool"
+			event.Data["tool_class"] = "read"
+			event.Data["logical_tool"] = "resources_get"
+			event.Data["attempt"] = 3
+			event.Data["retry_outcome"] = "exhausted"
+			event.Data["failure_class"] = sessionResetFailure
+			event.Data["failure_code"] = sessionResetFailure
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -264,13 +293,20 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			payload, ok := req.EventData.GetAIAgentEnrichmentFailedPayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentEnrichmentFailedPayload")
-			Expect(payload.EventID).To(Equal("evt-002"))
+			Expect(payload.EventID).To(Equal(event.EventID.String()))
 			Expect(payload.IncidentID).To(Equal("inc-002"))
 			Expect(payload.Reason).To(Equal("all_enrichment_sources_failed"))
 			Expect(payload.Detail).To(ContainSubstring("K8s down"))
 			Expect(payload.AffectedResourceKind).To(Equal("Pod"))
 			Expect(payload.AffectedResourceName).To(Equal("web-abc"))
 			Expect(payload.AffectedResourceNamespace.Value).To(Equal("default"))
+			Expect(payload.ClusterID.Value).To(Equal("prod-east"))
+			Expect(payload.ToolClass.Value).To(Equal(ogenclient.AIAgentEnrichmentFailedPayloadToolClassRead))
+			Expect(payload.LogicalTool.Value).To(Equal("resources_get"))
+			Expect(payload.Attempt.Value).To(Equal(3))
+			Expect(payload.RetryOutcome.Value).To(Equal(ogenclient.AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted))
+			Expect(payload.FailureClass.Value).To(Equal(ogenclient.AIAgentEnrichmentFailedPayloadFailureClassSessionReset))
+			Expect(payload.FailureCode.Value).To(Equal(sessionResetFailure))
 		})
 	})
 

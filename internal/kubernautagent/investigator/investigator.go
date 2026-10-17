@@ -748,8 +748,12 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 			return result, messages, currentEnrichment, nil
 		}
 		if currentEnrichment.HistoryUnavailable {
-			result.HumanReviewNeeded = true
-			result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+			// History transport/schema failure is a typed evidence terminal
+			// outcome, not RCA incompleteness. Stop before an ungrounded
+			// continuation and let the downstream evidence mapper route it as
+			// an API/evidence failure instead of WorkflowNotFound.
+			result.HumanReviewNeeded = false
+			result.HumanReviewReason = ""
 			result.Warnings = append(result.Warnings, "target-scoped remediation history is unavailable; RCA requires operator review")
 			return result, messages, currentEnrichment, nil
 		}
@@ -775,7 +779,19 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 	}
 }
 
-func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (result *katypes.InvestigationResult, retErr error) {
+	evidenceScope := katypes.NewEvidenceStatusScope()
+	ctx = katypes.WithEvidenceStatusScope(ctx, evidenceScope)
+	defer func() {
+		if status := evidenceScope.Snapshot(); status != nil {
+			if result != nil {
+				result.EvidenceStatus = status
+			} else if retErr != nil {
+				retErr = katypes.NewInvestigationError(retErr, status)
+			}
+		}
+	}()
+
 	ctx, err := inv.prescopeFleetOverlay(ctx, signal.ClusterID, signal.RemediationID)
 	if err != nil {
 		return nil, err
@@ -888,6 +904,12 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	if hardFailed {
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
 	}
+	if enrichData != nil && enrichData.HistoryUnavailable {
+		// Keep the RCA target identity, but do not run workflow selection with
+		// unavailable repeat evidence. The typed source status is merged by
+		// Enrich and attached to the terminal result by Investigate.
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
+	}
 	promptEnrichment := toPromptEnrichment(enrichData)
 	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, p.Signal, p.RCAResult, enrichData, p.CorrelationID)
 
@@ -951,6 +973,12 @@ func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *kat
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
 	}
 	if rcaResult.HumanReviewNeeded {
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+	}
+	if enrichData != nil && enrichData.HistoryUnavailable {
+		// The source status is carried by the investigation evidence scope;
+		// do not turn an unavailable history backend into RCA-incomplete or
+		// allow workflow discovery to manufacture a no-workflow outcome.
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
 	}
 	// Guard: only short-circuit not-actionable when no workflow was already
@@ -1083,8 +1111,15 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 	case reEnriched != nil:
 		inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
 			"rca_target", p.PostRCAKind+"/"+p.PostRCAName)
+		enrichData = preserveSignalTargetLabelsOnFailedRCAEnrichment(reEnriched, p.EnrichData)
 	default:
-		inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
+		inv.logger.Info("re-enrichment returned nil, retaining only target identity and allowed label fallback")
+		enrichData = &enrichment.EnrichmentResult{
+			ResourceKind:      p.PostRCAKind,
+			ResourceName:      p.PostRCAName,
+			ResourceNamespace: p.PostRCANS,
+		}
+		enrichData = preserveSignalTargetLabelsOnFailedRCAEnrichment(enrichData, p.EnrichData)
 	}
 
 	p.WorkflowSignal.ResourceKind = p.PostRCAKind
@@ -1243,11 +1278,28 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, target enrichmen
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
 		if enrichment.IsHistoryUnavailableError(err) || errors.Is(err, enrichment.ErrRBACForbidden) {
+			status := enrichment.HistoryEvidenceStatusForError(err, target.Kind, target.Name, target.Namespace, clusterID, incidentID)
+			evidenceStatus := &katypes.EvidenceStatus{
+				Version:         status.Version,
+				Class:           status.Class,
+				Source:          status.Source,
+				Outcome:         status.Outcome,
+				TargetRef:       status.TargetRef,
+				ClusterID:       status.ClusterID,
+				Attempts:        status.Attempts,
+				LastFailureCode: status.LastFailureCode,
+				CorrelationID:   status.CorrelationID,
+				Sources:         []katypes.EvidenceSourceStatus{status},
+			}
+			if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+				scope.MergeSource(status)
+			}
 			return &enrichment.EnrichmentResult{
 				ResourceKind:       target.Kind,
 				ResourceName:       target.Name,
 				ResourceNamespace:  target.Namespace,
 				HistoryUnavailable: true,
+				EvidenceStatus:     evidenceStatus,
 			}
 		}
 		// Preserve the existing best-effort behavior for unrelated enrichment

@@ -685,6 +685,28 @@ type AIAgentEnrichmentCompletedPayload struct {
 	FailedDetections OptNilStringArray `json:"failed_detections"`
 	// Whether remediation history was successfully fetched from DataStorage.
 	RemediationHistoryFetched bool `json:"remediation_history_fetched"`
+	// Validated target cluster identity associated with the enrichment or recovery observation.
+	ClusterID OptString `json:"cluster_id"`
+	// Bounded evidence or recovery source identifier.
+	Source OptString `json:"source"`
+	// Trusted MCP tool class for recovery telemetry.
+	ToolClass OptAIAgentEnrichmentCompletedPayloadToolClass `json:"tool_class"`
+	// Validated logical MCP tool name; wire prefixes are not persisted.
+	LogicalTool OptString `json:"logical_tool"`
+	// Bounded recovery attempt number.
+	Attempt OptInt `json:"attempt"`
+	// Bounded recovery observation outcome.
+	RetryOutcome OptAIAgentEnrichmentCompletedPayloadRetryOutcome `json:"retry_outcome"`
+	// Server-owned transport failure class.
+	FailureClass OptAIAgentEnrichmentCompletedPayloadFailureClass `json:"failure_class"`
+	// Server-owned bounded failure code; raw dependency error text is excluded.
+	FailureCode OptString `json:"failure_code"`
+	// Bounded evidence source classification.
+	EvidenceSource OptAIAgentEnrichmentCompletedPayloadEvidenceSource `json:"evidence_source"`
+	// Bounded evidence source outcome.
+	EvidenceOutcome OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome `json:"evidence_outcome"`
+	// Server-owned bounded evidence failure code.
+	EvidenceFailureCode OptString `json:"evidence_failure_code"`
 }
 
 // GetEventType returns the value of EventType.
@@ -737,6 +759,61 @@ func (s *AIAgentEnrichmentCompletedPayload) GetRemediationHistoryFetched() bool 
 	return s.RemediationHistoryFetched
 }
 
+// GetClusterID returns the value of ClusterID.
+func (s *AIAgentEnrichmentCompletedPayload) GetClusterID() OptString {
+	return s.ClusterID
+}
+
+// GetSource returns the value of Source.
+func (s *AIAgentEnrichmentCompletedPayload) GetSource() OptString {
+	return s.Source
+}
+
+// GetToolClass returns the value of ToolClass.
+func (s *AIAgentEnrichmentCompletedPayload) GetToolClass() OptAIAgentEnrichmentCompletedPayloadToolClass {
+	return s.ToolClass
+}
+
+// GetLogicalTool returns the value of LogicalTool.
+func (s *AIAgentEnrichmentCompletedPayload) GetLogicalTool() OptString {
+	return s.LogicalTool
+}
+
+// GetAttempt returns the value of Attempt.
+func (s *AIAgentEnrichmentCompletedPayload) GetAttempt() OptInt {
+	return s.Attempt
+}
+
+// GetRetryOutcome returns the value of RetryOutcome.
+func (s *AIAgentEnrichmentCompletedPayload) GetRetryOutcome() OptAIAgentEnrichmentCompletedPayloadRetryOutcome {
+	return s.RetryOutcome
+}
+
+// GetFailureClass returns the value of FailureClass.
+func (s *AIAgentEnrichmentCompletedPayload) GetFailureClass() OptAIAgentEnrichmentCompletedPayloadFailureClass {
+	return s.FailureClass
+}
+
+// GetFailureCode returns the value of FailureCode.
+func (s *AIAgentEnrichmentCompletedPayload) GetFailureCode() OptString {
+	return s.FailureCode
+}
+
+// GetEvidenceSource returns the value of EvidenceSource.
+func (s *AIAgentEnrichmentCompletedPayload) GetEvidenceSource() OptAIAgentEnrichmentCompletedPayloadEvidenceSource {
+	return s.EvidenceSource
+}
+
+// GetEvidenceOutcome returns the value of EvidenceOutcome.
+func (s *AIAgentEnrichmentCompletedPayload) GetEvidenceOutcome() OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome {
+	return s.EvidenceOutcome
+}
+
+// GetEvidenceFailureCode returns the value of EvidenceFailureCode.
+func (s *AIAgentEnrichmentCompletedPayload) GetEvidenceFailureCode() OptString {
+	return s.EvidenceFailureCode
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentEnrichmentCompletedPayload) SetEventType(val AIAgentEnrichmentCompletedPayloadEventType) {
 	s.EventType = val
@@ -787,6 +864,61 @@ func (s *AIAgentEnrichmentCompletedPayload) SetRemediationHistoryFetched(val boo
 	s.RemediationHistoryFetched = val
 }
 
+// SetClusterID sets the value of ClusterID.
+func (s *AIAgentEnrichmentCompletedPayload) SetClusterID(val OptString) {
+	s.ClusterID = val
+}
+
+// SetSource sets the value of Source.
+func (s *AIAgentEnrichmentCompletedPayload) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetToolClass sets the value of ToolClass.
+func (s *AIAgentEnrichmentCompletedPayload) SetToolClass(val OptAIAgentEnrichmentCompletedPayloadToolClass) {
+	s.ToolClass = val
+}
+
+// SetLogicalTool sets the value of LogicalTool.
+func (s *AIAgentEnrichmentCompletedPayload) SetLogicalTool(val OptString) {
+	s.LogicalTool = val
+}
+
+// SetAttempt sets the value of Attempt.
+func (s *AIAgentEnrichmentCompletedPayload) SetAttempt(val OptInt) {
+	s.Attempt = val
+}
+
+// SetRetryOutcome sets the value of RetryOutcome.
+func (s *AIAgentEnrichmentCompletedPayload) SetRetryOutcome(val OptAIAgentEnrichmentCompletedPayloadRetryOutcome) {
+	s.RetryOutcome = val
+}
+
+// SetFailureClass sets the value of FailureClass.
+func (s *AIAgentEnrichmentCompletedPayload) SetFailureClass(val OptAIAgentEnrichmentCompletedPayloadFailureClass) {
+	s.FailureClass = val
+}
+
+// SetFailureCode sets the value of FailureCode.
+func (s *AIAgentEnrichmentCompletedPayload) SetFailureCode(val OptString) {
+	s.FailureCode = val
+}
+
+// SetEvidenceSource sets the value of EvidenceSource.
+func (s *AIAgentEnrichmentCompletedPayload) SetEvidenceSource(val OptAIAgentEnrichmentCompletedPayloadEvidenceSource) {
+	s.EvidenceSource = val
+}
+
+// SetEvidenceOutcome sets the value of EvidenceOutcome.
+func (s *AIAgentEnrichmentCompletedPayload) SetEvidenceOutcome(val OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) {
+	s.EvidenceOutcome = val
+}
+
+// SetEvidenceFailureCode sets the value of EvidenceFailureCode.
+func (s *AIAgentEnrichmentCompletedPayload) SetEvidenceFailureCode(val OptString) {
+	s.EvidenceFailureCode = val
+}
+
 // Event type for discriminator (matches parent event_type).
 type AIAgentEnrichmentCompletedPayloadEventType string
 
@@ -822,6 +954,335 @@ func (s *AIAgentEnrichmentCompletedPayloadEventType) UnmarshalText(data []byte) 
 	}
 }
 
+// Bounded evidence source outcome.
+type AIAgentEnrichmentCompletedPayloadEvidenceOutcome string
+
+const (
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess              AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "success"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial              AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "partial"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped              AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "skipped"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty           AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "valid_empty"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "transport_unavailable"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure  AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "schema_client_failure"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled             AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "canceled"
+	AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated     AIAgentEnrichmentCompletedPayloadEvidenceOutcome = "sources_truncated"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadEvidenceOutcome values.
+func (AIAgentEnrichmentCompletedPayloadEvidenceOutcome) AllValues() []AIAgentEnrichmentCompletedPayloadEvidenceOutcome {
+	return []AIAgentEnrichmentCompletedPayloadEvidenceOutcome{
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled,
+		AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceOutcome) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadEvidenceOutcome(data) {
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded evidence source classification.
+type AIAgentEnrichmentCompletedPayloadEvidenceSource string
+
+const (
+	AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory AIAgentEnrichmentCompletedPayloadEvidenceSource = "remediation_history"
+	AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain         AIAgentEnrichmentCompletedPayloadEvidenceSource = "owner_chain"
+	AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels     AIAgentEnrichmentCompletedPayloadEvidenceSource = "detected_labels"
+	AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp                AIAgentEnrichmentCompletedPayloadEvidenceSource = "mcp"
+	AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool        AIAgentEnrichmentCompletedPayloadEvidenceSource = "context_tool"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadEvidenceSource values.
+func (AIAgentEnrichmentCompletedPayloadEvidenceSource) AllValues() []AIAgentEnrichmentCompletedPayloadEvidenceSource {
+	return []AIAgentEnrichmentCompletedPayloadEvidenceSource{
+		AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory,
+		AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain,
+		AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels,
+		AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp,
+		AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceSource) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceSource) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadEvidenceSource(data) {
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp
+		return nil
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Server-owned transport failure class.
+type AIAgentEnrichmentCompletedPayloadFailureClass string
+
+const (
+	AIAgentEnrichmentCompletedPayloadFailureClassSessionReset   AIAgentEnrichmentCompletedPayloadFailureClass = "session_reset"
+	AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient  AIAgentEnrichmentCompletedPayloadFailureClass = "http_transient"
+	AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized   AIAgentEnrichmentCompletedPayloadFailureClass = "unauthorized"
+	AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled AIAgentEnrichmentCompletedPayloadFailureClass = "caller_canceled"
+	AIAgentEnrichmentCompletedPayloadFailureClassPermanent      AIAgentEnrichmentCompletedPayloadFailureClass = "permanent"
+	AIAgentEnrichmentCompletedPayloadFailureClassUnknown        AIAgentEnrichmentCompletedPayloadFailureClass = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadFailureClass values.
+func (AIAgentEnrichmentCompletedPayloadFailureClass) AllValues() []AIAgentEnrichmentCompletedPayloadFailureClass {
+	return []AIAgentEnrichmentCompletedPayloadFailureClass{
+		AIAgentEnrichmentCompletedPayloadFailureClassSessionReset,
+		AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient,
+		AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized,
+		AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled,
+		AIAgentEnrichmentCompletedPayloadFailureClassPermanent,
+		AIAgentEnrichmentCompletedPayloadFailureClassUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadFailureClass) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadFailureClassSessionReset:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassPermanent:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadFailureClass) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadFailureClass(data) {
+	case AIAgentEnrichmentCompletedPayloadFailureClassSessionReset:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassSessionReset
+		return nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient
+		return nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized
+		return nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled
+		return nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassPermanent:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassPermanent
+		return nil
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded recovery observation outcome.
+type AIAgentEnrichmentCompletedPayloadRetryOutcome string
+
+const (
+	AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry     AIAgentEnrichmentCompletedPayloadRetryOutcome = "retry"
+	AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess   AIAgentEnrichmentCompletedPayloadRetryOutcome = "success"
+	AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed    AIAgentEnrichmentCompletedPayloadRetryOutcome = "failed"
+	AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted AIAgentEnrichmentCompletedPayloadRetryOutcome = "exhausted"
+	AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown   AIAgentEnrichmentCompletedPayloadRetryOutcome = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadRetryOutcome values.
+func (AIAgentEnrichmentCompletedPayloadRetryOutcome) AllValues() []AIAgentEnrichmentCompletedPayloadRetryOutcome {
+	return []AIAgentEnrichmentCompletedPayloadRetryOutcome{
+		AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry,
+		AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess,
+		AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed,
+		AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted,
+		AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadRetryOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadRetryOutcome) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadRetryOutcome(data) {
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry
+		return nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess
+		return nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed
+		return nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted
+		return nil
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Trusted MCP tool class for recovery telemetry.
+type AIAgentEnrichmentCompletedPayloadToolClass string
+
+const (
+	AIAgentEnrichmentCompletedPayloadToolClassRead     AIAgentEnrichmentCompletedPayloadToolClass = "read"
+	AIAgentEnrichmentCompletedPayloadToolClassMutation AIAgentEnrichmentCompletedPayloadToolClass = "mutation"
+	AIAgentEnrichmentCompletedPayloadToolClassUnknown  AIAgentEnrichmentCompletedPayloadToolClass = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentCompletedPayloadToolClass values.
+func (AIAgentEnrichmentCompletedPayloadToolClass) AllValues() []AIAgentEnrichmentCompletedPayloadToolClass {
+	return []AIAgentEnrichmentCompletedPayloadToolClass{
+		AIAgentEnrichmentCompletedPayloadToolClassRead,
+		AIAgentEnrichmentCompletedPayloadToolClassMutation,
+		AIAgentEnrichmentCompletedPayloadToolClassUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentCompletedPayloadToolClass) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentCompletedPayloadToolClassRead:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadToolClassMutation:
+		return []byte(s), nil
+	case AIAgentEnrichmentCompletedPayloadToolClassUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadToolClass) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentCompletedPayloadToolClass(data) {
+	case AIAgentEnrichmentCompletedPayloadToolClassRead:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassRead
+		return nil
+	case AIAgentEnrichmentCompletedPayloadToolClassMutation:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassMutation
+		return nil
+	case AIAgentEnrichmentCompletedPayloadToolClassUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent Phase 2 enrichment failure event payload (aiagent.enrichment.failed) - SOC2 CC8.1, Issue.
 // Ref: #/components/schemas/AIAgentEnrichmentFailedPayload
 type AIAgentEnrichmentFailedPayload struct {
@@ -841,6 +1302,28 @@ type AIAgentEnrichmentFailedPayload struct {
 	AffectedResourceName string `json:"affected_resource_name"`
 	// Namespace of the resource (empty for cluster-scoped).
 	AffectedResourceNamespace OptString `json:"affected_resource_namespace"`
+	// Validated target cluster identity associated with the failed enrichment or recovery observation.
+	ClusterID OptString `json:"cluster_id"`
+	// Bounded evidence or recovery source identifier.
+	Source OptString `json:"source"`
+	// Trusted MCP tool class for recovery telemetry.
+	ToolClass OptAIAgentEnrichmentFailedPayloadToolClass `json:"tool_class"`
+	// Validated logical MCP tool name; wire prefixes are not persisted.
+	LogicalTool OptString `json:"logical_tool"`
+	// Bounded recovery attempt number.
+	Attempt OptInt `json:"attempt"`
+	// Bounded recovery observation outcome.
+	RetryOutcome OptAIAgentEnrichmentFailedPayloadRetryOutcome `json:"retry_outcome"`
+	// Server-owned transport failure class.
+	FailureClass OptAIAgentEnrichmentFailedPayloadFailureClass `json:"failure_class"`
+	// Server-owned bounded failure code; raw dependency error text is excluded.
+	FailureCode OptString `json:"failure_code"`
+	// Bounded evidence source classification.
+	EvidenceSource OptAIAgentEnrichmentFailedPayloadEvidenceSource `json:"evidence_source"`
+	// Bounded evidence source outcome.
+	EvidenceOutcome OptAIAgentEnrichmentFailedPayloadEvidenceOutcome `json:"evidence_outcome"`
+	// Server-owned bounded evidence failure code.
+	EvidenceFailureCode OptString `json:"evidence_failure_code"`
 }
 
 // GetEventType returns the value of EventType.
@@ -883,6 +1366,61 @@ func (s *AIAgentEnrichmentFailedPayload) GetAffectedResourceNamespace() OptStrin
 	return s.AffectedResourceNamespace
 }
 
+// GetClusterID returns the value of ClusterID.
+func (s *AIAgentEnrichmentFailedPayload) GetClusterID() OptString {
+	return s.ClusterID
+}
+
+// GetSource returns the value of Source.
+func (s *AIAgentEnrichmentFailedPayload) GetSource() OptString {
+	return s.Source
+}
+
+// GetToolClass returns the value of ToolClass.
+func (s *AIAgentEnrichmentFailedPayload) GetToolClass() OptAIAgentEnrichmentFailedPayloadToolClass {
+	return s.ToolClass
+}
+
+// GetLogicalTool returns the value of LogicalTool.
+func (s *AIAgentEnrichmentFailedPayload) GetLogicalTool() OptString {
+	return s.LogicalTool
+}
+
+// GetAttempt returns the value of Attempt.
+func (s *AIAgentEnrichmentFailedPayload) GetAttempt() OptInt {
+	return s.Attempt
+}
+
+// GetRetryOutcome returns the value of RetryOutcome.
+func (s *AIAgentEnrichmentFailedPayload) GetRetryOutcome() OptAIAgentEnrichmentFailedPayloadRetryOutcome {
+	return s.RetryOutcome
+}
+
+// GetFailureClass returns the value of FailureClass.
+func (s *AIAgentEnrichmentFailedPayload) GetFailureClass() OptAIAgentEnrichmentFailedPayloadFailureClass {
+	return s.FailureClass
+}
+
+// GetFailureCode returns the value of FailureCode.
+func (s *AIAgentEnrichmentFailedPayload) GetFailureCode() OptString {
+	return s.FailureCode
+}
+
+// GetEvidenceSource returns the value of EvidenceSource.
+func (s *AIAgentEnrichmentFailedPayload) GetEvidenceSource() OptAIAgentEnrichmentFailedPayloadEvidenceSource {
+	return s.EvidenceSource
+}
+
+// GetEvidenceOutcome returns the value of EvidenceOutcome.
+func (s *AIAgentEnrichmentFailedPayload) GetEvidenceOutcome() OptAIAgentEnrichmentFailedPayloadEvidenceOutcome {
+	return s.EvidenceOutcome
+}
+
+// GetEvidenceFailureCode returns the value of EvidenceFailureCode.
+func (s *AIAgentEnrichmentFailedPayload) GetEvidenceFailureCode() OptString {
+	return s.EvidenceFailureCode
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentEnrichmentFailedPayload) SetEventType(val AIAgentEnrichmentFailedPayloadEventType) {
 	s.EventType = val
@@ -923,6 +1461,61 @@ func (s *AIAgentEnrichmentFailedPayload) SetAffectedResourceNamespace(val OptStr
 	s.AffectedResourceNamespace = val
 }
 
+// SetClusterID sets the value of ClusterID.
+func (s *AIAgentEnrichmentFailedPayload) SetClusterID(val OptString) {
+	s.ClusterID = val
+}
+
+// SetSource sets the value of Source.
+func (s *AIAgentEnrichmentFailedPayload) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetToolClass sets the value of ToolClass.
+func (s *AIAgentEnrichmentFailedPayload) SetToolClass(val OptAIAgentEnrichmentFailedPayloadToolClass) {
+	s.ToolClass = val
+}
+
+// SetLogicalTool sets the value of LogicalTool.
+func (s *AIAgentEnrichmentFailedPayload) SetLogicalTool(val OptString) {
+	s.LogicalTool = val
+}
+
+// SetAttempt sets the value of Attempt.
+func (s *AIAgentEnrichmentFailedPayload) SetAttempt(val OptInt) {
+	s.Attempt = val
+}
+
+// SetRetryOutcome sets the value of RetryOutcome.
+func (s *AIAgentEnrichmentFailedPayload) SetRetryOutcome(val OptAIAgentEnrichmentFailedPayloadRetryOutcome) {
+	s.RetryOutcome = val
+}
+
+// SetFailureClass sets the value of FailureClass.
+func (s *AIAgentEnrichmentFailedPayload) SetFailureClass(val OptAIAgentEnrichmentFailedPayloadFailureClass) {
+	s.FailureClass = val
+}
+
+// SetFailureCode sets the value of FailureCode.
+func (s *AIAgentEnrichmentFailedPayload) SetFailureCode(val OptString) {
+	s.FailureCode = val
+}
+
+// SetEvidenceSource sets the value of EvidenceSource.
+func (s *AIAgentEnrichmentFailedPayload) SetEvidenceSource(val OptAIAgentEnrichmentFailedPayloadEvidenceSource) {
+	s.EvidenceSource = val
+}
+
+// SetEvidenceOutcome sets the value of EvidenceOutcome.
+func (s *AIAgentEnrichmentFailedPayload) SetEvidenceOutcome(val OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) {
+	s.EvidenceOutcome = val
+}
+
+// SetEvidenceFailureCode sets the value of EvidenceFailureCode.
+func (s *AIAgentEnrichmentFailedPayload) SetEvidenceFailureCode(val OptString) {
+	s.EvidenceFailureCode = val
+}
+
 // Event type for discriminator (matches parent event_type).
 type AIAgentEnrichmentFailedPayloadEventType string
 
@@ -952,6 +1545,335 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) err
 	switch AIAgentEnrichmentFailedPayloadEventType(data) {
 	case AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed:
 		*s = AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded evidence source outcome.
+type AIAgentEnrichmentFailedPayloadEvidenceOutcome string
+
+const (
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess              AIAgentEnrichmentFailedPayloadEvidenceOutcome = "success"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial              AIAgentEnrichmentFailedPayloadEvidenceOutcome = "partial"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped              AIAgentEnrichmentFailedPayloadEvidenceOutcome = "skipped"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty           AIAgentEnrichmentFailedPayloadEvidenceOutcome = "valid_empty"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable AIAgentEnrichmentFailedPayloadEvidenceOutcome = "transport_unavailable"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure  AIAgentEnrichmentFailedPayloadEvidenceOutcome = "schema_client_failure"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled             AIAgentEnrichmentFailedPayloadEvidenceOutcome = "canceled"
+	AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated     AIAgentEnrichmentFailedPayloadEvidenceOutcome = "sources_truncated"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadEvidenceOutcome values.
+func (AIAgentEnrichmentFailedPayloadEvidenceOutcome) AllValues() []AIAgentEnrichmentFailedPayloadEvidenceOutcome {
+	return []AIAgentEnrichmentFailedPayloadEvidenceOutcome{
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled,
+		AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadEvidenceOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceOutcome) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadEvidenceOutcome(data) {
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded evidence source classification.
+type AIAgentEnrichmentFailedPayloadEvidenceSource string
+
+const (
+	AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory AIAgentEnrichmentFailedPayloadEvidenceSource = "remediation_history"
+	AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain         AIAgentEnrichmentFailedPayloadEvidenceSource = "owner_chain"
+	AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels     AIAgentEnrichmentFailedPayloadEvidenceSource = "detected_labels"
+	AIAgentEnrichmentFailedPayloadEvidenceSourceMcp                AIAgentEnrichmentFailedPayloadEvidenceSource = "mcp"
+	AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool        AIAgentEnrichmentFailedPayloadEvidenceSource = "context_tool"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadEvidenceSource values.
+func (AIAgentEnrichmentFailedPayloadEvidenceSource) AllValues() []AIAgentEnrichmentFailedPayloadEvidenceSource {
+	return []AIAgentEnrichmentFailedPayloadEvidenceSource{
+		AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory,
+		AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain,
+		AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels,
+		AIAgentEnrichmentFailedPayloadEvidenceSourceMcp,
+		AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadEvidenceSource) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceMcp:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceSource) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadEvidenceSource(data) {
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceMcp:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceMcp
+		return nil
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Server-owned transport failure class.
+type AIAgentEnrichmentFailedPayloadFailureClass string
+
+const (
+	AIAgentEnrichmentFailedPayloadFailureClassSessionReset   AIAgentEnrichmentFailedPayloadFailureClass = "session_reset"
+	AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient  AIAgentEnrichmentFailedPayloadFailureClass = "http_transient"
+	AIAgentEnrichmentFailedPayloadFailureClassUnauthorized   AIAgentEnrichmentFailedPayloadFailureClass = "unauthorized"
+	AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled AIAgentEnrichmentFailedPayloadFailureClass = "caller_canceled"
+	AIAgentEnrichmentFailedPayloadFailureClassPermanent      AIAgentEnrichmentFailedPayloadFailureClass = "permanent"
+	AIAgentEnrichmentFailedPayloadFailureClassUnknown        AIAgentEnrichmentFailedPayloadFailureClass = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadFailureClass values.
+func (AIAgentEnrichmentFailedPayloadFailureClass) AllValues() []AIAgentEnrichmentFailedPayloadFailureClass {
+	return []AIAgentEnrichmentFailedPayloadFailureClass{
+		AIAgentEnrichmentFailedPayloadFailureClassSessionReset,
+		AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient,
+		AIAgentEnrichmentFailedPayloadFailureClassUnauthorized,
+		AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled,
+		AIAgentEnrichmentFailedPayloadFailureClassPermanent,
+		AIAgentEnrichmentFailedPayloadFailureClassUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadFailureClass) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadFailureClassSessionReset:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadFailureClassUnauthorized:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadFailureClassPermanent:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadFailureClassUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadFailureClass) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadFailureClass(data) {
+	case AIAgentEnrichmentFailedPayloadFailureClassSessionReset:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassSessionReset
+		return nil
+	case AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient
+		return nil
+	case AIAgentEnrichmentFailedPayloadFailureClassUnauthorized:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassUnauthorized
+		return nil
+	case AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled
+		return nil
+	case AIAgentEnrichmentFailedPayloadFailureClassPermanent:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassPermanent
+		return nil
+	case AIAgentEnrichmentFailedPayloadFailureClassUnknown:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded recovery observation outcome.
+type AIAgentEnrichmentFailedPayloadRetryOutcome string
+
+const (
+	AIAgentEnrichmentFailedPayloadRetryOutcomeRetry     AIAgentEnrichmentFailedPayloadRetryOutcome = "retry"
+	AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess   AIAgentEnrichmentFailedPayloadRetryOutcome = "success"
+	AIAgentEnrichmentFailedPayloadRetryOutcomeFailed    AIAgentEnrichmentFailedPayloadRetryOutcome = "failed"
+	AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted AIAgentEnrichmentFailedPayloadRetryOutcome = "exhausted"
+	AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown   AIAgentEnrichmentFailedPayloadRetryOutcome = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadRetryOutcome values.
+func (AIAgentEnrichmentFailedPayloadRetryOutcome) AllValues() []AIAgentEnrichmentFailedPayloadRetryOutcome {
+	return []AIAgentEnrichmentFailedPayloadRetryOutcome{
+		AIAgentEnrichmentFailedPayloadRetryOutcomeRetry,
+		AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess,
+		AIAgentEnrichmentFailedPayloadRetryOutcomeFailed,
+		AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted,
+		AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadRetryOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeRetry:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeFailed:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadRetryOutcome) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadRetryOutcome(data) {
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeRetry:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeRetry
+		return nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess
+		return nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeFailed:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeFailed
+		return nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted
+		return nil
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Trusted MCP tool class for recovery telemetry.
+type AIAgentEnrichmentFailedPayloadToolClass string
+
+const (
+	AIAgentEnrichmentFailedPayloadToolClassRead     AIAgentEnrichmentFailedPayloadToolClass = "read"
+	AIAgentEnrichmentFailedPayloadToolClassMutation AIAgentEnrichmentFailedPayloadToolClass = "mutation"
+	AIAgentEnrichmentFailedPayloadToolClassUnknown  AIAgentEnrichmentFailedPayloadToolClass = "unknown"
+)
+
+// AllValues returns all AIAgentEnrichmentFailedPayloadToolClass values.
+func (AIAgentEnrichmentFailedPayloadToolClass) AllValues() []AIAgentEnrichmentFailedPayloadToolClass {
+	return []AIAgentEnrichmentFailedPayloadToolClass{
+		AIAgentEnrichmentFailedPayloadToolClassRead,
+		AIAgentEnrichmentFailedPayloadToolClassMutation,
+		AIAgentEnrichmentFailedPayloadToolClassUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentEnrichmentFailedPayloadToolClass) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentEnrichmentFailedPayloadToolClassRead:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadToolClassMutation:
+		return []byte(s), nil
+	case AIAgentEnrichmentFailedPayloadToolClassUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadToolClass) UnmarshalText(data []byte) error {
+	switch AIAgentEnrichmentFailedPayloadToolClass(data) {
+	case AIAgentEnrichmentFailedPayloadToolClassRead:
+		*s = AIAgentEnrichmentFailedPayloadToolClassRead
+		return nil
+	case AIAgentEnrichmentFailedPayloadToolClassMutation:
+		*s = AIAgentEnrichmentFailedPayloadToolClassMutation
+		return nil
+	case AIAgentEnrichmentFailedPayloadToolClassUnknown:
+		*s = AIAgentEnrichmentFailedPayloadToolClassUnknown
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -24314,6 +25236,466 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 		*s = m
 	}
 	return m
+}
+
+// NewOptAIAgentEnrichmentCompletedPayloadEvidenceOutcome returns new OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadEvidenceOutcome(v AIAgentEnrichmentCompletedPayloadEvidenceOutcome) OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome {
+	return OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome is optional AIAgentEnrichmentCompletedPayloadEvidenceOutcome.
+type OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome struct {
+	Value AIAgentEnrichmentCompletedPayloadEvidenceOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome was set.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) Reset() {
+	var v AIAgentEnrichmentCompletedPayloadEvidenceOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) SetTo(v AIAgentEnrichmentCompletedPayloadEvidenceOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) Get() (v AIAgentEnrichmentCompletedPayloadEvidenceOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) Or(d AIAgentEnrichmentCompletedPayloadEvidenceOutcome) AIAgentEnrichmentCompletedPayloadEvidenceOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentCompletedPayloadEvidenceSource returns new OptAIAgentEnrichmentCompletedPayloadEvidenceSource with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadEvidenceSource(v AIAgentEnrichmentCompletedPayloadEvidenceSource) OptAIAgentEnrichmentCompletedPayloadEvidenceSource {
+	return OptAIAgentEnrichmentCompletedPayloadEvidenceSource{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadEvidenceSource is optional AIAgentEnrichmentCompletedPayloadEvidenceSource.
+type OptAIAgentEnrichmentCompletedPayloadEvidenceSource struct {
+	Value AIAgentEnrichmentCompletedPayloadEvidenceSource
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadEvidenceSource was set.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceSource) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceSource) Reset() {
+	var v AIAgentEnrichmentCompletedPayloadEvidenceSource
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceSource) SetTo(v AIAgentEnrichmentCompletedPayloadEvidenceSource) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceSource) Get() (v AIAgentEnrichmentCompletedPayloadEvidenceSource, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceSource) Or(d AIAgentEnrichmentCompletedPayloadEvidenceSource) AIAgentEnrichmentCompletedPayloadEvidenceSource {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentCompletedPayloadFailureClass returns new OptAIAgentEnrichmentCompletedPayloadFailureClass with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadFailureClass(v AIAgentEnrichmentCompletedPayloadFailureClass) OptAIAgentEnrichmentCompletedPayloadFailureClass {
+	return OptAIAgentEnrichmentCompletedPayloadFailureClass{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadFailureClass is optional AIAgentEnrichmentCompletedPayloadFailureClass.
+type OptAIAgentEnrichmentCompletedPayloadFailureClass struct {
+	Value AIAgentEnrichmentCompletedPayloadFailureClass
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadFailureClass was set.
+func (o OptAIAgentEnrichmentCompletedPayloadFailureClass) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadFailureClass) Reset() {
+	var v AIAgentEnrichmentCompletedPayloadFailureClass
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadFailureClass) SetTo(v AIAgentEnrichmentCompletedPayloadFailureClass) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadFailureClass) Get() (v AIAgentEnrichmentCompletedPayloadFailureClass, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadFailureClass) Or(d AIAgentEnrichmentCompletedPayloadFailureClass) AIAgentEnrichmentCompletedPayloadFailureClass {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentCompletedPayloadRetryOutcome returns new OptAIAgentEnrichmentCompletedPayloadRetryOutcome with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadRetryOutcome(v AIAgentEnrichmentCompletedPayloadRetryOutcome) OptAIAgentEnrichmentCompletedPayloadRetryOutcome {
+	return OptAIAgentEnrichmentCompletedPayloadRetryOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadRetryOutcome is optional AIAgentEnrichmentCompletedPayloadRetryOutcome.
+type OptAIAgentEnrichmentCompletedPayloadRetryOutcome struct {
+	Value AIAgentEnrichmentCompletedPayloadRetryOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadRetryOutcome was set.
+func (o OptAIAgentEnrichmentCompletedPayloadRetryOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadRetryOutcome) Reset() {
+	var v AIAgentEnrichmentCompletedPayloadRetryOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadRetryOutcome) SetTo(v AIAgentEnrichmentCompletedPayloadRetryOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadRetryOutcome) Get() (v AIAgentEnrichmentCompletedPayloadRetryOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadRetryOutcome) Or(d AIAgentEnrichmentCompletedPayloadRetryOutcome) AIAgentEnrichmentCompletedPayloadRetryOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentCompletedPayloadToolClass returns new OptAIAgentEnrichmentCompletedPayloadToolClass with value set to v.
+func NewOptAIAgentEnrichmentCompletedPayloadToolClass(v AIAgentEnrichmentCompletedPayloadToolClass) OptAIAgentEnrichmentCompletedPayloadToolClass {
+	return OptAIAgentEnrichmentCompletedPayloadToolClass{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentCompletedPayloadToolClass is optional AIAgentEnrichmentCompletedPayloadToolClass.
+type OptAIAgentEnrichmentCompletedPayloadToolClass struct {
+	Value AIAgentEnrichmentCompletedPayloadToolClass
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentCompletedPayloadToolClass was set.
+func (o OptAIAgentEnrichmentCompletedPayloadToolClass) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentCompletedPayloadToolClass) Reset() {
+	var v AIAgentEnrichmentCompletedPayloadToolClass
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentCompletedPayloadToolClass) SetTo(v AIAgentEnrichmentCompletedPayloadToolClass) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentCompletedPayloadToolClass) Get() (v AIAgentEnrichmentCompletedPayloadToolClass, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentCompletedPayloadToolClass) Or(d AIAgentEnrichmentCompletedPayloadToolClass) AIAgentEnrichmentCompletedPayloadToolClass {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentFailedPayloadEvidenceOutcome returns new OptAIAgentEnrichmentFailedPayloadEvidenceOutcome with value set to v.
+func NewOptAIAgentEnrichmentFailedPayloadEvidenceOutcome(v AIAgentEnrichmentFailedPayloadEvidenceOutcome) OptAIAgentEnrichmentFailedPayloadEvidenceOutcome {
+	return OptAIAgentEnrichmentFailedPayloadEvidenceOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentFailedPayloadEvidenceOutcome is optional AIAgentEnrichmentFailedPayloadEvidenceOutcome.
+type OptAIAgentEnrichmentFailedPayloadEvidenceOutcome struct {
+	Value AIAgentEnrichmentFailedPayloadEvidenceOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentFailedPayloadEvidenceOutcome was set.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) Reset() {
+	var v AIAgentEnrichmentFailedPayloadEvidenceOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) SetTo(v AIAgentEnrichmentFailedPayloadEvidenceOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) Get() (v AIAgentEnrichmentFailedPayloadEvidenceOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) Or(d AIAgentEnrichmentFailedPayloadEvidenceOutcome) AIAgentEnrichmentFailedPayloadEvidenceOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentFailedPayloadEvidenceSource returns new OptAIAgentEnrichmentFailedPayloadEvidenceSource with value set to v.
+func NewOptAIAgentEnrichmentFailedPayloadEvidenceSource(v AIAgentEnrichmentFailedPayloadEvidenceSource) OptAIAgentEnrichmentFailedPayloadEvidenceSource {
+	return OptAIAgentEnrichmentFailedPayloadEvidenceSource{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentFailedPayloadEvidenceSource is optional AIAgentEnrichmentFailedPayloadEvidenceSource.
+type OptAIAgentEnrichmentFailedPayloadEvidenceSource struct {
+	Value AIAgentEnrichmentFailedPayloadEvidenceSource
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentFailedPayloadEvidenceSource was set.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceSource) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceSource) Reset() {
+	var v AIAgentEnrichmentFailedPayloadEvidenceSource
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceSource) SetTo(v AIAgentEnrichmentFailedPayloadEvidenceSource) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceSource) Get() (v AIAgentEnrichmentFailedPayloadEvidenceSource, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceSource) Or(d AIAgentEnrichmentFailedPayloadEvidenceSource) AIAgentEnrichmentFailedPayloadEvidenceSource {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentFailedPayloadFailureClass returns new OptAIAgentEnrichmentFailedPayloadFailureClass with value set to v.
+func NewOptAIAgentEnrichmentFailedPayloadFailureClass(v AIAgentEnrichmentFailedPayloadFailureClass) OptAIAgentEnrichmentFailedPayloadFailureClass {
+	return OptAIAgentEnrichmentFailedPayloadFailureClass{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentFailedPayloadFailureClass is optional AIAgentEnrichmentFailedPayloadFailureClass.
+type OptAIAgentEnrichmentFailedPayloadFailureClass struct {
+	Value AIAgentEnrichmentFailedPayloadFailureClass
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentFailedPayloadFailureClass was set.
+func (o OptAIAgentEnrichmentFailedPayloadFailureClass) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentFailedPayloadFailureClass) Reset() {
+	var v AIAgentEnrichmentFailedPayloadFailureClass
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentFailedPayloadFailureClass) SetTo(v AIAgentEnrichmentFailedPayloadFailureClass) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentFailedPayloadFailureClass) Get() (v AIAgentEnrichmentFailedPayloadFailureClass, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentFailedPayloadFailureClass) Or(d AIAgentEnrichmentFailedPayloadFailureClass) AIAgentEnrichmentFailedPayloadFailureClass {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentFailedPayloadRetryOutcome returns new OptAIAgentEnrichmentFailedPayloadRetryOutcome with value set to v.
+func NewOptAIAgentEnrichmentFailedPayloadRetryOutcome(v AIAgentEnrichmentFailedPayloadRetryOutcome) OptAIAgentEnrichmentFailedPayloadRetryOutcome {
+	return OptAIAgentEnrichmentFailedPayloadRetryOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentFailedPayloadRetryOutcome is optional AIAgentEnrichmentFailedPayloadRetryOutcome.
+type OptAIAgentEnrichmentFailedPayloadRetryOutcome struct {
+	Value AIAgentEnrichmentFailedPayloadRetryOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentFailedPayloadRetryOutcome was set.
+func (o OptAIAgentEnrichmentFailedPayloadRetryOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentFailedPayloadRetryOutcome) Reset() {
+	var v AIAgentEnrichmentFailedPayloadRetryOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentFailedPayloadRetryOutcome) SetTo(v AIAgentEnrichmentFailedPayloadRetryOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentFailedPayloadRetryOutcome) Get() (v AIAgentEnrichmentFailedPayloadRetryOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentFailedPayloadRetryOutcome) Or(d AIAgentEnrichmentFailedPayloadRetryOutcome) AIAgentEnrichmentFailedPayloadRetryOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptAIAgentEnrichmentFailedPayloadToolClass returns new OptAIAgentEnrichmentFailedPayloadToolClass with value set to v.
+func NewOptAIAgentEnrichmentFailedPayloadToolClass(v AIAgentEnrichmentFailedPayloadToolClass) OptAIAgentEnrichmentFailedPayloadToolClass {
+	return OptAIAgentEnrichmentFailedPayloadToolClass{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAIAgentEnrichmentFailedPayloadToolClass is optional AIAgentEnrichmentFailedPayloadToolClass.
+type OptAIAgentEnrichmentFailedPayloadToolClass struct {
+	Value AIAgentEnrichmentFailedPayloadToolClass
+	Set   bool
+}
+
+// IsSet returns true if OptAIAgentEnrichmentFailedPayloadToolClass was set.
+func (o OptAIAgentEnrichmentFailedPayloadToolClass) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAIAgentEnrichmentFailedPayloadToolClass) Reset() {
+	var v AIAgentEnrichmentFailedPayloadToolClass
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAIAgentEnrichmentFailedPayloadToolClass) SetTo(v AIAgentEnrichmentFailedPayloadToolClass) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAIAgentEnrichmentFailedPayloadToolClass) Get() (v AIAgentEnrichmentFailedPayloadToolClass, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAIAgentEnrichmentFailedPayloadToolClass) Or(d AIAgentEnrichmentFailedPayloadToolClass) AIAgentEnrichmentFailedPayloadToolClass {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptAIAnalysisAuditPayloadRepeatValidationOutcome returns new OptAIAnalysisAuditPayloadRepeatValidationOutcome with value set to v.

@@ -192,6 +192,9 @@ func (h *InvestigatingHandler) syncKASessionStatus(analysis *aianalysisv1.AIAnal
 	}
 	now := metav1.Now()
 	session.LastPolled = &now
+	if as.Status.EvidenceStatus != nil {
+		analysis.Status.EnsureInvestigationMetadata().EvidenceStatus = mapEvidenceStatusToAIAnalysis(as.Status.EvidenceStatus)
+	}
 
 	// #774: Propagate identity from KA's live status to CR status while a
 	// user is driving (DD-INTERACTIVE-002).
@@ -491,6 +494,9 @@ func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis
 	analysis.Status.Message = as.Status.Error
 	if analysis.Status.Message == "" {
 		analysis.Status.Message = "Investigation failed on KA side"
+	}
+	if _, subReason, hasEvidenceFailure := evidenceFailureClassification(as.Status.EvidenceStatus); hasEvidenceFailure {
+		analysis.Status.SubReason = subReason
 	}
 
 	// Record failure audit

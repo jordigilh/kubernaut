@@ -64,6 +64,7 @@ func buildEnrichmentCompletedPayload(event *AuditEvent) ogenclient.AuditEventReq
 	if _, present := event.Data["failed_detections"]; present {
 		payload.FailedDetections.SetTo(dataStringSlice(event.Data, "failed_detections"))
 	}
+	setCompletedEnrichmentTelemetryFields(&payload, event)
 	return ogenclient.NewAIAgentEnrichmentCompletedPayloadAuditEventRequestEventData(payload)
 }
 
@@ -80,7 +81,109 @@ func buildEnrichmentFailedPayload(event *AuditEvent) ogenclient.AuditEventReques
 	if ns := dataString(event.Data, "affected_resource_namespace"); ns != "" {
 		payload.AffectedResourceNamespace.SetTo(ns)
 	}
+	setFailedEnrichmentTelemetryFields(&payload, event)
 	return ogenclient.NewAIAgentEnrichmentFailedPayloadAuditEventRequestEventData(payload)
+}
+
+// enrichmentTelemetrySetters keeps the shared mapping logic independent of
+// ogen's distinct enum types for completed and failed payloads.
+type enrichmentTelemetrySetters struct {
+	clusterID           func(string)
+	source              func(string)
+	toolClass           func(string)
+	logicalTool         func(string)
+	attempt             func(int)
+	retryOutcome        func(string)
+	failureClass        func(string)
+	failureCode         func(string)
+	evidenceSource      func(string)
+	evidenceOutcome     func(string)
+	evidenceFailureCode func(string)
+}
+
+// setEnrichmentTelemetryFields maps the optional bounded recovery/evidence
+// fields shared by normal enrichment and MCP recovery observations. Raw
+// transport text and wire names are never accepted here.
+func setEnrichmentTelemetryFields(event *AuditEvent, setters enrichmentTelemetrySetters) {
+	if v := dataString(event.Data, "cluster_id"); v != "" {
+		setters.clusterID(v)
+	}
+	if v := dataString(event.Data, "source"); v != "" {
+		setters.source(v)
+	}
+	if v := dataString(event.Data, "tool_class"); v != "" {
+		setters.toolClass(v)
+	}
+	if v := dataString(event.Data, "logical_tool"); v != "" {
+		setters.logicalTool(v)
+	}
+	if v, ok := dataIntValue(event.Data, "attempt"); ok {
+		setters.attempt(v)
+	}
+	if v := dataString(event.Data, "retry_outcome"); v != "" {
+		setters.retryOutcome(v)
+	}
+	if v := dataString(event.Data, "failure_class"); v != "" {
+		setters.failureClass(v)
+	}
+	if v := dataString(event.Data, "failure_code"); v != "" {
+		setters.failureCode(v)
+	}
+	if v := dataString(event.Data, "evidence_source"); v != "" {
+		setters.evidenceSource(v)
+	}
+	if v := dataString(event.Data, "evidence_outcome"); v != "" {
+		setters.evidenceOutcome(v)
+	}
+	if v := dataString(event.Data, "evidence_failure_code"); v != "" {
+		setters.evidenceFailureCode(v)
+	}
+}
+
+//nolint:dupl // The generated completed/failed payloads intentionally expose distinct enum types.
+func setCompletedEnrichmentTelemetryFields(payload *ogenclient.AIAgentEnrichmentCompletedPayload, event *AuditEvent) {
+	setEnrichmentTelemetryFields(event, enrichmentTelemetrySetters{
+		clusterID:   payload.ClusterID.SetTo,
+		source:      payload.Source.SetTo,
+		toolClass:   func(v string) { payload.ToolClass.SetTo(ogenclient.AIAgentEnrichmentCompletedPayloadToolClass(v)) },
+		logicalTool: payload.LogicalTool.SetTo,
+		attempt:     payload.Attempt.SetTo,
+		retryOutcome: func(v string) {
+			payload.RetryOutcome.SetTo(ogenclient.AIAgentEnrichmentCompletedPayloadRetryOutcome(v))
+		},
+		failureClass: func(v string) {
+			payload.FailureClass.SetTo(ogenclient.AIAgentEnrichmentCompletedPayloadFailureClass(v))
+		},
+		failureCode: payload.FailureCode.SetTo,
+		evidenceSource: func(v string) {
+			payload.EvidenceSource.SetTo(ogenclient.AIAgentEnrichmentCompletedPayloadEvidenceSource(v))
+		},
+		evidenceOutcome: func(v string) {
+			payload.EvidenceOutcome.SetTo(ogenclient.AIAgentEnrichmentCompletedPayloadEvidenceOutcome(v))
+		},
+		evidenceFailureCode: payload.EvidenceFailureCode.SetTo,
+	})
+}
+
+//nolint:dupl // The generated completed/failed payloads intentionally expose distinct enum types.
+func setFailedEnrichmentTelemetryFields(payload *ogenclient.AIAgentEnrichmentFailedPayload, event *AuditEvent) {
+	setEnrichmentTelemetryFields(event, enrichmentTelemetrySetters{
+		clusterID:    payload.ClusterID.SetTo,
+		source:       payload.Source.SetTo,
+		toolClass:    func(v string) { payload.ToolClass.SetTo(ogenclient.AIAgentEnrichmentFailedPayloadToolClass(v)) },
+		logicalTool:  payload.LogicalTool.SetTo,
+		attempt:      payload.Attempt.SetTo,
+		retryOutcome: func(v string) { payload.RetryOutcome.SetTo(ogenclient.AIAgentEnrichmentFailedPayloadRetryOutcome(v)) },
+		failureClass: func(v string) { payload.FailureClass.SetTo(ogenclient.AIAgentEnrichmentFailedPayloadFailureClass(v)) },
+		failureCode:  payload.FailureCode.SetTo,
+		evidenceSource: func(v string) {
+			payload.EvidenceSource.SetTo(ogenclient.AIAgentEnrichmentFailedPayloadEvidenceSource(v))
+		},
+		evidenceOutcome: func(v string) {
+			payload.EvidenceOutcome.SetTo(ogenclient.AIAgentEnrichmentFailedPayloadEvidenceOutcome(v))
+		},
+		evidenceFailureCode: payload.EvidenceFailureCode.SetTo,
+	})
 }
 
 func buildLLMRequestPayload(event *AuditEvent) ogenclient.AuditEventRequestEventData {

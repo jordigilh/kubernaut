@@ -419,26 +419,36 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 
 	result, err := inv.executeResolved(ctx, name, args, phase)
 	if err != nil {
-		inv.logger.Error(err, "tool execution failed",
-			"tool", name,
-		)
-		if ar := detector.RecordFailure(name, args); !ar.Allowed {
-			errResult := toolErrorJSON(ar.Reason)
-			alignment.SubmitToolStep(ctx, name, errResult)
-			return errResult
+		return inv.handleToolExecutionError(ctx, detector, name, args, err)
+	}
+
+	return inv.finishToolResult(ctx, name, result, correlationID, phase)
+}
+
+func (inv *Investigator) handleToolExecutionError(ctx context.Context, detector *AnomalyDetector, name string, args json.RawMessage, err error) string {
+	if status := katypes.EvidenceStatusFromError(err); status != nil {
+		if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+			scope.Merge(status)
 		}
-		errResult := toolErrorJSON(err.Error())
+	}
+	inv.logger.Error(err, "tool execution failed", "tool", name)
+	if ar := detector.RecordFailure(name, args); !ar.Allowed {
+		errResult := toolErrorJSON(ar.Reason)
 		alignment.SubmitToolStep(ctx, name, errResult)
 		return errResult
 	}
+	errResult := toolErrorJSON(err.Error())
+	alignment.SubmitToolStep(ctx, name, errResult)
+	return errResult
+}
 
+func (inv *Investigator) finishToolResult(ctx context.Context, name, result, correlationID string, phase katypes.Phase) string {
 	// DD-KA-2496: project the original structure before text sanitizers can
-	// consume JSON quoting. captureEvidence retains only sanitized content,
-	// never the original output; summarization/truncation stay independent.
+	// consume JSON quoting. captureEvidence retains only sanitized content;
+	// summarization and truncation stay independent.
 	if phase == katypes.PhaseRCA {
 		inv.captureEvidence(ctx, correlationID, name, result)
 	}
-
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {

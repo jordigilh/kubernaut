@@ -120,8 +120,12 @@ func mapFromAgentSessionJSON(j *apiextensionsv1.JSON) map[string]interface{} {
 // BR-AI-009: Reset failure counter on successful API call
 // BR-KA-197: Check needs_human_review before proceeding
 func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) (ctrl.Result, error) {
+	if res == nil {
+		return ctrl.Result{}, fmt.Errorf("agent session result is nil")
+	}
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
+	analysis.Status.EnsureInvestigationMetadata().EvidenceStatus = mapEvidenceStatusToAIAnalysis(res.EvidenceStatus)
 
 	// #388: All processed alerts are actionable by default; only the
 	// NotActionable handler overrides this to "NotActionable".
@@ -141,6 +145,9 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// Check if NeedsHumanReview is set
 	needsHumanReview := res.NeedsHumanReview
 	hasSelectedWorkflow := res.SelectedWorkflow != nil
+	if failed := p.handleEvidenceFailure(ctx, analysis, res); failed {
+		return ctrl.Result{}, nil
+	}
 
 	p.log.Info("Processing successful incident response",
 		"confidence", res.Confidence,
@@ -173,6 +180,42 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	}
 
 	return p.finalizeSuccessfulInvestigation(analysis, res, hasSelectedWorkflow)
+}
+
+// handleEvidenceFailure keeps transport/schema evidence failures on the
+// existing API-error routing path. In particular, an unavailable history
+// source must never fall through to the no-workflow branch and become
+// WorkflowNotFound.
+func (p *ResponseProcessor) handleEvidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) bool {
+	reason, subReason, failed := evidenceFailureClassification(res.EvidenceStatus)
+	if !failed {
+		return false
+	}
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation
+	analysis.Status.CompletedAt = &now
+	setTotalAnalysisTime(analysis, now)
+	analysis.Status.Reason = reason
+	analysis.Status.SubReason = subReason
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = res.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().Warnings = res.Warnings
+	analysis.Status.Message = fmt.Sprintf("evidence source unavailable: %s", res.EvidenceStatus.Class)
+	analysis.Status.EnsureReview().NeedsHumanReview = false
+
+	if rca := extractRootCauseAnalysisWithSPSeverity(analysis, res.RootCauseAnalysis); rca != nil {
+		analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
+	}
+	failureErr := fmt.Errorf("evidence source failure: %s", res.EvidenceStatus.Class)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("failed to record evidence failure audit", "error", auditErr)
+	}
+	p.metrics.RecordFailure(string(reason), subReason)
+	aianalysis.SetInvestigationComplete(analysis, false, failureErr.Error())
+	aianalysis.SetAnalysisComplete(analysis, false, failureErr.Error())
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, failureErr.Error())
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Evidence unavailable, approval not applicable")
+	return true
 }
 
 // checkAlternateOutcomes evaluates the BR-KA-200.6 Outcome A (problem

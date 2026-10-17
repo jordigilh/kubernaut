@@ -49,6 +49,10 @@ type TerminalSnapshot struct {
 	Status        Status
 	Result        *katypes.InvestigationResult
 	Err           error
+	// EvidenceStatus is carried separately for failed/cancelled paths where
+	// Result is intentionally absent. It is derived from Result or the typed
+	// InvestigationError at the terminal transition boundary.
+	EvidenceStatus *katypes.EvidenceStatus
 }
 
 // TerminalHookFunc is invoked exactly once for the single call site that
@@ -115,12 +119,20 @@ func (m *Manager) fireTerminalHook(id, correlationID string, status Status, resu
 		return
 	}
 	m.terminalHook(TerminalSnapshot{
-		SessionID:     id,
-		RemediationID: correlationID,
-		Status:        status,
-		Result:        result,
-		Err:           err,
+		SessionID:      id,
+		RemediationID:  correlationID,
+		Status:         status,
+		Result:         result,
+		Err:            err,
+		EvidenceStatus: terminalEvidenceStatus(result, err),
 	})
+}
+
+func terminalEvidenceStatus(result *katypes.InvestigationResult, err error) *katypes.EvidenceStatus {
+	if result != nil && result.EvidenceStatus != nil {
+		return result.EvidenceStatus
+	}
+	return katypes.EvidenceStatusFromError(err)
 }
 
 // fireInteractiveUpgradeHook invokes the registered InteractiveUpgradeHook,

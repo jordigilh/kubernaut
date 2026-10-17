@@ -165,6 +165,7 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 		RootCauseAnalysis: marshalJSON(buildRootCauseAnalysisMap(r)),
 		NeedsHumanReview:  r.HumanReviewNeeded,
 		Warnings:          buildWarnings(r),
+		EvidenceStatus:    mapEvidenceStatus(r.EvidenceStatus),
 	}
 
 	applyHumanReviewReason(res, log, r)
@@ -190,6 +191,48 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 		res.AlignmentVerdict = buildAlignmentVerdict(r)
 	}
 	return res
+}
+
+// mapEvidenceStatus converts KA's internal bounded evidence contract to the
+// AgentSession CRD projection. The conversion is explicit so an internal
+// status can never accidentally serialize raw transport errors or unbounded
+// dependency metadata (BR-AUDIT-005, DD-FLEET-009).
+func mapEvidenceStatus(status *katypes.EvidenceStatus) *agentsessionv1.EvidenceStatus {
+	if status == nil {
+		return nil
+	}
+	mapped := &agentsessionv1.EvidenceStatus{
+		Version:          status.Version,
+		Class:            agentsessionv1.EvidenceFailureClass(status.Class),
+		Source:           agentsessionv1.EvidenceSource(status.Source),
+		Outcome:          agentsessionv1.EvidenceOutcome(status.Outcome),
+		TargetRef:        status.TargetRef,
+		ClusterID:        status.ClusterID,
+		LogicalTool:      status.LogicalTool,
+		Attempts:         status.Attempts,
+		LastFailureCode:  status.LastFailureCode,
+		CorrelationID:    status.CorrelationID,
+		SourcesTruncated: status.SourcesTruncated,
+	}
+	if len(status.Sources) == 0 {
+		return mapped
+	}
+	mapped.Sources = make([]agentsessionv1.EvidenceSourceStatus, 0, len(status.Sources))
+	for _, source := range status.Sources {
+		mapped.Sources = append(mapped.Sources, agentsessionv1.EvidenceSourceStatus{
+			Version:         source.Version,
+			Class:           agentsessionv1.EvidenceFailureClass(source.Class),
+			Source:          agentsessionv1.EvidenceSource(source.Source),
+			Outcome:         agentsessionv1.EvidenceOutcome(source.Outcome),
+			TargetRef:       source.TargetRef,
+			ClusterID:       source.ClusterID,
+			LogicalTool:     source.LogicalTool,
+			Attempts:        source.Attempts,
+			LastFailureCode: source.LastFailureCode,
+			CorrelationID:   source.CorrelationID,
+		})
+	}
+	return mapped
 }
 
 // marshalJSON marshals v into an apiextensionsv1.JSON, returning nil when v

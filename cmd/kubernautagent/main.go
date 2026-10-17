@@ -235,6 +235,7 @@ func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 		effectiveReg:         core.effectiveReg,
 		alignEvaluator:       core.alignEvaluator,
 		alignCfg:             core.alignCfg,
+		agentMetrics:         core.agentMetrics,
 		fleetOverlayResolver: core.fleetOverlayResolver,
 		infra:                core.infra,
 		sanitizer:            core.sanitizer,

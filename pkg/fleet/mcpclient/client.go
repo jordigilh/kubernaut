@@ -297,7 +297,21 @@ func (c *Client) resolveToolName(tool string) string {
 // the MCP Gateway), which would otherwise leave the Client permanently unable
 // to sync, even after the Gateway becomes healthy again.
 func (c *Client) callTool(ctx context.Context, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
-	session := c.currentSession()
+	return callReadToolWithReconnect(ctx, toolName, args, c.currentSession, c.reconnect)
+}
+
+// callReadToolWithReconnect invokes an idempotent read and repairs a dead
+// provider session once before retrying. Both the read client and mutation
+// reconciliation path use this helper so their recovery behavior remains
+// identical without duplicating the retry sequence.
+func callReadToolWithReconnect(
+	ctx context.Context,
+	toolName string,
+	args map[string]any,
+	sessionProvider func() *mcp.ClientSession,
+	reconnect func(context.Context) error,
+) (*mcp.CallToolResult, error) {
+	session := sessionProvider()
 	if session == nil {
 		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
 	}
@@ -305,15 +319,13 @@ func (c *Client) callTool(ctx context.Context, toolName string, args map[string]
 	if err == nil {
 		return result, nil
 	}
-	if c.reconnect == nil || !isRetryableSessionError(err) {
+	if reconnect == nil || !isRetryableSessionError(err) {
 		return nil, fmt.Errorf("call %s: %w", toolName, err)
 	}
-
-	if reconnErr := c.reconnect(ctx); reconnErr != nil {
+	if reconnErr := reconnect(ctx); reconnErr != nil {
 		return nil, fmt.Errorf("call %s: reconnect failed: %w (original: %w)", toolName, reconnErr, err)
 	}
-
-	session = c.currentSession()
+	session = sessionProvider()
 	if session == nil {
 		return nil, fmt.Errorf("call %s: no active MCP session after reconnect", toolName)
 	}

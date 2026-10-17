@@ -680,6 +680,141 @@ spec:
                       DegradedMode indicates if the analysis ran with degraded capabilities
                       (e.g., Rego policy evaluation failed, using safe defaults)
                     type: boolean
+                  evidenceStatus:
+                    description: |-
+                      EvidenceStatus is the bounded server-owned evidence projection copied from
+                      KA. It is additive and does not alter existing reason/subreason routing.
+                    properties:
+                      attempts:
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                      class:
+                        description: EvidenceFailureClass is a closed, server-owned
+                          terminal evidence class.
+                        enum:
+                        - none
+                        - history_based_ineffective_remediation
+                        - rca_incomplete
+                        - evidence_transport_unavailable
+                        - schema_client_request_failure
+                        type: string
+                      clusterID:
+                        maxLength: 253
+                        type: string
+                      correlationID:
+                        maxLength: 253
+                        type: string
+                      lastFailureCode:
+                        maxLength: 128
+                        type: string
+                      logicalTool:
+                        maxLength: 128
+                        type: string
+                      outcome:
+                        description: EvidenceOutcome is a closed source/terminal outcome.
+                        enum:
+                        - success
+                        - partial
+                        - skipped
+                        - valid_empty
+                        - transport_unavailable
+                        - schema_client_failure
+                        - canceled
+                        - sources_truncated
+                        type: string
+                      source:
+                        description: EvidenceSource identifies a bounded evidence
+                          producer.
+                        enum:
+                        - remediation_history
+                        - owner_chain
+                        - detected_labels
+                        - mcp
+                        - context_tool
+                        type: string
+                      sources:
+                        items:
+                          description: EvidenceSourceStatus preserves one bounded
+                            status per target/source pair.
+                          properties:
+                            attempts:
+                              maximum: 100
+                              minimum: 0
+                              type: integer
+                            class:
+                              description: EvidenceFailureClass is a closed, server-owned
+                                terminal evidence class.
+                              enum:
+                              - none
+                              - history_based_ineffective_remediation
+                              - rca_incomplete
+                              - evidence_transport_unavailable
+                              - schema_client_request_failure
+                              type: string
+                            clusterID:
+                              maxLength: 253
+                              type: string
+                            correlationID:
+                              maxLength: 253
+                              type: string
+                            lastFailureCode:
+                              maxLength: 128
+                              type: string
+                            logicalTool:
+                              maxLength: 128
+                              type: string
+                            outcome:
+                              description: EvidenceOutcome is a closed source/terminal
+                                outcome.
+                              enum:
+                              - success
+                              - partial
+                              - skipped
+                              - valid_empty
+                              - transport_unavailable
+                              - schema_client_failure
+                              - canceled
+                              - sources_truncated
+                              type: string
+                            source:
+                              description: EvidenceSource identifies a bounded evidence
+                                producer.
+                              enum:
+                              - remediation_history
+                              - owner_chain
+                              - detected_labels
+                              - mcp
+                              - context_tool
+                              type: string
+                            targetRef:
+                              maxLength: 253
+                              type: string
+                            version:
+                              maxLength: 8
+                              type: string
+                          required:
+                          - class
+                          - outcome
+                          - source
+                          - version
+                          type: object
+                        maxItems: 8
+                        type: array
+                      sourcesTruncated:
+                        type: boolean
+                      targetRef:
+                        maxLength: 253
+                        type: string
+                      version:
+                        maxLength: 8
+                        type: string
+                    required:
+                    - class
+                    - outcome
+                    - source
+                    - version
+                    type: object
                   investigationId:
                     description: |-
                       ========================================

@@ -187,6 +187,10 @@ const (
 	ActionGroundingResponse     = "grounding_response"
 	ActionTruncationDetected    = "truncation_detected"
 	ActionEnriched              = "enriched"
+	ActionMCPTransportReset     = "mcp_transport_reset"
+	ActionMCPRetry              = "mcp_retry"
+	ActionMCPRetryExhausted     = "mcp_retry_exhausted"
+	ActionEvidenceSourceFailed  = "evidence_source_failed"
 
 	ActionSessionStarted          = "session_started"
 	ActionSessionCancelled        = "session_cancelled"
@@ -271,6 +275,9 @@ var AllEventTypes = []string{
 
 // AuditEvent represents an audit event to be stored.
 type AuditEvent struct {
+	// EventID is the canonical UUID for the event. NewEvent creates it once;
+	// stores copy the same value to the top-level request and typed payload.
+	EventID       uuid.UUID
 	EventType     string
 	EventCategory string
 	EventAction   string
@@ -400,8 +407,10 @@ func CorrelationIDFromContext(ctx context.Context) (string, bool) {
 // NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
 func NewEvent(eventType string, correlationID string, opts ...EventOption) *AuditEvent {
 	data := make(map[string]interface{})
-	data["event_id"] = uuid.New().String()
+	eventID := uuid.New()
+	data["event_id"] = eventID.String()
 	event := &AuditEvent{
+		EventID:       eventID,
 		EventType:     eventType,
 		EventCategory: EventCategory,
 		CorrelationID: correlationID,

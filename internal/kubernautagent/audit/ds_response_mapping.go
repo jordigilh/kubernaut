@@ -35,17 +35,38 @@ func dataString(d map[string]interface{}, key string) string {
 }
 
 func dataInt(d map[string]interface{}, key string) int {
+	n, _ := dataIntValue(d, key)
+	return n
+}
+
+func dataIntValue(d map[string]interface{}, key string) (int, bool) {
 	if v, ok := d[key]; ok {
 		switch n := v.(type) {
 		case int:
-			return n
+			return n, true
+		case int8:
+			return int(n), true
+		case int16:
+			return int(n), true
+		case int32:
+			return int(n), true
 		case int64:
-			return int(n)
+			return int(n), true
+		case uint:
+			return int(n), true
+		case uint8:
+			return int(n), true
+		case uint16:
+			return int(n), true
+		case uint32:
+			return int(n), true
+		case uint64:
+			return int(n), true
 		case float64:
-			return int(n)
+			return int(n), true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func dataBool(d map[string]interface{}, key string) bool {

@@ -23,6 +23,7 @@ package testutil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -85,6 +86,7 @@ type gatewayConfig struct {
 	structuredContent            []map[string]any
 	allowExternalContainerAccess bool
 	emptyResourcesList           bool
+	ambiguousMutationFailure     bool
 }
 
 // WithTool registers a static tool on the mock gateway.
@@ -148,6 +150,16 @@ func WithStructuredContent(data []map[string]any) Option {
 func WithEmptyResourcesList() Option {
 	return func(cfg *gatewayConfig) {
 		cfg.emptyResourcesList = true
+	}
+}
+
+// WithAmbiguousMutationFailure makes the mock return a transport-level
+// handler error after recording resources_create_or_update. It is used to
+// prove that executor-side reconciliation performs a separate read and never
+// resends an ambiguous mutation.
+func WithAmbiguousMutationFailure() Option {
+	return func(cfg *gatewayConfig) {
+		cfg.ambiguousMutationFailure = true
 	}
 }
 
@@ -330,6 +342,7 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 	// Server contract (github.com/containers/kubernetes-mcp-server). Using any
 	// other key masks client bugs that only surface against the real server.
 	createResourceName := prefix + "resources_create_or_update"
+	ambiguousMutationFailure := cfg.ambiguousMutationFailure
 	gw.server.AddTool(&mcp.Tool{
 		Name:        createResourceName,
 		Description: fmt.Sprintf("Create a Kubernetes resource on cluster %s", cluster),
@@ -346,6 +359,9 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 				Content: []mcp.Content{&mcp.TextContent{Text: "failed to create or update resources, missing argument resource"}},
 				IsError: true,
 			}, nil
+		}
+		if ambiguousMutationFailure {
+			return nil, errors.New("ambiguous mutation transport failure")
 		}
 
 		return &mcp.CallToolResult{

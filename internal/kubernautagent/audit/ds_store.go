@@ -40,6 +40,9 @@ func NewDSAuditStore(client AuditCreator) *DSAuditStore {
 }
 
 func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error {
+	if err := canonicalizeEventID(event); err != nil {
+		return fmt.Errorf("audit store: %w", err)
+	}
 	req := &ogenclient.AuditEventRequest{
 		Version:        "1.0",
 		EventType:      event.EventType,
@@ -49,6 +52,7 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 		EventOutcome:   ogenclient.AuditEventRequestEventOutcome(event.EventOutcome),
 		CorrelationID:  event.CorrelationID,
 	}
+	req.EventID.SetTo(event.EventID)
 	if event.ActingUser != "" {
 		req.ActorType.SetTo("user")
 		req.ActorID.SetTo(event.ActingUser)

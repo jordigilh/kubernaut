@@ -20,11 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -78,6 +79,114 @@ type RemediationHistoryResult struct {
 	Tier1Window        string         `json:"tier1_window"`
 	Tier2              []Tier2Summary `json:"tier2"`
 	Tier2Window        string         `json:"tier2_window"`
+	// EvidenceStatus travels beside the LLM-facing history payload. It is not
+	// serialized into tool output; the investigator's status scope carries it
+	// through terminal mappings.
+	EvidenceStatus *katypes.EvidenceStatus `json:"-"`
+}
+
+// HistoryFetchOutcome is the typed boundary result for a history lookup.
+// Existing DataStorageClient callers continue to receive the mapped history;
+// the status is carried on RemediationHistoryResult or HistoryFetchError so
+// older fakes remain source-compatible.
+type HistoryFetchOutcome struct {
+	History *RemediationHistoryResult
+	Status  katypes.EvidenceSourceStatus
+}
+
+// HistoryFetchError preserves a bounded source classification while retaining
+// the wrapped dependency error for caller diagnostics and errors.Is/As.
+type HistoryFetchError struct {
+	Err    error
+	Status katypes.EvidenceSourceStatus
+}
+
+func (e *HistoryFetchError) Error() string {
+	if e == nil || e.Err == nil {
+		return "remediation history fetch failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *HistoryFetchError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func historyTargetRef(kind, name, namespace string) string {
+	return strings.Trim(strings.Join([]string{namespace, kind, name}, "/"), "/")
+}
+
+func historySourceStatus(kind, name, namespace, clusterID, correlationID string, outcome katypes.EvidenceOutcome, code string) katypes.EvidenceSourceStatus {
+	class := katypes.EvidenceFailureNone
+	switch outcome {
+	case katypes.EvidenceOutcomeSuccess,
+		katypes.EvidenceOutcomePartial,
+		katypes.EvidenceOutcomeSkipped,
+		katypes.EvidenceOutcomeValidEmpty,
+		katypes.EvidenceOutcomeSourcesTruncated:
+		// These outcomes describe a completed or intentionally bounded source;
+		// they do not imply a terminal evidence failure class.
+	case katypes.EvidenceOutcomeTransportUnavailable, katypes.EvidenceOutcomeCanceled:
+		class = katypes.EvidenceFailureTransportUnavailable
+	case katypes.EvidenceOutcomeSchemaClientFailure:
+		class = katypes.EvidenceFailureSchemaClientRequestFailure
+	}
+	return katypes.EvidenceSourceStatus{
+		Version:         katypes.EvidenceStatusVersion,
+		Class:           class,
+		Source:          katypes.EvidenceSourceRemediationHistory,
+		Outcome:         outcome,
+		TargetRef:       historyTargetRef(kind, name, namespace),
+		ClusterID:       clusterID,
+		LastFailureCode: code,
+		CorrelationID:   correlationID,
+	}
+}
+
+func historyAggregateStatus(status katypes.EvidenceSourceStatus) *katypes.EvidenceStatus {
+	return &katypes.EvidenceStatus{
+		Version:         status.Version,
+		Class:           status.Class,
+		Source:          status.Source,
+		Outcome:         status.Outcome,
+		TargetRef:       status.TargetRef,
+		ClusterID:       status.ClusterID,
+		LogicalTool:     status.LogicalTool,
+		Attempts:        status.Attempts,
+		LastFailureCode: status.LastFailureCode,
+		CorrelationID:   status.CorrelationID,
+		Sources:         []katypes.EvidenceSourceStatus{status},
+	}
+}
+
+func mergeEvidenceSourceStatus(ctx context.Context, status katypes.EvidenceSourceStatus) {
+	if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+		scope.MergeSource(status)
+	}
+}
+
+func historyStatusFromError(err error, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
+	var typed *HistoryFetchError
+	if errors.As(err, &typed) && typed != nil {
+		return typed.Status
+	}
+	if errors.Is(err, ErrRBACForbidden) {
+		return historySourceStatus(kind, name, namespace, clusterID, correlationID,
+			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeForbidden)
+	}
+	return historySourceStatus(kind, name, namespace, clusterID, correlationID,
+		katypes.EvidenceOutcomeTransportUnavailable, katypes.EvidenceFailureCodeTransport)
+}
+
+// HistoryEvidenceStatusForError maps an enrichment failure that prevented a
+// history result from being returned into the bounded source contract. It is
+// used by the investigator when Enrich must return early (for example, before
+// the normal history fetch path can attach its status).
+func HistoryEvidenceStatusForError(err error, kind, name, namespace, clusterID, correlationID string) katypes.EvidenceSourceStatus {
+	return historyStatusFromError(err, kind, name, namespace, clusterID, correlationID)
 }
 
 // Tier1Entry is a detailed remediation history record (recent window).
@@ -207,6 +316,13 @@ type EnrichmentResult struct {
 	// HistoryUnavailable distinguishes acquisition failure from a successful
 	// empty history. Phase 2 must require review when repeat context is unavailable.
 	HistoryUnavailable bool `json:"history_unavailable,omitempty"`
+	// EvidenceStatus is the source status for this target's enrichment call.
+	// It is carried beside prompts and merged into the investigation scope.
+	EvidenceStatus *katypes.EvidenceStatus `json:"-"`
+	// DetectedLabelsFallback marks labels copied from the signal target after
+	// the RCA target's optional label source failed. History is never copied
+	// across targets.
+	DetectedLabelsFallback bool `json:"detected_labels_fallback,omitempty"`
 }
 
 // Enricher resolves owner chain, labels, and remediation history.
@@ -388,7 +504,7 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 	if err != nil {
 		return nil, err
 	}
-	specHash = resolvedSpecHash
+	specHash = strings.TrimSpace(resolvedSpecHash)
 	result.HistoryUnavailable = specHashUnavailable
 
 	ownerErr, hardErr := e.populateOwnerChain(ctx, kind, name, namespace, apiVersion, result)
@@ -400,25 +516,73 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 		return nil, labelErr
 	}
 
-	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, req.ClusterID, specHash)
+	histResult, histErr, historySkipped := e.fetchHistory(ctx, result, historyFetchRequest{
+		Kind: kind, Name: name, Namespace: namespace, ClusterID: req.ClusterID,
+		IncidentID: incidentID, SpecHash: specHash,
+	})
 	if histErr != nil {
-		// An empty current hash means no valid history query could be formed
-		// (the DS API correctly returns 400). Preserve unknown/legacy flows;
-		// only a failed valid Phase 2 acquisition requires manual review.
 		result.HistoryUnavailable = result.HistoryUnavailable || specHash != ""
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)
-	} else {
+	} else if !historySkipped {
 		result.RemediationHistory = histResult
 	}
 
 	e.emitEnrichmentAuditEvent(ctx, enrichmentAuditParams{
 		Kind: kind, Name: name, Namespace: namespace, IncidentID: incidentID,
-		Result: result, OwnerErr: ownerErr, HistErr: histErr,
+		ClusterID: req.ClusterID, Result: result, OwnerErr: ownerErr, HistErr: histErr,
 	})
 
 	return result, nil
+}
+
+type historyFetchRequest struct {
+	Kind, Name, Namespace string
+	ClusterID, IncidentID string
+	SpecHash              string
+}
+
+func (e *Enricher) fetchHistory(ctx context.Context, result *EnrichmentResult, req historyFetchRequest) (*RemediationHistoryResult, error, bool) {
+	if req.SpecHash == "" {
+		outcome := katypes.EvidenceOutcomeSkipped
+		if result != nil && result.HistoryUnavailable {
+			// A failed hash acquisition is different from a successful empty
+			// hash. Both avoid an invalid DataStorage request, but only the
+			// former is an unavailable evidence source.
+			outcome = katypes.EvidenceOutcomeTransportUnavailable
+		}
+		status := historySourceStatus(req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID,
+			outcome, katypes.EvidenceFailureCodeHashUnavailable)
+		history := &RemediationHistoryResult{EvidenceStatus: historyAggregateStatus(status)}
+		result.EvidenceStatus = history.EvidenceStatus
+		mergeEvidenceSourceStatus(ctx, status)
+		return history, nil, true
+	}
+
+	history, err := e.ds.GetRemediationHistory(ctx, req.Kind, req.Name, req.Namespace, req.ClusterID, req.SpecHash)
+	if err != nil {
+		status := historyStatusFromError(err, req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID)
+		result.EvidenceStatus = historyAggregateStatus(status)
+		mergeEvidenceSourceStatus(ctx, status)
+		return nil, err, false
+	}
+	if history == nil {
+		history = &RemediationHistoryResult{}
+	}
+	if history.EvidenceStatus == nil {
+		outcome := katypes.EvidenceOutcomeSuccess
+		if len(history.Tier1) == 0 && len(history.Tier2) == 0 {
+			outcome = katypes.EvidenceOutcomeValidEmpty
+		}
+		status := historySourceStatus(req.Kind, req.Name, req.Namespace, req.ClusterID, req.IncidentID, outcome, "")
+		history.EvidenceStatus = historyAggregateStatus(status)
+	}
+	result.EvidenceStatus = history.EvidenceStatus
+	for _, source := range history.EvidenceStatus.Sources {
+		mergeEvidenceSourceStatus(ctx, source)
+	}
+	return history, nil, false
 }
 
 // resolveSpecHash returns specHash unchanged if already provided, otherwise
@@ -426,8 +590,8 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 // a failed live hash lookup from a successful empty/legacy result so Phase 2
 // can fail closed without breaking the best-effort enrichment API.
 func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, apiVersion, specHash string) (string, bool, error) {
-	if specHash != "" {
-		return specHash, false, nil
+	if strings.TrimSpace(specHash) != "" {
+		return strings.TrimSpace(specHash), false, nil
 	}
 	computed, err := e.effectiveK8s(ctx).GetSpecHash(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
@@ -446,6 +610,12 @@ func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, a
 		)
 		return "", true, nil
 	}
+	// An empty hash is a valid "history not queryable" outcome, not by itself
+	// an unavailable history backend. The caller records the bounded skipped
+	// evidence status and avoids sending an invalid empty hash to DataStorage;
+	// HistoryUnavailable remains reserved for an actual failed hash acquisition
+	// (for example RBAC or transport failure).
+	computed = strings.TrimSpace(computed)
 	return computed, false, nil
 }
 
@@ -505,34 +675,38 @@ func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, names
 // enrichmentAuditParams groups the fields needed to emit the enrichment
 // audit event. Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type enrichmentAuditParams struct {
-	Kind, Name, Namespace, IncidentID string
-	Result                            *EnrichmentResult
-	OwnerErr, HistErr                 error
+	Kind, Name, Namespace, IncidentID, ClusterID string
+	Result                                       *EnrichmentResult
+	OwnerErr, HistErr                            error
 }
 
 // emitEnrichmentAuditEvent records a best-effort audit event summarizing the
 // enrichment outcome: failure when both the owner-chain and history lookups
 // errored, success (with any partial error detail) otherwise.
 func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAuditParams) {
-	kind, name, namespace, incidentID := p.Kind, p.Name, p.Namespace, p.IncidentID
+	kind, name, namespace, incidentID, clusterID := p.Kind, p.Name, p.Namespace, p.IncidentID, p.ClusterID
 	result, ownerErr, histErr := p.Result, p.OwnerErr, p.HistErr
-	eventID := uuid.New().String()
 	correlationID := incidentID
 	if correlationID == "" {
-		correlationID = eventID
+		correlationID, _ = audit.CorrelationIDFromContext(ctx)
 	}
 
 	if ownerErr != nil && histErr != nil {
 		event := audit.NewEvent(audit.EventTypeEnrichmentFailed, correlationID)
 		event.EventAction = audit.ActionEnriched
 		event.EventOutcome = "failure"
-		event.Data["event_id"] = eventID
 		event.Data["incident_id"] = incidentID
 		event.Data["reason"] = "all_enrichment_sources_failed"
-		event.Data["detail"] = "owner_chain: " + ownerErr.Error() + "; history: " + histErr.Error()
+		event.Data["detail"] = "owner_chain=" + enrichmentFailureCode(ownerErr) + "; history=" + enrichmentFailureCode(histErr)
 		event.Data["affected_resource_kind"] = kind
 		event.Data["affected_resource_name"] = name
 		event.Data["affected_resource_namespace"] = namespace
+		event.Data["cluster_id"] = clusterID
+		if result != nil && result.EvidenceStatus != nil {
+			event.Data["evidence_source"] = string(result.EvidenceStatus.Source)
+			event.Data["evidence_outcome"] = string(result.EvidenceStatus.Outcome)
+			event.Data["evidence_failure_code"] = result.EvidenceStatus.LastFailureCode
+		}
 		audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
 		return
 	}
@@ -540,27 +714,50 @@ func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAud
 	event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
 	event.EventAction = audit.ActionEnriched
 	event.EventOutcome = "success"
-	event.Data["event_id"] = eventID
 	event.Data["incident_id"] = incidentID
+	event.Data["cluster_id"] = clusterID
 
 	rootKind, rootName, rootNS := resolveRootOwner(kind, name, namespace, result.OwnerChain)
 	event.Data["root_owner_kind"] = rootKind
 	event.Data["root_owner_name"] = rootName
 	event.Data["root_owner_namespace"] = rootNS
 	event.Data["owner_chain_length"] = len(result.OwnerChain)
-	event.Data["remediation_history_fetched"] = histErr == nil
+	event.Data["remediation_history_fetched"] = histErr == nil && result.RemediationHistory != nil
 	if result.DetectedLabels != nil {
 		event.Data["detected_labels_summary"] = result.DetectedLabels
 		event.Data["failed_detections"] = result.DetectedLabels.FailedDetections
 	}
 
 	if ownerErr != nil {
-		event.Data["owner_error"] = ownerErr.Error()
+		event.Data["owner_error_code"] = enrichmentFailureCode(ownerErr)
 	}
 	if histErr != nil {
-		event.Data["history_error"] = histErr.Error()
+		event.Data["history_error_code"] = enrichmentFailureCode(histErr)
+	}
+	if result.EvidenceStatus != nil {
+		event.Data["evidence_source"] = string(result.EvidenceStatus.Source)
+		event.Data["evidence_outcome"] = string(result.EvidenceStatus.Outcome)
+		event.Data["evidence_failure_code"] = result.EvidenceStatus.LastFailureCode
 	}
 	audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
+
+}
+
+func enrichmentFailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	var typed *HistoryFetchError
+	if errors.As(err, &typed) && typed != nil && typed.Status.LastFailureCode != "" {
+		return typed.Status.LastFailureCode
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return katypes.EvidenceFailureCodeCanceled
+	}
+	if errors.Is(err, ErrRBACForbidden) {
+		return "rbac_forbidden"
+	}
+	return katypes.EvidenceFailureCodeTransport
 }
 
 func resolveRootOwner(kind, name, namespace string, chain []OwnerChainEntry) (string, string, string) {

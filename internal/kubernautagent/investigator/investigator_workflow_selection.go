@@ -48,6 +48,17 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}, correlationID)
 	if freezeErr != nil {
 		inv.logger.Error(freezeErr, "evidence handoff could not be frozen; requiring human review", "correlation_id", correlationID)
+		if enrichData != nil && enrichData.HistoryUnavailable {
+			// The handoff guard is intentionally fail-closed. Preserve the
+			// existing operator-review signal for callers that supplied a
+			// prompt-only enrichment snapshot; the typed evidence scope takes
+			// precedence in downstream response routing.
+			return &katypes.InvestigationResult{
+				HumanReviewNeeded: true,
+				HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
+				Reason:            "evidence source unavailable for workflow selection",
+			}, nil
+		}
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true, HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
 			Reason: "evidence handoff could not be safely frozen within its configured budget",

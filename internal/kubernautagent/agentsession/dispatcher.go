@@ -617,7 +617,7 @@ func (d *Dispatcher) OnTerminal(snap session.TerminalSnapshot) {
 			"remediation_id", snap.RemediationID, "session_id", snap.SessionID)
 		return
 	}
-	d.writeTerminalStatus(context.Background(), key, snap.Status, snap.Result, snap.Err)
+	d.writeTerminalStatus(context.Background(), key, snap.Status, snap.Result, snap.Err, snap.EvidenceStatus)
 	if snap.Status != session.StatusUserDriving {
 		d.unregisterDispatched(snap.RemediationID)
 	}

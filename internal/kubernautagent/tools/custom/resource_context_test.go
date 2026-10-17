@@ -126,7 +126,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-111: get_namespaced_resource_context includes remediation_history", func() {
 		It("should return remediation history from DataStorage", func() {
-			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{
+			k8s := &fakeK8s{specHash: "history-hash", chain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "prod"},
 			}}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{
@@ -212,7 +212,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-433-116: get_cluster_resource_context includes remediation_history", func() {
 		It("should return remediation history from DataStorage", func() {
-			k8s := &fakeK8s{}
+			k8s := &fakeK8s{specHash: "history-hash"}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{
 				Tier1: []enrichment.Tier1Entry{
 					{RemediationUID: "node-drain", Outcome: "success"},
@@ -439,7 +439,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 
 	Describe("UT-KA-FLEET-034: fetchRemediationHistory threads the target clusterID — BR-INTEGRATION-1489", func() {
 		It("passes audit.ClusterIDFromContext(ctx) to ds.GetRemediationHistory for a fleet-target investigation", func() {
-			k8s := &fakeK8s{chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "api-server", Namespace: "prod"}}}
+			k8s := &fakeK8s{specHash: "history-hash", chain: []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "api-server", Namespace: "prod"}}}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
 			ctx := audit.WithClusterID(context.Background(), "spoke-east-1")

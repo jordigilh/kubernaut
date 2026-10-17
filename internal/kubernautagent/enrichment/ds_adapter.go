@@ -18,10 +18,14 @@ package enrichment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // DSAdapter implements DataStorageClient by wrapping the ogen-generated DS client.
@@ -50,6 +54,12 @@ func NewDSAdapter(client HistoryContextClient) *DSAdapter {
 // clusterID optionally scopes the query to a single fleet cluster (Issue
 // #1802, main only); pass "" for unscoped (release/v1.5 semantics).
 func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, namespace, clusterID, specHash string) (*RemediationHistoryResult, error) {
+	specHash = strings.TrimSpace(specHash)
+	if specHash == "" {
+		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+			katypes.EvidenceOutcomeSkipped, katypes.EvidenceFailureCodeHashUnavailable)
+		return &RemediationHistoryResult{EvidenceStatus: historyAggregateStatus(status)}, nil
+	}
 	params := ogenclient.GetRemediationHistoryContextParams{
 		TargetKind:      kind,
 		TargetName:      name,
@@ -62,18 +72,37 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 
 	res, err := a.client.GetRemediationHistoryContext(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("ds adapter: history query for %s/%s/%s: %w", namespace, kind, name, err)
+		outcome := katypes.EvidenceOutcomeTransportUnavailable
+		code := katypes.EvidenceFailureCodeTransport
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			outcome = katypes.EvidenceOutcomeCanceled
+			code = katypes.EvidenceFailureCodeCanceled
+		}
+		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx), outcome, code)
+		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: history query for %s/%s/%s: %w", namespace, kind, name, err), status)
 	}
 
 	if _, isBadRequest := res.(*ogenclient.GetRemediationHistoryContextBadRequest); isBadRequest {
-		return nil, fmt.Errorf("ds adapter: bad request for %s/%s/%s (spec_hash=%s)", namespace, kind, name, specHash)
+		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
+		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: bad request for %s/%s/%s (spec_hash=%s)", namespace, kind, name, specHash), status)
 	}
 
 	historyCtx, ok := res.(*ogenclient.RemediationHistoryContext)
 	if !ok {
-		return nil, fmt.Errorf("ds adapter: unexpected response type %T", res)
+		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
+			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
+		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: unexpected response type %T", res), status)
 	}
 
+	return mapHistoryContext(historyCtx, kind, name, namespace, clusterID, correlationIDFromContext(ctx)), nil
+}
+
+func newHistoryFetchError(err error, status katypes.EvidenceSourceStatus) error {
+	return &HistoryFetchError{Err: err, Status: status}
+}
+
+func mapHistoryContext(historyCtx *ogenclient.RemediationHistoryContext, kind, name, namespace, clusterID, correlationID string) *RemediationHistoryResult {
 	result := &RemediationHistoryResult{
 		TargetResource:     historyCtx.TargetResource,
 		CurrentSpecHash:    historyCtx.CurrentSpecHash,
@@ -81,24 +110,30 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 		Tier1Window:        historyCtx.Tier1.Window,
 		Tier2Window:        historyCtx.Tier2.Window,
 	}
-
 	result.Tier1 = make([]Tier1Entry, 0, len(historyCtx.Tier1.Chain))
 	for _, e := range historyCtx.Tier1.Chain {
 		result.Tier1 = append(result.Tier1, mapTier1Entry(e))
 	}
-	slices.SortFunc(result.Tier1, func(a, b Tier1Entry) int {
-		return b.CompletedAt.Compare(a.CompletedAt)
-	})
-
+	slices.SortFunc(result.Tier1, func(a, b Tier1Entry) int { return b.CompletedAt.Compare(a.CompletedAt) })
 	result.Tier2 = make([]Tier2Summary, 0, len(historyCtx.Tier2.Chain))
 	for _, e := range historyCtx.Tier2.Chain {
 		result.Tier2 = append(result.Tier2, mapTier2Summary(e))
 	}
-	slices.SortFunc(result.Tier2, func(a, b Tier2Summary) int {
-		return b.CompletedAt.Compare(a.CompletedAt)
-	})
+	slices.SortFunc(result.Tier2, func(a, b Tier2Summary) int { return b.CompletedAt.Compare(a.CompletedAt) })
+	outcome := katypes.EvidenceOutcomeSuccess
+	if len(result.Tier1) == 0 && len(result.Tier2) == 0 {
+		outcome = katypes.EvidenceOutcomeValidEmpty
+	}
+	status := historySourceStatus(kind, name, namespace, clusterID, correlationID, outcome, "")
+	result.EvidenceStatus = historyAggregateStatus(status)
+	return result
+}
 
-	return result, nil
+func correlationIDFromContext(ctx context.Context) string {
+	if correlationID, ok := audit.CorrelationIDFromContext(ctx); ok {
+		return correlationID
+	}
+	return ""
 }
 
 func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
