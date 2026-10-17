@@ -457,10 +457,11 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 	}
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, LLMInvocationContext{
-		CorrelationID: correlationID,
-		Client:        client,
-		ModelName:     modelName,
-		RuntimeParams: runtimeParams,
+		CorrelationID:  correlationID,
+		Client:         client,
+		ModelName:      modelName,
+		RuntimeParams:  runtimeParams,
+		decisionLoopID: "interactive",
 	})
 }
 

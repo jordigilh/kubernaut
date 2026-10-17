@@ -18,6 +18,8 @@ package investigator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +37,12 @@ import (
 )
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
+	decisionLoopID, err := decisionLoopIDForInvocation(phase, llmCtx.decisionLoopID, llmCtx.ModelName, messages)
+	if err != nil {
+		return nil, fmt.Errorf("derive decision loop identity: %w", err)
+	}
+	llmCtx.decisionLoopID = decisionLoopID
+
 	state := &loopTurnState{loopStart: time.Now()}
 	budget := llmCtx.rcaBudget
 	if budget == nil {
@@ -111,6 +119,34 @@ func decisionLoopPrefix(phase katypes.Phase, loopID string) string {
 		return string(phase)
 	}
 	return string(phase) + ":" + loopID
+}
+
+// decisionLoopIDForInvocation gives each independent LLM invocation its own
+// deterministic namespace while preserving retry/reconciliation deduplication
+// for the same phase, model, loop kind, and starting conversation. The
+// conversation is hashed rather than copied into the audit identity so prompt
+// content cannot leak through the event ID seed (DD-KA-2520-2521).
+func decisionLoopIDForInvocation(phase katypes.Phase, loopID, modelName string, messages []llm.Message) (string, error) {
+	if loopID == "" {
+		loopID = string(phase)
+	}
+	identity := struct {
+		Phase    katypes.Phase
+		LoopID   string
+		Model    string
+		Messages []llm.Message
+	}{
+		Phase:    phase,
+		LoopID:   loopID,
+		Model:    modelName,
+		Messages: messages,
+	}
+	payload, err := json.Marshal(identity)
+	if err != nil {
+		return "", fmt.Errorf("marshal decision loop identity: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("%s:%s", loopID, hex.EncodeToString(digest[:8])), nil
 }
 
 type loopResponseParams struct {

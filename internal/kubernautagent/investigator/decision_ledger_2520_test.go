@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -166,5 +167,28 @@ var _ = Describe("Investigation decision ledger transitions — #2520", func() {
 		inv.emitInvestigationDecision(context.Background(), params)
 		Expect(secondStore.events).To(HaveLen(2))
 		Expect(secondStore.events[0].EventID).To(Equal(secondStore.events[1].EventID))
+	})
+
+	It("UT-KA-2520-010: namespaces independent LLM invocations within one session", func() {
+		messages := []llm.Message{{Role: "user", Content: "investigate the incident"}}
+		interactiveID, err := decisionLoopIDForInvocation(katypes.PhaseRCA, "interactive", "mock-model", messages)
+		Expect(err).NotTo(HaveOccurred())
+		autonomousID, err := decisionLoopIDForInvocation(katypes.PhaseRCA, "", "mock-model", messages)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(interactiveID).NotTo(Equal(autonomousID),
+			"an interactive turn must not reuse the autonomous RCA decision namespace")
+
+		nextTurnID, err := decisionLoopIDForInvocation(katypes.PhaseRCA, "interactive", "mock-model", []llm.Message{
+			{Role: "user", Content: "investigate the incident"},
+			{Role: "assistant", Content: "the root cause is memory pressure"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nextTurnID).NotTo(Equal(interactiveID),
+			"different conversation state must receive a distinct deterministic namespace")
+
+		retryID, err := decisionLoopIDForInvocation(katypes.PhaseRCA, "interactive", "mock-model", messages)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(retryID).To(Equal(interactiveID),
+			"replaying the same invocation must retain deterministic retry deduplication")
 	})
 })
