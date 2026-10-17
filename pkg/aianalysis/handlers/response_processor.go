@@ -55,6 +55,7 @@ const (
 	maxPriorRemediationUIDs                    = 64
 	maxPriorRemediationUIDLength               = 253
 	humanReviewReasonInvestigationInconclusive = "investigation_inconclusive"
+	humanReviewReasonOperatorEscalation        = "operator_escalation"
 )
 
 // ResponseProcessor handles processing of KA responses
@@ -166,6 +167,18 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, res.Confidence)
 
+	// Explicit operator escalation and not-actionable signals are boundary
+	// decisions that must be applied before a stale typed failure projection.
+	// Operator escalation is a user decision; actionable=false is the existing
+	// server-authenticated benign-alert signal. Neither may fall through to
+	// rca_incomplete merely because an earlier phase populated that outcome.
+	if explicitOperatorEscalationResult(res) {
+		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
+	}
+	if explicitNotActionableResult(res) {
+		return p.handleNotActionableFromIncident(ctx, analysis, res)
+	}
+
 	// Typed terminal outcomes take precedence over compatibility projections.
 	// In particular, only an explicit completed_no_match discovery gate may
 	// enter the successful no-workflow path.
@@ -254,6 +267,17 @@ func explicitNoMatchingWorkflowResult(res *agentsessionv1.AgentSessionResult) bo
 	return res.TerminalOutcome == "" || res.TerminalOutcome == sharedtypes.TerminalOutcomeNoMatchingWorkflows
 }
 
+func explicitOperatorEscalationResult(res *agentsessionv1.AgentSessionResult) bool {
+	return res != nil && res.NeedsHumanReview && res.HumanReviewReason == humanReviewReasonOperatorEscalation
+}
+
+func explicitNotActionableResult(res *agentsessionv1.AgentSessionResult) bool {
+	if res == nil || res.SelectedWorkflow != nil || res.IsActionable == nil || *res.IsActionable {
+		return false
+	}
+	return hasNotActionableSignal(res.Warnings)
+}
+
 // compatibilityFailureReason returns the legacy human-review projection for a
 // typed terminal failure. The typed outcome remains authoritative in
 // AIAnalysis.Status.RCAResult; this projection must stay within the existing
@@ -261,6 +285,9 @@ func explicitNoMatchingWorkflowResult(res *agentsessionv1.AgentSessionResult) bo
 func compatibilityFailureReason(res *agentsessionv1.AgentSessionResult) string {
 	if res == nil {
 		return humanReviewReasonInvestigationInconclusive
+	}
+	if explicitOperatorEscalationResult(res) {
+		return humanReviewReasonOperatorEscalation
 	}
 	if explicitNoMatchingWorkflowResult(res) {
 		return string(sharedtypes.TerminalOutcomeNoMatchingWorkflows)
@@ -367,9 +394,7 @@ func (p *ResponseProcessor) checkAlternateOutcomes(ctx context.Context, analysis
 	// authoritative LLM determination — same trust pattern as needs_human_review (line 94).
 	// #607: Removed confidence >= 0.7 gate. The LLM's explicit actionable=false is trusted
 	// regardless of confidence. The agent applies a confidence floor of 0.8 as defense-in-depth.
-	isNotActionable := hasNotActionableSignal(res.Warnings)
-	isActionablePtr := res.IsActionable
-	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
+	if explicitNotActionableResult(res) {
 		result, err := p.handleNotActionableFromIncident(ctx, analysis, res)
 		return result, err, true
 	}

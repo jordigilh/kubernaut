@@ -484,6 +484,12 @@ func applyHumanReviewReason(res *agentsessionv1.AgentSessionResult, log logr.Log
 		return
 	}
 	reason := r.HumanReviewReason
+	// Interactive operator escalation is an explicit user decision and must
+	// take precedence over a stale compatibility reason retained from an
+	// earlier investigation phase.
+	if r.Reason == "operator_escalation" {
+		reason = r.Reason
+	}
 	if reason == "" {
 		reason = r.Reason
 	}

@@ -267,6 +267,30 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("investigation_inconclusive"))
 	})
 
+	It("UT-AA-2521-013: explicit not-actionable outcome overrides a stale typed RCA failure", func() {
+		analysis := createAnalysis()
+		notActionable := false
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:              "inc-2521-013",
+			Analysis:                "The alert is benign",
+			NeedsHumanReview:        false,
+			IsActionable:            &notActionable,
+			Warnings:                []string{"Alert not actionable"},
+			TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+			HistoryStatus:           sharedtypes.HistoryStatusNotRequested,
+			Timestamp:               "2026-10-16T00:00:00Z",
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+		Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded))
+		Expect(analysis.Status.SubReason).To(Equal("NotActionable"))
+		Expect(analysis.Status.GetRCAResult().Actionability).To(Equal(aianalysis.ActionabilityNotActionable))
+		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse())
+	})
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// Issue #769: rootCauseAnalysis preservation
 	// ═══════════════════════════════════════════════════════════════════════

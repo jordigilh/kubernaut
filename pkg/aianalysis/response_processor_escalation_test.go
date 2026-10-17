@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
@@ -123,6 +124,20 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 
 			Expect(analysis.Status.CompletedAt).ToNot(BeNil(),
 				"AU-12: CompletedAt must be set for FedRAMP audit trail temporal completeness")
+		})
+
+		It("UT-AA-2521-014: preserves operator_escalation when a stale typed RCA failure is present", func() {
+			analysis := createAnalysis()
+			resp := buildEscalationResp()
+			resp.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
+			resp.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure
+
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
+			Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("operator_escalation"),
+				"operator_escalation must take precedence over the stale typed RCA failure")
+			Expect(analysis.Status.SubReason).To(Equal("OperatorEscalation"))
 		})
 	})
 })
