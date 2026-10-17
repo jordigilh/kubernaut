@@ -21,6 +21,10 @@
 # service images or govulncheck. Trivy severities, exit codes, and discovery
 # remain unchanged; unlisted CVEs still fail the image gate.
 #
+# Release run 39064021455 (2026-10-17) separately reported CVE-2026-56851 in
+# kubectl's bundled golang.org/x/text v0.33.0. The user-approved exception
+# below expires six calendar months later; kubectl is not rebuilt or upgraded.
+#
 # Re-run before the expiration date:
 #   1. Inspect released binaries with `go version -m` and real binary scans
 #      (current minimum fixes: Go 1.26.9, x/net v0.60.0, x/text v0.39.0).
@@ -61,3 +65,7 @@ CVE-2026-97031 exp:2027-04-11
 
 # Newly observed in both x/net (fixed v0.60.0) and stdlib (fixed Go 1.26.9).
 CVE-2026-78669 exp:2027-04-11
+
+# kubectl x/text v0.33.0; fixed v0.41.0. User-approved risk acceptance on
+# 2026-10-17; this is not vulnerability remediation.
+CVE-2026-56851 exp:2027-04-17

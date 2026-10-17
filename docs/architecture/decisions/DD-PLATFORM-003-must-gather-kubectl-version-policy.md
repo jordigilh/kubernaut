@@ -3,7 +3,7 @@
 **Date**: July 13, 2026
 **Status**: ✅ **APPROVED**
 **Confidence**: 90%
-**Last Reviewed**: October 11, 2026 (six-month risk-acceptance amendment below)
+**Last Reviewed**: October 17, 2026 (six-month risk-acceptance amendments below)
 **Related**: Issue #1663 (Trivy security scan blocking `v1.6.0-rc1` release), Issue #1662 (follow-up to re-triage residual CVEs before exception expiration), Issue #1315 (Trivy/SBOM release gate), `cmd/must-gather/Dockerfile`
 
 ---
@@ -180,6 +180,22 @@ this specific tool.
 **Success Metrics**:
 - Trivy scan for `must-gather`: 0 CRITICAL, <=5 time-bound-exception HIGH (target: 0 once upstream catches up)
 - No user-reported must-gather functional regressions against clusters in the 1.30-1.32 range post-release
+
+## 2026-10-17 Amendment: CVE-2026-56851 Exception
+
+The release workflow run [39064021455](https://github.com/jordigilh/kubernaut/actions/runs/39064021455)
+reported **CVE-2026-56851** in the bundled `kubectl` binary's
+`golang.org/x/text v0.33.0` dependency (fixed in `v0.41.0`). Per the user's
+direction, retain the existing released `kubectl v1.36.2` and add only this
+exact CVE to `cmd/must-gather/.trivyignore` through **2027-04-17** (six calendar
+months from the 2026-10-17 approval).
+
+This is a narrowly scoped, time-bound risk acceptance—not vulnerability
+remediation. Kubectl is intentionally neither upgraded nor source-built. The
+exception remains routed only to must-gather scans; all unlisted findings and
+application-image findings remain blocking. Re-triage with Issue #1662 before
+expiry and remove the entry when a compatible patched kubectl artifact is
+adopted.
 
 ## 2026-10-11 Amendment: Explicit Six-Month Risk Acceptance
 
