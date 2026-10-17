@@ -141,4 +141,30 @@ var _ = Describe("Investigation decision ledger transitions — #2520", func() {
 		Expect(store.events).To(HaveLen(1))
 		Expect(store.events[0].Data["workflow_discovery_status"]).To(Equal(string(sharedtypes.WorkflowDiscoveryStatusStarted)))
 	})
+
+	It("UT-KA-2520-009: namespaces deterministic decision IDs by session", func() {
+		firstStore := &decisionLedgerAuditStore{}
+		inv := &Investigator{auditStore: firstStore, logger: logr.Discard()}
+		params := investigationDecisionParams{
+			CorrelationID: "rr-2520-009",
+			Phase:         katypes.PhaseRCA,
+			TurnKind:      investigationDecisionTurnState,
+			TurnID:        "rca:complete",
+			Result:        &katypes.InvestigationResult{HistoryStatus: sharedtypes.HistoryStatusAvailable},
+		}
+		inv.emitInvestigationDecision(context.Background(), params)
+		params.SessionID = "session-b"
+		inv.emitInvestigationDecision(context.Background(), params)
+
+		Expect(firstStore.events).To(HaveLen(2))
+		Expect(firstStore.events[0].EventID).NotTo(Equal(firstStore.events[1].EventID))
+
+		secondStore := &decisionLedgerAuditStore{}
+		inv.auditStore = secondStore
+		params.SessionID = ""
+		inv.emitInvestigationDecision(context.Background(), params)
+		inv.emitInvestigationDecision(context.Background(), params)
+		Expect(secondStore.events).To(HaveLen(2))
+		Expect(secondStore.events[0].EventID).To(Equal(secondStore.events[1].EventID))
+	})
 })

@@ -182,9 +182,14 @@ func (inv *Investigator) emitInvestigationDecision(ctx context.Context, p invest
 	if turnID == "" {
 		turnID = string(p.Phase) + ":state"
 	}
-	eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s:%s:%s", correlationID, p.Phase, p.TurnKind, turnID)))
+	sessionID := firstNonEmpty(p.SessionID, session.SessionIDFromContext(ctx))
+	eventIDSeed := fmt.Sprintf("%s:%s:%s:%s", correlationID, p.Phase, p.TurnKind, turnID)
+	if sessionID != "" {
+		eventIDSeed = fmt.Sprintf("%s:%s", eventIDSeed, sessionID)
+	}
+	eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(eventIDSeed))
 	event := audit.NewEvent(audit.EventTypeInvestigationDecision, correlationID,
-		audit.WithSessionID(firstNonEmpty(p.SessionID, session.SessionIDFromContext(ctx))))
+		audit.WithSessionID(sessionID))
 	event.EventID = eventID
 	event.EventAction = audit.ActionInvestigationDecision
 	event.EventOutcome = decisionLedgerEventOutcome(p.TurnKind, snapshot.TerminalOutcome)
