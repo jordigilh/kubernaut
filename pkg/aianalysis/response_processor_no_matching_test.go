@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // rawJSON marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
@@ -84,13 +85,16 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 
 	buildNoMatchingWorkflowsResp := func() *agentsessionv1.AgentSessionResult {
 		return &agentsessionv1.AgentSessionResult{
-			IncidentID:        "inc-768-001",
-			Analysis:          "The namespace-quota ResourceQuota in demo-quota is 100% exhausted on memory.",
-			NeedsHumanReview:  true,
-			HumanReviewReason: "no_matching_workflows",
-			Confidence:        0.98,
-			Timestamp:         "2026-04-21T00:00:00Z",
-			Warnings:          []string{"No workflows matched the alert criteria"},
+			IncidentID:              "inc-768-001",
+			Analysis:                "The namespace-quota ResourceQuota in demo-quota is 100% exhausted on memory.",
+			NeedsHumanReview:        true,
+			HumanReviewReason:       "no_matching_workflows",
+			TerminalOutcome:         sharedtypes.TerminalOutcomeNoMatchingWorkflows,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch,
+			HistoryStatus:           sharedtypes.HistoryStatusAvailable,
+			Confidence:              0.98,
+			Timestamp:               "2026-04-21T00:00:00Z",
+			Warnings:                []string{"No workflows matched the alert criteria"},
 			RootCauseAnalysis: rawJSON(map[string]interface{}{
 				"summary":              "The namespace-quota ResourceQuota is exhausted",
 				"severity":             "medium",
@@ -199,6 +203,68 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 					"Phase must remain Failed for humanReviewReason=%s", reason)
 			}
 		})
+	})
+
+	It("UT-AA-2521-010: keeps the legacy review projection while routing typed history failure", func() {
+		analysis := createAnalysis()
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:              "inc-2521-010",
+			Analysis:                "Actionable RCA preserved",
+			NeedsHumanReview:        true,
+			HumanReviewReason:       aianalysisv1.HumanReviewReasonRCAIncomplete,
+			TerminalOutcome:         sharedtypes.TerminalOutcomeHistoryEnrichmentUnavailable,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+			HistoryStatus:           sharedtypes.HistoryStatusTransportUnavailable,
+			Timestamp:               "2026-10-16T00:00:00Z",
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal(aianalysisv1.HumanReviewReasonRCAIncomplete))
+		Expect(analysis.Status.SubReason).To(Equal("RcaIncomplete"))
+		Expect(analysis.Status.GetRCAResult().TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeHistoryEnrichmentUnavailable))
+		Expect(analysis.Status.GetRCAResult().HistoryStatus).To(Equal(sharedtypes.HistoryStatusTransportUnavailable))
+	})
+
+	It("UT-AA-2521-011: typed discovery failure overrides a stale legacy no-match reason", func() {
+		analysis := createAnalysis()
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:              "inc-2521-011",
+			Analysis:                "Workflow discovery could not complete",
+			NeedsHumanReview:        true,
+			HumanReviewReason:       aianalysisv1.HumanReviewReasonNoMatchingWorkflows,
+			TerminalOutcome:         sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusFailed,
+			HistoryStatus:           sharedtypes.HistoryStatusAvailable,
+			Timestamp:               "2026-10-16T00:00:00Z",
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+		Expect(analysis.Status.SubReason).To(Equal("InvestigationInconclusive"))
+		Expect(analysis.Status.SubReason).NotTo(Equal(aianalysisv1.SubReasonNoMatchingWorkflows))
+		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("investigation_inconclusive"))
+	})
+
+	It("UT-AA-2521-012: legacy no-match reason without a completed gate cannot complete analysis", func() {
+		analysis := createAnalysis()
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "inc-2521-012",
+			Analysis:          "Workflow selection did not produce a result",
+			NeedsHumanReview:  true,
+			HumanReviewReason: aianalysisv1.HumanReviewReasonNoMatchingWorkflows,
+			HistoryStatus:     sharedtypes.HistoryStatusAvailable,
+			Timestamp:         "2026-10-16T00:00:00Z",
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+		Expect(analysis.Status.SubReason).To(Equal("InvestigationInconclusive"))
+		Expect(analysis.Status.SubReason).NotTo(Equal(aianalysisv1.SubReasonNoMatchingWorkflows))
+		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("investigation_inconclusive"))
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════

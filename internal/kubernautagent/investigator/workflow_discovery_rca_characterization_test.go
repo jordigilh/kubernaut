@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -35,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // rcaK8sClient is a fake K8s adapter for enrichment that lets tests fail
@@ -55,9 +57,14 @@ func (f *rcaK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string
 	return "hash", nil
 }
 
-type rcaDSClient struct{}
+type rcaDSClient struct {
+	historyErr error
+}
 
 func (f *rcaDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+	if f.historyErr != nil {
+		return nil, f.historyErr
+	}
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 
@@ -143,6 +150,40 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resolver.calls).To(Equal([]string{"remote-cluster"}))
+		})
+	})
+
+	Describe("UT-KA-2521-009: post-RCA history failure is not workflow discovery failure", func() {
+		It("should preserve the RCA and skip discovery when target history is unavailable", func() {
+			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{historyErr: errors.New("history backend leaked credential=secret")}, store, logger)
+			inv := newTestInvestigator(investigator.Config{
+				Client: client, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: store, Logger: logger,
+				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			})
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", ResourceKind: "Pod", ResourceName: "worker-pod", Namespace: "production",
+			}, &katypes.InvestigationResult{
+				RCASummary: "OOMKilled after memory pressure",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "worker", Namespace: "production", APIVersion: "apps/v1",
+				},
+			}, nil, "corr-2521-009")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(Equal("OOMKilled after memory pressure"))
+			Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeHistoryEnrichmentUnavailable))
+			Expect(result.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure))
+			Expect(result.HistoryStatus).To(Equal(sharedtypes.HistoryStatusTransportUnavailable))
+			Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+			Expect(client.calls).To(BeEmpty(), "history failure must prevent the workflow-discovery LLM call")
+			for _, event := range store.events {
+				raw, marshalErr := json.Marshal(event.Data)
+				Expect(marshalErr).NotTo(HaveOccurred())
+				Expect(string(raw)).NotTo(ContainSubstring("credential=secret"))
+			}
 		})
 	})
 
@@ -328,7 +369,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	})
 
 	Describe("UT-KA-WAVE4-006 (runWorkflowSelection): unparseable text after exhausting retries", func() {
-		It("should classify as no_matching_workflows once retries are exhausted", func() {
+		It("should classify as workflow_discovery_failed once retries are exhausted", func() {
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
 			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
@@ -351,7 +392,9 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"))
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+			Expect(result.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed))
+			Expect(result.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusFailed))
 		})
 	})
 })

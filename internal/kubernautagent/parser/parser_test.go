@@ -55,6 +55,25 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-2520-004: parser cannot author server-owned terminal state", func() {
+		It("should discard model-supplied terminal, discovery, and history statuses", func() {
+			p := parser.NewResultParser()
+			result, err := p.Parse(`{
+				"rca_summary": "Memory pressure detected",
+				"confidence": 0.9,
+				"terminal_outcome": "no_matching_workflows",
+				"workflow_discovery_status": "completed_no_match",
+				"history_status": "transport_unavailable"
+			}`)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.TerminalOutcome).To(BeEmpty())
+			Expect(result.WorkflowDiscoveryStatus).To(BeEmpty())
+			Expect(result.HistoryStatus).To(BeEmpty())
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"))
+		})
+	})
+
 	Describe("UT-KA-433-022: Parser returns structured error for malformed JSON", func() {
 		It("should return an error for invalid JSON", func() {
 			p := parser.NewResultParser()
@@ -832,8 +851,8 @@ false
 			})
 		})
 
-		Describe("UT-KA-746-003: No workflow + confidence > 0 derives no_matching_workflows", func() {
-			It("should set HumanReviewNeeded and no_matching_workflows when no workflow selected", func() {
+		Describe("UT-KA-746-003: No workflow + confidence > 0 remains discovery-inconclusive before the phase gate", func() {
+			It("should set HumanReviewNeeded without fabricating no_matching_workflows", func() {
 				p := parser.NewResultParser()
 				content := `{
 					"root_cause_analysis": {
@@ -846,8 +865,8 @@ false
 				Expect(result).NotTo(BeNil())
 				Expect(result.HumanReviewNeeded).To(BeTrue(),
 					"#746: No workflow selected must trigger HumanReviewNeeded (BR-KA-197.2)")
-				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-					"#746: Parser must derive no_matching_workflows when no workflow selected (HAPI parity)")
+				Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+					"#2520-2521: parser cannot prove completed discovery before the server-owned phase gate")
 			})
 		})
 
@@ -863,8 +882,8 @@ false
 			})
 		})
 
-		Describe("UT-KA-746-005: investigation_outcome=inconclusive + RCA + no workflow -> no_matching_workflows", func() {
-			It("should derive no_matching_workflows from inconclusive outcome with RCA and no workflow", func() {
+		Describe("UT-KA-746-005: investigation_outcome=inconclusive + RCA + no workflow remains phase-gated", func() {
+			It("should preserve investigation_inconclusive until discovery explicitly completes", func() {
 				p := parser.NewResultParser()
 				content := `{
 					"root_cause_analysis": {
@@ -878,8 +897,8 @@ false
 				Expect(result).NotTo(BeNil())
 				Expect(result.HumanReviewNeeded).To(BeTrue(),
 					"#746: inconclusive + no workflow must trigger HumanReviewNeeded")
-				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-					"#746: inconclusive + RCA summary + no workflow must derive no_matching_workflows")
+				Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+					"#2520-2521: RCA presence alone must not prove no matching workflows")
 			})
 		})
 
