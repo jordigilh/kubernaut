@@ -24,6 +24,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // runRCAWithMessages starts the signal-only RCA conversation and returns its
@@ -66,16 +67,23 @@ func (inv *Investigator) runRCAWithMessages(ctx context.Context, signal katypes.
 	}
 	if parseErr != nil && ctx.Err() != nil {
 		//nolint:nilerr // cancellation is represented by a typed result.
-		return &katypes.InvestigationResult{Cancelled: true, CancelledPhase: string(katypes.PhaseRCA)}, messages, nil
+		return &katypes.InvestigationResult{
+			Cancelled:               true,
+			CancelledPhase:          string(katypes.PhaseRCA),
+			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusNotStarted,
+		}, messages, nil
 	}
 	if parseErr != nil {
 		inv.logger.Info("RCA parse failed after retry, requesting human review", "error", parseErr.Error(), "correlation_id", correlationID)
-		return &katypes.InvestigationResult{
+		parseFailureResult := &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
-			HumanReviewReason: "llm_parsing_error",
+			HumanReviewReason: humanReviewReasonLLMParsingError,
 			Reason:            "RCA response could not be parsed after retry",
 			Warnings:          []string{"RCA response could not be parsed after retry; human review is required"},
-		}, messages, nil
+		}
+		markRCAIncomplete(parseFailureResult)
+		return parseFailureResult, messages, nil
 	}
 	result.Reasoning = toReasoningSummary(reasoning)
 	result = inv.sameKindValidationGate(ctx, result, signal, messages, llmCtx)
@@ -96,10 +104,12 @@ func (inv *Investigator) classifyRCALoopResult(loopRes LoopResult) (result *katy
 	case *CancelledResult:
 		return buildCancelledRCAResult(r), "", nil, true
 	case *ExhaustedResult:
-		return &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
-		}, "", nil, true
+		}
+		markRCAIncomplete(result)
+		return result, "", nil, true
 	case *SubmitResult:
 		return nil, r.Content, r.Reasoning, false
 	case *TextResult:
@@ -126,10 +136,12 @@ func toReasoningSummary(b *llm.ReasoningBlock) *katypes.ReasoningSummary {
 // available.
 func buildCancelledRCAResult(r *CancelledResult) *katypes.InvestigationResult {
 	cancelledResult := &katypes.InvestigationResult{
-		Cancelled:           true,
-		CancelledPhase:      string(katypes.PhaseRCA),
-		CancelledAtTurn:     r.Turn,
-		AccumulatedMessages: messagesToAuditFormat(r.Messages),
+		Cancelled:               true,
+		CancelledPhase:          string(katypes.PhaseRCA),
+		TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+		WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusNotStarted,
+		CancelledAtTurn:         r.Turn,
+		AccumulatedMessages:     messagesToAuditFormat(r.Messages),
 	}
 	if r.Tokens != nil {
 		s := r.Tokens.Summary()
@@ -167,6 +179,7 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 
 	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
 		if ctx.Err() != nil {
+			inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseRCA, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Cancelled: true})
 			return nil, nil
 		}
 		inv.logger.Info("parse-level retry for RCA submit",
@@ -181,6 +194,10 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			correlationID: correlationID, modelName: modelName, client: client,
 			runtimeParams: runtimeParams, tokens: tokens,
 		})
+		inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseRCA, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Result: result, Succeeded: ok, Cancelled: ctx.Err() != nil})
+		if ctx.Err() != nil {
+			return nil, nil
+		}
 		if ok {
 			return result, retriedReasoning
 		}

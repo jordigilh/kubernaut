@@ -23,16 +23,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName string) {
 	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
 	completeEvent.EventAction = audit.ActionResponseSent
 	completeEvent.EventOutcome = audit.OutcomeSuccess
@@ -41,9 +44,32 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 	}
 	inv.marshalAuditResponseData(completeEvent, result)
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.auditLog())
+	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
+		CorrelationID:      correlationID,
+		Phase:              terminalDecisionPhase(result),
+		TurnKind:           investigationDecisionTurnTerminal,
+		TurnID:             "investigation:complete",
+		Model:              firstNonEmpty(modelName, inv.modelName),
+		Tokens:             tokens,
+		Result:             result,
+		ContinuationReason: "investigation_complete",
+	})
 }
 
-func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+func terminalDecisionPhase(result *katypes.InvestigationResult) katypes.Phase {
+	if result != nil && result.CancelledPhase == string(katypes.PhaseWorkflowDiscovery) {
+		return katypes.PhaseWorkflowDiscovery
+	}
+	if result != nil && result.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusNotStarted && result.WorkflowDiscoveryStatus != "" {
+		if result.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure {
+			return katypes.PhaseRCA
+		}
+		return katypes.PhaseWorkflowDiscovery
+	}
+	return katypes.PhaseRCA
+}
+
+func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName string) {
 	ev := audit.NewEvent(audit.EventTypeRCAComplete, correlationID)
 	ev.EventAction = audit.ActionLLMResponse
 	ev.EventOutcome = audit.OutcomeSuccess
@@ -52,6 +78,284 @@ func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.In
 	}
 	inv.marshalAuditResponseData(ev, result)
 	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.auditLog())
+	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
+		CorrelationID:      correlationID,
+		Phase:              katypes.PhaseRCA,
+		TurnKind:           investigationDecisionTurnState,
+		TurnID:             "rca:complete",
+		Model:              firstNonEmpty(modelName, inv.modelName),
+		Tokens:             tokens,
+		Result:             result,
+		ContinuationReason: "rca_complete",
+	})
+}
+
+type parseRetryDecisionParams struct {
+	Phase         katypes.Phase
+	CorrelationID string
+	ModelName     string
+	Attempt       int
+	Result        *katypes.InvestigationResult
+	Succeeded     bool
+	Cancelled     bool
+}
+
+func (inv *Investigator) emitParseRetryDecision(ctx context.Context, p parseRetryDecisionParams) {
+	continuationReason := "parse_retry_failed"
+	failureClass := "validation_failed"
+	if p.Succeeded {
+		continuationReason = "parse_retry_succeeded"
+		failureClass = ""
+	}
+	result := p.Result
+	if p.Cancelled {
+		continuationReason = "parse_retry_cancelled"
+		failureClass = "cancelled"
+		discoveryStatus := sharedtypes.WorkflowDiscoveryStatusNotStarted
+		if p.Phase == katypes.PhaseWorkflowDiscovery {
+			discoveryStatus = sharedtypes.WorkflowDiscoveryStatusStarted
+		}
+		result = &katypes.InvestigationResult{
+			Cancelled:               true,
+			CancelledPhase:          string(p.Phase),
+			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+			WorkflowDiscoveryStatus: discoveryStatus,
+		}
+	}
+	auditCtx := ctx
+	if p.Cancelled {
+		auditCtx = context.WithoutCancel(ctx)
+	}
+	inv.emitInvestigationDecision(auditCtx, investigationDecisionParams{
+		CorrelationID:      p.CorrelationID,
+		Phase:              p.Phase,
+		TurnKind:           investigationDecisionTurnState,
+		TurnID:             fmt.Sprintf("%s:parse_retry:%d", p.Phase, p.Attempt),
+		Model:              p.ModelName,
+		Result:             result,
+		ContinuationReason: continuationReason,
+		FailureClass:       failureClass,
+		RetryAttempt:       p.Attempt,
+	})
+}
+
+const (
+	investigationDecisionTurnTool     = "tool_only"
+	investigationDecisionTurnTerminal = "terminal_decision"
+	investigationDecisionTurnState    = "state_transition"
+)
+
+// investigationDecisionParams contains only server-owned, bounded state for
+// one decision-ledger checkpoint. It intentionally has no prompt, reasoning,
+// tool argument/result, or raw error field (DD-KA-2520-2521).
+type investigationDecisionParams struct {
+	CorrelationID           string
+	SessionID               string
+	Phase                   katypes.Phase
+	TurnKind                string
+	TurnID                  string
+	Model                   string
+	Tokens                  *TokenAccumulator
+	Result                  *katypes.InvestigationResult
+	TerminalOutcome         sharedtypes.TerminalOutcome
+	WorkflowDiscoveryStatus sharedtypes.WorkflowDiscoveryStatus
+	HistoryStatus           sharedtypes.HistoryStatus
+	ContinuationReason      string
+	FailureClass            string
+	RetryAttempt            int
+	RelatedEventIDs         []string
+}
+
+// emitInvestigationDecision persists the bounded decision-ledger event. The
+// deterministic event ID is derived from the logical correlation, phase, turn,
+// and kind so retries/reconciles describe the same checkpoint rather than
+// creating an unbounded duplicate stream.
+func (inv *Investigator) emitInvestigationDecision(ctx context.Context, p investigationDecisionParams) {
+	correlationID := decisionCorrelationID(ctx, p.CorrelationID)
+	if correlationID == "" {
+		inv.logger.Info("decision ledger skipped: missing correlation id")
+		return
+	}
+
+	snapshot := resolveDecisionSnapshot(p)
+	turnID := p.TurnID
+	if turnID == "" {
+		turnID = string(p.Phase) + ":state"
+	}
+	sessionID := firstNonEmpty(p.SessionID, session.SessionIDFromContext(ctx))
+	eventIDSeed := fmt.Sprintf("%s:%s:%s:%s", correlationID, p.Phase, p.TurnKind, turnID)
+	if sessionID != "" {
+		eventIDSeed = fmt.Sprintf("%s:%s", eventIDSeed, sessionID)
+	}
+	eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(eventIDSeed))
+	event := audit.NewEvent(audit.EventTypeInvestigationDecision, correlationID,
+		audit.WithSessionID(sessionID))
+	event.EventID = eventID
+	event.EventAction = audit.ActionInvestigationDecision
+	event.EventOutcome = decisionLedgerEventOutcome(p.TurnKind, snapshot.TerminalOutcome)
+	populateDecisionEvent(event, p, snapshot, eventID.String(), turnID)
+	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
+}
+
+type investigationDecisionSnapshot struct {
+	HistoryStatus           sharedtypes.HistoryStatus
+	WorkflowDiscoveryStatus sharedtypes.WorkflowDiscoveryStatus
+	TerminalOutcome         sharedtypes.TerminalOutcome
+}
+
+func decisionCorrelationID(ctx context.Context, correlationID string) string {
+	if correlationID != "" {
+		return correlationID
+	}
+	if value, ok := audit.CorrelationIDFromContext(ctx); ok {
+		return value
+	}
+	return ""
+}
+
+func resolveDecisionSnapshot(p investigationDecisionParams) investigationDecisionSnapshot {
+	snapshot := investigationDecisionSnapshot{
+		HistoryStatus:           p.HistoryStatus,
+		WorkflowDiscoveryStatus: p.WorkflowDiscoveryStatus,
+		TerminalOutcome:         p.TerminalOutcome,
+	}
+	if p.Result != nil {
+		if snapshot.HistoryStatus == "" {
+			snapshot.HistoryStatus = p.Result.HistoryStatus
+		}
+		if snapshot.WorkflowDiscoveryStatus == "" {
+			snapshot.WorkflowDiscoveryStatus = p.Result.WorkflowDiscoveryStatus
+		}
+		if snapshot.TerminalOutcome == "" {
+			snapshot.TerminalOutcome = p.Result.TerminalOutcome
+		}
+	}
+	if snapshot.HistoryStatus == "" {
+		snapshot.HistoryStatus = sharedtypes.HistoryStatusNotRequested
+	}
+	if snapshot.WorkflowDiscoveryStatus == "" {
+		snapshot.WorkflowDiscoveryStatus = defaultDecisionDiscoveryStatus(p.Phase)
+	}
+	if snapshot.TerminalOutcome == "" && p.Result != nil {
+		snapshot.TerminalOutcome = ClassifyTerminalOutcome(OutcomeClassificationInput{
+			Result:                  p.Result,
+			HistoryStatus:           snapshot.HistoryStatus,
+			WorkflowDiscoveryStatus: snapshot.WorkflowDiscoveryStatus,
+		})
+	}
+	if snapshot.TerminalOutcome == "" {
+		snapshot.TerminalOutcome = sharedtypes.TerminalOutcomeUnknown
+	}
+	return snapshot
+}
+
+func defaultDecisionDiscoveryStatus(phase katypes.Phase) sharedtypes.WorkflowDiscoveryStatus {
+	if phase == katypes.PhaseWorkflowDiscovery {
+		return sharedtypes.WorkflowDiscoveryStatusStarted
+	}
+	return sharedtypes.WorkflowDiscoveryStatusNotStarted
+}
+
+func populateDecisionEvent(event *audit.AuditEvent, p investigationDecisionParams, snapshot investigationDecisionSnapshot, eventID, turnID string) {
+	event.Data["event_id"] = eventID
+	event.Data["phase"] = string(p.Phase)
+	event.Data["turn_kind"] = p.TurnKind
+	event.Data["turn_id"] = turnID
+	event.Data["history_status"] = string(snapshot.HistoryStatus)
+	event.Data["evidence_status"] = decisionEvidenceStatus(snapshot.HistoryStatus)
+	event.Data["workflow_discovery_status"] = string(snapshot.WorkflowDiscoveryStatus)
+	event.Data["terminal_outcome"] = string(snapshot.TerminalOutcome)
+	event.Data["target_status"] = decisionTargetStatus(p.Result)
+	if p.Result != nil && p.Result.CausalMechanismStatus != "" {
+		event.Data["causal_mechanism_status"] = p.Result.CausalMechanismStatus
+	}
+	if p.Model != "" {
+		event.Data["model"] = p.Model
+	}
+	if p.Tokens != nil {
+		event.Data["prompt_tokens"] = p.Tokens.PromptTokens()
+		event.Data["completion_tokens"] = p.Tokens.CompletionTokens()
+		event.Data["total_tokens"] = p.Tokens.TotalTokens()
+	}
+	if p.ContinuationReason != "" {
+		event.Data["continuation_reason"] = p.ContinuationReason
+	}
+	if p.Result != nil && p.Result.HumanReviewReason != "" {
+		event.Data["human_review_reason"] = p.Result.HumanReviewReason
+	}
+	if failureClass := decisionFailureClass(p.FailureClass, snapshot.TerminalOutcome); failureClass != "" {
+		event.Data["failure_class"] = failureClass
+	}
+	if p.RetryAttempt >= 0 {
+		event.Data["retry_attempt"] = p.RetryAttempt
+	}
+	if len(p.RelatedEventIDs) > 0 {
+		event.Data["related_event_ids"] = append([]string(nil), p.RelatedEventIDs...)
+	}
+}
+
+func decisionFailureClass(explicit string, outcome sharedtypes.TerminalOutcome) string {
+	if explicit != "" {
+		if explicit == ReasonToolBudgetExhausted {
+			return "tool_budget_exhausted"
+		}
+		return explicit
+	}
+	switch outcome {
+	case sharedtypes.TerminalOutcomeUnknown,
+		sharedtypes.TerminalOutcomeWorkflowSelected,
+		sharedtypes.TerminalOutcomeProblemResolved,
+		sharedtypes.TerminalOutcomeNoMatchingWorkflows:
+		return ""
+	default:
+		return string(outcome)
+	}
+}
+
+func decisionLedgerEventOutcome(turnKind string, terminalOutcome sharedtypes.TerminalOutcome) string {
+	if turnKind != investigationDecisionTurnTerminal || terminalOutcome == sharedtypes.TerminalOutcomeUnknown {
+		return audit.OutcomePending
+	}
+	switch terminalOutcome {
+	case sharedtypes.TerminalOutcomeWorkflowSelected,
+		sharedtypes.TerminalOutcomeProblemResolved,
+		sharedtypes.TerminalOutcomeNoMatchingWorkflows:
+		return audit.OutcomeSuccess
+	default:
+		return audit.OutcomeFailure
+	}
+}
+
+func decisionTargetStatus(result *katypes.InvestigationResult) string {
+	if result == nil {
+		return "not_evaluated"
+	}
+	if result.RemediationTarget.Kind != "" || result.RemediationTarget.Name != "" {
+		return "identified"
+	}
+	return "not_identified"
+}
+
+func decisionEvidenceStatus(historyStatus sharedtypes.HistoryStatus) string {
+	switch historyStatus {
+	case sharedtypes.HistoryStatusAvailable, sharedtypes.HistoryStatusEmpty:
+		return "available"
+	case sharedtypes.HistoryStatusTransportUnavailable:
+		return "transport_unavailable"
+	case sharedtypes.HistoryStatusSchemaError:
+		return "schema_error"
+	default:
+		return "not_requested"
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (inv *Investigator) marshalAuditResponseData(ev *audit.AuditEvent, result *katypes.InvestigationResult) {
@@ -102,6 +406,12 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	m["total_tool_calls"] = r.TotalToolCalls
 	if r.DueDiligence != nil {
 		m["due_diligence"] = dueDiligenceToAuditJSON(r.DueDiligence)
+	}
+	if r.TerminalOutcome != "" {
+		m["terminal_outcome"] = string(r.TerminalOutcome)
+	}
+	if r.WorkflowDiscoveryStatus != "" {
+		m["workflow_discovery_status"] = string(r.WorkflowDiscoveryStatus)
 	}
 	if r.Reasoning != nil {
 		m["reasoning"] = reasoningAuditFields(r.Reasoning.Text, r.Reasoning.Redacted)

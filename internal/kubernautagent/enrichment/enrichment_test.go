@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,6 +59,23 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 			}
 		}, Entry("failed request", true), Entry("successful empty history", false),
 	)
+
+	It("UT-KA-2521-008: classifies a typed history schema failure separately from transport failure", func() {
+		ds := &fakeDataStorageClient{
+			history: nil,
+			err:     enrichment.ErrHistorySchema,
+		}
+		enricher := enrichment.NewEnricher(
+			&fakeK8sClient{specHash: "current-spec"}, ds, audit.NopAuditStore{}, logr.Discard(),
+		)
+
+		result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{
+			Kind: "Deployment", Name: "api", Namespace: "prod", IncidentID: "incident-schema-2521",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HistoryUnavailable).To(BeTrue())
+		Expect(result.HistoryStatus).To(Equal(sharedtypes.HistoryStatusSchemaError))
+	})
 
 	It("UT-KA-2496-AUDIT-006: an empty current hash remains unknown rather than a failed valid acquisition", func() {
 		ds := &fakeDataStorageClient{err: errors.New("bad request for missing current hash")}
@@ -490,7 +508,11 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			Expect(ev.CorrelationID).To(Equal("test-incident-002"))
 			Expect(ev.Data["incident_id"]).To(Equal("test-incident-002"))
 			Expect(ev.Data["reason"]).To(Equal("all_enrichment_sources_failed"))
-			Expect(ev.Data["detail"]).To(Equal("owner_chain=transport_unavailable; history=transport_unavailable"))
+			Expect(ev.Data["detail"]).To(Equal("owner_chain=transport;history=transport"))
+			Expect(ev.Data["detail"]).NotTo(ContainSubstring("K8s down"))
+			Expect(ev.Data["detail"]).NotTo(ContainSubstring("DS down"))
+			Expect(ev.Data["owner_error"]).To(BeNil())
+			Expect(ev.Data["history_error"]).To(BeNil())
 			Expect(ev.Data["affected_resource_kind"]).To(Equal("Pod"))
 			Expect(ev.Data["affected_resource_name"]).To(Equal("api-server-abc"))
 			Expect(ev.Data["affected_resource_namespace"]).To(Equal("production"))

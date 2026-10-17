@@ -337,22 +337,20 @@ End of analysis.`
 
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
-			// #746: LLM's needs_human_review=true and human_review_reason="investigation_inconclusive"
-			// are cleared by the parser (line 52-53). Then applyOutcomeRouting re-derives HR:
-			// no workflow selected → no_matching_workflows (BR-KA-197.2, HAPI v1.2.1 parity).
-			// The key assertion: the LLM's "investigation_inconclusive" reason is NOT preserved —
-			// the parser derives "no_matching_workflows" from the absence of a workflow.
+			// #2520-2521: LLM review fields are cleared and the parser retains a
+			// conservative compatibility reason. The server-owned discovery phase
+			// must explicitly complete with zero candidates before no-match routing.
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"No workflow selected → parser-derived HumanReviewNeeded (BR-KA-197.2)")
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"Parser must derive no_matching_workflows, not preserve LLM's investigation_inconclusive")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"Parser must not infer no_matching_workflows from an absent workflow")
 		})
 	})
 
 	// --- BR-KA-200: Parser-derived escalation ---
 
-	Describe("UT-KA-700-PDE-001: inconclusive + RCA + no workflow → no_matching_workflows", func() {
-		It("should derive no_matching_workflows from context signals", func() {
+	Describe("UT-KA-700-PDE-001: inconclusive + RCA + no workflow remains phase-gated", func() {
+		It("should preserve the conservative reason until discovery completes", func() {
 			input := `{
 				"root_cause_analysis": {
 					"summary": "Memory pressure detected but no remediation workflow available"
@@ -365,8 +363,8 @@ End of analysis.`
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"inconclusive outcome must set HumanReviewNeeded")
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"RCA present + no workflow + inconclusive = no_matching_workflows (BR-KA-197)")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"RCA present + no workflow is not enough to establish no_matching_workflows")
 		})
 	})
 
@@ -440,8 +438,8 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-OUT-003: inconclusive + RCA + no workflow → no_matching_workflows (BR-KA-197)", func() {
-		It("should derive no_matching_workflows when RCA present but no workflow selected", func() {
+	Describe("UT-KA-433-OUT-003: inconclusive + RCA + no workflow remains phase-gated (BR-KA-197)", func() {
+		It("should preserve investigation_inconclusive when discovery has not run", func() {
 			input := `{
 				"rca_summary": "Unable to determine root cause with available data",
 				"investigation_outcome": "inconclusive",
@@ -451,8 +449,8 @@ End of analysis.`
 			result, err := p.Parse(input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"inconclusive + RCA present + no workflow = no_matching_workflows per BR-KA-197")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"inconclusive + RCA present + no workflow cannot prove no matching workflows")
 		})
 	})
 

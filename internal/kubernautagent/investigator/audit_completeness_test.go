@@ -343,9 +343,9 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 
 			Expect(responseData).To(HaveKey("human_review_reason"),
 				"response_data must serialize HumanReviewReason (the enum value)")
-			Expect(responseData["human_review_reason"]).To(Equal("no_matching_workflows"),
-				"human_review_reason must be parser-derived from investigation_outcome per #700: "+
-					"inconclusive + RCA present + no workflow = no_matching_workflows")
+			Expect(responseData["human_review_reason"]).To(Equal("investigation_inconclusive"),
+				"parser-only inconclusive RCA must remain a conservative compatibility projection; "+
+					"typed terminal routing must not infer no_matching_workflows before discovery")
 
 			Expect(responseData).To(HaveKey("reason"),
 				"response_data must separately serialize Reason (the free-text explanation)")

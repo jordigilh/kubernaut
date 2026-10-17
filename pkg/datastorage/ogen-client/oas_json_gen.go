@@ -3885,6 +3885,734 @@ func (s *AIAgentInvestigationCancelledPayloadEventType) UnmarshalJSON(data []byt
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentInvestigationDecisionPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentInvestigationDecisionPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		if s.SessionID.Set {
+			e.FieldStart("session_id")
+			s.SessionID.Encode(e)
+		}
+	}
+	{
+		if s.TurnID.Set {
+			e.FieldStart("turn_id")
+			s.TurnID.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("phase")
+		s.Phase.Encode(e)
+	}
+	{
+		e.FieldStart("turn_kind")
+		s.TurnKind.Encode(e)
+	}
+	{
+		if s.Model.Set {
+			e.FieldStart("model")
+			s.Model.Encode(e)
+		}
+	}
+	{
+		if s.PromptTokens.Set {
+			e.FieldStart("prompt_tokens")
+			s.PromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.CompletionTokens.Set {
+			e.FieldStart("completion_tokens")
+			s.CompletionTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalTokens.Set {
+			e.FieldStart("total_tokens")
+			s.TotalTokens.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceStatus.Set {
+			e.FieldStart("evidence_status")
+			s.EvidenceStatus.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("history_status")
+		s.HistoryStatus.Encode(e)
+	}
+	{
+		if s.TargetStatus.Set {
+			e.FieldStart("target_status")
+			s.TargetStatus.Encode(e)
+		}
+	}
+	{
+		if s.CausalMechanismStatus.Set {
+			e.FieldStart("causal_mechanism_status")
+			s.CausalMechanismStatus.Encode(e)
+		}
+	}
+	{
+		if s.ContinuationReason.Set {
+			e.FieldStart("continuation_reason")
+			s.ContinuationReason.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("terminal_outcome")
+		s.TerminalOutcome.Encode(e)
+	}
+	{
+		e.FieldStart("workflow_discovery_status")
+		s.WorkflowDiscoveryStatus.Encode(e)
+	}
+	{
+		if s.HumanReviewReason.Set {
+			e.FieldStart("human_review_reason")
+			s.HumanReviewReason.Encode(e)
+		}
+	}
+	{
+		if s.FailureClass.Set {
+			e.FieldStart("failure_class")
+			s.FailureClass.Encode(e)
+		}
+	}
+	{
+		if s.RetryAttempt.Set {
+			e.FieldStart("retry_attempt")
+			s.RetryAttempt.Encode(e)
+		}
+	}
+	{
+		if s.RelatedEventIds != nil {
+			e.FieldStart("related_event_ids")
+			e.ArrStart()
+			for _, elem := range s.RelatedEventIds {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentInvestigationDecisionPayload = [22]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "session_id",
+	4:  "turn_id",
+	5:  "phase",
+	6:  "turn_kind",
+	7:  "model",
+	8:  "prompt_tokens",
+	9:  "completion_tokens",
+	10: "total_tokens",
+	11: "evidence_status",
+	12: "history_status",
+	13: "target_status",
+	14: "causal_mechanism_status",
+	15: "continuation_reason",
+	16: "terminal_outcome",
+	17: "workflow_discovery_status",
+	18: "human_review_reason",
+	19: "failure_class",
+	20: "retry_attempt",
+	21: "related_event_ids",
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayload from json.
+func (s *AIAgentInvestigationDecisionPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayload to nil")
+	}
+	var requiredBitSet [3]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "session_id":
+			if err := func() error {
+				s.SessionID.Reset()
+				if err := s.SessionID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"session_id\"")
+			}
+		case "turn_id":
+			if err := func() error {
+				s.TurnID.Reset()
+				if err := s.TurnID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"turn_id\"")
+			}
+		case "phase":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				if err := s.Phase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
+		case "turn_kind":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				if err := s.TurnKind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"turn_kind\"")
+			}
+		case "model":
+			if err := func() error {
+				s.Model.Reset()
+				if err := s.Model.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"model\"")
+			}
+		case "prompt_tokens":
+			if err := func() error {
+				s.PromptTokens.Reset()
+				if err := s.PromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt_tokens\"")
+			}
+		case "completion_tokens":
+			if err := func() error {
+				s.CompletionTokens.Reset()
+				if err := s.CompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completion_tokens\"")
+			}
+		case "total_tokens":
+			if err := func() error {
+				s.TotalTokens.Reset()
+				if err := s.TotalTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_tokens\"")
+			}
+		case "evidence_status":
+			if err := func() error {
+				s.EvidenceStatus.Reset()
+				if err := s.EvidenceStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_status\"")
+			}
+		case "history_status":
+			requiredBitSet[1] |= 1 << 4
+			if err := func() error {
+				if err := s.HistoryStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"history_status\"")
+			}
+		case "target_status":
+			if err := func() error {
+				s.TargetStatus.Reset()
+				if err := s.TargetStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target_status\"")
+			}
+		case "causal_mechanism_status":
+			if err := func() error {
+				s.CausalMechanismStatus.Reset()
+				if err := s.CausalMechanismStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causal_mechanism_status\"")
+			}
+		case "continuation_reason":
+			if err := func() error {
+				s.ContinuationReason.Reset()
+				if err := s.ContinuationReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"continuation_reason\"")
+			}
+		case "terminal_outcome":
+			requiredBitSet[2] |= 1 << 0
+			if err := func() error {
+				if err := s.TerminalOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"terminal_outcome\"")
+			}
+		case "workflow_discovery_status":
+			requiredBitSet[2] |= 1 << 1
+			if err := func() error {
+				if err := s.WorkflowDiscoveryStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_discovery_status\"")
+			}
+		case "human_review_reason":
+			if err := func() error {
+				s.HumanReviewReason.Reset()
+				if err := s.HumanReviewReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"human_review_reason\"")
+			}
+		case "failure_class":
+			if err := func() error {
+				s.FailureClass.Reset()
+				if err := s.FailureClass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failure_class\"")
+			}
+		case "retry_attempt":
+			if err := func() error {
+				s.RetryAttempt.Reset()
+				if err := s.RetryAttempt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry_attempt\"")
+			}
+		case "related_event_ids":
+			if err := func() error {
+				s.RelatedEventIds = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.RelatedEventIds = append(s.RelatedEventIds, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"related_event_ids\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentInvestigationDecisionPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [3]uint8{
+		0b01100111,
+		0b00010000,
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentInvestigationDecisionPayload) {
+					name = jsonFieldsNameOfAIAgentInvestigationDecisionPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentInvestigationDecisionPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadEventType as json.
+func (s AIAgentInvestigationDecisionPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadEventType from json.
+func (s *AIAgentInvestigationDecisionPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadEventType(v) {
+	case AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision:
+		*s = AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision
+	default:
+		*s = AIAgentInvestigationDecisionPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadHistoryStatus as json.
+func (s AIAgentInvestigationDecisionPayloadHistoryStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadHistoryStatus from json.
+func (s *AIAgentInvestigationDecisionPayloadHistoryStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadHistoryStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadHistoryStatus(v) {
+	case AIAgentInvestigationDecisionPayloadHistoryStatusAvailable:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusAvailable
+	case AIAgentInvestigationDecisionPayloadHistoryStatusEmpty:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusEmpty
+	case AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable
+	case AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError
+	case AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested
+	default:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadHistoryStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadHistoryStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadPhase as json.
+func (s AIAgentInvestigationDecisionPayloadPhase) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadPhase from json.
+func (s *AIAgentInvestigationDecisionPayloadPhase) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadPhase to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadPhase(v) {
+	case AIAgentInvestigationDecisionPayloadPhaseRca:
+		*s = AIAgentInvestigationDecisionPayloadPhaseRca
+	case AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery:
+		*s = AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery
+	case AIAgentInvestigationDecisionPayloadPhaseValidation:
+		*s = AIAgentInvestigationDecisionPayloadPhaseValidation
+	case AIAgentInvestigationDecisionPayloadPhaseUnknown:
+		*s = AIAgentInvestigationDecisionPayloadPhaseUnknown
+	default:
+		*s = AIAgentInvestigationDecisionPayloadPhase(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadPhase) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadPhase) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadTerminalOutcome as json.
+func (s AIAgentInvestigationDecisionPayloadTerminalOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadTerminalOutcome from json.
+func (s *AIAgentInvestigationDecisionPayloadTerminalOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadTerminalOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadTerminalOutcome(v) {
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown
+	default:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadTerminalOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadTerminalOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadTurnKind as json.
+func (s AIAgentInvestigationDecisionPayloadTurnKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadTurnKind from json.
+func (s *AIAgentInvestigationDecisionPayloadTurnKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadTurnKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadTurnKind(v) {
+	case AIAgentInvestigationDecisionPayloadTurnKindToolOnly:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindToolOnly
+	case AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision
+	case AIAgentInvestigationDecisionPayloadTurnKindStateTransition:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindStateTransition
+	default:
+		*s = AIAgentInvestigationDecisionPayloadTurnKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadTurnKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadTurnKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus as json.
+func (s AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus from json.
+func (s *AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus(v) {
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure
+	default:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentRCACompletePayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -19314,6 +20042,128 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentInvestigationDecisionPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.investigation.decision")
+		{
+			s := s.AIAgentInvestigationDecisionPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				if s.SessionID.Set {
+					e.FieldStart("session_id")
+					s.SessionID.Encode(e)
+				}
+			}
+			{
+				if s.TurnID.Set {
+					e.FieldStart("turn_id")
+					s.TurnID.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("phase")
+				s.Phase.Encode(e)
+			}
+			{
+				e.FieldStart("turn_kind")
+				s.TurnKind.Encode(e)
+			}
+			{
+				if s.Model.Set {
+					e.FieldStart("model")
+					s.Model.Encode(e)
+				}
+			}
+			{
+				if s.PromptTokens.Set {
+					e.FieldStart("prompt_tokens")
+					s.PromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.CompletionTokens.Set {
+					e.FieldStart("completion_tokens")
+					s.CompletionTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalTokens.Set {
+					e.FieldStart("total_tokens")
+					s.TotalTokens.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceStatus.Set {
+					e.FieldStart("evidence_status")
+					s.EvidenceStatus.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("history_status")
+				s.HistoryStatus.Encode(e)
+			}
+			{
+				if s.TargetStatus.Set {
+					e.FieldStart("target_status")
+					s.TargetStatus.Encode(e)
+				}
+			}
+			{
+				if s.CausalMechanismStatus.Set {
+					e.FieldStart("causal_mechanism_status")
+					s.CausalMechanismStatus.Encode(e)
+				}
+			}
+			{
+				if s.ContinuationReason.Set {
+					e.FieldStart("continuation_reason")
+					s.ContinuationReason.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("terminal_outcome")
+				s.TerminalOutcome.Encode(e)
+			}
+			{
+				e.FieldStart("workflow_discovery_status")
+				s.WorkflowDiscoveryStatus.Encode(e)
+			}
+			{
+				if s.HumanReviewReason.Set {
+					e.FieldStart("human_review_reason")
+					s.HumanReviewReason.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.RetryAttempt.Set {
+					e.FieldStart("retry_attempt")
+					s.RetryAttempt.Encode(e)
+				}
+			}
+			{
+				if s.RelatedEventIds != nil {
+					e.FieldStart("related_event_ids")
+					e.ArrStart()
+					for _, elem := range s.RelatedEventIds {
+						e.Str(elem)
+					}
+					e.ArrEnd()
+				}
+			}
+		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.response.failed")
@@ -22286,6 +23136,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.rca.complete":
 					s.Type = AIAgentRCACompletePayloadAuditEventEventData
 					found = true
+				case "aiagent.investigation.decision":
+					s.Type = AIAgentInvestigationDecisionPayloadAuditEventEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventEventData
 					found = true
@@ -22718,6 +23571,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentRCACompletePayloadAuditEventEventData:
 		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentInvestigationDecisionPayloadAuditEventEventData:
+		if err := s.AIAgentInvestigationDecisionPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
@@ -25143,6 +26000,128 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.TotalCompletionTokens.Set {
 					e.FieldStart("total_completion_tokens")
 					s.TotalCompletionTokens.Encode(e)
+				}
+			}
+		}
+	case AIAgentInvestigationDecisionPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.investigation.decision")
+		{
+			s := s.AIAgentInvestigationDecisionPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				if s.SessionID.Set {
+					e.FieldStart("session_id")
+					s.SessionID.Encode(e)
+				}
+			}
+			{
+				if s.TurnID.Set {
+					e.FieldStart("turn_id")
+					s.TurnID.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("phase")
+				s.Phase.Encode(e)
+			}
+			{
+				e.FieldStart("turn_kind")
+				s.TurnKind.Encode(e)
+			}
+			{
+				if s.Model.Set {
+					e.FieldStart("model")
+					s.Model.Encode(e)
+				}
+			}
+			{
+				if s.PromptTokens.Set {
+					e.FieldStart("prompt_tokens")
+					s.PromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.CompletionTokens.Set {
+					e.FieldStart("completion_tokens")
+					s.CompletionTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalTokens.Set {
+					e.FieldStart("total_tokens")
+					s.TotalTokens.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceStatus.Set {
+					e.FieldStart("evidence_status")
+					s.EvidenceStatus.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("history_status")
+				s.HistoryStatus.Encode(e)
+			}
+			{
+				if s.TargetStatus.Set {
+					e.FieldStart("target_status")
+					s.TargetStatus.Encode(e)
+				}
+			}
+			{
+				if s.CausalMechanismStatus.Set {
+					e.FieldStart("causal_mechanism_status")
+					s.CausalMechanismStatus.Encode(e)
+				}
+			}
+			{
+				if s.ContinuationReason.Set {
+					e.FieldStart("continuation_reason")
+					s.ContinuationReason.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("terminal_outcome")
+				s.TerminalOutcome.Encode(e)
+			}
+			{
+				e.FieldStart("workflow_discovery_status")
+				s.WorkflowDiscoveryStatus.Encode(e)
+			}
+			{
+				if s.HumanReviewReason.Set {
+					e.FieldStart("human_review_reason")
+					s.HumanReviewReason.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.RetryAttempt.Set {
+					e.FieldStart("retry_attempt")
+					s.RetryAttempt.Encode(e)
+				}
+			}
+			{
+				if s.RelatedEventIds != nil {
+					e.FieldStart("related_event_ids")
+					e.ArrStart()
+					for _, elem := range s.RelatedEventIds {
+						e.Str(elem)
+					}
+					e.ArrEnd()
 				}
 			}
 		}
@@ -28118,6 +29097,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.rca.complete":
 					s.Type = AIAgentRCACompletePayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.investigation.decision":
+					s.Type = AIAgentInvestigationDecisionPayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventRequestEventData
 					found = true
@@ -28550,6 +29532,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentRCACompletePayloadAuditEventRequestEventData:
 		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentInvestigationDecisionPayloadAuditEventRequestEventData:
+		if err := s.AIAgentInvestigationDecisionPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
@@ -36355,6 +37341,18 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.TerminalOutcome.Set {
+			e.FieldStart("terminalOutcome")
+			s.TerminalOutcome.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowDiscoveryStatus.Set {
+			e.FieldStart("workflowDiscoveryStatus")
+			s.WorkflowDiscoveryStatus.Encode(e)
+		}
+	}
+	{
 		if s.HumanReviewReason.Set {
 			e.FieldStart("humanReviewReason")
 			s.HumanReviewReason.Encode(e)
@@ -36382,7 +37380,7 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseData = [12]string{
+var jsonFieldsNameOfIncidentResponseData = [14]string{
 	0:  "incidentId",
 	1:  "analysis",
 	2:  "rootCauseAnalysis",
@@ -36392,9 +37390,11 @@ var jsonFieldsNameOfIncidentResponseData = [12]string{
 	6:  "timestamp",
 	7:  "isActionable",
 	8:  "needsHumanReview",
-	9:  "humanReviewReason",
-	10: "warnings",
-	11: "alternativeWorkflows",
+	9:  "terminalOutcome",
+	10: "workflowDiscoveryStatus",
+	11: "humanReviewReason",
+	12: "warnings",
+	13: "alternativeWorkflows",
 }
 
 // Decode decodes IncidentResponseData from json.
@@ -36504,6 +37504,26 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"needsHumanReview\"")
+			}
+		case "terminalOutcome":
+			if err := func() error {
+				s.TerminalOutcome.Reset()
+				if err := s.TerminalOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"terminalOutcome\"")
+			}
+		case "workflowDiscoveryStatus":
+			if err := func() error {
+				s.WorkflowDiscoveryStatus.Reset()
+				if err := s.WorkflowDiscoveryStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowDiscoveryStatus\"")
 			}
 		case "humanReviewReason":
 			if err := func() error {
@@ -37777,6 +38797,106 @@ func (s IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) MarshalJSON
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataTerminalOutcome as json.
+func (s IncidentResponseDataTerminalOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes IncidentResponseDataTerminalOutcome from json.
+func (s *IncidentResponseDataTerminalOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataTerminalOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch IncidentResponseDataTerminalOutcome(v) {
+	case IncidentResponseDataTerminalOutcomeWorkflowSelected:
+		*s = IncidentResponseDataTerminalOutcomeWorkflowSelected
+	case IncidentResponseDataTerminalOutcomeProblemResolved:
+		*s = IncidentResponseDataTerminalOutcomeProblemResolved
+	case IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable:
+		*s = IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable
+	case IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable:
+		*s = IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable
+	case IncidentResponseDataTerminalOutcomeRcaIncomplete:
+		*s = IncidentResponseDataTerminalOutcomeRcaIncomplete
+	case IncidentResponseDataTerminalOutcomeNoMatchingWorkflows:
+		*s = IncidentResponseDataTerminalOutcomeNoMatchingWorkflows
+	case IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed:
+		*s = IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed
+	case IncidentResponseDataTerminalOutcomeCancelled:
+		*s = IncidentResponseDataTerminalOutcomeCancelled
+	default:
+		*s = IncidentResponseDataTerminalOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentResponseDataTerminalOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataTerminalOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataWorkflowDiscoveryStatus as json.
+func (s IncidentResponseDataWorkflowDiscoveryStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes IncidentResponseDataWorkflowDiscoveryStatus from json.
+func (s *IncidentResponseDataWorkflowDiscoveryStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataWorkflowDiscoveryStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch IncidentResponseDataWorkflowDiscoveryStatus(v) {
+	case IncidentResponseDataWorkflowDiscoveryStatusNotStarted:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusNotStarted
+	case IncidentResponseDataWorkflowDiscoveryStatusStarted:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusStarted
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch
+	case IncidentResponseDataWorkflowDiscoveryStatusFailed:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusFailed
+	case IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure
+	default:
+		*s = IncidentResponseDataWorkflowDiscoveryStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentResponseDataWorkflowDiscoveryStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataWorkflowDiscoveryStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -42936,6 +44056,72 @@ func (s OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) MarshalJ
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataTerminalOutcome as json.
+func (o OptIncidentResponseDataTerminalOutcome) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes IncidentResponseDataTerminalOutcome from json.
+func (o *OptIncidentResponseDataTerminalOutcome) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataTerminalOutcome to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataTerminalOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataTerminalOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataWorkflowDiscoveryStatus as json.
+func (o OptIncidentResponseDataWorkflowDiscoveryStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes IncidentResponseDataWorkflowDiscoveryStatus from json.
+func (o *OptIncidentResponseDataWorkflowDiscoveryStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataWorkflowDiscoveryStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataWorkflowDiscoveryStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataWorkflowDiscoveryStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

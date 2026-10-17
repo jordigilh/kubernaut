@@ -223,7 +223,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				{
 					scenario:           "llm_parsing_error",
 					signalType:         "MOCK_MAX_RETRIES_EXHAUSTED",
-					expectedReason:     "llm_parsing_error",
+					expectedReason:     "investigation_inconclusive",
 					expectedApproval:   true,
 					expectedConfidence: 0.0,
 				},
@@ -258,8 +258,8 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 						"Reason should be umbrella category per BR-KA-197")
 
 					expectedSubReason := map[string]string{
-						"llm_parsing_error": "LLMParsingError",
-						"low_confidence":    "LowConfidence",
+						"investigation_inconclusive": "InvestigationInconclusive",
+						"low_confidence":             "LowConfidence",
 					}[tc.expectedReason]
 
 					Expect(result.Status.SubReason).To(Equal(expectedSubReason),

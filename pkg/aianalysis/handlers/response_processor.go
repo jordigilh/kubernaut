@@ -51,9 +51,11 @@ import (
 // defaultLowConfidenceFloor is the V1.0 global default applied when no
 // operator override is configured (BR-KA-197 AC-4, BR-AI-088.4).
 const (
-	defaultLowConfidenceFloor    = 0.7
-	maxPriorRemediationUIDs      = 64
-	maxPriorRemediationUIDLength = 253
+	defaultLowConfidenceFloor                  = 0.7
+	maxPriorRemediationUIDs                    = 64
+	maxPriorRemediationUIDLength               = 253
+	humanReviewReasonInvestigationInconclusive = "investigation_inconclusive"
+	humanReviewReasonOperatorEscalation        = "operator_escalation"
 )
 
 // ResponseProcessor handles processing of KA responses
@@ -142,6 +144,12 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	// branch or failure audit; it never contributes to hasSelectedWorkflow.
 	p.storeSelectionAssessment(analysis, res.SelectionAssessment)
 
+	// DD-KA-2520-2521: copy the server-owned typed state before routing. The
+	// typed state is authoritative; legacy reason fields remain projections for
+	// older consumers and must not establish no_matching_workflows by
+	// themselves.
+	p.storeTypedInvestigationState(analysis, res)
+
 	// Check if NeedsHumanReview is set
 	needsHumanReview := res.NeedsHumanReview
 	hasSelectedWorkflow := res.SelectedWorkflow != nil
@@ -158,6 +166,25 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, res.Confidence)
+
+	// Explicit operator escalation and not-actionable signals are boundary
+	// decisions that must be applied before a stale typed failure projection.
+	// Operator escalation is a user decision; actionable=false is the existing
+	// server-authenticated benign-alert signal. Neither may fall through to
+	// rca_incomplete merely because an earlier phase populated that outcome.
+	if explicitOperatorEscalationResult(res) {
+		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
+	}
+	if !needsHumanReview && explicitNotActionableResult(res) {
+		return p.handleNotActionableFromIncident(ctx, analysis, res)
+	}
+
+	// Typed terminal outcomes take precedence over compatibility projections.
+	// In particular, only an explicit completed_no_match discovery gate may
+	// enter the successful no-workflow path.
+	if result, err, handled := p.routeTypedTerminalOutcome(ctx, analysis, res); handled {
+		return result, err
+	}
 
 	// BR-KA-197: Check if KA explicitly requires human review (Layer 1 - Primary)
 	// CRITICAL: This MUST be checked FIRST. KA's explicit needs_human_review=true
@@ -218,6 +245,122 @@ func (p *ResponseProcessor) handleEvidenceFailure(ctx context.Context, analysis 
 	return true
 }
 
+// storeTypedInvestigationState persists the typed investigation contract on
+// AIAnalysis.Status.RCAResult before any terminal path is selected.
+func (p *ResponseProcessor) storeTypedInvestigationState(analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) {
+	if analysis == nil || res == nil {
+		return
+	}
+	rca := analysis.Status.EnsureRCAResult()
+	rca.TerminalOutcome = res.TerminalOutcome
+	rca.WorkflowDiscoveryStatus = res.WorkflowDiscoveryStatus
+	rca.HistoryStatus = res.HistoryStatus
+}
+
+// explicitNoMatchingWorkflowResult is intentionally stricter than the legacy
+// HumanReviewReason check. A missing SelectedWorkflow or a legacy reason alone
+// cannot prove that discovery completed with zero candidates.
+func explicitNoMatchingWorkflowResult(res *agentsessionv1.AgentSessionResult) bool {
+	if res == nil || res.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch {
+		return false
+	}
+	return res.TerminalOutcome == "" || res.TerminalOutcome == sharedtypes.TerminalOutcomeNoMatchingWorkflows
+}
+
+func explicitOperatorEscalationResult(res *agentsessionv1.AgentSessionResult) bool {
+	return res != nil && res.NeedsHumanReview && res.HumanReviewReason == humanReviewReasonOperatorEscalation
+}
+
+func explicitNotActionableResult(res *agentsessionv1.AgentSessionResult) bool {
+	if res == nil || res.SelectedWorkflow != nil || res.IsActionable == nil || *res.IsActionable {
+		return false
+	}
+	return hasNotActionableSignal(res.Warnings)
+}
+
+// compatibilityFailureReason returns the legacy human-review projection for a
+// typed terminal failure. The typed outcome remains authoritative in
+// AIAnalysis.Status.RCAResult; this projection must stay within the existing
+// HumanReviewReason enum so older consumers and CRD validation remain valid.
+func compatibilityFailureReason(res *agentsessionv1.AgentSessionResult) string {
+	if res == nil {
+		return humanReviewReasonInvestigationInconclusive
+	}
+	if explicitOperatorEscalationResult(res) {
+		return humanReviewReasonOperatorEscalation
+	}
+	if explicitNoMatchingWorkflowResult(res) {
+		return string(sharedtypes.TerminalOutcomeNoMatchingWorkflows)
+	}
+	switch res.TerminalOutcome {
+	case sharedtypes.TerminalOutcomeEvidenceTransportUnavailable,
+		sharedtypes.TerminalOutcomeHistoryEnrichmentUnavailable,
+		sharedtypes.TerminalOutcomeRCAIncomplete:
+		return aianalysisv1.HumanReviewReasonRCAIncomplete
+	case sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed,
+		sharedtypes.TerminalOutcomeCancelled:
+		return humanReviewReasonInvestigationInconclusive
+	case sharedtypes.TerminalOutcomeNoMatchingWorkflows,
+		sharedtypes.TerminalOutcomeProblemResolved,
+		sharedtypes.TerminalOutcomeWorkflowSelected:
+		// A valid typed outcome with a contradictory discovery gate or
+		// selected-workflow shape must fail closed. Do not let a stale legacy
+		// human-review reason reclassify it as no_matching_workflows.
+		return humanReviewReasonInvestigationInconclusive
+	case sharedtypes.TerminalOutcomeUnknown:
+		// Unknown is treated like an absent typed outcome and falls back to the
+		// compatibility projection below.
+	}
+	if res.HumanReviewReason != "" {
+		if res.HumanReviewReason == string(sharedtypes.TerminalOutcomeNoMatchingWorkflows) {
+			// The legacy projection is not authoritative. Without the typed
+			// completed_no_match gate, preserve a conservative failure route.
+			return humanReviewReasonInvestigationInconclusive
+		}
+		return res.HumanReviewReason
+	}
+	// Empty preserves the legacy warning-based fallback in
+	// applyWorkflowResolutionFailureState. It is never used to enter the
+	// successful no-match path because explicitNoMatchingWorkflowResult is
+	// checked independently.
+	return ""
+}
+
+// routeTypedTerminalOutcome handles terminal states that must not fall through
+// to legacy warning/reason inference. A selected workflow returns handled=false
+// so the normal confidence and analysis path continues.
+func (p *ResponseProcessor) routeTypedTerminalOutcome(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) (ctrl.Result, error, bool) {
+	if res == nil {
+		return ctrl.Result{}, nil, false
+	}
+
+	switch {
+	case explicitNoMatchingWorkflowResult(res):
+		result, err := p.handleNoMatchingWorkflowsCompleted(ctx, analysis, res)
+		return result, err, true
+	case res.TerminalOutcome == sharedtypes.TerminalOutcomeProblemResolved:
+		if res.SelectedWorkflow == nil {
+			result, err := p.handleProblemResolvedFromIncident(ctx, analysis, res)
+			return result, err, true
+		}
+		// Contradictory typed state fails closed rather than executing a
+		// workflow while claiming the problem is already resolved.
+		result, err := p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
+		return result, err, true
+	case res.TerminalOutcome == sharedtypes.TerminalOutcomeWorkflowSelected:
+		if res.SelectedWorkflow != nil {
+			return ctrl.Result{}, nil, false
+		}
+		result, err := p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
+		return result, err, true
+	case res.TerminalOutcome == sharedtypes.TerminalOutcomeUnknown || res.TerminalOutcome == "":
+		return ctrl.Result{}, nil, false
+	default:
+		result, err := p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
+		return result, err, true
+	}
+}
+
 // checkAlternateOutcomes evaluates the BR-KA-200.6 Outcome A (problem
 // resolved), #388/#607 Outcome D (not actionable), and BR-AI-050/#29
 // (no-workflow terminal failure) branches of ProcessAgentSessionResult, in
@@ -251,9 +394,7 @@ func (p *ResponseProcessor) checkAlternateOutcomes(ctx context.Context, analysis
 	// authoritative LLM determination — same trust pattern as needs_human_review (line 94).
 	// #607: Removed confidence >= 0.7 gate. The LLM's explicit actionable=false is trusted
 	// regardless of confidence. The agent applies a confidence floor of 0.8 as defense-in-depth.
-	isNotActionable := hasNotActionableSignal(res.Warnings)
-	isActionablePtr := res.IsActionable
-	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
+	if explicitNotActionableResult(res) {
 		result, err := p.handleNotActionableFromIncident(ctx, analysis, res)
 		return result, err, true
 	}
@@ -573,12 +714,14 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from AgentSessionResult
 // BR-KA-197: Workflow resolution failed, human must intervene
-// #768: Delegates to handleNoMatchingWorkflowsCompleted when humanReviewReason=no_matching_workflows
+// #768: Delegates to handleNoMatchingWorkflowsCompleted only when the typed
+// discovery gate explicitly completed with zero candidates.
 func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) (ctrl.Result, error) {
-	humanReviewReason := res.HumanReviewReason
+	humanReviewReason := compatibilityFailureReason(res)
 
-	// #768: no_matching_workflows is a successful investigation — route to Completed handler
-	if humanReviewReason == aianalysisv1.HumanReviewReasonNoMatchingWorkflows {
+	// #768: no_matching_workflows is a successful investigation — route to
+	// Completed only after the explicit discovery gate has completed.
+	if explicitNoMatchingWorkflowResult(res) {
 		return p.handleNoMatchingWorkflowsCompleted(ctx, analysis, res)
 	}
 
@@ -826,7 +969,10 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 // Issue #768: Phase should be Completed when humanReviewReason=no_matching_workflows
 // Issue #769: rootCauseAnalysis must be preserved (rootCause must be populated)
 func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis, res *agentsessionv1.AgentSessionResult) (ctrl.Result, error) {
-	humanReviewReason := res.HumanReviewReason
+	humanReviewReason := compatibilityFailureReason(res)
+	if humanReviewReason == "" {
+		humanReviewReason = string(sharedtypes.TerminalOutcomeNoMatchingWorkflows)
+	}
 
 	p.log.Info("Investigation succeeded, no matching workflows — completing with human review",
 		"confidence", res.Confidence,
@@ -893,13 +1039,17 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
-	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows // Maps to CRD SubReason enum
+	failureReason := compatibilityFailureReason(res)
+	if failureReason == "" {
+		failureReason = humanReviewReasonInvestigationInconclusive
+	}
+	analysis.Status.SubReason = p.mapEnumToSubReason(failureReason)
 	analysis.Status.EnsureInvestigationMetadata().InvestigationID = res.IncidentID
 
 	// BR-KA-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
 	review := analysis.Status.EnsureReview()
 	review.NeedsHumanReview = true
-	review.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+	review.HumanReviewReason = failureReason
 
 	// Build operator-friendly message
 	analysis.Status.Message = "No workflow selected for remediation"
@@ -914,18 +1064,19 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 
 	// BR-AI-050: Emit audit event for terminal failure
-	failureErr := fmt.Errorf("no workflow selected: no matching workflows found")
+	subReason := analysis.Status.SubReason
+	failureErr := fmt.Errorf("no workflow selected: %s", failureReason)
 	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
 	// Track failure metrics
-	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows).Inc()
-	p.metrics.RecordFailure("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows)
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", subReason).Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
 
-	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
+	aianalysis.SetInvestigationComplete(analysis, false, failureErr.Error())
 	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected for remediation")
-	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No matching workflows found")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, fmt.Sprintf("No workflow resolved: %s", failureReason))
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }

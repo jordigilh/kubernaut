@@ -319,8 +319,8 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 		})
 	})
 
-	Describe("IT-KA-760-009: All retries exhausted → no_matching_workflows", func() {
-		It("should classify as no_matching_workflows after retry exhaustion", func() {
+	Describe("IT-KA-760-009: All retries exhausted → investigation_inconclusive", func() {
+		It("should classify as investigation_inconclusive after retry exhaustion", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"ResourceQuota exhausted","confidence":0.95}`}},
@@ -340,8 +340,8 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 			Expect(result).NotTo(BeNil())
 
 			Expect(result.HumanReviewNeeded).To(BeTrue())
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"exhausted retries must classify as no_matching_workflows, not llm_parsing_error")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"exhausted retries must classify as investigation_inconclusive")
 			Expect(result.RCASummary).To(ContainSubstring("ResourceQuota"),
 				"RCA must be preserved through retry exhaustion")
 		})
@@ -456,8 +456,8 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 		RemediationID: "rem-it-760-decline",
 	}
 
-	Describe("IT-KA-760-001: Free text decline -> no_matching_workflows", func() {
-		It("should classify LLM free text during workflow selection as no_matching_workflows", func() {
+	Describe("IT-KA-760-001: Free text decline → investigation_inconclusive", func() {
+		It("should classify LLM free text during workflow selection as investigation_inconclusive", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"ResourceQuota exhausted — namespace-quota memory limit (512Mi) fully consumed by 2 running pods","confidence":0.95}`}},
@@ -476,15 +476,15 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"workflow decline must trigger human review")
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"#760: free text decline must be classified as no_matching_workflows, not llm_parsing_error")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"#760: free text decline must be classified as investigation_inconclusive")
 			Expect(result.RCASummary).To(ContainSubstring("ResourceQuota"),
 				"RCA summary from Phase 1 must be preserved")
 		})
 	})
 
-	Describe("IT-KA-760-002: Garbage JSON -> retry exhaustion -> no_matching_workflows", func() {
-		It("should classify garbage JSON after retry exhaustion as no_matching_workflows", func() {
+	Describe("IT-KA-760-002: Garbage JSON → retry exhaustion → investigation_inconclusive", func() {
+		It("should classify garbage JSON after retry exhaustion as investigation_inconclusive", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
@@ -503,8 +503,8 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"garbage JSON must trigger human review")
-			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"#760 v2: garbage JSON triggers parse retry → exhaustion → no_matching_workflows")
+			Expect(result.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"#760 v2: garbage JSON triggers parse retry → exhaustion → investigation_inconclusive")
 			Expect(result.Reason).To(ContainSubstring("submit tool"),
 				"garbage JSON is treated as non-tool workflow output; retries exhaust with this reason")
 		})

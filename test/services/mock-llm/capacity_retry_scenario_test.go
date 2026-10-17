@@ -57,15 +57,23 @@ var _ = Describe("E2E-AA-065 capacity-retry mock fixture", func() {
 		workflowFixture := contextConfigured.ConfigForContext(&scenarios.DetectionContext{
 			Phase: scenarios.PhaseWorkflowDiscovery,
 		})
-		Expect(workflowFixture.ToolCallName).To(Equal("kubectl_get_by_name"))
+		Expect(workflowFixture.ToolCallName).To(BeEmpty())
 		Expect(workflowFixture.ForceText).NotTo(BeNil())
 		Expect(*workflowFixture.ForceText).To(BeTrue())
+		Expect(workflowFixture.ToolCallArgs).To(BeEmpty())
 
 		advertisedFixture := contextConfigured.ConfigForContext(&scenarios.DetectionContext{
 			AvailableTools: []string{openai.ToolListAvailableActions, openai.ToolSubmitResultWithWorkflow},
 		})
 		Expect(advertisedFixture.ForceText).NotTo(BeNil())
-		Expect(*advertisedFixture.ForceText).To(BeTrue())
+		Expect(*advertisedFixture.ForceText).To(BeFalse())
+		Expect(advertisedFixture.ToolCallName).To(Equal(openai.ToolSubmitResultWithWorkflow))
+		Expect(advertisedFixture.ToolCallArgs).To(BeEmpty())
+
+		noWorkflowAdvertisedFixture := contextConfigured.ConfigForContext(&scenarios.DetectionContext{
+			AvailableTools: []string{openai.ToolListAvailableActions, openai.ToolSubmitResultNoWorkflow},
+		})
+		Expect(noWorkflowAdvertisedFixture.ToolCallName).To(Equal(openai.ToolSubmitResultNoWorkflow))
 
 		rcaRetryFixture := contextConfigured.ConfigForContext(&scenarios.DetectionContext{
 			Phase:          scenarios.PhaseRCA,

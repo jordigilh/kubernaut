@@ -108,6 +108,7 @@ var eventDataBuilders = map[string]eventDataBuilder{
 	EventTypeValidationAttempt:       buildValidationAttemptPayload,
 	EventTypeResponseComplete:        buildResponseCompletePayload,
 	EventTypeRCAComplete:             buildRCACompletePayload,
+	EventTypeInvestigationDecision:   buildInvestigationDecisionPayload,
 	EventTypeResponseFailed:          buildResponseFailedPayload,
 	EventTypeSessionStarted:          buildSessionStartedPayload,
 	EventTypeSessionCompleted:        buildSessionCompletedPayload,

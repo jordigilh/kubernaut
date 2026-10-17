@@ -59,8 +59,8 @@ var _ = Describe("K8s Call Audit Event — #898, BR-INTERACTIVE-003, BR-AUDIT-00
 				"AllEventTypes must include aiagent.interactive.k8s_call for event type validation")
 		})
 
-		It("should have a total of 39 event types after adding aiagent.config.reloaded/aiagent.config.rejected (GAP-11, issue #2285)", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(39))
+		It("should have a total of 40 event types after adding the investigation decision event (DD-KA-2520-2521)", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(40))
 		})
 
 		It("should have the correct event type string value", func() {

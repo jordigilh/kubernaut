@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // P2.2 Refactoring: Constants moved to constants.go
@@ -444,9 +445,13 @@ func (h *InvestigatingHandler) handleSessionCompleted(ctx context.Context, analy
 	// That is misleading: the investigation never actually reached a
 	// conclusion. Correct the classification here. FedRAMP AU-3 (truthful
 	// audit content) / SI-11 (accurate error handling).
-	if analysis.Status.SubReason == "NoMatchingWorkflows" && isSessionTimedOutWithoutResult(res) {
+	if isSessionTimedOutWithoutResult(res) {
 		analysis.Status.SubReason = "InvestigationInconclusive"
-		analysis.Status.EnsureReview().HumanReviewReason = "investigation_inconclusive"
+		analysis.Status.EnsureReview().HumanReviewReason = humanReviewReasonInvestigationInconclusive
+		rca := analysis.Status.EnsureRCAResult()
+		rca.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
+		rca.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
+		rca.HistoryStatus = sharedtypes.HistoryStatusNotRequested
 		analysis.Status.Message = "KA session completed without producing a result " +
 			"(likely an inactivity timeout); the investigation did not reach a conclusion"
 	}

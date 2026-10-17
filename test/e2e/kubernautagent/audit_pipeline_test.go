@@ -646,28 +646,33 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 				"LLM response event must be persisted (basic audit pipeline)")
 
-			// aiagent.enrichment.completed uses IncidentID as correlation_id.
-			// Best-effort: verify if present but don't fail — depends on
-			// enrichment wiring in the direct KA invocation path.
+			// DD-KA-2520-2521: enrichment and investigation audit events share
+			// the remediation-wide top-level correlation. IncidentID remains in
+			// the bounded enrichment payload as source-specific metadata.
 			var enrichmentEvents []ogenclient.AuditEvent
 			Eventually(func() bool {
 				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-					CorrelationID: ogenclient.NewOptString(incidentID),
+					CorrelationID: ogenclient.NewOptString(remediationID),
 				})
 				if qErr != nil {
 					return false
 				}
 				enrichmentEvents = resp.Data
-				return len(enrichmentEvents) > 0
+				for _, event := range enrichmentEvents {
+					if event.EventType == "aiagent.enrichment.completed" {
+						return true
+					}
+				}
+				return false
 			}, 15*time.Second, 1*time.Second).Should(BeTrue(),
-				"At least one event with IncidentID correlation must be persisted")
+				"At least one enrichment event with remediation correlation must be persisted")
 
 			hasEnrichment := false
 			for _, event := range enrichmentEvents {
 				if event.EventType == "aiagent.enrichment.completed" {
 					hasEnrichment = true
-					Expect(event.CorrelationID).To(Equal(incidentID),
-						"enrichment.completed must use IncidentID as correlation_id")
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"enrichment.completed must join the remediation audit timeline")
 					break
 				}
 			}

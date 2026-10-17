@@ -91,6 +91,18 @@ func (m *MockDataStorageClient) LastBatchSize() int {
 	return len(m.batches[len(m.batches)-1])
 }
 
+func (m *MockDataStorageClient) MaxBatchSize() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	maxSize := 0
+	for _, batch := range m.batches {
+		if len(batch) > maxSize {
+			maxSize = len(batch)
+		}
+	}
+	return maxSize
+}
+
 func (m *MockDataStorageClient) TotalEventsWritten() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -151,8 +163,8 @@ type errorCaptureSink struct {
 	errors []string
 }
 
-func (s *errorCaptureSink) Init(logr.RuntimeInfo)                    {}
-func (s *errorCaptureSink) Enabled(int) bool                         { return true }
+func (s *errorCaptureSink) Init(logr.RuntimeInfo)                        {}
+func (s *errorCaptureSink) Enabled(int) bool                             { return true }
 func (s *errorCaptureSink) Info(level int, msg string, _ ...interface{}) {}
 func (s *errorCaptureSink) Error(_ error, msg string, _ ...interface{}) {
 	s.mu.Lock()
@@ -160,7 +172,7 @@ func (s *errorCaptureSink) Error(_ error, msg string, _ ...interface{}) {
 	s.errors = append(s.errors, msg)
 }
 func (s *errorCaptureSink) WithValues(...interface{}) logr.LogSink { return s }
-func (s *errorCaptureSink) WithName(string) logr.LogSink          { return s }
+func (s *errorCaptureSink) WithName(string) logr.LogSink           { return s }
 
 func (s *errorCaptureSink) hasErrorContaining(substr string) bool {
 	s.mu.Lock()
@@ -196,11 +208,11 @@ type infoEntry struct {
 	msg   string
 }
 
-func (s *infoCaptureSink) Init(logr.RuntimeInfo)                          {}
-func (s *infoCaptureSink) Enabled(int) bool                               { return true }
-func (s *infoCaptureSink) Error(_ error, _ string, _ ...interface{})      {}
-func (s *infoCaptureSink) WithValues(...interface{}) logr.LogSink         { return s }
-func (s *infoCaptureSink) WithName(string) logr.LogSink                  { return s }
+func (s *infoCaptureSink) Init(logr.RuntimeInfo)                     {}
+func (s *infoCaptureSink) Enabled(int) bool                          { return true }
+func (s *infoCaptureSink) Error(_ error, _ string, _ ...interface{}) {}
+func (s *infoCaptureSink) WithValues(...interface{}) logr.LogSink    { return s }
+func (s *infoCaptureSink) WithName(string) logr.LogSink              { return s }
 func (s *infoCaptureSink) Info(level int, msg string, _ ...interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,7 +261,7 @@ func createTestEvent() *ogenclient.AuditEventRequest {
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
-		SignalName:   "test-alert",
+		SignalName:  "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}
@@ -465,6 +477,27 @@ var _ = Describe("BufferedAuditStore", func() {
 			}, "3s").Should(Equal(1))
 
 			Expect(mockClient.LastBatchSize()).To(Equal(5))
+		})
+
+		It("UT-AUDIT-2522-001: splits buffered writes at the DataStorage batch limit", func() {
+			config := audit.Config{
+				BufferSize:    2000,
+				BatchSize:     1000,
+				FlushInterval: 10 * time.Second,
+				MaxRetries:    1,
+			}
+			var err error
+			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			for i := 0; i < 1200; i++ {
+				Expect(store.StoreAudit(ctx, createTestEvent())).To(Succeed())
+			}
+			Expect(store.Flush(ctx)).To(Succeed())
+
+			Expect(mockClient.TotalEventsWritten()).To(Equal(1200))
+			Expect(mockClient.BatchCount()).To(Equal(3))
+			Expect(mockClient.MaxBatchSize()).To(BeNumerically("<=", 500))
 		})
 	})
 

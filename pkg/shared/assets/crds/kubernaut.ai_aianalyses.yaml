@@ -1182,6 +1182,17 @@ spec:
                       - workflowId
                       type: object
                     type: array
+                  historyStatus:
+                    description: |-
+                      HistoryStatus distinguishes empty target history from an unavailable
+                      history/evidence transport.
+                    enum:
+                    - available
+                    - empty
+                    - transport_unavailable
+                    - schema_error
+                    - not_requested
+                    type: string
                   rootCause:
                     description: |-
                       ========================================
@@ -1632,6 +1643,31 @@ spec:
                     required:
                     - proposedWorkflowId
                     type: object
+                  terminalOutcome:
+                    description: |-
+                      TerminalOutcome is the server-owned typed investigation terminal state.
+                      An absent SelectedWorkflow is not sufficient to establish no-match.
+                    enum:
+                    - workflow_selected
+                    - problem_resolved
+                    - evidence_transport_unavailable
+                    - history_enrichment_unavailable
+                    - rca_incomplete
+                    - no_matching_workflows
+                    - workflow_discovery_failed
+                    - cancelled
+                    type: string
+                  workflowDiscoveryStatus:
+                    description: WorkflowDiscoveryStatus records the phase-aware workflow
+                      discovery gate.
+                    enum:
+                    - not_started
+                    - started
+                    - completed_selected
+                    - completed_no_match
+                    - failed
+                    - skipped_due_to_failure
+                    type: string
                 type: object
               reason:
                 description: Reason provides the umbrella failure or completion category.
