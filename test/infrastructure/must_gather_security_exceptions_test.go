@@ -29,13 +29,31 @@ import (
 )
 
 var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", func() {
-	It("UT-SEC-2493-007: accepts only the observed kubectl CVEs for six calendar months", func() {
+	It("UT-SEC-2493-007: accepts only the observed kubectl CVEs for their approved six-calendar-month windows", func() {
 		body, err := os.ReadFile(filepath.Join(getProjectRoot(), "cmd/must-gather/.trivyignore")) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-		acceptedAt, err := time.Parse(time.DateOnly, "2026-10-11")
+		legacyAcceptedAt, err := time.Parse(time.DateOnly, "2026-10-11")
 		Expect(err).NotTo(HaveOccurred())
-		expiresAt := acceptedAt.AddDate(0, 6, 0).Format(time.DateOnly)
-		ids := make([]string, 0, 16)
+		legacyExpiresAt := "exp:" + legacyAcceptedAt.AddDate(0, 6, 0).Format(time.DateOnly)
+		newAcceptedAt, err := time.Parse(time.DateOnly, "2026-10-17")
+		Expect(err).NotTo(HaveOccurred())
+		newExpiresAt := "exp:" + newAcceptedAt.AddDate(0, 6, 0).Format(time.DateOnly)
+		legacyIDs := []string{
+			"CVE-2026-25681", "CVE-2026-27136", "CVE-2026-33814", "CVE-2026-33818",
+			"CVE-2026-39821", "CVE-2026-39822", "CVE-2026-46600", "CVE-2026-56852",
+			"CVE-2026-56853", "CVE-2026-56858", "CVE-2026-56859", "CVE-2026-56860",
+			"CVE-2026-56862", "CVE-2026-78667", "CVE-2026-78669", "CVE-2026-97031",
+		}
+		expectedExpirations := make(map[string]string, len(legacyIDs)+1)
+		for _, id := range legacyIDs {
+			expectedExpirations[id] = legacyExpiresAt
+		}
+		expectedExpirations["CVE-2026-56851"] = newExpiresAt
+		expectedIDs := make([]string, 0, len(expectedExpirations))
+		for id := range expectedExpirations {
+			expectedIDs = append(expectedIDs, id)
+		}
+		ids := make([]string, 0, len(expectedExpirations))
 		for _, line := range strings.Split(string(body), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
@@ -43,21 +61,18 @@ var _ = Describe("Must-gather kubectl security exceptions [BR-SECURITY-2493]", f
 			}
 			fields := strings.Fields(line)
 			Expect(fields).To(HaveLen(2), "every exception must have an explicit expiration: %s", line)
-			Expect(fields[1]).To(Equal("exp:"+expiresAt), "exception: %s", fields[0])
+			expectedExpiration, known := expectedExpirations[fields[0]]
+			Expect(known).To(BeTrue(), "unexpected exception: %s", line)
+			Expect(fields[1]).To(Equal(expectedExpiration), "exception: %s", fields[0])
 			ids = append(ids, fields[0])
 		}
-		Expect(ids).To(ConsistOf(
-			"CVE-2026-25681", "CVE-2026-27136", "CVE-2026-33814", "CVE-2026-33818",
-			"CVE-2026-39821", "CVE-2026-39822", "CVE-2026-46600", "CVE-2026-56852",
-			"CVE-2026-56853", "CVE-2026-56858", "CVE-2026-56859", "CVE-2026-56860",
-			"CVE-2026-56862", "CVE-2026-78667", "CVE-2026-78669", "CVE-2026-97031",
-		), "do not silently broaden the accepted CVE set or duplicate exceptions")
+		Expect(ids).To(ConsistOf(expectedIDs), "do not silently broaden the accepted CVE set or duplicate exceptions")
 	})
 
 	It("UT-SEC-2493-008: records explicit risk acceptance without claiming the CVEs are fixed", func() {
 		body, err := os.ReadFile(filepath.Join(getProjectRoot(), "cmd/must-gather/.trivyignore")) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-		for _, evidence := range []string{"risk acceptance", "not vulnerability remediation", "2026-10-11", "2027-04-11", "Issue #1662", "DD-PLATFORM-003", "v1.36.5", "v1.37.1"} {
+		for _, evidence := range []string{"risk acceptance", "not vulnerability remediation", "2026-10-11", "2026-10-17", "2027-04-11", "2027-04-17", "Issue #1662", "DD-PLATFORM-003", "v1.36.5", "v1.37.1", "CVE-2026-56851"} {
 			Expect(string(body)).To(ContainSubstring(evidence))
 		}
 		Expect(string(body)).NotTo(ContainSubstring("no fix available"))

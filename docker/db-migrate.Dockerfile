@@ -45,13 +45,14 @@ ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
 # removed by excluding drivers -- it's pulled in by github.com/jackc/pgx/v5,
 # the postgres driver we actually keep (`go mod graph` confirms; `go version -m`
 # on the built binary confirms it's actually linked in, not just resolved).
-# Pin to the same version used in the main project's go.mod to resolve
-# CVE-2026-56852 (golang.org/x/text < v0.39.0, norm.Iter infinite loop).
+# Pin explicitly because this isolated module does not read the main project's
+# go.mod. v0.41.0 resolves CVE-2026-56851 (golang.org/x/text Nickname profile
+# out-of-bounds panic) and remains above the v0.39.0 floor for CVE-2026-56852.
 RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
     go get github.com/pressly/goose/v3/cmd/goose@v3.27.2 && \
-    go get golang.org/x/text@v0.40.0 && \
+    go get golang.org/x/text@v0.41.0 && \
     go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
       -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
