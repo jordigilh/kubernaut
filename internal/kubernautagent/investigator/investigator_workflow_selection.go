@@ -27,6 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
@@ -48,21 +49,22 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}, correlationID)
 	if freezeErr != nil {
 		inv.logger.Error(freezeErr, "evidence handoff could not be frozen; requiring human review", "correlation_id", correlationID)
+		freezeResult := &katypes.InvestigationResult{
+			HumanReviewNeeded: true, HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
+			Reason: "evidence handoff could not be safely frozen within its configured budget",
+		}
 		if enrichData != nil && enrichData.HistoryUnavailable {
 			// The handoff guard is intentionally fail-closed. Preserve the
 			// existing operator-review signal for callers that supplied a
 			// prompt-only enrichment snapshot; the typed evidence scope takes
 			// precedence in downstream response routing.
-			return &katypes.InvestigationResult{
-				HumanReviewNeeded: true,
-				HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
-				Reason:            "evidence source unavailable for workflow selection",
-			}, nil
+			freezeResult.Reason = "evidence source unavailable for workflow selection"
+			markDiscoverySkippedDueToFailure(freezeResult, sharedtypes.HistoryStatusTransportUnavailable, true)
+		} else {
+			markDiscoverySkippedDueToFailure(freezeResult, sharedtypes.HistoryStatusNotRequested, false)
+			freezeResult.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
 		}
-		return &katypes.InvestigationResult{
-			HumanReviewNeeded: true, HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
-			Reason: "evidence handoff could not be safely frozen within its configured budget",
-		}, nil
+		return freezeResult, nil
 	}
 	defer func() {
 		if result != nil {
@@ -160,6 +162,9 @@ func (inv *Investigator) completeWorkflowSelection(ctx context.Context, content 
 	// observable outcome: human review, never silent pass-through.
 	if inv.pipeline.CatalogFetcher == nil {
 		if result.HumanReviewNeeded {
+			if result.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch {
+				markWorkflowDiscoveryFailed(result)
+			}
 			return result, nil
 		}
 		inv.logger.Error(nil, "workflow catalog fetcher not configured, requiring human review instead of skipping validation",
@@ -167,6 +172,7 @@ func (inv *Investigator) completeWorkflowSelection(ctx context.Context, content 
 		result.HumanReviewNeeded = true
 		result.HumanReviewReason = "catalog_unavailable"
 		result.Reason = "workflow catalog fetcher not configured"
+		markWorkflowDiscoveryFailed(result)
 		return result, nil
 	}
 	return inv.selfCorrectWorkflowSelection(ctx, result, content, messages, rcaSummary, correlationID, llmCtx)
@@ -211,11 +217,13 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 	switch r := loopRes.(type) {
 	case *CancelledResult:
 		cancelledResult := &katypes.InvestigationResult{
-			RCASummary:          rcaSummary,
-			Cancelled:           true,
-			CancelledPhase:      string(katypes.PhaseWorkflowDiscovery),
-			CancelledAtTurn:     r.Turn,
-			AccumulatedMessages: messagesToAuditFormat(r.Messages),
+			RCASummary:              rcaSummary,
+			Cancelled:               true,
+			CancelledPhase:          string(katypes.PhaseWorkflowDiscovery),
+			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusStarted,
+			CancelledAtTurn:         r.Turn,
+			AccumulatedMessages:     messagesToAuditFormat(r.Messages),
 		}
 		if r.Tokens != nil {
 			s := r.Tokens.Summary()
@@ -227,20 +235,24 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 		}
 		return "", cancelledResult
 	case *ExhaustedResult:
-		return "", &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}
+		markWorkflowDiscoveryFailed(result)
+		return "", result
 	case *SubmitNoWorkflowResult:
 		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
 			"correlation_id", correlationID)
-		return "", &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
 		}
+		markWorkflowDiscoveryNoMatch(result)
+		return "", result
 	case *SubmitWithWorkflowResult:
 		return r.Content, nil
 	case *SubmitResult:
@@ -275,9 +287,9 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 // submit_result_with_workflow -- the caller MUST feed content back through
 // resultParser.Parse and selfCorrectWorkflowSelection exactly like a
 // first-attempt success, never return it as a final answer directly.
-// terminal is set (content empty) for every other outcome:
-// no_matching_workflows (explicit decline or retries exhausted) or
-// cancelled.
+// terminal is set (content empty) for every other outcome: an explicit
+// no_matching_workflows decline or a conservative workflow_discovery_failed
+// retry exhaustion, plus cancellation.
 //
 // #1677 follow-up hardening: this used to return retryWorkflowSubmit's
 // result directly, bypassing selfCorrectWorkflowSelection's catalog
@@ -296,25 +308,32 @@ func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context
 		return "", retryResult
 	}
 	if ctx.Err() != nil {
-		return "", &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			RCASummary:     rcaSummary,
 			Cancelled:      true,
 			CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
 		}
+		result.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
+		result.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusStarted
+		return "", result
 	}
 	if parseErr != nil {
-		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as no_matching_workflows",
+		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as workflow_discovery_failed",
 			"correlation_id", llmCtx.CorrelationID)
 	} else {
-		inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+		inv.logger.Info("workflow selection: all retries exhausted, classifying as workflow_discovery_failed",
 			"correlation_id", llmCtx.CorrelationID)
 	}
-	return "", &katypes.InvestigationResult{
+	result := &katypes.InvestigationResult{
 		RCASummary:        rcaSummary,
 		HumanReviewNeeded: true,
-		HumanReviewReason: "no_matching_workflows",
+		// Compatibility projection retained for existing consumers. The
+		// typed state below is workflow_discovery_failed, not no-match.
+		HumanReviewReason: humanReviewReasonInvestigationInconclusive,
 		Reason:            failureReason,
 	}
+	markWorkflowDiscoveryFailed(result)
+	return "", result
 }
 
 // selfCorrectWorkflowSelection runs the catalog-validated self-correction
@@ -328,6 +347,7 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 		result.HumanReviewNeeded = true
 		result.HumanReviewReason = "catalog_unavailable"
 		result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
+		markWorkflowDiscoveryFailed(result)
 		return result, nil
 	}
 	if discoveredWorkflows, ok := katypes.DiscoveredWorkflowStateFromContext(ctx); ok {
@@ -405,14 +425,17 @@ func (inv *Investigator) classifySelfCorrectionLoopResult(corrLoopRes LoopResult
 	case *ExhaustedResult:
 		r.HumanReviewNeeded = true
 		r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
+		markWorkflowDiscoveryFailed(r)
 		return r, nil
 	case *SubmitNoWorkflowResult:
-		return &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
-		}, nil
+		}
+		markWorkflowDiscoveryNoMatch(result)
+		return result, nil
 	case *SubmitWithWorkflowResult:
 		state.content = cr.Content
 	case *SubmitResult:
@@ -428,11 +451,14 @@ func (inv *Investigator) classifySelfCorrectionLoopResult(corrLoopRes LoopResult
 // wrapped and returned as a hard error.
 func handleSelfCorrectError(corrErr error, rcaSummary string) (*katypes.InvestigationResult, error) {
 	if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
-		return &katypes.InvestigationResult{
-			RCASummary:     rcaSummary,
-			Cancelled:      true,
-			CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-		}, nil
+		result := &katypes.InvestigationResult{
+			RCASummary:              rcaSummary,
+			Cancelled:               true,
+			CancelledPhase:          string(katypes.PhaseWorkflowDiscovery),
+			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusStarted,
+		}
+		return result, nil
 	}
 	return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 }
@@ -449,6 +475,13 @@ func (inv *Investigator) finalizeSelfCorrection(ctx context.Context, corrected *
 	inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
 	enrichFromCatalog(corrected, validator)
 	CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
+	if corrected.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch && corrected.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusFailed {
+		if corrected.WorkflowID != "" && !corrected.HumanReviewNeeded {
+			markWorkflowDiscoverySelected(corrected)
+		} else {
+			markWorkflowDiscoveryFailed(corrected)
+		}
+	}
 	return corrected
 }
 
@@ -615,12 +648,14 @@ func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSumm
 	case SubmitResultNoWorkflowToolName:
 		inv.logger.Info("retry succeeded: submit_result_no_workflow",
 			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
+		result := &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM used submit_result_no_workflow after retry",
-		}, "", true
+		}
+		markWorkflowDiscoveryNoMatch(result)
+		return result, "", true
 	case SubmitResultWithWorkflowToolName:
 		inv.logger.Info("retry succeeded: submit_result_with_workflow",
 			"correlation_id", correlationID)

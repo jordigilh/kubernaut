@@ -144,8 +144,20 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 	// to correctly surface this outcome.
 	if r == nil {
 		log.Info("MapInvestigationResultToAgentSessionResult: nil InvestigationResult, synthesizing curated placeholder", "incidentID", incidentID)
-		r = &katypes.InvestigationResult{RCASummary: "Investigation completed without result"}
+		r = &katypes.InvestigationResult{
+			RCASummary:              "Investigation completed without result",
+			TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusNotStarted,
+			HistoryStatus:           sharedtypes.HistoryStatusNotRequested,
+		}
+	} else {
+		// Typed compatibility projection must not mutate the investigator's
+		// authoritative result. The same result is retained for audit and
+		// terminal hooks after this mapping boundary.
+		copyResult := *r
+		r = &copyResult
 	}
+	applyTypedOutcomeFallback(r)
 	// DD-KA-2496: an accepted repeat must not lose mandatory reasoning at a
 	// persistence boundary. Fail to the existing non-executable review shape.
 	if r.WorkflowID != "" && r.RepeatJustificationRequired != nil && *r.RepeatJustificationRequired && katypes.SafeRepeatJustification(r.RepeatJustification) == nil {
@@ -158,14 +170,17 @@ func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.Inve
 	}
 
 	res := &agentsessionv1.AgentSessionResult{
-		IncidentID:        incidentID,
-		Analysis:          r.RCASummary,
-		Confidence:        r.Confidence,
-		Timestamp:         time.Now().UTC().Format(time.RFC3339),
-		RootCauseAnalysis: marshalJSON(buildRootCauseAnalysisMap(r)),
-		NeedsHumanReview:  r.HumanReviewNeeded,
-		Warnings:          buildWarnings(r),
-		EvidenceStatus:    mapEvidenceStatus(r.EvidenceStatus),
+		IncidentID:              incidentID,
+		Analysis:                r.RCASummary,
+		Confidence:              r.Confidence,
+		Timestamp:               time.Now().UTC().Format(time.RFC3339),
+		RootCauseAnalysis:       marshalJSON(buildRootCauseAnalysisMap(r)),
+		NeedsHumanReview:        r.HumanReviewNeeded,
+		Warnings:                buildWarnings(r),
+		EvidenceStatus:          mapEvidenceStatus(r.EvidenceStatus),
+		TerminalOutcome:         r.TerminalOutcome,
+		WorkflowDiscoveryStatus: r.WorkflowDiscoveryStatus,
+		HistoryStatus:           r.HistoryStatus,
 	}
 
 	applyHumanReviewReason(res, log, r)
@@ -233,6 +248,49 @@ func mapEvidenceStatus(status *katypes.EvidenceStatus) *agentsessionv1.EvidenceS
 		})
 	}
 	return mapped
+}
+
+// applyTypedOutcomeFallback protects the AgentSession boundary when an older
+// investigator result arrives without the new typed fields. It is deliberately
+// conservative: a missing workflow never becomes no_matching_workflows. New
+// production results are expected to arrive already classified by the
+// Investigator (DD-KA-2520-2521).
+func applyTypedOutcomeFallback(r *katypes.InvestigationResult) {
+	if r == nil {
+		return
+	}
+	if r.HistoryStatus == "" {
+		r.HistoryStatus = sharedtypes.HistoryStatusNotRequested
+	}
+	if r.WorkflowDiscoveryStatus == "" {
+		switch {
+		case r.WorkflowID != "":
+			r.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusCompletedSelected
+		case r.Cancelled:
+			r.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
+		default:
+			r.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
+		}
+	}
+	if r.TerminalOutcome.IsValid() {
+		return
+	}
+	switch {
+	case r.Cancelled:
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
+	case r.WorkflowID != "":
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeWorkflowSelected
+	case r.InvestigationOutcome == katypes.InvestigationOutcomeProblemResolved:
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeProblemResolved
+	case r.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch:
+		// This is the only legacy-compatible no-match projection: the
+		// phase-aware discovery gate is explicit.
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeNoMatchingWorkflows
+	case r.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusFailed:
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed
+	default:
+		r.TerminalOutcome = sharedtypes.TerminalOutcomeRCAIncomplete
+	}
 }
 
 // marshalJSON marshals v into an apiextensionsv1.JSON, returning nil when v

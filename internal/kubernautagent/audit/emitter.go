@@ -27,19 +27,22 @@ import (
 const EventCategory = "aiagent"
 
 const (
-	EventTypeLLMRequest          = "aiagent.llm.request"
-	EventTypeLLMResponse         = "aiagent.llm.response"
-	EventTypeLLMToolCall         = "aiagent.llm.tool_call"
-	EventTypeValidationAttempt   = "aiagent.workflow.validation_attempt"
-	EventTypeResponseComplete    = "aiagent.response.complete"
-	EventTypeResponseFailed      = "aiagent.response.failed"
-	EventTypeRCAComplete         = "aiagent.rca.complete"
-	EventTypeEnrichmentCompleted = "aiagent.enrichment.completed"
-	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
-	EventTypeAlignmentStep       = "aiagent.alignment.step"
-	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
-	EventTypeGroundingRequest    = "aiagent.alignment.grounding.request"
-	EventTypeGroundingResponse   = "aiagent.alignment.grounding.response"
+	EventTypeLLMRequest        = "aiagent.llm.request"
+	EventTypeLLMResponse       = "aiagent.llm.response"
+	EventTypeLLMToolCall       = "aiagent.llm.tool_call"
+	EventTypeValidationAttempt = "aiagent.workflow.validation_attempt"
+	EventTypeResponseComplete  = "aiagent.response.complete"
+	EventTypeResponseFailed    = "aiagent.response.failed"
+	EventTypeRCAComplete       = "aiagent.rca.complete"
+	// EventTypeInvestigationDecision records one bounded, server-owned
+	// investigation state transition or terminal decision (DD-KA-2520-2521).
+	EventTypeInvestigationDecision = "aiagent.investigation.decision"
+	EventTypeEnrichmentCompleted   = "aiagent.enrichment.completed"
+	EventTypeEnrichmentFailed      = "aiagent.enrichment.failed"
+	EventTypeAlignmentStep         = "aiagent.alignment.step"
+	EventTypeAlignmentVerdict      = "aiagent.alignment.verdict"
+	EventTypeGroundingRequest      = "aiagent.alignment.grounding.request"
+	EventTypeGroundingResponse     = "aiagent.alignment.grounding.response"
 
 	EventTypeSessionStarted   = "aiagent.session.started"
 	EventTypeSessionCancelled = "aiagent.session.cancelled"
@@ -210,6 +213,7 @@ const (
 	ActionSecretAccessed          = "secret_accessed"
 	ActionFleetOverlayFailed      = "fleet_overlay_failed"
 	ActionFleetOverlayUnavailable = "fleet_overlay_unavailable"
+	ActionInvestigationDecision   = "investigation_decision"
 
 	// Workflow catalog discovery event actions (Issue #1677, DD-WORKFLOW-019).
 	// Values match DS's pre-existing ActionDiscovery/ActionRetrieve/ActionValidate
@@ -238,6 +242,7 @@ var AllEventTypes = []string{
 	EventTypeValidationAttempt,
 	EventTypeResponseComplete,
 	EventTypeRCAComplete,
+	EventTypeInvestigationDecision,
 	EventTypeResponseFailed,
 	EventTypeEnrichmentCompleted,
 	EventTypeEnrichmentFailed,

@@ -316,6 +316,10 @@ type EnrichmentResult struct {
 	// HistoryUnavailable distinguishes acquisition failure from a successful
 	// empty history. Phase 2 must require review when repeat context is unavailable.
 	HistoryUnavailable bool `json:"history_unavailable,omitempty"`
+	// HistoryStatus is the typed acquisition result used by the investigation
+	// terminal contract. It is deliberately separate from HistoryUnavailable so
+	// a successful empty history cannot be confused with transport failure.
+	HistoryStatus sharedtypes.HistoryStatus `json:"history_status,omitempty"`
 	// EvidenceStatus is the source status for this target's enrichment call.
 	// It is carried beside prompts and merged into the investigation scope.
 	EvidenceStatus *katypes.EvidenceStatus `json:"-"`
@@ -486,8 +490,9 @@ type EnrichRequest struct {
 	// ClusterID optionally scopes the DataStorage remediation-history query to
 	// a single fleet cluster (Issue #1802, main only). Empty means unscoped
 	// (release/v1.5 semantics, or main without fleet tracking configured).
-	ClusterID  string
-	IncidentID string
+	ClusterID     string
+	IncidentID    string
+	CorrelationID string
 }
 
 // Enrich resolves enrichment data for the given resource.
@@ -498,6 +503,7 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 		ResourceKind:      kind,
 		ResourceName:      name,
 		ResourceNamespace: namespace,
+		HistoryStatus:     sharedtypes.HistoryStatusNotRequested,
 	}
 
 	resolvedSpecHash, specHashUnavailable, err := e.resolveSpecHash(ctx, kind, name, namespace, apiVersion, specHash)
@@ -506,6 +512,9 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 	}
 	specHash = strings.TrimSpace(resolvedSpecHash)
 	result.HistoryUnavailable = specHashUnavailable
+	if specHashUnavailable {
+		result.HistoryStatus = sharedtypes.HistoryStatusTransportUnavailable
+	}
 
 	ownerErr, hardErr := e.populateOwnerChain(ctx, kind, name, namespace, apiVersion, result)
 	if hardErr != nil {
@@ -522,6 +531,9 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 	})
 	if histErr != nil {
 		result.HistoryUnavailable = result.HistoryUnavailable || specHash != ""
+		if specHash != "" {
+			result.HistoryStatus = historyStatusForError(histErr)
+		}
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)
@@ -531,10 +543,31 @@ func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentRe
 
 	e.emitEnrichmentAuditEvent(ctx, enrichmentAuditParams{
 		Kind: kind, Name: name, Namespace: namespace, IncidentID: incidentID,
-		ClusterID: req.ClusterID, Result: result, OwnerErr: ownerErr, HistErr: histErr,
+		ClusterID: req.ClusterID, CorrelationID: req.CorrelationID,
+		Result: result, OwnerErr: ownerErr, HistErr: histErr,
 	})
-
+	if histErr == nil {
+		switch {
+		case specHashUnavailable:
+			// A successful empty response cannot erase the failed live-hash
+			// acquisition that made target-scoped history unverifiable.
+			result.HistoryStatus = sharedtypes.HistoryStatusTransportUnavailable
+		case historySkipped:
+			result.HistoryStatus = sharedtypes.HistoryStatusNotRequested
+		case histResult == nil || (len(histResult.Tier1) == 0 && len(histResult.Tier2) == 0):
+			result.HistoryStatus = sharedtypes.HistoryStatusEmpty
+		default:
+			result.HistoryStatus = sharedtypes.HistoryStatusAvailable
+		}
+	}
 	return result, nil
+}
+
+func historyStatusForError(err error) sharedtypes.HistoryStatus {
+	if errors.Is(err, ErrHistorySchema) {
+		return sharedtypes.HistoryStatusSchemaError
+	}
+	return sharedtypes.HistoryStatusTransportUnavailable
 }
 
 type historyFetchRequest struct {
@@ -676,6 +709,7 @@ func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, names
 // audit event. Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type enrichmentAuditParams struct {
 	Kind, Name, Namespace, IncidentID, ClusterID string
+	CorrelationID                                string
 	Result                                       *EnrichmentResult
 	OwnerErr, HistErr                            error
 }
@@ -686,7 +720,10 @@ type enrichmentAuditParams struct {
 func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAuditParams) {
 	kind, name, namespace, incidentID, clusterID := p.Kind, p.Name, p.Namespace, p.IncidentID, p.ClusterID
 	result, ownerErr, histErr := p.Result, p.OwnerErr, p.HistErr
-	correlationID := incidentID
+	correlationID := p.CorrelationID
+	if correlationID == "" {
+		correlationID = incidentID
+	}
 	if correlationID == "" {
 		correlationID, _ = audit.CorrelationIDFromContext(ctx)
 	}
@@ -697,7 +734,11 @@ func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAud
 		event.EventOutcome = "failure"
 		event.Data["incident_id"] = incidentID
 		event.Data["reason"] = "all_enrichment_sources_failed"
-		event.Data["detail"] = "owner_chain=" + enrichmentFailureCode(ownerErr) + "; history=" + enrichmentFailureCode(histErr)
+		event.Data["detail"] = boundedEnrichmentFailureDetail(ownerErr, histErr)
+		event.Data["owner_error_class"] = enrichmentErrorClass(ownerErr)
+		event.Data["history_error_class"] = enrichmentErrorClass(histErr)
+		event.Data["owner_error_code"] = enrichmentFailureCode(ownerErr)
+		event.Data["history_error_code"] = enrichmentFailureCode(histErr)
 		event.Data["affected_resource_kind"] = kind
 		event.Data["affected_resource_name"] = name
 		event.Data["affected_resource_namespace"] = namespace
@@ -730,9 +771,11 @@ func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAud
 
 	if ownerErr != nil {
 		event.Data["owner_error_code"] = enrichmentFailureCode(ownerErr)
+		event.Data["owner_error_class"] = enrichmentErrorClass(ownerErr)
 	}
 	if histErr != nil {
 		event.Data["history_error_code"] = enrichmentFailureCode(histErr)
+		event.Data["history_error_class"] = enrichmentErrorClass(histErr)
 	}
 	if result.EvidenceStatus != nil {
 		event.Data["evidence_source"] = string(result.EvidenceStatus.Source)
@@ -758,6 +801,39 @@ func enrichmentFailureCode(err error) string {
 		return "rbac_forbidden"
 	}
 	return katypes.EvidenceFailureCodeTransport
+}
+
+const enrichmentFailureDetailMaxLen = 128
+
+func boundedEnrichmentFailureDetail(ownerErr, historyErr error) string {
+	detail := "owner_chain=" + enrichmentErrorClass(ownerErr) + ";history=" + enrichmentErrorClass(historyErr)
+	if len(detail) <= enrichmentFailureDetailMaxLen {
+		return detail
+	}
+	return detail[:enrichmentFailureDetailMaxLen]
+}
+
+// enrichmentErrorClass is intentionally an enum-like projection. Persisting
+// err.Error() here would leak provider URLs, request bodies, credentials, or
+// transport internals into the immutable audit record (DD-KA-2520-2521).
+func enrichmentErrorClass(err error) string {
+	if err == nil {
+		return "none"
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, context.DeadlineExceeded), apierrors.IsTimeout(err):
+		return "timeout"
+	case isForbiddenError(err):
+		return "forbidden"
+	case IsNotFoundError(err):
+		return "not_found"
+	case IsNoMatchError(err), errors.Is(err, ErrHistorySchema):
+		return "schema_error"
+	default:
+		return "transport"
+	}
 }
 
 func resolveRootOwner(kind, name, namespace string, chain []OwnerChainEntry) (string, string, string) {

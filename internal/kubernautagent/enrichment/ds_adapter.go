@@ -85,14 +85,14 @@ func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, names
 	if _, isBadRequest := res.(*ogenclient.GetRemediationHistoryContextBadRequest); isBadRequest {
 		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
 			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
-		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: bad request for %s/%s/%s (spec_hash=%s)", namespace, kind, name, specHash), status)
+		return nil, newHistoryFetchError(fmt.Errorf("%w: ds adapter: bad request for %s/%s/%s (spec_hash=%s)", ErrHistorySchema, namespace, kind, name, specHash), status)
 	}
 
 	historyCtx, ok := res.(*ogenclient.RemediationHistoryContext)
 	if !ok {
 		status := historySourceStatus(kind, name, namespace, clusterID, correlationIDFromContext(ctx),
 			katypes.EvidenceOutcomeSchemaClientFailure, katypes.EvidenceFailureCodeSchema)
-		return nil, newHistoryFetchError(fmt.Errorf("ds adapter: unexpected response type %T", res), status)
+		return nil, newHistoryFetchError(fmt.Errorf("%w: ds adapter: unexpected response type %T", ErrHistorySchema, res), status)
 	}
 
 	return mapHistoryContext(historyCtx, kind, name, namespace, clusterID, correlationIDFromContext(ctx)), nil

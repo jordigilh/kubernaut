@@ -28,6 +28,13 @@ import (
 // sentinel so existing best-effort enrichment behavior remains intact.
 var ErrHistoryUnavailable = errors.New("target history unavailable")
 
+// ErrHistorySchema marks a response that cannot be interpreted as the
+// remediation-history contract (for example, a bad request caused by an
+// invalid/empty spec hash or an unexpected response variant). It is kept
+// separate from transport exhaustion so terminal classification can preserve
+// the distinction without retaining the raw provider error.
+var ErrHistorySchema = errors.New("target history schema error")
+
 // IsHistoryUnavailableError reports whether err represents a required
 // spec-hash/history acquisition failure.
 func IsHistoryUnavailableError(err error) bool {

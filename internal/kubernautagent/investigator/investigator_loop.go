@@ -31,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
@@ -53,7 +54,20 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		}
 	}
 
-	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
+	exhausted := &ExhaustedResult{Reason: "max turns exhausted"}
+	result := loopDecisionSnapshot(exhausted, phase)
+	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
+		CorrelationID:      llmCtx.CorrelationID,
+		Phase:              phase,
+		TurnKind:           investigationDecisionTurnTerminal,
+		TurnID:             fmt.Sprintf("%s:exhausted", phase),
+		Model:              llmCtx.ModelName,
+		Tokens:             llmCtx.Tokens,
+		Result:             result,
+		FailureClass:       "turn_budget_exhausted",
+		ContinuationReason: "turn_budget_exhausted",
+	})
+	return exhausted, nil
 }
 
 // loopTurnState carries the mutable state that persists across turns of
@@ -63,6 +77,130 @@ type loopTurnState struct {
 	loopStart         time.Time
 	truncationRetried bool
 	maxTokens         int
+}
+
+type loopDecisionEmission struct {
+	Phase              katypes.Phase
+	LLMContext         LLMInvocationContext
+	Turn               int
+	TurnKind           string
+	TurnIDSuffix       string
+	Result             LoopResult
+	FailureClass       string
+	ContinuationReason string
+	RetryAttempt       int
+}
+
+func (inv *Investigator) emitLoopDecision(ctx context.Context, p loopDecisionEmission) {
+	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
+		CorrelationID:      p.LLMContext.CorrelationID,
+		Phase:              p.Phase,
+		TurnKind:           p.TurnKind,
+		TurnID:             fmt.Sprintf("%s:turn:%d%s", p.Phase, p.Turn, p.TurnIDSuffix),
+		Model:              p.LLMContext.ModelName,
+		Tokens:             p.LLMContext.Tokens,
+		Result:             loopDecisionSnapshot(p.Result, p.Phase),
+		FailureClass:       p.FailureClass,
+		ContinuationReason: p.ContinuationReason,
+		RetryAttempt:       p.RetryAttempt,
+	})
+}
+
+type loopResponseParams struct {
+	State         *loopTurnState
+	Messages      []llm.Message
+	Phase         katypes.Phase
+	LLMContext    LLMInvocationContext
+	Turn          int
+	Response      llm.ChatResponse
+	CorrelationID string
+}
+
+func (inv *Investigator) processLoopResponse(ctx context.Context, p loopResponseParams) (LoopResult, []llm.Message, bool, error) {
+	if len(p.Response.ToolCalls) > 0 {
+		return inv.processToolTurn(ctx, p)
+	}
+	if p.Response.FinishReason == llm.FinishReasonLength {
+		return inv.processTruncatedTurn(ctx, p)
+	}
+	inv.emitLoopDecision(ctx, loopDecisionEmission{
+		Phase:              p.Phase,
+		LLMContext:         p.LLMContext,
+		Turn:               p.Turn,
+		TurnKind:           investigationDecisionTurnTerminal,
+		TurnIDSuffix:       ":text",
+		ContinuationReason: "text_response",
+	})
+	return &TextResult{Content: p.Response.Message.Content, Reasoning: p.Response.Message.Reasoning, Messages: p.Messages}, p.Messages, true, nil
+}
+
+func (inv *Investigator) processToolTurn(ctx context.Context, p loopResponseParams) (LoopResult, []llm.Message, bool, error) {
+	toolMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, p.Messages, p.Response, p.Turn, string(p.Phase), p.CorrelationID)
+	if sentinel != nil {
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              p.Phase,
+			LLMContext:         p.LLMContext,
+			Turn:               p.Turn,
+			TurnKind:           investigationDecisionTurnTerminal,
+			TurnIDSuffix:       ":sentinel",
+			Result:             sentinel,
+			ContinuationReason: "sentinel_submit",
+		})
+		return sentinel, toolMessages, true, nil
+	}
+	if budgetExhausted {
+		exhausted := &ExhaustedResult{Reason: ReasonToolBudgetExhausted}
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              p.Phase,
+			LLMContext:         p.LLMContext,
+			Turn:               p.Turn,
+			TurnKind:           investigationDecisionTurnTerminal,
+			TurnIDSuffix:       ":tool_budget",
+			Result:             exhausted,
+			FailureClass:       ReasonToolBudgetExhausted,
+			ContinuationReason: "tool_budget_exhausted",
+		})
+		return exhausted, toolMessages, true, nil
+	}
+	inv.emitLoopDecision(ctx, loopDecisionEmission{
+		Phase:              p.Phase,
+		LLMContext:         p.LLMContext,
+		Turn:               p.Turn,
+		TurnKind:           investigationDecisionTurnTool,
+		ContinuationReason: "tool_turn_complete",
+	})
+	return nil, toolMessages, false, nil
+}
+
+func (inv *Investigator) processTruncatedTurn(ctx context.Context, p loopResponseParams) (LoopResult, []llm.Message, bool, error) {
+	if !p.State.truncationRetried {
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              p.Phase,
+			LLMContext:         p.LLMContext,
+			Turn:               p.Turn,
+			TurnKind:           investigationDecisionTurnTool,
+			TurnIDSuffix:       ":truncation",
+			ContinuationReason: "response_truncated_retry",
+			RetryAttempt:       1,
+		})
+		return nil, inv.handleTruncation(ctx, p.State, p.Messages, p.Response, p.Phase, p.CorrelationID), false, nil
+	}
+
+	// #1614: the escalated retry is also truncated. Returning it as text would
+	// silently ship a partial answer downstream, so classify it as exhausted.
+	exhausted := &ExhaustedResult{Reason: "output truncated after retry"}
+	inv.emitLoopDecision(ctx, loopDecisionEmission{
+		Phase:              p.Phase,
+		LLMContext:         p.LLMContext,
+		Turn:               p.Turn,
+		TurnKind:           investigationDecisionTurnTerminal,
+		TurnIDSuffix:       ":truncated",
+		Result:             exhausted,
+		FailureClass:       "output_truncated",
+		ContinuationReason: "output_truncated_after_retry",
+		RetryAttempt:       1,
+	})
+	return exhausted, p.Messages, true, nil
 }
 
 // runLoopTurn executes a single turn of the investigation LLM loop: the
@@ -77,6 +215,15 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 
 	if ctx.Err() != nil {
 		emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              phase,
+			LLMContext:         llmCtx,
+			Turn:               turn,
+			TurnKind:           investigationDecisionTurnTerminal,
+			TurnIDSuffix:       ":cancelled",
+			Result:             &CancelledResult{Turn: turn, Phase: string(phase)},
+			ContinuationReason: "context_cancelled",
+		})
 		// nolint:nilerr // intentional: cancellation is a documented normal
 		// outcome for this function (see doc comment above), not a failure
 		// -- ctx.Err() is converted into a typed cancelled result, not
@@ -88,9 +235,28 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 
 	resp, cancelled, callErr := inv.doLLMCall(ctx, state, messages, phase, llmCtx, turn, toolDefs)
 	if callErr != nil {
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              phase,
+			LLMContext:         llmCtx,
+			Turn:               turn,
+			TurnKind:           investigationDecisionTurnTerminal,
+			TurnIDSuffix:       ":failure",
+			Result:             &ExhaustedResult{Reason: "llm_call_failed"},
+			FailureClass:       "llm_call_failed",
+			ContinuationReason: "llm_call_failed",
+		})
 		return nil, messages, true, callErr
 	}
 	if cancelled != nil {
+		inv.emitLoopDecision(ctx, loopDecisionEmission{
+			Phase:              phase,
+			LLMContext:         llmCtx,
+			Turn:               turn,
+			TurnKind:           investigationDecisionTurnTerminal,
+			TurnIDSuffix:       ":cancelled",
+			Result:             cancelled,
+			ContinuationReason: "context_cancelled",
+		})
 		return cancelled, messages, true, nil
 	}
 
@@ -121,31 +287,39 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 	// the 200-char preview above) so the dedup guard compares the full text.
 	emitReasoningContentEvent(ctx, resp.Message.Reasoning, resp.Message.Content, turn, string(phase))
 
-	if len(resp.ToolCalls) > 0 {
-		toolMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)
-		if sentinel != nil {
-			return sentinel, toolMessages, true, nil
-		}
-		if budgetExhausted {
-			return &ExhaustedResult{Reason: ReasonToolBudgetExhausted}, toolMessages, true, nil
-		}
-		return nil, toolMessages, false, nil
-	}
+	return inv.processLoopResponse(ctx, loopResponseParams{
+		State:         state,
+		Messages:      messages,
+		Phase:         phase,
+		LLMContext:    llmCtx,
+		Turn:          turn,
+		Response:      resp,
+		CorrelationID: correlationID,
+	})
+}
 
-	if resp.FinishReason == llm.FinishReasonLength {
-		if !state.truncationRetried {
-			return nil, inv.handleTruncation(ctx, state, messages, resp, phase, correlationID), false, nil
+// loopDecisionSnapshot projects a loop-level terminal state into the bounded
+// typed contract without retaining the loop's raw reason or response content.
+func loopDecisionSnapshot(result LoopResult, phase katypes.Phase) *katypes.InvestigationResult {
+	snapshot := &katypes.InvestigationResult{}
+	switch result.(type) {
+	case *CancelledResult:
+		snapshot.Cancelled = true
+		snapshot.CancelledPhase = string(phase)
+		snapshot.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
+	case *SubmitNoWorkflowResult:
+		markWorkflowDiscoveryNoMatch(snapshot)
+	case *ExhaustedResult:
+		if phase == katypes.PhaseWorkflowDiscovery {
+			markWorkflowDiscoveryFailed(snapshot)
+		} else {
+			markRCAIncomplete(snapshot)
 		}
-		// #1614: the escalated retry is ALSO truncated. The one-shot guard
-		// above means we will never retry again, so returning the
-		// still-truncated content as a TextResult would silently ship a
-		// partial/garbage answer downstream as if it were complete.
-		// Classify as exhausted instead so every runLLMLoop caller's
-		// existing *ExhaustedResult handling flags it for human review.
-		return &ExhaustedResult{Reason: "output truncated after retry"}, messages, true, nil
 	}
-
-	return &TextResult{Content: resp.Message.Content, Reasoning: resp.Message.Reasoning, Messages: messages}, messages, true, nil
+	if phase == katypes.PhaseWorkflowDiscovery && snapshot.WorkflowDiscoveryStatus == "" {
+		snapshot.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusStarted
+	}
+	return snapshot
 }
 
 // doLLMCall builds the per-turn chat request (using state.maxTokens for any
@@ -634,5 +808,15 @@ func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katy
 			event.Data["accumulated_messages"] = s
 		}
 	}
-	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger) //nolint:contextcheck // audit.StoreBestEffort is intentionally fire-and-forget so a cancelled investigation context cannot drop the event
+	auditCtx := context.WithoutCancel(ctx)
+	audit.StoreBestEffort(auditCtx, inv.auditStore, event, inv.logger) // audit.StoreBestEffort is intentionally detached so cancellation cannot drop the event
+	inv.emitInvestigationDecision(auditCtx, investigationDecisionParams{
+		CorrelationID:      correlationID,
+		SessionID:          session.SessionIDFromContext(ctx),
+		Phase:              katypes.Phase(result.CancelledPhase),
+		TurnKind:           investigationDecisionTurnTerminal,
+		TurnID:             "investigation:cancelled",
+		Result:             result,
+		ContinuationReason: "investigation_cancelled",
+	})
 }

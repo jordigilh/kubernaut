@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 const maxSelfCorrectionAttempts = 3
@@ -643,6 +644,10 @@ func markRCAContinuationCancelled(result *katypes.InvestigationResult, messages 
 	}
 	result.Cancelled = true
 	result.CancelledPhase = string(katypes.PhaseRCA)
+	result.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
+	if result.WorkflowDiscoveryStatus == "" {
+		result.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
+	}
 	result.AccumulatedMessages = messagesToAuditFormat(messages)
 	if budget != nil {
 		result.CancelledAtTurn = budget.used
@@ -686,7 +691,7 @@ func (inv *Investigator) runRCAHistoryReviewTurn(ctx context.Context, p rcaHisto
 			return markRCAContinuationCancelled(result, messages, p.LLMContext.rcaBudget), messages, true, nil
 		}
 		result.HumanReviewNeeded = true
-		result.HumanReviewReason = "llm_parsing_error"
+		result.HumanReviewReason = humanReviewReasonLLMParsingError
 		result.Warnings = append(result.Warnings, "history-aware RCA response could not be parsed after retry")
 		//nolint:nilerr // malformed continuation is an existing review outcome
 		return result, messages, true, nil
@@ -752,6 +757,7 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 			// outcome, not RCA incompleteness. Stop before an ungrounded
 			// continuation and let the downstream evidence mapper route it as
 			// an API/evidence failure instead of WorkflowNotFound.
+			markHistoryEnrichmentUnavailable(result, currentEnrichment)
 			result.HumanReviewNeeded = false
 			result.HumanReviewReason = ""
 			result.Warnings = append(result.Warnings, "target-scoped remediation history is unavailable; RCA requires operator review")
@@ -803,6 +809,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// per-investigation AnomalyDetector (not the shared config template) is
 	// the one reset here.
 	correlationID := signal.RemediationID
+	// Preserve one logical remediation correlation through every deep enrichment
+	// and audit call, including target-shift re-enrichment and retry paths.
+	ctx = audit.WithCorrelationID(ctx, correlationID)
 	inv.anomalyDetectorFor(correlationID).Reset()
 	// #2387 (BR-KA-OBSERVABILITY-001): start call-level accounting fresh for
 	// this investigation. Reset once here — never between phases or legs —
@@ -851,6 +860,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	})
 	if err != nil {
 		return nil, fmt.Errorf("history-aware RCA continuation: %w", err)
+	}
+	applyEnrichmentHistoryStatus(rcaResult, enrichData)
+	if rcaResult.WorkflowDiscoveryStatus == "" {
+		rcaResult.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
 	}
 	alignment.NotifyRCAComplete(ctx, rcaMessages)
 
@@ -902,14 +915,34 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 		SignalKind: p.SignalKind, SignalName: p.SignalName, SignalNS: p.SignalNS, SignalAPIVersion: p.Signal.ResourceAPIVersion,
 	})
 	if hardFailed {
+		historyUnavailable := p.RCAResult.HistoryStatus == sharedtypes.HistoryStatusTransportUnavailable ||
+			p.RCAResult.HistoryStatus == sharedtypes.HistoryStatusSchemaError
+		markDiscoverySkippedDueToFailure(p.RCAResult, p.RCAResult.HistoryStatus,
+			historyUnavailable && p.RCAResult.HumanReviewReason == katypes.HumanReviewReasonRCAIncomplete)
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
 	}
 	if enrichData != nil && enrichData.HistoryUnavailable {
 		// Keep the RCA target identity, but do not run workflow selection with
 		// unavailable repeat evidence. The typed source status is merged by
 		// Enrich and attached to the terminal result by Investigate.
+		markHistoryEnrichmentUnavailable(p.RCAResult, enrichData)
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
 	}
+	if enrichData != nil && isHistoryUnavailableStatus(enrichData.HistoryStatus) {
+		markHistoryEnrichmentUnavailable(p.RCAResult, enrichData)
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
+	}
+	markWorkflowDiscoveryStarted(p.RCAResult)
+	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
+		CorrelationID:      p.CorrelationID,
+		Phase:              katypes.PhaseWorkflowDiscovery,
+		TurnKind:           investigationDecisionTurnState,
+		TurnID:             "workflow_discovery:started",
+		Model:              "",
+		Result:             p.RCAResult,
+		ContinuationReason: "workflow_discovery_started",
+		RetryAttempt:       0,
+	})
 	promptEnrichment := toPromptEnrichment(enrichData)
 	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, p.Signal, p.RCAResult, enrichData, p.CorrelationID)
 
@@ -929,9 +962,11 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
+	applyWorkflowDiscoveryTypedStatus(workflowResult, p.RCAResult, enrichData)
 
 	if workflowResult.Cancelled {
 		applySignalSeverity(workflowResult, p.Signal)
+		workflowResult.TerminalOutcome = sharedtypes.TerminalOutcomeCancelled
 		// #2387: see the RCA-cancelled path above — partial counts apply here too.
 		inv.applyMetricsFromScope(workflowResult, p.CorrelationID)
 		inv.setTokenUsageFromScope(workflowResult, p.CorrelationID)
@@ -999,6 +1034,21 @@ func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *kat
 // not-actionable, and re-enrichment hard-fail branches. Callers set any
 // branch-specific fields on rcaResult before invoking this helper.
 func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+	applyEnrichmentHistoryStatus(rcaResult, enrichData)
+	if rcaResult.WorkflowDiscoveryStatus == "" {
+		rcaResult.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
+	}
+	historyEnrichmentUnavailable := isHistoryUnavailableStatus(rcaResult.HistoryStatus) &&
+		(enrichData != nil && (enrichData.HistoryUnavailable || isHistoryUnavailableStatus(enrichData.HistoryStatus)))
+	// Reclassify after enrichment is applied so a late #2518/history status can
+	// override a provisional RCA-incomplete value, while valid typed outcomes
+	// remain authoritative when no higher-priority unavailable state exists.
+	rcaResult.TerminalOutcome = ClassifyTerminalOutcome(OutcomeClassificationInput{
+		Result:                       rcaResult,
+		HistoryStatus:                rcaResult.HistoryStatus,
+		WorkflowDiscoveryStatus:      rcaResult.WorkflowDiscoveryStatus,
+		HistoryEnrichmentUnavailable: historyEnrichmentUnavailable,
+	})
 	applySignalSeverity(rcaResult, signal)
 	attachDetectedLabels(rcaResult, enrichData)
 	InjectRemediationTarget(rcaResult, signal, enrichData)
@@ -1095,8 +1145,14 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 	// allLabelDetectionsFailed() fell through to keep initial labels.
 	if reEnriched != nil && reEnriched.HardFail {
 		inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
-		p.RCAResult.HumanReviewNeeded = true
-		p.RCAResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+		if isHistoryUnavailableStatus(reEnriched.HistoryStatus) || reEnriched.HistoryUnavailable {
+			markHistoryEnrichmentUnavailable(p.RCAResult, reEnriched)
+		} else {
+			applyEnrichmentHistoryStatus(p.RCAResult, reEnriched)
+			p.RCAResult.HumanReviewNeeded = true
+			p.RCAResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+			markDiscoverySkippedDueToFailure(p.RCAResult, p.RCAResult.HistoryStatus, false)
+		}
 		return enrichData, true
 	}
 
@@ -1182,6 +1238,16 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
+	if workflowResult.HistoryStatus == "" {
+		workflowResult.HistoryStatus = rcaResult.HistoryStatus
+	}
+	if workflowResult.WorkflowDiscoveryStatus == "" {
+		workflowResult.WorkflowDiscoveryStatus = rcaResult.WorkflowDiscoveryStatus
+	}
+	if !workflowResult.TerminalOutcome.IsValid() && rcaResult.TerminalOutcome.IsValid() &&
+		rcaResult.TerminalOutcome != sharedtypes.TerminalOutcomeRCAIncomplete {
+		workflowResult.TerminalOutcome = rcaResult.TerminalOutcome
+	}
 	if workflowResult.SignalName == "" && rcaResult.SignalName != "" {
 		workflowResult.SignalName = rcaResult.SignalName
 	}
@@ -1239,7 +1305,7 @@ func applySignalSeverity(result *katypes.InvestigationResult, signal katypes.Sig
 	// An exhausted RCA parse is not an RCA result. Do not let the trusted
 	// signal severity make an unparsed response look like a genuine finding.
 	if result != nil && result.HumanReviewNeeded &&
-		result.HumanReviewReason == "llm_parsing_error" && result.RCASummary == "" {
+		result.HumanReviewReason == humanReviewReasonLLMParsingError && result.RCASummary == "" {
 		return
 	}
 	result.Severity = signal.Severity
@@ -1271,9 +1337,13 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, target enrichmen
 	if inv.enricher == nil {
 		return nil
 	}
+	correlationID := incidentID
+	if value, ok := audit.CorrelationIDFromContext(ctx); ok && value != "" {
+		correlationID = value
+	}
 	result, err := inv.enricher.Enrich(ctx, enrichment.EnrichRequest{
 		Kind: target.Kind, Name: target.Name, Namespace: target.Namespace, APIVersion: target.APIVersion,
-		ClusterID: clusterID, IncidentID: incidentID,
+		ClusterID: clusterID, IncidentID: incidentID, CorrelationID: correlationID,
 	})
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
