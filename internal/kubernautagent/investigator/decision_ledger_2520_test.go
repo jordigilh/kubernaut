@@ -124,4 +124,21 @@ var _ = Describe("Investigation decision ledger transitions — #2520", func() {
 		Expect(decisionLoopPrefix(katypes.PhaseWorkflowDiscovery, "workflow_self_correction:1")).NotTo(Equal(
 			decisionLoopPrefix(katypes.PhaseWorkflowDiscovery, "workflow_self_correction:2")))
 	})
+
+	It("UT-KA-2520-008: records cancelled workflow parse retries as discovery-started", func() {
+		store := &decisionLedgerAuditStore{}
+		inv := &Investigator{auditStore: store, logger: logr.Discard()}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{
+			Phase:         katypes.PhaseWorkflowDiscovery,
+			CorrelationID: "rr-2520-008",
+			Attempt:       1,
+			Cancelled:     true,
+		})
+
+		Expect(store.events).To(HaveLen(1))
+		Expect(store.events[0].Data["workflow_discovery_status"]).To(Equal(string(sharedtypes.WorkflowDiscoveryStatusStarted)))
+	})
 })

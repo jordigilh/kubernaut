@@ -111,11 +111,15 @@ func (inv *Investigator) emitParseRetryDecision(ctx context.Context, p parseRetr
 	if p.Cancelled {
 		continuationReason = "parse_retry_cancelled"
 		failureClass = "cancelled"
+		discoveryStatus := sharedtypes.WorkflowDiscoveryStatusNotStarted
+		if p.Phase == katypes.PhaseWorkflowDiscovery {
+			discoveryStatus = sharedtypes.WorkflowDiscoveryStatusStarted
+		}
 		result = &katypes.InvestigationResult{
 			Cancelled:               true,
 			CancelledPhase:          string(p.Phase),
 			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
-			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusNotStarted,
+			WorkflowDiscoveryStatus: discoveryStatus,
 		}
 	}
 	auditCtx := ctx
