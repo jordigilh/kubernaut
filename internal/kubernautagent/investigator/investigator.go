@@ -785,6 +785,24 @@ func (inv *Investigator) continueRCAWithHistory(ctx context.Context, p rcaHistor
 	}
 }
 
+// initializeInvestigationState establishes the per-remediation correlation and
+// resets the call-scoped accounting used by all investigation phases.
+func (inv *Investigator) initializeInvestigationState(ctx context.Context, correlationID string) context.Context {
+	// Preserve one logical remediation correlation through every deep enrichment
+	// and audit call, including target-shift re-enrichment and retry paths.
+	ctx = audit.WithCorrelationID(ctx, correlationID)
+	// #1892: reset the per-investigation AnomalyDetector, not the shared config
+	// template.
+	inv.anomalyDetectorFor(correlationID).Reset()
+	// #2387 (BR-KA-OBSERVABILITY-001): reset once here — never between phases or
+	// legs — so every leg of one remediation request accumulates into cumulative
+	// per-RR totals (turns, tools, and tokens alike).
+	inv.resetMetrics(correlationID)
+	inv.resetTokenScope(correlationID)
+	inv.resetEvidence(correlationID)
+	return ctx
+}
+
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (result *katypes.InvestigationResult, retErr error) {
 	evidenceScope := katypes.NewEvidenceStatusScope()
 	ctx = katypes.WithEvidenceStatusScope(ctx, evidenceScope)
@@ -805,21 +823,8 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	defer inv.startDiagSummary(ctx)()
 
-	// #1892: correlationID must be resolved before the first Reset() so the
-	// per-investigation AnomalyDetector (not the shared config template) is
-	// the one reset here.
 	correlationID := signal.RemediationID
-	// Preserve one logical remediation correlation through every deep enrichment
-	// and audit call, including target-shift re-enrichment and retry paths.
-	ctx = audit.WithCorrelationID(ctx, correlationID)
-	inv.anomalyDetectorFor(correlationID).Reset()
-	// #2387 (BR-KA-OBSERVABILITY-001): start call-level accounting fresh for
-	// this investigation. Reset once here — never between phases or legs —
-	// so every leg of one remediation request accumulates into cumulative
-	// per-RR totals (turns, tools, and tokens alike).
-	inv.resetMetrics(correlationID)
-	inv.resetTokenScope(correlationID)
-	inv.resetEvidence(correlationID)
+	ctx = inv.initializeInvestigationState(ctx, correlationID)
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
 	// model name, and runtime params. Subsequent hot-reload swaps do not
