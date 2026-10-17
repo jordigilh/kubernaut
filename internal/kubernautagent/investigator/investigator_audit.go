@@ -35,7 +35,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName string) {
 	completeEvent := audit.NewEvent(audit.EventTypeResponseComplete, correlationID)
 	completeEvent.EventAction = audit.ActionResponseSent
 	completeEvent.EventOutcome = audit.OutcomeSuccess
@@ -49,7 +49,7 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 		Phase:              terminalDecisionPhase(result),
 		TurnKind:           investigationDecisionTurnTerminal,
 		TurnID:             "investigation:complete",
-		Model:              inv.modelName,
+		Model:              firstNonEmpty(modelName, inv.modelName),
 		Tokens:             tokens,
 		Result:             result,
 		ContinuationReason: "investigation_complete",
@@ -61,12 +61,15 @@ func terminalDecisionPhase(result *katypes.InvestigationResult) katypes.Phase {
 		return katypes.PhaseWorkflowDiscovery
 	}
 	if result != nil && result.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusNotStarted && result.WorkflowDiscoveryStatus != "" {
+		if result.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure {
+			return katypes.PhaseRCA
+		}
 		return katypes.PhaseWorkflowDiscovery
 	}
 	return katypes.PhaseRCA
 }
 
-func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID, modelName string) {
 	ev := audit.NewEvent(audit.EventTypeRCAComplete, correlationID)
 	ev.EventAction = audit.ActionLLMResponse
 	ev.EventOutcome = audit.OutcomeSuccess
@@ -80,10 +83,55 @@ func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.In
 		Phase:              katypes.PhaseRCA,
 		TurnKind:           investigationDecisionTurnState,
 		TurnID:             "rca:complete",
-		Model:              inv.modelName,
+		Model:              firstNonEmpty(modelName, inv.modelName),
 		Tokens:             tokens,
 		Result:             result,
 		ContinuationReason: "rca_complete",
+	})
+}
+
+type parseRetryDecisionParams struct {
+	Phase         katypes.Phase
+	CorrelationID string
+	ModelName     string
+	Attempt       int
+	Result        *katypes.InvestigationResult
+	Succeeded     bool
+	Cancelled     bool
+}
+
+func (inv *Investigator) emitParseRetryDecision(ctx context.Context, p parseRetryDecisionParams) {
+	continuationReason := "parse_retry_failed"
+	failureClass := "validation_failed"
+	if p.Succeeded {
+		continuationReason = "parse_retry_succeeded"
+		failureClass = ""
+	}
+	result := p.Result
+	if p.Cancelled {
+		continuationReason = "parse_retry_cancelled"
+		failureClass = "cancelled"
+		result = &katypes.InvestigationResult{
+			Cancelled:               true,
+			CancelledPhase:          string(p.Phase),
+			TerminalOutcome:         sharedtypes.TerminalOutcomeCancelled,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusNotStarted,
+		}
+	}
+	auditCtx := ctx
+	if p.Cancelled {
+		auditCtx = context.WithoutCancel(ctx)
+	}
+	inv.emitInvestigationDecision(auditCtx, investigationDecisionParams{
+		CorrelationID:      p.CorrelationID,
+		Phase:              p.Phase,
+		TurnKind:           investigationDecisionTurnState,
+		TurnID:             fmt.Sprintf("%s:parse_retry:%d", p.Phase, p.Attempt),
+		Model:              p.ModelName,
+		Result:             result,
+		ContinuationReason: continuationReason,
+		FailureClass:       failureClass,
+		RetryAttempt:       p.Attempt,
 	})
 }
 
@@ -130,12 +178,13 @@ func (inv *Investigator) emitInvestigationDecision(ctx context.Context, p invest
 	if turnID == "" {
 		turnID = string(p.Phase) + ":state"
 	}
-	eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s:%s:%s", correlationID, p.Phase, p.TurnKind, turnID))).String()
+	eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s:%s:%s", correlationID, p.Phase, p.TurnKind, turnID)))
 	event := audit.NewEvent(audit.EventTypeInvestigationDecision, correlationID,
 		audit.WithSessionID(firstNonEmpty(p.SessionID, session.SessionIDFromContext(ctx))))
+	event.EventID = eventID
 	event.EventAction = audit.ActionInvestigationDecision
 	event.EventOutcome = decisionLedgerEventOutcome(p.TurnKind, snapshot.TerminalOutcome)
-	populateDecisionEvent(event, p, snapshot, eventID, turnID)
+	populateDecisionEvent(event, p, snapshot, eventID.String(), turnID)
 	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
 }
 
@@ -238,6 +287,9 @@ func populateDecisionEvent(event *audit.AuditEvent, p investigationDecisionParam
 
 func decisionFailureClass(explicit string, outcome sharedtypes.TerminalOutcome) string {
 	if explicit != "" {
+		if explicit == ReasonToolBudgetExhausted {
+			return "tool_budget_exhausted"
+		}
 		return explicit
 	}
 	switch outcome {

@@ -24,13 +24,15 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+const decisionLedgerTestTurnKind = "state_transition"
+
 var _ = Describe("Investigation decision ledger audit payload — #2520", func() {
 	It("UT-KA-2520-001: registers the typed decision event in the audit payload registry", func() {
 		event := NewEvent(EventTypeInvestigationDecision, "rr-1")
 		event.EventAction = "investigation_decision"
 		event.EventOutcome = "success"
 		event.Data["phase"] = "rca"
-		event.Data["turn_kind"] = "state_transition"
+		event.Data["turn_kind"] = decisionLedgerTestTurnKind
 		event.Data["terminal_outcome"] = "evidence_transport_unavailable"
 		event.Data["workflow_discovery_status"] = "skipped_due_to_failure"
 
@@ -65,7 +67,7 @@ var _ = Describe("Investigation decision ledger audit payload — #2520", func()
 
 		boundedEvent := NewEvent(EventTypeInvestigationDecision, "rr-1")
 		boundedEvent.Data["phase"] = decisionPhaseWorkflowDiscovery
-		boundedEvent.Data["turn_kind"] = "state_transition"
+		boundedEvent.Data["turn_kind"] = decisionLedgerTestTurnKind
 		boundedEvent.Data["turn_id"] = strings.Repeat("t", decisionLedgerStringMaxLen+32)
 		boundedEvent.Data["model"] = strings.Repeat("m", decisionLedgerModelMaxLen+32)
 		boundedEvent.Data["terminal_outcome"] = "workflow_discovery_failed"
@@ -80,16 +82,42 @@ var _ = Describe("Investigation decision ledger audit payload — #2520", func()
 		boundedRaw, boundedErr := json.Marshal(boundedPayload)
 		Expect(boundedErr).NotTo(HaveOccurred())
 		var encoded struct {
+			IncidentID      string   `json:"incident_id"`
+			SessionID       string   `json:"session_id"`
 			Model           string   `json:"model"`
 			TurnID          string   `json:"turn_id"`
 			RelatedEventIDs []string `json:"related_event_ids"`
 		}
 		Expect(json.Unmarshal(boundedRaw, &encoded)).To(Succeed())
+		Expect(encoded.SessionID).To(BeEmpty())
 		Expect(encoded.Model).To(HaveLen(decisionLedgerModelMaxLen))
 		Expect(encoded.TurnID).To(HaveLen(decisionLedgerStringMaxLen))
 		Expect(encoded.RelatedEventIDs).To(HaveLen(decisionLedgerMaxRelated))
 		for _, id := range encoded.RelatedEventIDs {
 			Expect(id).To(HaveLen(decisionLedgerStringMaxLen))
 		}
+	})
+
+	It("UT-KA-2520-004: preserves the 253-character envelope correlation and session IDs", func() {
+		correlationID := strings.Repeat("r", decisionLedgerModelMaxLen)
+		sessionID := strings.Repeat("s", decisionLedgerModelMaxLen)
+		event := NewEvent(EventTypeInvestigationDecision, correlationID)
+		event.SessionID = sessionID
+		event.Data["phase"] = decisionPhaseRCA
+		event.Data["turn_kind"] = decisionLedgerTestTurnKind
+		event.Data["terminal_outcome"] = "unknown"
+		event.Data["workflow_discovery_status"] = "not_started"
+
+		payload, ok := buildEventData(event)
+		Expect(ok).To(BeTrue())
+		raw, err := json.Marshal(payload)
+		Expect(err).NotTo(HaveOccurred())
+		var encoded struct {
+			IncidentID string `json:"incident_id"`
+			SessionID  string `json:"session_id"`
+		}
+		Expect(json.Unmarshal(raw, &encoded)).To(Succeed())
+		Expect(encoded.IncidentID).To(Equal(correlationID))
+		Expect(encoded.SessionID).To(Equal(sessionID))
 	})
 })

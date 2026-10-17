@@ -85,11 +85,43 @@ var _ = Describe("Investigation decision ledger transitions — #2520", func() {
 		for _, event := range store.events {
 			Expect(event.CorrelationID).To(Equal("rr-2520-003"))
 			Expect(event.Data["event_id"]).NotTo(BeEmpty())
+			Expect(event.EventID.String()).To(Equal(event.Data["event_id"]))
 		}
 		Expect(store.events[0].Data["terminal_outcome"]).To(Equal(string(sharedtypes.TerminalOutcomeUnknown)))
 		Expect(store.events[0].Data["workflow_discovery_status"]).To(Equal(string(sharedtypes.WorkflowDiscoveryStatusNotStarted)))
 		Expect(store.events[1].Data["workflow_discovery_status"]).To(Equal(string(sharedtypes.WorkflowDiscoveryStatusStarted)))
 		Expect(store.events[2].Data["terminal_outcome"]).To(Equal(string(sharedtypes.TerminalOutcomeNoMatchingWorkflows)))
 		Expect(store.events[2].EventOutcome).To(Equal(audit.OutcomeSuccess))
+	})
+
+	It("UT-KA-2520-004: keeps skipped discovery terminal events in the RCA phase", func() {
+		Expect(terminalDecisionPhase(&katypes.InvestigationResult{
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+		})).To(Equal(katypes.PhaseRCA))
+	})
+
+	It("UT-KA-2520-005: preserves problem-resolved and not-actionable discovery outcomes", func() {
+		resolved := &katypes.InvestigationResult{
+			InvestigationOutcome: katypes.InvestigationOutcomeProblemResolved,
+		}
+		applyWorkflowDiscoveryTypedStatus(resolved, nil, nil)
+		Expect(resolved.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch))
+		Expect(resolved.TerminalOutcome).To(Equal(sharedtypes.TerminalOutcomeProblemResolved))
+
+		actionable := false
+		notActionable := &katypes.InvestigationResult{IsActionable: &actionable}
+		applyWorkflowDiscoveryTypedStatus(notActionable, nil, nil)
+		Expect(notActionable.WorkflowDiscoveryStatus).To(Equal(sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch))
+		Expect(notActionable.TerminalOutcome).To(BeEmpty())
+	})
+
+	It("UT-KA-2520-006: normalizes the human-readable tool budget reason for the ledger wire value", func() {
+		Expect(decisionFailureClass(ReasonToolBudgetExhausted, sharedtypes.TerminalOutcomeUnknown)).To(Equal("tool_budget_exhausted"))
+	})
+
+	It("UT-KA-2520-007: separates workflow-loop attempt namespaces in turn IDs", func() {
+		Expect(decisionLoopPrefix(katypes.PhaseWorkflowDiscovery, "workflow_selection")).To(Equal("workflow_discovery:workflow_selection"))
+		Expect(decisionLoopPrefix(katypes.PhaseWorkflowDiscovery, "workflow_self_correction:1")).NotTo(Equal(
+			decisionLoopPrefix(katypes.PhaseWorkflowDiscovery, "workflow_self_correction:2")))
 	})
 })

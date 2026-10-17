@@ -100,6 +100,9 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
+	if llmCtx.decisionLoopID == "" {
+		llmCtx.decisionLoopID = "workflow_selection"
+	}
 
 	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
 	if err != nil {
@@ -399,7 +402,9 @@ func (inv *Investigator) runSelfCorrectionAttempt(ctx context.Context, r *katype
 	state.messages = append(state.messages, llm.Message{Role: "assistant", Content: state.content})
 	state.messages = append(state.messages, llm.Message{Role: "user", Content: correctionMsg})
 
-	corrLoopRes, corrErr := inv.runLLMLoop(ctx, state.messages, katypes.PhaseWorkflowDiscovery, llmCtx)
+	correctionContext := llmCtx
+	correctionContext.decisionLoopID = fmt.Sprintf("workflow_self_correction:%d", state.attempt)
+	corrLoopRes, corrErr := inv.runLLMLoop(ctx, state.messages, katypes.PhaseWorkflowDiscovery, correctionContext)
 	if corrErr != nil {
 		return nil, corrErr
 	}
@@ -478,6 +483,9 @@ func (inv *Investigator) finalizeSelfCorrection(ctx context.Context, corrected *
 	if corrected.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch && corrected.WorkflowDiscoveryStatus != sharedtypes.WorkflowDiscoveryStatusFailed {
 		if corrected.WorkflowID != "" && !corrected.HumanReviewNeeded {
 			markWorkflowDiscoverySelected(corrected)
+		} else if status, outcome, ok := classifyWorkflowDiscoveryNoWorkflow(corrected); ok {
+			corrected.WorkflowDiscoveryStatus = status
+			corrected.TerminalOutcome = outcome
 		} else {
 			markWorkflowDiscoveryFailed(corrected)
 		}
@@ -530,6 +538,7 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 
 	for attempt := 0; attempt < maxParseRetries; attempt++ {
 		if ctx.Err() != nil {
+			inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseWorkflowDiscovery, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Cancelled: true})
 			return nil, ""
 		}
 		inv.logger.Info("parse-level retry for workflow submit",
@@ -544,6 +553,10 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			correlationID: correlationID, modelName: modelName, client: client,
 			runtimeParams: runtimeParams, tokens: tokens,
 		})
+		inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseWorkflowDiscovery, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Result: result, Succeeded: ok, Cancelled: ctx.Err() != nil})
+		if ctx.Err() != nil {
+			return nil, ""
+		}
 		if ok {
 			return result, content
 		}

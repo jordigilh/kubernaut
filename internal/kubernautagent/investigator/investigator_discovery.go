@@ -67,6 +67,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	if err != nil {
 		return nil, err
 	}
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
 		"rca_target_kind", rcaResult.RemediationTarget.Kind,
@@ -95,7 +96,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	}
 	if enricherWired {
 		if rawEnrichData != nil && (rawEnrichData.HistoryUnavailable || isHistoryUnavailableStatus(rawEnrichData.HistoryStatus)) {
-			return inv.finalizeHistoryUnavailableDiscovery(ctx, rcaResult, signal, rawEnrichData, correlationID), nil
+			return inv.finalizeHistoryUnavailableDiscovery(ctx, rcaResult, signal, rawEnrichData, correlationID, modelName), nil
 		}
 		enrichData = toPromptEnrichment(rawEnrichData)
 	} else if enrichData != nil && enrichData.HistoryUnavailable {
@@ -114,8 +115,6 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// discovery tools forward labels to DS catalog queries, activating
 	// GitOps-aware scoring (parity with autonomous path).
 	inv.attachRCADetectedLabelsJSON(&signal, rawEnrichData, correlationID)
-
-	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
 	p1Ctx := BuildPhase1Context(rcaResult)
 	markWorkflowDiscoveryStarted(rcaResult)
@@ -178,11 +177,15 @@ func applyWorkflowDiscoveryTypedStatus(result, rcaResult *katypes.InvestigationR
 	if result.WorkflowDiscoveryStatus == "" {
 		if result.WorkflowID != "" {
 			markWorkflowDiscoverySelected(result)
+		} else if status, outcome, ok := classifyWorkflowDiscoveryNoWorkflow(result); ok {
+			result.WorkflowDiscoveryStatus = status
+			result.TerminalOutcome = outcome
 		} else {
 			markWorkflowDiscoveryFailed(result)
 		}
 	}
-	if result.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch {
+	if result.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch &&
+		result.TerminalOutcome == "" && (result.IsActionable == nil || *result.IsActionable) {
 		result.TerminalOutcome = sharedtypes.TerminalOutcomeNoMatchingWorkflows
 	}
 }
@@ -191,7 +194,7 @@ func applyWorkflowDiscoveryTypedStatus(result, rcaResult *katypes.InvestigationR
 // before workflow discovery when the required target-scoped history could not
 // be acquired. This is also used for an RCA target shift whose owner/label
 // enrichment succeeded but whose history source failed.
-func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context, result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, correlationID string) *katypes.InvestigationResult {
+func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context, result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, correlationID, modelName string) *katypes.InvestigationResult {
 	markHistoryEnrichmentUnavailable(result, enrichData)
 	applySignalSeverity(result, signal)
 	attachDetectedLabels(result, enrichData)
@@ -199,7 +202,7 @@ func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context
 	InjectTargetResourceParameters(result)
 	inv.applyMetricsFromScope(result, correlationID)
 	inv.setTokenUsageFromScope(result, correlationID)
-	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID)
+	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID, firstNonEmpty(modelName, inv.modelName))
 	return result
 }
 

@@ -179,6 +179,7 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 
 	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
 		if ctx.Err() != nil {
+			inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseRCA, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Cancelled: true})
 			return nil, nil
 		}
 		inv.logger.Info("parse-level retry for RCA submit",
@@ -193,6 +194,10 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			correlationID: correlationID, modelName: modelName, client: client,
 			runtimeParams: runtimeParams, tokens: tokens,
 		})
+		inv.emitParseRetryDecision(ctx, parseRetryDecisionParams{Phase: katypes.PhaseRCA, CorrelationID: correlationID, ModelName: modelName, Attempt: attempt + 1, Result: result, Succeeded: ok, Cancelled: ctx.Err() != nil})
+		if ctx.Err() != nil {
+			return nil, nil
+		}
 		if ok {
 			return result, retriedReasoning
 		}

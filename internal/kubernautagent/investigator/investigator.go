@@ -883,15 +883,15 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return rcaResult, nil
 	}
 
-	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
+	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID, rcaModelName)
 
-	if early, done := inv.checkRCAEarlyReturn(ctx, rcaResult, signal, enrichData, tokens, correlationID); done {
+	if early, done := inv.checkRCAEarlyReturn(ctx, rcaResult, signal, enrichData, tokens, correlationID, rcaModelName); done {
 		return early, nil
 	}
 
 	return inv.runWorkflowDiscoveryPhase(ctx, workflowDiscoveryPhaseParams{
 		Signal: signal, RCAResult: rcaResult, EnrichData: enrichData, EnrichmentCache: enrichmentCache,
-		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS, Tokens: tokens, CorrelationID: correlationID,
+		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS, Tokens: tokens, CorrelationID: correlationID, ModelName: rcaModelName,
 	})
 }
 
@@ -906,6 +906,7 @@ type workflowDiscoveryPhaseParams struct {
 	SignalKind, SignalName, SignalNS string
 	Tokens                           *TokenAccumulator
 	CorrelationID                    string
+	ModelName                        string
 }
 
 // runWorkflowDiscoveryPhase runs Phase 3 (workflow discovery/selection) of
@@ -924,18 +925,18 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 			p.RCAResult.HistoryStatus == sharedtypes.HistoryStatusSchemaError
 		markDiscoverySkippedDueToFailure(p.RCAResult, p.RCAResult.HistoryStatus,
 			historyUnavailable && p.RCAResult.HumanReviewReason == katypes.HumanReviewReasonRCAIncomplete)
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID, p.ModelName), nil
 	}
 	if enrichData != nil && enrichData.HistoryUnavailable {
 		// Keep the RCA target identity, but do not run workflow selection with
 		// unavailable repeat evidence. The typed source status is merged by
 		// Enrich and attached to the terminal result by Investigate.
 		markHistoryEnrichmentUnavailable(p.RCAResult, enrichData)
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID, p.ModelName), nil
 	}
 	if enrichData != nil && isHistoryUnavailableStatus(enrichData.HistoryStatus) {
 		markHistoryEnrichmentUnavailable(p.RCAResult, enrichData)
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID, p.ModelName), nil
 	}
 	markWorkflowDiscoveryStarted(p.RCAResult)
 	inv.emitInvestigationDecision(ctx, investigationDecisionParams{
@@ -982,6 +983,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
 		WorkflowResult: workflowResult, RCAResult: p.RCAResult, Signal: p.Signal, WorkflowSignal: workflowSignal,
 		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: p.Tokens, CorrelationID: p.CorrelationID,
+		ModelName: wfModelName,
 	}), nil
 }
 
@@ -1007,19 +1009,19 @@ func (inv *Investigator) startDiagSummary(ctx context.Context) func() {
 // short-circuit conditions after RCA completes. Returns done=true when
 // Investigate must return result immediately without running workflow
 // discovery.
-func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) (result *katypes.InvestigationResult, done bool) {
+func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID, modelName string) (result *katypes.InvestigationResult, done bool) {
 	if signal.Interactive || session.InteractiveUpgradeFromContext(ctx) {
 		rcaResult.InteractiveHold = true
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID, modelName), true
 	}
 	if rcaResult.HumanReviewNeeded {
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID, modelName), true
 	}
 	if enrichData != nil && enrichData.HistoryUnavailable {
 		// The source status is carried by the investigation evidence scope;
 		// do not turn an unavailable history backend into RCA-incomplete or
 		// allow workflow discovery to manufacture a no-workflow outcome.
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID, modelName), true
 	}
 	// Guard: only short-circuit not-actionable when no workflow was already
 	// identified by the RCA (defense-in-depth against LLM self-contradiction).
@@ -1027,7 +1029,7 @@ func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *kat
 		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
 			"investigation_outcome", rcaResult.InvestigationOutcome,
 			"correlation_id", correlationID)
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID, modelName), true
 	}
 	return nil, false
 }
@@ -1038,13 +1040,14 @@ func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *kat
 // early-return path in Investigate: the interactive-hold, human-review-needed,
 // not-actionable, and re-enrichment hard-fail branches. Callers set any
 // branch-specific fields on rcaResult before invoking this helper.
-func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID, modelName string) *katypes.InvestigationResult {
 	applyEnrichmentHistoryStatus(rcaResult, enrichData)
 	if rcaResult.WorkflowDiscoveryStatus == "" {
 		rcaResult.WorkflowDiscoveryStatus = sharedtypes.WorkflowDiscoveryStatusNotStarted
 	}
 	historyEnrichmentUnavailable := isHistoryUnavailableStatus(rcaResult.HistoryStatus) &&
-		(enrichData != nil && (enrichData.HistoryUnavailable || isHistoryUnavailableStatus(enrichData.HistoryStatus)))
+		(rcaResult.TerminalOutcome == sharedtypes.TerminalOutcomeHistoryEnrichmentUnavailable ||
+			(enrichData != nil && (enrichData.HistoryUnavailable || isHistoryUnavailableStatus(enrichData.HistoryStatus))))
 	// Reclassify after enrichment is applied so a late #2518/history status can
 	// override a provisional RCA-incomplete value, while valid typed outcomes
 	// remain authoritative when no higher-priority unavailable state exists.
@@ -1066,7 +1069,7 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	// counts, never costs) so completed investigations report tokens exactly
 	// like cancelled ones already do via TokenUsage.
 	inv.setTokenUsageFromScope(rcaResult, correlationID)
-	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID, modelName)
 	return rcaResult
 }
 
@@ -1231,6 +1234,7 @@ type mergeAndFinalizeWorkflowResultParams struct {
 	P1Ctx                     *prompt.Phase1Data
 	Tokens                    *TokenAccumulator
 	CorrelationID             string
+	ModelName                 string
 }
 
 // mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
@@ -1285,7 +1289,7 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	// the full-path result gets the same server-side injection.
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
-	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
+	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID, p.ModelName)
 	return workflowResult
 }
 
@@ -1402,6 +1406,7 @@ type LLMInvocationContext struct {
 	RuntimeParams     llm.RuntimeParams
 	WorkflowDiscovery *workflowDiscoveryAuditContext
 	RepeatSelection   *parser.RepeatSelectionContext
+	decisionLoopID    string
 	rcaBudget         *rcaLoopBudget
 }
 

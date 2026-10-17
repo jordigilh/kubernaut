@@ -60,7 +60,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		CorrelationID:      llmCtx.CorrelationID,
 		Phase:              phase,
 		TurnKind:           investigationDecisionTurnTerminal,
-		TurnID:             fmt.Sprintf("%s:exhausted", phase),
+		TurnID:             decisionLoopPrefix(phase, llmCtx.decisionLoopID) + ":exhausted",
 		Model:              llmCtx.ModelName,
 		Tokens:             llmCtx.Tokens,
 		Result:             result,
@@ -96,7 +96,7 @@ func (inv *Investigator) emitLoopDecision(ctx context.Context, p loopDecisionEmi
 		CorrelationID:      p.LLMContext.CorrelationID,
 		Phase:              p.Phase,
 		TurnKind:           p.TurnKind,
-		TurnID:             fmt.Sprintf("%s:turn:%d%s", p.Phase, p.Turn, p.TurnIDSuffix),
+		TurnID:             fmt.Sprintf("%s:turn:%d%s", decisionLoopPrefix(p.Phase, p.LLMContext.decisionLoopID), p.Turn, p.TurnIDSuffix),
 		Model:              p.LLMContext.ModelName,
 		Tokens:             p.LLMContext.Tokens,
 		Result:             loopDecisionSnapshot(p.Result, p.Phase),
@@ -104,6 +104,13 @@ func (inv *Investigator) emitLoopDecision(ctx context.Context, p loopDecisionEmi
 		ContinuationReason: p.ContinuationReason,
 		RetryAttempt:       p.RetryAttempt,
 	})
+}
+
+func decisionLoopPrefix(phase katypes.Phase, loopID string) string {
+	if loopID == "" {
+		return string(phase)
+	}
+	return string(phase) + ":" + loopID
 }
 
 type loopResponseParams struct {

@@ -246,6 +246,20 @@ func markWorkflowDiscoveryFailed(result *katypes.InvestigationResult) {
 	result.TerminalOutcome = sharedtypes.TerminalOutcomeWorkflowDiscoveryFailed
 }
 
+func classifyWorkflowDiscoveryNoWorkflow(result *katypes.InvestigationResult) (sharedtypes.WorkflowDiscoveryStatus, sharedtypes.TerminalOutcome, bool) {
+	if result == nil || result.HumanReviewNeeded {
+		return "", "", false
+	}
+	switch {
+	case result.InvestigationOutcome == katypes.InvestigationOutcomeProblemResolved:
+		return sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch, sharedtypes.TerminalOutcomeProblemResolved, true
+	case result.IsActionable != nil && !*result.IsActionable:
+		return sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch, "", true
+	default:
+		return "", "", false
+	}
+}
+
 // markRCAIncomplete records a terminal RCA failure without pretending that
 // workflow discovery ran. Enrichment status is deliberately left for the
 // caller to apply first so a later #2518 transport result can take precedence.

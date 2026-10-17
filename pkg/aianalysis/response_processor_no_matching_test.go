@@ -104,6 +104,26 @@ var _ = Describe("ResponseProcessor no_matching_workflows (#768, #769)", func() 
 		}
 	}
 
+	It("UT-AA-2520-003: does not bypass human review for an actionable=false result", func() {
+		actionable := false
+		analysis := createAnalysis()
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:              "inc-2520-003",
+			NeedsHumanReview:        true,
+			HumanReviewReason:       aianalysisv1.HumanReviewReasonRCAIncomplete,
+			IsActionable:            &actionable,
+			Warnings:                []string{"Alert not actionable"},
+			TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
+			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+		}
+
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue())
+		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal(aianalysisv1.HumanReviewReasonRCAIncomplete))
+	})
+
 	assertCondition := func(conditions []metav1.Condition, condType string, expectedStatus metav1.ConditionStatus, expectedReason string) {
 		cond := meta.FindStatusCondition(conditions, condType)
 		ExpectWithOffset(1, cond).ToNot(BeNil(), "Condition %s must be set", condType)

@@ -56,7 +56,20 @@ func (s *capacityRetrySlowInvestigationScenario) ConfigForContext(ctx *Detection
 		}
 	}
 	if workflowDiscovery {
-		cfg.ToolCallName = openai.ToolSubmitResultNoWorkflow
+		cfg.ToolCallName = ""
+		for _, tool := range ctx.AvailableTools {
+			switch tool {
+			case openai.ToolSubmitResultNoWorkflow:
+				cfg.ToolCallName = openai.ToolSubmitResultNoWorkflow
+			case openai.ToolSubmitResultWithWorkflow:
+				if cfg.ToolCallName == "" {
+					cfg.ToolCallName = openai.ToolSubmitResultWithWorkflow
+				}
+			}
+		}
+		if cfg.ToolCallName == "" {
+			cfg.ForceText = BoolPtr(true)
+		}
 		cfg.ToolCallArgs = nil
 	}
 	if rcaSubmitOnly {

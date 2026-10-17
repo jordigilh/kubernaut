@@ -175,7 +175,7 @@ func (p *ResponseProcessor) ProcessAgentSessionResult(ctx context.Context, analy
 	if explicitOperatorEscalationResult(res) {
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, res)
 	}
-	if explicitNotActionableResult(res) {
+	if !needsHumanReview && explicitNotActionableResult(res) {
 		return p.handleNotActionableFromIncident(ctx, analysis, res)
 	}
 
@@ -1064,18 +1064,19 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 
 	// BR-AI-050: Emit audit event for terminal failure
-	failureErr := fmt.Errorf("no workflow selected: no matching workflows found")
+	subReason := analysis.Status.SubReason
+	failureErr := fmt.Errorf("no workflow selected: %s", failureReason)
 	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
 	// Track failure metrics
-	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows).Inc()
-	p.metrics.RecordFailure("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows)
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", subReason).Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
 
-	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
+	aianalysis.SetInvestigationComplete(analysis, false, failureErr.Error())
 	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected for remediation")
-	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No matching workflows found")
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, fmt.Sprintf("No workflow resolved: %s", failureReason))
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }

@@ -41,8 +41,8 @@ func buildInvestigationDecisionPayload(event *AuditEvent) ogenclient.AuditEventR
 	payload := ogenclient.AIAgentInvestigationDecisionPayload{
 		EventType:               ogenclient.AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision,
 		EventID:                 safeLedgerString(dataString(event.Data, "event_id"), decisionLedgerStringMaxLen),
-		IncidentID:              safeLedgerString(event.CorrelationID, decisionLedgerStringMaxLen),
-		SessionID:               optionalLedgerString(event.SessionID, decisionLedgerStringMaxLen),
+		IncidentID:              safeLedgerString(event.CorrelationID, decisionLedgerModelMaxLen),
+		SessionID:               optionalLedgerString(event.SessionID, decisionLedgerModelMaxLen),
 		TurnID:                  optionalLedgerString(dataString(event.Data, "turn_id"), decisionLedgerStringMaxLen),
 		Phase:                   phase,
 		TurnKind:                turnKind,
@@ -100,7 +100,8 @@ func decisionOptionalString(key, value string) (string, bool) {
 			"investigation_cancelled": {}, "context_cancelled": {}, "sentinel_submit": {},
 			"tool_budget_exhausted": {}, "tool_turn_complete": {}, "response_truncated_retry": {},
 			"output_truncated_after_retry": {}, "text_response": {}, "llm_call_failed": {},
-			"turn_budget_exhausted": {},
+			"turn_budget_exhausted": {}, "parse_retry_failed": {}, "parse_retry_succeeded": {},
+			"parse_retry_cancelled": {},
 		}
 	case "human_review_reason":
 		allowed = map[string]struct{}{

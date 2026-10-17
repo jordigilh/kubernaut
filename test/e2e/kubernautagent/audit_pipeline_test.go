@@ -658,7 +658,12 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 					return false
 				}
 				enrichmentEvents = resp.Data
-				return len(enrichmentEvents) > 0
+				for _, event := range enrichmentEvents {
+					if event.EventType == "aiagent.enrichment.completed" {
+						return true
+					}
+				}
+				return false
 			}, 15*time.Second, 1*time.Second).Should(BeTrue(),
 				"At least one enrichment event with remediation correlation must be persisted")
 
