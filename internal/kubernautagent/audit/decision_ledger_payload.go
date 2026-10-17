@@ -23,6 +23,7 @@ const (
 	decisionLedgerModelMaxLen                   = 253
 	decisionLedgerMaxRelated                    = 32
 	decisionPhaseRCA                            = "rca"
+	decisionPhaseWorkflowDiscovery              = "workflow_discovery"
 	decisionOutcomeEvidenceTransportUnavailable = "evidence_transport_unavailable"
 )
 
@@ -163,7 +164,7 @@ func decisionPhase(value string) ogenclient.AIAgentInvestigationDecisionPayloadP
 	switch value {
 	case decisionPhaseRCA:
 		return ogenclient.AIAgentInvestigationDecisionPayloadPhaseRca
-	case "workflow_discovery":
+	case decisionPhaseWorkflowDiscovery:
 		return ogenclient.AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery
 	case "validation":
 		return ogenclient.AIAgentInvestigationDecisionPayloadPhaseValidation

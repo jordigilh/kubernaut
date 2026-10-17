@@ -64,7 +64,7 @@ var _ = Describe("Investigation decision ledger audit payload — #2520", func()
 		Expect(string(raw)).To(ContainSubstring("evidence_transport_unavailable"))
 
 		boundedEvent := NewEvent(EventTypeInvestigationDecision, "rr-1")
-		boundedEvent.Data["phase"] = "workflow_discovery"
+		boundedEvent.Data["phase"] = decisionPhaseWorkflowDiscovery
 		boundedEvent.Data["turn_kind"] = "state_transition"
 		boundedEvent.Data["turn_id"] = strings.Repeat("t", decisionLedgerStringMaxLen+32)
 		boundedEvent.Data["model"] = strings.Repeat("m", decisionLedgerModelMaxLen+32)
