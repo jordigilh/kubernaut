@@ -1,0 +1,16 @@
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  review_status: true
+  # Keep CodeRabbit advisory during the initial rollout; human CODEOWNER
+  # approval and the existing CI merge controls remain authoritative.
+  request_changes_workflow: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    # Limit automatic reviews to PRs targeting the default branch.
+    base_branches:
+      - "main"
