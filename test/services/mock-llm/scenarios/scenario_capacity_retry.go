@@ -37,8 +37,9 @@ func newCapacityRetrySlowInvestigationScenario() *capacityRetrySlowInvestigation
 }
 
 // ConfigForContext keeps the resource-context tool in the RCA phase only.
-// Workflow discovery has its own trusted catalog toolset and must receive a
-// text response instead of repeatedly attempting the RCA tool.
+// Workflow discovery submits the explicit no-workflow sentinel so the typed
+// outcome contract records completed_no_match rather than inferring failure
+// from an absent selected workflow.
 func (s *capacityRetrySlowInvestigationScenario) ConfigForContext(ctx *DetectionContext) MockScenarioConfig {
 	cfg := s.config
 	cfg.ForceText = BoolPtr(false)
@@ -55,7 +56,8 @@ func (s *capacityRetrySlowInvestigationScenario) ConfigForContext(ctx *Detection
 		}
 	}
 	if workflowDiscovery {
-		cfg.ForceText = BoolPtr(true)
+		cfg.ToolCallName = openai.ToolSubmitResultNoWorkflow
+		cfg.ToolCallArgs = nil
 	}
 	if rcaSubmitOnly {
 		// The response builder owns submit_result's structured RCA payload. A
