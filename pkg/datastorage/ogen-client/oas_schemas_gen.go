@@ -1294,7 +1294,7 @@ type AIAgentEnrichmentFailedPayload struct {
 	IncidentID string `json:"incident_id"`
 	// Failure reason from EnrichmentFailure (e.g., rca_incomplete).
 	Reason string `json:"reason"`
-	// Detailed failure context including retry information.
+	// Bounded source failure classes; never contains raw provider errors.
 	Detail string `json:"detail"`
 	// Kind of the resource that was being enriched when failure occurred.
 	AffectedResourceKind string `json:"affected_resource_kind"`
@@ -2510,6 +2510,621 @@ func (s *AIAgentInvestigationCancelledPayloadEventType) UnmarshalText(data []byt
 	switch AIAgentInvestigationCancelledPayloadEventType(data) {
 	case AIAgentInvestigationCancelledPayloadEventTypeAiagentInvestigationCancelled:
 		*s = AIAgentInvestigationCancelledPayloadEventTypeAiagentInvestigationCancelled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Bounded, redacted investigation decision checkpoint emitted by Kubernaut
+// Agent (DD-KA-2520-2521, BR-AUDIT-005). This payload intentionally
+// contains only typed state, counts, identifiers, and bounded allow-listed
+// metadata. Prompts, private reasoning, credentials, raw transport errors,
+// and unrestricted tool arguments/results are not part of this schema.
+// Ref: #/components/schemas/AIAgentInvestigationDecisionPayload
+type AIAgentInvestigationDecisionPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentInvestigationDecisionPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Logical remediation correlation ID.
+	IncidentID string `json:"incident_id"`
+	// Bounded investigation session identifier.
+	SessionID OptString `json:"session_id"`
+	// Deterministic turn/state identity for idempotent reconstruction.
+	TurnID                  OptString                                                  `json:"turn_id"`
+	Phase                   AIAgentInvestigationDecisionPayloadPhase                   `json:"phase"`
+	TurnKind                AIAgentInvestigationDecisionPayloadTurnKind                `json:"turn_kind"`
+	Model                   OptString                                                  `json:"model"`
+	PromptTokens            OptInt                                                     `json:"prompt_tokens"`
+	CompletionTokens        OptInt                                                     `json:"completion_tokens"`
+	TotalTokens             OptInt                                                     `json:"total_tokens"`
+	EvidenceStatus          OptString                                                  `json:"evidence_status"`
+	HistoryStatus           AIAgentInvestigationDecisionPayloadHistoryStatus           `json:"history_status"`
+	TargetStatus            OptString                                                  `json:"target_status"`
+	CausalMechanismStatus   OptString                                                  `json:"causal_mechanism_status"`
+	ContinuationReason      OptString                                                  `json:"continuation_reason"`
+	TerminalOutcome         AIAgentInvestigationDecisionPayloadTerminalOutcome         `json:"terminal_outcome"`
+	WorkflowDiscoveryStatus AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus `json:"workflow_discovery_status"`
+	HumanReviewReason       OptString                                                  `json:"human_review_reason"`
+	FailureClass            OptString                                                  `json:"failure_class"`
+	RetryAttempt            OptInt                                                     `json:"retry_attempt"`
+	RelatedEventIds         []string                                                   `json:"related_event_ids"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentInvestigationDecisionPayload) GetEventType() AIAgentInvestigationDecisionPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentInvestigationDecisionPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentInvestigationDecisionPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentInvestigationDecisionPayload) GetSessionID() OptString {
+	return s.SessionID
+}
+
+// GetTurnID returns the value of TurnID.
+func (s *AIAgentInvestigationDecisionPayload) GetTurnID() OptString {
+	return s.TurnID
+}
+
+// GetPhase returns the value of Phase.
+func (s *AIAgentInvestigationDecisionPayload) GetPhase() AIAgentInvestigationDecisionPayloadPhase {
+	return s.Phase
+}
+
+// GetTurnKind returns the value of TurnKind.
+func (s *AIAgentInvestigationDecisionPayload) GetTurnKind() AIAgentInvestigationDecisionPayloadTurnKind {
+	return s.TurnKind
+}
+
+// GetModel returns the value of Model.
+func (s *AIAgentInvestigationDecisionPayload) GetModel() OptString {
+	return s.Model
+}
+
+// GetPromptTokens returns the value of PromptTokens.
+func (s *AIAgentInvestigationDecisionPayload) GetPromptTokens() OptInt {
+	return s.PromptTokens
+}
+
+// GetCompletionTokens returns the value of CompletionTokens.
+func (s *AIAgentInvestigationDecisionPayload) GetCompletionTokens() OptInt {
+	return s.CompletionTokens
+}
+
+// GetTotalTokens returns the value of TotalTokens.
+func (s *AIAgentInvestigationDecisionPayload) GetTotalTokens() OptInt {
+	return s.TotalTokens
+}
+
+// GetEvidenceStatus returns the value of EvidenceStatus.
+func (s *AIAgentInvestigationDecisionPayload) GetEvidenceStatus() OptString {
+	return s.EvidenceStatus
+}
+
+// GetHistoryStatus returns the value of HistoryStatus.
+func (s *AIAgentInvestigationDecisionPayload) GetHistoryStatus() AIAgentInvestigationDecisionPayloadHistoryStatus {
+	return s.HistoryStatus
+}
+
+// GetTargetStatus returns the value of TargetStatus.
+func (s *AIAgentInvestigationDecisionPayload) GetTargetStatus() OptString {
+	return s.TargetStatus
+}
+
+// GetCausalMechanismStatus returns the value of CausalMechanismStatus.
+func (s *AIAgentInvestigationDecisionPayload) GetCausalMechanismStatus() OptString {
+	return s.CausalMechanismStatus
+}
+
+// GetContinuationReason returns the value of ContinuationReason.
+func (s *AIAgentInvestigationDecisionPayload) GetContinuationReason() OptString {
+	return s.ContinuationReason
+}
+
+// GetTerminalOutcome returns the value of TerminalOutcome.
+func (s *AIAgentInvestigationDecisionPayload) GetTerminalOutcome() AIAgentInvestigationDecisionPayloadTerminalOutcome {
+	return s.TerminalOutcome
+}
+
+// GetWorkflowDiscoveryStatus returns the value of WorkflowDiscoveryStatus.
+func (s *AIAgentInvestigationDecisionPayload) GetWorkflowDiscoveryStatus() AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus {
+	return s.WorkflowDiscoveryStatus
+}
+
+// GetHumanReviewReason returns the value of HumanReviewReason.
+func (s *AIAgentInvestigationDecisionPayload) GetHumanReviewReason() OptString {
+	return s.HumanReviewReason
+}
+
+// GetFailureClass returns the value of FailureClass.
+func (s *AIAgentInvestigationDecisionPayload) GetFailureClass() OptString {
+	return s.FailureClass
+}
+
+// GetRetryAttempt returns the value of RetryAttempt.
+func (s *AIAgentInvestigationDecisionPayload) GetRetryAttempt() OptInt {
+	return s.RetryAttempt
+}
+
+// GetRelatedEventIds returns the value of RelatedEventIds.
+func (s *AIAgentInvestigationDecisionPayload) GetRelatedEventIds() []string {
+	return s.RelatedEventIds
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentInvestigationDecisionPayload) SetEventType(val AIAgentInvestigationDecisionPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentInvestigationDecisionPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentInvestigationDecisionPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentInvestigationDecisionPayload) SetSessionID(val OptString) {
+	s.SessionID = val
+}
+
+// SetTurnID sets the value of TurnID.
+func (s *AIAgentInvestigationDecisionPayload) SetTurnID(val OptString) {
+	s.TurnID = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *AIAgentInvestigationDecisionPayload) SetPhase(val AIAgentInvestigationDecisionPayloadPhase) {
+	s.Phase = val
+}
+
+// SetTurnKind sets the value of TurnKind.
+func (s *AIAgentInvestigationDecisionPayload) SetTurnKind(val AIAgentInvestigationDecisionPayloadTurnKind) {
+	s.TurnKind = val
+}
+
+// SetModel sets the value of Model.
+func (s *AIAgentInvestigationDecisionPayload) SetModel(val OptString) {
+	s.Model = val
+}
+
+// SetPromptTokens sets the value of PromptTokens.
+func (s *AIAgentInvestigationDecisionPayload) SetPromptTokens(val OptInt) {
+	s.PromptTokens = val
+}
+
+// SetCompletionTokens sets the value of CompletionTokens.
+func (s *AIAgentInvestigationDecisionPayload) SetCompletionTokens(val OptInt) {
+	s.CompletionTokens = val
+}
+
+// SetTotalTokens sets the value of TotalTokens.
+func (s *AIAgentInvestigationDecisionPayload) SetTotalTokens(val OptInt) {
+	s.TotalTokens = val
+}
+
+// SetEvidenceStatus sets the value of EvidenceStatus.
+func (s *AIAgentInvestigationDecisionPayload) SetEvidenceStatus(val OptString) {
+	s.EvidenceStatus = val
+}
+
+// SetHistoryStatus sets the value of HistoryStatus.
+func (s *AIAgentInvestigationDecisionPayload) SetHistoryStatus(val AIAgentInvestigationDecisionPayloadHistoryStatus) {
+	s.HistoryStatus = val
+}
+
+// SetTargetStatus sets the value of TargetStatus.
+func (s *AIAgentInvestigationDecisionPayload) SetTargetStatus(val OptString) {
+	s.TargetStatus = val
+}
+
+// SetCausalMechanismStatus sets the value of CausalMechanismStatus.
+func (s *AIAgentInvestigationDecisionPayload) SetCausalMechanismStatus(val OptString) {
+	s.CausalMechanismStatus = val
+}
+
+// SetContinuationReason sets the value of ContinuationReason.
+func (s *AIAgentInvestigationDecisionPayload) SetContinuationReason(val OptString) {
+	s.ContinuationReason = val
+}
+
+// SetTerminalOutcome sets the value of TerminalOutcome.
+func (s *AIAgentInvestigationDecisionPayload) SetTerminalOutcome(val AIAgentInvestigationDecisionPayloadTerminalOutcome) {
+	s.TerminalOutcome = val
+}
+
+// SetWorkflowDiscoveryStatus sets the value of WorkflowDiscoveryStatus.
+func (s *AIAgentInvestigationDecisionPayload) SetWorkflowDiscoveryStatus(val AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) {
+	s.WorkflowDiscoveryStatus = val
+}
+
+// SetHumanReviewReason sets the value of HumanReviewReason.
+func (s *AIAgentInvestigationDecisionPayload) SetHumanReviewReason(val OptString) {
+	s.HumanReviewReason = val
+}
+
+// SetFailureClass sets the value of FailureClass.
+func (s *AIAgentInvestigationDecisionPayload) SetFailureClass(val OptString) {
+	s.FailureClass = val
+}
+
+// SetRetryAttempt sets the value of RetryAttempt.
+func (s *AIAgentInvestigationDecisionPayload) SetRetryAttempt(val OptInt) {
+	s.RetryAttempt = val
+}
+
+// SetRelatedEventIds sets the value of RelatedEventIds.
+func (s *AIAgentInvestigationDecisionPayload) SetRelatedEventIds(val []string) {
+	s.RelatedEventIds = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentInvestigationDecisionPayloadEventType string
+
+const (
+	AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision AIAgentInvestigationDecisionPayloadEventType = "aiagent.investigation.decision"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadEventType values.
+func (AIAgentInvestigationDecisionPayloadEventType) AllValues() []AIAgentInvestigationDecisionPayloadEventType {
+	return []AIAgentInvestigationDecisionPayloadEventType{
+		AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadEventType(data) {
+	case AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision:
+		*s = AIAgentInvestigationDecisionPayloadEventTypeAiagentInvestigationDecision
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAgentInvestigationDecisionPayloadHistoryStatus string
+
+const (
+	AIAgentInvestigationDecisionPayloadHistoryStatusAvailable            AIAgentInvestigationDecisionPayloadHistoryStatus = "available"
+	AIAgentInvestigationDecisionPayloadHistoryStatusEmpty                AIAgentInvestigationDecisionPayloadHistoryStatus = "empty"
+	AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable AIAgentInvestigationDecisionPayloadHistoryStatus = "transport_unavailable"
+	AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError          AIAgentInvestigationDecisionPayloadHistoryStatus = "schema_error"
+	AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested         AIAgentInvestigationDecisionPayloadHistoryStatus = "not_requested"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadHistoryStatus values.
+func (AIAgentInvestigationDecisionPayloadHistoryStatus) AllValues() []AIAgentInvestigationDecisionPayloadHistoryStatus {
+	return []AIAgentInvestigationDecisionPayloadHistoryStatus{
+		AIAgentInvestigationDecisionPayloadHistoryStatusAvailable,
+		AIAgentInvestigationDecisionPayloadHistoryStatusEmpty,
+		AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable,
+		AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError,
+		AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadHistoryStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadHistoryStatusAvailable:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusEmpty:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadHistoryStatus) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadHistoryStatus(data) {
+	case AIAgentInvestigationDecisionPayloadHistoryStatusAvailable:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusAvailable
+		return nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusEmpty:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusEmpty
+		return nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusTransportUnavailable
+		return nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusSchemaError
+		return nil
+	case AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested:
+		*s = AIAgentInvestigationDecisionPayloadHistoryStatusNotRequested
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAgentInvestigationDecisionPayloadPhase string
+
+const (
+	AIAgentInvestigationDecisionPayloadPhaseRca               AIAgentInvestigationDecisionPayloadPhase = "rca"
+	AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery AIAgentInvestigationDecisionPayloadPhase = "workflow_discovery"
+	AIAgentInvestigationDecisionPayloadPhaseValidation        AIAgentInvestigationDecisionPayloadPhase = "validation"
+	AIAgentInvestigationDecisionPayloadPhaseUnknown           AIAgentInvestigationDecisionPayloadPhase = "unknown"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadPhase values.
+func (AIAgentInvestigationDecisionPayloadPhase) AllValues() []AIAgentInvestigationDecisionPayloadPhase {
+	return []AIAgentInvestigationDecisionPayloadPhase{
+		AIAgentInvestigationDecisionPayloadPhaseRca,
+		AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery,
+		AIAgentInvestigationDecisionPayloadPhaseValidation,
+		AIAgentInvestigationDecisionPayloadPhaseUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadPhase) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadPhaseRca:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadPhaseValidation:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadPhaseUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadPhase) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadPhase(data) {
+	case AIAgentInvestigationDecisionPayloadPhaseRca:
+		*s = AIAgentInvestigationDecisionPayloadPhaseRca
+		return nil
+	case AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery:
+		*s = AIAgentInvestigationDecisionPayloadPhaseWorkflowDiscovery
+		return nil
+	case AIAgentInvestigationDecisionPayloadPhaseValidation:
+		*s = AIAgentInvestigationDecisionPayloadPhaseValidation
+		return nil
+	case AIAgentInvestigationDecisionPayloadPhaseUnknown:
+		*s = AIAgentInvestigationDecisionPayloadPhaseUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAgentInvestigationDecisionPayloadTerminalOutcome string
+
+const (
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected             AIAgentInvestigationDecisionPayloadTerminalOutcome = "workflow_selected"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved              AIAgentInvestigationDecisionPayloadTerminalOutcome = "problem_resolved"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable AIAgentInvestigationDecisionPayloadTerminalOutcome = "evidence_transport_unavailable"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable AIAgentInvestigationDecisionPayloadTerminalOutcome = "history_enrichment_unavailable"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete                AIAgentInvestigationDecisionPayloadTerminalOutcome = "rca_incomplete"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows          AIAgentInvestigationDecisionPayloadTerminalOutcome = "no_matching_workflows"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed      AIAgentInvestigationDecisionPayloadTerminalOutcome = "workflow_discovery_failed"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled                    AIAgentInvestigationDecisionPayloadTerminalOutcome = "cancelled"
+	AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown                      AIAgentInvestigationDecisionPayloadTerminalOutcome = "unknown"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadTerminalOutcome values.
+func (AIAgentInvestigationDecisionPayloadTerminalOutcome) AllValues() []AIAgentInvestigationDecisionPayloadTerminalOutcome {
+	return []AIAgentInvestigationDecisionPayloadTerminalOutcome{
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled,
+		AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadTerminalOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadTerminalOutcome) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadTerminalOutcome(data) {
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowSelected
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeProblemResolved
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeEvidenceTransportUnavailable
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeHistoryEnrichmentUnavailable
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeRcaIncomplete
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeNoMatchingWorkflows
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeWorkflowDiscoveryFailed
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeCancelled
+		return nil
+	case AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown:
+		*s = AIAgentInvestigationDecisionPayloadTerminalOutcomeUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAgentInvestigationDecisionPayloadTurnKind string
+
+const (
+	AIAgentInvestigationDecisionPayloadTurnKindToolOnly         AIAgentInvestigationDecisionPayloadTurnKind = "tool_only"
+	AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision AIAgentInvestigationDecisionPayloadTurnKind = "terminal_decision"
+	AIAgentInvestigationDecisionPayloadTurnKindStateTransition  AIAgentInvestigationDecisionPayloadTurnKind = "state_transition"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadTurnKind values.
+func (AIAgentInvestigationDecisionPayloadTurnKind) AllValues() []AIAgentInvestigationDecisionPayloadTurnKind {
+	return []AIAgentInvestigationDecisionPayloadTurnKind{
+		AIAgentInvestigationDecisionPayloadTurnKindToolOnly,
+		AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision,
+		AIAgentInvestigationDecisionPayloadTurnKindStateTransition,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadTurnKind) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadTurnKindToolOnly:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadTurnKindStateTransition:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadTurnKind) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadTurnKind(data) {
+	case AIAgentInvestigationDecisionPayloadTurnKindToolOnly:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindToolOnly
+		return nil
+	case AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindTerminalDecision
+		return nil
+	case AIAgentInvestigationDecisionPayloadTurnKindStateTransition:
+		*s = AIAgentInvestigationDecisionPayloadTurnKindStateTransition
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus string
+
+const (
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted          AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "not_started"
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted             AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "started"
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected   AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "completed_selected"
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch    AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "completed_no_match"
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed              AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "failed"
+	AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus = "skipped_due_to_failure"
+)
+
+// AllValues returns all AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus values.
+func (AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) AllValues() []AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus {
+	return []AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus{
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted,
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted,
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected,
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch,
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed,
+		AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed:
+		return []byte(s), nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus) UnmarshalText(data []byte) error {
+	switch AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatus(data) {
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusNotStarted
+		return nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusStarted
+		return nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedSelected
+		return nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusCompletedNoMatch
+		return nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusFailed
+		return nil
+	case AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure:
+		*s = AIAgentInvestigationDecisionPayloadWorkflowDiscoveryStatusSkippedDueToFailure
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -10169,6 +10784,7 @@ type AuditEventEventData struct {
 	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                       AIAgentResponsePayload
 	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
+	AIAgentInvestigationDecisionPayload          AIAgentInvestigationDecisionPayload
 	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
@@ -10324,6 +10940,7 @@ const (
 	NotificationMessageEscalatedPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.response.complete"
 	AIAgentRCACompletePayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.rca.complete"
+	AIAgentInvestigationDecisionPayloadAuditEventEventData                           AuditEventEventDataType = "aiagent.investigation.decision"
 	AIAgentResponseFailedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.enrichment.failed"
@@ -10592,6 +11209,11 @@ func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
 // IsAIAgentRCACompletePayload reports whether AuditEventEventData is AIAgentRCACompletePayload.
 func (s AuditEventEventData) IsAIAgentRCACompletePayload() bool {
 	return s.Type == AIAgentRCACompletePayloadAuditEventEventData
+}
+
+// IsAIAgentInvestigationDecisionPayload reports whether AuditEventEventData is AIAgentInvestigationDecisionPayload.
+func (s AuditEventEventData) IsAIAgentInvestigationDecisionPayload() bool {
+	return s.Type == AIAgentInvestigationDecisionPayloadAuditEventEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventEventData is AIAgentResponseFailedPayload.
@@ -11829,6 +12451,27 @@ func (s AuditEventEventData) GetAIAgentRCACompletePayload() (v AIAgentRCAComplet
 func NewAIAgentRCACompletePayloadAuditEventEventData(v AIAgentRCACompletePayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAgentRCACompletePayload(v)
+	return s
+}
+
+// SetAIAgentInvestigationDecisionPayload sets AuditEventEventData to AIAgentInvestigationDecisionPayload.
+func (s *AuditEventEventData) SetAIAgentInvestigationDecisionPayload(v AIAgentInvestigationDecisionPayload) {
+	s.Type = AIAgentInvestigationDecisionPayloadAuditEventEventData
+	s.AIAgentInvestigationDecisionPayload = v
+}
+
+// GetAIAgentInvestigationDecisionPayload returns AIAgentInvestigationDecisionPayload and true boolean if AuditEventEventData is AIAgentInvestigationDecisionPayload.
+func (s AuditEventEventData) GetAIAgentInvestigationDecisionPayload() (v AIAgentInvestigationDecisionPayload, ok bool) {
+	if !s.IsAIAgentInvestigationDecisionPayload() {
+		return v, false
+	}
+	return s.AIAgentInvestigationDecisionPayload, true
+}
+
+// NewAIAgentInvestigationDecisionPayloadAuditEventEventData returns new AuditEventEventData from AIAgentInvestigationDecisionPayload.
+func NewAIAgentInvestigationDecisionPayloadAuditEventEventData(v AIAgentInvestigationDecisionPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentInvestigationDecisionPayload(v)
 	return s
 }
 
@@ -14438,6 +15081,7 @@ type AuditEventRequestEventData struct {
 	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                       AIAgentResponsePayload
 	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
+	AIAgentInvestigationDecisionPayload          AIAgentInvestigationDecisionPayload
 	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
@@ -14593,6 +15237,7 @@ const (
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.response.complete"
 	AIAgentRCACompletePayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.rca.complete"
+	AIAgentInvestigationDecisionPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "aiagent.investigation.decision"
 	AIAgentResponseFailedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.enrichment.failed"
@@ -14861,6 +15506,11 @@ func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
 // IsAIAgentRCACompletePayload reports whether AuditEventRequestEventData is AIAgentRCACompletePayload.
 func (s AuditEventRequestEventData) IsAIAgentRCACompletePayload() bool {
 	return s.Type == AIAgentRCACompletePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentInvestigationDecisionPayload reports whether AuditEventRequestEventData is AIAgentInvestigationDecisionPayload.
+func (s AuditEventRequestEventData) IsAIAgentInvestigationDecisionPayload() bool {
+	return s.Type == AIAgentInvestigationDecisionPayloadAuditEventRequestEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventRequestEventData is AIAgentResponseFailedPayload.
@@ -16098,6 +16748,27 @@ func (s AuditEventRequestEventData) GetAIAgentRCACompletePayload() (v AIAgentRCA
 func NewAIAgentRCACompletePayloadAuditEventRequestEventData(v AIAgentRCACompletePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentRCACompletePayload(v)
+	return s
+}
+
+// SetAIAgentInvestigationDecisionPayload sets AuditEventRequestEventData to AIAgentInvestigationDecisionPayload.
+func (s *AuditEventRequestEventData) SetAIAgentInvestigationDecisionPayload(v AIAgentInvestigationDecisionPayload) {
+	s.Type = AIAgentInvestigationDecisionPayloadAuditEventRequestEventData
+	s.AIAgentInvestigationDecisionPayload = v
+}
+
+// GetAIAgentInvestigationDecisionPayload returns AIAgentInvestigationDecisionPayload and true boolean if AuditEventRequestEventData is AIAgentInvestigationDecisionPayload.
+func (s AuditEventRequestEventData) GetAIAgentInvestigationDecisionPayload() (v AIAgentInvestigationDecisionPayload, ok bool) {
+	if !s.IsAIAgentInvestigationDecisionPayload() {
+		return v, false
+	}
+	return s.AIAgentInvestigationDecisionPayload, true
+}
+
+// NewAIAgentInvestigationDecisionPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentInvestigationDecisionPayload.
+func NewAIAgentInvestigationDecisionPayloadAuditEventRequestEventData(v AIAgentInvestigationDecisionPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentInvestigationDecisionPayload(v)
 	return s
 }
 
@@ -22220,6 +22891,10 @@ type IncidentResponseData struct {
 	IsActionable OptNilBool `json:"isActionable"`
 	// True when AI could not produce reliable result.
 	NeedsHumanReview OptBool `json:"needsHumanReview"`
+	// Server-owned typed investigation terminal outcome (DD-KA-2520-2521).
+	TerminalOutcome OptIncidentResponseDataTerminalOutcome `json:"terminalOutcome"`
+	// Server-owned workflow-discovery gate state (DD-KA-2520-2521).
+	WorkflowDiscoveryStatus OptIncidentResponseDataWorkflowDiscoveryStatus `json:"workflowDiscoveryStatus"`
 	// Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
 	// decision_expired (#2019/#2020) indicates a workflow was discovered and presented but no decision
 	// arrived before the interactive session's inactivity timeout.
@@ -22273,6 +22948,16 @@ func (s *IncidentResponseData) GetIsActionable() OptNilBool {
 // GetNeedsHumanReview returns the value of NeedsHumanReview.
 func (s *IncidentResponseData) GetNeedsHumanReview() OptBool {
 	return s.NeedsHumanReview
+}
+
+// GetTerminalOutcome returns the value of TerminalOutcome.
+func (s *IncidentResponseData) GetTerminalOutcome() OptIncidentResponseDataTerminalOutcome {
+	return s.TerminalOutcome
+}
+
+// GetWorkflowDiscoveryStatus returns the value of WorkflowDiscoveryStatus.
+func (s *IncidentResponseData) GetWorkflowDiscoveryStatus() OptIncidentResponseDataWorkflowDiscoveryStatus {
+	return s.WorkflowDiscoveryStatus
 }
 
 // GetHumanReviewReason returns the value of HumanReviewReason.
@@ -22333,6 +23018,16 @@ func (s *IncidentResponseData) SetIsActionable(val OptNilBool) {
 // SetNeedsHumanReview sets the value of NeedsHumanReview.
 func (s *IncidentResponseData) SetNeedsHumanReview(val OptBool) {
 	s.NeedsHumanReview = val
+}
+
+// SetTerminalOutcome sets the value of TerminalOutcome.
+func (s *IncidentResponseData) SetTerminalOutcome(val OptIncidentResponseDataTerminalOutcome) {
+	s.TerminalOutcome = val
+}
+
+// SetWorkflowDiscoveryStatus sets the value of WorkflowDiscoveryStatus.
+func (s *IncidentResponseData) SetWorkflowDiscoveryStatus(val OptIncidentResponseDataWorkflowDiscoveryStatus) {
+	s.WorkflowDiscoveryStatus = val
 }
 
 // SetHumanReviewReason sets the value of HumanReviewReason.
@@ -23072,6 +23767,160 @@ func (s *IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) UnmarshalT
 		return nil
 	case IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected:
 		*s = IncidentResponseDataSelectedWorkflowRepeatValidationOutcomeRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Server-owned typed investigation terminal outcome (DD-KA-2520-2521).
+type IncidentResponseDataTerminalOutcome string
+
+const (
+	IncidentResponseDataTerminalOutcomeWorkflowSelected             IncidentResponseDataTerminalOutcome = "workflow_selected"
+	IncidentResponseDataTerminalOutcomeProblemResolved              IncidentResponseDataTerminalOutcome = "problem_resolved"
+	IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable IncidentResponseDataTerminalOutcome = "evidence_transport_unavailable"
+	IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable IncidentResponseDataTerminalOutcome = "history_enrichment_unavailable"
+	IncidentResponseDataTerminalOutcomeRcaIncomplete                IncidentResponseDataTerminalOutcome = "rca_incomplete"
+	IncidentResponseDataTerminalOutcomeNoMatchingWorkflows          IncidentResponseDataTerminalOutcome = "no_matching_workflows"
+	IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed      IncidentResponseDataTerminalOutcome = "workflow_discovery_failed"
+	IncidentResponseDataTerminalOutcomeCancelled                    IncidentResponseDataTerminalOutcome = "cancelled"
+)
+
+// AllValues returns all IncidentResponseDataTerminalOutcome values.
+func (IncidentResponseDataTerminalOutcome) AllValues() []IncidentResponseDataTerminalOutcome {
+	return []IncidentResponseDataTerminalOutcome{
+		IncidentResponseDataTerminalOutcomeWorkflowSelected,
+		IncidentResponseDataTerminalOutcomeProblemResolved,
+		IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable,
+		IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable,
+		IncidentResponseDataTerminalOutcomeRcaIncomplete,
+		IncidentResponseDataTerminalOutcomeNoMatchingWorkflows,
+		IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed,
+		IncidentResponseDataTerminalOutcomeCancelled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataTerminalOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataTerminalOutcomeWorkflowSelected:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeProblemResolved:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeRcaIncomplete:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeNoMatchingWorkflows:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed:
+		return []byte(s), nil
+	case IncidentResponseDataTerminalOutcomeCancelled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataTerminalOutcome) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataTerminalOutcome(data) {
+	case IncidentResponseDataTerminalOutcomeWorkflowSelected:
+		*s = IncidentResponseDataTerminalOutcomeWorkflowSelected
+		return nil
+	case IncidentResponseDataTerminalOutcomeProblemResolved:
+		*s = IncidentResponseDataTerminalOutcomeProblemResolved
+		return nil
+	case IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable:
+		*s = IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable
+		return nil
+	case IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable:
+		*s = IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable
+		return nil
+	case IncidentResponseDataTerminalOutcomeRcaIncomplete:
+		*s = IncidentResponseDataTerminalOutcomeRcaIncomplete
+		return nil
+	case IncidentResponseDataTerminalOutcomeNoMatchingWorkflows:
+		*s = IncidentResponseDataTerminalOutcomeNoMatchingWorkflows
+		return nil
+	case IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed:
+		*s = IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed
+		return nil
+	case IncidentResponseDataTerminalOutcomeCancelled:
+		*s = IncidentResponseDataTerminalOutcomeCancelled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Server-owned workflow-discovery gate state (DD-KA-2520-2521).
+type IncidentResponseDataWorkflowDiscoveryStatus string
+
+const (
+	IncidentResponseDataWorkflowDiscoveryStatusNotStarted          IncidentResponseDataWorkflowDiscoveryStatus = "not_started"
+	IncidentResponseDataWorkflowDiscoveryStatusStarted             IncidentResponseDataWorkflowDiscoveryStatus = "started"
+	IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected   IncidentResponseDataWorkflowDiscoveryStatus = "completed_selected"
+	IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch    IncidentResponseDataWorkflowDiscoveryStatus = "completed_no_match"
+	IncidentResponseDataWorkflowDiscoveryStatusFailed              IncidentResponseDataWorkflowDiscoveryStatus = "failed"
+	IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure IncidentResponseDataWorkflowDiscoveryStatus = "skipped_due_to_failure"
+)
+
+// AllValues returns all IncidentResponseDataWorkflowDiscoveryStatus values.
+func (IncidentResponseDataWorkflowDiscoveryStatus) AllValues() []IncidentResponseDataWorkflowDiscoveryStatus {
+	return []IncidentResponseDataWorkflowDiscoveryStatus{
+		IncidentResponseDataWorkflowDiscoveryStatusNotStarted,
+		IncidentResponseDataWorkflowDiscoveryStatusStarted,
+		IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected,
+		IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch,
+		IncidentResponseDataWorkflowDiscoveryStatusFailed,
+		IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataWorkflowDiscoveryStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataWorkflowDiscoveryStatusNotStarted:
+		return []byte(s), nil
+	case IncidentResponseDataWorkflowDiscoveryStatusStarted:
+		return []byte(s), nil
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected:
+		return []byte(s), nil
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch:
+		return []byte(s), nil
+	case IncidentResponseDataWorkflowDiscoveryStatusFailed:
+		return []byte(s), nil
+	case IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataWorkflowDiscoveryStatus) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataWorkflowDiscoveryStatus(data) {
+	case IncidentResponseDataWorkflowDiscoveryStatusNotStarted:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusNotStarted
+		return nil
+	case IncidentResponseDataWorkflowDiscoveryStatusStarted:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusStarted
+		return nil
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected
+		return nil
+	case IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch
+		return nil
+	case IncidentResponseDataWorkflowDiscoveryStatusFailed:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusFailed
+		return nil
+	case IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure:
+		*s = IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -27118,6 +27967,98 @@ func (o OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) Get() (v
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIncidentResponseDataSelectedWorkflowRepeatValidationOutcome) Or(d IncidentResponseDataSelectedWorkflowRepeatValidationOutcome) IncidentResponseDataSelectedWorkflowRepeatValidationOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataTerminalOutcome returns new OptIncidentResponseDataTerminalOutcome with value set to v.
+func NewOptIncidentResponseDataTerminalOutcome(v IncidentResponseDataTerminalOutcome) OptIncidentResponseDataTerminalOutcome {
+	return OptIncidentResponseDataTerminalOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataTerminalOutcome is optional IncidentResponseDataTerminalOutcome.
+type OptIncidentResponseDataTerminalOutcome struct {
+	Value IncidentResponseDataTerminalOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataTerminalOutcome was set.
+func (o OptIncidentResponseDataTerminalOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataTerminalOutcome) Reset() {
+	var v IncidentResponseDataTerminalOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataTerminalOutcome) SetTo(v IncidentResponseDataTerminalOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataTerminalOutcome) Get() (v IncidentResponseDataTerminalOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataTerminalOutcome) Or(d IncidentResponseDataTerminalOutcome) IncidentResponseDataTerminalOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataWorkflowDiscoveryStatus returns new OptIncidentResponseDataWorkflowDiscoveryStatus with value set to v.
+func NewOptIncidentResponseDataWorkflowDiscoveryStatus(v IncidentResponseDataWorkflowDiscoveryStatus) OptIncidentResponseDataWorkflowDiscoveryStatus {
+	return OptIncidentResponseDataWorkflowDiscoveryStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataWorkflowDiscoveryStatus is optional IncidentResponseDataWorkflowDiscoveryStatus.
+type OptIncidentResponseDataWorkflowDiscoveryStatus struct {
+	Value IncidentResponseDataWorkflowDiscoveryStatus
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataWorkflowDiscoveryStatus was set.
+func (o OptIncidentResponseDataWorkflowDiscoveryStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataWorkflowDiscoveryStatus) Reset() {
+	var v IncidentResponseDataWorkflowDiscoveryStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataWorkflowDiscoveryStatus) SetTo(v IncidentResponseDataWorkflowDiscoveryStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataWorkflowDiscoveryStatus) Get() (v IncidentResponseDataWorkflowDiscoveryStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataWorkflowDiscoveryStatus) Or(d IncidentResponseDataWorkflowDiscoveryStatus) IncidentResponseDataWorkflowDiscoveryStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}

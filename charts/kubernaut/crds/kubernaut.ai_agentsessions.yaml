@@ -716,6 +716,16 @@ spec:
                     - source
                     - version
                     type: object
+                  historyStatus:
+                    description: HistoryStatus distinguishes empty history from unavailable
+                      history.
+                    enum:
+                    - available
+                    - empty
+                    - transport_unavailable
+                    - schema_error
+                    - not_requested
+                    type: string
                   humanReviewReason:
                     description: |-
                       HumanReviewReason is the structured reason when NeedsHumanReview=true.
@@ -751,6 +761,20 @@ spec:
                       executable workflow configuration (DD-KA-2496 / BR-KA-016). Nested fields
                       use the KA snake_case wire contract, matching SelectedWorkflow above.
                     x-kubernetes-preserve-unknown-fields: true
+                  terminalOutcome:
+                    description: |-
+                      TerminalOutcome is KA's server-owned investigation terminal state.
+                      Consumers must not infer no_matching_workflows from SelectedWorkflow=nil.
+                    enum:
+                    - workflow_selected
+                    - problem_resolved
+                    - evidence_transport_unavailable
+                    - history_enrichment_unavailable
+                    - rca_incomplete
+                    - no_matching_workflows
+                    - workflow_discovery_failed
+                    - cancelled
+                    type: string
                   timestamp:
                     description: Timestamp is the ISO timestamp of analysis completion.
                     type: string
@@ -781,6 +805,18 @@ spec:
                     items:
                       type: string
                     type: array
+                  workflowDiscoveryStatus:
+                    description: |-
+                      WorkflowDiscoveryStatus records whether workflow discovery actually ran
+                      and how its gate completed.
+                    enum:
+                    - not_started
+                    - started
+                    - completed_selected
+                    - completed_no_match
+                    - failed
+                    - skipped_due_to_failure
+                    type: string
                 type: object
               sessionID:
                 description: |-

@@ -475,6 +475,24 @@ var _ = Describe("MapInvestigationResultToAgentSessionResult — SI-10 curated r
 		})
 	})
 
+	Describe("UT-KA-2521-002: operator escalation takes precedence over stale RCA review reason", func() {
+		It("should preserve operator_escalation when the legacy reason is stale", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary:        "operator chose escalation",
+				HumanReviewNeeded: true,
+				HumanReviewReason: katypes.HumanReviewReasonRCAIncomplete,
+				Reason:            "operator_escalation",
+				TerminalOutcome:   sharedtypes.TerminalOutcomeRCAIncomplete,
+			}
+
+			mapped := agentsession.MapInvestigationResultToAgentSessionResult(logger, result, "incident-operator-escalation")
+
+			Expect(mapped.NeedsHumanReview).To(BeTrue())
+			Expect(mapped.HumanReviewReason).To(Equal("operator_escalation"),
+				"operator escalation must not be downgraded to rca_incomplete")
+		})
+	})
+
 	Describe("UT-AA-KA-065-013: HumanReviewReason mapping — unrecognized reason falls back safely", func() {
 		It("should fall back to investigation_inconclusive for an unrecognized reason string, without panicking", func() {
 			result := &katypes.InvestigationResult{

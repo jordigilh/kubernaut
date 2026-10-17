@@ -21,9 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // RunWorkflowDiscoveryFromRCA executes Phase 3 (workflow selection) using a
@@ -39,6 +41,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	if rcaResult == nil {
 		return nil, fmt.Errorf("RunWorkflowDiscoveryFromRCA: rcaResult must not be nil")
 	}
+	ctx = audit.WithCorrelationID(ctx, correlationID)
 	ctx, evidenceScope := ensureEvidenceStatusScope(ctx)
 	defer func() { attachEvidenceStatus(evidenceScope, &result, &retErr) }()
 
@@ -64,6 +67,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	if err != nil {
 		return nil, err
 	}
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
 		"rca_target_kind", rcaResult.RemediationTarget.Kind,
@@ -91,6 +95,9 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		return hardFailResult, nil
 	}
 	if enricherWired {
+		if rawEnrichData != nil && (rawEnrichData.HistoryUnavailable || isHistoryUnavailableStatus(rawEnrichData.HistoryStatus)) {
+			return inv.finalizeHistoryUnavailableDiscovery(ctx, rcaResult, signal, rawEnrichData, correlationID, modelName), nil
+		}
 		enrichData = toPromptEnrichment(rawEnrichData)
 	} else if enrichData != nil && enrichData.HistoryUnavailable {
 		// Interactive callers may provide only the serialized enrichment
@@ -109,9 +116,8 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	// GitOps-aware scoring (parity with autonomous path).
 	inv.attachRCADetectedLabelsJSON(&signal, rawEnrichData, correlationID)
 
-	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
-
 	p1Ctx := BuildPhase1Context(rcaResult)
+	markWorkflowDiscoveryStarted(rcaResult)
 	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, LLMInvocationContext{
 		CorrelationID: correlationID,
 		Client:        client,
@@ -121,6 +127,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	if err != nil {
 		return nil, err
 	}
+	applyWorkflowDiscoveryTypedStatus(workflowResult, rcaResult, rawEnrichData)
 
 	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
 	// #2387: cumulative per-RR totals straight from the scope (message +
@@ -150,6 +157,53 @@ func attachEvidenceStatus(scope *katypes.EvidenceStatusScope, result **katypes.I
 	} else if *retErr != nil {
 		*retErr = katypes.NewInvestigationError(*retErr, status)
 	}
+}
+
+// applyWorkflowDiscoveryTypedStatus applies the server-owned discovery gate to
+// a workflow-selection result. A result that reaches this helper without an
+// explicit selection or no-match sentinel is a discovery failure.
+func applyWorkflowDiscoveryTypedStatus(result, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
+	if result == nil {
+		return
+	}
+	if result.HistoryStatus == "" {
+		switch {
+		case enrichData != nil && enrichData.HistoryStatus != "":
+			result.HistoryStatus = enrichData.HistoryStatus
+		case rcaResult != nil:
+			result.HistoryStatus = rcaResult.HistoryStatus
+		}
+	}
+	if result.WorkflowDiscoveryStatus == "" {
+		if result.WorkflowID != "" {
+			markWorkflowDiscoverySelected(result)
+		} else if status, outcome, ok := classifyWorkflowDiscoveryNoWorkflow(result); ok {
+			result.WorkflowDiscoveryStatus = status
+			result.TerminalOutcome = outcome
+		} else {
+			markWorkflowDiscoveryFailed(result)
+		}
+	}
+	if result.WorkflowDiscoveryStatus == sharedtypes.WorkflowDiscoveryStatusCompletedNoMatch &&
+		result.TerminalOutcome == "" && (result.IsActionable == nil || *result.IsActionable) {
+		result.TerminalOutcome = sharedtypes.TerminalOutcomeNoMatchingWorkflows
+	}
+}
+
+// finalizeHistoryUnavailableDiscovery preserves the accepted RCA and exits
+// before workflow discovery when the required target-scoped history could not
+// be acquired. This is also used for an RCA target shift whose owner/label
+// enrichment succeeded but whose history source failed.
+func (inv *Investigator) finalizeHistoryUnavailableDiscovery(ctx context.Context, result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, correlationID, modelName string) *katypes.InvestigationResult {
+	markHistoryEnrichmentUnavailable(result, enrichData)
+	applySignalSeverity(result, signal)
+	attachDetectedLabels(result, enrichData)
+	InjectRemediationTarget(result, signal, enrichData)
+	InjectTargetResourceParameters(result)
+	inv.applyMetricsFromScope(result, correlationID)
+	inv.setTokenUsageFromScope(result, correlationID)
+	inv.emitResponseComplete(ctx, result, &TokenAccumulator{}, correlationID, firstNonEmpty(modelName, inv.modelName))
+	return result
 }
 
 // autoResolveRCATargetAPIVersion auto-resolves rcaResult.RemediationTarget.APIVersion
@@ -246,8 +300,14 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 		inv.logger.Error(reEnriched.OwnerChainError,
 			"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
 			"correlation_id", correlationID)
-		rcaResult.HumanReviewNeeded = true
-		rcaResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+		if isHistoryUnavailableStatus(reEnriched.HistoryStatus) || reEnriched.HistoryUnavailable {
+			markHistoryEnrichmentUnavailable(rcaResult, reEnriched)
+		} else {
+			applyEnrichmentHistoryStatus(rcaResult, reEnriched)
+			rcaResult.HumanReviewNeeded = true
+			rcaResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
+			markDiscoverySkippedDueToFailure(rcaResult, rcaResult.HistoryStatus, false)
+		}
 		applySignalSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, rawEnrichData)
 		InjectRemediationTarget(rcaResult, signal, rawEnrichData)

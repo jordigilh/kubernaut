@@ -264,6 +264,8 @@ type investigationResultJSON struct {
 	Confidence                  float64                         `json:"confidence"`
 	NeedsHumanReview            bool                            `json:"needs_human_review"`
 	HumanReviewReason           string                          `json:"human_review_reason"`
+	TerminalOutcome             string                          `json:"terminal_outcome"`
+	WorkflowDiscoveryStatus     string                          `json:"workflow_discovery_status"`
 	Warnings                    []string                        `json:"warnings"`
 	Parameters                  map[string]interface{}          `json:"parameters"`
 	AlternativeWorkflows        []altWorkflowJSON               `json:"alternative_workflows"`
@@ -354,8 +356,19 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		data.SelectionAssessment.SetTo(*ir.SelectionAssessment)
 	}
 
+	applyIncidentResponseOptionalFields(&data, ir)
+	return data
+}
+
+func applyIncidentResponseOptionalFields(data *ogenclient.IncidentResponseData, ir investigationResultJSON) {
 	if ir.NeedsHumanReview {
 		data.NeedsHumanReview.SetTo(true)
+	}
+	if outcome, ok := validTerminalOutcome(ir.TerminalOutcome); ok {
+		data.TerminalOutcome.SetTo(outcome)
+	}
+	if discoveryStatus, ok := validWorkflowDiscoveryStatus(ir.WorkflowDiscoveryStatus); ok {
+		data.WorkflowDiscoveryStatus.SetTo(discoveryStatus)
 	}
 	if ir.HumanReviewReason != "" {
 		if reason, ok := validHumanReviewReason(ir.HumanReviewReason); ok {
@@ -375,8 +388,38 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 	if ir.IsActionable != nil {
 		data.IsActionable.SetTo(*ir.IsActionable)
 	}
+}
 
-	return data
+func validTerminalOutcome(value string) (ogenclient.IncidentResponseDataTerminalOutcome, bool) {
+	outcome := ogenclient.IncidentResponseDataTerminalOutcome(value)
+	switch outcome {
+	case ogenclient.IncidentResponseDataTerminalOutcomeWorkflowSelected,
+		ogenclient.IncidentResponseDataTerminalOutcomeProblemResolved,
+		ogenclient.IncidentResponseDataTerminalOutcomeEvidenceTransportUnavailable,
+		ogenclient.IncidentResponseDataTerminalOutcomeHistoryEnrichmentUnavailable,
+		ogenclient.IncidentResponseDataTerminalOutcomeRcaIncomplete,
+		ogenclient.IncidentResponseDataTerminalOutcomeNoMatchingWorkflows,
+		ogenclient.IncidentResponseDataTerminalOutcomeWorkflowDiscoveryFailed,
+		ogenclient.IncidentResponseDataTerminalOutcomeCancelled:
+		return outcome, true
+	default:
+		return "", false
+	}
+}
+
+func validWorkflowDiscoveryStatus(value string) (ogenclient.IncidentResponseDataWorkflowDiscoveryStatus, bool) {
+	status := ogenclient.IncidentResponseDataWorkflowDiscoveryStatus(value)
+	switch status {
+	case ogenclient.IncidentResponseDataWorkflowDiscoveryStatusNotStarted,
+		ogenclient.IncidentResponseDataWorkflowDiscoveryStatusStarted,
+		ogenclient.IncidentResponseDataWorkflowDiscoveryStatusCompletedSelected,
+		ogenclient.IncidentResponseDataWorkflowDiscoveryStatusCompletedNoMatch,
+		ogenclient.IncidentResponseDataWorkflowDiscoveryStatusFailed,
+		ogenclient.IncidentResponseDataWorkflowDiscoveryStatusSkippedDueToFailure:
+		return status, true
+	default:
+		return "", false
+	}
 }
 
 // toRemediationTargetResponse maps the audit-record RemediationTarget into

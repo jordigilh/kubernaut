@@ -146,9 +146,8 @@ var _ = Describe("DEX persona token helper", Label("dex-token-helper"), func() {
 	})
 
 	It("UT-AF-E2E-1807-002 retries a DEX request that reaches its per-attempt timeout", func() {
-		var requests atomic.Int32
+		var attempts atomic.Int32
 		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			requests.Add(1)
 			time.Sleep(200 * time.Millisecond)
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -156,10 +155,11 @@ var _ = Describe("DEX persona token helper", Label("dex-token-helper"), func() {
 
 		client := server.Client()
 		client.Timeout = 50 * time.Millisecond
+		client.Transport = &countingRoundTripper{base: client.Transport, calls: &attempts}
 		_, err := fetchDEXTokenWithClient(client, server.URL+"/dex", "client", "secret", "user", "password")
 
 		Expect(err).To(HaveOccurred())
-		Expect(requests.Load()).To(Equal(int32(dexTokenMaxAttempts)))
+		Expect(attempts.Load()).To(Equal(int32(dexTokenMaxAttempts)))
 	})
 
 	It("UT-AF-E2E-1807-001 reuses a persona JWT for the same DEX client", func() {
@@ -199,3 +199,13 @@ var _ = Describe("DEX persona token helper", Label("dex-token-helper"), func() {
 		Expect(responseWriteError.Load()).To(BeFalse())
 	})
 })
+
+type countingRoundTripper struct {
+	base  http.RoundTripper
+	calls *atomic.Int32
+}
+
+func (t *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.calls.Add(1)
+	return t.base.RoundTrip(req)
+}

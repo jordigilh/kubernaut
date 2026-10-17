@@ -466,6 +466,20 @@ type RCAResult struct {
 	// ========================================
 	// Selected workflow for execution (populated when phase=Completed)
 	SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
+	// TerminalOutcome is the server-owned typed investigation terminal state.
+	// An absent SelectedWorkflow is not sufficient to establish no-match.
+	// +optional
+	// +kubebuilder:validation:Enum=workflow_selected;problem_resolved;evidence_transport_unavailable;history_enrichment_unavailable;rca_incomplete;no_matching_workflows;workflow_discovery_failed;cancelled
+	TerminalOutcome sharedtypes.TerminalOutcome `json:"terminalOutcome,omitempty"`
+	// WorkflowDiscoveryStatus records the phase-aware workflow discovery gate.
+	// +optional
+	// +kubebuilder:validation:Enum=not_started;started;completed_selected;completed_no_match;failed;skipped_due_to_failure
+	WorkflowDiscoveryStatus sharedtypes.WorkflowDiscoveryStatus `json:"workflowDiscoveryStatus,omitempty"`
+	// HistoryStatus distinguishes empty target history from an unavailable
+	// history/evidence transport.
+	// +optional
+	// +kubebuilder:validation:Enum=available;empty;transport_unavailable;schema_error;not_requested
+	HistoryStatus sharedtypes.HistoryStatus `json:"historyStatus,omitempty"`
 	// SelectionAssessment is non-executable context for rejected proposals.
 	// It cannot be used by RO/WFE to construct a WorkflowExecution (DD-KA-2496).
 	// +optional

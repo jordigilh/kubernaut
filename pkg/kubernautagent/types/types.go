@@ -157,6 +157,13 @@ type InvestigationResult struct {
 	// Outcome routing (is_actionable already existed, GAP-002 population in P3)
 	IsActionable *bool `json:"is_actionable,omitempty"`
 
+	// DD-KA-2520-2521: typed, server-owned investigation state. These fields
+	// are authoritative for terminal routing; SelectedWorkflow must never be
+	// used to infer no_matching_workflows.
+	TerminalOutcome         sharedtypes.TerminalOutcome         `json:"terminal_outcome,omitempty"`
+	WorkflowDiscoveryStatus sharedtypes.WorkflowDiscoveryStatus `json:"workflow_discovery_status,omitempty"`
+	HistoryStatus           sharedtypes.HistoryStatus           `json:"history_status,omitempty"`
+
 	// InvestigationOutcome preserves the raw investigation_outcome string from
 	// the LLM (e.g., "actionable", "inconclusive", "problem_resolved"). Used
 	// for Phase 1→3 propagation so the investigator can merge Phase 1 outcomes

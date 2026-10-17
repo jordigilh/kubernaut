@@ -125,6 +125,13 @@ func clearModelSelectionMetadata(result *katypes.InvestigationResult) {
 	result.PriorRemediationUIDs = nil
 	result.HandoffDigest = ""
 	result.ProposedWorkflowID = ""
+	// DD-KA-2520-2521: these fields are server-owned lifecycle state, not
+	// model output. The flat intake embeds InvestigationResult for legacy
+	// compatibility, so clear any attacker/model-supplied values before the
+	// investigator applies the phase-aware discovery gate.
+	result.TerminalOutcome = ""
+	result.WorkflowDiscoveryStatus = ""
+	result.HistoryStatus = ""
 }
 
 const notActionableWarning = "Alert not actionable — no remediation warranted"
@@ -156,11 +163,11 @@ func ApplyInvestigationOutcome(result *katypes.InvestigationResult, outcome stri
 	case "inconclusive":
 		result.HumanReviewNeeded = true
 		if result.HumanReviewReason == "" {
-			if result.RCASummary != "" && result.WorkflowID == "" {
-				result.HumanReviewReason = "no_matching_workflows"
-			} else {
-				result.HumanReviewReason = "investigation_inconclusive"
-			}
+			// Keep the historical reason as a compatibility projection for
+			// older consumers. Typed terminal routing is authoritative and is
+			// populated by the server-owned investigation lifecycle; this
+			// parser projection must never be used to infer no-match.
+			result.HumanReviewReason = "investigation_inconclusive"
 		}
 	case "actionable":
 		if result.IsActionable == nil {
@@ -182,12 +189,10 @@ func applyOutcomeRouting(result *katypes.InvestigationResult) {
 		result.IsActionable = &trueVal
 		return
 	}
-	// #746 / BR-KA-197.2: When no workflow is selected and no specific outcome
-	// (inconclusive, problem_resolved, etc.) has already set HumanReviewNeeded,
-	// derive no_matching_workflows. Matches HAPI v1.2.1:
-	//   elif selected_workflow is None: needs_human_review = True; reason = "no_matching_workflows"
+	// Keep the legacy reason projection conservative as well. Typed state is
+	// authoritative and is set by the server-owned discovery lifecycle.
 	if !result.HumanReviewNeeded {
 		result.HumanReviewNeeded = true
-		result.HumanReviewReason = "no_matching_workflows"
+		result.HumanReviewReason = "investigation_inconclusive"
 	}
 }

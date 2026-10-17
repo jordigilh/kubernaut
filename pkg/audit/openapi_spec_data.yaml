@@ -1894,6 +1894,7 @@ components:
             - $ref: '#/components/schemas/NotificationMessageEscalatedPayload'
             - $ref: '#/components/schemas/AIAgentResponsePayload'
             - $ref: '#/components/schemas/AIAgentRCACompletePayload'
+            - $ref: '#/components/schemas/AIAgentInvestigationDecisionPayload'
             - $ref: '#/components/schemas/AIAgentResponseFailedPayload'
             - $ref: '#/components/schemas/AIAgentEnrichmentCompletedPayload'
             - $ref: '#/components/schemas/AIAgentEnrichmentFailedPayload'
@@ -2054,6 +2055,7 @@ components:
               'notification.message.escalated': '#/components/schemas/NotificationMessageEscalatedPayload'
               'aiagent.response.complete': '#/components/schemas/AIAgentResponsePayload'
               'aiagent.rca.complete': '#/components/schemas/AIAgentRCACompletePayload'
+              'aiagent.investigation.decision': '#/components/schemas/AIAgentInvestigationDecisionPayload'
               'aiagent.response.failed': '#/components/schemas/AIAgentResponseFailedPayload'
               'aiagent.enrichment.completed': '#/components/schemas/AIAgentEnrichmentCompletedPayload'
               'aiagent.enrichment.failed': '#/components/schemas/AIAgentEnrichmentFailedPayload'
@@ -4879,6 +4881,90 @@ components:
           minimum: 0
           description: Completion tokens consumed during Phase 1 RCA
 
+    AIAgentInvestigationDecisionPayload:
+      type: object
+      required: [event_type, event_id, incident_id, phase, turn_kind, terminal_outcome, workflow_discovery_status, history_status]
+      description: |
+        Bounded, redacted investigation decision checkpoint emitted by Kubernaut
+        Agent (DD-KA-2520-2521, BR-AUDIT-005). This payload intentionally
+        contains only typed state, counts, identifiers, and bounded allow-listed
+        metadata. Prompts, private reasoning, credentials, raw transport errors,
+        and unrestricted tool arguments/results are not part of this schema.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.investigation.decision']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Logical remediation correlation ID
+          maxLength: 253
+        session_id:
+          type: string
+          maxLength: 253
+          description: Bounded investigation session identifier
+        turn_id:
+          type: string
+          maxLength: 128
+          description: Deterministic turn/state identity for idempotent reconstruction
+        phase:
+          type: string
+          enum: [rca, workflow_discovery, validation, unknown]
+        turn_kind:
+          type: string
+          enum: [tool_only, terminal_decision, state_transition]
+        model:
+          type: string
+          maxLength: 253
+        prompt_tokens:
+          type: integer
+          minimum: 0
+        completion_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+        evidence_status:
+          type: string
+          maxLength: 64
+        history_status:
+          type: string
+          enum: [available, empty, transport_unavailable, schema_error, not_requested]
+        target_status:
+          type: string
+          maxLength: 64
+        causal_mechanism_status:
+          type: string
+          maxLength: 64
+        continuation_reason:
+          type: string
+          maxLength: 128
+        terminal_outcome:
+          type: string
+          enum: [workflow_selected, problem_resolved, evidence_transport_unavailable, history_enrichment_unavailable, rca_incomplete, no_matching_workflows, workflow_discovery_failed, cancelled, unknown]
+        workflow_discovery_status:
+          type: string
+          enum: [not_started, started, completed_selected, completed_no_match, failed, skipped_due_to_failure]
+        human_review_reason:
+          type: string
+          maxLength: 128
+        failure_class:
+          type: string
+          maxLength: 128
+        retry_attempt:
+          type: integer
+          minimum: 0
+        related_event_ids:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 128
+
     AIAgentResponseFailedPayload:
       type: object
       required: [event_type, event_id, incident_id, error_message, phase, error_details]
@@ -5027,8 +5113,9 @@ components:
           example: "rca_incomplete"
         detail:
           type: string
-          description: Detailed failure context including retry information
-          example: "resolve_owner_chain failed after 3 retries: ConnectionError"
+          maxLength: 128
+          description: Bounded source failure classes; never contains raw provider errors
+          example: "owner_chain=transport;history=schema_error"
         affected_resource_kind:
           type: string
           description: Kind of the resource that was being enriched when failure occurred
@@ -5331,6 +5418,14 @@ components:
           type: boolean
           default: false
           description: True when AI could not produce reliable result
+        terminalOutcome:
+          type: string
+          enum: [workflow_selected, problem_resolved, evidence_transport_unavailable, history_enrichment_unavailable, rca_incomplete, no_matching_workflows, workflow_discovery_failed, cancelled]
+          description: Server-owned typed investigation terminal outcome (DD-KA-2520-2521)
+        workflowDiscoveryStatus:
+          type: string
+          enum: [not_started, started, completed_selected, completed_no_match, failed, skipped_due_to_failure]
+          description: Server-owned workflow-discovery gate state (DD-KA-2520-2521)
         humanReviewReason:
           type: string
           enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete, alignment_check_failed, decision_expired]

@@ -11,8 +11,16 @@
 **Version**: 1.0
 **Created**: 2026-05-12
 **Author**: AI Assistant
-**Status**: Active
+**Status**: Superseded for correlation semantics; retained as a historical test record
+**Superseded By**: DD-KA-2520-2521 and `docs/tests/2520-2521/TEST_PLAN.md`
 **Branch**: `fix/1111-audit-trace-coverage`
+
+> **Supersession notice**: The original #1111 workflow-discovery forwarding and
+> event-coverage work remains historical context. Its earlier enrichment
+> `IncidentID` top-level correlation exception is superseded by DD-KA-2520-2521,
+> which requires enrichment and investigation audit events for one remediation
+> to share the remediation-wide top-level correlation. `IncidentID` remains
+> bounded payload metadata.
 
 ---
 
@@ -51,7 +59,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 - BR-AUDIT-021: Remediation ID propagation for audit correlation
 - BR-AUDIT-023: Per-step audit events for workflow discovery
 - DD-WORKFLOW-014 v3.0: Workflow Selection Audit Trail
-- DD-AUDIT-CORRELATION-001: Universal Correlation ID Standard
+- DD-AUDIT-CORRELATION-002: Universal Correlation ID Standard
 - Issue #1111: Workflow discovery audit events fail OpenAPI validation (empty correlation_id)
 
 ### 2.2 Cross-References
@@ -68,7 +76,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 |----|------|--------|-------------|----------------|------------|
 | R1 | `get_workflow` context filter change breaks non-investigator callers | Regression | Low | UT-KA-1111-010 | Best-effort signal loading (don't fail if missing) |
 | R2 | `NewOptString("")` sends empty `remediation_id=` to DS | Silent failure | Medium | UT-KA-1111-006 | Guard with `if signal.RemediationID != ""` |
-| R3 | `aiagent.enrichment.completed` uses `ai-rr-*` correlation | FP query miss | High | N/A | Moved to KA E2E tier instead of FP |
+| R3 | Historical `IncidentID` enrichment correlation exception | Superseded contract | Closed | N/A | DD-KA-2520-2521 requires remediation-wide top-level correlation |
 | R4 | FP E2E timeout with 10 more events | Flaky test | Low | FP Step 11 | 240s timeout sufficient; avg is ~80s |
 | R5 | Service E2E failure injection infrastructure gaps | Deferred tests | Medium | Phase 3 | Defer to separate issues if infrastructure missing |
 
@@ -76,7 +84,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 - R1: Mitigated by UT-KA-1111-010 (get_workflow without signal context succeeds)
 - R2: Mitigated by UT-KA-1111-006 (empty RemediationID does not send param)
-- R3: Documented in FP Step 11 comments explaining why enrichment events are excluded
+- R3: Superseded by DD-KA-2520-2521; enrichment events now join the remediation-wide audit timeline
 
 ---
 
@@ -92,7 +100,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 ### 4.2 Features Not to be Tested
 
-- **Enrichment correlation fix**: `aiagent.enrichment.completed` uses `signal.IncidentID` (AIAnalysis name) instead of `signal.RemediationID`. This is a design decision, not a bug. Separate issue if alignment is needed.
+- **Enrichment correlation fix (superseded)**: the earlier `IncidentID` exception is superseded by DD-KA-2520-2521. Enrichment and investigation audit events now share the remediation-wide top-level correlation; `IncidentID` remains bounded payload metadata.
 - **Webhook correlation alignment**: `remediationworkflow.admitted.*` uses admission UID. Aligning to RR name would require webhook handler changes. Out of scope.
 - **Never-emitted events** (~14 types): Error/edge-case events with no production emitter path in current scenarios (e.g., `gateway.crd.failed` requires K8s API server errors).
 
@@ -100,8 +108,8 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 | Decision | Rationale |
 |----------|-----------|
-| FP queries by `correlation_id = RR.Name` | DD-AUDIT-CORRELATION-001 establishes RR name as the universal correlation ID |
-| Events with non-RR correlation are tested at service/IT tier | FP cannot query events correlated by admission UID or AIAnalysis name |
+| FP queries by `correlation_id = RR.Name` | DD-KA-2520-2521 and DD-AUDIT-CORRELATION-002 require remediation-wide top-level correlation |
+| Historical non-RR enrichment exception | Superseded; `IncidentID` remains bounded event metadata, not the sole audit bridge |
 | `get_workflow` signal context is best-effort | Non-investigator callers (notification resolver, RO adapter, WE querier) may not have a signal context |
 
 ---

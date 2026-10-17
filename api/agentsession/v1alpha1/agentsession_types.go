@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // AgentSessionPhase represents the lifecycle state of an AgentSession, as
@@ -348,6 +350,20 @@ type AgentSessionResult struct {
 	// Empty means no specific reason was recorded.
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
+	// TerminalOutcome is KA's server-owned investigation terminal state.
+	// Consumers must not infer no_matching_workflows from SelectedWorkflow=nil.
+	// +optional
+	// +kubebuilder:validation:Enum=workflow_selected;problem_resolved;evidence_transport_unavailable;history_enrichment_unavailable;rca_incomplete;no_matching_workflows;workflow_discovery_failed;cancelled
+	TerminalOutcome sharedtypes.TerminalOutcome `json:"terminalOutcome,omitempty"`
+	// WorkflowDiscoveryStatus records whether workflow discovery actually ran
+	// and how its gate completed.
+	// +optional
+	// +kubebuilder:validation:Enum=not_started;started;completed_selected;completed_no_match;failed;skipped_due_to_failure
+	WorkflowDiscoveryStatus sharedtypes.WorkflowDiscoveryStatus `json:"workflowDiscoveryStatus,omitempty"`
+	// HistoryStatus distinguishes empty history from unavailable history.
+	// +optional
+	// +kubebuilder:validation:Enum=available;empty;transport_unavailable;schema_error;not_requested
+	HistoryStatus sharedtypes.HistoryStatus `json:"historyStatus,omitempty"`
 	// IsActionable is the LLM's assessment of whether the alert warrants
 	// action. nil means the LLM did not explicitly assess actionability.
 	// +optional
