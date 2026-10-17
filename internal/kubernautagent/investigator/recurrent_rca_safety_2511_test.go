@@ -116,7 +116,7 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 		Expect(err).NotTo(HaveOccurred())
 		inv := newTestInvestigator(investigator.Config{
 			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
-			Enricher:   enrichment.NewEnricher(&gateK8sClient{}, ds, &gateRecordingAuditStore{}, logger),
+			Enricher:   enrichment.NewEnricher(&historySpecHashK8sClient2511{}, ds, &gateRecordingAuditStore{}, logger),
 			AuditStore: &gateRecordingAuditStore{}, Logger: logger, MaxTurns: 1,
 			PhaseTools: investigator.DefaultPhaseToolMap(),
 		})
@@ -154,8 +154,11 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			Message: "history-backed recurrence",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.HumanReviewNeeded).To(BeTrue())
-		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+		Expect(result.HumanReviewNeeded).To(BeFalse())
+		Expect(result.HumanReviewReason).To(BeEmpty())
+		Expect(result.EvidenceStatus).NotTo(BeNil())
+		Expect(result.EvidenceStatus.Class).To(Equal(katypes.EvidenceFailureTransportUnavailable))
+		Expect(result.EvidenceStatus.Outcome).To(Equal(katypes.EvidenceOutcomeTransportUnavailable))
 		Expect(result.Warnings).To(ContainElement(ContainSubstring("history is unavailable")))
 		Expect(client.calls).To(HaveLen(1), "failed history acquisition must not trigger an ungrounded continuation")
 	})
@@ -214,8 +217,11 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			Message: "spec hash unavailable",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.HumanReviewNeeded).To(BeTrue())
-		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+		Expect(result.HumanReviewNeeded).To(BeFalse())
+		Expect(result.HumanReviewReason).To(BeEmpty())
+		Expect(result.EvidenceStatus).NotTo(BeNil())
+		Expect(result.EvidenceStatus.Class).To(Equal(katypes.EvidenceFailureTransportUnavailable))
+		Expect(result.EvidenceStatus.Outcome).To(Equal(katypes.EvidenceOutcomeTransportUnavailable))
 		Expect(client.calls).To(HaveLen(1), "spec-hash failure must not permit an ungrounded continuation")
 	})
 
@@ -240,8 +246,11 @@ var _ = Describe("#2511 recurrent RCA safety boundaries", func() {
 			Message: "forbidden history",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.HumanReviewNeeded).To(BeTrue())
-		Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonRCAIncomplete))
+		Expect(result.HumanReviewNeeded).To(BeFalse())
+		Expect(result.HumanReviewReason).To(BeEmpty())
+		Expect(result.EvidenceStatus).NotTo(BeNil())
+		Expect(result.EvidenceStatus.Class).To(Equal(katypes.EvidenceFailureSchemaClientRequestFailure))
+		Expect(result.EvidenceStatus.Outcome).To(Equal(katypes.EvidenceOutcomeSchemaClientFailure))
 		Expect(client.calls).To(HaveLen(1), "forbidden history acquisition must not permit an ungrounded continuation")
 	})
 

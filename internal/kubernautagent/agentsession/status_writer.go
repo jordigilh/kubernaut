@@ -144,7 +144,7 @@ func (d *Dispatcher) writeFailedStatus(ctx context.Context, key crclient.ObjectK
 // eventual human decision (select_workflow/complete_no_action) actually
 // concludes the session. That final write arrives as a second OnTerminal
 // call once CompleteUserDriving/ForceCompleteByRemediationID commits.
-func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.ObjectKey, status session.Status, result *katypes.InvestigationResult, fnErr error) {
+func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.ObjectKey, status session.Status, result *katypes.InvestigationResult, fnErr error, evidenceStatus *katypes.EvidenceStatus) {
 	if status == session.StatusUserDriving {
 		d.updateStatus(ctx, key, func(as *agentsessionv1.AgentSession) {
 			if isTerminalPhase(as.Status.Phase) {
@@ -167,9 +167,13 @@ func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.Objec
 		case session.StatusFailed:
 			as.Status.Phase = agentsessionv1.AgentSessionPhaseFailed
 			as.Status.Error = curatedFailureMessage(fnErr)
+			as.Status.EvidenceStatus = mapEvidenceStatus(evidenceStatus)
 		default: // session.StatusCompleted
 			as.Status.Phase = agentsessionv1.AgentSessionPhaseCompleted
 			as.Status.Result = MapInvestigationResultToAgentSessionResult(d.logger, result, as.Spec.IncidentID)
+		}
+		if status == session.StatusCancelled {
+			as.Status.EvidenceStatus = mapEvidenceStatus(evidenceStatus)
 		}
 	})
 }

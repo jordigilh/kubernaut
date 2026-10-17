@@ -19,7 +19,9 @@ package custom
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -29,6 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var namespacedResourceContextSchema = json.RawMessage(`{
@@ -128,13 +131,58 @@ type remediationHistoryQuery struct {
 }
 
 func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichment.DataStorageClient, q remediationHistoryQuery) *enrichment.RemediationHistoryResult {
+	if strings.TrimSpace(q.SpecHash) == "" {
+		status := &katypes.EvidenceStatus{
+			Version:         katypes.EvidenceStatusVersion,
+			Class:           katypes.EvidenceFailureNone,
+			Source:          katypes.EvidenceSourceRemediationHistory,
+			Outcome:         katypes.EvidenceOutcomeSkipped,
+			TargetRef:       strings.Trim(strings.Join([]string{q.Namespace, q.Kind, q.Name}, "/"), "/"),
+			ClusterID:       q.ClusterID,
+			LogicalTool:     q.ToolName,
+			LastFailureCode: katypes.EvidenceFailureCodeHashUnavailable,
+		}
+		if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+			scope.Merge(status)
+		}
+		return &enrichment.RemediationHistoryResult{EvidenceStatus: status}
+	}
 	result, err := ds.GetRemediationHistory(ctx, q.Kind, q.Name, q.Namespace, q.ClusterID, q.SpecHash)
 	if err != nil {
 		logger.Info(q.ToolName+": remediation history fetch failed",
 			"kind", q.Kind, "name", q.Name, "namespace", q.Namespace, "error", err)
+		status := katypes.EvidenceSourceStatus{
+			Version:         katypes.EvidenceStatusVersion,
+			Class:           katypes.EvidenceFailureTransportUnavailable,
+			Source:          katypes.EvidenceSourceRemediationHistory,
+			Outcome:         katypes.EvidenceOutcomeTransportUnavailable,
+			TargetRef:       strings.Trim(strings.Join([]string{q.Namespace, q.Kind, q.Name}, "/"), "/"),
+			ClusterID:       q.ClusterID,
+			LogicalTool:     q.ToolName,
+			LastFailureCode: katypes.EvidenceFailureCodeTransport,
+		}
+		var typed *enrichment.HistoryFetchError
+		if errors.As(err, &typed) && typed != nil {
+			status = typed.Status
+		}
+		if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+			scope.MergeSource(status)
+		}
+		return &enrichment.RemediationHistoryResult{EvidenceStatus: &katypes.EvidenceStatus{
+			Version: status.Version, Class: status.Class, Source: status.Source,
+			Outcome: status.Outcome, TargetRef: status.TargetRef, ClusterID: status.ClusterID,
+			LogicalTool: status.LogicalTool, Attempts: status.Attempts,
+			LastFailureCode: status.LastFailureCode, CorrelationID: status.CorrelationID,
+			Sources: []katypes.EvidenceSourceStatus{status},
+		}}
 	}
 	if result == nil {
 		result = &enrichment.RemediationHistoryResult{}
+	}
+	if result.EvidenceStatus != nil {
+		if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+			scope.Merge(result.EvidenceStatus)
+		}
 	}
 	return result
 }

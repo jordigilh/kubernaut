@@ -353,7 +353,10 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				logr.Discard())
 
 			By("Calling broken enricher")
-			result, err := brokenEnricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "broken-pod-"+testID, Namespace: "it-enrichment", IncidentID: incidentID})
+			// Supply a valid hash so the history client is exercised even though
+			// the K8s client is unavailable. An empty hash intentionally skips the
+			// DataStorage query because it cannot form a valid history request.
+			result, err := brokenEnricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "broken-pod-"+testID, Namespace: "it-enrichment", SpecHash: "sha256:broken", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred(), "enricher handles failure gracefully")
 			Expect(result.OwnerChain).To(BeEmpty(), "K8s failed so owner chain should be empty")
 			Expect(result.RemediationHistory).To(BeNil(), "DS failed so history should be nil")
@@ -373,8 +376,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				var eventData map[string]interface{}
 				g.Expect(json.Unmarshal(eventDataRaw, &eventData)).To(Succeed())
 				g.Expect(eventData["reason"]).To(Equal("all_enrichment_sources_failed"))
-				g.Expect(eventData["detail"]).To(ContainSubstring("envtest unreachable"))
-				g.Expect(eventData["detail"]).To(ContainSubstring("DS endpoint unreachable"))
+				g.Expect(eventData["detail"]).To(Equal("owner_chain=transport_unavailable; history=transport_unavailable"))
 				g.Expect(eventData["affected_resource_kind"]).To(Equal("Pod"))
 				g.Expect(eventData["incident_id"]).To(Equal(incidentID))
 			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())

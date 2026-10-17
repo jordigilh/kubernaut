@@ -106,11 +106,10 @@ func (w *WriterClient) resolveToolName(tool string) string {
 	return ClusterTool(w.clusterID, tool)
 }
 
-// callTool invokes the named MCP tool against the current session, retrying
-// once via the reconnect callback (if set) when the call fails with a
-// retryable session error. Mirrors Client.callTool exactly (issue #2317);
-// kept as a WriterClient-local copy rather than a shared helper because the
-// two types' CallTool signatures and zero-value returns differ ((*mcp.CallToolResult, error) vs bespoke per-method returns).
+// callTool invokes a mutating MCP tool exactly once. A transport failure after
+// the request was sent is ambiguous; retrying here could duplicate a create,
+// update, or delete. Failed creates may use callReadTool for an explicit
+// read-after-write reconciliation, but the mutation itself is never replayed.
 func (w *WriterClient) callTool(ctx context.Context, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
 	session := w.currentSession()
 	if session == nil {
@@ -120,19 +119,14 @@ func (w *WriterClient) callTool(ctx context.Context, toolName string, args map[s
 	if err == nil {
 		return result, nil
 	}
-	if w.reconnect == nil || !isRetryableSessionError(err) {
-		return nil, fmt.Errorf("call %s: %w", toolName, err)
-	}
+	return nil, fmt.Errorf("call %s: %w", toolName, err)
+}
 
-	if reconnErr := w.reconnect(ctx); reconnErr != nil {
-		return nil, fmt.Errorf("call %s: reconnect failed: %w (original: %w)", toolName, reconnErr, err)
-	}
-
-	session = w.currentSession()
-	if session == nil {
-		return nil, fmt.Errorf("call %s: no active MCP session after reconnect", toolName)
-	}
-	return session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: args})
+// callReadTool invokes an idempotent read and repairs a dead provider session
+// once before retrying. It is used only for reconciliation after an ambiguous
+// mutation and never for the mutation request itself.
+func (w *WriterClient) callReadTool(ctx context.Context, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
+	return callReadToolWithReconnect(ctx, toolName, args, w.currentSession, w.reconnect)
 }
 
 // Create implements client.Writer. It serializes the object to JSON and sends
@@ -255,7 +249,7 @@ func (w *WriterClient) remoteResourceExists(ctx context.Context, gvk schema.Grou
 		args["namespace"] = namespace
 	}
 
-	result, callErr := w.callTool(ctx, w.resolveToolName(ToolGet), args)
+	result, callErr := w.callReadTool(ctx, w.resolveToolName(ToolGet), args)
 	if callErr != nil || result == nil || result.IsError {
 		return false
 	}

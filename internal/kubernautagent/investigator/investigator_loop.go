@@ -321,6 +321,40 @@ func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID
 // caller must return it immediately), and whether the anomaly detector's
 // total tool-call budget is now exhausted.
 func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, turn int, phase string, correlationID string) (newMessages []llm.Message, sentinel LoopResult, budgetExhausted bool) {
+	if sentinel = inv.findSentinelTool(ctx, messages, resp, phase, correlationID); sentinel != nil {
+		return messages, sentinel, false
+	}
+
+	assistantMsg := resp.Message
+	assistantMsg.ToolCalls = resp.ToolCalls
+	messages = append(messages, assistantMsg)
+	toolResults := inv.executeToolBatch(ctx, resp, turn, phase, correlationID)
+
+	// #2387 (BR-KA-OBSERVABILITY-001): batch-count the dispatched tools.
+	// Sentinel submits (submit_result*) return before this point, so they are
+	// consumed, never executed, and never counted here.
+	inv.metricsFor(correlationID).AddToolCalls(len(resp.ToolCalls))
+
+	for i, tc := range resp.ToolCalls {
+		emitToSink(ctx, session.EventTypeToolResult, turn, phase, map[string]interface{}{
+			"tool_name":      tc.Name,
+			"tool_index":     i,
+			"result_preview": truncatePreview(toolResults[i], 200),
+		})
+
+		inv.emitToolCallAudit(ctx, tc, i, toolResults[i], phase, correlationID)
+		messages = append(messages, llm.Message{
+			Role:       "tool",
+			Content:    toolResults[i],
+			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
+		})
+	}
+
+	return messages, nil, inv.anomalyDetectorFor(correlationID).TotalExceeded()
+}
+
+func (inv *Investigator) findSentinelTool(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, phase, correlationID string) LoopResult {
 	for _, tc := range resp.ToolCalls {
 		if !inv.toolAllowedInPhase(ctx, katypes.Phase(phase), tc.Name) {
 			continue
@@ -339,14 +373,13 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 				"tool", tc.Name,
 				"phase", phase,
 				"correlation_id", correlationID)
-			return messages, sr, false
+			return sr
 		}
 	}
+	return nil
+}
 
-	assistantMsg := resp.Message
-	assistantMsg.ToolCalls = resp.ToolCalls
-	messages = append(messages, assistantMsg)
-
+func (inv *Investigator) executeToolBatch(ctx context.Context, resp llm.ChatResponse, turn int, phase, correlationID string) []string {
 	toolResults := make([]string, len(resp.ToolCalls))
 	var g errgroup.Group
 	for i, tc := range resp.ToolCalls {
@@ -355,42 +388,32 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			"tool_index": i,
 		})
 		g.Go(func() error {
-			// BR-KA-267, #1949: bound each tool call so a stuck dependency
-			// (e.g. a K8s informer-cache read or DataStorage call) cannot
-			// hang this goroutine indefinitely — g.Wait() below previously
-			// had no deadline at all.
-			toolCtx, cancel := context.WithTimeout(ctx, inv.toolCallTimeout)
-			defer cancel()
-			toolResults[i] = inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID, katypes.Phase(phase))
+			toolResults[i] = inv.executeToolCall(ctx, tc, correlationID, katypes.Phase(phase))
 			return nil
 		})
 	}
 	_ = g.Wait()
+	return toolResults
+}
 
-	// #2387 (BR-KA-OBSERVABILITY-001): batch-count the dispatched tools.
-	// Sentinel submits (submit_result*) return before this point, so they are
-	// consumed, never executed, and never counted here.
-	inv.metricsFor(correlationID).AddToolCalls(len(resp.ToolCalls))
-
-	for i, tc := range resp.ToolCalls {
-		emitToSink(ctx, session.EventTypeToolResult, turn, phase, map[string]interface{}{
-			"tool_name":      tc.Name,
-			"tool_index":     i,
-			"result_preview": truncatePreview(toolResults[i], 200),
-		})
-
-		inv.emitToolCallAudit(ctx, tc, i, toolResults[i], phase, correlationID)
-
-		messages = append(messages, llm.Message{
-			Role:       "tool",
-			Content:    toolResults[i],
-			ToolCallID: tc.ID,
-			ToolName:   tc.Name,
-		})
+func (inv *Investigator) executeToolCall(ctx context.Context, tc llm.ToolCall, correlationID string, phase katypes.Phase) string {
+	// BR-KA-267, #1949: bound each tool call so a stuck dependency (e.g. a K8s
+	// informer-cache read or DataStorage call) cannot hang the batch forever.
+	toolCtx, cancel := context.WithTimeout(ctx, inv.toolCallTimeout)
+	defer cancel()
+	parentScope, hasParentScope := katypes.EvidenceStatusScopeFromContext(ctx)
+	if !hasParentScope {
+		return inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID, phase)
 	}
 
-	budgetExhausted = inv.anomalyDetectorFor(correlationID).TotalExceeded()
-	return messages, nil, budgetExhausted
+	// Each concurrent tool call gets an isolated child accumulator. The parent
+	// is merged after the call regardless of success, typed failure, or
+	// cancellation, so source status never rides in the bounded tool result.
+	childScope := katypes.NewEvidenceStatusScope()
+	toolCtx = katypes.WithEvidenceStatusScope(toolCtx, childScope)
+	result := inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID, phase)
+	parentScope.Merge(childScope.Snapshot())
+	return result
 }
 
 const omittedWorkflowSchemaAuditResult = `{"result_omitted":true,"reason":"workflow_schema_not_persisted"}`

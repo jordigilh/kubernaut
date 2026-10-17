@@ -536,13 +536,16 @@ func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
 // the existing workflow-discovery safety contract (ADR-056, DD-KA-2511).
 func preserveSignalTargetLabelsOnFailedRCAEnrichment(current, signal *enrichment.EnrichmentResult) *enrichment.EnrichmentResult {
 	if current == nil || signal == nil || current == signal ||
-		!allLabelDetectionsFailed(current.DetectedLabels) ||
 		signal.DetectedLabels == nil || allLabelDetectionsFailed(signal.DetectedLabels) {
+		return current
+	}
+	if current.DetectedLabels != nil && !allLabelDetectionsFailed(current.DetectedLabels) {
 		return current
 	}
 
 	preserved := *current
 	preserved.DetectedLabels = signal.DetectedLabels
+	preserved.DetectedLabelsFallback = true
 	return &preserved
 }
 

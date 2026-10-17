@@ -611,7 +611,7 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 	// forever, exactly the same failure class already fixed for the read
 	// path (Client.callTool).
 	Describe("Session-provider WriterClient reconnect-on-failure (issue #2317)", func() {
-		It("UT-WE-054-WRITER-RECONN-001: Create recovers via WithReconnect after the underlying session dies", func() {
+		It("UT-FLEET-2518-015: Create never replays an ambiguous mutation and reconciles with one read", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
 
 			cfg := mcpclient.DefaultResilienceConfig()
@@ -633,8 +633,20 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 
 			err = writer.Create(ctx, job)
-			Expect(err).ToNot(HaveOccurred(),
-				"Create must recover by reconnecting once the session is dead, not fail forever")
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(),
+				"an ambiguous create must report the explicit read-after-write reconciliation result")
+			var mutationCalls, readCalls int
+			for _, call := range gw.CallLog() {
+				switch call.ToolName {
+				case "prod-east__resources_create_or_update":
+					mutationCalls++
+				case "prod-east__resources_get":
+					readCalls++
+				}
+			}
+			Expect(mutationCalls).To(BeNumerically("<=", 1), "the ambiguous mutation must never be replayed")
+			Expect(readCalls).To(Equal(1), "reconciliation is a separate idempotent read")
 		})
 
 		It("UT-WE-054-WRITER-RECONN-002: without WithReconnect, a dead session fails Create every time", func() {

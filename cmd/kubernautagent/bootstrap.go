@@ -83,6 +83,7 @@ type coreServices struct {
 	alignEvaluator       *alignment.Evaluator
 	alignCfg             kaconfig.AlignmentCheckConfig
 	wfCatalog            *workflowcatalog.LazyCatalog
+	agentMetrics         *kametrics.Metrics
 }
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
@@ -96,6 +97,10 @@ func buildCoreServices(
 	dsTokenSource *auth.TokenSource,
 	logger logr.Logger,
 ) *coreServices {
+	// Construct the injected registry before fleet tools. The provider-backed
+	// BridgeTools capture the observer during construction; no post-startup
+	// global swap is permitted (DD-FLEET-009).
+	agentMetrics := kametrics.NewMetrics()
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
 	infra := initK8sInfra(logger)
 
@@ -122,7 +127,8 @@ func buildCoreServices(
 		os.Exit(1)
 	}
 	reg := buildToolRegistry(cfg, logger, infra, ds, wfCatalog, auditStore)
-	fleetClient, fleetOverlayResolver := registerFleetTools(context.Background(), cfg, logger)
+	fleetObserver := newFleetRetryObserver(auditStore, agentMetrics, logger.WithName("fleet-recovery"))
+	fleetClient, fleetOverlayResolver := registerFleetTools(context.Background(), cfg, logger, fleetObserver)
 	// #1553 / ADR-068 decision #11 / BR-INTEGRATION-054: fail closed on Fleet
 	// dependency unreachability via readyz (pod-wide), instead of the
 	// previous fail-open behavior of only logging an error.
@@ -156,7 +162,7 @@ func buildCoreServices(
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
-		wfCatalog: wfCatalog,
+		wfCatalog: wfCatalog, agentMetrics: agentMetrics,
 	}
 }
 
@@ -344,6 +350,7 @@ type investigationRunnerParams struct {
 	catalogFetcher       investigator.CatalogFetcher
 	summarizer           *summarizer.Summarizer
 	logger               logr.Logger
+	agentMetrics         *kametrics.Metrics
 }
 
 // investigationStack groups the constructed investigation-stack components
@@ -472,7 +479,10 @@ func wrapWithAlignment(
 // the process on unrecoverable wiring failures, matching the original inline
 // main() behavior (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4f).
 func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
-	agentMetrics := kametrics.NewMetrics()
+	agentMetrics := p.agentMetrics
+	if agentMetrics == nil {
+		agentMetrics = kametrics.NewMetrics()
+	}
 
 	instrumentedAudit := audit.NewInstrumentedAuditStore(p.auditStore, agentMetrics.RecordAuditEventEmitted)
 

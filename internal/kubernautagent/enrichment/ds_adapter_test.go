@@ -283,7 +283,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 
 			adapter := enrichment.NewDSAdapter(client)
 			Expect(func() {
-				result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "")
+				result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "test-hash")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Tier1).To(HaveLen(1))
 				Expect(result.Tier1[0].RemediationUID).To(Equal("wf-123"))
@@ -348,7 +348,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "test-hash")
 			Expect(err).To(HaveOccurred(), "#762: 400 responses must surface as errors")
 			Expect(err.Error()).To(ContainSubstring("bad request"))
 			Expect(result).To(BeNil())
@@ -366,7 +366,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			adapter := enrichment.NewDSAdapter(ogenClient)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api", "default", "", "")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api", "default", "", "test-hash")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("ds adapter"))
 			Expect(result).To(BeNil())

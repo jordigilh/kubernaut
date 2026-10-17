@@ -90,7 +90,7 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 	})
 
 	Describe("UT-KA-OBS-001: Metrics registration", func() {
-		It("registers all 9 metrics without panic", func() {
+		It("registers all core and Fleet recovery metrics without panic", func() {
 			families, err := reg.Gather()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -108,6 +108,7 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 			m.RecordAuditEventEmitted("aiagent.session.started")
 			m.HTTPRequestDurationSeconds.WithLabelValues("/test", "GET", "200").Observe(0.01)
 			m.HTTPRequestsInFlight.Inc()
+			m.RecordMCPRecovery("read", "bridge_tool", "retry", "session_reset")
 
 			families, err = reg.Gather()
 			Expect(err).NotTo(HaveOccurred())
@@ -125,6 +126,21 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 			Expect(names).To(HaveKey(kametrics.MetricNameHTTPRequestsInFlight))
 			Expect(names).To(HaveKey(kametrics.MetricNameAuthzDeniedTotal))
 			Expect(names).To(HaveKey(kametrics.MetricNameAuditEventsEmittedTotal))
+			Expect(names).To(HaveKey(kametrics.MetricNameMCPRecoveryAttemptsTotal))
+		})
+	})
+
+	Describe("UT-KA-2518-014: RecordMCPRecovery", func() {
+		It("records only bounded label values and collapses unknown input", func() {
+			m.RecordMCPRecovery("read", "bridge_tool", "retry", "session_reset")
+			m.RecordMCPRecovery("attacker-controlled-tool", "https://secret.example", "unexpected", "raw dependency error")
+
+			Expect(gatherCounter(reg, kametrics.MetricNameMCPRecoveryAttemptsTotal, map[string]string{
+				"tool_class": "read", "source": "bridge_tool", "outcome": "retry", "failure_class": "session_reset",
+			})).To(BeNumerically("==", 1))
+			Expect(gatherCounter(reg, kametrics.MetricNameMCPRecoveryAttemptsTotal, map[string]string{
+				"tool_class": "unknown", "source": "unknown", "outcome": "unknown", "failure_class": "unknown",
+			})).To(BeNumerically("==", 1))
 		})
 	})
 
@@ -240,6 +256,7 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 				nilMetrics.RecordRateLimited()
 				nilMetrics.RecordAuthzDenied("owner_mismatch")
 				nilMetrics.RecordAuditEventEmitted("aiagent.session.started")
+				nilMetrics.RecordMCPRecovery("read", "bridge_tool", "retry", "session_reset")
 			}).NotTo(Panic())
 		})
 	})
@@ -256,6 +273,7 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 				kametrics.MetricNameHTTPRequestsInFlight,
 				kametrics.MetricNameAuthzDeniedTotal,
 				kametrics.MetricNameAuditEventsEmittedTotal,
+				kametrics.MetricNameMCPRecoveryAttemptsTotal,
 			}
 			for _, c := range expectedConstants {
 				Expect(c).NotTo(BeEmpty(), "constant must not be empty")

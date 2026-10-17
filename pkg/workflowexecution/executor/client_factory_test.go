@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -188,6 +189,49 @@ var _ = Describe("UT-WE-054-CF: ClientFactory", func() {
 			Expect(err).ToNot(HaveOccurred(),
 				"ClientFor must recover by reconnecting once the session is already dead, not fail forever")
 			Expect(execClient).ToNot(BeNil())
+		})
+
+		It("IT-FLEET-2518-007 [AC-4, AC-6]: factory mutation path reconciles with one read without replaying the mutation", func() {
+			gw := mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("prod-east"),
+				mockgw.WithAmbiguousMutationFailure(),
+			)
+			DeferCleanup(gw.Close)
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(func() { _ = rc.Close() })
+
+			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := executor.NewMCPClientFactoryWithProvider(localClient, rc.SessionProvider(), rc.Reconnect)
+			execClient, err := factory.ClientFor(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+
+			obj := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]interface{}{
+					"name":      "ambiguous-pod",
+					"namespace": "default",
+				},
+			}}
+			err = execClient.Create(ctx, obj)
+			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(),
+				"successful read-after-ambiguous-create must surface the typed AlreadyExists result")
+
+			var mutationCalls, reconciliationReads int
+			for _, call := range gw.CallLog() {
+				switch call.ToolName {
+				case "prod-east__resources_create_or_update":
+					mutationCalls++
+				case "prod-east__resources_get":
+					reconciliationReads++
+				}
+			}
+			Expect(mutationCalls).To(Equal(1), "ambiguous mutations must never be replayed")
+			Expect(reconciliationReads).To(Equal(1), "existence must be checked through a separate read")
 		})
 	})
 })

@@ -75,6 +75,11 @@ type ReasoningSummary struct {
 // the JSON serialization boundary for no behavioral gain, so it is intentionally
 // not decomposed.
 type InvestigationResult struct {
+	// EvidenceStatus is the bounded server-owned status of optional evidence
+	// sources. It is additive and omitted when no source reported a degraded
+	// outcome (DD-FLEET-009, BR-AUDIT-005).
+	EvidenceStatus *EvidenceStatus `json:"evidence_status,omitempty"`
+
 	// Core RCA output
 	RCASummary        string                 `json:"rca_summary"`
 	Severity          string                 `json:"severity,omitempty"`

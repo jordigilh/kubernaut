@@ -18,17 +18,14 @@ package mcpclient
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -124,18 +121,129 @@ type ResilientClient struct {
 
 	client atomic.Pointer[Client]
 	ready  atomic.Bool
+	// generation increments only when a newly connected session is published.
+	// Consumers use it to fence bindings resolved against an older session.
+	generation atomic.Uint64
 
-	// reconnectGroup deduplicates concurrent reconnect() calls (e.g. a
-	// periodic readiness prober racing the lazy reconnect-on-error path in
-	// Get/List) into a single in-flight handshake, matching the existing
-	// singleflight convention in discovery_tools.go. Without this, two
-	// concurrent reconnects each create a fresh client and Store() it,
-	// leaking the loser's connection.
-	reconnectGroup singleflight.Group
+	sessionMu sync.RWMutex
+
+	lifecycleMu    sync.Mutex
+	lifecycleState atomic.Uint32
+	reconnectRun   *reconnectRun
+}
+
+const (
+	resilientActive uint32 = iota
+	resilientClosing
+	resilientClosed
+)
+
+type reconnectRun struct {
+	rc            *ResilientClient
+	cancel        context.CancelFunc
+	operationDone <-chan struct{}
+	work          func() error
+	done          chan struct{}
+	deadlineCh    chan time.Time
+	waiters       int
+	mu            sync.Mutex
+	result        error
+	finished      bool
+}
+
+func (r *reconnectRun) addDeadline(ctx context.Context) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return
+	}
+	select {
+	case r.deadlineCh <- deadline:
+	default:
+		// A reconnect caller's deadline is advisory to the shared operation;
+		// its own ctx.Done path still returns the exact caller error.
+	}
+}
+
+func (r *reconnectRun) leave() {
+	r.mu.Lock()
+	if r.waiters > 0 {
+		r.waiters--
+	}
+	last := r.waiters == 0 && !r.finished
+	r.mu.Unlock()
+	if last {
+		r.cancel()
+	}
+}
+
+func (r *reconnectRun) finish(err error) {
+	r.mu.Lock()
+	if r.finished {
+		r.mu.Unlock()
+		return
+	}
+	r.result = err
+	r.finished = true
+	close(r.done)
+	r.mu.Unlock()
+
+	r.rc.lifecycleMu.Lock()
+	if r.rc.reconnectRun == r {
+		r.rc.reconnectRun = nil
+	}
+	r.rc.lifecycleMu.Unlock()
+}
+
+func (r *reconnectRun) resultError() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.result
+}
+
+func (r *reconnectRun) manageDeadline() {
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+	for {
+		select {
+		case deadline := <-r.deadlineCh:
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				r.cancel()
+				continue
+			}
+			if timer == nil {
+				timer = time.NewTimer(remaining)
+			} else {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(remaining)
+			}
+			timerC = timer.C
+		case <-timerC:
+			r.cancel()
+			timerC = nil
+		case <-r.operationDone:
+			return
+		case <-r.done:
+			return
+		}
+	}
 }
 
 // NewResilient creates a ResilientClient that connects with backoff and auto-reconnects.
 func NewResilient(ctx context.Context, endpoint string, cfg ResilienceConfig, logger logr.Logger, opts ...Option) (*ResilientClient, error) {
+	// The construction context bounds the initial handshake only. Reconnects
+	// after startup need a provider lifetime parent rather than inheriting a
+	// one-shot startup deadline.
 	rc := &ResilientClient{
 		endpoint: endpoint,
 		opts:     opts,
@@ -166,6 +274,9 @@ func (rc *ResilientClient) ResilienceConfig() ResilienceConfig {
 
 // Get implements client.Reader with automatic reconnection on transient errors.
 func (rc *ResilientClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if rc.isClosed() {
+		return ErrSessionClosed
+	}
 	c := rc.client.Load()
 	if c == nil {
 		return fmt.Errorf("MCP client not connected")
@@ -185,6 +296,9 @@ func (rc *ResilientClient) Get(ctx context.Context, key client.ObjectKey, obj cl
 
 // List implements client.Reader with automatic reconnection on transient errors.
 func (rc *ResilientClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if rc.isClosed() {
+		return ErrSessionClosed
+	}
 	c := rc.client.Load()
 	if c == nil {
 		return fmt.Errorf("MCP client not connected")
@@ -207,7 +321,10 @@ func (rc *ResilientClient) List(ctx context.Context, list client.ObjectList, opt
 // WARNING: The returned session becomes stale when the ResilientClient
 // reconnects. Prefer SessionProvider() for long-lived per-cluster clients.
 func (rc *ResilientClient) Session() *mcp.ClientSession {
-	c := rc.client.Load()
+	if rc.isClosed() {
+		return nil
+	}
+	c, _ := rc.loadPublished()
 	if c == nil {
 		return nil
 	}
@@ -219,7 +336,10 @@ func (rc *ResilientClient) Session() *mcp.ClientSession {
 // instances that must survive ResilientClient reconnections.
 func (rc *ResilientClient) SessionProvider() SessionProvider {
 	return func() *mcp.ClientSession {
-		c := rc.client.Load()
+		if rc.isClosed() {
+			return nil
+		}
+		c, _ := rc.loadPublished()
 		if c == nil {
 			return nil
 		}
@@ -227,13 +347,90 @@ func (rc *ResilientClient) SessionProvider() SessionProvider {
 	}
 }
 
+// SessionHandleProvider returns the current provider-owned session together
+// with its publication generation. A zero Session means the gateway is
+// currently disconnected; callers must return a bounded transient error rather
+// than retaining or closing a stale session.
+func (rc *ResilientClient) SessionHandleProvider() SessionHandleProvider {
+	return func() SessionHandle {
+		if rc.isClosed() {
+			return SessionHandle{Generation: rc.generation.Load()}
+		}
+		c, generation := rc.loadPublished()
+		if c == nil {
+			return SessionHandle{Generation: generation}
+		}
+		return SessionHandle{
+			Session:    c.Session(),
+			Generation: generation,
+		}
+	}
+}
+
 // Close terminates the underlying client connection.
 func (rc *ResilientClient) Close() error {
-	rc.ready.Store(false)
-	c := rc.client.Load()
-	if c != nil {
-		return c.Close()
+	rc.lifecycleMu.Lock()
+	switch rc.lifecycleState.Load() {
+	case resilientClosed:
+		rc.lifecycleMu.Unlock()
+		return nil
+	case resilientClosing:
+		rc.lifecycleMu.Unlock()
+		return nil
+	default:
+		rc.lifecycleState.Store(resilientClosing)
+		run := rc.reconnectRun
+		rc.lifecycleMu.Unlock()
+		if run != nil {
+			run.cancel()
+		}
 	}
+
+	rc.ready.Store(false)
+	rc.sessionMu.Lock()
+	c := rc.client.Swap(nil)
+	rc.sessionMu.Unlock()
+	var closeErr error
+	if c != nil {
+		closeErr = c.Close()
+	}
+	rc.lifecycleState.Store(resilientClosed)
+	return closeErr
+}
+
+// CloseContext fences future publication and closes the current provider-owned
+// session before the caller's deadline. The MCP SDK's Client.Close has no
+// context parameter, so the context is used to avoid starting work after the
+// caller has already expired; the SDK close itself is normally non-blocking.
+func (rc *ResilientClient) CloseContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return rc.Close()
+}
+
+func (rc *ResilientClient) isClosed() bool {
+	return rc.lifecycleState.Load() != resilientActive
+}
+
+func (rc *ResilientClient) loadPublished() (*Client, uint64) {
+	rc.sessionMu.RLock()
+	defer rc.sessionMu.RUnlock()
+	return rc.client.Load(), rc.generation.Load()
+}
+
+func (rc *ResilientClient) publish(c *Client) error {
+	rc.lifecycleMu.Lock()
+	defer rc.lifecycleMu.Unlock()
+	if rc.lifecycleState.Load() != resilientActive {
+		_ = c.Close()
+		return ErrSessionClosed
+	}
+	rc.sessionMu.Lock()
+	rc.client.Store(c)
+	rc.generation.Add(1)
+	rc.sessionMu.Unlock()
+	rc.ready.Store(true)
 	return nil
 }
 
@@ -264,8 +461,10 @@ func (rc *ResilientClient) connectWithBackoff(ctx context.Context) error {
 			return false, nil
 		}
 
-		rc.client.Store(c)
-		rc.ready.Store(true)
+		if publishErr := rc.publish(c); publishErr != nil {
+			lastErr = publishErr
+			return false, publishErr
+		}
 		rc.logger.Info("MCP Gateway connection established", "endpoint", rc.endpoint)
 		return true, nil
 	})
@@ -288,19 +487,52 @@ func (rc *ResilientClient) Reconnect(ctx context.Context) error {
 	return rc.reconnect(ctx)
 }
 
-// reconnectGroupKey is a constant singleflight key: a ResilientClient always
-// reconnects to the same endpoint, so there is only one dedup dimension per
-// instance (unlike discovery_tools.go's per-cluster keying).
-const reconnectGroupKey = "reconnect"
-
 func (rc *ResilientClient) reconnect(ctx context.Context) error {
-	_, err, _ := rc.reconnectGroup.Do(reconnectGroupKey, func() (any, error) {
-		return nil, rc.doReconnect(ctx)
-	})
-	return err
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	rc.lifecycleMu.Lock()
+	if rc.lifecycleState.Load() != resilientActive {
+		rc.lifecycleMu.Unlock()
+		return ErrSessionClosed
+	}
+	run := rc.reconnectRun
+	if run == nil {
+		opCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		run = &reconnectRun{
+			rc:            rc,
+			cancel:        cancel,
+			operationDone: opCtx.Done(),
+			work:          func() error { return rc.doReconnect(opCtx) },
+			done:          make(chan struct{}),
+			deadlineCh:    make(chan time.Time, 8),
+			waiters:       1,
+		}
+		rc.reconnectRun = run
+		run.addDeadline(ctx)
+		go run.manageDeadline()
+		go func() { run.finish(run.work()) }()
+	} else {
+		run.mu.Lock()
+		run.waiters++
+		run.mu.Unlock()
+		run.addDeadline(ctx)
+	}
+	rc.lifecycleMu.Unlock()
+
+	defer run.leave()
+	select {
+	case <-run.done:
+		return run.resultError()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (rc *ResilientClient) doReconnect(ctx context.Context) error {
+	if rc.isClosed() {
+		return ErrSessionClosed
+	}
 	rc.ready.Store(false)
 
 	old := rc.client.Load()
@@ -320,8 +552,9 @@ func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 		return err
 	}
 
-	rc.client.Store(c)
-	rc.ready.Store(true)
+	if err := rc.publish(c); err != nil {
+		return err
+	}
 	rc.logger.Info("Reconnected to MCP Gateway")
 	return nil
 }
@@ -367,18 +600,8 @@ func (rc *ResilientClient) isRetryableError(err error) bool {
 // ResilientClient.Get/List and session-provider Client.callTool so both
 // retry-on-reconnect paths use identical semantics.
 func isRetryableSessionError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, mcp.ErrConnectionClosed) || errors.Is(err, mcp.ErrSessionMissing) {
-		return true
-	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "401")
+	failure := ClassifyTransportError(err)
+	return failure != nil && failure.Action() == ActionReconnectAndRetryRead
 }
 
 // WithTokenRefreshTimeout returns an Option that bounds the OAuth2 token

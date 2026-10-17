@@ -47,6 +47,10 @@ const (
 
 	// LLM retry telemetry (kubernaut#1612 gap remediation)
 	MetricNameLLMCallRetriesTotal = "aiagent_llm_call_retries_total"
+
+	// Fleet MCP recovery telemetry (Issue #2518). Labels are deliberately
+	// bounded enums; target and wire identity remain audit/log fields only.
+	MetricNameMCPRecoveryAttemptsTotal = "aiagent_fleet_mcp_recovery_attempts_total"
 )
 
 // maxSignalNameLen bounds the signal_name label to prevent Prometheus TSDB
@@ -74,6 +78,9 @@ type Metrics struct {
 
 	// LLM retry telemetry (#1612 gap remediation)
 	LLMCallRetriesTotal *prometheus.CounterVec
+
+	// Fleet MCP recovery telemetry (#2518).
+	MCPRecoveryAttemptsTotal *prometheus.CounterVec
 }
 
 var (
@@ -101,6 +108,7 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 	m.initCoreCollectors()
 	m.initInteractiveCollectors()
 	m.initLLMRetryCollectors()
+	m.initMCPRecoveryCollectors()
 	registry.MustRegister(m.allCollectors()...)
 	return m
 }
@@ -229,6 +237,16 @@ func (m *Metrics) initLLMRetryCollectors() {
 	)
 }
 
+func (m *Metrics) initMCPRecoveryCollectors() {
+	m.MCPRecoveryAttemptsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameMCPRecoveryAttemptsTotal,
+			Help: "Total Fleet MCP recovery observations by bounded tool class, source, outcome, and failure class",
+		},
+		[]string{"tool_class", "source", "outcome", "failure_class"},
+	)
+}
+
 // allCollectors returns every collector owned by m, for bulk registration.
 func (m *Metrics) allCollectors() []prometheus.Collector {
 	return []prometheus.Collector{
@@ -246,6 +264,7 @@ func (m *Metrics) allCollectors() []prometheus.Collector {
 		m.InteractiveTakeoverTotal,
 		m.InteractiveLeaseContentionTotal,
 		m.LLMCallRetriesTotal,
+		m.MCPRecoveryAttemptsTotal,
 	}
 }
 
@@ -354,4 +373,30 @@ func (m *Metrics) RecordLLMCallRetry(phase, outcome string) {
 		return
 	}
 	m.LLMCallRetriesTotal.WithLabelValues(phase, outcome).Inc()
+}
+
+// RecordMCPRecovery records one shared MCP recovery observation using only
+// fixed, server-owned label values. Unknown values collapse to "unknown" so
+// an untrusted tool name, gateway response, or failure string cannot create a
+// Prometheus cardinality sink.
+func (m *Metrics) RecordMCPRecovery(toolClass, source, outcome, failureClass string) {
+	if m == nil {
+		return
+	}
+	m.MCPRecoveryAttemptsTotal.WithLabelValues(
+		boundedMCPLabel(toolClass, map[string]struct{}{"read": {}, "mutation": {}, "unknown": {}}),
+		boundedMCPLabel(source, map[string]struct{}{"bridge_tool": {}, "reader": {}, "writer": {}, "unknown": {}}),
+		boundedMCPLabel(outcome, map[string]struct{}{"retry": {}, "success": {}, "failed": {}, "exhausted": {}, "unknown": {}}),
+		boundedMCPLabel(failureClass, map[string]struct{}{
+			"session_reset": {}, "http_transient": {}, "unauthorized": {},
+			"caller_canceled": {}, "permanent": {}, "unknown": {},
+		}),
+	).Inc()
+}
+
+func boundedMCPLabel(value string, allowed map[string]struct{}) string {
+	if _, ok := allowed[value]; ok {
+		return value
+	}
+	return "unknown"
 }

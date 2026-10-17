@@ -1321,19 +1321,96 @@ func (s *AIAgentEnrichmentCompletedPayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("remediation_history_fetched")
 		e.Bool(s.RemediationHistoryFetched)
 	}
+	{
+		if s.ClusterID.Set {
+			e.FieldStart("cluster_id")
+			s.ClusterID.Encode(e)
+		}
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.ToolClass.Set {
+			e.FieldStart("tool_class")
+			s.ToolClass.Encode(e)
+		}
+	}
+	{
+		if s.LogicalTool.Set {
+			e.FieldStart("logical_tool")
+			s.LogicalTool.Encode(e)
+		}
+	}
+	{
+		if s.Attempt.Set {
+			e.FieldStart("attempt")
+			s.Attempt.Encode(e)
+		}
+	}
+	{
+		if s.RetryOutcome.Set {
+			e.FieldStart("retry_outcome")
+			s.RetryOutcome.Encode(e)
+		}
+	}
+	{
+		if s.FailureClass.Set {
+			e.FieldStart("failure_class")
+			s.FailureClass.Encode(e)
+		}
+	}
+	{
+		if s.FailureCode.Set {
+			e.FieldStart("failure_code")
+			s.FailureCode.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceSource.Set {
+			e.FieldStart("evidence_source")
+			s.EvidenceSource.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceOutcome.Set {
+			e.FieldStart("evidence_outcome")
+			s.EvidenceOutcome.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceFailureCode.Set {
+			e.FieldStart("evidence_failure_code")
+			s.EvidenceFailureCode.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentEnrichmentCompletedPayload = [10]string{
-	0: "event_type",
-	1: "event_id",
-	2: "incident_id",
-	3: "root_owner_kind",
-	4: "root_owner_name",
-	5: "root_owner_namespace",
-	6: "owner_chain_length",
-	7: "detected_labels_summary",
-	8: "failed_detections",
-	9: "remediation_history_fetched",
+var jsonFieldsNameOfAIAgentEnrichmentCompletedPayload = [21]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "root_owner_kind",
+	4:  "root_owner_name",
+	5:  "root_owner_namespace",
+	6:  "owner_chain_length",
+	7:  "detected_labels_summary",
+	8:  "failed_detections",
+	9:  "remediation_history_fetched",
+	10: "cluster_id",
+	11: "source",
+	12: "tool_class",
+	13: "logical_tool",
+	14: "attempt",
+	15: "retry_outcome",
+	16: "failure_class",
+	17: "failure_code",
+	18: "evidence_source",
+	19: "evidence_outcome",
+	20: "evidence_failure_code",
 }
 
 // Decode decodes AIAgentEnrichmentCompletedPayload from json.
@@ -1341,7 +1418,7 @@ func (s *AIAgentEnrichmentCompletedPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayload to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -1457,6 +1534,116 @@ func (s *AIAgentEnrichmentCompletedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remediation_history_fetched\"")
 			}
+		case "cluster_id":
+			if err := func() error {
+				s.ClusterID.Reset()
+				if err := s.ClusterID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "tool_class":
+			if err := func() error {
+				s.ToolClass.Reset()
+				if err := s.ToolClass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tool_class\"")
+			}
+		case "logical_tool":
+			if err := func() error {
+				s.LogicalTool.Reset()
+				if err := s.LogicalTool.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"logical_tool\"")
+			}
+		case "attempt":
+			if err := func() error {
+				s.Attempt.Reset()
+				if err := s.Attempt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"attempt\"")
+			}
+		case "retry_outcome":
+			if err := func() error {
+				s.RetryOutcome.Reset()
+				if err := s.RetryOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry_outcome\"")
+			}
+		case "failure_class":
+			if err := func() error {
+				s.FailureClass.Reset()
+				if err := s.FailureClass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failure_class\"")
+			}
+		case "failure_code":
+			if err := func() error {
+				s.FailureCode.Reset()
+				if err := s.FailureCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failure_code\"")
+			}
+		case "evidence_source":
+			if err := func() error {
+				s.EvidenceSource.Reset()
+				if err := s.EvidenceSource.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_source\"")
+			}
+		case "evidence_outcome":
+			if err := func() error {
+				s.EvidenceOutcome.Reset()
+				if err := s.EvidenceOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_outcome\"")
+			}
+		case "evidence_failure_code":
+			if err := func() error {
+				s.EvidenceFailureCode.Reset()
+				if err := s.EvidenceFailureCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_failure_code\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -1466,9 +1653,10 @@ func (s *AIAgentEnrichmentCompletedPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b01011111,
 		0b00000010,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -1552,6 +1740,240 @@ func (s *AIAgentEnrichmentCompletedPayloadEventType) UnmarshalJSON(data []byte) 
 	return s.Decode(d)
 }
 
+// Encode encodes AIAgentEnrichmentCompletedPayloadEvidenceOutcome as json.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadEvidenceOutcome from json.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadEvidenceOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadEvidenceOutcome(v) {
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSuccess
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomePartial
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSkipped
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeValidEmpty
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeTransportUnavailable
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSchemaClientFailure
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeCanceled
+	case AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcomeSourcesTruncated
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadEvidenceSource as json.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceSource) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadEvidenceSource from json.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceSource) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadEvidenceSource to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadEvidenceSource(v) {
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceRemediationHistory
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceOwnerChain
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceDetectedLabels
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceMcp
+	case AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSourceContextTool
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadEvidenceSource(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadEvidenceSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadEvidenceSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadFailureClass as json.
+func (s AIAgentEnrichmentCompletedPayloadFailureClass) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadFailureClass from json.
+func (s *AIAgentEnrichmentCompletedPayloadFailureClass) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadFailureClass to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadFailureClass(v) {
+	case AIAgentEnrichmentCompletedPayloadFailureClassSessionReset:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassSessionReset
+	case AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassHTTPTransient
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassUnauthorized
+	case AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassCallerCanceled
+	case AIAgentEnrichmentCompletedPayloadFailureClassPermanent:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassPermanent
+	case AIAgentEnrichmentCompletedPayloadFailureClassUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClassUnknown
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadFailureClass(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadFailureClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadFailureClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadRetryOutcome as json.
+func (s AIAgentEnrichmentCompletedPayloadRetryOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadRetryOutcome from json.
+func (s *AIAgentEnrichmentCompletedPayloadRetryOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadRetryOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadRetryOutcome(v) {
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeRetry
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeSuccess
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeFailed
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeExhausted
+	case AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcomeUnknown
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadRetryOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadRetryOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadRetryOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadToolClass as json.
+func (s AIAgentEnrichmentCompletedPayloadToolClass) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadToolClass from json.
+func (s *AIAgentEnrichmentCompletedPayloadToolClass) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentCompletedPayloadToolClass to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentCompletedPayloadToolClass(v) {
+	case AIAgentEnrichmentCompletedPayloadToolClassRead:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassRead
+	case AIAgentEnrichmentCompletedPayloadToolClassMutation:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassMutation
+	case AIAgentEnrichmentCompletedPayloadToolClassUnknown:
+		*s = AIAgentEnrichmentCompletedPayloadToolClassUnknown
+	default:
+		*s = AIAgentEnrichmentCompletedPayloadToolClass(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentCompletedPayloadToolClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentCompletedPayloadToolClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *AIAgentEnrichmentFailedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -1595,17 +2017,94 @@ func (s *AIAgentEnrichmentFailedPayload) encodeFields(e *jx.Encoder) {
 			s.AffectedResourceNamespace.Encode(e)
 		}
 	}
+	{
+		if s.ClusterID.Set {
+			e.FieldStart("cluster_id")
+			s.ClusterID.Encode(e)
+		}
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.ToolClass.Set {
+			e.FieldStart("tool_class")
+			s.ToolClass.Encode(e)
+		}
+	}
+	{
+		if s.LogicalTool.Set {
+			e.FieldStart("logical_tool")
+			s.LogicalTool.Encode(e)
+		}
+	}
+	{
+		if s.Attempt.Set {
+			e.FieldStart("attempt")
+			s.Attempt.Encode(e)
+		}
+	}
+	{
+		if s.RetryOutcome.Set {
+			e.FieldStart("retry_outcome")
+			s.RetryOutcome.Encode(e)
+		}
+	}
+	{
+		if s.FailureClass.Set {
+			e.FieldStart("failure_class")
+			s.FailureClass.Encode(e)
+		}
+	}
+	{
+		if s.FailureCode.Set {
+			e.FieldStart("failure_code")
+			s.FailureCode.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceSource.Set {
+			e.FieldStart("evidence_source")
+			s.EvidenceSource.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceOutcome.Set {
+			e.FieldStart("evidence_outcome")
+			s.EvidenceOutcome.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceFailureCode.Set {
+			e.FieldStart("evidence_failure_code")
+			s.EvidenceFailureCode.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentEnrichmentFailedPayload = [8]string{
-	0: "event_type",
-	1: "event_id",
-	2: "incident_id",
-	3: "reason",
-	4: "detail",
-	5: "affected_resource_kind",
-	6: "affected_resource_name",
-	7: "affected_resource_namespace",
+var jsonFieldsNameOfAIAgentEnrichmentFailedPayload = [19]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "reason",
+	4:  "detail",
+	5:  "affected_resource_kind",
+	6:  "affected_resource_name",
+	7:  "affected_resource_namespace",
+	8:  "cluster_id",
+	9:  "source",
+	10: "tool_class",
+	11: "logical_tool",
+	12: "attempt",
+	13: "retry_outcome",
+	14: "failure_class",
+	15: "failure_code",
+	16: "evidence_source",
+	17: "evidence_outcome",
+	18: "evidence_failure_code",
 }
 
 // Decode decodes AIAgentEnrichmentFailedPayload from json.
@@ -1613,7 +2112,7 @@ func (s *AIAgentEnrichmentFailedPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -1709,6 +2208,116 @@ func (s *AIAgentEnrichmentFailedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"affected_resource_namespace\"")
 			}
+		case "cluster_id":
+			if err := func() error {
+				s.ClusterID.Reset()
+				if err := s.ClusterID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_id\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "tool_class":
+			if err := func() error {
+				s.ToolClass.Reset()
+				if err := s.ToolClass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tool_class\"")
+			}
+		case "logical_tool":
+			if err := func() error {
+				s.LogicalTool.Reset()
+				if err := s.LogicalTool.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"logical_tool\"")
+			}
+		case "attempt":
+			if err := func() error {
+				s.Attempt.Reset()
+				if err := s.Attempt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"attempt\"")
+			}
+		case "retry_outcome":
+			if err := func() error {
+				s.RetryOutcome.Reset()
+				if err := s.RetryOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry_outcome\"")
+			}
+		case "failure_class":
+			if err := func() error {
+				s.FailureClass.Reset()
+				if err := s.FailureClass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failure_class\"")
+			}
+		case "failure_code":
+			if err := func() error {
+				s.FailureCode.Reset()
+				if err := s.FailureCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"failure_code\"")
+			}
+		case "evidence_source":
+			if err := func() error {
+				s.EvidenceSource.Reset()
+				if err := s.EvidenceSource.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_source\"")
+			}
+		case "evidence_outcome":
+			if err := func() error {
+				s.EvidenceOutcome.Reset()
+				if err := s.EvidenceOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_outcome\"")
+			}
+		case "evidence_failure_code":
+			if err := func() error {
+				s.EvidenceFailureCode.Reset()
+				if err := s.EvidenceFailureCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence_failure_code\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -1718,8 +2327,10 @@ func (s *AIAgentEnrichmentFailedPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [3]uint8{
 		0b01111111,
+		0b00000000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -1799,6 +2410,240 @@ func (s AIAgentEnrichmentFailedPayloadEventType) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadEvidenceOutcome as json.
+func (s AIAgentEnrichmentFailedPayloadEvidenceOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadEvidenceOutcome from json.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadEvidenceOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadEvidenceOutcome(v) {
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSuccess
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomePartial
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSkipped
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeValidEmpty
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeTransportUnavailable
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSchemaClientFailure
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeCanceled
+	case AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcomeSourcesTruncated
+	default:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadEvidenceOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadEvidenceSource as json.
+func (s AIAgentEnrichmentFailedPayloadEvidenceSource) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadEvidenceSource from json.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceSource) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadEvidenceSource to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadEvidenceSource(v) {
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceRemediationHistory
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceOwnerChain
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceDetectedLabels
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceMcp:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceMcp
+	case AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSourceContextTool
+	default:
+		*s = AIAgentEnrichmentFailedPayloadEvidenceSource(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadEvidenceSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadEvidenceSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadFailureClass as json.
+func (s AIAgentEnrichmentFailedPayloadFailureClass) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadFailureClass from json.
+func (s *AIAgentEnrichmentFailedPayloadFailureClass) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadFailureClass to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadFailureClass(v) {
+	case AIAgentEnrichmentFailedPayloadFailureClassSessionReset:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassSessionReset
+	case AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassHTTPTransient
+	case AIAgentEnrichmentFailedPayloadFailureClassUnauthorized:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassUnauthorized
+	case AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassCallerCanceled
+	case AIAgentEnrichmentFailedPayloadFailureClassPermanent:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassPermanent
+	case AIAgentEnrichmentFailedPayloadFailureClassUnknown:
+		*s = AIAgentEnrichmentFailedPayloadFailureClassUnknown
+	default:
+		*s = AIAgentEnrichmentFailedPayloadFailureClass(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadFailureClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadFailureClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadRetryOutcome as json.
+func (s AIAgentEnrichmentFailedPayloadRetryOutcome) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadRetryOutcome from json.
+func (s *AIAgentEnrichmentFailedPayloadRetryOutcome) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadRetryOutcome to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadRetryOutcome(v) {
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeRetry:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeRetry
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeSuccess
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeFailed:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeFailed
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeExhausted
+	case AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcomeUnknown
+	default:
+		*s = AIAgentEnrichmentFailedPayloadRetryOutcome(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadRetryOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadRetryOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadToolClass as json.
+func (s AIAgentEnrichmentFailedPayloadToolClass) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadToolClass from json.
+func (s *AIAgentEnrichmentFailedPayloadToolClass) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentEnrichmentFailedPayloadToolClass to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentEnrichmentFailedPayloadToolClass(v) {
+	case AIAgentEnrichmentFailedPayloadToolClassRead:
+		*s = AIAgentEnrichmentFailedPayloadToolClassRead
+	case AIAgentEnrichmentFailedPayloadToolClassMutation:
+		*s = AIAgentEnrichmentFailedPayloadToolClassMutation
+	case AIAgentEnrichmentFailedPayloadToolClassUnknown:
+		*s = AIAgentEnrichmentFailedPayloadToolClassUnknown
+	default:
+		*s = AIAgentEnrichmentFailedPayloadToolClass(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentEnrichmentFailedPayloadToolClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentEnrichmentFailedPayloadToolClass) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18548,6 +19393,72 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("remediation_history_fetched")
 				e.Bool(s.RemediationHistoryFetched)
 			}
+			{
+				if s.ClusterID.Set {
+					e.FieldStart("cluster_id")
+					s.ClusterID.Encode(e)
+				}
+			}
+			{
+				if s.Source.Set {
+					e.FieldStart("source")
+					s.Source.Encode(e)
+				}
+			}
+			{
+				if s.ToolClass.Set {
+					e.FieldStart("tool_class")
+					s.ToolClass.Encode(e)
+				}
+			}
+			{
+				if s.LogicalTool.Set {
+					e.FieldStart("logical_tool")
+					s.LogicalTool.Encode(e)
+				}
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.FailureCode.Set {
+					e.FieldStart("failure_code")
+					s.FailureCode.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceSource.Set {
+					e.FieldStart("evidence_source")
+					s.EvidenceSource.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceOutcome.Set {
+					e.FieldStart("evidence_outcome")
+					s.EvidenceOutcome.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceFailureCode.Set {
+					e.FieldStart("evidence_failure_code")
+					s.EvidenceFailureCode.Encode(e)
+				}
+			}
 		}
 	case AIAgentEnrichmentFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -18582,6 +19493,72 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.AffectedResourceNamespace.Set {
 					e.FieldStart("affected_resource_namespace")
 					s.AffectedResourceNamespace.Encode(e)
+				}
+			}
+			{
+				if s.ClusterID.Set {
+					e.FieldStart("cluster_id")
+					s.ClusterID.Encode(e)
+				}
+			}
+			{
+				if s.Source.Set {
+					e.FieldStart("source")
+					s.Source.Encode(e)
+				}
+			}
+			{
+				if s.ToolClass.Set {
+					e.FieldStart("tool_class")
+					s.ToolClass.Encode(e)
+				}
+			}
+			{
+				if s.LogicalTool.Set {
+					e.FieldStart("logical_tool")
+					s.LogicalTool.Encode(e)
+				}
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.FailureCode.Set {
+					e.FieldStart("failure_code")
+					s.FailureCode.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceSource.Set {
+					e.FieldStart("evidence_source")
+					s.EvidenceSource.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceOutcome.Set {
+					e.FieldStart("evidence_outcome")
+					s.EvidenceOutcome.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceFailureCode.Set {
+					e.FieldStart("evidence_failure_code")
+					s.EvidenceFailureCode.Encode(e)
 				}
 			}
 		}
@@ -24248,6 +25225,72 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("remediation_history_fetched")
 				e.Bool(s.RemediationHistoryFetched)
 			}
+			{
+				if s.ClusterID.Set {
+					e.FieldStart("cluster_id")
+					s.ClusterID.Encode(e)
+				}
+			}
+			{
+				if s.Source.Set {
+					e.FieldStart("source")
+					s.Source.Encode(e)
+				}
+			}
+			{
+				if s.ToolClass.Set {
+					e.FieldStart("tool_class")
+					s.ToolClass.Encode(e)
+				}
+			}
+			{
+				if s.LogicalTool.Set {
+					e.FieldStart("logical_tool")
+					s.LogicalTool.Encode(e)
+				}
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.FailureCode.Set {
+					e.FieldStart("failure_code")
+					s.FailureCode.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceSource.Set {
+					e.FieldStart("evidence_source")
+					s.EvidenceSource.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceOutcome.Set {
+					e.FieldStart("evidence_outcome")
+					s.EvidenceOutcome.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceFailureCode.Set {
+					e.FieldStart("evidence_failure_code")
+					s.EvidenceFailureCode.Encode(e)
+				}
+			}
 		}
 	case AIAgentEnrichmentFailedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
@@ -24282,6 +25325,72 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.AffectedResourceNamespace.Set {
 					e.FieldStart("affected_resource_namespace")
 					s.AffectedResourceNamespace.Encode(e)
+				}
+			}
+			{
+				if s.ClusterID.Set {
+					e.FieldStart("cluster_id")
+					s.ClusterID.Encode(e)
+				}
+			}
+			{
+				if s.Source.Set {
+					e.FieldStart("source")
+					s.Source.Encode(e)
+				}
+			}
+			{
+				if s.ToolClass.Set {
+					e.FieldStart("tool_class")
+					s.ToolClass.Encode(e)
+				}
+			}
+			{
+				if s.LogicalTool.Set {
+					e.FieldStart("logical_tool")
+					s.LogicalTool.Encode(e)
+				}
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.FailureClass.Set {
+					e.FieldStart("failure_class")
+					s.FailureClass.Encode(e)
+				}
+			}
+			{
+				if s.FailureCode.Set {
+					e.FieldStart("failure_code")
+					s.FailureCode.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceSource.Set {
+					e.FieldStart("evidence_source")
+					s.EvidenceSource.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceOutcome.Set {
+					e.FieldStart("evidence_outcome")
+					s.EvidenceOutcome.Encode(e)
+				}
+			}
+			{
+				if s.EvidenceFailureCode.Set {
+					e.FieldStart("evidence_failure_code")
+					s.EvidenceFailureCode.Encode(e)
 				}
 			}
 		}
@@ -40493,6 +41602,336 @@ func (s NotificationMessageSentPayloadMetadata) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *NotificationMessageSentPayloadMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadEvidenceOutcome as json.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadEvidenceOutcome from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadEvidenceOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadEvidenceSource as json.
+func (o OptAIAgentEnrichmentCompletedPayloadEvidenceSource) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadEvidenceSource from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadEvidenceSource) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadEvidenceSource to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadEvidenceSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadEvidenceSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadFailureClass as json.
+func (o OptAIAgentEnrichmentCompletedPayloadFailureClass) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadFailureClass from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadFailureClass) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadFailureClass to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadFailureClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadFailureClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadRetryOutcome as json.
+func (o OptAIAgentEnrichmentCompletedPayloadRetryOutcome) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadRetryOutcome from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadRetryOutcome) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadRetryOutcome to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadRetryOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadRetryOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentCompletedPayloadToolClass as json.
+func (o OptAIAgentEnrichmentCompletedPayloadToolClass) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentCompletedPayloadToolClass from json.
+func (o *OptAIAgentEnrichmentCompletedPayloadToolClass) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentCompletedPayloadToolClass to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentCompletedPayloadToolClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentCompletedPayloadToolClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadEvidenceOutcome as json.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadEvidenceOutcome from json.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentFailedPayloadEvidenceOutcome to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentFailedPayloadEvidenceOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadEvidenceSource as json.
+func (o OptAIAgentEnrichmentFailedPayloadEvidenceSource) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadEvidenceSource from json.
+func (o *OptAIAgentEnrichmentFailedPayloadEvidenceSource) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentFailedPayloadEvidenceSource to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentFailedPayloadEvidenceSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentFailedPayloadEvidenceSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadFailureClass as json.
+func (o OptAIAgentEnrichmentFailedPayloadFailureClass) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadFailureClass from json.
+func (o *OptAIAgentEnrichmentFailedPayloadFailureClass) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentFailedPayloadFailureClass to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentFailedPayloadFailureClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentFailedPayloadFailureClass) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadRetryOutcome as json.
+func (o OptAIAgentEnrichmentFailedPayloadRetryOutcome) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadRetryOutcome from json.
+func (o *OptAIAgentEnrichmentFailedPayloadRetryOutcome) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentFailedPayloadRetryOutcome to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentFailedPayloadRetryOutcome) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentFailedPayloadRetryOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentEnrichmentFailedPayloadToolClass as json.
+func (o OptAIAgentEnrichmentFailedPayloadToolClass) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes AIAgentEnrichmentFailedPayloadToolClass from json.
+func (o *OptAIAgentEnrichmentFailedPayloadToolClass) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAIAgentEnrichmentFailedPayloadToolClass to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAIAgentEnrichmentFailedPayloadToolClass) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAIAgentEnrichmentFailedPayloadToolClass) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

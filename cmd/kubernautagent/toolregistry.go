@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
@@ -186,6 +187,15 @@ type gatewayOverlayResolver struct {
 	discoverer fleetclient.GatewayDiscoverer
 	session    fleetclient.Session
 
+	// bindingResolver owns gateway-specific logical-to-wire resolution and
+	// session-scoped selection leases. It is set by production wiring; static
+	// session test doubles intentionally keep the legacy direct path.
+	bindingResolver fleetclient.ToolBindingResolver
+	handleProvider  fleetclient.SessionHandleProvider
+	reconnect       func(context.Context) error
+	retryObserver   fleetclient.RetryObserver
+	bindingInitErr  error
+
 	// sessionProvider resolves the live MCP session on every Overlay call,
 	// following ResilientClient reconnects instead of binding to a
 	// one-time snapshot (issue #2315 self-healing fix). Takes precedence
@@ -229,6 +239,9 @@ func (r *gatewayOverlayResolver) resolveSession() (fleetclient.Session, error) {
 // Overlay implements investigator.FleetOverlayResolver.
 func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
 	v, err, _ := r.sf.Do(clusterID, func() (any, error) {
+		if r.bindingInitErr != nil {
+			return nil, fmt.Errorf("initialize Fleet binding resolver: %w", r.bindingInitErr)
+		}
 		defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
 		if err != nil {
 			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
@@ -256,7 +269,23 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 		overlay := make(map[string]tools.Tool, len(defs))
 		for _, def := range defs {
 			genericName := strings.TrimPrefix(def.Name, prefix)
-			bridge := fleetclient.NewBridgeTool(def, clusterID, session)
+			var bridge *fleetclient.BridgeTool
+			if r.bindingResolver != nil {
+				bridge = fleetclient.NewBridgeToolWithBindingResolverAndObserver(
+					fleetclient.ToolDefinition{
+						Name:        genericName,
+						Description: def.Description,
+						InputSchema: def.InputSchema,
+					},
+					clusterID,
+					r.bindingResolver,
+					r.handleProvider,
+					r.reconnect,
+					r.retryObserver,
+				)
+			} else {
+				bridge = fleetclient.NewBridgeTool(def, clusterID, session)
+			}
 			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
 		}
 		return overlay, nil
@@ -362,7 +391,7 @@ func fleetOAuth2ConfigFromKA(oauth2 kaconfig.FleetOAuth2) fleet.FleetOAuth2Confi
 // when fleet mode is not configured.
 //
 // Authority: DD-FLEET-005, ADR-068 decision #11
-func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger, observers ...fleetclient.RetryObserver) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
 	gatewayType := cfg.Integrations.Fleet.GatewayType
 	endpoint := cfg.Integrations.Fleet.Endpoint
 	if gatewayType == "" || endpoint == "" {
@@ -370,6 +399,10 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 	}
 
 	fleetLog := logger.WithName("fleet")
+	var retryObserver fleetclient.RetryObserver
+	if len(observers) > 0 {
+		retryObserver = observers[0]
+	}
 	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery",
 		"endpoint", endpoint, "gatewayType", gatewayType)
 
@@ -402,10 +435,87 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 	}
 
 	discoverer := fleetclient.NewDiscovererWithProvider(fleetregistry.MCPGatewayType(gatewayType), resilientClient.SessionProvider(), resilientClient.Reconnect)
+	bindingResolver, bindingErr := fleetclient.NewGatewayBindingResolver(
+		fleetregistry.MCPGatewayType(gatewayType), discoverer,
+	)
+	if bindingErr != nil {
+		fleetLog.Error(bindingErr, "failed to initialize Fleet MCP binding resolver")
+	}
 
 	fleetLog.Info("fleet tool pre-scoping resolver ready (self-healing, DD-FLEET-005)",
 		"endpoint", endpoint, "gatewayType", gatewayType)
-	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, sessionProvider: resilientClient.SessionProvider()}
+	return resilientClient, &gatewayOverlayResolver{
+		discoverer:      discoverer,
+		sessionProvider: resilientClient.SessionProvider(),
+		handleProvider:  resilientClient.SessionHandleProvider(),
+		reconnect:       resilientClient.Reconnect,
+		bindingResolver: bindingResolver,
+		bindingInitErr:  bindingErr,
+		retryObserver:   retryObserver,
+	}
+}
+
+// newFleetRetryObserver adapts the dependency-free shared MCP recovery seam
+// to KA's injected metrics and audit stores. High-cardinality target/wire
+// values stay in structured audit fields and never become metric labels.
+func newFleetRetryObserver(store audit.AuditStore, m *kametrics.Metrics, logger logr.Logger) fleetclient.RetryObserver {
+	return fleetclient.RetryObserverFunc(func(ctx context.Context, observation fleetclient.RetryObservation) {
+		failureClass := string(observation.FailureClass)
+		if failureClass == "" {
+			failureClass = "none"
+		}
+		if m != nil {
+			m.RecordMCPRecovery(observation.ToolClass, observation.Source, observation.Outcome, failureClass)
+		}
+		if store == nil {
+			return
+		}
+		if ctx == nil {
+			return
+		}
+		correlationID, _ := audit.CorrelationIDFromContext(ctx)
+		event := audit.NewEvent(audit.EventTypeEnrichmentFailed, correlationID)
+		if observation.Outcome == fleetclient.RetryOutcomeSuccess {
+			event = audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
+		}
+		action := audit.ActionMCPRetry
+		switch {
+		case observation.Outcome == fleetclient.RetryOutcomeExhausted:
+			action = audit.ActionMCPRetryExhausted
+		case observation.FailureClass == fleetclient.FailureSessionReset && observation.Outcome == fleetclient.RetryOutcomeRetry:
+			action = audit.ActionMCPTransportReset
+		}
+		event.EventAction = action
+		event.EventOutcome = audit.OutcomePending
+		switch observation.Outcome {
+		case fleetclient.RetryOutcomeSuccess:
+			event.EventOutcome = audit.OutcomeSuccess
+		case fleetclient.RetryOutcomeFailed, fleetclient.RetryOutcomeExhausted:
+			event.EventOutcome = audit.OutcomeFailure
+		}
+		event.ClusterID = observation.ClusterID
+		event.Data["incident_id"] = correlationID
+		event.Data["reason"] = "mcp_recovery"
+		event.Data["detail"] = observation.Outcome + ":" + failureClass
+		event.Data["affected_resource_kind"] = "MCP"
+		event.Data["affected_resource_name"] = observation.LogicalTool
+		event.Data["source"] = observation.Source
+		event.Data["tool_class"] = observation.ToolClass
+		event.Data["logical_tool"] = observation.LogicalTool
+		event.Data["attempt"] = observation.Attempt
+		event.Data["outcome"] = observation.Outcome
+		event.Data["failure_class"] = failureClass
+		event.Data["failure_code"] = observation.FailureCode
+		event.Data["cluster_id"] = observation.ClusterID
+		// The enrichment payload is also the typed persistence envelope for
+		// recovery observations. These bounded placeholders satisfy its
+		// required root-owner fields without fabricating Kubernetes evidence.
+		event.Data["root_owner_kind"] = "MCP"
+		event.Data["root_owner_name"] = observation.LogicalTool
+		event.Data["owner_chain_length"] = 0
+		event.Data["remediation_history_fetched"] = false
+		audit.StoreBestEffort(ctx, store, event, logger)
+	})
 }
 
 // fleetReadinessProbeInterval controls how often the #1553 Fleet readiness

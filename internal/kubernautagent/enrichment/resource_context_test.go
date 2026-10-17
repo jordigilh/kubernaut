@@ -34,7 +34,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 	Describe("UT-KA-433-036: get_resource_context combines K8s owner chain + DS remediation history", func() {
 
 		It("should resolve root owner from owner chain and combine with remediation history", func() {
-			k8s := &fakeK8sClient{
+			k8s := &fakeK8sClient{specHash: "test-spec-hash",
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Pod", Name: "api-server-abc-xyz", Namespace: "production"},
 					{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
@@ -80,7 +80,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 		})
 
 		It("should use the resource itself as root owner when owner chain is empty", func() {
-			k8s := &fakeK8sClient{ownerChain: nil}
+			k8s := &fakeK8sClient{specHash: "test-spec-hash", ownerChain: nil}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 
 			reg := registry.New()
@@ -102,7 +102,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 		})
 
 		It("should return remediation history for cluster-scoped resources", func() {
-			k8s := &fakeK8sClient{}
+			k8s := &fakeK8sClient{specHash: "test-spec-hash"}
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{
 					Tier1: []enrichment.Tier1Entry{

@@ -532,6 +532,11 @@ type ReviewStatus struct {
 // flag, and the retry counter used by BR-AI-009's backoff logic
 // (God-struct decomposition, #2189 follow-up).
 type InvestigationMetadata struct {
+	// EvidenceStatus is the bounded server-owned evidence projection copied from
+	// KA. It is additive and does not alter existing reason/subreason routing.
+	// +optional
+	EvidenceStatus *EvidenceStatus `json:"evidenceStatus,omitempty"`
+
 	// ========================================
 	// INVESTIGATION DETAILS
 	// ========================================

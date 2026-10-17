@@ -286,7 +286,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 
 	Describe("UT-KA-433-011: Enricher fetches remediation history via DataStorage client", func() {
 		It("should return remediation history from the DataStorage client", func() {
-			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8s := &fakeK8sClient{specHash: "test-spec-hash", ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			}}
 			ds := &fakeDataStorageClient{
@@ -309,7 +309,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 
 	Describe("UT-KA-433-012: Enricher handles partial failure gracefully", func() {
 		It("should return partial results when owner chain fails but history succeeds", func() {
-			k8s := &fakeK8sClient{err: errors.New("K8s API unavailable")}
+			k8s := &fakeK8sClient{specHash: "test-spec-hash", err: errors.New("K8s API unavailable")}
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{
 					Tier1: []enrichment.Tier1Entry{
@@ -447,7 +447,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 		})
 
 		It("should emit enrichment.completed with structured EventData on success", func() {
-			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8s := &fakeK8sClient{specHash: "test-spec-hash", ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			}}
@@ -476,7 +476,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 		})
 
 		It("should emit enrichment.failed with structured EventData when both clients fail", func() {
-			k8s := &fakeK8sClient{err: errors.New("K8s down")}
+			k8s := &fakeK8sClient{specHash: "test-spec-hash", err: errors.New("K8s down")}
 			ds := &fakeDataStorageClient{err: errors.New("DS down")}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
 			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc", Namespace: "production", IncidentID: "test-incident-002"})
@@ -490,8 +490,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			Expect(ev.CorrelationID).To(Equal("test-incident-002"))
 			Expect(ev.Data["incident_id"]).To(Equal("test-incident-002"))
 			Expect(ev.Data["reason"]).To(Equal("all_enrichment_sources_failed"))
-			Expect(ev.Data["detail"]).To(ContainSubstring("K8s down"))
-			Expect(ev.Data["detail"]).To(ContainSubstring("DS down"))
+			Expect(ev.Data["detail"]).To(Equal("owner_chain=transport_unavailable; history=transport_unavailable"))
 			Expect(ev.Data["affected_resource_kind"]).To(Equal("Pod"))
 			Expect(ev.Data["affected_resource_name"]).To(Equal("api-server-abc"))
 			Expect(ev.Data["affected_resource_namespace"]).To(Equal("production"))

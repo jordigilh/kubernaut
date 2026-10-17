@@ -35,10 +35,12 @@ import (
 // resolves enrichment internally (pre-RCA + post-RCA re-enrichment), mirroring
 // the autonomous Investigate() pipeline. The caller-provided enrichData is used
 // as fallback only when the enricher is nil.
-func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (result *katypes.InvestigationResult, retErr error) {
 	if rcaResult == nil {
 		return nil, fmt.Errorf("RunWorkflowDiscoveryFromRCA: rcaResult must not be nil")
 	}
+	ctx, evidenceScope := ensureEvidenceStatusScope(ctx)
+	defer func() { attachEvidenceStatus(evidenceScope, &result, &retErr) }()
 
 	rcaCopy := *rcaResult
 	rcaResult = &rcaCopy
@@ -90,6 +92,16 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	}
 	if enricherWired {
 		enrichData = toPromptEnrichment(rawEnrichData)
+	} else if enrichData != nil && enrichData.HistoryUnavailable {
+		// Interactive callers may provide only the serialized enrichment
+		// snapshot, without an Enricher to attach source status. Preserve the
+		// same typed terminal evidence contract as the autonomous path.
+		status := enrichment.HistoryEvidenceStatusForError(
+			enrichment.ErrHistoryUnavailable,
+			signal.ResourceKind, signal.ResourceName, signal.Namespace,
+			signal.ClusterID, correlationID,
+		)
+		evidenceScope.MergeSource(status)
 	}
 
 	// F6 (#1374): Attach DetectedLabelsJSON to the signal so workflow
@@ -118,6 +130,26 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	inv.applyMetricsFromScope(workflowResult, correlationID)
 	inv.setTokenUsageFromScope(workflowResult, correlationID)
 	return workflowResult, nil
+}
+
+func ensureEvidenceStatusScope(ctx context.Context) (context.Context, *katypes.EvidenceStatusScope) {
+	if scope, ok := katypes.EvidenceStatusScopeFromContext(ctx); ok {
+		return ctx, scope
+	}
+	scope := katypes.NewEvidenceStatusScope()
+	return katypes.WithEvidenceStatusScope(ctx, scope), scope
+}
+
+func attachEvidenceStatus(scope *katypes.EvidenceStatusScope, result **katypes.InvestigationResult, retErr *error) {
+	status := scope.Snapshot()
+	if status == nil {
+		return
+	}
+	if *result != nil {
+		(*result).EvidenceStatus = status
+	} else if *retErr != nil {
+		*retErr = katypes.NewInvestigationError(*retErr, status)
+	}
 }
 
 // autoResolveRCATargetAPIVersion auto-resolves rcaResult.RemediationTarget.APIVersion
@@ -224,7 +256,16 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 	}
 
 	if reEnriched == nil {
-		return rawEnrichData, true, nil
+		// A failed target lookup must not return the signal target's history
+		// under the RCA target identity. Keep only explicitly allowed label
+		// fallback data in a target-scoped shell.
+		targetOnly := &enrichment.EnrichmentResult{
+			ResourceKind:      postRCATarget.Kind,
+			ResourceName:      postRCATarget.Name,
+			ResourceNamespace: postRCATarget.Namespace,
+		}
+		targetOnly = preserveSignalTargetLabelsOnFailedRCAEnrichment(targetOnly, rawEnrichData)
+		return targetOnly, true, nil
 	}
 
 	if reEnriched.TargetResourceDeleted {
@@ -235,7 +276,7 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 	if allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 		inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
 			"rca_target", postRCATarget.Kind+"/"+postRCATarget.Name, "correlation_id", correlationID)
-		return rawEnrichData, true, nil
+		return preserveSignalTargetLabelsOnFailedRCAEnrichment(reEnriched, rawEnrichData), true, nil
 	}
 
 	return reEnriched, true, nil
