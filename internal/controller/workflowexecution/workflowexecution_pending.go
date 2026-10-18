@@ -361,6 +361,9 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 func (r *WorkflowExecutionReconciler) checkPendingJobResource(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, logger logr.Logger) (bool, ctrl.Result, error, bool) {
 	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
 	if clientErr != nil {
+		logger.Error(clientErr, "Failed to get execution client for Job existence check",
+			"clusterID", wfe.Spec.ClusterID,
+		)
 		return false, ctrl.Result{}, fmt.Errorf("get execution client for Job existence check: %w", clientErr), true
 	}
 
@@ -379,6 +382,10 @@ func (r *WorkflowExecutionReconciler) checkPendingJobResource(ctx context.Contex
 		result, markErr := r.MarkFailed(ctx, wfe, nil)
 		return false, result, markErr, true
 	default:
+		logger.Error(err, "Failed to check existing Job",
+			"namespace", r.ExecutionNamespace,
+			"name", resourceName,
+		)
 		return false, ctrl.Result{}, fmt.Errorf("check existing Job %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
 	}
 }
