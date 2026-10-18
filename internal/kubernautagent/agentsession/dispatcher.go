@@ -810,19 +810,36 @@ func (d *Dispatcher) OnTerminal(snap session.TerminalSnapshot) {
 }
 
 func (d *Dispatcher) isCurrentDispatchLeaseOwner(ctx context.Context, key crclient.ObjectKey) bool {
-	checkCtx, cancel := context.WithTimeout(ctx, listTimeout)
-	defer cancel()
-
-	lease := &coordinationv1.Lease{}
-	if err := d.client.Get(checkCtx, crclient.ObjectKey{
-		Name:      dispatchLeaseName(key.Name),
-		Namespace: key.Namespace,
-	}, lease); err != nil {
+	const attempts = 3
+	backoff := 100 * time.Millisecond
+	for attempt := 1; attempt <= attempts; attempt++ {
+		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		lease := &coordinationv1.Lease{}
+		err := d.client.Get(checkCtx, crclient.ObjectKey{
+			Name:      dispatchLeaseName(key.Name),
+			Namespace: key.Namespace,
+		}, lease)
+		cancel()
+		if err == nil {
+			return lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == d.holderIdentity
+		}
+		if apierrors.IsNotFound(err) {
+			return false
+		}
 		d.logger.Error(err, "failed to check dispatch Lease before terminal status write",
-			"agentSession", key.Name, "namespace", key.Namespace)
-		return false
+			"agentSession", key.Name, "namespace", key.Namespace, "attempt", attempt)
+		if attempt < attempts {
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return false
+			case <-timer.C:
+			}
+			backoff *= 2
+		}
 	}
-	return lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == d.holderIdentity
+	return false
 }
 
 // OnInteractiveUpgrade implements session.InteractiveUpgradeHookFunc,
@@ -1087,8 +1104,8 @@ func (d *Dispatcher) renewOnce(name, namespace string) bool {
 	if d.epochLeaseName != "" && lease.Annotations[epochAwareDispatchLeaseAnnotation] == agentEpochLeaseValue {
 		live, err := d.isLeaseOwnerLive(ctx, lease.Spec.HolderIdentity)
 		if err != nil {
-			d.logger.Error(err, "dispatch lease renewal stopped after epoch liveness check failed", "lease", name, "namespace", namespace)
-			return false
+			d.logger.Error(err, "dispatch lease renewal: epoch liveness check failed, retrying next tick", "lease", name, "namespace", namespace)
+			return true
 		}
 		if !live {
 			d.logger.Info("dispatch lease renewal stopped after epoch ownership became stale", "lease", name, "namespace", namespace)
