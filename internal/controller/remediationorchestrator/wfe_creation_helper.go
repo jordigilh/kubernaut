@@ -40,7 +40,7 @@ import (
 // Reference: Issue #666, TP-666-v1 §8.3
 type WFECreationCallbacks struct {
 	EmitWorkflowCreatedAudit func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, preHash string)
-	CreateWFE                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error)
+	CreateWFE                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error)
 }
 
 // CreateWFEAndTransition is the shared flow for creating a WorkflowExecution CRD,
@@ -62,16 +62,20 @@ func CreateWFEAndTransition(
 ) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	weName, err := cbs.CreateWFE(ctx, rr, ai)
+	weName, created, err := cbs.CreateWFE(ctx, rr, ai)
 	if err != nil {
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
 		return phase.Requeue(config.RequeueGenericError, "WFE creation failed"), nil
 	}
 	logger.Info("Created WorkflowExecution CRD", "weName", weName)
 
-	cbs.EmitWorkflowCreatedAudit(ctx, rr, ai, preHash)
+	if created {
+		cbs.EmitWorkflowCreatedAudit(ctx, rr, ai, preHash)
+	}
 
-	m.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
+	if created {
+		m.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
+	}
 
 	if err := persistWFERefAndDisplay(ctx, k8sClient, m, rr, ai, weName); err != nil {
 		logger.Error(err, "Failed to set WorkflowExecutionRef in status")

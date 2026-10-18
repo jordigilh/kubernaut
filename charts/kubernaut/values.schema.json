@@ -2649,7 +2649,7 @@
             "maxEvidenceHandoffBytes": {
               "type": "integer",
               "minimum": 1,
-              "default": 65536,
+              "default": 262144,
               "description": "DD-KA-2496: maximum serialized bytes for the entire frozen evidence packet, including digest and freeze timestamp. Independent of tool-output summarization/truncation; overflow routes workflow selection to existing human review, never partial delivery."
             },
             "resolvedConfidenceThreshold": {

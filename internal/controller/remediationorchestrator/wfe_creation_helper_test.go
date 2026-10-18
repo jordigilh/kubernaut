@@ -83,8 +83,8 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	noopWFECallbacks := func() prodcontroller.WFECreationCallbacks {
 		return prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return "wfe-test", nil
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				return "wfe-test", true, nil
 			},
 		}
 	}
@@ -112,6 +112,32 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		Expect(auditEmitted).To(BeTrue(), "should emit workflow_created audit")
 	})
 
+	It("UT-WEC-007: reused WFE → do not emit duplicate workflow_created audit", func() {
+		rr := newRemediationRequest("wec-007", defaultFixture, remediationv1.PhaseAwaitingApproval)
+		rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
+
+		c := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr).
+			WithStatusSubresource(&remediationv1.RemediationRequest{}).
+			Build()
+
+		cbs := noopWFECallbacks()
+		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+			return "wfe-existing", false, nil
+		}
+		auditEmitted := false
+		cbs.EmitWorkflowCreatedAudit = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {
+			auditEmitted = true
+		}
+
+		intent, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "hash007", cbs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(intent.Type).To(Equal(phase.TransitionAdvance))
+		Expect(auditEmitted).To(BeFalse(), "reusing a WFE must not emit workflow_created again")
+	})
+
 	It("UT-WEC-002: WFE creation fails → RequeueAfter", func() {
 		rr := newRemediationRequest("wec-002", defaultFixture, remediationv1.PhaseAnalyzing)
 		rr.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
@@ -123,8 +149,8 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			Build()
 
 		cbs := noopWFECallbacks()
-		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-			return "", fmt.Errorf("namespace terminating")
+		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+			return "", false, fmt.Errorf("namespace terminating")
 		}
 
 		intent, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "", cbs)
@@ -159,8 +185,8 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			Build()
 
 		cbs := noopWFECallbacks()
-		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-			return "wfe-created", nil
+		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+			return "wfe-created", true, nil
 		}
 
 		_, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "hash456", cbs)

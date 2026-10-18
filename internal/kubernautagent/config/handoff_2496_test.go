@@ -28,12 +28,12 @@ import (
 
 // DD-KA-2496 / BR-KA-016: defaults are independent of model-context truncation.
 var _ = Describe("#2496 positive independent evidence handoff budget", func() {
-	It("UT-KA-2496-010: defaults to 65,536 bytes when omitted", func() {
+	It("UT-KA-2496-010: defaults to 262,144 bytes when omitted", func() {
 		cfg, err := config.Load([]byte("ai:\n  summarizer:\n    maxToolOutputSize: 32\n"))
 		Expect(err).NotTo(HaveOccurred())
 		raw, err := yaml.Marshal(cfg.AI.Investigation)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(raw)).To(ContainSubstring("maxEvidenceHandoffBytes: 65536"))
+		Expect(string(raw)).To(ContainSubstring("maxEvidenceHandoffBytes: 262144"))
 	})
 	DescribeTable("UT-KA-2496-010: rejects non-positive explicitly configured budgets",
 		func(budget int) {

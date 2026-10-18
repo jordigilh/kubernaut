@@ -816,13 +816,18 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				completionTime := metav1.Now()
-				wfeStatus.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				wfeStatus.Status.CompletionTime = &completionTime
-				Expect(k8sClient.Status().Update(ctx, wfeStatus)).To(Succeed())
+				var wfeStatus *workflowexecutionv1alpha1.WorkflowExecution
+				Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					var getErr error
+					wfeStatus, getErr = getWFE(wfe.Name, wfe.Namespace)
+					if getErr != nil {
+						return getErr
+					}
+					completionTime := metav1.Now()
+					wfeStatus.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					wfeStatus.Status.CompletionTime = &completionTime
+					return k8sClient.Status().Update(ctx, wfeStatus)
+				})).To(Succeed())
 
 				By("Verifying reconcile requeue time is set to cooldown remaining")
 				// Note: We can't directly observe RequeueAfter in integration test,
