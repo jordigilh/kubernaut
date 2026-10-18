@@ -3995,7 +3995,9 @@ func runHelmTemplateApply(ctx context.Context, kubeconfigPath string, writer io.
 func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, kubectlExtraArgs []string, extraArgs ...string) error {
 	helmArgs := []string{"template", releaseName, chart, "-n", namespace}
 	helmArgs = append(helmArgs, extraArgs...)
-	helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
+	helmCtx, cancelHelm := context.WithCancel(ctx)
+	defer cancelHelm()
+	helmCmd := exec.CommandContext(helmCtx, "helm", helmArgs...)
 	helmCmd.Stderr = writer
 	helmOutput, err := helmCmd.StdoutPipe()
 	if err != nil {
@@ -4013,16 +4015,13 @@ func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath str
 		return fmt.Errorf("start helm template: %w", err)
 	}
 	if err := kubectlCmd.Start(); err != nil {
-		_ = helmCmd.Process.Kill()
-		_ = helmCmd.Wait()
+		cleanupHelmAfterKubectlFailure(helmCmd, helmOutput, cancelHelm, writer)
 		return fmt.Errorf("start kubectl apply: %w", err)
 	}
 
 	kubectlErr := kubectlCmd.Wait()
 	if kubectlErr != nil {
-		_ = helmOutput.Close()
-		_ = helmCmd.Process.Kill()
-		_ = helmCmd.Wait()
+		cleanupHelmAfterKubectlFailure(helmCmd, helmOutput, cancelHelm, writer)
 		return fmt.Errorf("kubectl apply failed: %w", kubectlErr)
 	}
 	helmErr := helmCmd.Wait()
@@ -4030,6 +4029,28 @@ func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath str
 		return fmt.Errorf("helm template failed: %w", helmErr)
 	}
 	return nil
+}
+
+func cleanupHelmAfterKubectlFailure(helmCmd *exec.Cmd, helmOutput io.Closer, cancelHelm context.CancelFunc, writer io.Writer) {
+	if err := helmOutput.Close(); err != nil {
+		_, _ = fmt.Fprintf(writer, "warning: close helm output after kubectl failure: %v\n", err)
+	}
+	cancelHelm()
+	if helmCmd.Process != nil {
+		if err := helmCmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			_, _ = fmt.Fprintf(writer, "warning: stop helm after kubectl failure: %v\n", err)
+		}
+	}
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- helmCmd.Wait() }()
+	select {
+	case err := <-waitResult:
+		if err != nil && !errors.Is(err, os.ErrProcessDone) {
+			_, _ = fmt.Fprintf(writer, "warning: reap helm after kubectl failure: %v\n", err)
+		}
+	case <-time.After(10 * time.Second):
+		_, _ = fmt.Fprintln(writer, "warning: timed out reaping helm after kubectl failure")
+	}
 }
 
 // runHelmUpgradeInstall runs a real `helm upgrade --install` (as opposed to
