@@ -67,6 +67,7 @@ const (
 
 	jobNamePrefix              = "wfe-"
 	jobAttemptSuffixLength     = 4
+	jobIdentityDigestLength    = 8
 	maxKubernetesJobNameLength = 63
 )
 
@@ -192,9 +193,20 @@ func formatJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecu
 	suffix := jobAttemptSuffix(wfe)
 	maxRRNameLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
 	if len(identity) > maxRRNameLength {
-		identity = strings.TrimRight(identity[:maxRRNameLength], "-")
+		identity = boundedJobIdentity(identity, maxRRNameLength)
 	}
 	return fmt.Sprintf("%s%s-%s", jobNamePrefix, identity, suffix)
+}
+
+func boundedJobIdentity(identity string, maxLength int) string {
+	digest := sha256.Sum256([]byte(identity))
+	digestText := hex.EncodeToString(digest[:])[:jobIdentityDigestLength]
+	prefixLength := maxLength - len(digestText) - 1
+	prefix := strings.TrimRight(identity[:prefixLength], "-")
+	if prefix == "" {
+		return digestText
+	}
+	return fmt.Sprintf("%s-%s", prefix, digestText)
 }
 
 func sanitizeJobNamePart(value string) string {
@@ -325,6 +337,10 @@ func (j *JobExecutor) IsExpectedJob(ctx context.Context, wfe *workflowexecutionv
 	if wfe.Status.ExecutionRef != nil || wfe.Spec.RemediationRequestRef.UID != "" {
 		resolvedName, err := jobNameForWFE(wfe)
 		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to resolve recorded Job identity",
+				"wfe", wfe.Name,
+				"namespace", wfe.Namespace,
+			)
 			return false
 		}
 		expected.Name = resolvedName
@@ -534,7 +550,8 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 			return nil, fmt.Errorf("verify existing Job %s/%s after create collision: %w", namespace, job.Name, getErr)
 		}
 		identityMatches := jobIdentityMatches(&existing, job)
-		if !identityMatches && wfe.Status.ExecutionRef != nil {
+		if !identityMatches && wfe.Status.ExecutionRef != nil &&
+			wfe.Status.ExecutionRef.Name != JobExecutionResourceName(wfe) {
 			// A migrated WFE may point at a Job created with the prior
 			// identity contract. Its recorded name plus owner/image provenance
 			// is the compatibility boundary; do not require the new template

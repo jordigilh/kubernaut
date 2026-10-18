@@ -1251,6 +1251,10 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 
 		Expect(len(job.Name)).To(BeNumerically("<=", 63))
 		Expect(job.Name).To(Equal(executor.JobExecutionResourceName(wfe)))
+		otherLongRR := wfe.DeepCopy()
+		otherLongRR.Spec.RemediationRequestRef.Name = longRRName + "-other"
+		Expect(executor.JobExecutionResourceName(otherLongRR)).NotTo(Equal(job.Name),
+			"distinct long RR names must retain a deterministic identity discriminator")
 		Expect(job.Labels["kubernaut.ai/workflow-execution"]).To(HaveLen(63))
 		Expect(job.Labels["kubernaut.ai/workflow-execution"]).NotTo(ContainSubstring(secretOutput))
 		Expect(job.Labels["kubernaut.ai/target-resource"]).To(HaveLen(63))
@@ -1415,6 +1419,7 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 		foreign.Spec.Template.Spec.Containers[0].Env = append(foreign.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{Name: "TAMPERED_TEMPLATE", Value: "true"})
 		Expect(fakeClient.Create(ctx, foreign)).To(Succeed())
+		wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: created.ResourceName}
 
 		_, err = je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 		Expect(err).To(HaveOccurred(), "same-name same-image template mutation must fail closed")

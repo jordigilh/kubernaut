@@ -178,6 +178,7 @@ the E2E journey was not run.
 | **UT-WE-2512-016** | A terminal WFE retries its missing terminal audit after the phase was persisted and records success before cooldown cleanup (AU-2/AU-3, CC7.2) | P0 |
 | **UT-WE-2512-017** | Credential-like workflow parameters are redacted in started/completed audit payloads while non-sensitive parameters remain reconstructable (BR-AUDIT-005, AU-3/AU-9/AU-11, ASVS V7.1.1/V7.2.1) | P0 |
 | **UT-WE-2512-018** | Job pending validation rejects malformed OCI bundles, malformed target identities, and missing RR UIDs on new Job WFEs (BR-WE-014, SI-10, ASVS V5.1.x) | P0 |
+| **UT-WE-2512-020** | Job pending validation rejects a new WFE without an RR name while allowing recorded legacy execution references to migrate (BR-WE-014, SI-10, ASVS V5.1.x) | P0 |
 | **UT-AUDIT-2512-001** | Repeated WorkflowExecution lifecycle emission derives the same deterministic event ID for one WFE/action and different IDs for different actions (AU-2/AU-3, CC7.2) | P0 |
 | **UT-AUDIT-2512-002** | WorkflowExecution audit payload carries generic execution reference and immutable RR UID (AU-3, CC7.2) | P0 |
 | **UT-DS-AUDIT-2512-001** | DataStorage preserves a client event ID through request conversion for durable deduplication (AU-2/AU-3, CC7.2) | P0 |

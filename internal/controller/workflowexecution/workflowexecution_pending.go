@@ -289,6 +289,10 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob {
 		resolvedName, resolveErr := weexecutor.ResolveJobExecutionResourceName(wfe)
 		if resolveErr != nil {
+			logger.Error(resolveErr, "Failed to resolve Job execution identity",
+				"name", wfe.Name,
+				"namespace", wfe.Namespace,
+			)
 			return resourceName, ctrl.Result{}, fmt.Errorf("resolve Job execution identity: %w", resolveErr), true
 		}
 		resourceName = resolvedName
@@ -297,26 +301,12 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	var executionClient weexecutor.ExecutorClient
 	switch wfe.Spec.WorkflowRef.ExecutionEngine {
 	case executionEngineJob:
-		var clientErr error
-		executionClient, clientErr = r.executionClientFor(ctx, wfe.Spec.ClusterID)
-		if clientErr != nil {
-			return resourceName, ctrl.Result{}, fmt.Errorf("get execution client for Job existence check: %w", clientErr), true
-		}
-		existingJob := &batchv1.Job{}
-		existingJob.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
-		err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
-		switch {
-		case err == nil:
-			resourceExists = r.jobMatchesPendingWFE(ctx, wfe, resourceName, existingJob, logger)
-		case apierrors.IsNotFound(err):
-			if wfe.Status.ExecutionRef != nil {
-				logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
-					"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
-				result, markErr := r.MarkFailed(ctx, wfe, nil)
-				return resourceName, result, markErr, true
-			}
-		default:
-			return resourceName, ctrl.Result{}, fmt.Errorf("check existing Job %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
+		var auditResult ctrl.Result
+		var auditErr error
+		var shouldReturn bool
+		resourceExists, auditResult, auditErr, shouldReturn = r.checkPendingJobResource(ctx, wfe, resourceName, logger)
+		if shouldReturn {
+			return resourceName, auditResult, auditErr, true
 		}
 	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		var clientErr error
@@ -366,6 +356,31 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	}
 
 	return resourceName, ctrl.Result{}, nil, false
+}
+
+func (r *WorkflowExecutionReconciler) checkPendingJobResource(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, logger logr.Logger) (bool, ctrl.Result, error, bool) {
+	executionClient, clientErr := r.executionClientFor(ctx, wfe.Spec.ClusterID)
+	if clientErr != nil {
+		return false, ctrl.Result{}, fmt.Errorf("get execution client for Job existence check: %w", clientErr), true
+	}
+
+	existingJob := &batchv1.Job{}
+	existingJob.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+	err := executionClient.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
+	switch {
+	case err == nil:
+		return r.jobMatchesPendingWFE(ctx, wfe, resourceName, existingJob, logger), ctrl.Result{}, nil, false
+	case apierrors.IsNotFound(err):
+		if wfe.Status.ExecutionRef == nil {
+			return false, ctrl.Result{}, nil, false
+		}
+		logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
+			"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
+		result, markErr := r.MarkFailed(ctx, wfe, nil)
+		return false, result, markErr, true
+	default:
+		return false, ctrl.Result{}, fmt.Errorf("check existing Job %s/%s: %w", r.ExecutionNamespace, resourceName, err), true
+	}
 }
 
 func (r *WorkflowExecutionReconciler) jobMatchesPendingWFE(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, existingJob *batchv1.Job, logger logr.Logger) bool {
