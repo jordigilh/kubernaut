@@ -50,13 +50,14 @@ For example, `targetResource = "default/deployment/my-app"` always produces `wfe
 Job identity is not a target lock. It is:
 
 ```
-name = "wfe-" + full(spec.remediationRequestRef.uid) + "-" + last-four(wfe.metadata.uid)
+name = "wfe-" + sanitize(spec.remediationRequestRef.name) + "-" + last-four(wfe.metadata.uid)
 ```
 
-For a standard UUID this is 45 characters. A same-WFE retry reuses the same
-name idempotently; a new RR/WFE cycle targeting the same resource receives a
-different name. The Kubernetes API's `AlreadyExists` result is therefore a
-same-WFE idempotency/collision signal, not a replacement permission.
+The RR-name portion is bounded to the Kubernetes Job-name limit. A same-WFE
+retry reuses the same name idempotently; a new RR/WFE cycle targeting the same
+resource receives a different, operator-traceable name. The Kubernetes API's
+`AlreadyExists` result is therefore a same-WFE idempotency/collision signal, not
+a replacement permission.
 
 ### Lock Lifecycle
 
@@ -151,3 +152,4 @@ This ensures sequential remediation cycles are not blocked by stale completed Jo
 | 1.2 | 2026-03-04 | Fixed background GC race with requeue-on-pending (Issue #383) |
 | 1.3 | 2026-03-04 | Added execution-time dedup classification via MarkFailedAsDeduplicated, DeduplicatedBy field, and audit trail for inherited RO transitions (Issue #190) |
 | 1.4 | 2026-10-14 | Job identity moved to full RR UID + WFE suffix; RO remains lock authority; retained Job replacement removed (Issue #2512, DD-WE-010) |
+| 1.5 | 2026-10-17 | Job identity uses the operator-facing RR name + WFE suffix; existing RR-UID-based references remain readable during migration |
