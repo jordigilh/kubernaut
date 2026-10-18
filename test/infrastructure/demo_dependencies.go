@@ -40,6 +40,7 @@ func LoadFleetGatewayVersionOverrides(path string) (FleetGatewayVersionOverrides
 	return parseFleetGatewayVersionOverrides(data)
 }
 
+// parseFleetGatewayVersionOverrides decodes one strict YAML override document.
 func parseFleetGatewayVersionOverrides(data []byte) (FleetGatewayVersionOverrides, error) {
 	var overrides FleetGatewayVersionOverrides
 	decoder := yaml.NewDecoder(bytes.NewReader(data))

@@ -79,6 +79,8 @@ type FleetGatewayVersions struct {
 	source              string
 }
 
+// resolveFleetGatewayVersions applies validated defaults to optional operator
+// overrides and records whether the effective matrix was supplied explicitly.
 func resolveFleetGatewayVersions(overrides FleetGatewayVersionOverrides) FleetGatewayVersions {
 	versions := FleetGatewayVersions{
 		EnvoyGatewayVersion: defaultEnvoyGatewayHelmVersion,
@@ -109,6 +111,8 @@ func (v FleetGatewayVersions) Report() string {
 	return fmt.Sprintf("EAIGW compatibility matrix (%s): Gateway API CRDs: %s, Envoy Gateway: %s, Envoy proxy: %s, Agent Router: %s", v.source, gatewayAPIVersion, v.EnvoyGatewayVersion, envoyProxyVersion, v.AgentRouterVersion)
 }
 
+// buildEnvoyGatewayCRDsHelmArgs returns the arguments for the separately
+// applied Gateway API and Envoy Gateway CRD chart.
 func buildEnvoyGatewayCRDsHelmArgs(versions FleetGatewayVersions) []string {
 	return []string{
 		"--version", versions.EnvoyGatewayVersion,
@@ -117,17 +121,22 @@ func buildEnvoyGatewayCRDsHelmArgs(versions FleetGatewayVersions) []string {
 	}
 }
 
+// buildEnvoyGatewayHelmArgs returns the controller chart arguments. The CRDs
+// are managed separately, so the chart's bundled CRDs are disabled.
 func buildEnvoyGatewayHelmArgs(versions FleetGatewayVersions) []string {
 	return []string{
 		"--version", versions.EnvoyGatewayVersion,
+		"--set", "crds.enabled=false",
 		"-f", fmt.Sprintf("https://raw.githubusercontent.com/theagentrouter/agent-router/%s/manifests/envoy-gateway-values.yaml", versions.AgentRouterVersion),
 	}
 }
 
+// buildAgentRouterCRDsHelmArgs returns the Agent Router CRD chart arguments.
 func buildAgentRouterCRDsHelmArgs(versions FleetGatewayVersions) []string {
 	return []string{"--version", versions.AgentRouterVersion}
 }
 
+// buildAgentRouterHelmArgs returns the Agent Router controller chart arguments.
 func buildAgentRouterHelmArgs(versions FleetGatewayVersions) []string {
 	return []string{
 		"--version", versions.AgentRouterVersion,
@@ -137,6 +146,8 @@ func buildAgentRouterHelmArgs(versions FleetGatewayVersions) []string {
 
 const fleetMCPSessionSeedSecretName = "mcp-session-seed"
 
+// buildFleetMCPSessionSeedSecretManifest renders the stable Secret consumed by
+// Agent Router's MCP session encryption configuration.
 func buildFleetMCPSessionSeedSecretManifest(namespace, seed string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Secret
@@ -149,12 +160,17 @@ stringData:
 `, fleetMCPSessionSeedSecretName, namespace, seed)
 }
 
+// ensureFleetMCPSessionSeedSecret creates the seed only when the Secret is
+// absent. API/authentication failures are returned instead of rotating the
+// seed and invalidating active MCP sessions.
 func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	check := exec.CommandContext(ctx, "kubectl", "get", "secret", fleetMCPSessionSeedSecretName,
-		"-n", namespace, "--kubeconfig", kubeconfigPath, "-o", "name")
-	check.Stdout = io.Discard
-	check.Stderr = io.Discard
-	if check.Run() == nil {
+		"-n", namespace, "--kubeconfig", kubeconfigPath, "--ignore-not-found", "-o", "name")
+	secretName, err := check.Output()
+	if err != nil {
+		return fmt.Errorf("check MCP session seed Secret: %w", err)
+	}
+	if strings.TrimSpace(string(secretName)) != "" {
 		_, _ = fmt.Fprintf(writer, "    Reusing MCP session seed Secret %s/%s\n", namespace, fleetMCPSessionSeedSecretName)
 		return nil
 	}
@@ -1544,6 +1560,8 @@ func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath stri
 	return deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, authConfig, FleetGatewayVersionOverrides{}, writer)
 }
 
+// deployFleetGatewayInfraWithVersions is the version-aware implementation used
+// by the demo path; legacy callers continue through DeployFleetGatewayInfra.
 func deployFleetGatewayInfraWithVersions(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, versionOverrides FleetGatewayVersionOverrides, writer io.Writer) (string, error) {
 	mcpGatewayNamespace, err := prepareMCPGatewayNamespace(ctx, namespace, kubeconfigPath, authConfig, writer)
 	if err != nil {
@@ -4001,12 +4019,15 @@ func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath str
 	}
 
 	kubectlErr := kubectlCmd.Wait()
+	if kubectlErr != nil {
+		_ = helmOutput.Close()
+		_ = helmCmd.Process.Kill()
+		_ = helmCmd.Wait()
+		return fmt.Errorf("kubectl apply failed: %w", kubectlErr)
+	}
 	helmErr := helmCmd.Wait()
 	if helmErr != nil {
 		return fmt.Errorf("helm template failed: %w", helmErr)
-	}
-	if kubectlErr != nil {
-		return fmt.Errorf("kubectl apply failed: %w", kubectlErr)
 	}
 	return nil
 }

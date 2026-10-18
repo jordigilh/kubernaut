@@ -485,22 +485,32 @@ helm template eg-crds oci://docker.io/envoyproxy/gateway-crds-helm \
 helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
   --version v1.9.2 \
   --namespace envoy-gateway-system --create-namespace \
+  --set crds.enabled=false \
   -f https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml
 kubectl rollout status deployment/envoy-gateway -n envoy-gateway-system --timeout=180s
 
 # Agent Router CRDs remain a separate chart. The project was renamed from
 # Envoy AI Gateway, but the chart and CRD names remain ai-gateway-*.
-helm install aieg-crds oci://docker.io/envoyproxy/ai-gateway-crds-helm \
+helm upgrade --install aieg-crds oci://docker.io/envoyproxy/ai-gateway-crds-helm \
   --version v1.2.0 -n envoy-ai-gateway-system --create-namespace
 
 # GitOps/helm-template users must provide a stable seed Secret. Do not let
 # every render generate a new seed.
-kubectl create secret generic mcp-session-seed \
-  --namespace envoy-ai-gateway-system \
-  --from-literal=seed="$(openssl rand -hex 32)" \
-  --dry-run=client -o yaml | kubectl apply -f -
+if seed_secret=$(kubectl get secret mcp-session-seed \
+  --namespace envoy-ai-gateway-system --ignore-not-found -o name); then
+  if [ -n "$seed_secret" ]; then
+    echo "Reusing envoy-ai-gateway-system/mcp-session-seed"
+  else
+    kubectl create secret generic mcp-session-seed \
+      --namespace envoy-ai-gateway-system \
+      --from-literal=seed="$(openssl rand -hex 32)" || exit 1
+  fi
+else
+  echo "failed to inspect envoy-ai-gateway-system/mcp-session-seed" >&2
+  exit 1
+fi
 
-helm install aieg oci://docker.io/envoyproxy/ai-gateway-helm \
+helm upgrade --install aieg oci://docker.io/envoyproxy/ai-gateway-helm \
   --version v1.2.0 -n envoy-ai-gateway-system \
   --set controller.mcp.sessionEncryption.existingSecret=mcp-session-seed
 kubectl rollout status deployment/ai-gateway-controller -n envoy-ai-gateway-system --timeout=180s
@@ -508,7 +518,8 @@ kubectl rollout status deployment/ai-gateway-controller -n envoy-ai-gateway-syst
 # When upgrading an existing v1.0 installation, add this one-time value so
 # active sessions can reconnect with the legacy seed. Remove it after clients
 # have reconnected:
-# --set controller.mcp.sessionEncryption.fallback.seed=default-insecure-seed
+# --set controller.mcp.sessionEncryption.fallback.seed=default-insecure-seed \
+# to the `helm upgrade --install aieg` command above.
 
 # ⚠️ envoy-gateway's own ServiceAccount has no RBAC for MCPRoute by default,
 #    even though extensionManager.resources below declares it as a watched

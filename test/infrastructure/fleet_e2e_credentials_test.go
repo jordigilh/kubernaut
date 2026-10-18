@@ -527,6 +527,7 @@ var _ = Describe("EAIGW version overrides", func() {
 		}))
 		Expect(buildEnvoyGatewayHelmArgs(versions)).To(Equal([]string{
 			"--version", "v1.9.2",
+			"--set", "crds.enabled=false",
 			"-f", "https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml",
 		}))
 		Expect(buildAgentRouterHelmArgs(versions)).To(Equal([]string{
