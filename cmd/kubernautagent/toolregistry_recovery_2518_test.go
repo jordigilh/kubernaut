@@ -31,6 +31,7 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -47,6 +48,33 @@ func (s *recoveryAuditStore2518) StoreAudit(_ context.Context, event *audit.Audi
 }
 
 var _ = Describe("Fleet overlay recovery wiring (Issue #2518)", func() {
+	It("IT-KA-2527-003 [BR-AUDIT-005, SI-10]: normalizes absent recovery failure classes to allowed values", func() {
+		store := &recoveryAuditStore2518{}
+		observer := newFleetRetryObserver(store, nil, logr.Discard())
+		ctx := context.Background()
+
+		observer.ObserveRetry(ctx, fleetclient.RetryObservation{
+			Source:      "bridge_tool",
+			ToolClass:   "read",
+			LogicalTool: "resources_get",
+			Outcome:     fleetclient.RetryOutcomeExhausted,
+		})
+		observer.ObserveRetry(ctx, fleetclient.RetryObservation{
+			Source:      "bridge_tool",
+			ToolClass:   "read",
+			LogicalTool: "resources_get",
+			Outcome:     fleetclient.RetryOutcomeSuccess,
+		})
+
+		store.mu.Lock()
+		events := append([]*audit.AuditEvent(nil), store.events...)
+		store.mu.Unlock()
+		Expect(events).To(HaveLen(2))
+		Expect(events[0].Data["failure_class"]).To(Equal("unknown"))
+		Expect(events[1].Data).NotTo(HaveKey("failure_class"),
+			"successful recovery must not persist a synthetic failure enum")
+	})
+
 	It("IT-KA-FLEET-2518-001 [BR-HAPI-261]: production overlay re-resolves a read binding after the MCP session resets", func() {
 		gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
 		DeferCleanup(gw.Close)

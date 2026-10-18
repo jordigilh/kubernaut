@@ -18,6 +18,7 @@ package agentsession
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -35,6 +36,7 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -50,6 +52,16 @@ const dispatchLeaseDuration = 15 * time.Minute
 // dispatch Lease while an investigation (or a deferred-interactive pending
 // wait) is in flight.
 const dispatchLeaseRenewInterval = dispatchLeaseDuration / 3
+
+// agentEpochLeaseDuration is deliberately much shorter than the dispatch
+// Lease. It is the failure detector's liveness window: a replacement KA can
+// safely take over a dispatch Lease after the old process stops renewing its
+// epoch Lease, without waiting for the 15-minute work Lease to expire.
+const agentEpochLeaseDuration = 30 * time.Second
+
+const agentEpochLeaseRenewInterval = agentEpochLeaseDuration / 3
+
+const agentEpochLeaseLabel = "kubernaut.ai/agent-epoch"
 
 // defaultResyncInterval is how often a non-terminal AgentSession is
 // re-Reconciled even with no new watch event (Reconcile's own
@@ -106,14 +118,21 @@ type Dispatcher struct {
 	investigator   InvestigationRunner
 	logger         logr.Logger
 	resyncInterval time.Duration
+	auditStore     kaaudit.AuditStore
+	epochLeaseName string
 
 	// dispatchedMu guards dispatched, the remediationID -> AgentSession
-	// ObjectKey map that lets OnTerminal/OnInteractiveUpgrade (registered
+	// key/session identity map that lets OnTerminal/OnInteractiveUpgrade (registered
 	// on session.Manager as hooks, DD-AA-KA-001 Amendment Gap 2) resolve
 	// which CRD to write without threading an ObjectKey through
 	// session.Manager itself, which has no CRD awareness.
 	dispatchedMu sync.RWMutex
-	dispatched   map[string]crclient.ObjectKey
+	dispatched   map[string]dispatchedEntry
+}
+
+type dispatchedEntry struct {
+	key       crclient.ObjectKey
+	sessionID string
 }
 
 // DispatcherOption configures optional Dispatcher behavior beyond
@@ -128,6 +147,13 @@ func WithResyncInterval(d time.Duration) DispatcherOption {
 	return func(disp *Dispatcher) { disp.resyncInterval = d }
 }
 
+// WithAuditStore wires the best-effort recovery-boundary audit emitter. It is
+// optional so unit tests and embedders that do not persist KA audit events keep
+// the existing dispatcher behavior.
+func WithAuditStore(store kaaudit.AuditStore) DispatcherOption {
+	return func(disp *Dispatcher) { disp.auditStore = store }
+}
+
 // NewDispatcher constructs a Dispatcher. namespace scopes the watch (""
 // watches all namespaces the client's RBAC permits). holderIdentity
 // identifies this KA replica in the dispatch Lease's HolderIdentity field.
@@ -140,12 +166,112 @@ func NewDispatcher(client crclient.WithWatch, namespace, holderIdentity string, 
 		investigator:   investigator,
 		logger:         logger.WithName("agentsession-dispatcher"),
 		resyncInterval: defaultResyncInterval,
-		dispatched:     make(map[string]crclient.ObjectKey),
+		dispatched:     make(map[string]dispatchedEntry),
 	}
 	for _, opt := range opts {
 		opt(d)
 	}
 	return d
+}
+
+// RegisterEpoch creates the short-lived liveness Lease for this KA process
+// epoch. Dispatch Leases refer to holderIdentity; this separate Lease lets a
+// replacement process distinguish a live owner from a crashed owner before
+// the longer dispatch Lease expires.
+func (d *Dispatcher) RegisterEpoch(ctx context.Context) error {
+	if d.namespace == "" {
+		return fmt.Errorf("register agent epoch: namespace is required")
+	}
+
+	name := agentEpochLeaseName(d.holderIdentity)
+	duration := int32(agentEpochLeaseDuration.Seconds())
+	now := nowMicroTime()
+	want := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: d.namespace,
+			Labels:    map[string]string{agentEpochLeaseLabel: "true"},
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &d.holderIdentity,
+			LeaseDurationSeconds: &duration,
+			AcquireTime:          now,
+			RenewTime:            now,
+		},
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	if err := d.client.Create(callCtx, want); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("create agent epoch lease %q: %w", name, err)
+		}
+		existing := &coordinationv1.Lease{}
+		if getErr := d.client.Get(callCtx, crclient.ObjectKeyFromObject(want), existing); getErr != nil {
+			return fmt.Errorf("get agent epoch lease %q: %w", name, getErr)
+		}
+		existing.Labels = want.Labels
+		existing.Spec = want.Spec
+		if updateErr := d.client.Update(callCtx, existing); updateErr != nil {
+			return fmt.Errorf("refresh agent epoch lease %q: %w", name, updateErr)
+		}
+	}
+	d.epochLeaseName = name
+	return nil
+}
+
+// StartEpochHeartbeat renews this process epoch until ctx is cancelled. A
+// graceful shutdown releases only this epoch Lease; dispatch Lease cleanup is
+// still governed by the normal investigation lifecycle and holder fencing.
+func (d *Dispatcher) StartEpochHeartbeat(ctx context.Context) {
+	if d.epochLeaseName == "" {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(agentEpochLeaseRenewInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				releaseCtx, releaseCancel := context.WithTimeout(context.WithoutCancel(ctx), listTimeout)
+				d.releaseEpochLease(releaseCtx)
+				releaseCancel()
+				return
+			case <-ticker.C:
+				d.renewEpochOnce(ctx)
+			}
+		}
+	}()
+}
+
+// ReconcileOrphanedAgentSessions performs the startup relist that a
+// controller-runtime watch alone cannot provide as an explicit recovery
+// boundary. Every existing non-terminal AgentSession is reconsidered; the
+// dispatch Lease and epoch liveness checks still arbitrate live owners.
+func (d *Dispatcher) ReconcileOrphanedAgentSessions(ctx context.Context) error {
+	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+
+	list := &agentsessionv1.AgentSessionList{}
+	var opts []crclient.ListOption
+	if d.namespace != "" {
+		opts = append(opts, crclient.InNamespace(d.namespace))
+	}
+	if err := d.client.List(listCtx, list, opts...); err != nil {
+		return fmt.Errorf("list agentsessions for startup recovery: %w", err)
+	}
+	for i := range list.Items {
+		if isTerminalPhase(list.Items[i].Status.Phase) {
+			continue
+		}
+		d.tryDispatch(ctx, &list.Items[i])
+	}
+	return nil
+}
+
+func agentEpochLeaseName(holderIdentity string) string {
+	sum := sha256.Sum256([]byte(holderIdentity))
+	return fmt.Sprintf("agent-epoch-%x", sum[:10])
 }
 
 // Reconcile is the controller-runtime entry point (#2231 / DD-AA-KA-001
@@ -399,7 +525,7 @@ func isTerminalPhase(p agentsessionv1.AgentSessionPhase) bool {
 // no-ops, not errors -- this is the expected, common outcome of every
 // replica reacting to the same watch event (BR-AA-KA-065.3).
 func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSession) {
-	won, err := d.acquireDispatchLease(ctx, as)
+	won, recovered, err := d.acquireDispatchLease(ctx, as)
 	if err != nil {
 		d.logger.Error(err, "dispatch lease acquisition failed", "agentSession", as.Name, "namespace", as.Namespace)
 		return
@@ -446,7 +572,7 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 		return
 	}
 
-	d.dispatch(ctx, fresh)
+	d.dispatch(ctx, fresh, recovered || fresh.Status.SessionID != "")
 }
 
 // dispatch launches the investigation for a won-Lease AgentSession: starts
@@ -457,7 +583,7 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 // need to resolve a CRD to write (Gap 2), and calls the appropriate
 // session.Manager entry point (autonomous vs. BR-INTERACTIVE-010
 // deferred-interactive).
-func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSession) {
+func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSession, recovered bool) {
 	key := crclient.ObjectKeyFromObject(as)
 	signal := MapSpecToSignal(as.Spec)
 
@@ -473,8 +599,10 @@ func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSessi
 		RemediationID: as.Spec.RemediationID,
 		Signal:        signal,
 	}
-	d.registerDispatched(as.Spec.RemediationID, key)
-
+	// Register before Start so an immediate interactive upgrade can resolve
+	// the AgentSession. The attempt ID is filled in as soon as Start returns;
+	// terminal callbacks remain gated behind the dispatched channel below.
+	d.registerDispatched(as.Spec.RemediationID, key, "")
 	var stopRenew sync.Once
 	done := make(chan struct{})
 	//nolint:contextcheck // renewal must outlive ctx's cancellation (investigation may finish/be cancelled while the Lease still needs refreshing until stop()); renewOnce uses its own bounded context by design.
@@ -524,6 +652,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSessi
 			reason = agentsessionv1.AgentSessionReasonCapacityExceeded
 		}
 		d.writeFailedStatus(ctx, key, fmt.Sprintf("failed to start investigation: %v", err), reason)
+		d.unregisterDispatched(as.Spec.RemediationID, "")
 		// BR-AI-009 / DD-AA-KA-001 amendment Gap 6 (2026-08-20): the
 		// investigation never started (session.Manager rejected it before
 		// accepting ownership), so this replica's dispatch Lease no longer
@@ -540,8 +669,28 @@ func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSessi
 		return
 	}
 
-	d.writeDispatchedStatus(ctx, key, sessionID, interactive)
+	if recovered {
+		d.emitRecoveryAudit(ctx, as, sessionID)
+	}
+	d.setDispatchedSessionID(as.Spec.RemediationID, sessionID)
+	d.writeDispatchedStatus(ctx, key, sessionID, interactive, recovered)
 	close(dispatched)
+}
+
+func (d *Dispatcher) emitRecoveryAudit(ctx context.Context, as *agentsessionv1.AgentSession, newSessionID string) {
+	if d.auditStore == nil {
+		return
+	}
+	previousSessionID := as.Status.SessionID
+	event := kaaudit.NewEvent(kaaudit.EventTypeSessionResumed, as.Spec.RemediationID,
+		kaaudit.WithSessionID(newSessionID))
+	event.EventAction = kaaudit.ActionSessionResumed
+	event.EventOutcome = kaaudit.OutcomeSuccess
+	event.Data["incident_id"] = as.Spec.IncidentID
+	event.Data["recovery_reason"] = "orphaned_dispatch_lease"
+	event.Data["previous_session_id"] = previousSessionID
+	event.Data["new_session_id"] = newSessionID
+	kaaudit.StoreBestEffort(ctx, d.auditStore, event, d.logger)
 }
 
 // hasInvestigationSession reports whether any InvestigationSession CRD
@@ -576,28 +725,43 @@ func (d *Dispatcher) hasInvestigationSession(ctx context.Context, namespace, rrN
 	return false, nil
 }
 
-// registerDispatched records the AgentSession ObjectKey that
+// registerDispatched records the AgentSession key and internal attempt ID that
 // OnTerminal/OnInteractiveUpgrade must resolve remediationID to.
-func (d *Dispatcher) registerDispatched(remediationID string, key crclient.ObjectKey) {
+func (d *Dispatcher) registerDispatched(remediationID string, key crclient.ObjectKey, sessionID string) {
 	d.dispatchedMu.Lock()
 	defer d.dispatchedMu.Unlock()
-	d.dispatched[remediationID] = key
+	d.dispatched[remediationID] = dispatchedEntry{key: key, sessionID: sessionID}
 }
 
-// lookupDispatched resolves remediationID to its AgentSession ObjectKey.
-func (d *Dispatcher) lookupDispatched(remediationID string) (crclient.ObjectKey, bool) {
+func (d *Dispatcher) setDispatchedSessionID(remediationID, sessionID string) {
+	d.dispatchedMu.Lock()
+	defer d.dispatchedMu.Unlock()
+	entry, ok := d.dispatched[remediationID]
+	if !ok {
+		return
+	}
+	entry.sessionID = sessionID
+	d.dispatched[remediationID] = entry
+}
+
+// lookupDispatched resolves remediationID to its AgentSession key and attempt.
+func (d *Dispatcher) lookupDispatched(remediationID string) (dispatchedEntry, bool) {
 	d.dispatchedMu.RLock()
 	defer d.dispatchedMu.RUnlock()
-	key, ok := d.dispatched[remediationID]
-	return key, ok
+	entry, ok := d.dispatched[remediationID]
+	return entry, ok
 }
 
 // unregisterDispatched removes remediationID's mapping once its session
 // has reached a genuine terminal outcome, bounding the map's size to
 // non-terminal sessions plus a small trailing window.
-func (d *Dispatcher) unregisterDispatched(remediationID string) {
+func (d *Dispatcher) unregisterDispatched(remediationID, sessionID string) {
 	d.dispatchedMu.Lock()
 	defer d.dispatchedMu.Unlock()
+	entry, ok := d.dispatched[remediationID]
+	if !ok || entry.sessionID != sessionID {
+		return
+	}
 	delete(d.dispatched, remediationID)
 }
 
@@ -611,15 +775,21 @@ func (d *Dispatcher) unregisterDispatched(remediationID string) {
 // never be overwritten by a stale return value from the original dispatch
 // goroutine.
 func (d *Dispatcher) OnTerminal(snap session.TerminalSnapshot) {
-	key, ok := d.lookupDispatched(snap.RemediationID)
+	entry, ok := d.lookupDispatched(snap.RemediationID)
 	if !ok {
 		d.logger.Info("terminal hook: no agentsession mapping for remediation id, skipping status write",
 			"remediation_id", snap.RemediationID, "session_id", snap.SessionID)
 		return
 	}
-	d.writeTerminalStatus(context.Background(), key, snap.Status, snap.Result, snap.Err, snap.EvidenceStatus)
+	if entry.sessionID == "" || entry.sessionID != snap.SessionID {
+		d.logger.Info("terminal hook: stale session attempt, skipping status write",
+			"remediation_id", snap.RemediationID, "session_id", snap.SessionID,
+			"current_session_id", entry.sessionID)
+		return
+	}
+	d.writeTerminalStatus(context.Background(), entry.key, snap.SessionID, snap.Status, snap.Result, snap.Err, snap.EvidenceStatus)
 	if snap.Status != session.StatusUserDriving {
-		d.unregisterDispatched(snap.RemediationID)
+		d.unregisterDispatched(snap.RemediationID, snap.SessionID)
 	}
 }
 
@@ -629,14 +799,23 @@ func (d *Dispatcher) OnTerminal(snap session.TerminalSnapshot) {
 // AgentSession.Status -- distinct from OnTerminal's StatusUserDriving case
 // (an autonomous InteractiveHold with no acting user yet).
 func (d *Dispatcher) OnInteractiveUpgrade(sessionID, remediationID, username string, groups []string) {
-	key, ok := d.lookupDispatched(remediationID)
+	entry, ok := d.lookupDispatched(remediationID)
 	if !ok {
 		d.logger.Info("interactive upgrade hook: no agentsession mapping for remediation id, skipping status write",
 			"remediation_id", remediationID, "session_id", sessionID)
 		return
 	}
-	d.updateStatus(context.Background(), key, func(as *agentsessionv1.AgentSession) {
+	if entry.sessionID != "" && entry.sessionID != sessionID {
+		d.logger.Info("interactive upgrade hook: stale session attempt, skipping status write",
+			"remediation_id", remediationID, "session_id", sessionID,
+			"current_session_id", entry.sessionID)
+		return
+	}
+	d.updateStatus(context.Background(), entry.key, func(as *agentsessionv1.AgentSession) {
 		if isTerminalPhase(as.Status.Phase) {
+			return
+		}
+		if as.Status.SessionID != "" && as.Status.SessionID != sessionID {
 			return
 		}
 		as.Status.Interactive = true
@@ -667,7 +846,7 @@ func dispatchLeaseName(agentSessionName string) string {
 // AlreadyExists, it attempts to reclaim a stale Lease (owning replica
 // crashed without completing) rather than treating every AlreadyExists as
 // a lost race.
-func (d *Dispatcher) acquireDispatchLease(ctx context.Context, as *agentsessionv1.AgentSession) (bool, error) {
+func (d *Dispatcher) acquireDispatchLease(ctx context.Context, as *agentsessionv1.AgentSession) (bool, bool, error) {
 	duration := int32(dispatchLeaseDuration.Seconds())
 	now := nowMicroTime()
 	lease := &coordinationv1.Lease{
@@ -688,31 +867,42 @@ func (d *Dispatcher) acquireDispatchLease(ctx context.Context, as *agentsessionv
 
 	err := d.client.Create(createCtx, lease)
 	if err == nil {
-		return true, nil
+		return true, as.Status.SessionID != "", nil
 	}
 	if !apierrors.IsAlreadyExists(err) {
-		return false, fmt.Errorf("create dispatch lease for agentsession %q: %w", as.Name, err)
+		return false, false, fmt.Errorf("create dispatch lease for agentsession %q: %w", as.Name, err)
 	}
 	return d.tryReclaimStaleLease(ctx, lease)
 }
 
-// tryReclaimStaleLease reclaims lease.Name/Namespace only if the currently
-// held Lease's renew deadline has passed. A benign lost-race (fresh Lease
-// held by another replica, or the Lease was deleted between Create and
-// Get) returns (false, nil), not an error.
-func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinationv1.Lease) (bool, error) {
+// tryReclaimStaleLease reclaims lease.Name/Namespace when the current Lease's
+// renew deadline has passed or its epoch heartbeat is no longer live. A benign
+// lost-race (fresh Lease held by another replica, or the Lease was deleted
+// between Create and Get) returns (false, false, nil), not an error.
+func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinationv1.Lease) (bool, bool, error) {
 	getCtx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 
 	existing := &coordinationv1.Lease{}
 	if err := d.client.Get(getCtx, crclient.ObjectKeyFromObject(want), existing); err != nil {
 		if apierrors.IsNotFound(err) {
-			return false, nil
+			return false, false, nil
 		}
-		return false, fmt.Errorf("get dispatch lease %q: %w", want.Name, err)
+		return false, false, fmt.Errorf("get dispatch lease %q: %w", want.Name, err)
 	}
-	if !isLeaseStale(existing) {
-		return false, nil
+	if existing.Spec.HolderIdentity != nil && *existing.Spec.HolderIdentity == d.holderIdentity {
+		return false, false, nil
+	}
+	stale := isLeaseStale(existing)
+	if !stale && d.epochLeaseName != "" {
+		live, err := d.isLeaseOwnerLive(ctx, existing.Spec.HolderIdentity)
+		if err != nil {
+			return false, false, err
+		}
+		stale = !live
+	}
+	if !stale {
+		return false, false, nil
 	}
 
 	existing.Spec.HolderIdentity = want.Spec.HolderIdentity
@@ -724,12 +914,12 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 	defer cancel2()
 	if err := d.client.Update(updateCtx, existing); err != nil {
 		if apierrors.IsConflict(err) {
-			return false, nil
+			return false, false, nil
 		}
-		return false, fmt.Errorf("reclaim stale dispatch lease %q: %w", want.Name, err)
+		return false, false, fmt.Errorf("reclaim stale dispatch lease %q: %w", want.Name, err)
 	}
 	d.logger.Info("reclaimed stale dispatch lease", "lease", want.Name, "namespace", want.Namespace)
-	return true, nil
+	return true, true, nil
 }
 
 // deleteDispatchLease removes the dispatch Lease for agentSessionName so a
@@ -751,7 +941,24 @@ func (d *Dispatcher) deleteDispatchLease(ctx context.Context, agentSessionName, 
 			Namespace: namespace,
 		},
 	}
-	if err := d.client.Delete(deleteCtx, lease); err != nil && !apierrors.IsNotFound(err) {
+	current := &coordinationv1.Lease{}
+	if err := d.client.Get(deleteCtx, crclient.ObjectKeyFromObject(lease), current); err != nil {
+		if !apierrors.IsNotFound(err) {
+			d.logger.Error(err, "failed to get dispatch lease before delete",
+				"agentSession", agentSessionName, "namespace", namespace)
+		}
+		return
+	}
+	if current.Spec.HolderIdentity == nil || *current.Spec.HolderIdentity != d.holderIdentity {
+		d.logger.V(1).Info("skipping dispatch lease delete after ownership changed",
+			"agentSession", agentSessionName, "namespace", namespace)
+		return
+	}
+	deleteOptions := &crclient.DeleteOptions{Preconditions: &metav1.Preconditions{
+		ResourceVersion: &current.ResourceVersion,
+		UID:             &current.UID,
+	}}
+	if err := d.client.Delete(deleteCtx, current, deleteOptions); err != nil && !apierrors.IsNotFound(err) {
 		d.logger.Error(err, "failed to delete dispatch lease after rejected dispatch",
 			"agentSession", agentSessionName, "namespace", namespace)
 	}
@@ -763,6 +970,29 @@ func isLeaseStale(l *coordinationv1.Lease) bool {
 	}
 	deadline := l.Spec.RenewTime.Add(time.Duration(*l.Spec.LeaseDurationSeconds) * time.Second)
 	return time.Now().After(deadline)
+}
+
+func (d *Dispatcher) isLeaseOwnerLive(ctx context.Context, holder *string) (bool, error) {
+	if holder == nil || *holder == "" {
+		return false, nil
+	}
+	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	list := &coordinationv1.LeaseList{}
+	opts := []crclient.ListOption{crclient.MatchingLabels{agentEpochLeaseLabel: "true"}}
+	if d.namespace != "" {
+		opts = append(opts, crclient.InNamespace(d.namespace))
+	}
+	if err := d.client.List(listCtx, list, opts...); err != nil {
+		return false, fmt.Errorf("list agent epoch leases: %w", err)
+	}
+	for i := range list.Items {
+		epoch := &list.Items[i]
+		if epoch.Spec.HolderIdentity != nil && *epoch.Spec.HolderIdentity == *holder && !isLeaseStale(epoch) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // renewDispatchLease refreshes the dispatch Lease's RenewTime on a fixed
@@ -781,23 +1011,69 @@ func (d *Dispatcher) renewDispatchLease(name, namespace string, done <-chan stru
 		case <-done:
 			return
 		case <-ticker.C:
-			d.renewOnce(name, namespace)
+			if !d.renewOnce(name, namespace) {
+				return
+			}
 		}
 	}
 }
 
-func (d *Dispatcher) renewOnce(name, namespace string) {
+func (d *Dispatcher) renewOnce(name, namespace string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	lease := &coordinationv1.Lease{}
 	if err := d.client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, lease); err != nil {
 		d.logger.Error(err, "dispatch lease renewal: get failed", "lease", name, "namespace", namespace)
-		return
+		return !apierrors.IsNotFound(err)
+	}
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != d.holderIdentity {
+		d.logger.Info("dispatch lease renewal stopped after ownership changed", "lease", name, "namespace", namespace)
+		return false
 	}
 	lease.Spec.RenewTime = nowMicroTime()
 	if err := d.client.Update(ctx, lease); err != nil {
 		d.logger.Error(err, "dispatch lease renewal: update failed", "lease", name, "namespace", namespace)
+		return !apierrors.IsConflict(err) && !apierrors.IsNotFound(err)
+	}
+	return true
+}
+
+func (d *Dispatcher) renewEpochOnce(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, listTimeout)
+	defer cancel()
+	lease := &coordinationv1.Lease{}
+	if err := d.client.Get(ctx, crclient.ObjectKey{Name: d.epochLeaseName, Namespace: d.namespace}, lease); err != nil {
+		d.logger.Error(err, "agent epoch Lease renewal: get failed", "lease", d.epochLeaseName, "namespace", d.namespace)
+		return
+	}
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != d.holderIdentity {
+		d.logger.Info("agent epoch Lease renewal stopped after ownership changed", "lease", d.epochLeaseName, "namespace", d.namespace)
+		return
+	}
+	lease.Spec.RenewTime = nowMicroTime()
+	if err := d.client.Update(ctx, lease); err != nil {
+		d.logger.Error(err, "agent epoch Lease renewal: update failed", "lease", d.epochLeaseName, "namespace", d.namespace)
+	}
+}
+
+func (d *Dispatcher) releaseEpochLease(ctx context.Context) {
+	if d.epochLeaseName == "" {
+		return
+	}
+	lease := &coordinationv1.Lease{}
+	if err := d.client.Get(ctx, crclient.ObjectKey{Name: d.epochLeaseName, Namespace: d.namespace}, lease); err != nil {
+		return
+	}
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != d.holderIdentity {
+		return
+	}
+	deleteOptions := &crclient.DeleteOptions{Preconditions: &metav1.Preconditions{
+		ResourceVersion: &lease.ResourceVersion,
+		UID:             &lease.UID,
+	}}
+	if err := d.client.Delete(ctx, lease, deleteOptions); err != nil && !apierrors.IsNotFound(err) {
+		d.logger.Error(err, "agent epoch Lease release failed", "lease", d.epochLeaseName, "namespace", d.namespace)
 	}
 }
 

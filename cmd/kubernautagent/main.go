@@ -363,7 +363,7 @@ func main() {
 	// replaces the retired pkg/agentclient HTTP submit channel. Runs
 	// regardless of interactive.enabled, since every investigation
 	// (autonomous or interactive) now dispatches through AgentSession.
-	startAgentSessionDispatcher(ctx, core.infra, stack.mgr, stack.runner, logger)
+	startAgentSessionDispatcher(ctx, core.infra, stack.mgr, stack.runner, logger, stack.instrumentedAudit)
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
 		r: r, cfg: cfg, addr: addr, llmRuntimePath: llmRuntimePath,

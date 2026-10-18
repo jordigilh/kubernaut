@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -34,6 +36,7 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 )
@@ -130,10 +133,17 @@ func newAgentSessionManager(restCfg *rest.Config, namespace string) (ctrl.Manage
 // replica) and falling back to a PID-based identity outside a real
 // deployment (e.g. local dev without a mounted downward-API POD_NAME).
 func holderIdentity() string {
-	if podName, _ := karbac.DetectPodIdentity(); podName != "" {
-		return podName
+	epoch := make([]byte, 8)
+	if _, err := rand.Read(epoch); err != nil {
+		// crypto/rand failure is exceptionally unlikely; PID fallback still
+		// keeps identities distinct across normal process starts.
+		epoch = []byte(fmt.Sprintf("%d", os.Getpid()))
 	}
-	return fmt.Sprintf("kubernaut-agent-%d", os.Getpid())
+	epochID := hex.EncodeToString(epoch)
+	if podName, _ := karbac.DetectPodIdentity(); podName != "" {
+		return podName + "-" + epochID
+	}
+	return fmt.Sprintf("kubernaut-agent-%d-%s", os.Getpid(), epochID)
 }
 
 // startAgentSessionDispatcher constructs and starts the AgentSession
@@ -145,7 +155,7 @@ func holderIdentity() string {
 // Manager/Reconciler registration fails -- this should never happen in a
 // real deployment (KA always runs in-cluster), matching
 // buildWorkflowCatalogCache's contract.
-func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *session.Manager, runner agentsession.InvestigationRunner, logger logr.Logger) *agentsession.Dispatcher {
+func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *session.Manager, runner agentsession.InvestigationRunner, logger logr.Logger, auditStore kaaudit.AuditStore) *agentsession.Dispatcher {
 	cli, err := buildAgentSessionDispatcherClient(infra)
 	if err != nil {
 		logger.Error(err, "AgentSession dispatcher: failed to build controller-runtime client -- dispatch disabled, KA cannot receive investigations from AA")
@@ -159,14 +169,26 @@ func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *sess
 		return nil
 	}
 
-	dispatcher := agentsession.NewDispatcher(cli, namespace, holderIdentity(), mgr, runner, logger)
+	holder := holderIdentity()
+	dispatcher := agentsession.NewDispatcher(cli, namespace, holder, mgr, runner, logger,
+		agentsession.WithAuditStore(auditStore))
 
 	// DD-AA-KA-001 Amendment Gap 2: register the status-writer hooks before
-	// starting the Manager, so no dispatch can race hook registration.
-	// session.Manager has no CRD awareness; these hooks are the only
-	// status-writing path for outcomes reached after dispatch.
+	// startup reconciliation can launch a recovered investigation. A fast
+	// recovered attempt must not reach its terminal transition before the
+	// Dispatcher is installed as the Manager's status writer.
 	mgr.SetTerminalHook(dispatcher.OnTerminal)
 	mgr.SetInteractiveUpgradeHook(dispatcher.OnInteractiveUpgrade)
+
+	if err := dispatcher.RegisterEpoch(ctx); err != nil {
+		logger.Error(err, "AgentSession dispatcher: failed to register process epoch -- dispatch disabled")
+		return nil
+	}
+	dispatcher.StartEpochHeartbeat(ctx)
+	if err := dispatcher.ReconcileOrphanedAgentSessions(ctx); err != nil {
+		logger.Error(err, "AgentSession dispatcher: startup AgentSession reconciliation failed -- dispatch disabled")
+		return nil
+	}
 
 	if err := dispatcher.SetupWithManager(ctrlMgr); err != nil {
 		logger.Error(err, "AgentSession dispatcher: failed to register reconciler with manager -- dispatch disabled, KA cannot receive investigations from AA")
@@ -180,7 +202,7 @@ func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *sess
 	}()
 	logger.Info("AgentSession dispatcher started",
 		"namespace", namespace,
-		"holderIdentity", holderIdentity(),
+		"holderIdentity", holder,
 	)
 	return dispatcher
 }

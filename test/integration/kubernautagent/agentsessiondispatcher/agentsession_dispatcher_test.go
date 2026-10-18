@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -125,6 +126,10 @@ func newAgentSession(name string) *agentsessionv1.AgentSession {
 // global controller-name registry otherwise rejects a second
 // "agentsession-dispatcher" registration in the same test binary).
 func startEnv(runner agentsession.InvestigationRunner) (crclient.WithWatch, *session.Manager, func()) {
+	return startEnvWithPreparation(runner, nil)
+}
+
+func startEnvWithPreparation(runner agentsession.InvestigationRunner, prepare func(crclient.WithWatch)) (crclient.WithWatch, *session.Manager, func()) {
 	Expect(os.Getenv("KUBEBUILDER_ASSETS")).NotTo(BeEmpty(),
 		"KUBEBUILDER_ASSETS must be set — run 'make setup-envtest' first")
 
@@ -155,11 +160,17 @@ func startEnv(runner agentsession.InvestigationRunner) (crclient.WithWatch, *ses
 		agentsession.WithResyncInterval(200*time.Millisecond))
 	sessions.SetTerminalHook(dispatcher.OnTerminal)
 	sessions.SetInteractiveUpgradeHook(dispatcher.OnInteractiveUpgrade)
+	Expect(dispatcher.RegisterEpoch(context.Background())).To(Succeed())
+	Expect(dispatcher.ReconcileOrphanedAgentSessions(context.Background())).To(Succeed())
+	if prepare != nil {
+		prepare(cli)
+	}
 
 	Expect(dispatcher.SetupWithManager(mgr)).To(Succeed())
 
 	healthy := &atomic.Bool{}
 	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	dispatcher.StartEpochHeartbeat(mgrCtx)
 	mgrDone := make(chan struct{})
 	go func() {
 		defer close(mgrDone)
@@ -277,5 +288,72 @@ var _ = Describe("AgentSession Dispatcher Reconciler wiring (#2231) [AU-2, CC7.2
 		Expect(int(runner.calls.Load())).To(Equal(1))
 		Expect(got.GetFinalizers()).To(ContainElement(agentsessionv1.DispatchCleanupFinalizer),
 			fmt.Sprintf("dispatchCleanupFinalizer must be present on %s even after reaching a terminal phase (removed only on delete)", got.Name))
+	})
+
+	It("IT-AA-2527-001: a real Manager reclaims a pre-expiry dispatch Lease after the owning epoch dies", func() {
+		runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "envtest recovery", Confidence: 0.85}}
+		as := newAgentSession("as-2527-it-1")
+		originalSpec := as.Spec.DeepCopy()
+
+		cli, _, stop := startEnvWithPreparation(runner, func(cli crclient.WithWatch) {
+			ctx := context.Background()
+			Expect(cli.Create(ctx, as)).To(Succeed())
+
+			dispatchDuration := int32(15 * time.Minute / time.Second)
+			now := metav1.NewMicroTime(time.Now())
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{Name: "dispatch-" + as.Name, Namespace: testNamespace},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptr.To("dead-replica-epoch"),
+					LeaseDurationSeconds: &dispatchDuration,
+					RenewTime:            &now,
+				},
+			})).To(Succeed())
+
+			epochDuration := int32(30)
+			oldEpochRenew := metav1.NewMicroTime(time.Now().Add(-time.Minute))
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "agent-epoch-dead-replica",
+					Namespace: testNamespace,
+					Labels:    map[string]string{"kubernaut.ai/agent-epoch": "true"},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptr.To("dead-replica-epoch"),
+					LeaseDurationSeconds: &epochDuration,
+					RenewTime:            &oldEpochRenew,
+				},
+			})).To(Succeed())
+
+			status := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, crclient.ObjectKeyFromObject(as), status)).To(Succeed())
+			status.Status.Phase = agentsessionv1.AgentSessionPhaseInvestigating
+			status.Status.SessionID = "old-envtest-session"
+			Expect(cli.Status().Update(ctx, status)).To(Succeed())
+		})
+		defer stop()
+		ctx := context.Background()
+		originalUID := as.UID
+
+		key := crclient.ObjectKeyFromObject(as)
+		Eventually(func() agentsessionv1.AgentSessionPhase {
+			got := &agentsessionv1.AgentSession{}
+			if err := cli.Get(ctx, key, got); err != nil {
+				return ""
+			}
+			return got.Status.Phase
+		}, 10*time.Second, 100*time.Millisecond).Should(Equal(agentsessionv1.AgentSessionPhaseCompleted),
+			"the production Manager/Reconciler must recover the existing AgentSession without manual Lease deletion")
+
+		got := &agentsessionv1.AgentSession{}
+		Expect(cli.Get(ctx, key, got)).To(Succeed())
+		Expect(got.UID).To(Equal(originalUID))
+		Expect(got.Spec).To(Equal(*originalSpec))
+		Expect(got.Status.SessionID).NotTo(Equal("old-envtest-session"))
+		Expect(int(runner.calls.Load())).To(Equal(1))
+
+		lease := &coordinationv1.Lease{}
+		Expect(cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-" + as.Name, Namespace: testNamespace}, lease)).To(Succeed())
+		Expect(*lease.Spec.HolderIdentity).To(Equal("replica-it"))
 	})
 })
