@@ -302,7 +302,11 @@ var _ = Describe("AgentSession Dispatcher Reconciler wiring (#2231) [AU-2, CC7.2
 			dispatchDuration := int32(15 * time.Minute / time.Second)
 			now := metav1.NewMicroTime(time.Now())
 			Expect(cli.Create(ctx, &coordinationv1.Lease{
-				ObjectMeta: metav1.ObjectMeta{Name: "dispatch-" + as.Name, Namespace: testNamespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "dispatch-" + as.Name,
+					Namespace:   testNamespace,
+					Annotations: map[string]string{"kubernaut.ai/epoch-aware": "true"},
+				},
 				Spec: coordinationv1.LeaseSpec{
 					HolderIdentity:       ptr.To("dead-replica-epoch"),
 					LeaseDurationSeconds: &dispatchDuration,

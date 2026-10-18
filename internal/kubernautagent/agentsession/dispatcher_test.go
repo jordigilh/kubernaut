@@ -548,7 +548,11 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			leaseDuration := int32(15 * time.Minute / time.Second)
 			renewed := metav1.NewMicroTime(time.Now())
 			Expect(cli.Create(ctx, &coordinationv1.Lease{
-				ObjectMeta: metav1.ObjectMeta{Name: "dispatch-as-recovery-2527", Namespace: testNamespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "dispatch-as-recovery-2527",
+					Namespace:   testNamespace,
+					Annotations: map[string]string{"kubernaut.ai/epoch-aware": "true"},
+				},
 				Spec: coordinationv1.LeaseSpec{
 					HolderIdentity:       ptrString("dead-replica-epoch"),
 					LeaseDurationSeconds: &leaseDuration,
@@ -605,7 +609,11 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			leaseDuration := int32(15 * time.Minute / time.Second)
 			renewed := metav1.NewMicroTime(time.Now())
 			Expect(cli.Create(ctx, &coordinationv1.Lease{
-				ObjectMeta: metav1.ObjectMeta{Name: "dispatch-as-live-2527", Namespace: testNamespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "dispatch-as-live-2527",
+					Namespace:   testNamespace,
+					Annotations: map[string]string{"kubernaut.ai/epoch-aware": "true"},
+				},
 				Spec: coordinationv1.LeaseSpec{
 					HolderIdentity:       ptrString("live-replica-epoch"),
 					LeaseDurationSeconds: &leaseDuration,

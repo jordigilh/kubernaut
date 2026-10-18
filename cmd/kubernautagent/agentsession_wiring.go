@@ -186,8 +186,7 @@ func startAgentSessionDispatcher(ctx context.Context, infra *k8sInfra, mgr *sess
 	}
 	dispatcher.StartEpochHeartbeat(ctx)
 	if err := dispatcher.ReconcileOrphanedAgentSessions(ctx); err != nil {
-		logger.Error(err, "AgentSession dispatcher: startup AgentSession reconciliation failed -- dispatch disabled")
-		return nil
+		logger.Error(err, "AgentSession dispatcher: startup AgentSession reconciliation failed -- relying on periodic resync")
 	}
 
 	if err := dispatcher.SetupWithManager(ctrlMgr); err != nil {

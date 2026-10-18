@@ -63,6 +63,8 @@ const agentEpochLeaseRenewInterval = agentEpochLeaseDuration / 3
 
 const agentEpochLeaseLabel = "kubernaut.ai/agent-epoch"
 
+const epochAwareDispatchLeaseAnnotation = "kubernaut.ai/epoch-aware"
+
 // defaultResyncInterval is how often a non-terminal AgentSession is
 // re-Reconciled even with no new watch event (Reconcile's own
 // ctrl.Result{RequeueAfter: ...}, #2231 / DD-AA-KA-001 Amendment -- the
@@ -261,10 +263,17 @@ func (d *Dispatcher) ReconcileOrphanedAgentSessions(ctx context.Context) error {
 		return fmt.Errorf("list agentsessions for startup recovery: %w", err)
 	}
 	for i := range list.Items {
-		if isTerminalPhase(list.Items[i].Status.Phase) {
+		as := &list.Items[i]
+		if isTerminalPhase(as.Status.Phase) {
 			continue
 		}
-		d.tryDispatch(ctx, &list.Items[i])
+		if !as.GetDeletionTimestamp().IsZero() {
+			if _, err := d.reconcileDelete(ctx, as); err != nil {
+				return fmt.Errorf("reconcile deleted agentsession %s: %w", as.Name, err)
+			}
+			continue
+		}
+		d.considerAgentSession(ctx, as)
 	}
 	return nil
 }
@@ -853,6 +862,9 @@ func (d *Dispatcher) acquireDispatchLease(ctx context.Context, as *agentsessionv
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dispatchLeaseName(as.Name),
 			Namespace: as.Namespace,
+			Annotations: map[string]string{
+				epochAwareDispatchLeaseAnnotation: "true",
+			},
 		},
 		Spec: coordinationv1.LeaseSpec{
 			HolderIdentity:       &d.holderIdentity,
@@ -890,11 +902,11 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 		}
 		return false, false, fmt.Errorf("get dispatch lease %q: %w", want.Name, err)
 	}
-	if existing.Spec.HolderIdentity != nil && *existing.Spec.HolderIdentity == d.holderIdentity {
+	stale := isLeaseStale(existing)
+	if existing.Spec.HolderIdentity != nil && *existing.Spec.HolderIdentity == d.holderIdentity && !stale {
 		return false, false, nil
 	}
-	stale := isLeaseStale(existing)
-	if !stale && d.epochLeaseName != "" {
+	if !stale && d.epochLeaseName != "" && existing.Annotations[epochAwareDispatchLeaseAnnotation] == "true" {
 		live, err := d.isLeaseOwnerLive(ctx, existing.Spec.HolderIdentity)
 		if err != nil {
 			return false, false, err
@@ -909,6 +921,7 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 	existing.Spec.AcquireTime = want.Spec.AcquireTime
 	existing.Spec.RenewTime = want.Spec.RenewTime
 	existing.Spec.LeaseDurationSeconds = want.Spec.LeaseDurationSeconds
+	existing.Annotations = want.Annotations
 
 	updateCtx, cancel2 := context.WithTimeout(ctx, listTimeout)
 	defer cancel2()
