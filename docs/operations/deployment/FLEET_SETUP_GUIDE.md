@@ -95,6 +95,13 @@ hub MCP Gateway/server and Gateway-managed registrations in the dedicated
 `mcp-system` namespace. The remote MCP server has its own independently
 configurable namespace and defaults to `mcp-system` as well.
 
+The EAIGW compatibility defaults are Agent Router v1.2.0, Envoy Gateway v1.9.2,
+Envoy proxy v1.39.1, and Gateway API v1.6.1. Override the upstream versions for
+compatibility testing with `ENVOY_GATEWAY_VERSION` and `AGENT_ROUTER_VERSION` on
+`make setup-fleet-demo-infra`; the setup output reports the effective matrix.
+The long-lived standalone SSE reset near 120 seconds remains an upstream Agent
+Router blocker and is not fixed by the version override alone.
+
 ### Validate the registrations
 
 The setup output must report the hub identity as `hub` and the remote identity as

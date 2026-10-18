@@ -1009,7 +1009,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # fleet MCPServerRegistration/AlertManager label already uses for this same
 # physical cluster.
 .PHONY: setup-fleet-demo-infra
-setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
+setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Console-first by default (~15 min). Required: LLM_PROVIDER, LLM_MODEL, LLM_CREDENTIALS_FILE (+ LLM_ENDPOINT except with LLM_PROVIDER=vertex_ai, + VERTEX_PROJECT/VERTEX_LOCATION with LLM_PROVIDER=vertex_ai). Optional: DEPENDENCY_OVERRIDES, LLM_REASONING_ENABLED, LLM_REASONING_EFFORT, IMAGE_REPOSITORY, IMAGE_TAG, ENVOY_GATEWAY_VERSION, AGENT_ROUTER_VERSION, MCP_GATEWAY_NAMESPACE, REMOTE_MCP_SERVER_NAMESPACE
 	@if [ -z "$(LLM_PROVIDER)" ] || [ -z "$(LLM_MODEL)" ] || [ -z "$(LLM_CREDENTIALS_FILE)" ] || { [ -z "$(LLM_ENDPOINT)" ] && [ "$(LLM_PROVIDER)" != "vertex_ai" ]; }; then \
 		echo "❌ LLM_PROVIDER, LLM_MODEL, and LLM_CREDENTIALS_FILE are always required; LLM_ENDPOINT is required except with LLM_PROVIDER=vertex_ai, e.g.:"; \
 		echo "   make setup-fleet-demo-infra LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \\"; \
@@ -1041,6 +1041,9 @@ setup-fleet-demo-infra: ## Create fleet Kind clusters + install Kubernaut, Conso
 		$(if $(VERTEX_LOCATION),-vertex-location "$(VERTEX_LOCATION)") \
 		$(if $(AUTONOMOUS),-autonomous=$(AUTONOMOUS)) \
 		$(if $(GATEWAY_TYPE),-gateway-type "$(GATEWAY_TYPE)") \
+		$(if $(DEPENDENCY_OVERRIDES),-dependency-overrides-file "$(DEPENDENCY_OVERRIDES)") \
+		$(if $(ENVOY_GATEWAY_VERSION),-envoy-gateway-version "$(ENVOY_GATEWAY_VERSION)") \
+		$(if $(AGENT_ROUTER_VERSION),-agent-router-version "$(AGENT_ROUTER_VERSION)") \
 		$(if $(MCP_GATEWAY_NAMESPACE),-mcp-gateway-namespace "$(MCP_GATEWAY_NAMESPACE)") \
 		$(if $(REMOTE_MCP_SERVER_NAMESPACE),-remote-mcp-server-namespace "$(REMOTE_MCP_SERVER_NAMESPACE)") \
 		$(if $(SPOKE_WORKERS),-spoke-workers "$(SPOKE_WORKERS)") \

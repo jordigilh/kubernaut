@@ -474,22 +474,41 @@ RFC 8693 exchange lives inside kube-mcp-server, not the gateway, so nothing
 there changes. Replace step B5 with:
 
 ```bash
-# Two separate charts: the base gateway, then the AI Gateway layer + its CRDs.
-# ⚠️ Version pin matters: ai-gateway-helm v1.0.0 requires Envoy Gateway v1.8.1,
-#    NOT v1.7.0 (mismatched versions crash-loop the AI Gateway controller with
-#    "no matches for aigateway.envoyproxy.io/v1beta1").
-helm install eg oci://docker.io/envoyproxy/gateway-helm \
-  --version v1.8.1 -n envoy-gateway-system --create-namespace
+# Agent Router v1.2.0 is built against Envoy Gateway v1.9.2 and Gateway API
+# v1.6.1. Apply the Gateway CRDs before upgrading the controller.
+helm template eg-crds oci://docker.io/envoyproxy/gateway-crds-helm \
+  --version v1.9.2 \
+  --set crds.gatewayAPI.enabled=true \
+  --set crds.envoyGateway.enabled=true \
+  | kubectl apply --server-side --force-conflicts -f -
+
+helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.9.2 \
+  --namespace envoy-gateway-system --create-namespace \
+  -f https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml
 kubectl rollout status deployment/envoy-gateway -n envoy-gateway-system --timeout=180s
 
-# ⚠️ CRDs are a SEPARATE chart in v1.0.0 (the main chart does not bundle them
-#    despite older docs implying otherwise) — install both or the controller
-#    crash-loops on missing CRDs.
+# Agent Router CRDs remain a separate chart. The project was renamed from
+# Envoy AI Gateway, but the chart and CRD names remain ai-gateway-*.
 helm install aieg-crds oci://docker.io/envoyproxy/ai-gateway-crds-helm \
-  --version v1.0.0 -n envoy-ai-gateway-system --create-namespace
+  --version v1.2.0 -n envoy-ai-gateway-system --create-namespace
+
+# GitOps/helm-template users must provide a stable seed Secret. Do not let
+# every render generate a new seed.
+kubectl create secret generic mcp-session-seed \
+  --namespace envoy-ai-gateway-system \
+  --from-literal=seed="$(openssl rand -hex 32)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 helm install aieg oci://docker.io/envoyproxy/ai-gateway-helm \
-  --version v1.0.0 -n envoy-ai-gateway-system
+  --version v1.2.0 -n envoy-ai-gateway-system \
+  --set controller.mcp.sessionEncryption.existingSecret=mcp-session-seed
 kubectl rollout status deployment/ai-gateway-controller -n envoy-ai-gateway-system --timeout=180s
+
+# When upgrading an existing v1.0 installation, add this one-time value so
+# active sessions can reconnect with the legacy seed. Remove it after clients
+# have reconnected:
+# --set controller.mcp.sessionEncryption.fallback.seed=default-insecure-seed
 
 # ⚠️ envoy-gateway's own ServiceAccount has no RBAC for MCPRoute by default,
 #    even though extensionManager.resources below declares it as a watched
@@ -704,7 +723,7 @@ kubectl --kubeconfig <(kubectl config view --raw --minify | \
 | Keycloak token exchange returns `invalid_scope` | `sts_scopes` unset — the exchange library always sends a `scope` param, and Keycloak rejects an explicitly empty one | Set `sts_scopes = ["k8s-api-audience"]` even though it's already a default client scope |
 | Exchanged token has no `preferred_username`, API server 401s | Keycloak's default service-account tokens carry no `preferred_username` claim | Use the `k8s-api-audience` scope's dedicated User Property mapper (already in the realm export) |
 | Kuadrant broker gets 401 on its own discovery connection | `require_oauth = true` on kube-mcp-server also gates the broker's upstream probe, not just client requests | Give the broker its own static credential via `MCPServerRegistration.credentialRef` |
-| EAIGW: `no matches for aigateway.envoyproxy.io/v1beta1`, controller crash-loops | Wrong Envoy Gateway version pin (v1.7.0 vs required v1.8.1), or CRDs chart not installed separately | Pin Envoy Gateway to v1.8.1; install `ai-gateway-crds-helm` explicitly |
+| EAIGW: `no matches for aigateway.envoyproxy.io/v1beta1`, controller crash-loops | Gateway API/Envoy Gateway or Agent Router CRDs are missing or incompatible | Apply Gateway API + Envoy Gateway v1.9.2 CRDs first; install Agent Router CRDs v1.2.0 explicitly |
 | EAIGW: `500`, `ResolvedRefs: Backend is disabled` | `extensionApis.enableBackend` not set | Patch `envoy-gateway-config` (see Path C) |
 | EAIGW: `503 upstream_reset_before_response_started{connection_timeout}` | `extensionManager` not wired; proxy cluster stuck at placeholder IP `192.0.2.42` | Patch `extensionManager` to point at the AI Gateway controller's extension-server port 1063 |
 | EAIGW: valid token still `401` at the gateway | JWKS fetch over self-signed TLS fails Envoy's default trust bundle | Add a `Backend` + `BackendTLSPolicy` for the Keycloak JWKS endpoint (see Path C) |
