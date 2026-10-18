@@ -503,7 +503,7 @@ func newFleetRetryObserver(store audit.AuditStore, m *kametrics.Metrics, logger 
 		event.Data["tool_class"] = observation.ToolClass
 		event.Data["logical_tool"] = observation.LogicalTool
 		event.Data["attempt"] = observation.Attempt
-		event.Data["outcome"] = observation.Outcome
+		event.Data["retry_outcome"] = observation.Outcome
 		if failureClass != "" {
 			event.Data["failure_class"] = failureClass
 		}

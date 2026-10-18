@@ -71,6 +71,7 @@ var _ = Describe("Fleet overlay recovery wiring (Issue #2518)", func() {
 		store.mu.Unlock()
 		Expect(events).To(HaveLen(2))
 		Expect(events[0].Data["failure_class"]).To(Equal("unknown"))
+		Expect(events[0].Data["retry_outcome"]).To(Equal(fleetclient.RetryOutcomeExhausted))
 		Expect(events[1].Data).NotTo(HaveKey("failure_class"),
 			"successful recovery must not persist a synthetic failure enum")
 	})

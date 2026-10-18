@@ -63,6 +63,8 @@ const agentEpochLeaseRenewInterval = agentEpochLeaseDuration / 3
 
 const agentEpochLeaseLabel = "kubernaut.ai/agent-epoch"
 
+const agentEpochLeaseValue = "true"
+
 const epochAwareDispatchLeaseAnnotation = "kubernaut.ai/epoch-aware"
 
 // defaultResyncInterval is how often a non-terminal AgentSession is
@@ -192,7 +194,7 @@ func (d *Dispatcher) RegisterEpoch(ctx context.Context) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: d.namespace,
-			Labels:    map[string]string{agentEpochLeaseLabel: "true"},
+			Labels:    map[string]string{agentEpochLeaseLabel: agentEpochLeaseValue},
 		},
 		Spec: coordinationv1.LeaseSpec{
 			HolderIdentity:       &d.holderIdentity,
@@ -796,10 +798,31 @@ func (d *Dispatcher) OnTerminal(snap session.TerminalSnapshot) {
 			"current_session_id", entry.sessionID)
 		return
 	}
+	if !d.isCurrentDispatchLeaseOwner(context.Background(), entry.key) {
+		d.logger.Info("terminal hook: dispatch Lease ownership changed, skipping status write",
+			"remediation_id", snap.RemediationID, "session_id", snap.SessionID)
+		return
+	}
 	d.writeTerminalStatus(context.Background(), entry.key, snap.SessionID, snap.Status, snap.Result, snap.Err, snap.EvidenceStatus)
 	if snap.Status != session.StatusUserDriving {
 		d.unregisterDispatched(snap.RemediationID, snap.SessionID)
 	}
+}
+
+func (d *Dispatcher) isCurrentDispatchLeaseOwner(ctx context.Context, key crclient.ObjectKey) bool {
+	checkCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+
+	lease := &coordinationv1.Lease{}
+	if err := d.client.Get(checkCtx, crclient.ObjectKey{
+		Name:      dispatchLeaseName(key.Name),
+		Namespace: key.Namespace,
+	}, lease); err != nil {
+		d.logger.Error(err, "failed to check dispatch Lease before terminal status write",
+			"agentSession", key.Name, "namespace", key.Namespace)
+		return false
+	}
+	return lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == d.holderIdentity
 }
 
 // OnInteractiveUpgrade implements session.InteractiveUpgradeHookFunc,
@@ -863,7 +886,7 @@ func (d *Dispatcher) acquireDispatchLease(ctx context.Context, as *agentsessionv
 			Name:      dispatchLeaseName(as.Name),
 			Namespace: as.Namespace,
 			Annotations: map[string]string{
-				epochAwareDispatchLeaseAnnotation: "true",
+				epochAwareDispatchLeaseAnnotation: agentEpochLeaseValue,
 			},
 		},
 		Spec: coordinationv1.LeaseSpec{
@@ -902,18 +925,11 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 		}
 		return false, false, fmt.Errorf("get dispatch lease %q: %w", want.Name, err)
 	}
-	stale := isLeaseStale(existing)
-	if existing.Spec.HolderIdentity != nil && *existing.Spec.HolderIdentity == d.holderIdentity && !stale {
-		return false, false, nil
+	reclaim, err := d.dispatchLeaseNeedsReclaim(ctx, existing)
+	if err != nil {
+		return false, false, err
 	}
-	if !stale && d.epochLeaseName != "" && existing.Annotations[epochAwareDispatchLeaseAnnotation] == "true" {
-		live, err := d.isLeaseOwnerLive(ctx, existing.Spec.HolderIdentity)
-		if err != nil {
-			return false, false, err
-		}
-		stale = !live
-	}
-	if !stale {
+	if !reclaim {
 		return false, false, nil
 	}
 
@@ -933,6 +949,30 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 	}
 	d.logger.Info("reclaimed stale dispatch lease", "lease", want.Name, "namespace", want.Namespace)
 	return true, true, nil
+}
+
+func (d *Dispatcher) dispatchLeaseNeedsReclaim(ctx context.Context, lease *coordinationv1.Lease) (bool, error) {
+	stale := isLeaseStale(lease)
+	sameHolder := lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == d.holderIdentity
+	epochAware := d.epochLeaseName != "" && lease.Annotations[epochAwareDispatchLeaseAnnotation] == agentEpochLeaseValue
+	if sameHolder && !stale {
+		if !epochAware {
+			return false, nil
+		}
+		_, err := d.isLeaseOwnerLive(ctx, lease.Spec.HolderIdentity)
+		if err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if stale || !epochAware {
+		return stale, nil
+	}
+	live, err := d.isLeaseOwnerLive(ctx, lease.Spec.HolderIdentity)
+	if err != nil {
+		return false, err
+	}
+	return !live, nil
 }
 
 // deleteDispatchLease removes the dispatch Lease for agentSessionName so a
@@ -992,7 +1032,7 @@ func (d *Dispatcher) isLeaseOwnerLive(ctx context.Context, holder *string) (bool
 	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 	list := &coordinationv1.LeaseList{}
-	opts := []crclient.ListOption{crclient.MatchingLabels{agentEpochLeaseLabel: "true"}}
+	opts := []crclient.ListOption{crclient.MatchingLabels{agentEpochLeaseLabel: agentEpochLeaseValue}}
 	if d.namespace != "" {
 		opts = append(opts, crclient.InNamespace(d.namespace))
 	}
@@ -1043,6 +1083,17 @@ func (d *Dispatcher) renewOnce(name, namespace string) bool {
 	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != d.holderIdentity {
 		d.logger.Info("dispatch lease renewal stopped after ownership changed", "lease", name, "namespace", namespace)
 		return false
+	}
+	if d.epochLeaseName != "" && lease.Annotations[epochAwareDispatchLeaseAnnotation] == agentEpochLeaseValue {
+		live, err := d.isLeaseOwnerLive(ctx, lease.Spec.HolderIdentity)
+		if err != nil {
+			d.logger.Error(err, "dispatch lease renewal stopped after epoch liveness check failed", "lease", name, "namespace", namespace)
+			return false
+		}
+		if !live {
+			d.logger.Info("dispatch lease renewal stopped after epoch ownership became stale", "lease", name, "namespace", namespace)
+			return false
+		}
 	}
 	lease.Spec.RenewTime = nowMicroTime()
 	if err := d.client.Update(ctx, lease); err != nil {

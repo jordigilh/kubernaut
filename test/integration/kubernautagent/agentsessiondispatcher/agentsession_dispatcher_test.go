@@ -161,10 +161,10 @@ func startEnvWithPreparation(runner agentsession.InvestigationRunner, prepare fu
 	sessions.SetTerminalHook(dispatcher.OnTerminal)
 	sessions.SetInteractiveUpgradeHook(dispatcher.OnInteractiveUpgrade)
 	Expect(dispatcher.RegisterEpoch(context.Background())).To(Succeed())
-	Expect(dispatcher.ReconcileOrphanedAgentSessions(context.Background())).To(Succeed())
 	if prepare != nil {
 		prepare(cli)
 	}
+	Expect(dispatcher.ReconcileOrphanedAgentSessions(context.Background())).To(Succeed())
 
 	Expect(dispatcher.SetupWithManager(mgr)).To(Succeed())
 
