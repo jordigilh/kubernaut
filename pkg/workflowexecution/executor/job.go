@@ -150,31 +150,51 @@ func (j *JobExecutor) Engine() string {
 }
 
 // JobExecutionResourceName returns the immutable Job identity for one
-// WorkflowExecution attempt (DD-WE-010). A RemediationRequest UID separates
-// sequential remediation cycles, while the WFE UID suffix separates attempts
-// associated with one RR. The normal UUID shape is 45 characters long:
-// wfe-<full RR UID>-<four-character WFE UID suffix>.
+// WorkflowExecution attempt (DD-WE-010). The RemediationRequest name keeps
+// the execution resource directly traceable to the operator-facing RR, while
+// the WFE UID suffix separates attempts associated with one RR:
+// wfe-<RR name>-<four-character WFE UID suffix>.
 //
-// Objects created before RR UID propagation may not have a reference UID. They
-// retain the old target-derived name as a migration/test fallback; production
-// WorkflowExecutions created by RemediationOrchestrator always carry the RR
-// UID in spec.remediationRequestRef.
+// Objects created before the RR name was propagated may fall back to the RR
+// UID, then to the old target-derived name for migration/test compatibility.
 func JobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
 	if wfe == nil {
 		return ""
 	}
 
-	rrUID := sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
-	if rrUID == "" {
+	rrName := sanitizeJobNamePart(wfe.Spec.RemediationRequestRef.Name)
+	if rrName == "" {
+		rrName = sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
+	}
+	if rrName == "" {
 		return ExecutionResourceName(wfe.Spec.TargetResource)
 	}
 
-	suffix := jobAttemptSuffix(wfe)
-	maxRRUIDLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
-	if len(rrUID) > maxRRUIDLength {
-		rrUID = strings.TrimRight(rrUID[:maxRRUIDLength], "-")
+	return formatJobExecutionResourceName(wfe, rrName)
+}
+
+// legacyJobExecutionResourceName returns the RR-UID-based Job name emitted by
+// the initial DD-WE-010 implementation. Existing WFEs retain this name in
+// Status.ExecutionRef and must remain readable/cleanable after the RR-name
+// identity change.
+func legacyJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	if wfe == nil {
+		return ""
 	}
-	return fmt.Sprintf("%s%s-%s", jobNamePrefix, rrUID, suffix)
+	rrUID := sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
+	if rrUID == "" {
+		return ""
+	}
+	return formatJobExecutionResourceName(wfe, rrUID)
+}
+
+func formatJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution, identity string) string {
+	suffix := jobAttemptSuffix(wfe)
+	maxRRNameLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
+	if len(identity) > maxRRNameLength {
+		identity = strings.TrimRight(identity[:maxRRNameLength], "-")
+	}
+	return fmt.Sprintf("%s%s-%s", jobNamePrefix, identity, suffix)
 }
 
 func sanitizeJobNamePart(value string) string {
@@ -223,7 +243,9 @@ func jobNameForWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, er
 	}
 
 	recordedName := wfe.Status.ExecutionRef.Name
-	if recordedName == expectedName || recordedName == ExecutionResourceName(wfe.Spec.TargetResource) {
+	if recordedName == expectedName ||
+		recordedName == legacyJobExecutionResourceName(wfe) ||
+		recordedName == ExecutionResourceName(wfe.Spec.TargetResource) {
 		return recordedName, nil
 	}
 	return "", fmt.Errorf("execution ref %q does not match expected Job %q for WFE %s/%s", recordedName, expectedName, wfe.Namespace, wfe.Name)
