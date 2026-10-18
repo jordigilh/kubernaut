@@ -589,7 +589,7 @@ kubernautAgent:
   # thresholds. Defaults (0.7/0.5, applied by the Go binary when unset here)
   # match the values previously hardcoded directly in the prompt template.
   # investigation:
-  #   maxEvidenceHandoffBytes: 65536
+  #   maxEvidenceHandoffBytes: 262144
   #   resolvedConfidenceThreshold: 0.7
   #   inconclusiveConfidenceThreshold: 0.5
   investigation: {}

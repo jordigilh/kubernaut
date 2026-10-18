@@ -39,7 +39,7 @@ It contains no per-item `source_kind`, `source_type`, `source_ref` or `source_re
 The packet is never silently truncated or partially projected. Sanitization, freeze/deep-copy, digest or configured serialized/prompt-budget failure routes automatic selection to the existing review path. No A2 bounded-compaction behavior is introduced.
 
 `ai.investigation.maxEvidenceHandoffBytes` is a positive serialized-packet byte
-budget, default **65,536 bytes (64 KiB)**. It is separate from tool-output
+budget, default **262,144 bytes (256 KiB)**. It is separate from tool-output
 summarization/truncation. The entire model-facing packet, including the digest and
 freeze timestamp, must fit; the digest covers canonical sanitized content excluding
 those two runtime fields. The same packet and digest are reused across corrections.
@@ -84,8 +84,10 @@ wires and **`selectionAssessment`** in AA RCA status. It is non-executable: reta
 the proposed identity, bounded reasoning, known current selection confidence and
 trusted repeat-match/validation/digest context without putting the rejected ID in
 `selected_workflow`. Internal trusted prior-attempt links stay out of the live
-Console projection. This contract and the 64 KiB default were explicitly approved
-by the user on 2026-10-10.
+Console projection. The original 64 KiB default was explicitly approved by the
+user on 2026-10-10; issue #2519 raises the operational default to 256 KiB because
+the smaller default caused KA failures in the default configuration. The packet
+contract and fail-closed behavior are unchanged.
 
 ---
 
