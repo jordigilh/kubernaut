@@ -123,6 +123,20 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(name).To(Equal("we-test-remediation"))
 		})
 
+		It("should report reused WorkflowExecution without a creation side effect", func() {
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			existingWE := helpers.NewWorkflowExecution("we-test-remediation", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingWE).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+
+			name, created, err := weCreator.CreateWithResult(context.Background(), rr, ai)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("we-test-remediation"))
+			Expect(created).To(BeFalse())
+		})
+
 		It("should build WorkflowExecution spec with all required fields per BR-ORCH-025", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()

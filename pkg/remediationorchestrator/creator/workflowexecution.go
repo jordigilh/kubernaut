@@ -185,6 +185,18 @@ func (c *WorkflowExecutionCreator) Create(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (string, error) {
+	name, _, err := c.CreateWithResult(ctx, rr, ai)
+	return name, err
+}
+
+// CreateWithResult creates a WorkflowExecution CRD and reports whether a new
+// object was persisted. Existing objects are reused without re-emitting
+// creation-side effects such as workflow_created audit events.
+func (c *WorkflowExecutionCreator) CreateWithResult(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (string, bool, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"namespace", rr.Namespace,
@@ -192,7 +204,7 @@ func (c *WorkflowExecutionCreator) Create(
 	)
 
 	if err := validateSelectedWorkflow(ai); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	// Generate deterministic name
@@ -203,18 +215,18 @@ func (c *WorkflowExecutionCreator) Create(
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
 	if err == nil {
 		logger.Info("WorkflowExecution already exists, reusing", "name", name)
-		return name, nil
+		return name, false, nil
 	}
 	if !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to check existing WorkflowExecution")
-		return "", fmt.Errorf("failed to check existing WorkflowExecution: %w", err)
+		return "", false, fmt.Errorf("failed to check existing WorkflowExecution: %w", err)
 	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
 		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+		return "", false, fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
 
 	we := c.buildWorkflowExecution(rr, ai, name)
@@ -222,7 +234,7 @@ func (c *WorkflowExecutionCreator) Create(
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, we, c.scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
+		return "", false, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
 	// Create the CRD
@@ -230,7 +242,7 @@ func (c *WorkflowExecutionCreator) Create(
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
 		// DD-CRD-002-RR: Set WorkflowExecutionReady=False on creation failure
 		rrconditions.SetWorkflowExecutionReady(rr, false, fmt.Sprintf("Failed to create WorkflowExecution: %v", err), c.metrics)
-		return "", fmt.Errorf("failed to create WorkflowExecution: %w", err)
+		return "", false, fmt.Errorf("failed to create WorkflowExecution: %w", err)
 	}
 
 	// DD-CRD-002-RR: Set WorkflowExecutionReady=True on successful creation
@@ -243,7 +255,7 @@ func (c *WorkflowExecutionCreator) Create(
 		"executionBundle", ai.Status.RCAResult.SelectedWorkflow.ExecutionBundle,
 		"targetResource", we.Spec.TargetResource,
 	)
-	return name, nil
+	return name, true, nil
 }
 
 // BuildTargetResourceString builds the target resource string for WorkflowExecution.

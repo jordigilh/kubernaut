@@ -313,8 +313,8 @@ func (r *Reconciler) registerPhaseHandlers(deps phaseHandlerDeps) {
 func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.Metrics) {
 	wfeCallbacks := WFECreationCallbacks{
 		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
-		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
-			return r.weCreator.Create(ctx, rr, ai)
+		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, bool, error) {
+			return r.weCreator.CreateWithResult(ctx, rr, ai)
 		},
 	}
 	r.phaseRegistry.MustRegister(NewAnalyzingHandler(c, m, AnalyzingCallbacks{

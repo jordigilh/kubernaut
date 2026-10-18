@@ -73,8 +73,8 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		UpdateRARTimeRemaining: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return "wfe-test", nil
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				return "wfe-test", true, nil
 			},
 		},
 	}
@@ -200,9 +200,9 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 
 			wfeCreated := false
 			cbs := noopAwaitingCallbacks()
-			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
 				wfeCreated = true
-				return "wfe-approved", nil
+				return "wfe-approved", true, nil
 			}
 
 			h := newHandler(c, cbs)
@@ -299,8 +299,8 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 				Build()
 
 			cbs := noopAwaitingCallbacks()
-			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return "", fmt.Errorf("namespace terminating")
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				return "", false, fmt.Errorf("namespace terminating")
 			}
 
 			h := newHandler(c, cbs)
