@@ -1498,9 +1498,19 @@ var _ = Describe("UT-WE-2512: per-RR Job identity", func() {
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacyJob).Build()
 		je := executor.NewJobExecutorWithFactory(&mockClientFactory{client: fakeClient})
 
+		Expect(je.IsExpectedJob(ctx, wfe, legacyJob, namespace)).To(BeTrue(),
+			"the recorded RR-UID-based Job must remain the expected execution resource during migration")
 		result, err := je.GetStatus(ctx, wfe, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+
+		created, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.ResourceName).To(Equal(legacyName),
+			"a WFE with a recorded legacy Job must not create a second RR-name Job")
+		jobs := &batchv1.JobList{}
+		Expect(fakeClient.List(ctx, jobs, client.InNamespace(namespace))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
 	})
 
 	It("UT-WE-2512-012: cleans up a legacy target-named Job through its recorded reference", func() {

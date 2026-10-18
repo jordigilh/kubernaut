@@ -287,7 +287,11 @@ func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Co
 func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (string, ctrl.Result, error, bool) {
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob {
-		resourceName = weexecutor.JobExecutionResourceName(wfe)
+		resolvedName, resolveErr := weexecutor.ResolveJobExecutionResourceName(wfe)
+		if resolveErr != nil {
+			return resourceName, ctrl.Result{}, fmt.Errorf("resolve Job execution identity: %w", resolveErr), true
+		}
+		resourceName = resolvedName
 	}
 	resourceExists := false
 	var executionClient weexecutor.ExecutorClient

@@ -251,6 +251,15 @@ func jobNameForWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, er
 	return "", fmt.Errorf("execution ref %q does not match expected Job %q for WFE %s/%s", recordedName, expectedName, wfe.Namespace, wfe.Name)
 }
 
+// ResolveJobExecutionResourceName returns the Job name authorized for the WFE.
+// A recorded Status.ExecutionRef is accepted only when it matches the current
+// or explicitly supported legacy identity; arbitrary references are rejected.
+// WorkflowExecution's pending reconciler uses this to keep audit/idempotency
+// lookups aligned with the executor's status and cleanup behavior.
+func ResolveJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	return jobNameForWFE(wfe)
+}
+
 func jobProvenanceMetadata(wfe *workflowexecutionv1alpha1.WorkflowExecution) (map[string]string, map[string]string) {
 	labels := map[string]string{
 		jobWorkflowExecutionLabel: jobLabelValue(wfe.Name),
@@ -313,6 +322,16 @@ func jobIdentityMatches(existing, expected *batchv1.Job) bool {
 // must not suppress audit evidence before the executor verifies ownership.
 func (j *JobExecutor) IsExpectedJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, existing *batchv1.Job, namespace string) bool {
 	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	if wfe.Status.ExecutionRef != nil || wfe.Spec.RemediationRequestRef.UID != "" {
+		resolvedName, err := jobNameForWFE(wfe)
+		if err != nil {
+			return false
+		}
+		expected.Name = resolvedName
+	}
+	if wfe.Status.ExecutionRef != nil {
+		return jobCanBeDeletedByWFE(existing, expected, wfe)
+	}
 	if wfe.Spec.RemediationRequestRef.UID == "" && wfe.Status.ExecutionRef == nil {
 		return jobCanBeDeletedByWFE(existing, expected, wfe)
 	}
@@ -493,6 +512,13 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 	}
 
 	job := j.buildJob(ctx, wfe, namespace, opts)
+	if wfe.Status.ExecutionRef != nil {
+		recordedName, nameErr := jobNameForWFE(wfe)
+		if nameErr != nil {
+			return nil, fmt.Errorf("resolve recorded Job identity: %w", nameErr)
+		}
+		job.Name = recordedName
+	}
 
 	if err := c.Create(ctx, job); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -507,7 +533,15 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 		if getErr := c.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: namespace}, &existing); getErr != nil {
 			return nil, fmt.Errorf("verify existing Job %s/%s after create collision: %w", namespace, job.Name, getErr)
 		}
-		if !jobIdentityMatches(&existing, job) {
+		identityMatches := jobIdentityMatches(&existing, job)
+		if !identityMatches && wfe.Status.ExecutionRef != nil {
+			// A migrated WFE may point at a Job created with the prior
+			// identity contract. Its recorded name plus owner/image provenance
+			// is the compatibility boundary; do not require the new template
+			// projection before reusing that exact recorded resource.
+			identityMatches = jobCanBeDeletedByWFE(&existing, job, wfe)
+		}
+		if !identityMatches {
 			collisionErr := fmt.Errorf("execution Job %s/%s already exists with mismatched identity or image", namespace, job.Name)
 			log.FromContext(ctx).Error(collisionErr, "refusing to adopt existing execution Job")
 			// Keep AlreadyExists classification for the controller's fail-closed
