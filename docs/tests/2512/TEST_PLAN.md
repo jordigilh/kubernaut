@@ -11,12 +11,13 @@
 ### Confirmed Job-name contract
 
 ```text
-wfe-<full RemediationRequestRef.UID>-<4-character WFE UID suffix>
+wfe-<RemediationRequestRef.name>-<4-character WFE UID suffix>
 ```
 
-The full RR UUID provides uniqueness across RR cycles. The four-character WFE
-suffix distinguishes multiple attempts under one RR. The resulting name is 45
-characters for a standard UUID and remains within the Kubernetes Job-name limit.
+The RR name provides the operator-facing identity across RR cycles. The
+four-character WFE suffix distinguishes multiple attempts under one RR. The
+sanitized RR-name portion is bounded so the result remains within the
+Kubernetes Job-name limit.
 
 ## 1. Purpose and objectives
 
@@ -158,7 +159,7 @@ the E2E journey was not run.
 
 | ID | Business behavior and control objective | Priority |
 |---|---|---:|
-| **UT-WE-2512-001** | The full RR UUID is present in the stable Job name, a 4-character WFE suffix distinguishes same-RR attempts, and the name remains DNS-label valid (BR-WE-014/011, SI-10, ASVS V5.1.x) | P0 |
+| **UT-WE-2512-001** | The RR name is present in the stable Job name, a 4-character WFE suffix distinguishes same-RR attempts, and the name remains DNS-label valid (BR-WE-014/011, SI-10, ASVS V5.1.x) | P0 |
 | **UT-WE-2512-002** | Recreating the same WFE after a lost status update returns/recognizes the same Job without creating or deleting a second resource (BR-WE-014, AC-6, ASVS V4.1.3) | P0 |
 | **UT-WE-2512-003** | Job container image equals the immutable WFE bundle exactly; WFE/RR labels and annotations identify the same execution (AU-3, CC7.2, ASVS V7.1.1) | P0 |
 | **UT-WE-2512-004** | Cleanup uses `Status.ExecutionRef` and refuses a Job whose WFE identity/UID does not match (AU-9, AC-6, ASVS V4.1.1/V4.1.3) | P0 |
@@ -170,6 +171,7 @@ the E2E journey was not run.
 | **UT-WE-2512-010** | A same-image Job with a changed deterministic execution template fails closed rather than being adopted (AC-6, ASVS V4.1.3) | P0 |
 | **UT-WE-2512-011** | A pre-existing WFE with RR UID but a legacy target-derived Status.ExecutionRef can still read its completed Job (BR-WE-014, AU-9, CC7.2) | P0 |
 | **UT-WE-2512-012** | A pre-existing WFE can clean its legacy target-named Job only when the recorded name, legacy owner metadata, and exact image match (BR-WE-014, AC-6, ASVS V4.1.3) | P0 |
+| **UT-WE-2512-019** | A pre-existing WFE with an RR-UID-based Status.ExecutionRef can still read its completed Job after the readable RR-name contract is introduced (BR-WE-014, AU-9, CC7.2) | P0 |
 | **UT-WE-2512-013** | Long WFE names route by full UID rather than truncated mutable labels (SI-10, AC-4/AC-6) | P1 |
 | **UT-WE-2512-014** | Controller-side execution-resource reads route through the configured local/remote ClientFactory (BR-FLEET-054, FedRAMP AC-4/AC-6) | P0 |
 | **UT-WE-2512-015** | Legacy Job status reads fail closed on wrong owner or bundle image (AU-3, AU-9, AC-6) | P0 |
