@@ -556,14 +556,18 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 		return fmt.Errorf("targetResource is required")
 	}
 
-	// DD-WE-010: New Job-backed WFEs require the parent RR UID so the Job name
-	// cannot fall back to the target-derived legacy identity. Existing WFEs with
-	// a recorded ExecutionRef are allowed through for migration cleanup/status.
+	// DD-WE-010: New Job-backed WFEs require both immutable RR identity fields.
+	// The Job name is derived from the RR name, while the UID remains available
+	// in labels/annotations and audit correlation. Existing WFEs with a recorded
+	// ExecutionRef are allowed through for migration and may use the UID fallback.
 	if wfe.Spec.WorkflowRef.ExecutionEngine == executionEngineJob &&
-		wfe.Spec.RemediationRequestRef.Name != "" &&
-		wfe.Spec.RemediationRequestRef.UID == "" &&
 		wfe.Status.ExecutionRef == nil {
-		return fmt.Errorf("remediationRequestRef.uid is required for new Job execution")
+		if wfe.Spec.RemediationRequestRef.Name == "" {
+			return fmt.Errorf("remediationRequestRef.name is required for new Job execution")
+		}
+		if wfe.Spec.RemediationRequestRef.UID == "" {
+			return fmt.Errorf("remediationRequestRef.uid is required for new Job execution")
+		}
 	}
 
 	// Validate targetResource format per DD-WE-001:

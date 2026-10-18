@@ -67,6 +67,7 @@ const (
 
 	jobNamePrefix              = "wfe-"
 	jobAttemptSuffixLength     = 4
+	jobIdentityDigestLength    = 8
 	maxKubernetesJobNameLength = 63
 )
 
@@ -150,31 +151,62 @@ func (j *JobExecutor) Engine() string {
 }
 
 // JobExecutionResourceName returns the immutable Job identity for one
-// WorkflowExecution attempt (DD-WE-010). A RemediationRequest UID separates
-// sequential remediation cycles, while the WFE UID suffix separates attempts
-// associated with one RR. The normal UUID shape is 45 characters long:
-// wfe-<full RR UID>-<four-character WFE UID suffix>.
+// WorkflowExecution attempt (DD-WE-010). The RemediationRequest name keeps
+// the execution resource directly traceable to the operator-facing RR, while
+// the WFE UID suffix separates attempts associated with one RR:
+// wfe-<RR name>-<four-character WFE UID suffix>.
 //
-// Objects created before RR UID propagation may not have a reference UID. They
-// retain the old target-derived name as a migration/test fallback; production
-// WorkflowExecutions created by RemediationOrchestrator always carry the RR
-// UID in spec.remediationRequestRef.
+// Objects created before the RR name was propagated may fall back to the RR
+// UID, then to the old target-derived name for migration/test compatibility.
 func JobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
 	if wfe == nil {
 		return ""
 	}
 
-	rrUID := sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
-	if rrUID == "" {
+	rrName := sanitizeJobNamePart(wfe.Spec.RemediationRequestRef.Name)
+	if rrName == "" {
+		rrName = sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
+	}
+	if rrName == "" {
 		return ExecutionResourceName(wfe.Spec.TargetResource)
 	}
 
-	suffix := jobAttemptSuffix(wfe)
-	maxRRUIDLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
-	if len(rrUID) > maxRRUIDLength {
-		rrUID = strings.TrimRight(rrUID[:maxRRUIDLength], "-")
+	return formatJobExecutionResourceName(wfe, rrName)
+}
+
+// legacyJobExecutionResourceName returns the RR-UID-based Job name emitted by
+// the initial DD-WE-010 implementation. Existing WFEs retain this name in
+// Status.ExecutionRef and must remain readable/cleanable after the RR-name
+// identity change.
+func legacyJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	if wfe == nil {
+		return ""
 	}
-	return fmt.Sprintf("%s%s-%s", jobNamePrefix, rrUID, suffix)
+	rrUID := sanitizeJobNamePart(string(wfe.Spec.RemediationRequestRef.UID))
+	if rrUID == "" {
+		return ""
+	}
+	return formatJobExecutionResourceName(wfe, rrUID)
+}
+
+func formatJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution, identity string) string {
+	suffix := jobAttemptSuffix(wfe)
+	maxRRNameLength := maxKubernetesJobNameLength - len(jobNamePrefix) - 1 - jobAttemptSuffixLength
+	if len(identity) > maxRRNameLength {
+		identity = boundedJobIdentity(identity, maxRRNameLength)
+	}
+	return fmt.Sprintf("%s%s-%s", jobNamePrefix, identity, suffix)
+}
+
+func boundedJobIdentity(identity string, maxLength int) string {
+	digest := sha256.Sum256([]byte(identity))
+	digestText := hex.EncodeToString(digest[:])[:jobIdentityDigestLength]
+	prefixLength := maxLength - len(digestText) - 1
+	prefix := strings.TrimRight(identity[:prefixLength], "-")
+	if prefix == "" {
+		return digestText
+	}
+	return fmt.Sprintf("%s-%s", prefix, digestText)
 }
 
 func sanitizeJobNamePart(value string) string {
@@ -223,10 +255,21 @@ func jobNameForWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, er
 	}
 
 	recordedName := wfe.Status.ExecutionRef.Name
-	if recordedName == expectedName || recordedName == ExecutionResourceName(wfe.Spec.TargetResource) {
+	if recordedName == expectedName ||
+		recordedName == legacyJobExecutionResourceName(wfe) ||
+		recordedName == ExecutionResourceName(wfe.Spec.TargetResource) {
 		return recordedName, nil
 	}
 	return "", fmt.Errorf("execution ref %q does not match expected Job %q for WFE %s/%s", recordedName, expectedName, wfe.Namespace, wfe.Name)
+}
+
+// ResolveJobExecutionResourceName returns the Job name authorized for the WFE.
+// A recorded Status.ExecutionRef is accepted only when it matches the current
+// or explicitly supported legacy identity; arbitrary references are rejected.
+// WorkflowExecution's pending reconciler uses this to keep audit/idempotency
+// lookups aligned with the executor's status and cleanup behavior.
+func ResolveJobExecutionResourceName(wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+	return jobNameForWFE(wfe)
 }
 
 func jobProvenanceMetadata(wfe *workflowexecutionv1alpha1.WorkflowExecution) (map[string]string, map[string]string) {
@@ -291,6 +334,20 @@ func jobIdentityMatches(existing, expected *batchv1.Job) bool {
 // must not suppress audit evidence before the executor verifies ownership.
 func (j *JobExecutor) IsExpectedJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, existing *batchv1.Job, namespace string) bool {
 	expected := j.buildJob(ctx, wfe, namespace, CreateOptions{})
+	if wfe.Status.ExecutionRef != nil || wfe.Spec.RemediationRequestRef.UID != "" {
+		resolvedName, err := jobNameForWFE(wfe)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to resolve recorded Job identity",
+				"wfe", wfe.Name,
+				"namespace", wfe.Namespace,
+			)
+			return false
+		}
+		expected.Name = resolvedName
+	}
+	if wfe.Status.ExecutionRef != nil {
+		return jobCanBeDeletedByWFE(existing, expected, wfe)
+	}
 	if wfe.Spec.RemediationRequestRef.UID == "" && wfe.Status.ExecutionRef == nil {
 		return jobCanBeDeletedByWFE(existing, expected, wfe)
 	}
@@ -471,6 +528,13 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 	}
 
 	job := j.buildJob(ctx, wfe, namespace, opts)
+	if wfe.Status.ExecutionRef != nil {
+		recordedName, nameErr := jobNameForWFE(wfe)
+		if nameErr != nil {
+			return nil, fmt.Errorf("resolve recorded Job identity: %w", nameErr)
+		}
+		job.Name = recordedName
+	}
 
 	if err := c.Create(ctx, job); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -485,7 +549,16 @@ func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1
 		if getErr := c.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: namespace}, &existing); getErr != nil {
 			return nil, fmt.Errorf("verify existing Job %s/%s after create collision: %w", namespace, job.Name, getErr)
 		}
-		if !jobIdentityMatches(&existing, job) {
+		identityMatches := jobIdentityMatches(&existing, job)
+		if !identityMatches && wfe.Status.ExecutionRef != nil &&
+			wfe.Status.ExecutionRef.Name != JobExecutionResourceName(wfe) {
+			// A migrated WFE may point at a Job created with the prior
+			// identity contract. Its recorded name plus owner/image provenance
+			// is the compatibility boundary; do not require the new template
+			// projection before reusing that exact recorded resource.
+			identityMatches = jobCanBeDeletedByWFE(&existing, job, wfe)
+		}
+		if !identityMatches {
 			collisionErr := fmt.Errorf("execution Job %s/%s already exists with mismatched identity or image", namespace, job.Name)
 			log.FromContext(ctx).Error(collisionErr, "refusing to adopt existing execution Job")
 			// Keep AlreadyExists classification for the controller's fail-closed

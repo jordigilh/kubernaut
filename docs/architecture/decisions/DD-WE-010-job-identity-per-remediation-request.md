@@ -1,24 +1,26 @@
 # DD-WE-010: Job Identity per RemediationRequest and WorkflowExecution Attempt
 
 **Status**: Approved  
-**Version**: 1.0  
-**Date**: 2026-10-14  
-**Issue**: [#2512](https://github.com/jordigilh/kubernaut/issues/2512)  
+**Version**: 1.1
+**Date**: 2026-10-17
+**Issue**: [#2512](https://github.com/jordigilh/kubernaut/issues/2512)
+**Correction**: [#2529](https://github.com/jordigilh/kubernaut/issues/2529)
 **Related**: DD-RO-002, DD-WE-003, DD-AUDIT-010, BR-WE-009/010/011/014/019, BR-AUDIT-005
 
 ## Decision
 
-Job-backed WorkflowExecutions use a deterministic name derived from the complete
-parent RemediationRequest UUID and a bounded WorkflowExecution attempt suffix:
+Job-backed WorkflowExecutions use a deterministic name derived from the parent
+RemediationRequest name and a bounded WorkflowExecution attempt suffix:
 
 ```text
-wfe-<full spec.remediationRequestRef.uid>-<4-character WFE UID suffix>
+wfe-<spec.remediationRequestRef.name>-<4-character WFE UID suffix>
 ```
 
-For a standard UUID this is 45 characters and remains within the Kubernetes Job
-name limit. The full RR UUID is the uniqueness boundary across remediation
-cycles. The suffix distinguishes multiple WFE attempts associated with the same
-RR; a same-WFE reconciliation reuses the same name idempotently.
+The RR name is the operator-facing identity and distinguishes remediation
+cycles; the suffix distinguishes multiple WFE attempts associated with the same
+RR. The sanitized RR-name portion is bounded so the result remains within the
+Kubernetes Job-name limit. A same-WFE reconciliation reuses the same name
+idempotently.
 
 The target resource is not part of Job identity. It remains the routing/locking
 key owned by RemediationOrchestrator.
@@ -30,10 +32,11 @@ and its retained Pods. Deleting the previous Job before creating the next one is
 not a safe identity mechanism because retention and asynchronous cleanup are
 independent lifecycle concerns.
 
-The WFE name is stable for one Kubernetes object, while the RR reference UID is
-copied by `WorkflowExecutionCreator` from the parent RR. This gives the Job a
-direct immutable link to the RR cycle without making retention settings part of
-identity.
+The WFE name is stable for one Kubernetes object, while the RR name and UID are
+copied by `WorkflowExecutionCreator` from the parent RR. Using the RR name keeps
+the Job directly traceable to the RR shown by Kubernetes operators; the RR UID
+remains in immutable metadata for provenance and audit correlation without
+making retention settings part of identity.
 
 ## Ownership and metadata
 
@@ -48,9 +51,9 @@ identity.
 - A same-name resource with mismatched expected identity or bundle/image fails
   closed; it is never adopted or deleted as stale.
 - During migration, an existing WFE whose `Status.ExecutionRef` records the
-  former target-derived name may continue to observe/clean that exact legacy
-  Job only when its legacy owner metadata and exact bundle image match. New
-  WFEs never generate legacy names.
+  former RR-UID-based or target-derived name may continue to observe/clean that
+  exact legacy Job only when its legacy owner metadata and exact bundle image
+  match. New WFEs never generate legacy names.
 
 ## Locking, cooldown, and retention
 
@@ -70,7 +73,7 @@ identity.
 |---|---|
 | Target-hash-only Job name | Reuses retained Jobs/Pods across RR cycles |
 | Random `GenerateName` | A lost create response can create duplicate Jobs for one WFE |
-| Full RR UUID plus full WFE UUID | Exceeds the 63-character Job-name limit |
+| RR UID-based Job name | Opaque to operators when the RR name already provides a direct, bounded identity |
 | Separate WE Lease | Duplicates RO's lock authority and expands lifecycle/race complexity |
 | Delete old Job before reuse | Makes identity depend on retention/GC timing |
 

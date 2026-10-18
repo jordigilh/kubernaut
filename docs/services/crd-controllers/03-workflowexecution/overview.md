@@ -10,7 +10,7 @@
 
 ### Version 4.4 (2026-10-14)
 **Updates**:
-- ✅ **DD-WE-010 / Issue #2512**: Job names use the full parent RR UID plus a four-character WFE UID suffix; retained Jobs are never replaced to make a new cycle possible.
+- ✅ **DD-WE-010 / Issue #2512**: Job names use the parent RR name plus a four-character WFE UID suffix; retained Jobs are never replaced to make a new cycle possible.
 - ✅ **DD-RO-002**: RemediationOrchestrator remains the active-target lock authority; WorkflowExecution cooldown is scoped to the same workflow ID.
 
 ### Version 4.3 (2026-03-21)
