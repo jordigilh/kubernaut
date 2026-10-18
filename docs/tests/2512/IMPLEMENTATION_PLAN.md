@@ -11,18 +11,18 @@
 ## 1. Outcome
 
 Each Job-backed WorkflowExecution receives a deterministic, Kubernetes-valid name
-derived from the full parent RemediationRequest UUID and a 4-character WFE
-attempt suffix, for example:
+derived from the parent RemediationRequest name and a 4-character WFE attempt
+suffix, for example:
 
 ```text
-wfe-550e8400-e29b-41d4-a716-446655440000-7a3c
+wfe-rr-5da327bdcae1-702732e1-7a3c
 ```
 
-The first segment is the full `spec.remediationRequestRef.uid` UUID and the second
-is a 4-character suffix from the WFE UID/attempt identity. The resulting name is
-45 characters, below the Kubernetes Job-name limit. The identity is stable
-across reconciliation retries for the same WFE, but differs for every new WFE/RR
-cycle. A later WFE therefore cannot attach to a prior Job or
+The first segment is the sanitized `spec.remediationRequestRef.name` and the
+second is a 4-character suffix from the WFE UID/attempt identity. The RR-name
+portion is bounded to keep the result below the Kubernetes Job-name limit. The
+identity is stable across reconciliation retries for the same WFE, but differs
+for every new WFE/RR cycle. A later WFE therefore cannot attach to a prior Job or
 its Pods merely because it targets the same resource. The Job image is copied
 exactly from the later WFE's immutable `spec.workflowRef.executionBundle`.
 
@@ -138,13 +138,14 @@ external lock store.
 ### Spike 3 — Can a same-WFE reconcile remain idempotent: YES
 
 **Evidence**: a WFE has an immutable Kubernetes UID and immutable spec. A name
-derived from the full RR UID plus WFE UID suffix is stable for retries of that WFE and unique to
-new WFE/RR attempts. `Status.ExecutionRef` becomes the canonical cleanup/status
-reference after creation.
+derived from the RR name plus WFE UID suffix is stable for retries of that WFE
+and unique to new WFE/RR attempts in the controller namespace.
+`Status.ExecutionRef` becomes the canonical cleanup/status reference after
+creation.
 
-**Decision**: use deterministic full-RR-UUID-plus-4-character-WFE-suffix naming,
-    not random `GenerateName`; treat a same-owner `AlreadyExists` as idempotent
-    and never delete it.
+**Decision**: use deterministic RR-name-plus-4-character-WFE-suffix naming, not
+    random `GenerateName`; treat a same-owner `AlreadyExists` as idempotent and
+    never delete it.
 
 ### Spike 4 — Can retained old Jobs coexist safely: YES
 
@@ -179,7 +180,7 @@ the discovery above.
 
 | Option | Summary | Result |
 |---|---|---|
-| **A — full-RR-UUID Job name + RO lock (recommended)** | Use the full RR UUID plus a 4-character WFE UID/attempt suffix; add WFE/RR metadata hints; use `Status.ExecutionRef`; remove Job stale replacement | Matches issue #2512 with no new API/dependency and follows DD-RO-002 |
+| **A — RR-name Job name + RO lock (recommended)** | Use the RR name plus a 4-character WFE UID/attempt suffix; retain RR UID in metadata; use `Status.ExecutionRef`; remove Job stale replacement | Keeps the Job directly traceable to the RR with no new API/dependency and follows DD-RO-002 |
 | B — random `GenerateName` | Let the API generate a new Job every create | Rejected: a lost create response/status update can create duplicate Jobs for one WFE; weak idempotency and audit linkage |
 | C — separate WE target Lease/lock | Keep unique Jobs but add a second Lease implementation to WE | Rejected: duplicates RO's lock authority, increases race/cleanup surface, and violates routing ownership |
 | D — retain target-only name and improve deletion/waiting | Make old Job replacement more reliable | Rejected: still permits stale identity/POD association and explicitly violates “do not rely on deleting old Jobs” |
@@ -194,11 +195,12 @@ description, implementation should add/update a design-decision entry (proposed
 ### Production code
 
 - `pkg/workflowexecution/executor/job.go`
-  - Add `JobExecutionResourceName(wfe)` using the full
-    `wfe.Spec.RemediationRequestRef.UID` plus a 4-character WFE UID/attempt
-    suffix. Use a stable RR-name fallback for objects with no RR UID, and accept
-    an existing WFE's recorded legacy target-derived `Status.ExecutionRef` only
-    during migration with exact image/owner corroboration.
+  - Add `JobExecutionResourceName(wfe)` using
+    `wfe.Spec.RemediationRequestRef.Name` plus a 4-character WFE UID/attempt
+    suffix. Use an RR-UID fallback for legacy objects without an RR name, and
+    accept an existing WFE's recorded RR-UID-based or target-derived
+    `Status.ExecutionRef` only during migration with exact image/owner
+    corroboration.
   - Build Job and Pod metadata with WFE UID and RR name/namespace/UID.
   - Use exact `WorkflowRef.ExecutionBundle` as the container image.
   - Make same-WFE create idempotent and foreign collisions fail closed.
@@ -262,7 +264,7 @@ description, implementation should add/update a design-decision entry (proposed
 Write the failing Ginkgo/Gomega tests in `docs/tests/2512/TEST_PLAN.md` before
 production edits. The P0 tests must assert business outcomes, not helper calls:
 
-1. Full RR UUID plus WFE suffix → distinct Job names for separate RR/attempt identities.
+1. RR name plus WFE suffix → distinct, operator-traceable Job names for separate RR/attempt identities.
 2. Same WFE retry → same Job identity and no second Job.
 3. Later WFE → exact later bundle image, WFE/RR identity metadata, and separate
    `Status.ExecutionRef`.
@@ -306,18 +308,19 @@ tests. REFACTOR is not merely “tests pass”.
 | Unique Job names bypass active locking | Keep RO lock authority and test the real RO path | `IT-RO-2512-001` |
 | Lost create response creates a duplicate | Deterministic WFE-identity name plus same-owner idempotency | `UT/IT-WE-2512-002` |
 | Old WFE cleanup deletes a later Job | Cleanup uses `Status.ExecutionRef` and owner UID, never target-only lookup | `UT/IT-WE-2512-003` |
-| Name length/collision | Full RR UUID plus 4-character WFE suffix, Kubernetes-name validation, fail-closed foreign collision | `UT-WE-2512-004` |
+| Name length/collision | Sanitized/bounded RR name plus 4-character WFE suffix, Kubernetes-name validation, fail-closed foreign collision | `UT-WE-2512-001/004/006` |
 | Retention changes identity | Name helper does not receive retention options; run both retention modes | `UT/IT-WE-2512-005` |
 | Audit trail conflates cycles | RR correlation plus exact execution-resource payload assertions | `IT-WE-2512-005` |
 | Existing WFE references a legacy target-named Job | Accept only the recorded legacy name with exact image/owner corroboration; reject arbitrary references | `UT-WE-2512-011/012` |
 
 ## 10. Risk Spike Reassessment
 
-- **RR UID propagation: PASS** — production `WorkflowExecutionCreator` copies
-  `rr.UID` into `spec.remediationRequestRef.uid`; direct test fixtures need only
-  retain the documented fallback when they omit an assigned UID.
-- **Name length: PASS** — full UUID (36) + prefix/separator (5) + four-character
-  WFE suffix produces a 45-character Job name, below the Kubernetes Job limit.
+- **RR identity propagation: PASS** — production `WorkflowExecutionCreator`
+  copies both `rr.Name` and `rr.UID` into `spec.remediationRequestRef`; the Job
+  name uses the readable name while the UID remains available for provenance.
+- **Name length: PASS** — the sanitized RR-name portion is bounded before the
+  four-character WFE suffix is appended, keeping the Job below the Kubernetes
+  name limit; generated RR names are substantially shorter than the bound.
 - **Retention independence: PASS by inspection and existing tests** — retention
   options affect TTL/cleanup behavior but are not inputs to resource identity;
   existing fullpipeline fixtures already combine retention with an extended
@@ -326,8 +329,8 @@ tests. REFACTOR is not merely “tests pass”.
   `pkg/remediationorchestrator/locking/...`, and
   `pkg/remediationorchestrator/routing/...` all pass their current tests.
 - **Legacy identity migration: PASS** — RED tests for status lookup and cleanup
-  through an existing target-derived `Status.ExecutionRef` now pass without
-  weakening the new identity path.
+  through existing RR-UID-based and target-derived `Status.ExecutionRef` values
+  now pass without weakening the new identity path.
 - **E2E retained-resource fixture: OPEN** — not run during triage; it remains a
   focused implementation/verification risk rather than a design blocker.
 - **Worktree isolation: PASS** — unrelated investigator modifications were
@@ -339,9 +342,9 @@ tests. REFACTOR is not merely “tests pass”.
 **Reassessed confidence: 96%** for preflight/design; **94%** for implementation
 readiness after focused verification.
 
-Justification: the selected identity contract is explicit and bounded: full RR
-UUID for cross-cycle uniqueness plus a four-character WFE suffix for same-RR
-attempts. Production propagation, Kubernetes length, retention independence,
+Justification: the selected identity contract is explicit and bounded: the
+operator-facing RR name for cross-cycle traceability plus a four-character WFE
+suffix for same-RR attempts. Production propagation, Kubernetes length, retention independence,
 RO lock preservation, cooldown scoping, exact image/provenance projection,
 foreign-collision fail-closed behavior, and affected package behavior are now
 implemented and evidenced by passing focused/unit suites and build validation.

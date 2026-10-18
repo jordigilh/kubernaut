@@ -570,7 +570,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 	// See docs/testing/BR-WE-014/E2E_TEST_PLAN_BR_WE_014.md for the updated scope note.
 
 	Context("E2E-WE-2512-001: Per-WFE Job identity", func() {
-		It("should use the full RR UID and WFE suffix, not targetResource (BR-WE-014, BR-WE-019)", func() {
+		It("should use the RR name and WFE suffix, not targetResource (BR-WE-014, BR-WE-019)", func() {
 			// Business Outcome: Per-WFE identity prevents retained Jobs/Pods from
 			// being reused; active-target locking remains an RO concern.
 			//
@@ -613,7 +613,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 
 			Expect(job.Name).To(Equal(weexecutor.JobExecutionResourceName(wfe)),
 				"Job name should follow the immutable RR/WFE identity")
-			Expect(job.Name).To(HaveLen(45), "standard RR UUID + WFE suffix Job name should be 45 characters")
+			Expect(job.Name).To(HavePrefix("wfe-"+wfe.Spec.RemediationRequestRef.Name+"-"),
+				"Job name should remain directly traceable to the RR name")
+			Expect(len(job.Name)).To(BeNumerically("<=", 63),
+				"Job name must remain within the Kubernetes name limit")
 
 			By("Verifying ExecutionRef in WFE status matches the deterministic Job name")
 			running, err := getWFE(wfe.Name, wfe.Namespace)
