@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -126,7 +127,12 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 		// that intentional duplication bounded before provider dispatch.
 		Expect(strings.Count(rendered, maxText)).To(Equal(8))
 		Expect(validateWorkflowSelectionPromptBudget(rendered, len(rendered))).NotTo(HaveOccurred())
-		Expect(validateWorkflowSelectionPromptBudget(rendered, len(rendered)-1)).To(MatchError("workflow selection prompt exceeds configured byte budget"))
+		budgetErr := validateWorkflowSelectionPromptBudget(rendered, len(rendered)-1)
+		Expect(budgetErr).To(MatchError("workflow selection prompt exceeds configured byte budget"))
+		var typedBudgetErr *workflowSelectionPromptBudgetError
+		Expect(errors.As(budgetErr, &typedBudgetErr)).To(BeTrue())
+		Expect(typedBudgetErr.PromptBytes).To(Equal(len(rendered)))
+		Expect(typedBudgetErr.BudgetBytes).To(Equal(len(rendered) - 1))
 		Expect(rendered).To(ContainSubstring("Historical decision context"))
 	})
 })

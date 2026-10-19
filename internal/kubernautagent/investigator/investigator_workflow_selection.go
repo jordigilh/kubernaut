@@ -94,16 +94,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
 	}
-	if err := validateWorkflowSelectionPromptBudget(systemPrompt, inv.evidence.budget); err != nil {
-		inv.logger.Error(err, "workflow selection prompt rejected by byte budget",
-			"correlation_id", correlationID, "prompt_bytes", len(systemPrompt), "budget_bytes", inv.evidence.budget)
-		return &katypes.InvestigationResult{
-			HumanReviewNeeded:       true,
-			HumanReviewReason:       katypes.HumanReviewReasonRCAIncomplete,
-			Reason:                  err.Error(),
-			TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
-			WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
-		}, nil
+	if budgetResult := inv.workflowSelectionPromptBudgetResult(systemPrompt, correlationID); budgetResult != nil {
+		return budgetResult, nil
 	}
 	llmCtx.WorkflowDiscovery = newWorkflowDiscoveryAuditContext(enrichData, overriddenSignal, systemPrompt)
 
@@ -139,9 +131,38 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 func validateWorkflowSelectionPromptBudget(rendered string, budget int) error {
 	if len(rendered) > budget {
-		return errors.New("workflow selection prompt exceeds configured byte budget")
+		return &workflowSelectionPromptBudgetError{PromptBytes: len(rendered), BudgetBytes: budget}
 	}
 	return nil
+}
+
+type workflowSelectionPromptBudgetError struct {
+	PromptBytes int
+	BudgetBytes int
+}
+
+func (e *workflowSelectionPromptBudgetError) Error() string {
+	return "workflow selection prompt exceeds configured byte budget"
+}
+
+func (inv *Investigator) workflowSelectionPromptBudgetResult(rendered, correlationID string) *katypes.InvestigationResult {
+	err := validateWorkflowSelectionPromptBudget(rendered, inv.evidence.budget)
+	if err == nil {
+		return nil
+	}
+	var budgetErr *workflowSelectionPromptBudgetError
+	if !errors.As(err, &budgetErr) {
+		return nil
+	}
+	inv.logger.Error(err, "workflow selection prompt rejected by byte budget",
+		"correlation_id", correlationID, "prompt_bytes", budgetErr.PromptBytes, "budget_bytes", budgetErr.BudgetBytes)
+	return &katypes.InvestigationResult{
+		HumanReviewNeeded:       true,
+		HumanReviewReason:       katypes.HumanReviewReasonRCAIncomplete,
+		Reason:                  err.Error(),
+		TerminalOutcome:         sharedtypes.TerminalOutcomeRCAIncomplete,
+		WorkflowDiscoveryStatus: sharedtypes.WorkflowDiscoveryStatusSkippedDueToFailure,
+	}
 }
 
 // completeWorkflowSelection keeps recovered and first-turn proposals on the
