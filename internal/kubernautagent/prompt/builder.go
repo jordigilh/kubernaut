@@ -288,10 +288,10 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		if len(in.EnrichData.DetectedLabels) > 0 {
 			parts = append(parts, "Detected labels: "+sortedLabelString(in.EnrichData.DetectedLabels))
 		}
-		// GAP-012/#2533: Phase 3 gets the complete history from the already
-		// sanitized, whole-packet-budget-checked handoff source (not abbreviated
-		// counts). Do not silently truncate a second copy here; freezeEvidenceHandoff
-		// is the authoritative fail-closed budget boundary.
+		// GAP-012/#2533: Phase 3 gets the complete operational history and
+		// guidance here. Model-authored decision fields also appear in the frozen
+		// handoff, so the frozen packet and complete rendered prompt each have a
+		// fail-closed byte-budget boundary; neither copy is silently truncated.
 		if in.EnrichData.HistoryResult != nil && (len(in.EnrichData.HistoryResult.Tier1) > 0 || len(in.EnrichData.HistoryResult.Tier2) > 0) {
 			parts = append(parts, BuildRemediationHistorySection(in.EnrichData.HistoryResult))
 		}

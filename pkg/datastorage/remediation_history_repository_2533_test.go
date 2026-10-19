@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Issue #2533 AIAnalysis decision context repository bridge", func() {
@@ -79,7 +80,11 @@ var _ = Describe("Issue #2533 AIAnalysis decision context repository bridge", fu
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(HaveKey("rr-known-2533"))
 		Expect(result["rr-known-2533"].WorkflowRationale).To(Equal("The current target evidence supports the catalog workflow."))
-		Expect(result["rr-known-2533"].RepeatJustification).NotTo(BeNil())
+		Expect(result["rr-known-2533"].RepeatJustification).To(HaveValue(Equal(sharedtypes.RepeatJustification{
+			EvidenceBasis:         "Current evidence basis",
+			PriorOutcomeRelevance: "The prior outcome was ineffective",
+			ExpectedMechanism:     "The workflow addresses the observed mechanism",
+		})))
 		Expect(result).NotTo(HaveKey("rr-malformed-2533"))
 	})
 

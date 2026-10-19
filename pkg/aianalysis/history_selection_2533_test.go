@@ -42,12 +42,18 @@ var _ = Describe("Issue #2533 AIAnalysis historical decision audit source", func
 			ProcessAgentSessionResult(context.Background(), analysis, mapped)
 		Expect(err).NotTo(HaveOccurred())
 		auditClient.RecordAnalysisComplete(context.Background(), analysis)
-		Expect(store.events).NotTo(BeEmpty())
+		if len(store.events) == 0 {
+			Fail("expected RecordAnalysisComplete to record an audit event")
+		}
+		event := store.events[len(store.events)-1]
+		Expect(event.EventType).To(Equal(aiaudit.EventTypeAnalysisCompleted))
 
-		raw, err := json.Marshal(store.events[len(store.events)-1].EventData)
+		raw, err := json.Marshal(event.EventData)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(raw)).To(ContainSubstring(`"workflow_rationale":"Selection based on current memory observations"`))
-		Expect(string(raw)).To(ContainSubstring(`"repeat_justification"`))
+		Expect(string(raw)).To(ContainSubstring(`"repeat_justification":{"evidence_basis":"New memory limit observed"`))
+		Expect(string(raw)).To(ContainSubstring(`"prior_outcome_relevance":"Prior Full assessment was ineffective"`))
+		Expect(string(raw)).To(ContainSubstring(`"expected_mechanism":"Increase the current limit"`))
 		Expect(string(raw)).NotTo(ContainSubstring(`"parameters"`))
 	})
 })

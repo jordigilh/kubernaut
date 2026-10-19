@@ -115,4 +115,32 @@ var _ = Describe("Issue #2533 Phase 3 historical decision handoff", func() {
 		Expect(workflowRequest).NotTo(BeNil(), "the production workflow-selection request must receive historical decision context")
 		Expect(workflowRequest.Messages[0].Content).To(ContainSubstring("Prior evidence supported the previous mechanism"))
 	})
+
+	It("IT-KA-2533-004: rejects an oversized rendered Phase 3 prompt before provider dispatch", func() {
+		client := &issue2533LLMClient{responses: []llm.ChatResponse{
+			{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Pod OOMKilled","confidence":0.85}`}},
+		}}
+		builder, err := prompt.NewBuilder()
+		Expect(err).NotTo(HaveOccurred())
+		inv := newTestInvestigator(investigator.Config{
+			Client: client, Builder: builder, ResultParser: parser.NewResultParser(),
+			Enricher:   enrichment.NewEnricher(&issue2533K8sClient{}, &issue2533DSClient{}, &gateRecordingAuditStore{}, logr.Discard()),
+			AuditStore: &gateRecordingAuditStore{}, Logger: logr.Discard(),
+			MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
+			Pipeline: investigator.Pipeline{MaxEvidenceHandoffBytes: 10_000},
+		})
+
+		result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+			ResourceKind: "Pod", ResourceName: "api-server", Name: "api-server", Namespace: "prod",
+			Severity: "critical", Message: "Pod OOMKilled repeatedly",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.HumanReviewNeeded).To(BeTrue())
+		Expect(result.Reason).To(Equal("workflow selection prompt exceeds configured byte budget"))
+		for _, call := range client.calls {
+			if len(call.Messages) > 0 {
+				Expect(call.Messages[0].Content).NotTo(ContainSubstring("# Workflow Selection Request"))
+			}
+		}
+	})
 })

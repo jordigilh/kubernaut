@@ -228,7 +228,7 @@ var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "f
 		Entry("E2E-FP-2496-006: complete explanation cannot replace current confidence", "historyrepeatlow2496", false, false, ""),
 		Entry("E2E-FP-2496-006a: complete repeat reasoning cannot bypass production Rego approval", "historyrepeatapproval2496", false, true, ""),
 		Entry("E2E-FP-2496-007: a previously successful same-ID recurrence also requires explanation", "historyrepeataccepted2496", true, false, ""),
-		Entry("E2E-FP-2533-001: complete prior decision context reaches the recurrence journey", "historyrepeataccepted2496", false, false, ""),
+		Entry("E2E-FP-2496-001 / E2E-FP-2533-001: complete prior decision context reaches the recurrence journey", "historyrepeataccepted2496", false, false, ""),
 		Entry("E2E-FP-2533-002: hostile historical rationale is sanitized before provider reuse", "historyrepeataccepted2496", true, false, "historyhostile2533"),
 	)
 

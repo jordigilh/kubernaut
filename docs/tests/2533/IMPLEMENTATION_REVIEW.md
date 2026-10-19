@@ -17,7 +17,9 @@ AIAnalysis analysis.completed audit payload
 ```
 
 The association is not a Phase 3 lookup and does not use parameters, execution
-bundles, raw transcripts, secrets, or private chain-of-thought.
+bundles, raw transcripts, secrets, or private chain-of-thought. The frozen
+handoff and complete rendered Phase 3 prompt each fail closed at the configured
+byte budget before provider dispatch.
 
 ## Wiring manifest
 
@@ -26,7 +28,7 @@ bundles, raw transcripts, secrets, or private chain-of-thought.
 | AIAnalysis audit -> DS history | `pkg/aianalysis/audit/audit.go` -> `pkg/datastorage/repository/remediation_history_repository.go` -> `pkg/datastorage/server/remediation_history_handler.go` | `UT-AA-2533-001`, `UT-DS-2533-001`, `IT-DS-2533-001` |
 | DS DTO -> KA Tier 1/Tier 2 | `internal/kubernautagent/enrichment/ds_adapter.go` | `IT-KA-2533-002` |
 | KA enrichment -> frozen handoff | `investigator.runWorkflowSelection` -> `evidence_handoff.go` | `UT-KA-2533-004/005/006` |
-| Frozen handoff -> Phase 3 provider request | `prompt.Builder.RenderWorkflowSelection` | `IT-KA-2533-003` |
+| Frozen handoff -> Phase 3 provider request | `prompt.Builder.RenderWorkflowSelection` plus complete rendered-prompt byte guard before dispatch | `IT-KA-2533-003/004` |
 | Full recurrence journey | existing full-pipeline history journey with #2533 context assertions | `E2E-FP-2533-001/002` |
 
 The production adapter has a compile-time assertion for the supplemental batch

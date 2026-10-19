@@ -121,6 +121,12 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(len(rendered)).To(BeNumerically("<=", katypes.DefaultMaxEvidenceHandoffBytes))
+		// The decision-context values are rendered in both the human-readable
+		// history and frozen JSON handoff; the complete prompt budget check keeps
+		// that intentional duplication bounded before provider dispatch.
+		Expect(strings.Count(rendered, maxText)).To(Equal(8))
+		Expect(validateWorkflowSelectionPromptBudget(rendered, len(rendered))).NotTo(HaveOccurred())
+		Expect(validateWorkflowSelectionPromptBudget(rendered, len(rendered)-1)).To(MatchError("workflow selection prompt exceeds configured byte budget"))
 		Expect(rendered).To(ContainSubstring("Historical decision context"))
 	})
 })

@@ -24,6 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 type issue2533HistoryContextClient struct {
@@ -39,10 +40,15 @@ func (c *issue2533HistoryContextClient) GetRemediationHistoryContext(
 
 var _ = Describe("Issue #2533 DataStorage history projection", func() {
 	It("IT-KA-2533-002: maps both historical decision fields through the production adapter", func() {
-		justification := ogenclient.RepeatJustification{
+		expectedJustification := sharedtypes.RepeatJustification{
 			EvidenceBasis:         "Current evidence basis",
 			PriorOutcomeRelevance: "The prior outcome was ineffective",
 			ExpectedMechanism:     "The workflow addresses the observed mechanism",
+		}
+		justification := ogenclient.RepeatJustification{
+			EvidenceBasis:         expectedJustification.EvidenceBasis,
+			PriorOutcomeRelevance: expectedJustification.PriorOutcomeRelevance,
+			ExpectedMechanism:     expectedJustification.ExpectedMechanism,
 		}
 		client := &issue2533HistoryContextClient{response: &ogenclient.RemediationHistoryContext{
 			TargetResource:  "prod/Deployment/api",
@@ -62,10 +68,9 @@ var _ = Describe("Issue #2533 DataStorage history projection", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Tier1).To(HaveLen(1))
 		Expect(result.Tier1[0].WorkflowRationale).To(Equal("The current target evidence supports the catalog workflow."))
-		Expect(result.Tier1[0].RepeatJustification).NotTo(BeNil())
-		Expect(result.Tier1[0].RepeatJustification.ExpectedMechanism).To(Equal("The workflow addresses the observed mechanism"))
+		Expect(result.Tier1[0].RepeatJustification).To(HaveValue(Equal(expectedJustification)))
 		Expect(result.Tier2).To(HaveLen(1))
 		Expect(result.Tier2[0].WorkflowRationale).To(Equal("Older target evidence supports the historical mechanism."))
-		Expect(result.Tier2[0].RepeatJustification).NotTo(BeNil())
+		Expect(result.Tier2[0].RepeatJustification).To(HaveValue(Equal(expectedJustification)))
 	})
 })
