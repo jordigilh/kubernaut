@@ -128,6 +128,40 @@ then the setup transfers those local images into the hub Kind nodes before Helm 
 On ARM64, the CI artifact download omits `db-migrate`; build that one image locally with
 `IMAGE_TAG=<base> IMAGE_ARCH=arm64` and tag it with the shared `<base>` tag before loading.
 
+The EAIGW demo uses Agent Router v1.2.0 with Envoy Gateway v1.9.2 and Gateway API v1.6.1
+by default. Override the two Helm versions without creating a Kubernaut release when testing
+another compatible upstream matrix:
+
+```bash
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible \
+  LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
+  ENVOY_GATEWAY_VERSION=v1.9.2 \
+  AGENT_ROUTER_VERSION=v1.2.0
+```
+
+The setup creates or reuses `mcp-session-seed` in `envoy-ai-gateway-system` so repeated
+Helm/GitOps renders do not silently rotate MCP session encryption. For an existing v1.0
+installation, use the documented one-time legacy-seed fallback during client reconnect.
+
+For repeatable dependency experiments, copy
+`hack/setup-demo-infra/demo-dependencies.example.yaml`, edit it, and pass it through the
+Make target:
+
+```bash
+cp hack/setup-demo-infra/demo-dependencies.example.yaml /tmp/demo-dependencies.yaml
+make setup-fleet-demo-infra \
+  LLM_PROVIDER=openai_compatible LLM_MODEL=gpt-4o \
+  LLM_ENDPOINT=https://api.openai.com/v1 \
+  LLM_CREDENTIALS_FILE=/tmp/llm-credentials \
+  DEPENDENCY_OVERRIDES=/tmp/demo-dependencies.yaml
+```
+
+Explicit `ENVOY_GATEWAY_VERSION` or `AGENT_ROUTER_VERSION` Make variables override values
+from the YAML file.
+
 For Claude on Vertex AI instead, point the credential file at a GCP
 service-account key JSON and pass the Vertex project/location (required with
 `LLM_PROVIDER=vertex_ai`; the endpoint is the regional host — the Vertex

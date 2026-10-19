@@ -63,6 +63,129 @@ const (
 // breaking all fleet E2E suites.
 const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server@sha256:4219880ffae9b61f5cf8e27c0536d4001336016a6af77dc5a63dfaf9ce938b97"
 
+// FleetGatewayVersionOverrides contains optional operator-supplied versions
+// for the Envoy AI Gateway demo stack. Empty fields use the validated Agent
+// Router v1.2.0 compatibility matrix.
+type FleetGatewayVersionOverrides struct {
+	EnvoyGatewayVersion string `yaml:"envoyGatewayVersion"`
+	AgentRouterVersion  string `yaml:"agentRouterVersion"`
+}
+
+// FleetGatewayVersions is the effective version matrix used by a provisioned
+// Envoy AI Gateway stack.
+type FleetGatewayVersions struct {
+	EnvoyGatewayVersion string
+	AgentRouterVersion  string
+	source              string
+}
+
+// resolveFleetGatewayVersions applies validated defaults to optional operator
+// overrides and records whether the effective matrix was supplied explicitly.
+func resolveFleetGatewayVersions(overrides FleetGatewayVersionOverrides) FleetGatewayVersions {
+	versions := FleetGatewayVersions{
+		EnvoyGatewayVersion: defaultEnvoyGatewayHelmVersion,
+		AgentRouterVersion:  defaultAgentRouterHelmVersion,
+		source:              "validated default",
+	}
+	if version := strings.TrimSpace(overrides.EnvoyGatewayVersion); version != "" {
+		versions.EnvoyGatewayVersion = version
+		versions.source = "operator-supplied"
+	}
+	if version := strings.TrimSpace(overrides.AgentRouterVersion); version != "" {
+		versions.AgentRouterVersion = version
+		versions.source = "operator-supplied"
+	}
+	return versions
+}
+
+// Report returns the effective matrix printed by the demo setup. Gateway API
+// and Envoy proxy versions are exact for the validated default matrix; custom
+// Envoy Gateway versions own those bundled dependency versions.
+func (v FleetGatewayVersions) Report() string {
+	gatewayAPIVersion := defaultGatewayAPIVersion
+	envoyProxyVersion := defaultEnvoyProxyVersion
+	if v.EnvoyGatewayVersion != defaultEnvoyGatewayHelmVersion {
+		gatewayAPIVersion = "bundled with " + v.EnvoyGatewayVersion
+		envoyProxyVersion = "bundled with " + v.EnvoyGatewayVersion
+	}
+	return fmt.Sprintf("EAIGW compatibility matrix (%s): Gateway API CRDs: %s, Envoy Gateway: %s, Envoy proxy: %s, Agent Router: %s", v.source, gatewayAPIVersion, v.EnvoyGatewayVersion, envoyProxyVersion, v.AgentRouterVersion)
+}
+
+// buildEnvoyGatewayCRDsHelmArgs returns the arguments for the separately
+// applied Gateway API and Envoy Gateway CRD chart.
+func buildEnvoyGatewayCRDsHelmArgs(versions FleetGatewayVersions) []string {
+	return []string{
+		"--version", versions.EnvoyGatewayVersion,
+		"--set", "crds.gatewayAPI.enabled=true",
+		"--set", "crds.envoyGateway.enabled=true",
+	}
+}
+
+// buildEnvoyGatewayHelmArgs returns the controller chart arguments. The CRDs
+// are managed separately, so the chart's bundled CRDs are disabled.
+func buildEnvoyGatewayHelmArgs(versions FleetGatewayVersions) []string {
+	return []string{
+		"--version", versions.EnvoyGatewayVersion,
+		"--set", "crds.enabled=false",
+		"-f", fmt.Sprintf("https://raw.githubusercontent.com/theagentrouter/agent-router/%s/manifests/envoy-gateway-values.yaml", versions.AgentRouterVersion),
+	}
+}
+
+// buildAgentRouterCRDsHelmArgs returns the Agent Router CRD chart arguments.
+func buildAgentRouterCRDsHelmArgs(versions FleetGatewayVersions) []string {
+	return []string{"--version", versions.AgentRouterVersion}
+}
+
+// buildAgentRouterHelmArgs returns the Agent Router controller chart arguments.
+func buildAgentRouterHelmArgs(versions FleetGatewayVersions) []string {
+	return []string{
+		"--version", versions.AgentRouterVersion,
+		"--set", "controller.mcp.sessionEncryption.existingSecret=" + fleetMCPSessionSeedSecretName,
+	}
+}
+
+const fleetMCPSessionSeedSecretName = "mcp-session-seed"
+
+// buildFleetMCPSessionSeedSecretManifest renders the stable Secret consumed by
+// Agent Router's MCP session encryption configuration.
+func buildFleetMCPSessionSeedSecretManifest(namespace, seed string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+type: Opaque
+stringData:
+  seed: %s
+`, fleetMCPSessionSeedSecretName, namespace, seed)
+}
+
+// ensureFleetMCPSessionSeedSecret creates the seed only when the Secret is
+// absent. API/authentication failures are returned instead of rotating the
+// seed and invalidating active MCP sessions.
+func ensureFleetMCPSessionSeedSecret(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	check := exec.CommandContext(ctx, "kubectl", "get", "secret", fleetMCPSessionSeedSecretName,
+		"-n", namespace, "--kubeconfig", kubeconfigPath, "--ignore-not-found", "-o", "name")
+	secretName, err := check.Output()
+	if err != nil {
+		return fmt.Errorf("check MCP session seed Secret: %w", err)
+	}
+	if strings.TrimSpace(string(secretName)) != "" {
+		_, _ = fmt.Fprintf(writer, "    Reusing MCP session seed Secret %s/%s\n", namespace, fleetMCPSessionSeedSecretName)
+		return nil
+	}
+
+	seed, err := generateDemoSecret(32)
+	if err != nil {
+		return fmt.Errorf("generate MCP session encryption seed: %w", err)
+	}
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, buildFleetMCPSessionSeedSecretManifest(namespace, seed)); err != nil {
+		return fmt.Errorf("create MCP session seed Secret: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "    Created MCP session seed Secret %s/%s\n", namespace, fleetMCPSessionSeedSecretName)
+	return nil
+}
+
 const (
 	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
 	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.7.1"
@@ -84,15 +207,18 @@ const (
 	traefikWebsecureNodePort = 30843
 
 	// Envoy AI Gateway (EAIGW): two separate Helm installs layered on CNCF
-	// Envoy Gateway, per Spike S18. ai-gateway-helm v1.0.0 requires exactly
-	// Envoy Gateway v1.8.1 (mismatched versions crash-loop the AI Gateway
-	// controller) and does NOT bundle its own CRDs (a separate
-	// ai-gateway-crds-helm chart is required).
-	envoyGatewayHelmChart   = "oci://docker.io/envoyproxy/gateway-helm"
-	envoyGatewayHelmVersion = "v1.8.1"
-	aiGatewayCRDsHelmChart  = "oci://docker.io/envoyproxy/ai-gateway-crds-helm"
-	aiGatewayHelmChart      = "oci://docker.io/envoyproxy/ai-gateway-helm"
-	aiGatewayHelmVersion    = "v1.0.0"
+	// per the Agent Router v1.2 release matrix. The chart/image names retain
+	// their historical ai-gateway prefix even though the project is now named
+	// Agent Router. These are validated defaults; FleetCoreDemoOptions can
+	// override them for compatibility testing without a Kubernaut release.
+	envoyGatewayCRDsHelmChart      = "oci://docker.io/envoyproxy/gateway-crds-helm"
+	envoyGatewayHelmChart          = "oci://docker.io/envoyproxy/gateway-helm"
+	aiGatewayCRDsHelmChart         = "oci://docker.io/envoyproxy/ai-gateway-crds-helm"
+	aiGatewayHelmChart             = "oci://docker.io/envoyproxy/ai-gateway-helm"
+	defaultEnvoyGatewayHelmVersion = "v1.9.2"
+	defaultAgentRouterHelmVersion  = "v1.2.0"
+	defaultGatewayAPIVersion       = "v1.6.1"
+	defaultEnvoyProxyVersion       = "v1.39.1"
 	// eaigwGatewayNodePort is the DD-TEST-001-allocated NodePort for the
 	// EAIGW FMC E2E lane's Gateway listener (next in the Kuadrant-31975 block).
 	eaigwGatewayNodePort = 31976
@@ -554,6 +680,10 @@ type FleetCoreDemoOptions struct {
 	// empty defaults to Kuadrant. See provisionFleetCoreInfra's doc comment
 	// for what differs between the two.
 	GatewayType registry.MCPGatewayType
+	// GatewayVersions optionally overrides the Envoy Gateway and Agent Router
+	// versions used by the EAIGW demo stack. Empty fields use the validated
+	// v1.9.2/v1.2.0 matrix and preserve existing callers.
+	GatewayVersions FleetGatewayVersionOverrides
 	// MCPGatewayNamespace overrides the dedicated namespace used for the MCP
 	// Gateway, hub kube-mcp-server, and Gateway registration resources. Empty
 	// selects DefaultMCPGatewayNamespace.
@@ -671,6 +801,7 @@ func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, r
 		RemoteMCPServerNamespace: remoteMCPNamespace,
 		KeycloakNamespace:        idpNamespace,
 		GatewayType:              gatewayType,
+		GatewayVersions:          opts.GatewayVersions,
 		HubClusterID:             hubClusterID,
 		SpokeWorkers:             opts.SpokeWorkers,
 	}, writer)
@@ -916,6 +1047,9 @@ type FleetCoreInfraOptions struct {
 	// comment for what differs between the two at the edge routing/OAuth
 	// validation layer.
 	GatewayType registry.MCPGatewayType
+	// GatewayVersions optionally overrides the EAIGW compatibility matrix.
+	// Empty fields use the validated defaults and preserve existing E2E callers.
+	GatewayVersions FleetGatewayVersionOverrides
 
 	// SpokeWorkers appends this many `role: worker` nodes to the remote/
 	// spoke cluster at creation time (Issue #2333); see
@@ -1173,7 +1307,7 @@ func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, wr
 		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 	}
 
-	mcpGatewayEndpoint, gwErr := DeployFleetGatewayInfra(ctx, namespace, kubeconfigPath, kubeMCPAuthConfig, writer)
+	mcpGatewayEndpoint, gwErr := deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, kubeMCPAuthConfig, opts.GatewayVersions, writer)
 	if gwErr != nil {
 		return nil, "", fmt.Errorf("fleet gateway infra deployment failed: %w", gwErr)
 	}
@@ -1423,6 +1557,12 @@ func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcIma
 // Returns mcpGatewayEndpoint for wiring into whatever consumes it (chart
 // --set values via FleetHelmOptions, FMCOAuth2Config-adjacent callers, etc.).
 func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) (string, error) {
+	return deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, authConfig, FleetGatewayVersionOverrides{}, writer)
+}
+
+// deployFleetGatewayInfraWithVersions is the version-aware implementation used
+// by the demo path; legacy callers continue through DeployFleetGatewayInfra.
+func deployFleetGatewayInfraWithVersions(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, versionOverrides FleetGatewayVersionOverrides, writer io.Writer) (string, error) {
 	mcpGatewayNamespace, err := prepareMCPGatewayNamespace(ctx, namespace, kubeconfigPath, authConfig, writer)
 	if err != nil {
 		return "", err
@@ -1433,11 +1573,12 @@ func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath stri
 	if authConfig.GatewayType == "" {
 		authConfig.GatewayType = registry.GatewayKuadrant // backward-compatible default
 	}
+	versions := resolveFleetGatewayVersions(versionOverrides)
 	var mcpGatewayEndpoint string
 	switch authConfig.GatewayType {
 	case registry.GatewayEAIGW:
-		_, _ = fmt.Fprintln(writer, "\n  🌐 Phase 1-2: Deploying Envoy AI Gateway (EAIGW, Spike S18)...")
-		svcFQDN, eaigwErr := deployEnvoyAIGatewayInfra(ctx, mcpGatewayNamespace, kubeconfigPath, writer)
+		_, _ = fmt.Fprintf(writer, "\n  🌐 Phase 1-2: Deploying Envoy AI Gateway (EAIGW, %s)...\n", versions.Report())
+		svcFQDN, eaigwErr := deployEnvoyAIGatewayInfra(ctx, mcpGatewayNamespace, kubeconfigPath, versions, writer)
 		if eaigwErr != nil {
 			return "", fmt.Errorf("envoy AI Gateway deployment failed: %w", eaigwErr)
 		}
@@ -1714,34 +1855,43 @@ metadata:
 // (envoy-<gw-namespace>-<gw-name>-<8-char-hash>, discovered via label
 // selector -- there is no static Service name to hardcode, unlike Kuadrant's
 // Istio-provisioned mcp-gateway-istio).
-func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) (string, error) {
+func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, versions FleetGatewayVersions, writer io.Writer) (string, error) {
 	const (
 		egNamespace   = "envoy-gateway-system"
 		aiegNamespace = "envoy-ai-gateway-system"
 		gatewayName   = "mcp-gateway"
 	)
 
-	// Envoy Gateway's Helm chart bundles the Gateway API CRDs by default
-	// (v1.8.x), so -- unlike Kuadrant -- no separate gatewayAPICRDsURL apply
-	// is needed here.
-	_, _ = fmt.Fprintln(writer, "    Installing Envoy Gateway (bundles Gateway API CRDs)...")
+	_, _ = fmt.Fprintln(writer, "    Installing Gateway API + Envoy Gateway CRDs...")
+	if err := runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer,
+		"eg-crds", envoyGatewayCRDsHelmChart, egNamespace,
+		[]string{"--server-side", "--force-conflicts"},
+		buildEnvoyGatewayCRDsHelmArgs(versions)...,
+	); err != nil {
+		return "", fmt.Errorf("envoy gateway CRDs install failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Installing Envoy Gateway...")
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "eg", envoyGatewayHelmChart, egNamespace,
-		"--version", envoyGatewayHelmVersion); err != nil {
+		buildEnvoyGatewayHelmArgs(versions)...); err != nil {
 		return "", fmt.Errorf("envoy gateway helm install failed: %w", err)
 	}
 	if err := waitForDeployment(ctx, "envoy-gateway", egNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
 		return "", fmt.Errorf("envoy-gateway controller rollout failed: %w", err)
 	}
 
-	// ai-gateway-helm v1.0.0 does NOT bundle its own CRDs (Spike S18 gap #2)
+	// Agent Router does NOT bundle its own CRDs (Spike S18 gap #2)
 	// -- the CRDs chart must be installed explicitly first.
 	_, _ = fmt.Fprintln(writer, "    Installing Envoy AI Gateway CRDs + controller...")
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", aiGatewayCRDsHelmChart, aiegNamespace,
-		"--version", aiGatewayHelmVersion); err != nil {
+		buildAgentRouterCRDsHelmArgs(versions)...); err != nil {
 		return "", fmt.Errorf("ai-gateway CRDs helm install failed: %w", err)
 	}
+	if err := ensureFleetMCPSessionSeedSecret(ctx, aiegNamespace, kubeconfigPath, writer); err != nil {
+		return "", err
+	}
 	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", aiGatewayHelmChart, aiegNamespace,
-		"--version", aiGatewayHelmVersion); err != nil {
+		buildAgentRouterHelmArgs(versions)...); err != nil {
 		return "", fmt.Errorf("ai-gateway helm install failed: %w", err)
 	}
 	if err := waitForDeployment(ctx, "ai-gateway-controller", aiegNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
@@ -3836,16 +3986,71 @@ func kubectlApplyManifest(ctx context.Context, kubeconfigPath string, writer io.
 // runHelmTemplateApply renders a Helm chart and pipes the output to kubectl apply.
 // Helm is used purely as a YAML renderer -- no Helm release is created.
 func runHelmTemplateApply(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, extraArgs ...string) error {
+	return runHelmTemplateApplyWithKubectlArgs(ctx, kubeconfigPath, writer, releaseName, chart, namespace, nil, extraArgs...)
+}
+
+// runHelmTemplateApplyWithKubectlArgs is the argument-safe variant of
+// runHelmTemplateApply. Version overrides come from the demo CLI, so they must
+// be passed as exec arguments rather than interpolated into a shell pipeline.
+func runHelmTemplateApplyWithKubectlArgs(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, kubectlExtraArgs []string, extraArgs ...string) error {
 	helmArgs := []string{"template", releaseName, chart, "-n", namespace}
 	helmArgs = append(helmArgs, extraArgs...)
-	helmCmd := strings.Join(append([]string{"helm"}, helmArgs...), " ")
-	kubectlCmd := fmt.Sprintf("kubectl apply --kubeconfig %s -f -", kubeconfigPath)
+	helmCtx, cancelHelm := context.WithCancel(ctx)
+	defer cancelHelm()
+	helmCmd := exec.CommandContext(helmCtx, "helm", helmArgs...)
+	helmCmd.Stderr = writer
+	helmOutput, err := helmCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create helm output pipe: %w", err)
+	}
 
-	script := helmCmd + " | " + kubectlCmd
-	cmd := exec.CommandContext(ctx, "sh", "-c", script)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
+	kubectlArgs := append([]string{"apply", "--kubeconfig", kubeconfigPath}, kubectlExtraArgs...)
+	kubectlArgs = append(kubectlArgs, "-f", "-")
+	kubectlCmd := exec.CommandContext(ctx, "kubectl", kubectlArgs...)
+	kubectlCmd.Stdin = helmOutput
+	kubectlCmd.Stdout = writer
+	kubectlCmd.Stderr = writer
+
+	if err := helmCmd.Start(); err != nil {
+		return fmt.Errorf("start helm template: %w", err)
+	}
+	if err := kubectlCmd.Start(); err != nil {
+		cleanupHelmAfterKubectlFailure(helmCmd, helmOutput, cancelHelm, writer)
+		return fmt.Errorf("start kubectl apply: %w", err)
+	}
+
+	kubectlErr := kubectlCmd.Wait()
+	if kubectlErr != nil {
+		cleanupHelmAfterKubectlFailure(helmCmd, helmOutput, cancelHelm, writer)
+		return fmt.Errorf("kubectl apply failed: %w", kubectlErr)
+	}
+	helmErr := helmCmd.Wait()
+	if helmErr != nil {
+		return fmt.Errorf("helm template failed: %w", helmErr)
+	}
+	return nil
+}
+
+func cleanupHelmAfterKubectlFailure(helmCmd *exec.Cmd, helmOutput io.Closer, cancelHelm context.CancelFunc, writer io.Writer) {
+	if err := helmOutput.Close(); err != nil {
+		_, _ = fmt.Fprintf(writer, "warning: close helm output after kubectl failure: %v\n", err)
+	}
+	cancelHelm()
+	if helmCmd.Process != nil {
+		if err := helmCmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			_, _ = fmt.Fprintf(writer, "warning: stop helm after kubectl failure: %v\n", err)
+		}
+	}
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- helmCmd.Wait() }()
+	select {
+	case err := <-waitResult:
+		if err != nil && !errors.Is(err, os.ErrProcessDone) {
+			_, _ = fmt.Fprintf(writer, "warning: reap helm after kubectl failure: %v\n", err)
+		}
+	case <-time.After(10 * time.Second):
+		_, _ = fmt.Fprintln(writer, "warning: timed out reaping helm after kubectl failure")
+	}
 }
 
 // runHelmUpgradeInstall runs a real `helm upgrade --install` (as opposed to

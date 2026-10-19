@@ -335,6 +335,10 @@ projection, not raw payload/audit/conversation persistence.
 User approved the concrete contracts in DD-KA-2496 v1.1: independent 64 KiB
 `ai.investigation.maxEvidenceHandoffBytes`, sibling non-executable
 `selection_assessment` / AA `selectionAssessment`, and NoExecution exclusion.
+Issue #2519 supersedes only the operational default: it is now 256 KiB
+(`262144` bytes) because the original default caused failures in the default
+configuration. Packet immutability, fail-closed overflow and the other DD-KA-2496
+contracts remain unchanged.
 
 - **RED (~30–45 min):** supplementary prompt/feedback specs; production config,
   real catalog/provider selection and pre-transform external-observation capture

@@ -105,11 +105,18 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		Expect(priorEA.Status.AssessmentReason).To(BeElementOf("Full", "Partial"))
 		Expect(priorEA.Status.Components.MetricsAssessed).To(BeTrue(), "the valid cluster-scoped metric fixture must be assessed")
 		Expect(priorEA.Status.Components.HealthScore).To(HaveValue(BeNumerically(">", 0)))
-		postHistory := fleetScopedHistory2496(targetNS, sourceOrigin, priorEA.Status.Components.PostRemediationSpecHash)
-		Expect(postHistory.Tier1.Chain).To(ContainElement(And(
-			HaveField("AppliedState.Value", ogenclient.RemediationHistoryEntryAppliedStateConfirmed),
-			HaveField("SpecChangeStatus.Value", ogenclient.RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent),
-		)))
+		By("Waiting for EM audit events to become visible in remediation history")
+		Eventually(func(g Gomega) {
+			postHistory, err := fleetScopedHistory2496(targetNS, sourceOrigin, priorEA.Status.Components.PostRemediationSpecHash)
+			g.Expect(err).NotTo(HaveOccurred())
+			if err != nil {
+				return
+			}
+			g.Expect(postHistory.Tier1.Chain).To(ContainElement(And(
+				HaveField("AppliedState.Value", ogenclient.RemediationHistoryEntryAppliedStateConfirmed),
+				HaveField("SpecChangeStatus.Value", ogenclient.RemediationHistoryEntrySpecChangeStatusPostHashMatchesCurrent),
+			)))
+		}, 30*time.Second, time.Second).Should(Succeed())
 		// Source pre-state and current spoke state really collide. Do not seed
 		// unrelated hashes that would be excluded even without cluster scoping.
 		hash := priorEA.Spec.PreRemediationSpecHash
@@ -129,7 +136,8 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 		for _, fixture := range []struct{ targetNamespace, origin, correlation string }{
 			{targetNS, sourceOrigin, otherOrigin}, {targetNS + "-other", currentOrigin, otherTarget},
 		} {
-			history := fleetScopedHistory2496(fixture.targetNamespace, fixture.origin, hash)
+			history, err := fleetScopedHistory2496(fixture.targetNamespace, fixture.origin, hash)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(history.Tier1.Chain).To(ContainElement(And(
 				HaveField("RemediationUID", fixture.correlation),
 				HaveField("WorkflowId.Value", priorSelection.WorkflowID),
@@ -138,7 +146,8 @@ var _ = Describe("History selection fleet isolation [BR-KA-016]", Label("fleet",
 				HaveField("SignalResolved", And(HaveField("Set", true), HaveField("Null", false), HaveField("Value", false))),
 			)))
 		}
-		history := fleetScopedHistory2496(targetNS, currentOrigin, hash)
+		history, err := fleetScopedHistory2496(targetNS, currentOrigin, hash)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(history.Tier1.Chain).To(BeEmpty())
 		Expect(history.Tier2.Chain).To(BeEmpty())
 		By("Running a fresh RR through KA with the isolated registered spoke target/origin")
@@ -211,16 +220,20 @@ func fleetHistoryMetrics2496(targetNS, clusterID string) {
 	})).To(Succeed(), "cluster-scoped EM metrics must be available before the prior lifecycle")
 }
 
-func fleetScopedHistory2496(targetNS, origin, hash string) *ogenclient.RemediationHistoryContext {
+func fleetScopedHistory2496(targetNS, origin, hash string) (*ogenclient.RemediationHistoryContext, error) {
 	GinkgoHelper()
 	resp, err := dataStorageClient.GetRemediationHistoryContext(ctx, ogenclient.GetRemediationHistoryContextParams{
 		TargetKind: "Deployment", TargetName: "memory-eater", TargetNamespace: targetNS,
 		CurrentSpecHash: hash, ClusterId: ogenclient.NewOptString(origin),
 	})
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 	history, ok := resp.(*ogenclient.RemediationHistoryContext)
-	Expect(ok).To(BeTrue())
-	return history
+	if !ok {
+		return nil, fmt.Errorf("unexpected remediation history response type %T", resp)
+	}
+	return history, nil
 }
 
 func fleetHistoryRemoteExecution2496(rrName, targetNS string) {

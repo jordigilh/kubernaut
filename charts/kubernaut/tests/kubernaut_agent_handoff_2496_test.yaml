@@ -22,14 +22,14 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
-  - it: "IT-PLATFORM-2496-001: materializes the independent 65,536-byte default"
+  - it: "IT-PLATFORM-2496-001: materializes the independent 262,144-byte default"
     documentSelector:
       path: metadata.name
       value: kubernaut-agent-config
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "(?m)^\\s*maxEvidenceHandoffBytes: 65536$"
+          pattern: "(?m)^\\s*maxEvidenceHandoffBytes: 262144$"
   - it: "IT-PLATFORM-2496-001: renders an operator-configured whole-packet budget"
     set:
       kubernautAgent:

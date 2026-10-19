@@ -83,10 +83,15 @@ func (d *Dispatcher) updateStatus(ctx context.Context, key crclient.ObjectKey, m
 // immutable and cannot hold a trustworthy snapshot of a fact that can
 // become true after Create. Never regresses a Status that has already
 // advanced past Pending (e.g. a duplicate dispatch attempt racing a
-// terminal write).
-func (d *Dispatcher) writeDispatchedStatus(ctx context.Context, key crclient.ObjectKey, sessionID string, interactive bool) {
+// terminal write). recovered is true only after a confirmed orphan-Lease
+// takeover, allowing the new attempt identity to replace the old non-terminal
+// SessionID without weakening the normal duplicate-dispatch guard.
+func (d *Dispatcher) writeDispatchedStatus(ctx context.Context, key crclient.ObjectKey, sessionID string, interactive, recovered bool) {
 	d.updateStatus(ctx, key, func(as *agentsessionv1.AgentSession) {
-		if as.Status.Phase != "" && as.Status.Phase != agentsessionv1.AgentSessionPhasePending {
+		if isTerminalPhase(as.Status.Phase) {
+			return
+		}
+		if !recovered && as.Status.Phase != "" && as.Status.Phase != agentsessionv1.AgentSessionPhasePending {
 			return
 		}
 		as.Status.SessionID = sessionID
@@ -144,10 +149,13 @@ func (d *Dispatcher) writeFailedStatus(ctx context.Context, key crclient.ObjectK
 // eventual human decision (select_workflow/complete_no_action) actually
 // concludes the session. That final write arrives as a second OnTerminal
 // call once CompleteUserDriving/ForceCompleteByRemediationID commits.
-func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.ObjectKey, status session.Status, result *katypes.InvestigationResult, fnErr error, evidenceStatus *katypes.EvidenceStatus) {
+func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.ObjectKey, sessionID string, status session.Status, result *katypes.InvestigationResult, fnErr error, evidenceStatus *katypes.EvidenceStatus) {
 	if status == session.StatusUserDriving {
 		d.updateStatus(ctx, key, func(as *agentsessionv1.AgentSession) {
 			if isTerminalPhase(as.Status.Phase) {
+				return
+			}
+			if as.Status.SessionID != "" && as.Status.SessionID != sessionID {
 				return
 			}
 			as.Status.Interactive = true
@@ -157,6 +165,9 @@ func (d *Dispatcher) writeTerminalStatus(ctx context.Context, key crclient.Objec
 
 	d.updateStatus(ctx, key, func(as *agentsessionv1.AgentSession) {
 		if isTerminalPhase(as.Status.Phase) {
+			return
+		}
+		if as.Status.SessionID != "" && as.Status.SessionID != sessionID {
 			return
 		}
 		now := metav1.Now()

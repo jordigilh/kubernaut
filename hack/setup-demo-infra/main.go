@@ -23,6 +23,9 @@ func main() {
 	clusterName := flag.String("cluster-name", "", "Kind cluster name (default: kubernaut-demo for local, kubernaut-hub for fleet)")
 	remoteClusterName := flag.String("remote-cluster-name", "kubernaut-remote-cluster", "fleet spoke Kind cluster name")
 	gatewayTypeFlag := flag.String("gateway-type", string(registry.GatewayEAIGW), "fleet MCP Gateway implementation: eaigw or kuadrant")
+	dependencyOverridesFile := flag.String("dependency-overrides-file", "", "optional YAML file with demo dependency overrides")
+	envoyGatewayVersion := flag.String("envoy-gateway-version", "", "optional Envoy Gateway version override for the EAIGW demo")
+	agentRouterVersion := flag.String("agent-router-version", "", "optional Agent Router/AI Gateway version override for the EAIGW demo")
 	mcpGatewayNamespace := flag.String("mcp-gateway-namespace", infrastructure.DefaultMCPGatewayNamespace, "fleet MCP Gateway and hub kube-mcp-server namespace")
 	remoteMCPServerNamespace := flag.String("remote-mcp-server-namespace", infrastructure.DefaultRemoteMCPServerNamespace, "fleet remote kube-mcp-server namespace")
 	spokeWorkers := flag.Int("spoke-workers", 0, "number of extra worker nodes for the fleet spoke cluster")
@@ -43,6 +46,14 @@ func main() {
 		flag.String("kubeconfig", "", "path to write the cluster kubeconfig")
 	}
 	flag.Parse()
+	fileGatewayVersions, dependencyErr := infrastructure.LoadFleetGatewayVersionOverrides(*dependencyOverridesFile)
+	if dependencyErr != nil {
+		fail(dependencyErr.Error())
+	}
+	gatewayVersions := infrastructure.MergeFleetGatewayVersionOverrides(fileGatewayVersions, infrastructure.FleetGatewayVersionOverrides{
+		EnvoyGatewayVersion: *envoyGatewayVersion,
+		AgentRouterVersion:  *agentRouterVersion,
+	})
 	reasoningValue, reasoningSet, parseErr := parseReasoningEnabled(*llmReasoningEnabled)
 	if parseErr != nil {
 		fail(parseErr.Error())
@@ -104,6 +115,7 @@ func main() {
 			ctx, *clusterName, *remoteClusterName, kubeconfigPath,
 			infrastructure.FleetCoreDemoOptions{
 				GatewayType:              gatewayType,
+				GatewayVersions:          gatewayVersions,
 				MCPGatewayNamespace:      *mcpGatewayNamespace,
 				RemoteMCPServerNamespace: *remoteMCPServerNamespace,
 				SpokeWorkers:             *spokeWorkers,

@@ -100,7 +100,7 @@ Mappings are scoped evidence for this feature, not a claim of whole-system certi
 
 Supplementary deployment proof **IT-PLATFORM-2496-001** (BR-KA-016/DD-KA-2496):
 the existing Helm schema and KA ConfigMap must materialize the independent
-65,536-byte default, honor a positive operator override, and reject explicit
+262,144-byte default, honor a positive operator override, and reject explicit
 zero/negative values. IT-KA-2496-008 proves the rendered configuration's runtime
 boundary through the production investigator builder. Observation-privacy cases
 under UT-KA-2496-008 additionally cover Secret context before metadata removal,
@@ -134,7 +134,7 @@ every failure requests review before any selection-provider call.
 ## 4. Scope and design decisions
 
 Concrete contracts approved on 2026-10-10: independent positive
-`ai.investigation.maxEvidenceHandoffBytes` (default 65,536 bytes); non-executable
+`ai.investigation.maxEvidenceHandoffBytes` (default 262,144 bytes); non-executable
 sibling `selection_assessment` / AA `selectionAssessment`; NoExecution does not
 establish a completed valid workflow assessment. Frozen-handoff supplementary
 proofs: **IT-KA-2496-007** pre-transform sanitized capture and whole-packet delivery;

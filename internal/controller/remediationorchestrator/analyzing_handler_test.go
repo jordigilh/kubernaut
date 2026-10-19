@@ -89,8 +89,8 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		IsDryRun:       func() bool { return false },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return wfeTest, nil
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				return wfeTest, true, nil
 			},
 		},
 	}
@@ -263,9 +263,9 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 
 			wfeCreated := false
 			cbs := noopAnalyzingCallbacks()
-			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
 				wfeCreated = true
-				return wfeTest, nil
+				return wfeTest, true, nil
 			}
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
@@ -399,8 +399,8 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
 			}
-			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return "", fmt.Errorf("namespace terminating")
+			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
+				return "", false, fmt.Errorf("namespace terminating")
 			}
 
 			h := newHandler(c, cbs)
@@ -557,9 +557,9 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs.IsDryRun = func() bool { return true }
 			cbs.WFECallbacks = prodcontroller.WFECreationCallbacks{
 				EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-				CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+				CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, bool, error) {
 					wfeCreated = true
-					return "wfe-should-not-exist", nil
+					return "wfe-should-not-exist", true, nil
 				},
 			}
 

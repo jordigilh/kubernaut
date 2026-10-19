@@ -480,6 +480,84 @@ value: fleet-mcp`))
 	})
 })
 
+var _ = Describe("EAIGW version overrides", func() {
+	It("UT-INFRA-FLEET-2519-001 [BR-PLATFORM-014]: uses the validated matrix when overrides are omitted", func() {
+		versions := resolveFleetGatewayVersions(FleetGatewayVersionOverrides{})
+
+		Expect(versions.EnvoyGatewayVersion).To(Equal(defaultEnvoyGatewayHelmVersion))
+		Expect(versions.AgentRouterVersion).To(Equal(defaultAgentRouterHelmVersion))
+	})
+
+	It("UT-INFRA-FLEET-2519-002 [BR-PLATFORM-014]: preserves explicit operator overrides", func() {
+		versions := resolveFleetGatewayVersions(FleetGatewayVersionOverrides{
+			EnvoyGatewayVersion: "v1.10.0",
+			AgentRouterVersion:  "v1.3.0",
+		})
+
+		Expect(versions.EnvoyGatewayVersion).To(Equal("v1.10.0"))
+		Expect(versions.AgentRouterVersion).To(Equal("v1.3.0"))
+	})
+
+	It("UT-INFRA-FLEET-2519-003 [BR-PLATFORM-014]: reports the effective compatibility matrix", func() {
+		report := resolveFleetGatewayVersions(FleetGatewayVersionOverrides{
+			EnvoyGatewayVersion: "v1.10.0",
+			AgentRouterVersion:  "v1.3.0",
+		}).Report()
+
+		Expect(report).To(ContainSubstring("Envoy Gateway: v1.10.0"))
+		Expect(report).To(ContainSubstring("Agent Router: v1.3.0"))
+		Expect(report).To(ContainSubstring("operator-supplied"))
+	})
+
+	It("UT-INFRA-FLEET-2519-004 [BR-PLATFORM-014]: renders a stable session seed Secret", func() {
+		manifest := buildFleetMCPSessionSeedSecretManifest("mcp-system", "stable-seed")
+
+		Expect(manifest).To(ContainSubstring("name: " + fleetMCPSessionSeedSecretName))
+		Expect(manifest).To(ContainSubstring("namespace: mcp-system"))
+		Expect(manifest).To(ContainSubstring("seed: stable-seed"))
+	})
+
+	It("UT-INFRA-FLEET-2519-005 [BR-PLATFORM-014]: builds the supported ordered Helm arguments", func() {
+		versions := resolveFleetGatewayVersions(FleetGatewayVersionOverrides{})
+
+		Expect(buildEnvoyGatewayCRDsHelmArgs(versions)).To(Equal([]string{
+			"--version", "v1.9.2",
+			"--set", "crds.gatewayAPI.enabled=true",
+			"--set", "crds.envoyGateway.enabled=true",
+		}))
+		Expect(buildEnvoyGatewayHelmArgs(versions)).To(Equal([]string{
+			"--version", "v1.9.2",
+			"--set", "crds.enabled=false",
+			"-f", "https://raw.githubusercontent.com/theagentrouter/agent-router/v1.2.0/manifests/envoy-gateway-values.yaml",
+		}))
+		Expect(buildAgentRouterHelmArgs(versions)).To(Equal([]string{
+			"--version", "v1.2.0",
+			"--set", "controller.mcp.sessionEncryption.existingSecret=mcp-session-seed",
+		}))
+	})
+
+	It("UT-INFRA-FLEET-2519-006 [BR-PLATFORM-014]: parses dependency overrides from YAML", func() {
+		overrides, err := parseFleetGatewayVersionOverrides([]byte("envoyGatewayVersion: v1.10.0\nagentRouterVersion: v1.3.0\n"))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(overrides.EnvoyGatewayVersion).To(Equal("v1.10.0"))
+		Expect(overrides.AgentRouterVersion).To(Equal("v1.3.0"))
+	})
+
+	It("UT-INFRA-FLEET-2519-007 [BR-PLATFORM-014]: explicit overrides take precedence over YAML", func() {
+		fileOverrides := FleetGatewayVersionOverrides{
+			EnvoyGatewayVersion: "v1.10.0",
+			AgentRouterVersion:  "v1.3.0",
+		}
+		cliOverrides := FleetGatewayVersionOverrides{EnvoyGatewayVersion: "v1.11.0"}
+
+		merged := MergeFleetGatewayVersionOverrides(fileOverrides, cliOverrides)
+
+		Expect(merged.EnvoyGatewayVersion).To(Equal("v1.11.0"))
+		Expect(merged.AgentRouterVersion).To(Equal("v1.3.0"))
+	})
+})
+
 func captureKubectlManifest(run func() error) string {
 	dir, err := os.MkdirTemp("", "fleet-kubectl-test-")
 	Expect(err).NotTo(HaveOccurred())
