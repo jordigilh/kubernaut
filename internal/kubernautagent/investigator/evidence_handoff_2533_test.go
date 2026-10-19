@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	internalerrors "github.com/jordigilh/kubernaut/internal/errors"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -129,7 +130,7 @@ var _ = Describe("Issue #2533 frozen historical decision context", func() {
 		Expect(validateWorkflowSelectionPromptBudget(rendered, len(rendered))).NotTo(HaveOccurred())
 		budgetErr := validateWorkflowSelectionPromptBudget(rendered, len(rendered)-1)
 		Expect(budgetErr).To(MatchError("workflow selection prompt exceeds configured byte budget"))
-		var typedBudgetErr *workflowSelectionPromptBudgetError
+		var typedBudgetErr *internalerrors.PromptBudgetError
 		Expect(errors.As(budgetErr, &typedBudgetErr)).To(BeTrue())
 		Expect(typedBudgetErr.PromptBytes).To(Equal(len(rendered)))
 		Expect(typedBudgetErr.BudgetBytes).To(Equal(len(rendered) - 1))

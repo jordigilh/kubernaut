@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	internalerrors "github.com/jordigilh/kubernaut/internal/errors"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -131,18 +132,9 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 func validateWorkflowSelectionPromptBudget(rendered string, budget int) error {
 	if len(rendered) > budget {
-		return &workflowSelectionPromptBudgetError{PromptBytes: len(rendered), BudgetBytes: budget}
+		return &internalerrors.PromptBudgetError{PromptBytes: len(rendered), BudgetBytes: budget}
 	}
 	return nil
-}
-
-type workflowSelectionPromptBudgetError struct {
-	PromptBytes int
-	BudgetBytes int
-}
-
-func (e *workflowSelectionPromptBudgetError) Error() string {
-	return "workflow selection prompt exceeds configured byte budget"
 }
 
 func (inv *Investigator) workflowSelectionPromptBudgetResult(rendered, correlationID string) *katypes.InvestigationResult {
@@ -150,7 +142,7 @@ func (inv *Investigator) workflowSelectionPromptBudgetResult(rendered, correlati
 	if err == nil {
 		return nil
 	}
-	var budgetErr *workflowSelectionPromptBudgetError
+	var budgetErr *internalerrors.PromptBudgetError
 	if !errors.As(err, &budgetErr) {
 		return nil
 	}
