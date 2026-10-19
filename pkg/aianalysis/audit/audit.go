@@ -34,6 +34,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Event type constants (per DD-AUDIT-003)
@@ -744,6 +745,11 @@ func applySelectionAuditFields(payload *ogenclient.AIAnalysisAuditPayload, rca *
 			return
 		}
 		applySelectedAuditFields(payload, safe)
+		if rationale := sharedtypes.BoundedHistoricalDecisionText(selected.Rationale); rationale != "" {
+			// BR-KA-016/#2533: retain only bounded, sanitized rationale for
+			// target-scoped historical context. It is never execution input.
+			payload.WorkflowRationale.SetTo(rationale)
+		}
 		payload.PriorRemediationUids = append([]string(nil), selected.PriorRemediationUIDs...)
 		return
 	}

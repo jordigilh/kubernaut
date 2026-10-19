@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // DSAdapter implements DataStorageClient by wrapping the ogen-generated DS client.
@@ -143,6 +144,7 @@ func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
 		WorkflowID:     e.WorkflowId.Or(""),
 		WorkflowName:   e.WorkflowName.Or(""),
 	}
+	entry.WorkflowRationale, entry.RepeatJustification = mapHistoricalDecisionContext(e.WorkflowRationale, e.RepeatJustification)
 	if confidence, known := e.WorkflowSelectionConfidence.Get(); known {
 		entry.WorkflowSelectionConfidence = &confidence
 	}
@@ -212,6 +214,7 @@ func mapTier2Summary(e ogenclient.RemediationHistorySummary) Tier2Summary {
 		WorkflowID:     e.WorkflowId.Or(""),
 		WorkflowName:   e.WorkflowName.Or(""),
 	}
+	s.WorkflowRationale, s.RepeatJustification = mapHistoricalDecisionContext(e.WorkflowRationale, e.RepeatJustification)
 	if confidence, known := e.WorkflowSelectionConfidence.Get(); known {
 		s.WorkflowSelectionConfidence = &confidence
 	}
@@ -255,6 +258,22 @@ func applyTier2SpecEvidence(summary *Tier2Summary, entry ogenclient.RemediationH
 	if entry.PostRemediationSpecHash.Set {
 		summary.PostRemediationSpecHash = entry.PostRemediationSpecHash.Value
 	}
+}
+
+func mapHistoricalDecisionContext(
+	rationale ogenclient.OptString,
+	justification ogenclient.OptRepeatJustification,
+) (string, *sharedtypes.RepeatJustification) {
+	decision := sharedtypes.HistoricalDecisionContext{WorkflowRationale: rationale.Or("")}
+	if value, known := justification.Get(); known {
+		decision.RepeatJustification = &sharedtypes.RepeatJustification{
+			EvidenceBasis:         value.EvidenceBasis,
+			PriorOutcomeRelevance: value.PriorOutcomeRelevance,
+			ExpectedMechanism:     value.ExpectedMechanism,
+		}
+	}
+	safe := sharedtypes.SafeHistoricalDecisionContext(decision)
+	return safe.WorkflowRationale, safe.RepeatJustification
 }
 
 func mapHealthChecks(hc ogenclient.RemediationHealthChecks) *HealthChecks {

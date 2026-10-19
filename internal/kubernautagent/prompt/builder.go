@@ -288,8 +288,10 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		if len(in.EnrichData.DetectedLabels) > 0 {
 			parts = append(parts, "Detected labels: "+sortedLabelString(in.EnrichData.DetectedLabels))
 		}
-		// GAP-012: Phase 3 gets full remediation history (not abbreviated counts)
-		// so LLM can make informed workflow selection based on past outcomes.
+		// GAP-012/#2533: Phase 3 gets the complete history from the already
+		// sanitized, whole-packet-budget-checked handoff source (not abbreviated
+		// counts). Do not silently truncate a second copy here; freezeEvidenceHandoff
+		// is the authoritative fail-closed budget boundary.
 		if in.EnrichData.HistoryResult != nil && (len(in.EnrichData.HistoryResult.Tier1) > 0 || len(in.EnrichData.HistoryResult.Tier2) > 0) {
 			parts = append(parts, BuildRemediationHistorySection(in.EnrichData.HistoryResult))
 		}

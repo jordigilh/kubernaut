@@ -38,6 +38,13 @@ type RemediationHistoryQuerier interface {
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
 }
 
+// HistoricalDecisionContextQuerier is an optional additive source bridge for
+// #2533. Keeping it separate preserves source compatibility for existing
+// history fakes while production adapters provide the bounded batch query.
+type HistoricalDecisionContextQuerier interface {
+	QueryAIAnalysisDecisionContextBatch(ctx context.Context, correlationIDs []string, clusterID string) (map[string]repository.AIAnalysisDecisionContext, error)
+}
+
 // Handler handles REST API requests for Data Storage Service
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
