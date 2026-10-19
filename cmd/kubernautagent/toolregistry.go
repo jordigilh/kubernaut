@@ -461,8 +461,8 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 func newFleetRetryObserver(store audit.AuditStore, m *kametrics.Metrics, logger logr.Logger) fleetclient.RetryObserver {
 	return fleetclient.RetryObserverFunc(func(ctx context.Context, observation fleetclient.RetryObservation) {
 		failureClass := string(observation.FailureClass)
-		if failureClass == "" {
-			failureClass = "none"
+		if failureClass == "" && observation.Outcome != fleetclient.RetryOutcomeSuccess {
+			failureClass = "unknown"
 		}
 		if m != nil {
 			m.RecordMCPRecovery(observation.ToolClass, observation.Source, observation.Outcome, failureClass)
@@ -503,8 +503,10 @@ func newFleetRetryObserver(store audit.AuditStore, m *kametrics.Metrics, logger 
 		event.Data["tool_class"] = observation.ToolClass
 		event.Data["logical_tool"] = observation.LogicalTool
 		event.Data["attempt"] = observation.Attempt
-		event.Data["outcome"] = observation.Outcome
-		event.Data["failure_class"] = failureClass
+		event.Data["retry_outcome"] = observation.Outcome
+		if failureClass != "" {
+			event.Data["failure_class"] = failureClass
+		}
 		event.Data["failure_code"] = observation.FailureCode
 		event.Data["cluster_id"] = observation.ClusterID
 		// The enrichment payload is also the typed persistence envelope for

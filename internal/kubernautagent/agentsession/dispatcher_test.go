@@ -538,6 +538,122 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 		})
 	})
 
+	Describe("UT-AA-2527-001: startup recovery reclaims a dispatch Lease whose epoch is no longer live", func() {
+		It("should preserve the AgentSession identity and start a new attempt before the dispatch Lease expires", func() {
+			as := newPendingAgentSession("as-recovery-2527")
+			as.Status.Phase = agentsessionv1.AgentSessionPhaseInvestigating
+			as.Status.SessionID = "old-ka-session"
+			Expect(cli.Create(ctx, as)).To(Succeed())
+
+			leaseDuration := int32(15 * time.Minute / time.Second)
+			renewed := metav1.NewMicroTime(time.Now())
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "dispatch-as-recovery-2527",
+					Namespace:   testNamespace,
+					Annotations: map[string]string{"kubernaut.ai/epoch-aware": "true"},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptrString("dead-replica-epoch"),
+					LeaseDurationSeconds: &leaseDuration,
+					RenewTime:            &renewed,
+				},
+			})).To(Succeed())
+
+			epochDuration := int32(30)
+			deadEpochRenew := metav1.NewMicroTime(time.Now().Add(-time.Minute))
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "agent-epoch-dead-replica",
+					Namespace: testNamespace,
+					Labels:    map[string]string{"kubernaut.ai/agent-epoch": "true"},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptrString("dead-replica-epoch"),
+					LeaseDurationSeconds: &epochDuration,
+					RenewTime:            &deadEpochRenew,
+				},
+			})).To(Succeed())
+
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "recovered from Spec", Confidence: 0.8}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replacement-epoch", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			Expect(d.RegisterEpoch(ctx)).To(Succeed())
+
+			Expect(d.ReconcileOrphanedAgentSessions(ctx)).To(Succeed())
+
+			key := crclient.ObjectKeyFromObject(as)
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted))
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(got.UID).To(Equal(as.UID))
+			Expect(got.Spec).To(Equal(as.Spec))
+			Expect(got.Status.SessionID).NotTo(Equal("old-ka-session"))
+
+			lease := &coordinationv1.Lease{}
+			Expect(cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-recovery-2527", Namespace: testNamespace}, lease)).To(Succeed())
+			Expect(*lease.Spec.HolderIdentity).To(Equal("replacement-epoch"))
+		})
+	})
+
+	Describe("UT-AA-2527-002: startup recovery does not reclaim a live competing epoch", func() {
+		It("should preserve the live holder and avoid a duplicate investigation", func() {
+			as := newPendingAgentSession("as-live-2527")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+
+			leaseDuration := int32(15 * time.Minute / time.Second)
+			renewed := metav1.NewMicroTime(time.Now())
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "dispatch-as-live-2527",
+					Namespace:   testNamespace,
+					Annotations: map[string]string{"kubernaut.ai/epoch-aware": "true"},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptrString("live-replica-epoch"),
+					LeaseDurationSeconds: &leaseDuration,
+					RenewTime:            &renewed,
+				},
+			})).To(Succeed())
+
+			epochDuration := int32(30)
+			liveEpochRenew := metav1.NewMicroTime(time.Now())
+			Expect(cli.Create(ctx, &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "agent-epoch-live-replica",
+					Namespace: testNamespace,
+					Labels:    map[string]string{"kubernaut.ai/agent-epoch": "true"},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       ptrString("live-replica-epoch"),
+					LeaseDurationSeconds: &epochDuration,
+					RenewTime:            &liveEpochRenew,
+				},
+			})).To(Succeed())
+
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "must not duplicate", Confidence: 0.8}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replacement-epoch", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			Expect(d.RegisterEpoch(ctx)).To(Succeed())
+
+			Expect(d.ReconcileOrphanedAgentSessions(ctx)).To(Succeed())
+			Consistently(func() int32 { return runner.calls.Load() }, "250ms", "10ms").Should(Equal(int32(0)))
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, crclient.ObjectKeyFromObject(as), got)).To(Succeed())
+			Expect(got.Status.Phase).To(BeEmpty())
+
+			lease := &coordinationv1.Lease{}
+			Expect(cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-live-2527", Namespace: testNamespace}, lease)).To(Succeed())
+			Expect(*lease.Spec.HolderIdentity).To(Equal("live-replica-epoch"))
+		})
+	})
+
 	Describe("UT-AA-2170-DELETE-001 / DD-AA-KA-001 Amendment N: deleting an AgentSession (directly, or transitively via RR/AIAnalysis cascade deletion) stops the in-flight investigation goroutine", func() {
 		It("should cancel the running investigation instead of leaking the goroutine forever", func() {
 			started := make(chan struct{})
