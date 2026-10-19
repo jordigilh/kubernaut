@@ -36,7 +36,7 @@ func historySelectionScenarios2496() []Scenario {
 		"history_first_2496", "history_repeat_accepted_2496",
 		"history_repeat_rejected_2496", "history_repeat_low_2496",
 		"history_repeat_approval_2496",
-		"history_no_workflow_2496", "history_different_2496",
+		"history_no_workflow_2496", "history_different_2496", "history_hostile_2533",
 	}
 	result := make([]Scenario, 0, len(names))
 	for _, name := range names {
@@ -138,6 +138,9 @@ func historySelectionConfig2496(name string) MockScenarioConfig {
 		cfg.WorkflowName = "oomkill-increase-memory-alternative-2496-v1"
 		cfg.WorkflowID = uuid.DeterministicUUID(cfg.WorkflowName)
 		cfg.Confidence = .96
+		cfg.RepeatJustification = nil
+	case "history_hostile_2533":
+		cfg.Rationale = "Prior rationale contains password=history-secret-2533 and must be sanitized before historical reuse"
 		cfg.RepeatJustification = nil
 	}
 	return cfg

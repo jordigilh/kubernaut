@@ -37,6 +37,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
@@ -49,7 +50,7 @@ import (
 // assertions read AF's SSE artifacts, never DataStorage as a transport.
 var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "fullpipeline", "history-2496"), func() {
 	DescribeTable("current selection after a genuine completed prior lifecycle",
-		func(currentSignal string, successfulPrior, approvalRequired bool) {
+		func(currentSignal string, successfulPrior, approvalRequired bool, priorSignal string) {
 			environment := "staging"
 			if approvalRequired {
 				environment = "production"
@@ -90,10 +91,14 @@ var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "f
 			fpWaitForPodCrashInNS("memory-eater", targetNS, 2*time.Minute)
 			// Keep parallel table entries from sharing AlertManager state. Each
 			// scenario owns its alert lifecycle and deferred cleanup.
-			firstSignal := "historyfirst2496-" + targetNS
-			if successfulPrior {
-				firstSignal = "historyrepeataccepted2496" // 512Mi really resolves the OOM.
-			} else {
+			firstSignal := priorSignal
+			if firstSignal == "" {
+				firstSignal = "historyfirst2496-" + targetNS
+				if successfulPrior {
+					firstSignal = "historyrepeataccepted2496" // 512Mi really resolves the OOM.
+				}
+			}
+			if !successfulPrior {
 				// Persistent external telemetry complements the real unresolved
 				// OOM/CrashLoop and firing AlertManager signal. EM computes its own
 				// component and aggregate scores; we never assign a desired score.
@@ -216,13 +221,15 @@ var _ = Describe("History-aware selection journeys [BR-KA-016]", Label("e2e", "f
 			By("Reading the current selection/assessment through authenticated AF A2A SSE")
 			fpAssertHistoryLive2496(current.Name, result)
 		},
-		Entry("E2E-FP-2496-001: justified same-ID repeat after zero effectiveness", "historyrepeataccepted2496", false, false),
-		Entry("E2E-FP-2496-002: different ID in the same action family remains eligible", "historydifferent2496", false, false),
-		Entry("E2E-FP-2496-003: rejected same-ID repeat exhausts into non-executable review", "historyrepeatrejected2496", false, false),
-		Entry("E2E-FP-2496-004: unsuitable but available catalog is explicitly declined", "historynoworkflow2496", false, false),
-		Entry("E2E-FP-2496-006: complete explanation cannot replace current confidence", "historyrepeatlow2496", false, false),
-		Entry("E2E-FP-2496-006a: complete repeat reasoning cannot bypass production Rego approval", "historyrepeatapproval2496", false, true),
-		Entry("E2E-FP-2496-007: a previously successful same-ID recurrence also requires explanation", "historyrepeataccepted2496", true, false),
+		Entry("E2E-FP-2496-001: justified same-ID repeat after zero effectiveness", "historyrepeataccepted2496", false, false, ""),
+		Entry("E2E-FP-2496-002: different ID in the same action family remains eligible", "historydifferent2496", false, false, ""),
+		Entry("E2E-FP-2496-003: rejected same-ID repeat exhausts into non-executable review", "historyrepeatrejected2496", false, false, ""),
+		Entry("E2E-FP-2496-004: unsuitable but available catalog is explicitly declined", "historynoworkflow2496", false, false, ""),
+		Entry("E2E-FP-2496-006: complete explanation cannot replace current confidence", "historyrepeatlow2496", false, false, ""),
+		Entry("E2E-FP-2496-006a: complete repeat reasoning cannot bypass production Rego approval", "historyrepeatapproval2496", false, true, ""),
+		Entry("E2E-FP-2496-007: a previously successful same-ID recurrence also requires explanation", "historyrepeataccepted2496", true, false, ""),
+		Entry("E2E-FP-2533-001: complete prior decision context reaches the recurrence journey", "historyrepeataccepted2496", false, false, ""),
+		Entry("E2E-FP-2533-002: hostile historical rationale is sanitized before provider reuse", "historyrepeataccepted2496", true, false, "historyhostile2533"),
 	)
 
 	// E2E-FP-2496-005 moved, with all isolation assertions, to
@@ -321,6 +328,20 @@ func fpAssertPriorHistory2496(rr *remediationv1.RemediationRequest, ea *eav1.Eff
 		g.Expect(entry.WorkflowId.Value).To(Equal(selected.WorkflowID))
 		g.Expect(entry.WorkflowName.Value).To(Equal(selected.WorkflowName))
 		g.Expect(entry.WorkflowSelectionConfidence.Value).To(Equal(selected.Confidence))
+		g.Expect(entry.WorkflowRationale.Set).To(BeTrue(), "E2E-FP-2533-001: AIAnalysis rationale must reach target-scoped history")
+		expectedRationale := sharedtypes.BoundedHistoricalDecisionText(selected.Rationale)
+		g.Expect(entry.WorkflowRationale.Value).To(Equal(expectedRationale),
+			"E2E-FP-2533-001: history rationale must come from the typed AIAnalysis audit payload")
+		if selected.RepeatJustification == nil {
+			g.Expect(entry.RepeatJustification.Set).To(BeFalse(),
+				"E2E-FP-2533-001: absent repeat justification remains explicitly unknown")
+		} else {
+			g.Expect(entry.RepeatJustification.Set).To(BeTrue(),
+				"E2E-FP-2533-001: complete repeat justification must reach history")
+			g.Expect(entry.RepeatJustification.Value.EvidenceBasis).To(Equal(selected.RepeatJustification.EvidenceBasis))
+			g.Expect(entry.RepeatJustification.Value.PriorOutcomeRelevance).To(Equal(selected.RepeatJustification.PriorOutcomeRelevance))
+			g.Expect(entry.RepeatJustification.Value.ExpectedMechanism).To(Equal(selected.RepeatJustification.ExpectedMechanism))
+		}
 		g.Expect(entry.AssessmentReason.Value).To(BeElementOf(
 			ogenclient.RemediationHistoryEntryAssessmentReasonFull, ogenclient.RemediationHistoryEntryAssessmentReasonPartial))
 		g.Expect(entry.EffectivenessScore.IsSet() && !entry.EffectivenessScore.IsNull()).To(BeTrue())

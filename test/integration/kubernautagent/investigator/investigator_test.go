@@ -475,7 +475,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	// BR-KA-016 / BR-KA-211 / DD-KA-2496; AC-4, SI-10, AU-3.
 	// Extend the existing real-DS suite: only Kubernetes resource reads and
 	// the external provider endpoint are substituted, never business logic.
-	DescribeTable("#2496 real history reaches the external selection request",
+	DescribeTable("#2496/#2533 real history reaches the external selection request",
 		func(hostile bool) {
 			testCtx := context.Background()
 			resourceName := fmt.Sprintf("history-provider-2496-%d", time.Now().UnixNano())
@@ -513,6 +513,21 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 						"post_remediation_spec_hash": sha256FixtureHash}, attempt.timestamp.Add(3*time.Minute))
 				seedAuditEvent(testCtx, "effectiveness.assessment.completed", "effectiveness", attempt.id,
 					map[string]interface{}{"event_type": "effectiveness.assessment.completed", "reason": "Full"}, attempt.timestamp.Add(4*time.Minute))
+				rationale := "Prior selection rationale supports the current mechanism"
+				if hostile {
+					rationale += " password=history-secret-2496"
+				}
+				seedAuditEvent(testCtx, "aianalysis.analysis.completed", "analysis", attempt.id,
+					map[string]interface{}{
+						"event_type": "aianalysis.analysis.completed", "analysis_name": "analysis-" + attempt.id,
+						"namespace": "production", "phase": "Completed", "approval_required": false,
+						"degraded_mode": false, "warnings_count": 0, "workflow_rationale": rationale,
+						"repeat_justification": map[string]string{
+							"evidence_basis":          "Current observations support the choice",
+							"prior_outcome_relevance": "The prior outcome remains relevant",
+							"expected_mechanism":      "The workflow addresses the mechanism",
+						},
+					}, attempt.timestamp.Add(5*time.Minute))
 			}
 			DeferCleanup(func() {
 				_, err := seedDB.ExecContext(context.Background(),
@@ -604,6 +619,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				Expect(string(attempts[i]["workflow_id"])).To(Equal(fmt.Sprintf("%q", expected.id)))
 				Expect(string(attempts[i]["workflow_name"])).To(ContainSubstring("history-workflow-2496"))
 				Expect(string(attempts[i]["workflow_selection_confidence"])).To(Equal(expected.confidence), "RCA confidence cannot replace prior selection confidence or explicit zero")
+				var rationale string
+				Expect(json.Unmarshal(attempts[i]["workflow_rationale"], &rationale)).To(Succeed())
+				Expect(rationale).To(ContainSubstring("Prior selection rationale supports the current mechanism"))
+				var repeatJustification map[string]string
+				Expect(json.Unmarshal(attempts[i]["repeat_justification"], &repeatJustification)).To(Succeed())
+				Expect(repeatJustification["expected_mechanism"]).To(Equal("The workflow addresses the mechanism"))
 				var recorded time.Time
 				Expect(json.Unmarshal(attempts[i]["recorded_at"], &recorded)).To(Succeed())
 				Expect(recorded).To(BeTemporally("==", expected.at))
@@ -618,6 +639,11 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			Expect(string(captured[1]["messages"])).NotTo(ContainSubstring("history-secret-2496"))
 			Expect(string(captured[2]["messages"])).NotTo(ContainSubstring("prior-parameter-2496"))
 			Expect(string(captured[2]["messages"])).NotTo(ContainSubstring("history-secret-2496"))
+			By("IT-KA-2533-003: the first workflow-selection request contains labelled historical decision context")
+			Expect(string(captured[2]["messages"])).To(ContainSubstring("Historical decision context"))
+			if hostile {
+				Expect(string(captured[2]["messages"])).To(ContainSubstring("[REDACTED]"))
+			}
 		},
 		Entry("IT-KA-2496-001: authenticated DS metadata reaches a real HTTP provider in chronological order", false),
 		Entry("IT-KA-2496-006: historical credentials and parameters cannot reach that provider", true),
